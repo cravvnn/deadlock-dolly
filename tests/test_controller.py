@@ -477,7 +477,7 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(self.console.sent, [], "Initialization must leave the game in the hideout")
             self.assertLess(self.console.events.index("cvar_unhide"), self.console.events.index("restore_gameinfo"))
             load = self.controller.load_replay()
-            command = 'playdemo "' + replay.as_posix() + '"'
+            command = 'playdemo "' + replay.resolve().as_posix() + '"'
             self.assertEqual(self.console.sent, [command])
             self.assertNotIn(command, self.console.requests, "Map loading must not block on a command response deadline")
             self.assertLess(self.console.events.index("restore_gameinfo"), self.console.events.index(command))
