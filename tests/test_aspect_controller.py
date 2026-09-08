@@ -114,7 +114,7 @@ class AspectControllerTests(unittest.TestCase):
                                           for index in range(602))
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 650)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(project, 0, 1, 60, False)
         frames = [request for request in self.console.requests if request.startswith("spec_goto ")]
         ratios = []

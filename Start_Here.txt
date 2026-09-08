@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.3.3 ALPHA - SOURCE PACKAGE
+DEADLOCK DOLLY 0.3.4 ALPHA - SOURCE PACKAGE
 
 This is the clean source package for GitHub and Windows executable builds.
 It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the

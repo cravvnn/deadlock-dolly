@@ -1,98 +1,107 @@
-# Validation — 0.3.3 alpha, build fix 1
+# Validation — 0.3.4 alpha
 
 Date: 8 September 2026.
 
-The supplied first GitHub Windows run installed the pinned build dependencies
-successfully, then stopped at the source-test gate: 460 tests in 46.221 seconds,
-six failures and one error. No executable was produced by that run.
+The user reports successfully building and running the 0.3.3 Windows executable.
+The newly supplied diagnostics establish that the app connected to its replay
+and ran camera playback. This release repairs issues found in that recording;
+**the 0.3.4 executable and native camera behavior have not been tested here**.
+The GitHub Windows test/build/icon/editor gates must run for this revision.
 
-Build fix 1 corrects the four affected test files and updates this report and
-the changelog. Production code, build scripts, workflow, logo and unlocker are
-byte-identical to the originally delivered 0.3.3 source archive. No test is
-skipped and no build gate is disabled.
+## Findings in the supplied executable diagnostics
 
-**No Windows EXE was compiled or launched in this Linux workspace.** A fresh
-GitHub Windows build must run after uploading these changes. Neither these
-checks nor the future bundle smoke test establish native Deadlock camera
-compatibility.
+The last recorded path used three camera keys, start tick 112097, 64 ticks/sec,
+2.375 shot seconds, playback speed 0.1 and 120 requested updates/sec.
 
-## Reported failure and repair
+- The retained 256 camera samples contained 88 zero-length send intervals,
+  105 intervals of 16 ms and 62 of 15 ms. There were 87 consecutive repeated
+  shot times and complete camera poses. The high-resolution wait timer was
+  already active. The movement clock was still coarse.
+- CPython 3.12 on Windows uses `GetTickCount64` for its monotonic clock and
+  `QueryPerformanceCounter` for its performance clock. The former's usual
+  resolution is 10–16 ms. All controller movement, observation and deadline
+  timestamps now use the performance clock consistently.
+- The authored yaw keys unwrap continuously as 108.5, 43.4 and -114.1 degrees.
+  Pitch/yaw angular velocity is continuous at the middle key, and 2,001 sampled
+  command batches have matching angles in both camera commands. No rotation
+  spline, key timing or angle-path changes were warranted by this evidence.
+- Stopped paused controls retained tick 112097. A first capture after the user
+  advanced to 112158 was rejected against that stale preparation; a retry
+  succeeded. Capture now retires stale preparation and measures the new view.
+- At tick 112249, seeking to that same tick did not reset spectator response.
+  A distant preview produced about 572.5 units of residual, beyond the retained
+  256-unit correction bound. Later startup checks measured about 0.245 gain:
+  a commanded 22.1-unit Z change moved the visible view only 5.4 units.
+- A genuine seek to 112097 produced a verified 16-to-16-unit response on all
+  three axes. This supports trying an adjacent-tick seek and verified return;
+  it does not prove that every native Deadlock state will recover that way.
 
-- Six assertions compared Windows short-name temporary paths (`RUNNER~1`) to
-  canonical long paths (`runneradmin`). Expected paths now resolve the same
-  location while still checking the full startup-log paths and replay command.
-- One separator test tried to create a newline-containing filename, which the
-  Windows filesystem rejected before the application's validator could run.
-  Real files still exercise semicolon and plus-sign rejection through the
-  command builder. Only filesystem lookup is simulated for quotes/control
-  characters, with the real validator required to report console separators.
-- An independent Linux harness used a directory symlink to reproduce path
-  aliases and rejected writes of Windows-invalid filenames. The seven original
-  cases reproduced **six failures and one error**; all seven corrected cases
-  passed. This emulates the two reported assumptions, not Windows APIs.
+## Implemented behavior
 
-## Completed local checks
+- High-resolution motion timestamps are shared by path playback, frozen
+  preview, manual paused movement, readback scheduling and motion metrics.
+  Diagnostics report the clock name, implementation and resolution.
+- Paused preparation captures the intended view before an adjacent-tick round
+  trip. It returns to the original tick, restores that view and then verifies
+  direct XYZ response and return before enabling movement.
+- A measured position failure after Play/Seek can invoke one such recovery.
+  A failed lens readback, cancellation or changed replay does not retry.
+- Capture after a completed external seek succeeds on its first fresh read.
+  The old movement preparation is invalidated; movement still needs calibration.
+  A replay changing during capture is rejected instead of mixing pose and time.
+- Existing offset bounds, direct-response proof, drift detection, selected-demo
+  checks, cancellation and dev/insecure process ownership remain enforced.
+  No global interpolation cvars, memory offsets or scale guesses are introduced.
 
-`python3 -m unittest discover -s tests -q`: **460 tests passed** on Linux,
-Python **3.12.13**, in **37.848 seconds** after the build fix.
+## Regression checks
 
-This includes the previous 441 camera/editor regressions and 19 packaging checks:
+`python3 -m unittest discover -s tests -q`: **475 tests passed** on Linux,
+Python **3.12.13**, in **53.649 seconds**.
 
-| Area | Checks |
+Fifteen new tests exercise the actual controller with simulated game transport:
+
+| Tests | Conditions checked |
 | --- | --- |
-| Portable startup and paths — 13 tests | EXE/resource roots, windowless log streams, direct startup without a child Python process, visible failures, File/CLI recovery, and prevention of recursive bootstrap |
-| External game environment | Native DLL-directory setup and restoration on successful/failed spawn, PATH filtering and unchanged source launch behavior; Windows API boundary simulated |
-| Release packaging — 6 tests | Explicit source exports, excluded personal/runtime data, invalid paths, missing files, x64 GUI PE and nine embedded icon frames through a simulated PE resource tree |
-| Retained application — 441 tests | Camera interpolation, aspect curves, controller transitions, paused movement, input, timing, startup, unlocker preparation and restoration |
+| 3 motion-clock regressions | Distinct coarse and precise clock epochs; 2 ms console latency; 120 Hz frozen rotation; 0.1-speed normal playback; paused yaw; endpoint/duration and cancellation |
+| 12 paused-refresh regressions | Same-tick no-op vs actual seek; restoring current/distant views; bounded recovery; first/last tick; unavailable neighbor; permanent weak response; cancellation; changed demo; lens failure; stale and mixed-tick capture |
 
-All **47 Python files plus the PyInstaller spec** parse with Python 3.10 syntax
-rules. The build itself deliberately requires Windows x64 and Python 3.12.
-The existing source BAT files retain their Windows CRLF line endings.
+The motion-clock tests fail if the old coarse clock is restored in memory.
+The native renderer is not simulated by those assertions. The prior Windows
+short-name/invalid-filename test corrections are retained. No tests are skipped
+and no Windows build gates are bypassed.
 
-The original packaging validation included an actual **Linux Tk 8.6.14** smoke
-run using the new desktop entry point. It
-created and updated the real Dolly editor, loaded its PNG icon fallback, read
-and verified the bundled unlocker, checked data locations and closed. This
-check ran from source (`frozen: false`), started no game and changed no game
-configuration. It is not evidence of native Windows EXE or ICO loading.
+The 49 Python files plus the PyInstaller spec parse under Python 3.10 syntax
+rules. The clean source manifest contains 81 files. Logo, unlocker, packaging
+recipe, build dependencies, workflow, path interpolation and input modules
+remain byte-identical to the previously supplied 0.3.3 build fix.
 
-The playback clock, path model, movement/input, hotkey, preferences, framing
-graph and console modules are byte-identical to 0.3.2. Controller changes in
-this revision locate portable logs; game-launch changes handle bundled resource
-paths and external DLL lookup. Existing launch/recovery regressions pass.
+## Native checks still needed
 
-The three logo assets and official cvar unlocker are byte-identical to 0.3.2.
-The unlocker SHA-256 remains
-`e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba`.
+1. Build the updated default branch with a fresh GitHub Actions run; download
+   and extract the complete 0.3.4 Windows package, then launch its EXE.
+2. At the troublesome paused scene, start Paused camera controls and let the
+   brief seek/return and position check finish. Verify the final replay moment
+   and visible starting view are preserved, then test vertical movement/turning.
+3. Switch a saved camera while paused, including one far from the current view.
+4. Stop controls, move the replay to another moment, and capture once. Start
+   controls again before further manual movement.
+5. Play the same saved rotation path at 0.1 speed, then compare 60 and 120 updates/s.
+   Export new diagnostics if it jumps or a position check still fails.
 
-## Windows build gates awaiting a fresh run
+A refresh may visibly flash the neighbouring scene while preparing. Cancelling
+mid-refresh deliberately stops further commands and can leave the replay at
+that neighbouring tick. Continuous flight itself neither seeks nor resumes.
+A permanently weak camera response remains blocked. This console backend is
+not synchronized with render frames, so the clock correction cannot guarantee
+perfectly smooth native footage or eliminate stalls caused by game rendering.
 
-The builder and GitHub Actions workflow will:
+## Sources and history
 
-1. Run the source regressions on Windows x64 with Python 3.12.
-2. Build a windowed `Dolly.exe` with the existing ICO and version information.
-3. Copy the official unlocker afterward and verify its pinned hash.
-4. Inspect the actual PE architecture, GUI subsystem and all nine icon frames.
-5. Relocate the complete folder to a path with spaces and start it from a
-   different working directory. Create the actual editor, load its Windows
-   icon and check the bundled runtime/resources without launching Deadlock.
-6. Produce Windows/source ZIPs, checksums and `BUILD_INFO.json` only after those
-   checks pass. The workflow creates downloadable artifacts; it does not publish
-   a GitHub Release.
+- [CPython 3.12.14 clock implementation](https://github.com/python/cpython/blob/v3.12.14/Python/pytime.c)
+- [Python performance-counter documentation](https://docs.python.org/3.12/library/time.html#time.perf_counter)
+- [Microsoft GetTickCount64 resolution](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-gettickcount64)
+- [Previous validation](HISTORY_VALIDATION.md)
+- [Build and GitHub update instructions](BUILDING.md)
 
-The reference PyInstaller Windows wheel was checked for the COPYING file used
-by the license-copy step. Build dependencies are pinned in requirements-build.txt.
-The icon, PE and API mock checks cannot substitute for executing this Windows gate.
-
-## Source delivery
-
-`SOURCE_FILES.txt` lists **79 files** for the GitHub source ZIP, including the
-workflow, tests, logo and licensed plugin. Logs, diagnostic archives, replays,
-recordings, private settings, virtual environments and build output are excluded.
-No GitHub repository was modified by this repair. The small update ZIP contains
-the four corrected tests and these two documentation files at their original
-repository paths. The full source ZIP includes the same corrections.
-
-Build and upload instructions are in [BUILDING.md](BUILDING.md). The retained
-camera investigations, tests and previous visual checks are in
-[HISTORY_VALIDATION.md](HISTORY_VALIDATION.md).
+Original diagnostics, log paths and recordings are excluded from source and
+update archives. No GitHub repository or release was modified by this work.

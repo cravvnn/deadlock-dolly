@@ -83,7 +83,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         saved = project.to_dict()
         self.controller.select_paused_camera(project, 10)
         seeks = [c for c in self.console.operations if c.startswith('demo_gototick ')]
-        self.assertEqual(seeks, ['demo_gototick 112697 0 1'])
+        self.assertEqual(seeks, ['demo_gototick 112696 0 1', 'demo_gototick 112697 0 1'])
         self.assertEqual(project.to_dict(), saved)
         self.assertEqual(self.controller._paused_pose['time'], 10)
         self.assertEqual(self.console.pose[:3], [100, 200, 300])
@@ -109,7 +109,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         # one transient neighbour after Dolly reasserts pause.
         self.console.goto_outputs = deque([target + 1, target, target, target,
                                             target + 1, target, target, target])
-        with patch('dolly.controller.time.monotonic', clock.monotonic), \
+        with patch('dolly.controller.time.perf_counter', clock.monotonic), \
              patch('dolly.controller.SEEK_SETTLE_INTERVAL', .04):
             info = self.controller._seek_tick(target)
         self.assertEqual(info['tick'], target)
@@ -121,7 +121,7 @@ class PlaybackTransitionTests(unittest.TestCase):
     def test_cancel_during_seek_prevents_camera_write(self):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 2)
-        with patch('dolly.controller.time.monotonic', clock.monotonic), \
+        with patch('dolly.controller.time.perf_counter', clock.monotonic), \
              patch('dolly.controller.SEEK_SETTLE_INTERVAL', .04):
             with self.assertRaisesRegex(RuntimeError, 'cancelled'):
                 self.controller._seek_tick(123)
@@ -132,7 +132,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 1000)
         self.console.goto_outputs = deque([124] * 500)
-        with patch('dolly.controller.time.monotonic', clock.monotonic), \
+        with patch('dolly.controller.time.perf_counter', clock.monotonic), \
              patch('dolly.controller.SEEK_SETTLE_INTERVAL', .04):
             with self.assertRaisesRegex(RuntimeError, 'did not reach tick 123'):
                 self.controller._seek_tick(123)
@@ -145,7 +145,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         self.console.requests.clear()
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 200)
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._reset_motion_observations(initial)
             self.controller._run_paused_flight(lambda: CameraMotion(up=-1, boost=True), 240, 60, 60)
         self.assertLess(clock.now, 2)
@@ -164,7 +164,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         self.console.delay_reads = 1
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 100)
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._reset_motion_observations(initial)
             self.controller._run_paused_flight(lambda: CameraMotion(forward=1), 10000, 60, 60)
         self.assertTrue(self.controller.status()['paused_camera'])
@@ -180,7 +180,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         self.console.goto_outputs = deque([100, 200, 200])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 20)
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._run(project, 0, .1, 60, False)
         self.assertEqual(self.console.pose[:3], [100, 200, 300])
         self.assertEqual(self.console.values['r_aspectratio'], 1)
@@ -198,7 +198,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         self.console.requests.clear()
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 400)
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._reset_motion_observations(project.evaluate(0))
             self.controller._run(project, 0, .1, 60, False)
         self.assertEqual(len(self.controller._playback_samples), 256)
@@ -224,7 +224,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         self.console.goto_outputs = deque([100, 10000, 10000])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 20)
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._run(project, 0, .1, 60, False)
         self.assertEqual(len(self.console.camera_writes), 1)
         self.assertEqual(self.console.pose[:3], [0, 0, 200])
@@ -269,7 +269,7 @@ class PlaybackTransitionTests(unittest.TestCase):
         self.console.goto_outputs = deque(range(100, 600))
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 500)
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._reset_motion_observations(project.evaluate(0))
             self.controller._run(project, 0, 1, 60, False)
         self.assertIn('visible camera stopped', self.controller.status()['message'])

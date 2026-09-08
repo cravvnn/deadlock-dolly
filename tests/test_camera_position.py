@@ -170,7 +170,7 @@ class CameraPositionTests(unittest.TestCase):
         self.console.goto_outputs.extend([100, 125, 150, 175, 200, 200])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=8)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(project, 0, 1, 60, False)
 
         self.assertGreater(len(self.console.view_writes), 3)

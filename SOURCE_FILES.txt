@@ -56,12 +56,14 @@ tests/test_curve.py
 tests/test_gui_capture.py
 tests/test_hotkey.py
 tests/test_launcher.py
+tests/test_motion_clock.py
 tests/test_navigation.py
 tests/test_navigation_input.py
 tests/test_pacing.py
 tests/test_path.py
 tests/test_paused_camera.py
 tests/test_paused_gui.py
+tests/test_paused_refresh.py
 tests/test_playback.py
 tests/test_playback_transitions.py
 tests/test_portable.py

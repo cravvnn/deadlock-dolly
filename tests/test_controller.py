@@ -397,7 +397,7 @@ class ControllerTests(unittest.TestCase):
         self.console.operations.clear()
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=3)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(make_project(), 0, 1, 60, True)
         self.assertEqual(len(self.console.camera_writes), 3)
         self.assertEqual(self.console.operations.count("demo_pause"), 4)
@@ -428,7 +428,7 @@ class ControllerTests(unittest.TestCase):
         self.console.goto_outputs.extend([100, 110, 120, 105, 105])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=4)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(make_project(), 0, 1, 60, False)
         x_positions = [float(command.split()[1]) for command in self.console.camera_writes]
         for position, acknowledged in zip(x_positions, (0, 10, 20, 5)):
@@ -736,7 +736,7 @@ class ControllerTests(unittest.TestCase):
     def _run_with_clock(self, project, *, limit=4, speed=1, frozen=False):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=limit)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(project, 0, speed, 60, frozen)
         return clock
 
@@ -922,7 +922,7 @@ class ControllerTests(unittest.TestCase):
             return response
 
         self.console.request = delayed_transport
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(project, 0, 1, 60, False)
         self.assertEqual(len(self.console.camera_writes), 80)
         self.assertTrue(all(command.endswith("; demo_goto") for command in self.console.camera_writes))
@@ -952,7 +952,7 @@ class ControllerTests(unittest.TestCase):
         self.console.demo_outputs.extend([100, 110, 120, 105, 105])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=4)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(project, 0, 1, 60, False)
         x_positions = [float(command.split()[1]) for command in self.console.camera_writes]
         for position, acknowledged in zip(x_positions, (0, 10, 20, 5)):
@@ -968,7 +968,7 @@ class ControllerTests(unittest.TestCase):
         self.console.tick = 120
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=70)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(make_project(), 0, 1, 60, False)
         self.assertEqual(len(self.console.camera_writes), 70)
         positions = [float(command.split()[1]) for command in self.console.camera_writes]
@@ -983,7 +983,7 @@ class ControllerTests(unittest.TestCase):
         self.console.demo_outputs.extend([100, "Error - Not currently playing back a demo."])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=5)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic), self.assertLogs("dolly", level="ERROR"):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic), self.assertLogs("dolly", level="ERROR"):
             self.controller._run(make_project(), 0, 1, 60, False)
         self.assertEqual(len(self.console.camera_writes), 1)
         self.assertNotIn("demo_pause", self.console.requests)
@@ -993,7 +993,7 @@ class ControllerTests(unittest.TestCase):
         self.console.demo_outputs.extend([100, 100, 101])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=5)
-        with patch("dolly.controller.time.monotonic", side_effect=clock.monotonic), self.assertLogs("dolly", level="ERROR"):
+        with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic), self.assertLogs("dolly", level="ERROR"):
             self.controller._run(make_project(), 0, 1, 60, True)
         self.assertEqual(len(self.console.camera_writes), 2)
         self.assertTrue(any("resumed" in message for message in self.messages))

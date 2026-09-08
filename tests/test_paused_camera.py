@@ -33,15 +33,19 @@ class PausedCameraTests(unittest.TestCase):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, waits)
         self.controller._state['paused_flight'] = True
-        with patch('dolly.controller.time.monotonic', clock.monotonic):
+        with patch('dolly.controller.time.perf_counter', clock.monotonic):
             self.controller._run_paused_flight(source or (lambda: CameraMotion(up=1)), 240, 60, 60)
         return clock
 
     def assert_no_seek_resume(self):
-        """Refreshing this exact tick is permitted; arrival-time seeking is not."""
+        """Permit only adjacent-tick refresh pairs; never play or seek arrival."""
+        seeks = [int(c.split()[1]) for c in self.console.operations
+                 if c.startswith('demo_gototick ')]
+        self.assertEqual(len(seeks) % 2, 0)
+        for away, returned in zip(seeks[::2], seeks[1::2]):
+            self.assertEqual(returned, self.console.tick)
+            self.assertEqual(away, returned - 1 if returned else 1)
         for command in self.console.operations:
-            if command.startswith('demo_gototick '):
-                self.assertEqual(int(command.split()[1]), self.console.tick, command)
             self.assertNotEqual(command, 'demo_resume')
             self.assertFalse(command.startswith('demo_goto '), command)
 
@@ -182,9 +186,14 @@ class PausedCameraTests(unittest.TestCase):
     def test_capture_after_external_seek_invalidates_preparation(self):
         self.prepare()
         self.console.tick = self.console.goto_output = 101
-        with self.assertRaisesRegex(RuntimeError, 'replay moved'):
-            self.controller.capture(0)
+        wanted = list(self.console.pose)
+        frame = self.controller.capture(0)
+        for actual, expected in zip((frame.x, frame.y, frame.z), wanted[:3]):
+            self.assertAlmostEqual(actual, expected, places=1)
         self.assertFalse(self.controller.status()['paused_camera'])
+        self.assertEqual(self.controller.status()['tick'], 101)
+        with self.assertRaisesRegex(RuntimeError, 'Start Paused camera'):
+            self.controller.nudge_paused_camera(CameraMotion(up=1))
 
     def test_capture_at_replay_retains_fixed_tick_and_can_resume(self):
         self.prepare()

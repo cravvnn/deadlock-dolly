@@ -59,6 +59,18 @@ CAMERA_DRIFT_LIMIT = 64.0
 CAMERA_DRIFT_SAMPLES = 3
 
 
+class CameraPositionError(RuntimeError):
+    """A measured position response failed, eligible for one paused refresh."""
+
+
+def motion_clock_info():
+    # Python 3.12's Windows monotonic clock can advance in 15/16 ms steps.
+    # All motion timestamps use the same high-resolution QPC-backed domain.
+    info = time.get_clock_info("perf_counter")
+    return {"name": "perf_counter", "implementation": info.implementation,
+            "resolution_seconds": info.resolution, "monotonic": info.monotonic}
+
+
 def numeric(value):
     value = float(value)
     if not math.isfinite(value):
@@ -495,7 +507,15 @@ class Controller:
             paused_tick = self._paused_tick
             self._require_demo(require_tick=False)
             self._request("demo_pause")
-            self._require_demo(require_tick=False)
+            info = self._require_demo(require_tick=False)
+            capture_tick = info.get("tick")
+            if paused_tick is not None and capture_tick != paused_tick:
+                # Capture is a fresh measurement, not a continuation of the
+                # previous manual writer. An external seek retires that
+                # preparation without making the first new capture fail.
+                self._invalidate_paused_camera()
+                self._reset_camera_position()
+                paused_tick = None
             if paused_tick is not None:
                 self._check_paused_tick()
             aspect = self._capture_aspect_ratio()
@@ -504,6 +524,10 @@ class Controller:
             frame.time = float(shot_time)
             if not math.isfinite(frame.time) or frame.time < 0:
                 raise ValueError("Shot time must be a finite, nonnegative number.")
+            if capture_tick is not None and self._require_demo().get("tick") != capture_tick:
+                self._invalidate_paused_camera()
+                self._reset_camera_position()
+                raise RuntimeError("The replay moved during Capture. Pause it and capture again.")
             if paused_tick is not None:
                 self._check_paused_tick()
                 # Capture measures the actual view, including manual movement
@@ -684,14 +708,14 @@ class Controller:
             error = max(abs(v) for v in residual.values())
             stalled = stalled + 1 if previous_error is not None and error >= previous_error - .05 else 0
             if stalled >= 3:
-                raise RuntimeError("Camera position stopped converging. The current camera mode or collision may be limiting movement. Export diagnostics if it persists.")
+                raise CameraPositionError("Camera position stopped converging. The current camera mode or collision may be limiting movement. Export diagnostics if it persists.")
             previous_error = error
             offset = {a: self._camera_offset[a] + residual[a] for a in CAMERA_AXES}
             if math.sqrt(sum(value * value for value in offset.values())) > CAMERA_MAX_OFFSET:
-                raise RuntimeError("Camera position correction exceeded its measurement limit. Enter replay freecam and retry; export diagnostics if it persists.")
+                raise CameraPositionError("Camera position correction exceeded its measurement limit. Enter replay freecam and retry; export diagnostics if it persists.")
             self._camera_offset = offset
             self._camera_calibration["offset"] = dict(offset)
-        raise RuntimeError("Camera position was still outside tolerance after the correction limit. Export diagnostics so the remaining response can be checked.")
+        raise CameraPositionError("Camera position was still outside tolerance after the correction limit. Export diagnostics so the remaining response can be checked.")
 
     def _position_frame(self, frame, *, direct=False):
         """Converge to the requested view; verify before any resume.
@@ -750,7 +774,7 @@ class Controller:
                     "commanded_delta": dict.fromkeys(CAMERA_AXES, CAMERA_HEIGHT_PROBE),
                     "observed_delta": response, "gain": gains, "return_residual": returned}
                 if not all(.9 <= gain <= 1.1 for gain in gains.values()) or not self._position_matches(returned):
-                    raise RuntimeError("The paused camera still applies only part of a position change. Camera movement was not started because native Resume could jump to a hidden position. Enter replay freecam, release movement keys and retry; export diagnostics if it persists.")
+                    raise CameraPositionError("The paused camera still applies only part of a position change. Camera movement was not started because native Resume could jump to a hidden position. Enter replay freecam, release movement keys and retry; export diagnostics if it persists.")
                 self._camera_calibration["direct_response_verified"] = True
             else:
                 self._converge_position(frame, "final")
@@ -785,18 +809,33 @@ class Controller:
         Some paused spectator states expose only a fraction of spec_goto's
         displacement. Fitting an additive offset in that state can place the
         hidden origin far away; native Resume then reveals it. Refreshing the
-        exact same tick is a recovery attempt, not an assumption about the
-        engine. A direct XYZ displacement and return must still pass.
+        exact same tick can be a no-op. A bounded adjacent-tick round trip is
+        a recovery attempt, not an assumption about the engine. The final
+        tick and a direct XYZ displacement and return must still pass.
         """
-        if refresh:
-            if tick is None:
-                raise RuntimeError("A readable replay tick is needed to refresh the paused camera.")
-            self._seek_tick(tick)
+        refresh_details = None
+        failed_calibration = None
         # A seek invalidates the previous local correction, including any
         # correction measured while the game had a weak paused response.
         self._reset_camera_position()
         try:
-            self._position_frame(frame, direct=True)
+            if refresh:
+                if tick is None:
+                    raise RuntimeError("A readable replay tick is needed to refresh the paused camera.")
+                refresh_details = self._refresh_camera_tick(tick)
+            try:
+                self._position_frame(frame, direct=True)
+            except CameraPositionError:
+                if refresh or tick is None:
+                    raise
+                # A Play/Seek targeting its already-current tick may also
+                # leave a weak camera. Retry once, only for measured position
+                # failures; cancellation, identity and lens errors propagate.
+                failed_calibration = deepcopy(self._camera_calibration)
+                self._check_position_cancelled()
+                refresh_details = self._refresh_camera_tick(tick)
+                self._reset_camera_position()
+                self._position_frame(frame, direct=True)
             if tick is not None and int(self._require_demo()["tick"]) != int(tick):
                 raise RuntimeError("The replay moved during the camera position check. Keep it paused and retry.")
             self._check_position_cancelled()
@@ -806,12 +845,49 @@ class Controller:
             self._message("Camera position check failed: " + str(exc), playing=False)
             raise
         finally:
-            self._camera_calibration["same_tick_refresh"] = bool(refresh)
+            self._camera_calibration["same_tick_refresh"] = False
+            self._camera_calibration["refresh"] = refresh_details or self._camera_calibration.get("refresh")
+            if failed_calibration is not None:
+                self._camera_calibration["before_refresh"] = failed_calibration
             self._camera_calibration["prepared_tick"] = tick
+
+    def _refresh_camera_tick(self, tick):
+        """Actually leave and return to a paused tick before touching the camera."""
+        tick = int(tick)
+        self._check_position_cancelled()
+        info = self._require_demo()
+        if int(info["tick"]) != tick:
+            raise RuntimeError("The replay moved before camera refresh. Pause it and retry.")
+        neighbour = tick - 1 if tick > 0 else 1
+        total = info.get("total_ticks")
+        if tick < 0 or (tick == 0 and (total is None or int(total) <= neighbour)):
+            raise RuntimeError("A neighbouring replay tick is unavailable for camera refresh. Seek slightly into the replay and retry.")
+        details = {"method": "adjacent_tick_round_trip", "target_tick": tick,
+                   "neighbour_tick": neighbour, "verified": False, "seeks": []}
+        # Keep an incomplete sequence available if a seek is cancelled or
+        # the demo changes. Never issue another seek after such a failure.
+        self._camera_calibration["refresh"] = details
+        self._message("Refreshing the paused camera, then returning to this replay tick. Release movement keys.")
+        try:
+            expected_tick = tick
+            for target in (neighbour, tick):
+                self._check_position_cancelled()
+                if int(self._require_demo()["tick"]) != expected_tick:
+                    raise RuntimeError("The replay moved during camera refresh. Pause it and retry.")
+                try:
+                    self._seek_tick(target)
+                finally:
+                    details["seeks"].append(deepcopy(self._last_seek_details))
+                expected_tick = target
+            details["verified"] = True
+            return details
+        except Exception as exc:
+            details["error"] = str(exc)
+            raise
 
     def _reset_motion_observations(self, frame):
         self._recent_camera_targets.clear()
-        self._recent_camera_targets.append((time.monotonic(), dict(frame)))
+        self._recent_camera_targets.append((time.perf_counter(), dict(frame)))
         self._next_camera_readback = 0.0
         self._camera_drift_samples = 0
 
@@ -1023,11 +1099,11 @@ class Controller:
         self._check_paused_tick()
         if self._stop_event.is_set():
             return False
-        sent_at = time.monotonic()
+        sent_at = time.perf_counter()
         sampled = sent_at >= self._next_camera_readback
         command = self._position_commands(frame) + ("; spec_pos" if sampled else "") + "; demo_goto"
         output = self._request(command)
-        received_at = time.monotonic()
+        received_at = time.perf_counter()
         self._check_paused_tick(output)
         if sampled:
             self._next_camera_readback = received_at + CAMERA_READBACK_INTERVAL
@@ -1037,7 +1113,7 @@ class Controller:
         return True
 
     def _run_paused_flight(self, input_source, move_speed, turn_speed, rate):
-        began = previous = time.monotonic()
+        began = previous = time.perf_counter()
         next_frame = began
         failure = None
         escape = False
@@ -1045,7 +1121,7 @@ class Controller:
         waiter = FrameWait()
         try:
             while not self._stop_event.is_set():
-                now = time.monotonic()
+                now = time.perf_counter()
                 motion = input_source()
                 if not isinstance(motion, CameraMotion):
                     raise ValueError("Paused camera input must return CameraMotion.")
@@ -1064,12 +1140,12 @@ class Controller:
                 else:
                     # Check external resume/seek even when no input is held.
                     self._check_paused_tick()
-                elapsed = max(0.0, time.monotonic() - began)
+                elapsed = max(0.0, time.perf_counter() - began)
                 with self._state_lock:
                     self._paused_details.update(updates=updates, elapsed_seconds=elapsed,
                         achieved_updates_per_second=updates / elapsed if elapsed else 0)
                 next_frame += 1 / rate
-                now = time.monotonic()
+                now = time.perf_counter()
                 if next_frame < now:
                     next_frame = now
                 waiter.wait(max(0, next_frame - now), self._stop_event)
@@ -1141,16 +1217,16 @@ class Controller:
         # demo_gototick follows the same command in the reference command list.
         self._request("demo_pause")
         self._request(f"demo_gototick {target} 0 1", timeout=6)
-        end = time.monotonic() + 15
+        end = time.perf_counter() + 15
         samples = deque(maxlen=32)
         stable = 0
         pause_confirmed = False
         self._last_seek_details = {"target_tick": target, "verified": False}
-        while time.monotonic() < end:
+        while time.perf_counter() < end:
             self._check_position_cancelled()
             info = self._require_demo()
             observed = int(info["tick"])
-            samples.append({"at": time.monotonic(), "tick": observed})
+            samples.append({"at": time.perf_counter(), "tick": observed})
             self._last_seek_details["samples"] = list(samples)
             stable = stable + 1 if observed == target else 0
             if stable >= SEEK_SETTLE_SAMPLES:
@@ -1267,7 +1343,7 @@ class Controller:
         return restoration_error
 
     def _run(self, project, start, speed, rate, frozen):
-        began = time.monotonic()
+        began = time.perf_counter()
         next_frame = began
         idle_since = began
         finished = False
@@ -1290,16 +1366,16 @@ class Controller:
             if frozen and initial_tick is not None:
                 frozen_tick = initial_tick
             if not frozen and initial_tick is not None:
-                elapsed = max(0.0, time.monotonic() - prepared.get("camera_prepared_at", began))
+                elapsed = max(0.0, time.perf_counter() - prepared.get("camera_prepared_at", began))
                 allowed = max(128.0, project.tick_rate * 2, elapsed * project.tick_rate * speed * 2 + 4)
                 if tick - initial_tick > allowed:
                     raise RuntimeError("The replay jumped forward before camera playback started. Use Play shot to restart.")
             clock = ReplayClock(project.tick_rate, speed) if not frozen else None
             if clock:
-                clock.observe(tick, time.monotonic())
+                clock.observe(tick, time.perf_counter())
             while not self._stop_event.is_set():
                 self._require_connection()
-                now = time.monotonic()
+                now = time.perf_counter()
                 if frozen:
                     if frozen_tick is not None and tick is not None and tick != frozen_tick:
                         raise RuntimeError("The scene resumed during Frozen preview. Camera playback stopped.")
@@ -1325,13 +1401,13 @@ class Controller:
                 command = self._position_commands(frame)
                 if frozen and tick is None:
                     command += "; demo_pause"
-                sent_at = time.monotonic()
+                sent_at = time.perf_counter()
                 sampled = sent_at >= self._next_camera_readback
                 if sampled:
                     command += "; spec_pos"
                 command += "; demo_goto"
                 output = self._request(command)
-                received_at = time.monotonic()
+                received_at = time.perf_counter()
                 # Never queue an unbounded set of camera commands. There is
                 # one outstanding batch, acknowledged before the next frame.
                 next_info = self._resolve_demo(output, require_tick=not frozen)
@@ -1379,7 +1455,7 @@ class Controller:
                         self._message("Playing shot with the replay.", playing=True)
                 tick = next_tick
                 next_frame += 1 / rate
-                now = time.monotonic()
+                now = time.perf_counter()
                 if next_frame < now:
                     next_frame = now
                 waiter.wait(max(0, next_frame - now), self._stop_event)
@@ -1460,6 +1536,7 @@ class Controller:
             destination = destination / ("Dolly_diagnostics_" + time.strftime("%Y%m%d_%H%M%S") + ".zip")
         destination.parent.mkdir(parents=True, exist_ok=True)
         report = {"version": __version__, "state": self.status(), "protocol": self._protocol,
+                  "motion_clock": motion_clock_info(),
                   "launch_attempt": self._launch_attempt,
                   "startup_evidence": self._startup_evidence,
                   "game_exit_code": self._session.process.poll() if self._session else None,

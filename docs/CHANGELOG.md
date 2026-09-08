@@ -1,5 +1,25 @@
 # Changes
 
+## 0.3.4 alpha — paused camera recovery and precise rotation timing
+
+- Use the high-resolution performance clock for every camera movement,
+  replay-clock sample and frame deadline. Windows Python 3.12's coarse clock
+  produced repeated poses followed by 15/16 ms steps in the supplied EXE log,
+  even with the high-resolution wait timer enabled.
+- Refresh paused camera state with one adjacent-tick seek and a verified
+  return to the original tick. Preserve the captured or selected camera view,
+  then require the existing direct XYZ movement and return check. A same-tick
+  seek alone did not reset the weak spectator response in the diagnostics.
+- Allow one such recovery for a failed position check after normal Play/Seek.
+  Cancellation, changed demos and lens errors do not trigger retries. A camera
+  that still moves only partway remains blocked; correction bounds are retained.
+- Let the first Capture after an external replay seek measure the new view.
+  Retire stale paused-movement preparation and require fresh calibration before
+  further manual movement. Reject a replay changing during the capture itself.
+- Export motion-clock implementation/resolution and both refresh seeks in
+  diagnostics. Retain authored path/rotation/framing interpolation and the
+  previous Windows build-test corrections. Native 0.3.4 verification is pending.
+
 ## 0.3.3 alpha — build fix 1
 
 - Correct six test failures caused by Windows expanding temporary-directory

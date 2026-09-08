@@ -5,12 +5,12 @@ development launcher and the official cvar unlocker. It follows the HLAE
 keyframe workflow: capture views, edit their timing and framing, then play the
 camera along the resulting path.
 
-**0.3.2 addresses slow-motion jitter and paused-camera resume jumps.** Camera
-timing now makes gradual corrections when replay ticks arrive, keeping position,
-rotation and framing on the same continuous clock. Paused camera preparation
-refreshes the current replay tick and checks the actual movement response before
-enabling flight. A settling seek must reach the exact requested tick before
-playback starts. The Windows startup-log fix from 0.3.1 remains included.
+**0.3.4 corrects a Windows camera-timing issue and adds paused-camera recovery.**
+Camera movement uses a high-resolution clock, including at 0.1 replay speed.
+Preparing a paused camera briefly seeks one tick away and returns to the
+original tick before restoring the chosen view and verifying its movement.
+Capture after an external seek measures the new view on the first attempt;
+start paused controls again before continuing manual movement.
 
 **Paused camera controls.** Switch between saved cameras at the current
 replay moment, or move and aim the camera while the replay remains paused.
@@ -20,16 +20,17 @@ a custom standard available.
 
 **This is an alpha.** Existing Windows feedback confirms Netconsole connectivity,
 unlocker initialization before replay loading, a readable replay clock and visible
-camera travel, including manual movement while paused. The latest clips also
-show a large jump on native Resume and smaller path jitter. This revision is
-checked with simulated game responses; its visible improvements and Windows
-timer behavior still need an in-game check.
+camera travel, including manual movement while paused, and EXE startup. The
+latest executable diagnostics identify a coarse motion clock and a weak paused
+spectator response. This revision is checked with simulated game responses;
+its visible smoothness and camera-refresh effectiveness need an in-game check.
 
 ## Start here
 
 1. Extract the **entire Windows ZIP** into a writable folder. When updating an existing
-   Dolly installation, first close Deadlock and Dolly and run its existing
-   **Recover_Game_Config.bat**. Then replace the package files in that same
+   Dolly installation, first close Deadlock and use Dolly's **File → Recover
+   game configuration** if a recovery is pending, then close Dolly. A source
+   installation can use **Recover_Game_Config.bat**. Replace package files in that same
    folder, keeping `logs` and saved shots. Do not discard a folder containing a
    pending gameinfo recovery journal.
 2. Windows portable builds include Python and Tcl/Tk. Keep `Dolly.exe` and
@@ -82,11 +83,15 @@ binding while it remains open.
 - Use **Previous / Next** to cycle saved camera views, or apply the selected
   camera. These actions pause at the current replay moment and apply the view's
   position, rotation, aspect and camera-variable values. They do **not** seek to
-  that view's arrival time. The displayed replay tick stays fixed.
-- Preparing or switching a paused camera briefly refreshes that same tick to
-  reset stale spectator state, then applies the requested view. It verifies a
+  that view's arrival time. The completed operation leaves the replay at its
+  original tick.
+- Preparing or switching a paused camera briefly seeks one tick backward and
+  returns to the original tick to refresh stale spectator state. At tick zero,
+  it uses the next available tick instead. It then applies the requested view and verifies a
   small XYZ movement and return. If the game still applies only part of the
   command, Dolly reports the failed check and leaves continuous controls off.
+  Release movement keys and allow preparation to finish. Cancelling midway
+  stops further commands, so the replay can remain at the neighbouring tick.
 - Start camera controls to move from the current freecam position. Release
   movement keys during the initial camera-position check. Use the panel's
   movement buttons, or focus its movement pad for keyboard controls.
@@ -317,8 +322,9 @@ The main pages do not scroll; long tables scroll vertically within their own pan
 The path overview is an XY diagram, not an in-game overlay.
 
 **Frozen preview:** this optional effect is off by default. It moves the camera
-using shot seconds through the scene currently on screen. Preparation refreshes
-that same tick when readable; it never resumes or jumps to the shot's start.
+using shot seconds through the scene currently on screen. Preparation checks
+the current tick and can use the adjacent-tick refresh described above; it never
+resumes or jumps to the shot's start.
 Choose that scene with the replay controls first, or use
 **Seek replay** if live ticks are available. **Capture timing** controls keyframe
 timestamps; **Frozen preview** independently controls whether the scene stays
