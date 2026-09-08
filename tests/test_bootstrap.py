@@ -26,7 +26,9 @@ class BootstrapTests(unittest.TestCase):
         def spawn(command, **options):
             captured.update(command=command, **options)
             self.assertFalse(options["stdout"].closed)
-            self.assertEqual(Path(options["stdout"].name), self.root / "logs" / "Dolly_startup.log")
+            # Windows may expand a temporary folder's 8.3 alias (RUNNER~1).
+            self.assertEqual(Path(options["stdout"].name),
+                             (self.root / "logs" / "Dolly_startup.log").resolve())
             options["stdout"].write(b"child startup output\r\n")
             return SimpleNamespace(pid=4567)
 
@@ -142,8 +144,8 @@ class BootstrapTests(unittest.TestCase):
         message_box.assert_called_once()
         parent, message, title, flags = message_box.call_args.args
         self.assertIsNone(parent)
-        self.assertIn(str(self.root / "logs" / "Dolly_startup.log"), message)
-        self.assertIn(str(self.root / "logs" / "Dolly.log"), message)
+        self.assertIn(str((self.root / "logs" / "Dolly_startup.log").resolve()), message)
+        self.assertIn(str((self.root / "logs" / "Dolly.log").resolve()), message)
         self.assertIn("startup error", title)
         self.assertEqual(flags, 0x10)
         if logging_failure:

@@ -41,7 +41,8 @@ class PortableRuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.application_root(self.app), self.app)
             self.assertEqual(runtime.resource_root(self.app), self.app)
         with self.frozen():
-            self.assertEqual(runtime.application_root(), self.app)
+            # sys.executable can contain a Windows short-name folder alias.
+            self.assertEqual(runtime.application_root(), self.app.resolve())
             self.assertEqual(runtime.resource_root(), self.bundle)
             self.assertNotEqual(runtime.application_root() / "logs", self.bundle / "logs")
 
@@ -99,7 +100,7 @@ class PortableRuntimeTests(unittest.TestCase):
                 patch.object(desktop, "_message") as message:
             self.assertEqual(desktop.main([]), 1)
         self.assertIn("cannot open editor", (self.app / "logs/Dolly_startup.log").read_text())
-        self.assertIn(str(self.app / "logs/Dolly_startup.log"), message.call_args.args[0])
+        self.assertIn(str((self.app / "logs/Dolly_startup.log").resolve()), message.call_args.args[0])
 
     def test_unwritable_log_reports_error_before_gui_start(self):
         self.app.mkdir(parents=True)

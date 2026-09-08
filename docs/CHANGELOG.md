@@ -1,5 +1,19 @@
 # Changes
 
+## 0.3.3 alpha — build fix 1
+
+- Correct six test failures caused by Windows expanding temporary-directory
+  short names such as `RUNNER~1` into their canonical long paths. Continue
+  checking the complete expected log paths and replay command.
+- Exercise separator rejection without trying to create filenames containing
+  quotes or control characters that Windows forbids. Keep real-file command
+  checks for semicolons and plus signs; also cover carriage return and NUL.
+- Pass all 460 local tests. A separate filesystem-assumption reproduction
+  fails with the original six failures/one error and passes all seven repaired
+  cases. This is a Linux simulation, not a completed Windows executable build.
+- Change four test files and two documentation files only. Retain the existing
+  Windows test/build/icon/GUI gates, executable version, application and assets.
+
 ## 0.3.3 alpha — executable packaging
 
 - Add a Windows x64 PyInstaller recipe for direct `Dolly.exe` startup, with

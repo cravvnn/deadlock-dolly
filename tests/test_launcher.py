@@ -190,11 +190,23 @@ class LauncherTests(unittest.TestCase):
         for port in (True, 0, 65536, "29090", "29090 -secure"):
             with self.subTest(port=port), self.assertRaises(launcher.LaunchError):
                 launcher.build_command(self.paths, overlay, port)
-        for name in ('x;+connect.dem', 'x\nquit.dem', 'x".dem', 'x+quit.dem'):
+        # These names exist on Windows too; exercise the real filesystem and
+        # full command builder for console separators accepted by the OS.
+        for name in ('x;quit.dem', 'x;+connect.dem', 'x+quit.dem'):
             demo = self.folder / name
             demo.write_bytes(b"demo")
-            with self.subTest(name=name), self.assertRaises(launcher.LaunchError):
+            with self.subTest(name=name), self.assertRaisesRegex(launcher.LaunchError, "console separators"):
                 launcher.build_command(self.paths, overlay, 29090, demo)
+        # Windows rejects control characters/quotes before a file can be
+        # created. Simulate only filesystem lookup to exercise the actual
+        # separator validator for every such input on every test platform.
+        for name in ('x\nquit.dem', 'x\rquit.dem', 'x\x00quit.dem', 'x".dem'):
+            demo = self.folder / name
+            with self.subTest(name=name), \
+                    patch.object(Path, "resolve", return_value=demo), \
+                    patch.object(Path, "is_file", return_value=True), \
+                    self.assertRaisesRegex(launcher.LaunchError, "console separators"):
+                launcher._validate_demo(demo)
 
     def test_explicit_netcon_protocol_has_its_own_fixed_flags(self):
         overlay = self.paths.game_dir / "citadel_dolly_test"
