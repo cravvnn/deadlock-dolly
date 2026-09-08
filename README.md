@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.3.4 alpha.** The portable Windows build opens through
+**Current source: 0.3.5 alpha.** The portable Windows build opens through
 `Dolly.exe`, with the supplied logo embedded in the executable. Python and
 Tcl/Tk are bundled; end users do not need to install them.
 

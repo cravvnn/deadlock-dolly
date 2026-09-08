@@ -5,10 +5,13 @@ development launcher and the official cvar unlocker. It follows the HLAE
 keyframe workflow: capture views, edit their timing and framing, then play the
 camera along the resulting path.
 
-**0.3.4 corrects a Windows camera-timing issue and adds paused-camera recovery.**
-Camera movement uses a high-resolution clock, including at 0.1 replay speed.
+**0.3.5 fixes paused-camera setup stopping after a small replay-seek overshoot.**
 Preparing a paused camera briefly seeks one tick away and returns to the
 original tick before restoring the chosen view and verifying its movement.
+If the return settles one or two ticks late, Dolly pauses and retries the exact
+target once from that later tick. Controls only start after the original tick,
+chosen view and direct movement are verified. Camera movement retains the
+high-resolution clock introduced in 0.3.4, including at 0.1 replay speed.
 Capture after an external seek measures the new view on the first attempt;
 start paused controls again before continuing manual movement.
 
@@ -21,9 +24,9 @@ a custom standard available.
 **This is an alpha.** Existing Windows feedback confirms Netconsole connectivity,
 unlocker initialization before replay loading, a readable replay clock and visible
 camera travel, including manual movement while paused, and EXE startup. The
-latest executable diagnostics identify a coarse motion clock and a weak paused
-spectator response. This revision is checked with simulated game responses;
-its visible smoothness and camera-refresh effectiveness need an in-game check.
+latest executable diagnostics confirm the new clock is active, but show the
+refresh return freezing two ticks late before movement starts. This revision
+is checked with simulated game responses; its recovery needs an in-game check.
 
 ## Start here
 
@@ -87,11 +90,13 @@ binding while it remains open.
   original tick.
 - Preparing or switching a paused camera briefly seeks one tick backward and
   returns to the original tick to refresh stale spectator state. At tick zero,
-  it uses the next available tick instead. It then applies the requested view and verifies a
-  small XYZ movement and return. If the game still applies only part of the
+  it uses the next available tick instead. A return that settles one or two ticks
+  late gets one correction back to the exact target. Dolly then applies the
+  requested view and verifies a small XYZ movement and return. If the game still applies only part of the
   command, Dolly reports the failed check and leaves continuous controls off.
   Release movement keys and allow preparation to finish. Cancelling midway
-  stops further commands, so the replay can remain at the neighbouring tick.
+  stops further commands, so the replay can remain at the neighbouring or
+  overshot tick.
 - Start camera controls to move from the current freecam position. Release
   movement keys during the initial camera-position check. Use the panel's
   movement buttons, or focus its movement pad for keyboard controls.

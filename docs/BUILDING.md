@@ -4,9 +4,9 @@ The source is ready for a portable Windows build. This workspace did not have
 a native Windows builder, so **no compiled EXE is included in the source ZIP**.
 The workflow below runs the real build and executable checks on Windows.
 
-## Update an existing 0.3.3 GitHub repository to 0.3.4
+## Update an existing 0.3.4 GitHub repository to 0.3.5
 
-1. Extract `Deadlock_Dolly_0.3.4_GitHub_Update.zip` locally.
+1. Extract `Deadlock_Dolly_0.3.5_GitHub_Update.zip` locally.
 2. Open the repository's main **Code** page, then **Add file → Upload files**.
 3. Drag all contents from inside the extracted update folder into the uploader.
    Keep the `dolly`, `tests` and `docs` directories intact; the other update
@@ -16,7 +16,7 @@ The workflow below runs the real build and executable checks on Windows.
 5. Select **Actions → Build Windows app → Run workflow** on that branch. Start
    a fresh run; re-running an old job rebuilds its old commit.
 6. Download **Deadlock-Dolly-Windows-x64** from the successful run's artifacts.
-   Extract it, then extract `Deadlock_Dolly_0.3.4-alpha_Windows_x64.zip` inside it.
+   Extract it, then extract `Deadlock_Dolly_0.3.5-alpha_Windows_x64.zip` inside it.
 7. Close the old editing session and follow the recovery/update instructions
    below before replacing its portable files. Copy the complete Windows
    package, including `_internal`; the GitHub update is source, not an EXE patch.
@@ -65,8 +65,8 @@ actual packaged-editor startup fails. Inspect `build/checks/` after a failure.
 
 Successful outputs are under `dist/`:
 
-- `Deadlock_Dolly_0.3.4-alpha_Windows_x64.zip`
-- `Deadlock_Dolly_0.3.4-alpha_Source.zip`
+- `Deadlock_Dolly_0.3.5-alpha_Windows_x64.zip`
+- `Deadlock_Dolly_0.3.5-alpha_Source.zip`
 - `SHA256SUMS.txt`
 
 The portable ZIP contains a `DeadlockDolly` folder with `Dolly.exe`, `_internal`,

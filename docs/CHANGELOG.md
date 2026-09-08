@@ -1,5 +1,24 @@
 # Changes
 
+## 0.3.5 alpha — recover from a paused refresh landing two ticks late
+
+- Correct the 0.3.4 paused-controls startup failure seen in all five supplied
+  attempts. The backward refresh succeeded, but its forward return stopped two
+  ticks late, preventing original-view restoration and all manual translation.
+- After three unchanged observations one or two ticks past a seek target,
+  reassert pause, confirm the replay and position, and retry that exact target
+  once. From the overshoot this is a backward seek. Keep the original polling
+  deadline and require six exact target readings across a further pause.
+- Ignore transient ahead readings; do not retry large or alternating offsets.
+  Cancellation, changed demos and unexpected movement during confirmation stop
+  recovery. A failed retry or weak camera response still blocks camera controls.
+- Preserve correction evidence in diagnostics, including the original samples,
+  observed overshoot and requested target. Keep 0.3.4's high-resolution motion
+  clock and the existing camera paths, bindings, logo and Windows build recipe.
+- Add transport-level regression tests for the observed seek behavior, original
+  view restoration, saved-camera switching and movement in both directions on
+  every axis. Native 0.3.5 behavior still needs a rebuilt Windows EXE and game test.
+
 ## 0.3.4 alpha — paused camera recovery and precise rotation timing
 
 - Use the high-resolution performance clock for every camera movement,

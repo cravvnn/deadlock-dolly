@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.3.4 ALPHA - SOURCE PACKAGE
+DEADLOCK DOLLY 0.3.5 ALPHA - SOURCE PACKAGE
 
 This is the clean source package for GitHub and Windows executable builds.
 It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the
@@ -46,8 +46,12 @@ After Check camera support, enter replay freecam. Open Paused camera on Cameras.
 Previous / Next switches saved views at the CURRENT replay moment; it never
 seeks to the camera's arrival time. Aspect and other camera values follow the
 selected view. The panel displays the fixed replay tick.
-Preparation briefly refreshes that SAME tick and reapplies the requested view;
-it does not change the replay moment. Release keys during the XYZ movement check.
+Preparation briefly seeks one tick away, returns to the exact original tick,
+and reapplies the requested view. A return that settles one or two ticks late
+gets one backward correction to that exact original tick. Release keys during
+setup and the XYZ movement check; movement starts only after verification.
+Cancelling during the refresh stops further commands and may leave the replay
+at the neighbouring or overshot tick; it does not complete the return.
 If movement still responds only partially, controls stay off with an explanation.
 
 Start camera controls, releasing movement keys during the initial position

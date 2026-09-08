@@ -69,6 +69,7 @@ tests/test_playback_transitions.py
 tests/test_portable.py
 tests/test_preview_convergence.py
 tests/test_release_packaging.py
+tests/test_seek_overshoot.py
 tests/test_settings.py
 third_party/cvar_unlocker/LICENSE.md
 third_party/cvar_unlocker/THIRD_PARTY.json

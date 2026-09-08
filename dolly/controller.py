@@ -1210,21 +1210,28 @@ class Controller:
         return self._seek_tick(target)
 
     def _seek_tick(self, target):
-        """Wait for the exact tick to settle, including after reasserted pause."""
+        """Verify an exact paused tick, correcting one settled small overshoot."""
         target = int(target)
         self._check_position_cancelled()
         # Current engine help: demo_goto <tick> [relative] [pause].
         # demo_gototick follows the same command in the reference command list.
         self._request("demo_pause")
+        self._check_position_cancelled()
         self._request(f"demo_gototick {target} 0 1", timeout=6)
+        self._check_position_cancelled()
         end = time.perf_counter() + 15
         samples = deque(maxlen=32)
         stable = 0
+        overshoot_tick = None
+        overshoot_samples = 0
         pause_confirmed = False
-        self._last_seek_details = {"target_tick": target, "verified": False}
+        corrections = []
+        self._last_seek_details = {"target_tick": target, "verified": False,
+                                   "corrections": corrections}
         while time.perf_counter() < end:
             self._check_position_cancelled()
             info = self._require_demo()
+            self._check_position_cancelled()
             observed = int(info["tick"])
             samples.append({"at": time.perf_counter(), "tick": observed})
             self._last_seek_details["samples"] = list(samples)
@@ -1236,6 +1243,40 @@ class Controller:
                 self._request("demo_pause")
                 pause_confirmed = True
                 stable = 0
+            if target < observed <= target + 2:
+                overshoot_samples = overshoot_samples + 1 if observed == overshoot_tick else 1
+                overshoot_tick = observed
+            else:
+                overshoot_tick = None
+                overshoot_samples = 0
+            if overshoot_samples >= SEEK_SETTLE_SAMPLES and not corrections:
+                # Native forward seeks can stop two ticks late. Reissuing the
+                # SAME target from there takes the backward-seek route. Do not
+                # react to a transient ahead sample or chase an unrelated seek.
+                self._check_position_cancelled()
+                self._request("demo_pause")
+                self._check_position_cancelled()
+                confirmed = int(self._require_demo()["tick"])
+                self._check_position_cancelled()
+                if confirmed != observed:
+                    if confirmed != target:
+                        raise RuntimeError("The replay moved during seek correction. Pause it and retry.")
+                    # It may have settled on its own while pause was processed.
+                    # Restart observation without issuing a corrective seek.
+                    stable = 0
+                    overshoot_tick = None
+                    overshoot_samples = 0
+                    pause_confirmed = False
+                elif time.perf_counter() < end:
+                    corrections.append({"from_tick": confirmed, "target_tick": target,
+                                        "at": time.perf_counter(),
+                                        "samples_before": list(samples)})
+                    self._request(f"demo_gototick {target} 0 1", timeout=6)
+                    self._check_position_cancelled()
+                    stable = 0
+                    overshoot_tick = None
+                    overshoot_samples = 0
+                    pause_confirmed = False
             if self._stop_event.wait(SEEK_SETTLE_INTERVAL):
                 raise RuntimeError("Seek cancelled.")
         raise RuntimeError(f"Replay did not reach tick {target}. Export diagnostics; the demo may have ended or seeking may differ in this build.")
