@@ -112,18 +112,21 @@ class MotionClockTests(unittest.TestCase):
 
         yaw = self.yaw_values()
         self.assertGreaterEqual(len(yaw), 300)
-        self.assertLessEqual(len(yaw), 304)
+        # The continuous final fraction may finish a little after the integer
+        # end tick. It must still arrive within one replay-tick period.
+        self.assertLessEqual(len(yaw), 300 + math.ceil(120 / (64 * .1)))
         self.assertAlmostEqual(yaw[0], 0)
         self.assertAlmostEqual(yaw[-1], 30)
         # Integer tick acknowledgements can adjust speed slightly; they must
         # not create the repeated zero-angle increments seen in the EXE log.
         increments = [b - a for a, b in zip(yaw, yaw[1:])]
-        # Permit initial clock settling and the exact final-key write; inspect
-        # the sustained motion after the first two replay tick observations.
+        # Permit initial clock settling; inspect sustained motion after the
+        # first two replay tick observations, including the new final tail.
         self.assertGreater(min(increments[40:-1]), 0.075)
         self.assertLess(max(increments[40:-1]), 0.125)
         self.assertGreater(increments[-1], 0)
-        self.assertLess(abs(self.clock.now - 2.5), 2 / 120 + 0.0021)
+        self.assertLess(increments[-1], .125)
+        self.assertLess(abs(self.clock.now - 2.5), 1 / (64 * .1))
         self.assertGreaterEqual(self.console.tick, 1016)
         self.assertTrue(self.console.paused)
         self.assertAlmostEqual(self.controller.status()["time"], 0.25)

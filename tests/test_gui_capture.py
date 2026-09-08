@@ -70,6 +70,7 @@ class CaptureHarness:
         app.hide_hud = Var(True)
         app.speed = Var("1")
         app.rate = Var("60")
+        app.smoothing = Var("Balanced")
         app.status_text = Var("")
         app.app_settings = AppSettings()
         app.capture_binding = DEFAULT_BINDING
@@ -275,6 +276,7 @@ class GuiCaptureTests(unittest.TestCase):
                 self.assertEqual(self.app.controller.play.call_args.kwargs["time"], 0.0)
                 self.assertFalse(self.app.controller.play.call_args.kwargs["frozen"])
                 self.assertTrue(self.app.controller.play.call_args.kwargs["hide_hud"])
+                self.assertEqual(self.app.controller.play.call_args.kwargs["smoothing"], "balanced")
                 self.app._set_time.assert_called_with(0.0)
         self.app._current_time.assert_not_called()
         self.assertEqual(self.harness.errors, [])
@@ -288,14 +290,45 @@ class GuiCaptureTests(unittest.TestCase):
         self.app.hide_hud.set(False)
         self.app.speed.set("0.5")
         self.app.rate.set("30")
+        self.app.smoothing.set("Strong")
         self.app._play()
         # Worker inputs are read on the UI thread and kept stable even if a
         # checkbox changes before the worker starts.
         self.app.frozen.set(False)
         self.app.hide_hud.set(True)
+        self.app.smoothing.set("Off")
         self.harness.finish()
         self.app.controller.play.assert_called_once_with(
-            self.app.project, time=0.0, speed=0.5, rate=30, frozen=True, hide_hud=False)
+            self.app.project, time=0.0, speed=0.5, rate=30, frozen=True, hide_hud=False,
+            smoothing="strong")
+
+    def test_play_shot_accepts_each_smoothing_choice_without_editing_project(self):
+        self.harness.capture()
+        self.app._snapshot = lambda: self.app.project
+        self.app.controller.play = Mock()
+        original = copy.deepcopy(self.app.project)
+        for choice in ("Off", "Light", "Balanced", "Strong"):
+            with self.subTest(choice=choice):
+                self.app.smoothing.set(choice)
+                self.app._play()
+                self.harness.finish()
+                self.assertEqual(self.app.controller.play.call_args.kwargs["smoothing"], choice.lower())
+                self.assertEqual(self.app.project, original)
+        self.assertEqual(self.harness.errors, [])
+
+    def test_invalid_smoothing_keeps_paused_controls_and_does_not_queue_playback(self):
+        self.harness.capture()
+        self.app._snapshot = lambda: self.app.project
+        self.app.controller.play = Mock()
+        self.app._close_paused_camera = Mock()
+        self.app._set_time.reset_mock()
+        self.app.smoothing.set("Unsupported")
+        self.app._play()
+        self.assertIsNone(self.harness.pending)
+        self.app.controller.play.assert_not_called()
+        self.app._close_paused_camera.assert_not_called()
+        self.app._set_time.assert_not_called()
+        self.assertEqual(len(self.harness.errors), 1)
 
     def test_edited_aspect_reaches_alternating_previews_and_keeps_legacy_fov(self):
         self.app.project = Project(name="Edited lens", keyframes=[

@@ -175,9 +175,13 @@ class PlaybackTransitionTests(unittest.TestCase):
 
     def test_exact_final_key_is_applied_even_when_clock_lags_acknowledged_end(self):
         project = make_project()
+        # Model one newly acknowledged replay tick, not a 100-tick external
+        # jump. The last fraction must finish smoothly before the exact key.
+        project.tick_rate = 64
+        project.keyframes[-1].time = 1 / 64
         self.console.weak = False
         self.console.offset = (0, 0, 0)
-        self.console.goto_outputs = deque([100, 200, 200])
+        self.console.goto_outputs = deque([100, 101, 101])
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, 20)
         with patch('dolly.controller.time.perf_counter', clock.monotonic):

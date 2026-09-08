@@ -1,5 +1,37 @@
 # Changes
 
+## 0.3.7 alpha — experimental shared playback smoothing
+
+- Add Off, Light, Balanced and Strong smoothing under Shot playback. Balanced
+  is the default for each editor session; the choice is not saved in settings
+  or project files. Choose before Play shot; a running shot keeps its choice.
+- Smooth the shared playback time over real-time windows of 0/80/160/280 ms.
+  Steady motion adds approximately 0/40/80/140 ms of camera delay relative to
+  replay action. Position, rotation, aspect and DOF/cvar tracks evaluate
+  together on the authored path; Step tracks remain discrete.
+- Let the filtered camera finish smoothly at the endpoint. Off retains the
+  0.3.6 command sequence and endpoint fix. This update is cumulative for 0.3.5
+  users; manual paused-camera movement, preview and capture remain unchanged.
+- Add filter, playback and GUI regression coverage and smoothing diagnostics.
+  Native improvement is not yet verified; compare the same 0.1-speed, 120 Hz
+  shot with Off, Balanced and Strong before publishing. The console filter
+  cannot guarantee smooth delivery inside Deadlock's renderer.
+
+## 0.3.6 alpha — smooth the last fraction of path playback
+
+- Remove a forced final-key jump when the replay reaches the end tick before
+  the continuous camera clock reaches the final key. Complete both before
+  normal pause/HUD restoration, with a bounded wait for the remaining camera
+  movement. The supplied 0.3.5 recording showed about a fourfold final yaw step.
+- Preserve the exact final camera/framing values and stop on a failed finish,
+  cancellation, replay identity change or an externally initiated large seek.
+- Keep paused-camera preparation, movement, focus handling and the verified
+  0.3.5 seek correction unchanged. The low paused-update average in diagnostics
+  includes idle time and does not establish slow active movement after Alt-Tab.
+- Keep the authored position/rotation/framing curves and normal playback clock.
+  This change targets the measured endpoint bump; it does not establish a fix
+  for all mid-path renderer or recording judder. Native verification is pending.
+
 ## 0.3.5 alpha — recover from a paused refresh landing two ticks late
 
 - Correct the 0.3.4 paused-controls startup failure seen in all five supplied

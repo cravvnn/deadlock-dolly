@@ -2,6 +2,253 @@
 
 This file preserves validation from earlier deliveries; see VALIDATION.md for the current release.
 
+# Validation — 0.3.6 alpha
+
+Date: 8 September 2026.
+
+The supplied 0.3.5-alpha diagnostics and video establish that paused camera
+movement works again and that small visible steps remain during panning.
+This update fixes a separately measurable endpoint jump. **No Windows executable
+was built or native Deadlock session run in this workspace.** The existing
+GitHub Windows gates and an in-game comparison remain necessary.
+
+## Diagnostics and video findings
+
+The last path has three keys, starts at tick 112181, spans 2.609375 replay seconds,
+and runs at 0.1 speed with 120 requested camera updates per second.
+
+- Playback completed 3,014 updates in 26.008 seconds: 115.89 updates/sec. Mean
+  command round trip was 6.04 ms, maximum 13.81 ms, and the largest received-update
+  interval was 18.71 ms. The precise clock and Windows timer were active.
+- The retained 256 samples contain no repeated commanded times or camera poses.
+  Before completion, yaw velocity stays between 6.64 and 7.28 degrees/sec and
+  pitch between -1.49 and -1.40 degrees/sec. There is no command reversal there.
+- At completion, yaw moves 0.27350 degrees in 10.02 ms: about 27.3 degrees/sec,
+  versus roughly 7.1 immediately beforehand. The replay reaches tick 112348
+  while the filtered camera is still short of its last key. The old code forces
+  the exact endpoint early, producing that larger step.
+- Visible readbacks generally follow the commanded angles within 0.09 degrees
+  in the retained tail, apart from the endpoint. Position readbacks trail by
+  approximately 145–165 ms, about one replay tick at 0.1 speed. There is no
+  sustained drift proving that the native player camera took over.
+
+The supplied 60-second, 2560x1440 recording was downloaded and inspected. A
+bounded optical-flow check follows static upper-building features through 1,620
+frames between 17.5 and 44.5 seconds. The continuous path starts around 20.8s;
+earlier jumps are setup. Near 21.63–21.68s, consecutive background horizontal
+steps measured at 640px analysis width are approximately -0.73, -0.34, -1.09 and
+-0.73 pixels. This confirms a short step followed by catch-up movement.
+
+No identical whole frames were found in the continuous 21–44s segment. Uneven
+console-command application, rendering or recording cadence is plausible, but
+these observations cannot isolate its source. Perspective and parallax also
+limit frame-based motion estimates. This release does not claim to eliminate
+all mid-path judder or prove native-camera takeover.
+
+## Paused movement is preserved
+
+The retained paused session passes direct XYZ movement and return checks with
+unit gains and zero residual. Its 2.03 updates/sec average includes idle time:
+18 intervals within active movement bursts range from 9.86 to 24.58 ms, median
+13.84 ms. The trace does not show long active-input stalls or timestamp window
+focus changes, so it cannot establish an Alt-Tab regression.
+
+One earlier preparation fails on a small height limit cycle: desired Z 363.5,
+readbacks alternating 362.5 and 364.5. The next attempt captures 364.5 and passes.
+The working calibration and its tolerances are preserved rather than loosened.
+The user explicitly requested retaining working paused movement unless a clear,
+low-risk focus-related correction was established.
+
+Existing input behavior requires releasing keys held during a focus change
+before pressing them again. The path's temporary background-throttle setting
+and the paused controls' existing behavior are retained.
+
+## Implemented change
+
+Normal playback uses the same continuous camera clock through its final
+fraction. Successful completion requires both the acknowledged replay time and
+camera time to reach the last key. The exact final position, angles, framing
+and other tracks are still applied before normal pause and HUD restoration.
+
+A bounded endpoint observation period prevents chasing a stalled camera clock:
+two replay-tick periods, clamped to 0.25–2 seconds. At 64 ticks/sec and 0.1 speed,
+that budget is 0.3125 seconds. Blocking console calls can extend wall-clock time.
+If completion fails, ordinary cleanup runs and no forced final-view jump occurs.
+Cancellation, selected-demo identity and external-seek checks remain enforced.
+
+The replay continues during the small finishing fraction, so normal completion
+can occur slightly after the first end-tick acknowledgement. Diagnostics record
+the initial lag, budget, elapsed time, clock readiness and successful final write.
+They do not mark completion verified merely because the camera clock is ready.
+
+## Regression verification
+
+`python3 -m unittest discover -s tests -q`: **499 tests passed** on Linux,
+Python **3.12.13**, in **53.936 seconds**. No tests were skipped.
+
+Six new tests exercise the real controller with a timed console simulation:
+all four diagonal pan directions, actual replay acknowledgement, cancellation,
+changed demo, excessive phase lag and failure of the final camera write.
+
+A simulated 0.1-speed shot previously ended with a 0.4344-degree yaw step after
+steps near 0.0995 degrees. With this change, the final sequence stays near
+0.1005 degrees and ends with a 0.0328-degree remainder. Completion takes 33 ms
+longer in that simulation. The original motion-clock regression now also
+limits the final angular step. The exact-endpoint test uses a realistic one-tick
+acknowledgement instead of a 100-tick leap; large phase jumps have an explicit
+bounded-failure regression.
+
+The existing height-compensation worker test now advances at the actual replay
+tick rate for the whole shot. It verifies at least 600 interpolated camera
+writes and the exact final height instead of relying on a forced endpoint after
+several large tick jumps. Its compensation and no-extra-query assertions remain.
+
+Only the controller's path-playback worker changes. Every paused-control,
+calibration, focus/input and seek method is unchanged from 0.3.5, as are authored
+curves and command transport. Source comparison verifies that boundary. The
+logo, unlocker, build workflow and dependencies are unchanged.
+
+The source manifest contains 83 files. All 51 Python files and the PyInstaller
+spec parse under Python 3.10 syntax rules. Diagnostic logs, video, optical-flow
+tools and temporary analysis dependencies are excluded from the release.
+
+## Native comparison
+
+1. Apply the source update to the existing repository and start a fresh
+   **Actions → Build Windows app → Run workflow** on the updated branch.
+2. Download the new artifact and extract its complete
+   `Deadlock_Dolly_0.3.6-alpha_Windows_x64.zip`. Use the complete portable folder,
+   including `_internal`, after closing the older editing session and completing
+   any pending game-configuration recovery.
+3. Play the same saved shot at 0.1 speed and 120 updates/sec. Compare the final
+   pan into the last key separately from the small steps in the middle.
+4. Briefly confirm paused movement still works. After Alt-Tab, release and
+   press movement keys again; the existing focus guard ignores held keys.
+5. If mid-path stepping remains, export diagnostics immediately after that shot.
+   The renderer and recording are not synchronized with this console backend,
+   so this narrow endpoint correction cannot promise frame-perfect motion.
+
+See [BUILDING.md](BUILDING.md) for GitHub instructions and
+[HISTORY_VALIDATION.md](HISTORY_VALIDATION.md) for previous reports.
+No GitHub repository or release was modified by this work.
+
+# Validation — 0.3.5 alpha
+
+Date: 8 September 2026.
+
+The supplied diagnostics come from a running **0.3.4-alpha** executable. They
+show a failure while preparing paused camera controls, before any camera
+position command or manual movement update. This revision repairs that seek
+failure. **No 0.3.5 Windows executable or native Deadlock session was run here.**
+The existing GitHub Windows test/build/icon/editor gates must run for this commit.
+
+## What the new diagnostics establish
+
+All five attempts complete the backward part of the adjacent-tick refresh but
+stop two ticks late on the forward return:
+
+| Attempt | Exact backward tick | Requested return tick | Observed return tick |
+| --- | ---: | ---: | ---: |
+| 1 | 112331 | 112332 | 112334 |
+| 2 | 112333 | 112334 | 112336 |
+| 3 | 112335 | 112336 | 112338 |
+| 4 | 112381 | 112382 | 112384 |
+| 5 | 112383 | 112384 | 112386 |
+
+The final attempt reports 112386 in 299 consecutive status responses, never
+112384, before timing out. Earlier attempts were cancelled. Some successful
+backward seeks briefly report one tick ahead and then settle correctly; an
+ahead reading alone is insufficient evidence to retry.
+
+No outgoing `spec_goto` position commands, camera-calibration messages or manual
+movement samples appear in these attempts. The upward pop reported by the user
+is consistent with the engine changing its view during the refresh and Dolly
+failing before restoring the captured view. The diagnostics do not establish
+which input handler supplied the remaining arrow-key rotation.
+
+The replay and unlocker reached their ready state. Diagnostics confirm the
+0.3.4 motion-clock change is active: `perf_counter`, `QueryPerformanceCounter()`,
+reported resolution 0.0000001 seconds. This recording contains no path playback
+samples, so it does not establish whether the earlier rotation jitter improved.
+
+## Implemented correction
+
+1. Observe at least three identical status readings one or two ticks beyond
+   the original seek target.
+2. Pause again, recheck the selected demo and tick, and honor cancellation.
+3. If the same overshoot is still present, reissue the **same exact target once**.
+   That command now takes a backward-seek route, which lands exactly in the log.
+4. Require three exact target readings, another pause, and three more exact
+   readings before reporting success. Original-view restoration and the existing
+   direct XYZ movement proof must then pass before paused controls are enabled.
+
+A target that settles naturally during confirmation gets no corrective seek.
+Unexpected movement during confirmation aborts recovery. Large, alternating or
+lower tick observations do not trigger correction. One unsuccessful correction
+does not retry again, reset the deadline or relax the exact-tick requirement.
+The existing 15-second observation deadline is shared across attempts; blocking
+console calls can extend actual elapsed time beyond that observation budget.
+
+Diagnostics retain the original overshoot samples, source tick, requested target
+and correction timestamp even when the rolling seek samples advance. Cancellation
+and replay identity are checked after blocking replies and before correction.
+
+## Regression checks
+
+`python3 -m unittest discover -s tests -q`: **493 tests passed** on Linux,
+Python **3.12.13**, in **53.778 seconds**. No tests were skipped.
+
+Eighteen new tests exercise the real controller using a simulated console whose
+forward seeks stop one or two ticks late and whose backward seeks land exactly:
+
+- Original view restoration, exact original replay moment, unchanged 0.1
+  timescale, and movement in both directions on all three axes.
+- Saved-camera switching at the current tick with authored framing and bank.
+- General forward seeks, six exact readbacks across pause, retained diagnostic
+  evidence, transient observations and natural settling during confirmation.
+- At most one correction, one observation deadline, and no correction for
+  large, alternating or lower observations.
+- Cancellation while settling, at confirmation, after correction and during
+  final verification; changed demos and unexpected confirmation movement.
+- A corrected replay tick still cannot enable a camera with weak translation.
+
+These tests simulate command/status behavior; they do not model native render
+frames. The original 0.3.4 overshoot behavior reproduced failures before the
+production fix. Existing regression tests and Windows build gates are retained.
+
+The 50 Python files and PyInstaller spec parse under Python 3.10 syntax rules.
+The source manifest contains 82 files. All production modules except the
+controller and version string remain byte-identical to 0.3.4. The logo, unlocker,
+workflow, build scripts, dependencies and existing tests are unchanged.
+
+## In-game checks after rebuilding
+
+1. Upload the source update at the existing GitHub repository root, commit,
+   and start a fresh **Actions → Build Windows app → Run workflow** on that
+   branch. Re-running an older job builds its old commit.
+2. Download the new artifact and extract its complete
+   `Deadlock_Dolly_0.3.5-alpha_Windows_x64.zip`. Close the old editing session,
+   complete any pending game-configuration recovery, and use the whole rebuilt
+   portable folder, including `_internal`.
+3. At the troublesome scene, pause and enter freecam. Frame a low camera view.
+   Start Paused camera controls with movement keys released. Let setup finish;
+   verify the exact replay moment and original view return after the refresh.
+4. Test WASD and Space/Ctrl after enabling keyboard flight with Deadlock focused,
+   then stop and start controls again. Switch to a saved view while paused.
+5. Repeat with the intended 0.1 replay speed. If setup still fails or the camera
+   jumps afterward, export fresh diagnostics immediately before retrying.
+
+Refresh can briefly show a neighbouring scene. Cancellation deliberately stops
+further commands and can leave the replay at a neighbouring or overshot tick.
+Continuous manual movement itself neither seeks nor resumes the replay.
+This release targets the paused-startup regression; unchanged rotation curves
+and console-based playback still require native footage to assess smoothness.
+
+See [BUILDING.md](BUILDING.md) for step-by-step GitHub updates and
+[HISTORY_VALIDATION.md](HISTORY_VALIDATION.md) for earlier validation.
+User recordings, logs and diagnostic exports are excluded from the archives.
+No GitHub repository or release was modified by this work.
+
 # Validation — 0.3.4 alpha
 
 Date: 8 September 2026.

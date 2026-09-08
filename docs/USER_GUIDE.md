@@ -5,7 +5,19 @@ development launcher and the official cvar unlocker. It follows the HLAE
 keyframe workflow: capture views, edit their timing and framing, then play the
 camera along the resulting path.
 
-**0.3.5 fixes paused-camera setup stopping after a small replay-seek overshoot.**
+**0.3.7 adds experimental playback smoothing.** Choose **Smoothing** below
+the playback controls before Play shot. **Balanced** is the session default;
+**Off** retains 0.3.6 playback. It smooths the shared camera timeline without
+changing your saved path or manual paused-camera movement. See
+[the modes and comparison](#experimental-playback-smoothing) below.
+
+**The 0.3.6 final-key fix is included; update directly from 0.3.5.** When the replay reaches
+the shot end slightly before the continuous camera, Dolly lets that final
+fraction finish before pausing and restoring the HUD. Completion can therefore
+be slightly later than the first end-tick report. A bounded wait prevents a
+stalled camera clock from keeping the shot running indefinitely.
+
+**The working 0.3.5 paused-camera controls are preserved.**
 Preparing a paused camera briefly seeks one tick away and returns to the
 original tick before restoring the chosen view and verifying its movement.
 If the return settles one or two ticks late, Dolly pauses and retries the exact
@@ -24,11 +36,14 @@ a custom standard available.
 **This is an alpha.** Existing Windows feedback confirms Netconsole connectivity,
 unlocker initialization before replay loading, a readable replay clock and visible
 camera travel, including manual movement while paused, and EXE startup. The
-latest executable diagnostics confirm the new clock is active, but show the
-refresh return freezing two ticks late before movement starts. This revision
-is checked with simulated game responses; its recovery needs an in-game check.
+latest 0.3.5 executable diagnostics confirm successful paused movement and a
+healthy high-resolution clock, alongside a small forced jump at the final
+camera key. The endpoint fix and experimental filter have simulated regression
+coverage. Their in-game result, including mid-path judder, is not yet verified.
+
 
 ## Start here
+
 
 1. Extract the **entire Windows ZIP** into a writable folder. When updating an existing
    Dolly installation, first close Deadlock and use Dolly's **File → Recover
@@ -76,7 +91,9 @@ does not change an already running game's launch options. A successful echo
 checks connectivity; it does not establish visibility of every engine logging
 channel or successful unlocker initialization.
 
+
 ## Switch and move cameras while paused
+
 
 After the usual launch, unlocker initialization and camera-support check, enter
 replay freecam and open **Paused camera…** on the **Cameras** tab. This is a
@@ -132,10 +149,11 @@ HLAE provides an independent camera input mode through
 Its Source 2 implementation overrides camera state using a frame-time input
 update. Dolly implements the paused workflow through its existing verified
 console connection; native render-time movement and mouse hooks require a
-separate Deadlock implementation. See `docs/CONSOLE_RESEARCH.md` for the source
-references and `docs/VALIDATION.md` for what was tested locally.
+separate Deadlock implementation. (Possibly coming in future)
+
 
 ## Make a first shot
+
 
 Start with two nearby views. No coordinate entry is needed. Confirm each camera
 effect before spending time on a longer shot.
@@ -248,7 +266,9 @@ are interpolated as Euler angles. The game's `spec_pos` output does not include
 roll, so capture keeps Dolly's last
 applied roll, or zero in a new session; edit roll explicitly when needed.
 
+
 ## Framing curve
+
 
 Use **FRAMING CURVE** on **Cameras** for the zoom-like effect. Its horizontal axis
 is shot time and its vertical axis is the value sent to `r_aspectratio`. The graph
@@ -293,39 +313,15 @@ Saving writes version 2, which older Dolly releases cannot open. Custom tracks o
 fixed values that target an old FOV control or `r_aspectratio` must be removed;
 Dolly reports the conflict so that only the framing curve controls this setting.
 
-## Program icon
-
-Dolly uses the exact reattached, white-backed film-reel logo as its window and
-Windows taskbar icon. Only size conversion is applied to the artwork. The source
-file is preserved byte-for-byte as `assets/logo-original.png`.
-
-Version 0.2.2 corrects an icon-format incompatibility with older Tk 8.6 Windows
-readers: every ICO image now uses an uncompressed 32-bit bitmap with a complete
-transparency mask. Dolly applies it explicitly to its main window and future
-dialogs; PNG is used only if ICO loading fails. Missing icon files are logged
-without preventing startup.
-
-The desktop launcher starts the editor without retaining a Python console
-window or its separate taskbar button. Dolly keeps its dedicated Windows
-application identity. The launcher `.bat` file itself retains its normal File
-Explorer file-type icon. Close the previous Dolly instance before launching
-this version so you can distinguish the current window from an old one.
 
 ## Editor layout
 
-**Session** contains the ordered startup controls. **Cameras** keeps the camera
-list, framing graph, selected-camera controls and top-down path overview together.
+
+**Session** contains the ordered startup controls. 
+**Cameras** keeps the camera list, framing graph, selected-camera controls and top-down path overview together.
 **Camera variables** contains depth-of-field and other numeric tracks. Playback
 controls stay below the active tab. Coordinate entry and advanced timing are in
 **More → Coordinates / timing…**, keeping them out of the normal capture workflow.
-
-At 100% Windows scaling (96 DPI), the window opens at 1180×800 with a minimum
-of 1000×700. Window and dialog sizes scale with DPI to keep the controls readable;
-the minimum is about 1500×1050 at 150% scaling. Panels resize with the window.
-The main pages do not scroll; long tables scroll vertically within their own panel.
-**Log** opens a separate resizable activity window, closed by default.
-The path overview is an XY diagram, not an in-game overlay.
-
 **Frozen preview:** this optional effect is off by default. It moves the camera
 using shot seconds through the scene currently on screen. Preparation checks
 the current tick and can use the adjacent-tick refresh described above; it never
@@ -388,8 +384,11 @@ shot. Filling it in deliberately overrides that restoration value.
 - Normal camera timing follows acknowledged replay ticks. New integer ticks
   adjust the clock gradually rather than snapping the camera's fractional
   position. Position, rotation, aspect and cvar curves share that clock. Its
-  estimate can briefly lag a tick, leads by at most one tick, and holds at that
-  cap when observations stop. Shot completion explicitly applies the final key.
+  underlying estimate can briefly lag a tick, leads by at most one tick, and holds at that
+  cap when observations stop. Optional smoothing adds the delay described below.
+  Completion waits for both the replay and camera
+  to arrive, then explicitly applies the final key. A small final clock lag gets
+  a bounded finishing period instead of an immediate jump to the endpoint.
 - Startup checks require approximately one-to-one XYZ movement and a verified
   return. During movement, occasional position readbacks check for persistent
   divergence from recent commands. A large sustained mismatch stops movement;
@@ -426,6 +425,44 @@ resolution and game updates may limit smoothness; they must be assessed locally.
 If that is insufficient, the next implementation step is a verified native
 Deadlock view hook while retaining this editor and path format.
 
+
+## Experimental playback smoothing
+
+
+Choose **Smoothing** under Shot playback before pressing **Play shot**. It
+averages the shared playback time over a short real-time window, then evaluates
+position, rotation, aspect and camera-variable tracks together at that time.
+The authored path geometry stays intact; Step cvar tracks still change
+discretely. This applies to normal path playback and Frozen preview, not manual
+paused-camera flight, saved-view previews or capture.
+
+| Mode | Real-time filter window | Added camera delay during steady movement |
+| --- | --- | --- |
+| Off | 0 ms | 0 ms |
+| Light | 80 ms | About 40 ms |
+| Balanced | 160 ms | About 80 ms |
+| Strong | 280 ms | About 140 ms |
+
+**Balanced** is selected each time Dolly starts. The choice remains for this
+editor session and is not saved in settings or project files. Changing it
+during a shot affects the next Play shot. **Off** preserves the 0.3.6 command
+sequence, including its smooth endpoint completion.
+
+Stronger settings spread small timing changes over a longer window, at the
+cost of more camera delay relative to the replay action. The values above are
+real-time delays, including at 0.1 replay speed. At the end, Dolly lets the
+filtered camera finish before restoring the HUD; it does not snap the filter
+to the last key. A discrete Step track remains discrete, with its timing
+following the same delayed camera clock.
+
+For a useful comparison, keep the same shot, recording setup, **Speed 0.1**
+and **Updates / s 120**. Play once with Off, once with Balanced, then once with
+Strong. Compare the diagonal pan separately from the last turn into the final
+camera. Export diagnostics after the setting you record. The filter has
+automated regression coverage, but an in-game improvement is not yet verified.
+It cannot replace missed console updates or smooth frames inside Deadlock's
+renderer, so it does not establish that the build is ready for public release.
+
 ## How the unlocker is loaded and recovered
 
 Dolly bundles the **unmodified official cvar unlocker v0.5.2 DLL** and checks its
@@ -451,10 +488,13 @@ identify the backup to compare. Existing standard `citadel/cvar_unlocker`
 mounts are temporarily replaced in the session and restored with the original
 file. Steam launch settings and pre-existing mod files are not changed.
 
+
 ## If something fails
 
+
 Use **Export diagnostics** in Dolly and send the resulting ZIP with a short
-description of the failed step. It includes the active shot and playback
+description of the failed step to my Discord @Cravvnn / or depo to the GitHub Repo.
+It includes the active shot and playback
 settings, measured playback update rates, console responses, capability results
 and launch logs, including local file paths. Preview diagnostics include the
 complete requested frame, its aspect ratio, and the action's result or error.
@@ -465,8 +505,7 @@ launch attempts also record your selected executable/replay paths and the error,
 failed before a game session existed. This version adds a bounded raw console
 history and logs from up to eight recent sessions, so a successful retry does
 not hide a preceding crashed launch. New session journals retain exit code/time.
-It does not include the replay itself or game assets. The support check verifies commands, not visual
-camera effects: mention separately whether position, rotation, aspect-ratio framing or DOF failed.
+It does not include the replay itself or game assets.
 
 If the camera-position check fails, make sure the replay is in roaming/freecam,
 release all movement keys, and retry the selected camera's Preview once. Wait for the
@@ -487,7 +526,9 @@ If the game launch changes or breaks after a Deadlock update, the pinned unlocke
 may need a compatible release. Dolly will not silently replace it with a new
 binary. Run recovery as described above if a configuration edit remains pending.
 
+
 ## Package and development
+
 
 - `dolly/`: complete Python editor, controller, path engine, launcher and console source.
 - `tests/`: automated path, transport, controller and launcher/recovery checks.

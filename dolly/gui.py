@@ -25,6 +25,7 @@ from dolly.navigation import CameraMotion
 from dolly.navigation_input import CameraInput
 from dolly.path import CvarTrack, Keyframe, Project, TrackKey
 from dolly.settings import AppSettings, load_settings, save_settings
+from dolly.smoothing import smoothing_window
 
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -103,6 +104,7 @@ class DollyApp:
         self.time_text = tk.StringVar(value="0")
         self.speed = tk.StringVar(value="1")
         self.rate = tk.StringVar(value="60")
+        self.smoothing = tk.StringVar(value="Balanced")
         self.frozen = tk.BooleanVar(value=False)
         self.hide_hud = tk.BooleanVar(value=True)
         self.capture_mode = tk.StringVar(value="Timed shot")
@@ -923,6 +925,15 @@ class DollyApp:
         ttk.Label(options, text="Play shot resumes the replay from the first camera.", style="Muted.TLabel").pack(side="left", padx=(18, 0))
         ttk.Combobox(options, textvariable=self.rate, values=("30", "60", "120"), state="readonly", width=5).pack(side="right")
         ttk.Label(options, text="Updates / s", style="Muted.TLabel").pack(side="right", padx=(9, 6))
+        smoothing = ttk.Frame(frame)
+        smoothing.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        ttk.Label(smoothing, text="Smoothing", style="Muted.TLabel").pack(side="left", padx=(0, 6))
+        ttk.Combobox(smoothing, textvariable=self.smoothing,
+                     values=("Off", "Light", "Balanced", "Strong"), state="readonly", width=10).pack(side="left")
+        ttk.Label(smoothing, text="Light 80 ms · Balanced 160 ms · Strong 280 ms (real time)",
+                  style="Muted.TLabel").pack(side="left", padx=(12, 0))
+        ttk.Label(frame, text="Stronger smoothing adds a small camera delay. Off uses prior playback.",
+                  style="Muted.TLabel").grid(row=4, column=0, sticky="w", pady=(3, 0))
 
     def _worker_loop(self):
         while True:
@@ -1578,9 +1589,12 @@ class DollyApp:
             if not .05 <= speed <= 4:
                 raise ValueError("Playback speed must be between 0.05 and 4.")
             rate, frozen, hide_hud = int(self.rate.get()), self.frozen.get(), self.hide_hud.get()
+            smoothing = self.smoothing.get().lower()
+            smoothing_window(smoothing)
             self._close_paused_camera(stop=False)
             submitted = self._submit("Starting shot playback", lambda: self.controller.play(
-                project, time=0.0, speed=speed, rate=rate, frozen=frozen, hide_hud=hide_hud))
+                project, time=0.0, speed=speed, rate=rate, frozen=frozen, hide_hud=hide_hud,
+                smoothing=smoothing))
             if submitted:
                 self._set_time(0.0)
         self._guard("Play shot", operation)

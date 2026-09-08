@@ -167,13 +167,17 @@ class CameraPositionTests(unittest.TestCase):
         project = self.start_playback()
         self.console.requests.clear()
         self.console.view_writes.clear()
-        self.console.goto_outputs.extend([100, 125, 150, 175, 200, 200])
+        # Advance at the project's actual tick rate across a full shot. Large
+        # tick jumps in a handful of frames previously relied on the endpoint
+        # snap; compensation must also hold through continuous interpolation.
+        self.console.goto_outputs.extend(
+            project.start_tick + int(i * project.tick_rate / 60) for i in range(700))
         clock = FakeClock()
-        self.controller._stop_event = CountedEvent(clock, limit=8)
+        self.controller._stop_event = CountedEvent(clock, limit=700)
         with patch("dolly.controller.time.perf_counter", side_effect=clock.monotonic):
             self.controller._run(project, 0, 1, 60, False)
 
-        self.assertGreater(len(self.console.view_writes), 3)
+        self.assertGreaterEqual(len(self.console.view_writes), 600)
         for pose in self.console.view_writes:
             self.assertAlmostEqual(pose[2], 200 + pose[0], places=5)
         self.assertAlmostEqual(self.console.view_writes[0][2], 200)

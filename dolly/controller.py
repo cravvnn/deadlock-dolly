@@ -23,6 +23,7 @@ from . import __version__
 from .path import Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX
 from .console import ConsoleClient, error_text, parse_demo_info, parse_demo_tick
 from .playback import ReplayClock
+from .smoothing import PhaseSmoother, smoothing_window
 from .display import client_aspect_ratio
 from .navigation import CameraMotion, move_camera
 from .pacing import FrameWait
@@ -1294,8 +1295,10 @@ class Controller:
                                         int(round(project.start_tick + shot_time * project.tick_rate)))
             self._message("Replay paused at the requested path time.", time=shot_time)
 
-    def play(self, project, time=0, speed=1, rate=60, frozen=False, hide_hud=True):
+    def play(self, project, time=0, speed=1, rate=60, frozen=False, hide_hud=True, smoothing="off"):
         # The main UI starts at zero; explicit API callers may choose a start.
+        # Reject invalid experimental modes before stopping a working camera.
+        window = smoothing_window(smoothing)
         with self._op_lock:
             self.stop()
             if self._playback_restore or self._restore or self._demo_speed_changed:
@@ -1317,6 +1320,9 @@ class Controller:
             self._playback_details = {"project": project.to_dict(), "start_time": start,
                                       "speed": speed, "rate": rate, "frozen": bool(frozen),
                                       "hide_hud": bool(hide_hud),
+                                      "smoothing": {"mode": smoothing, "window_seconds": window,
+                                                    "nominal_delay_seconds": window / 2,
+                                                    "kind": "shared_phase_finite_window"},
                                       "clock_max_lead_ticks": 0 if frozen else 1}
             self._playback_metrics = {"updates": 0, "requested_updates_per_second": rate,
                                       "mean_round_trip_ms": 0, "max_round_trip_ms": 0,
@@ -1357,7 +1363,7 @@ class Controller:
                 self._applied_pose = frame
                 self._message("Playing frozen preview." if frozen else "Playing shot with the replay.",
                               playing=True, time=start)
-                self._thread = threading.Thread(target=self._run, args=(project, start, speed, rate, frozen),
+                self._thread = threading.Thread(target=self._run, args=(project, start, speed, rate, frozen, smoothing),
                                                 daemon=True, name="DollyPlayback")
                 self._thread.start()
             except Exception as exc:
@@ -1383,7 +1389,7 @@ class Controller:
             self._state["paused_flight"] = False
         return restoration_error
 
-    def _run(self, project, start, speed, rate, frozen):
+    def _run(self, project, start, speed, rate, frozen, smoothing="off"):
         began = time.perf_counter()
         next_frame = began
         idle_since = began
@@ -1395,8 +1401,17 @@ class Controller:
         max_interval = 0.0
         previous_update = None
         last_observed_at = began
+        endpoint_started_at = None
+        endpoint_settle_limit = 2.0
         waiter = FrameWait()
         try:
+            window = smoothing_window(smoothing)
+            phase = PhaseSmoother(window, began, start) if window else None
+            if self._playback_details is not None:
+                self._playback_details["smoothing"] = {
+                    "mode": smoothing, "window_seconds": window,
+                    "nominal_delay_seconds": window / 2,
+                    "kind": "shared_phase_finite_window"}
             # One identity check before the first frame. Each subsequent frame
             # returns its own fresh demo status, avoiding a second round trip.
             info = self._require_demo(require_tick=not frozen)
@@ -1413,29 +1428,55 @@ class Controller:
                     raise RuntimeError("The replay jumped forward before camera playback started. Use Play shot to restart.")
             clock = ReplayClock(project.tick_rate, speed) if not frozen else None
             if clock:
+                # Allow two replay-tick periods with a .25–2 second real-time
+                # budget. Compute only after ReplayClock validates its rate.
+                endpoint_settle_limit = max(.25, 2 / max(1.0, project.tick_rate * speed)) + window
                 clock.observe(tick, time.perf_counter())
+            elif phase:
+                endpoint_settle_limit = .25 + window
             while not self._stop_event.is_set():
                 self._require_connection()
                 now = time.perf_counter()
                 if frozen:
                     if frozen_tick is not None and tick is not None and tick != frozen_tick:
                         raise RuntimeError("The scene resumed during Frozen preview. Camera playback stopped.")
-                    shot_time = start + (now - began) * speed
-                    reached_end = shot_time >= project.duration
+                    raw_time = start + (now - began) * speed
+                    source_at_end = raw_time >= project.duration
                 else:
                     acknowledged_time = (tick - project.start_tick) / project.tick_rate
                     if acknowledged_time < 0:
                         raise RuntimeError("Replay moved before this path's start tick. Use Play shot to restart.")
-                    shot_time = (clock.position(now) - project.start_tick) / project.tick_rate
+                    raw_time = (clock.position(now) - project.start_tick) / project.tick_rate
                     # The camera may lead by at most one demo tick, but the HUD
                     # is kept hidden until the actual replay reaches the end.
-                    reached_end = acknowledged_time >= project.duration
+                    source_at_end = acknowledged_time >= project.duration
                     if now - idle_since > 1.0:
                         if self.status().get("message") != "Replay is paused or waiting; the path is holding its camera.":
                             self._message("Replay is paused or waiting; the path is holding its camera.", playing=True)
-                # A filtered clock may trail its latest integer observation.
-                # Once the replay reaches the end, always send the exact last
-                # key before pausing instead of leaving a fractional shortfall.
+                # Average one shared phase, then evaluate the original path.
+                # Do not independently lag the axes, cut corners, blend across
+                # discrete cvar values, or extrapolate past the existing clock.
+                bounded_time = min(project.duration, max(0.0, raw_time))
+                shot_time = phase.update(now, bounded_time) if phase else raw_time
+                reached_end = source_at_end and shot_time >= project.duration
+                if source_at_end and endpoint_started_at is None and (not frozen or phase):
+                    endpoint_started_at = now
+                    if self._playback_details is not None:
+                        self._playback_details["endpoint_settle"] = {
+                            "started_at": now, "budget_seconds": endpoint_settle_limit,
+                            "initial_lag_ticks": max(0.0, (project.duration - shot_time) * project.tick_rate),
+                            "elapsed_seconds": 0.0, "verified": False}
+                if endpoint_started_at is not None:
+                    settling = max(0.0, now - endpoint_started_at)
+                    if self._playback_details is not None:
+                        self._playback_details["endpoint_settle"].update(
+                            elapsed_seconds=settling, clock_ready=raw_time >= project.duration,
+                            filter_ready=shot_time >= project.duration)
+                    if not reached_end and settling >= endpoint_settle_limit:
+                        raise RuntimeError("The camera clock did not settle at the shot endpoint. Playback stopped without jumping to the final view. Use Play shot to restart; export diagnostics if it persists.")
+                # Keep the same fractional camera clock through the final pan.
+                # An integer end-tick acknowledgement must not snap a lagging
+                # camera ahead. Once both have arrived, send the exact last key.
                 if reached_end:
                     shot_time = project.duration
                 frame = dict(project.evaluate(min(project.duration, shot_time)), time=shot_time)
@@ -1462,11 +1503,17 @@ class Controller:
                 if sampled:
                     self._next_camera_readback = received_at + CAMERA_READBACK_INTERVAL
                 self._observe_motion_frame(frame, output, sent_at, received_at, next_tick, sampled=sampled)
+                with self._state_lock:
+                    self._playback_samples[-1].update(
+                        raw_time=bounded_time, smoothing_mode=smoothing,
+                        smoothing_delay_shot_seconds=max(0.0, bounded_time - shot_time),
+                        smoothing_delay_ms=1000 * max(0.0, bounded_time - shot_time) / speed)
                 if clock:
                     clock.observe(next_tick, received_at)
                     with self._state_lock:
                         self._playback_samples[-1].update(
-                            clock_estimate_tick=shot_time * project.tick_rate + project.start_tick,
+                            clock_estimate_tick=raw_time * project.tick_rate + project.start_tick,
+                            camera_estimate_tick=shot_time * project.tick_rate + project.start_tick,
                             clock_lag_ticks=clock.lag_ticks,
                             clock_phase_error_ticks=clock.phase_error_ticks)
                 self._applied_pose = frame
@@ -1488,6 +1535,9 @@ class Controller:
                         "max_round_trip_ms": max_round_trip * 1000,
                         "max_update_interval_ms": max_interval * 1000}
                 if reached_end:
+                    if (not frozen or phase) and self._playback_details is not None:
+                        self._playback_details["endpoint_settle"].update(
+                            verified=True, camera_completed_at=received_at)
                     finished = True
                     break
                 if next_tick != tick:

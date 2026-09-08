@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.3.5 ALPHA - SOURCE PACKAGE
+DEADLOCK DOLLY 0.3.7 ALPHA - SOURCE PACKAGE
 
 This is the clean source package for GitHub and Windows executable builds.
 It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the
@@ -6,6 +6,10 @@ portable Windows package using GitHub Actions or your Windows Python 3.12.
 End users of that built package launch Dolly.exe with the supplied logo and
 do not need to install Python. This source copy also supports the BAT workflow
 below. Camera behavior from 0.3.2 remains included.
+
+0.3.7 adds experimental playback smoothing. It also includes 0.3.6's fix for
+the final camera jumping ahead before its movement finishes. You can update
+directly from 0.3.5. In-game smoothness is not yet verified for this revision.
 
 1. Updating? Close Deadlock and Dolly, then run Recover_Game_Config.bat from
    the EXISTING Dolly folder first. Extract the new package over that folder,
@@ -30,7 +34,8 @@ below. Camera behavior from 0.3.2 remains included.
    graph edits framing only; camera time and position stay unchanged. Smooth
    is the default, with Linear and Step available independently of the path.
    Use Preview to apply the selected camera; graph edits alone do not go live.
-9. Leave Frozen preview OFF and Hide HUD ON. Click Play shot.
+9. Leave Frozen preview OFF and Hide HUD ON. Under Shot playback, choose
+   Smoothing before clicking Play shot; Balanced is the new session default.
    Dolly returns to the first capture's replay tick, applies the starting camera
    and framing/DOF settings, hides the HUD, checks and corrects camera position
    while paused, then plays the replay and camera path together. Play shot
@@ -120,6 +125,30 @@ resuming or jumping to the shot's start time.
 Speed changes the replay and camera together. A four-second shot at 0.1x takes
 about 40 real seconds. A smooth spline does not imply constant travel speed:
 the view spacing and arrival times determine speed through each section.
+
+EXPERIMENTAL PLAYBACK SMOOTHING
+
+Choose Smoothing under Shot playback before Play shot. It smooths the shared
+playback time, so position, rotation, aspect and depth-of-field tracks remain
+together on the authored path. Step camera-variable keys stay discrete.
+It does not change saved geometry, captures or manual paused-camera movement.
+
+Mode        Real-time filter window    Added delay at steady movement
+Off         0 ms                       0 ms
+Light       80 ms                      about 40 ms
+Balanced    160 ms                     about 80 ms
+Strong      280 ms                     about 140 ms
+
+Balanced starts selected whenever Dolly opens. The choice lasts for this
+editor session and is not saved in settings or shot files. Off uses 0.3.6
+playback, including its final-key fix. Stronger smoothing adds camera delay
+relative to the replay action, and completion lets that movement finish.
+
+Compare the same shot at Speed 0.1 and Updates / s 120: play Off, Balanced,
+then Strong. Watch the diagonal pan and the final camera separately. Export
+diagnostics after the version you record. This filter cannot repair dropped
+console updates or guarantee smooth native rendering; check it in-game before
+publishing the build.
 
 Keep movement keys released during the brief position check. It can move the
 camera in height before verifying its return. Saved keys need no height edit.
