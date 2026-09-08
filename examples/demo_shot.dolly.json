@@ -1,0 +1,82 @@
+{
+  "format": "deadlock-dolly",
+  "version": 2,
+  "name": "TEMPLATE ONLY - invented coordinates; replace every camera key before game playback",
+  "interpolation": "smooth",
+  "rotation_mode": "shortest",
+  "start_tick": 0,
+  "tick_rate": 64.0,
+  "setup_values": {
+    "r_citadel_depthoffield_enable": 1
+  },
+  "keyframes": [
+    {
+      "time": 0.0,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 200.0,
+      "pitch": 5.0,
+      "yaw": 0.0,
+      "roll": 0.0,
+      "aspect_ratio": 1.7777777777777777
+    },
+    {
+      "time": 2.5,
+      "x": 200.0,
+      "y": 150.0,
+      "z": 240.0,
+      "pitch": 10.0,
+      "yaw": 45.0,
+      "roll": 3.0,
+      "aspect_ratio": 1.2
+    },
+    {
+      "time": 6.0,
+      "x": 500.0,
+      "y": 200.0,
+      "z": 220.0,
+      "pitch": 0.0,
+      "yaw": 90.0,
+      "roll": 0.0,
+      "aspect_ratio": 2.1
+    }
+  ],
+  "tracks": [
+    {
+      "name": "r_citadel_depthoffield_focus_distance",
+      "interpolation": "smooth",
+      "restore_value": null,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": 600.0
+        },
+        {
+          "time": 2.5,
+          "value": 1000.0
+        },
+        {
+          "time": 6.0,
+          "value": 300.0
+        }
+      ]
+    },
+    {
+      "name": "r_citadel_depthoffield_aperture_diameter",
+      "interpolation": "linear",
+      "restore_value": null,
+      "keys": [
+        {
+          "time": 0.0,
+          "value": 0.4
+        },
+        {
+          "time": 6.0,
+          "value": 1.5
+        }
+      ]
+    }
+  ],
+  "standard_aspect": 1.7777777777777777,
+  "lens_interpolation": "smooth"
+}

@@ -1,0 +1,16 @@
+# Portable runtime notices
+
+The Windows release script includes Python's installed `LICENSE.txt` and
+PyInstaller's installed `COPYING.txt` alongside these notices. PyInstaller's
+bootloader distribution exception is in its COPYING file. The source repository
+does not contain the Python interpreter or the PyInstaller bootloader itself.
+
+The Tcl/Tk notices here were obtained from the upstream 8.6 branch release:
+
+- [Tcl notice](https://github.com/tcltk/tcl/blob/core-8-6-16/license.terms)
+- [Tk notice](https://github.com/tcltk/tk/blob/core-8-6-16/license.terms)
+
+The actual Tcl/Tk runtime version is read during the Windows bundle self-test.
+These notices do not assert that a particular Python installation bundles
+exactly 8.6.16. The cvar unlocker retains its separate MIT license and pinned
+provenance under `third_party/cvar_unlocker/`.

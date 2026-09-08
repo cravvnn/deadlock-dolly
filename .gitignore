@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+/build/
+/dist/
+/logs/
+/_internal/
+/MANIFEST.json
+*.exe
+*.zip
+*.dem
+*.mp4
+*.log
+*.dolly.json
+!examples/*.dolly.json
+.env
+.env.*
+.DS_Store
+Thumbs.db
+Desktop.ini
+Start_Here.txt
+
+# The one pinned official game plugin is intentionally versioned.
+# Do not add a blanket *.dll rule that would drop it from GitHub builds.

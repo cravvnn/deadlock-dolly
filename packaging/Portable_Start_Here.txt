@@ -1,0 +1,43 @@
+DEADLOCK DOLLY - WINDOWS PORTABLE
+
+1. Extract the WHOLE ZIP to a writable folder, such as Downloads or a tools
+   folder. Keep Dolly.exe and _internal together. Python is already included.
+2. Double-click Dolly.exe. It uses the Dolly logo and opens without a console.
+   For a desktop shortcut, right-click Dolly.exe > Send to > Desktop, or use
+   Windows' Create shortcut action. Keep the EXE in its original app folder.
+3. Open Steam and close any running Deadlock. In Session, select Deadlock's
+   executable and a local extracted .dem replay. Keep Netconsole selected.
+4. Launch hideout, wait for it to finish loading, then Connect and Initialize
+   unlocker. Only after that succeeds, Load replay and Check camera support.
+5. Enter replay freecam. On Cameras, Start path here, fly to another view and
+   + Capture camera. Capture binding supports Mouse4/Mouse5 and keyboard keys.
+6. Edit framing with the aspect-ratio curve. Leave Frozen preview off to play
+   the replay with your path. Play shot starts from the first view and handles
+   HUD visibility. Paused camera opens the separate movement/switching panel.
+7. Save shots wherever you prefer. Capture preferences stay in
+   %APPDATA%/DeadlockDolly/settings.json. Logs and recovery backups are in
+   logs beside Dolly.exe, and appear after you start using the application.
+
+UPDATING AN OLDER INSTALLATION
+
+Close Deadlock first. In the old Dolly, use File > Recover game configuration
+if present; otherwise close Dolly and run its old Recover_Game_Config.bat.
+Close Dolly before replacing files. Keep the logs folder and all saved shots.
+Never discard a folder containing a pending gameinfo recovery backup.
+
+RECOVERY AND ERRORS
+
+Close Deadlock and use File > Recover game configuration. If the editor cannot
+open, open a terminal in the app folder and run:
+  .\Dolly.exe --recover
+Recovery uses the same saved backups and does not overwrite conflicting
+Steam/user edits. It needs no separately installed Python.
+
+Use Export diagnostics after an in-game problem. If Dolly does not open,
+send logs/Dolly_startup.log and logs/Dolly.log when available.
+
+The launcher always uses -dev -insecure and initializes the bundled unlocker
+before replay loading. Close this editing session before playing normally.
+The included BUILD_INFO.json distinguishes the app's startup check from a
+Deadlock runtime test. Source and game-mod notices are under LICENSE.txt and
+_internal/third_party. No video files or user replays are included.

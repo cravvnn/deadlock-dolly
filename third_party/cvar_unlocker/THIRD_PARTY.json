@@ -1,0 +1,15 @@
+{
+  "name": "cvar-unhide-s2-citadel",
+  "version": "v0.5.2",
+  "license": "MIT",
+  "source_url": "https://github.com/Artemon121/cvar-unhide-s2-citadel",
+  "release_url": "https://github.com/Artemon121/cvar-unhide-s2-citadel/releases/tag/v0.5.2",
+  "download_url": "https://github.com/Artemon121/cvar-unhide-s2-citadel/releases/download/v0.5.2/cvar-unhide-s2-citadel.zip",
+  "release_archive_sha256": "f7b051319b65252002fa20c6b4dd9d0680fba811557cb951aeff2916c0e27a5f",
+  "bundled_file": "bin/win64/server.dll",
+  "bundled_file_sha256": "e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba",
+  "bundled_file_size": 300032,
+  "source_checkout_commit": "505547d58e4b66001406a8fa618548364f7cdb4d",
+  "retrieved_utc": "2026-09-07",
+  "notes": "Unmodified official release DLL. The upstream full gameinfo.gi is intentionally not bundled or installed. Dolly backs up the current local gameinfo bytes and temporarily mounts the DLL via its SearchPaths; it restores after plugin initialization or game exit, with journaled crash recovery. The standard citadel game identity is retained. Release binary compatibility with current Deadlock must be verified on Windows."
+}
