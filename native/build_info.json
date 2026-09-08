@@ -1,0 +1,33 @@
+{
+  "abi": 1,
+  "version": "0.3.8-alpha",
+  "sha256": "3dd7f019abd5be8752e04a25f556b1d9c15297bea6f79b0a5945503d59f7976e",
+  "compiler": "Zig 0.14.1 clang, cross-compiled on Linux for Windows x64",
+  "configuration": "Release",
+  "runtime": "static",
+  "native_path_tests_passed": true,
+  "native_callback_tests_passed": false,
+  "native_callback_tests_note": "Windows callback harness is part of the GitHub build gate; not executed in this Linux workspace.",
+  "game_runtime_verified": false,
+  "pe": {
+    "machine": "x64",
+    "dll": true,
+    "exports": [
+      "CreateInterface",
+      "DollyNativeProtocolVersion"
+    ],
+    "import_libraries": [
+      "KERNEL32.dll",
+      "SHELL32.dll",
+      "api-ms-win-crt-convert-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "api-ms-win-crt-locale-l1-1-0.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-private-l1-1-0.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "bcrypt.dll"
+    ]
+  }
+}

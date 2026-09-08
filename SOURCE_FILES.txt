@@ -1,4 +1,4 @@
-# Files for the clean source ZIP. Keep runtime/user data out.
+# Explicit clean source export, including Dolly native helper and its sources.
 .gitattributes
 .github/workflows/windows.yml
 .gitignore
@@ -17,6 +17,7 @@ docs/BUILDING.md
 docs/CHANGELOG.md
 docs/CONSOLE_RESEARCH.md
 docs/HISTORY_VALIDATION.md
+docs/NATIVE_CAMERA.md
 docs/USER_GUIDE.md
 docs/VALIDATION.md
 dolly/__init__.py
@@ -32,6 +33,8 @@ dolly/display.py
 dolly/gui.py
 dolly/hotkey.py
 dolly/launcher.py
+dolly/native_bridge.py
+dolly/native_path.py
 dolly/navigation.py
 dolly/navigation_input.py
 dolly/pacing.py
@@ -41,6 +44,31 @@ dolly/runtime.py
 dolly/settings.py
 dolly/smoothing.py
 examples/demo_shot.dolly.json
+native/CMakeLists.txt
+native/bin/win64/DollyNative.dll
+native/build_info.json
+native/include/dolly_path.hpp
+native/include/dolly_protocol.hpp
+native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json
+native/src/bridge_win.cpp
+native/src/dolly_path.cpp
+native/tests/bridge_smoke.cpp
+native/tests/path_tests.cpp
+native/vendor/minhook/LICENSE.txt
+native/vendor/minhook/UPSTREAM.json
+native/vendor/minhook/include/MinHook.h
+native/vendor/minhook/src/buffer.c
+native/vendor/minhook/src/buffer.h
+native/vendor/minhook/src/hde/hde32.c
+native/vendor/minhook/src/hde/hde32.h
+native/vendor/minhook/src/hde/hde64.c
+native/vendor/minhook/src/hde/hde64.h
+native/vendor/minhook/src/hde/pstdint.h
+native/vendor/minhook/src/hde/table32.h
+native/vendor/minhook/src/hde/table64.h
+native/vendor/minhook/src/hook.c
+native/vendor/minhook/src/trampoline.c
+native/vendor/minhook/src/trampoline.h
 packaging/Portable_Start_Here.txt
 packaging/dolly.spec
 packaging/entrypoint.py
@@ -59,6 +87,10 @@ tests/test_gui_capture.py
 tests/test_hotkey.py
 tests/test_launcher.py
 tests/test_motion_clock.py
+tests/test_native_bridge.py
+tests/test_native_controller.py
+tests/test_native_packaging.py
+tests/test_native_path.py
 tests/test_navigation.py
 tests/test_navigation_input.py
 tests/test_pacing.py
@@ -83,5 +115,6 @@ third_party/notices/RUNTIME_NOTICES.md
 third_party/notices/VConsoleLib-python-MIT.txt
 third_party/notices/tcl-license.terms
 third_party/notices/tk-license.terms
+tools/build_native.py
 tools/build_windows.py
 tools/release_files.py

@@ -330,6 +330,32 @@ class GuiCaptureTests(unittest.TestCase):
         self.app._set_time.assert_not_called()
         self.assertEqual(len(self.harness.errors), 1)
 
+    def test_launch_captures_native_driver_choice_before_worker_runs(self):
+        self.app.game_path = Var("B:/Deadlock/game/bin/win64/citadel.exe")
+        self.app.demo_path = Var("B:/replays/example.dem")
+        self.app.protocol = Var("Netconsole")
+        self.app.camera_driver = Var("Native (experimental)")
+        self.app.controller.launch = Mock(return_value=None)
+        self.app._session_result = Mock()
+        self.app._launch()
+        self.app.camera_driver.set("Console (legacy)")
+        self.app.protocol.set("VConsole")
+        self.harness.finish()
+        self.app.controller.launch.assert_called_once_with(
+            "B:/Deadlock/game/bin/win64/citadel.exe", "B:/replays/example.dem",
+            protocol="netcon", native=True)
+
+    def test_launch_allows_console_fallback_before_startup(self):
+        self.app.game_path = Var("game")
+        self.app.demo_path = Var("example.dem")
+        self.app.protocol = Var("VConsole")
+        self.app.camera_driver = Var("Console (legacy)")
+        self.app.controller.launch = Mock(return_value=None)
+        self.app._session_result = Mock()
+        self.app._launch()
+        self.harness.finish()
+        self.app.controller.launch.assert_called_once_with("game", "example.dem", protocol="vconsole", native=False)
+
     def test_edited_aspect_reaches_alternating_previews_and_keeps_legacy_fov(self):
         self.app.project = Project(name="Edited lens", keyframes=[
             Keyframe(0.0, 240.1, 3816.2, 421.3, -10.5, 317.4, 0.0, 75.0),

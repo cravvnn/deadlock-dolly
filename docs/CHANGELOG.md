@@ -1,5 +1,32 @@
 # Changes
 
+## 0.3.8 alpha — experimental native main-view camera
+
+- Add a Native (experimental) camera driver selected before launch. Evaluate
+  the complete saved path in the game's main-view callback, after normal camera
+  setup and before the view matrices. XYZ, rotation and aspect zoom no longer
+  rely on repeated console camera commands during native shot playback.
+- Use the verified fractional game clock for replay shots and a high-resolution
+  elapsed clock for frozen previews. Preserve existing spline shapes, shortest
+  rotation, zoom interpolation and exact endpoints. The optional external
+  smoothing filter remains available with the Console driver.
+- Support only the exact client.dll and engine2.dll builds supplied for this
+  investigation. Fingerprints, function bytes and view identity are checked
+  before camera ownership. A game update requires a verified native profile;
+  Console remains selectable before launch. No Valve DLL is distributed.
+- Arm the native path before demo_resume. Hold the last view while verifying
+  that the underlying spectator camera has caught up before releasing control.
+  Manual paused flight, capture, preview and position calibration are unchanged.
+- Keep the unlocker-before-replay startup, -dev/-insecure requirements and
+  recoverable game configuration. Stop overriding if the editor disappears,
+  the replay changes, the view is unsupported or replay time jumps.
+- Add native telemetry, shared-memory protocol checks, C++/Python curve parity
+  tests and a Windows callback smoke test to the executable build workflow.
+  DOF and other effect cvars still use console updates at sampled native phase.
+- Native helper cross-compiles for Windows x64. Actual game rendering,
+  responsiveness and visual smoothness remain unverified pending user testing;
+  this is an experimental alpha, not a demonstrated jitter-free release.
+
 ## 0.3.7 alpha — experimental shared playback smoothing
 
 - Add Off, Light, Balanced and Strong smoothing under Shot playback. Balanced

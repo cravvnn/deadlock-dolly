@@ -1,160 +1,107 @@
-# Validation — 0.3.7 alpha
+# Validation — 0.3.8 alpha
 
 Date: 8 September 2026.
 
-This build adds the user's requested experimental smoothing filter to camera
-path playback. It also includes the 0.3.6 endpoint correction. **The filter has
-been tested against simulated playback and recorded command timing, but its
-visible effect in Deadlock has not yet been verified.** No Windows executable
-was built or native game session run in this Linux workspace. A successful
-GitHub Windows build and the native comparison below remain necessary.
+This is an **experimental native-camera integration**, not a verified cure for
+visible jitter. The helper has been compiled for Windows x64 and its path math
+and editor integration have been tested here. Deadlock, Windows native callback
+execution, packaged EXE startup and rendered visual quality have not been tested
+in this Linux workspace. The included GitHub workflow runs the Windows checks
+before producing an executable.
 
-## What changes
+## Why this changes the delivery method
 
-The optional filter averages the existing continuous playback phase over a
-finite window measured in real time. The original project is then evaluated
-once at that filtered phase. Position, pitch, yaw, bank, aspect ratio and
-animated camera variables therefore remain on the same authored timeline.
-Step-valued variables remain discrete. There is no independent axis averaging,
-curve replacement, native offset change or future-pose extrapolation.
+The supplied 0.3.7 diagnostics retained positional lag of approximately
+155.72 ms with Light smoothing and 154.60 ms with Balanced, beyond each filter's
+nominal delay. A single 64 Hz replay tick takes 156.25 ms of real time at 0.1x.
+These were different shots, with rounded low-frequency position readback; the
+numbers support investigating tick-dependent camera application but do not
+prove its internal cause or form a controlled comparison of the filters.
 
-| Mode | Real-time window | Added camera delay during steady motion |
-| --- | ---: | ---: |
-| Off | 0 ms | 0 ms |
-| Light | 80 ms | about 40 ms |
-| Balanced | 160 ms | about 80 ms |
-| Strong | 280 ms | about 140 ms |
+Advancedfx's Source 2 camera path is applied inside the game view setup. Dolly's
+new driver follows that architectural approach using independently verified
+Deadlock addresses and Dolly's existing curve evaluator. It does not reuse CS2
+addresses or repeatedly stream camera targets to the native helper. Sources:
+[Advancedfx Source 2 view integration](https://github.com/advancedfx/advancedfx/blob/main/AfxHookSource2/main.cpp),
+[Advancedfx camera paths](https://github.com/advancedfx/advancedfx/blob/main/shared/CamPath.cpp).
 
-The editor starts with Balanced selected. The selection is session-only and
-does not alter saved projects or capture settings. Off preserves 0.3.6 playback.
-Manual paused flight, camera capture and selected-frame previews do not use
-this filter. Frozen path playback does use it when selected.
+## Exact-build evidence
 
-Smoothing trades camera timing for steadier progression. At 0.1 playback speed,
-Balanced's nominal 80 ms real-time delay is 0.008 replay seconds. The camera and
-its effect tracks stay together, but trail the unfiltered camera phase relative
-to game action. A held endpoint is reached exactly within one full filter
-window; startup and the final approach ease over that window.
+| Module | SHA-256 |
+| --- | --- |
+| client.dll | `c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b` |
+| engine2.dll | `887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb` |
 
-The existing endpoint budget gains one smoothing window. At 64 ticks/sec and
-0.1 speed, Balanced allows 0.3125 + 0.16 = 0.4725 real seconds after the replay
-end acknowledgement. The ordinary drift, replay ownership, cancellation and
-external-seek checks remain active. Blocking console calls can extend elapsed
-wall time. Completion is verified only after the exact last view has been sent
-and its response checked; a timeout does not force a final camera jump.
+Static disassembly independently verified the main `SetUpView` callback at
+client RVA `0x16bcfb0`, its sole direct caller, expected view-render vtable and
+main view at `this + 0x10`. The original function runs first; final XYZ, angles,
+aspect and the corresponding FOV adjustment are written before the inspected
+matrix-building code. Other caller/vtable combinations and the alternate
+projection flag are excluded. Installed files are hashed before launch changes;
+the native worker checks loaded module fingerprints and function bytes again.
+Derived evidence is included in `native/profiles/`. Game DLLs are not included.
 
-Diagnostics record the selected mode, window and nominal real-time delay.
-Each retained sample records bounded raw shot time, filtered shot time,
-`smoothing_delay_shot_seconds` and `smoothing_delay_ms` (real time).
-`clock_estimate_tick` describes the unfiltered clock; `camera_estimate_tick`
-describes the filtered camera. This distinguishes filter delay from console
-round-trip or replay-clock lag.
+Replay time comes from the verified float current-time field at client globals
+`+0x30`. It includes the engine's fractional time. The rounded context tick at
+`+0x44` must not have interpolation fraction added to it: that would introduce
+a full-tick discontinuity. Frozen previews use QueryPerformanceCounter instead.
+The current-time scope and its actual cadence at this callback still need a
+live probe. Float precision is also finite: near 1,800 replay seconds its
+resolution is about 0.122 ms of replay time, or 1.22 ms of real time at 0.1x.
 
-## Evidence from the supplied recording and diagnostics
+## Implementation checks
 
-The supplied 0.3.5 shot has three keys, starts at tick 112181, spans 2.609375
-replay seconds and runs at 0.1 speed with 120 requested updates/sec. It completed
-3,014 updates in 26.008 seconds (115.89 updates/sec), with a 6.04 ms mean command
-round trip and an 18.71 ms largest received-update interval. The precise clock
-and Windows timer were active. The retained tail has no duplicate commanded
-poses or reversals, but does contain small timing variations.
+- Compile the complete project to an immutable bounded path once. The callback
+  evaluates its XYZ, pitch/yaw/bank and aspect at the current phase. Existing
+  Hermite/PCHIP, shortest-rotation, linear and step behavior are retained.
+- Prepare and acknowledge a held first view, acknowledge Play while still
+  paused, then send `demo_resume`. Native playback sends no repeated console
+  position, rotation or aspect commands.
+- Hold the final camera while the underlying spectator is repositioned once.
+  Require three fresh original-view samples within position/angle tolerance
+  before release. If it cannot settle, retain the hold and report the problem.
+- Release ownership on expired editor heartbeat, replay change, seeking,
+  unsupported view or time jump. Keep the hook DLL resident until game exit to
+  avoid unloading code still referenced by the engine.
+- Preserve the existing paused-flight, capture, seek and calibration methods.
+  DOF and other effect cvars remain asynchronous console updates using sampled
+  native phase. They are not synchronized to each rendered view.
 
-The previously inspected 60-second recording shows a short visual step and
-catch-up during the continuous pan. Readbacks do not establish sustained native
-player-camera takeover. Console application, game rendering and recording
-cadence remain possible contributors. Detailed measurements, including the
-separate endpoint jump corrected in 0.3.6, are preserved in
-[HISTORY_VALIDATION.md](HISTORY_VALIDATION.md).
+Path evaluation performs no allocation. The full callback also reads game state,
+uses atomic shared ownership and publishes telemetry; it is not claimed to be
+lock-free or hard real-time. A native hook does not remove frame pacing, GPU,
+recording or game-clock limitations.
 
-For this build, the filter was replayed over the retained command timestamps
-and shot times. The forced final sample was excluded; statistics also exclude
-the first 0.4 seconds of filter warm-up and the last 0.1 seconds of the tail.
-These are numerical command-timing measurements, not newly rendered frames.
+## Executed checks and remaining gates
 
-| Mode | Phase-rate standard deviation | Successive phase-rate change RMS | Measured steady delay |
-| --- | ---: | ---: | ---: |
-| Off | 0.00083362 | 0.00056958 | 0 ms |
-| Light | 0.00074523 | 0.00006393 | 39.8 ms |
-| Balanced | 0.00070924 | 0.00004442 | 79.6 ms |
-| Strong | 0.00064916 | 0.00003166 | 139.2 ms |
+| Check | Result |
+| --- | --- |
+| Python regression suite, Python 3.12.13/Linux | 590 run: 589 passed, 1 Windows-only shared-memory smoke skipped |
+| C++ evaluator compiled and exercised against Python curves | Passed, including random/nonuniform paths, wrapped angles, zoom and malformed payloads |
+| Windows x64 native DLL cross-compilation, Zig 0.14.1/clang | Passed |
+| PE32+ x64 DLL, required exports and no separate compiler runtime DLL imports | Passed |
+| Actual callback synthetic Windows harness cross-compilation | Passed; execution awaits GitHub Windows CTest |
+| Windows CTest, shared-memory smoke and packaged EXE smoke | Required by included Windows build workflow; not executed here |
+| Live unlocker proxy startup, view cadence, handoff and visible smoothness | Requires the supplied game build and user testing |
 
-Phase rates are shot seconds per real second; their means remain approximately
-0.10002 in every mode. Balanced reduces phase-rate variation by about 15% and
-successive rate-change RMS by about 92% in this retained trace. **Those numbers
-do not mean 92% less visible camera jitter.** They establish that the requested
-timing filter attenuates the small command-clock changes, with the documented
-delay. No measured native improvement is claimed.
+The Windows callback harness calls the actual production callback against
+synthetic memory. It checks sub-tick changes within one integer tick, initial
+paused Play acknowledgement, hold/resume continuity, endpoint handling,
+projection transformation, replay changes, time jumps, heartbeat expiry and
+release after fault. It loads no Valve DLL and installs no game hook. It tests
+callback logic, not that the game invokes that callback once per rendered frame.
 
-## Earlier-version comparison and implementation limits
+All 62 Python/spec files parse with Python 3.10 syntax rules. Seventeen protected
+paused-camera, positioning and seek methods are byte-identical to 0.3.7.
+Release archives use an explicit 119-file manifest; logs, recordings, game DLLs and build intermediates are
+excluded. The update archive is based on the complete 0.3.7 source archive.
 
-Available source archives from 0.3.3 through 0.3.6 have identical authored-path,
-replay-clock, pacing, navigation and console modules. The intervening controller
-changes concern the precise clock, paused-camera preparation, seek handling
-and endpoint completion. This comparison did not identify a removed mid-path
-interpolation algorithm to restore. The earlier 0.3.2 source was unavailable.
+## Before publishing
 
-Advancedfx's Source 2 implementation evaluates its camera path within a game
-view callback and writes the view origin, angles and FOV there. Dolly currently
-uses acknowledged external console commands. A timing filter cannot supply
-missing rendered frames or guarantee when the engine applies each command.
-See the primary
-[Advancedfx Source 2 implementation](https://github.com/advancedfx/advancedfx/blob/main/AfxHookSource2/main.cpp).
+Follow [NATIVE_CAMERA.md](NATIVE_CAMERA.md) for the short comparison procedure.
+Use the same saved straight/diagonal-pan shot at 1x and 0.1x, then check native
+frozen playback and the handoff back to paused movement. Export diagnostics
+immediately after any failure or visible step. A successful GitHub build is
+necessary but does not establish smooth in-game rendering.
 
-If all modes show the same stepping in a controlled native comparison, more
-filtering is unlikely to resolve that particular step. Renderer-side camera
-integration would be a separate implementation requiring Deadlock-specific
-investigation and native validation, rather than an assumption that CS2 offsets
-or hooks apply unchanged.
-
-## Regression verification
-
-`python3 -m unittest discover -s tests -q`: **533 tests passed** on Linux,
-Python **3.12.13**, with no tests skipped. The tests include:
-
-- Twenty filter cases covering time-weighted sampling, jittered timestamps,
-  equal timestamps, resets, finite inputs, bounded history, monotonic output,
-  large clock epochs and exact endpoint flushing.
-- Twelve controller integration cases covering all four diagonal pan
-  directions at 0.1 speed, synchronized XYZ/rotation/aspect/DOF, discrete
-  variables, endpoint completion, cancellation, replay changes, external seeks,
-  the existing one-tick prediction cap, frozen playback and diagnostics.
-- Editor coverage for selecting each mode, rejecting invalid values without
-  disturbing paused controls, and retaining the chosen mode when work is queued.
-- Existing paused movement, calibration, input/focus, capture, startup, seek,
-  endpoint, packaging and playback regressions.
-
-A separate timed-console comparison loaded the original 0.3.6 playback worker
-from its archive. All console commands, duration and final status were identical
-to the new worker with Off, for both normal 0.1 playback and frozen playback.
-This checks the actual previous implementation as well as the API default.
-
-Source comparison confirms that only `Controller.play` and `Controller._run`
-change relative to 0.3.6. Paused-flight, calibration, input and seek methods are
-byte-identical. The authored curves, launch/unlocker sequence, keybindings,
-logo, Windows workflow and build dependencies are unchanged.
-
-The explicit source manifest contains **86 files**. All **54 Python files** and
-the PyInstaller spec parse under Python 3.10 syntax rules. Logs, recordings,
-temporary analysis tools and dependencies are excluded from release archives.
-The GitHub update is cumulative against 0.3.5, including the 0.3.6 endpoint fix.
-
-## Native comparison before a public release
-
-1. Apply `Deadlock_Dolly_0.3.7_GitHub_Update.zip` to the existing 0.3.5 or 0.3.6
-   repository and start a fresh **Actions → Build Windows app → Run workflow**.
-   See [BUILDING.md](BUILDING.md) for the upload and extraction steps.
-2. Close the old editing session, complete any pending configuration recovery,
-   and extract the complete new Windows package, including `_internal`.
-3. Open the same saved shot. Keep playback speed at 0.1 and updates/sec at 120.
-   Play it with Off, then Balanced, then Strong. Keep the capture/render settings
-   unchanged and compare the same diagonal pan section. Do not change the path
-   between runs. Off already includes the 0.3.6 endpoint correction.
-4. Check both mid-path stepping and the last-key approach. Check framing and
-   DOF timing around any action that needs an exact match. Export diagnostics
-   immediately after each problematic run so its mode and samples are retained.
-5. Briefly confirm manual paused flight still works. After switching focus,
-   release and press movement keys again; the existing focus guard is unchanged.
-
-The app remains an alpha pending this native comparison. Automated tests and a
-successful packaged-editor startup do not establish cinematic smoothness.
-No GitHub repository or public release was modified by this work.
+No GitHub repository or public release was changed by this work.

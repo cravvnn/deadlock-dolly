@@ -1,0 +1,346 @@
+"""Bounded Windows shared-memory transport for the native render camera.
+
+Only the editor writes control bytes; only its launched game writes status.
+Sequence counters publish coherent snapshots. The heartbeat is independent of
+command snapshots, so a long wait cannot look like an abandoned editor.
+"""
+from __future__ import annotations
+
+import ctypes
+import math
+import mmap
+import os
+import re
+import struct
+import threading
+import time
+import uuid
+
+from .native_path import compile_project
+
+ABI = 1
+CONTROL_BYTES = 2 * 1024 * 1024
+MAPPING_BYTES = CONTROL_BYTES + 4096
+PAYLOAD_OFFSET = 1024
+MAX_PAYLOAD_BYTES = CONTROL_BYTES - PAYLOAD_OFFSET
+CONTROL = struct.Struct("<8s6IQ2I2d512s")
+STATUS = struct.Struct("<8s6IQ3diI14d2dQ256s512s2d")
+CONTROL_MAGIC = b"DLYCAM01"
+STATUS_MAGIC = b"DLYSTAT1"
+STATES = ("starting", "probe", "armed", "playing", "completed", "stopped", "fault", "unsupported")
+
+
+class NativeBridgeError(RuntimeError):
+    """Native camera is unavailable or did not acknowledge a command."""
+
+
+def _number(value, label, *, positive=False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite number")
+    result = float(value)
+    if not math.isfinite(result) or result < 0 or (positive and result == 0):
+        raise ValueError(f"{label} must be {'positive' if positive else 'nonnegative'} and finite")
+    return result
+
+
+def _pid(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 < value <= 0xFFFFFFFF:
+        raise ValueError("Native camera requires a valid process ID")
+    return value
+
+
+class NativeBridge:
+    @classmethod
+    def create(cls, *, mapping_factory=None, clock=time.monotonic,
+               sleep=time.sleep, start_heartbeat=True, editor_pid=None, token=None):
+        """Create a private session mapping before starting its development game.
+
+        The injectable factory/clock are for portable transport tests; the
+        production mapping is always a Windows pagefile-backed named mapping.
+        """
+        editor_pid = _pid(os.getpid() if editor_pid is None else editor_pid)
+        token = uuid.uuid4().hex if token is None else token
+        if not isinstance(token, str) or re.fullmatch(r"[a-f0-9]{32}", token) is None:
+            raise ValueError("Native camera session token must be 32 lowercase hex digits")
+        name = "Local\\DeadlockDollyNative_" + token
+        if mapping_factory is None:
+            if os.name != "nt":
+                raise NativeBridgeError("Native camera sessions require 64-bit Windows")
+            mapping = mmap.mmap(-1, MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
+        else:
+            mapping = mapping_factory(name, MAPPING_BYTES)
+        try:
+            return cls(mapping, token, editor_pid, clock, sleep, start_heartbeat)
+        except Exception:
+            close = getattr(mapping, "close", None)
+            if close is not None:
+                close()
+            raise
+
+    def __init__(self, mapping, token, editor_pid, clock, sleep, start_heartbeat):
+        if len(mapping) != MAPPING_BYTES:
+            raise NativeBridgeError("Native camera mapping has an unexpected size")
+        self._mapping = mapping
+        self.token = token
+        self.editor_pid = editor_pid
+        self.game_pid = 0
+        self._clock = clock
+        self._sleep = sleep
+        self._lock = threading.RLock()
+        self._operations = threading.RLock()
+        self._heartbeat_stop = threading.Event()
+        self._thread = None
+        self._closed = False
+        self._command = 0
+        self._sequence = 0
+        self._heartbeat = 0
+        self._flags = 0
+        self._start = 0.0
+        self._speed = 1.0
+        self._demo = b""
+        self._prepared = False
+        self._mode = 0
+        self._atomic32 = self._atomic64 = None
+        self._read32 = None
+        if os.name == "nt" and isinstance(mapping, mmap.mmap):
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            self._atomic32 = kernel.InterlockedExchange
+            self._atomic32.argtypes = [ctypes.POINTER(ctypes.c_int32), ctypes.c_int32]
+            self._atomic32.restype = ctypes.c_int32
+            self._atomic64 = kernel.InterlockedExchange64
+            self._atomic64.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.c_int64]
+            self._atomic64.restype = ctypes.c_int64
+            self._read32 = kernel.InterlockedCompareExchange
+            self._read32.argtypes = [ctypes.POINTER(ctypes.c_int32), ctypes.c_int32, ctypes.c_int32]
+            self._read32.restype = ctypes.c_int32
+        mapping[:] = b"\0" * MAPPING_BYTES
+        self._publish(0, b"", increment=False)
+        self._beat()
+        if start_heartbeat:
+            self._thread = threading.Thread(target=self._heartbeat_loop,
+                                            name="dolly-native-heartbeat", daemon=True)
+            self._thread.start()
+
+    def _store(self, offset, value, bits=32):
+        atomic = self._atomic32 if bits == 32 else self._atomic64
+        if atomic is None:
+            struct.pack_into("<I" if bits == 32 else "<Q", self._mapping, offset, value)
+        else:
+            typ = ctypes.c_int32 if bits == 32 else ctypes.c_int64
+            slot = typ.from_buffer(self._mapping, offset)
+            atomic(ctypes.byref(slot), typ(value))
+
+    def _check_open(self):
+        if self._closed:
+            raise NativeBridgeError("Native camera session is closed")
+
+    def _load_sequence(self):
+        offset = CONTROL_BYTES + 8
+        if self._read32 is None:
+            return struct.unpack_from("<I", self._mapping, offset)[0]
+        slot = ctypes.c_int32.from_buffer(self._mapping, offset)
+        return self._read32(ctypes.byref(slot), 0, 0) & 0xFFFFFFFF
+
+    def _beat(self):
+        with self._lock:
+            if self._closed:
+                return
+            self._heartbeat = (self._heartbeat + 1) & 0xFFFFFFFFFFFFFFFF
+            self._store(32, self._heartbeat, 64)
+
+    def _heartbeat_loop(self):
+        while not self._heartbeat_stop.wait(0.1):
+            self._beat()
+
+    def _publish(self, mode, payload=b"", *, increment=True):
+        with self._lock:
+            self._check_open()
+            if len(payload) > MAX_PAYLOAD_BYTES:
+                raise ValueError("Native camera path exceeds the shared-memory capacity")
+            if increment and self._command == 0xFFFFFFFF:
+                raise NativeBridgeError("Native camera command counter exhausted; relaunch the session")
+            command = self._command + int(increment)
+            odd = (self._sequence + 1) & 0xFFFFFFFF
+            even = (odd + 1) & 0xFFFFFFFF
+            header = CONTROL.pack(CONTROL_MAGIC, ABI, odd, command, mode,
+                                  self.editor_pid, self.game_pid, 0, self._flags,
+                                  len(payload), self._start, self._speed, self._demo)
+            self._store(12, odd)
+            # Neither the header copy nor the sequence publication touches the
+            # aligned heartbeat at 32:40; it belongs to the heartbeat writer.
+            self._mapping[:12] = header[:12]
+            self._mapping[16:32] = header[16:32]
+            self._mapping[40:CONTROL.size] = header[40:]
+            if payload:
+                self._mapping[PAYLOAD_OFFSET:PAYLOAD_OFFSET + len(payload)] = payload
+            self._store(12, even)
+            self._sequence = even
+            self._command = command
+            self._mode = mode
+            return command
+
+    def bind_game(self, pid):
+        pid = _pid(pid)
+        with self._operations, self._lock:
+            self._check_open()
+            if self.game_pid:
+                if self.game_pid != pid:
+                    raise NativeBridgeError("Native camera cannot attach to another game process")
+                return
+            self.game_pid = pid
+            self._publish(self._mode, increment=False)
+
+    def status(self):
+        """Return one coherent, validated native status snapshot."""
+        with self._lock:
+            self._check_open()
+            for _ in range(8):
+                first = self._load_sequence()
+                if first & 1:
+                    self._sleep(0.0005)
+                    continue
+                data = bytes(self._mapping[CONTROL_BYTES:CONTROL_BYTES + STATUS.size])
+                second = self._load_sequence()
+                if first == second and not second & 1 and struct.unpack_from("<I", data, 8)[0] == first:
+                    break
+                self._sleep(0.0005)
+            else:
+                raise NativeBridgeError("Native camera status is busy; retry the operation")
+            if data == b"\0" * STATUS.size:
+                return {"state": "starting", "state_code": 0, "abi": ABI,
+                        "game_pid": self.game_pid, "ack_command": 0, "complete": False,
+                        "frame_count": 0, "phase": 0.0, "message": "Waiting for the native camera plugin"}
+            values = STATUS.unpack(data)
+            magic, sequence, abi, state, pid, ack, error = values[:7]
+            if magic != STATUS_MAGIC or abi != ABI:
+                raise NativeBridgeError("Native camera protocol does not match this editor build")
+            if not self.game_pid or pid != self.game_pid:
+                raise NativeBridgeError("Native camera status belongs to a different game process")
+            if state >= len(STATES) or ack > self._command:
+                raise NativeBridgeError("Native camera returned an invalid state or command acknowledgment")
+            frame_count, real_time, engine_time, phase, tick, paused = values[7:13]
+            original, applied = list(values[13:20]), list(values[20:27])
+            original_fov, applied_fov, hook_calls, message, demo, maximum_ms, interval_ms = values[27:]
+            numbers = [real_time, engine_time, phase, *original, *applied,
+                       original_fov, applied_fov, maximum_ms, interval_ms]
+            if not all(math.isfinite(value) for value in numbers) or paused not in (0, 1):
+                raise NativeBridgeError("Native camera returned non-finite view or timing data")
+            return {"state": STATES[state], "state_code": state, "abi": abi,
+                    "game_pid": pid, "ack_command": ack, "error": error,
+                    "complete": state == 4, "frame_count": frame_count,
+                    "real_time": real_time, "engine_time": engine_time,
+                    "phase": phase, "tick": tick, "paused": bool(paused),
+                    "original_pose": original, "applied_pose": applied,
+                    "original_fov": original_fov, "applied_fov": applied_fov,
+                    "hook_calls": hook_calls,
+                    "message": message.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
+                    "demo_name": demo.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
+                    "max_frame_interval_ms": maximum_ms, "frame_interval_ms": interval_ms}
+
+    def _wait(self, command, states, timeout):
+        deadline = self._clock() + timeout
+        while True:
+            snapshot = self.status()
+            acknowledged = snapshot["ack_command"] == command
+            # A previous command's fault remains visible until the callback
+            # processes this command. In particular, Release and a fresh Hold
+            # must be allowed to recover instead of failing on that old error.
+            # Unsupported is a session-wide startup/build failure, independent
+            # of command acknowledgments, and cannot be recovered by a shot.
+            if snapshot["state"] == "unsupported" or (acknowledged and snapshot["state"] == "fault"):
+                raise NativeBridgeError(snapshot.get("message") or "Native camera refused this game build or view")
+            if acknowledged and snapshot["state"] in states:
+                return snapshot
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                raise NativeBridgeError("Native camera did not acknowledge the command in time: " + snapshot.get("message", snapshot["state"]))
+            self._sleep(min(0.01, remaining))
+
+    def prepare(self, project, start, speed, frozen, demo_name, timeout=5):
+        start = _number(start, "Start time")
+        speed = _number(speed, "Playback speed", positive=True)
+        timeout = _number(timeout, "Native acknowledgment timeout")
+        if not isinstance(frozen, bool):
+            raise ValueError("Frozen preview must be a boolean")
+        if not isinstance(demo_name, str) or not demo_name or any(c in demo_name for c in "\0\r\n"):
+            raise ValueError("Native camera requires the current replay name")
+        demo = demo_name.encode("utf-8")
+        if len(demo) >= 512:
+            raise ValueError("Replay name is too long for the native camera protocol")
+        payload = compile_project(project)
+        if start > project.duration:
+            raise ValueError("Native start time exceeds the shot duration")
+        with self._operations:
+            self._check_open()
+            if not self.game_pid:
+                raise NativeBridgeError("Native camera requires its launched game process")
+            self._prepared = False
+            self._start, self._speed, self._demo = start, speed, demo
+            self._flags = (1 if frozen else 0) | 2
+            command = self._publish(1, payload)
+            try:
+                result = self._wait(command, {"armed"}, timeout)
+            except Exception:
+                self._publish(0)
+                raise
+            self._prepared = True
+            return result
+
+    def play(self, timeout=3):
+        timeout = _number(timeout, "Native acknowledgment timeout")
+        with self._operations:
+            self._check_open()
+            if not self._prepared:
+                raise NativeBridgeError("Prepare a native camera path before playing")
+            command = self._publish(2)
+            try:
+                return self._wait(command, {"playing", "completed"}, timeout)
+            except Exception:
+                self._prepared = False
+                self._publish(0)
+                raise
+
+    def release(self, timeout=3):
+        timeout = _number(timeout, "Native acknowledgment timeout")
+        with self._operations:
+            self._check_open()
+            self._prepared = False
+            command = self._publish(0)
+            if not self.game_pid:
+                return self.status()
+            return self._wait(command, {"stopped", "probe"}, timeout)
+
+    def hold(self, timeout=3):
+        """Freeze the native callback's latest phase without a read/write race."""
+        timeout = _number(timeout, "Native acknowledgment timeout")
+        with self._operations:
+            self._check_open()
+            if not self._prepared:
+                raise NativeBridgeError("Prepare a native camera path before holding")
+            command = self._publish(3)
+            return self._wait(command, {"armed"}, timeout)
+
+    def diagnostics(self):
+        try:
+            return self.status()
+        except (NativeBridgeError, OSError, ValueError) as exc:
+            return {"state": "unavailable", "message": str(exc)}
+
+    def close(self):
+        """Release once, stop heartbeats, and close the mapping even after faults."""
+        with self._operations:
+            if self._closed:
+                return
+            try:
+                self.release(timeout=0.25)
+            except (NativeBridgeError, OSError, ValueError):
+                pass
+            finally:
+                self._heartbeat_stop.set()
+                if self._thread is not None and self._thread is not threading.current_thread():
+                    self._thread.join(timeout=0.5)
+                with self._lock:
+                    self._closed = True
+                    close = getattr(self._mapping, "close", None)
+                    if close is not None:
+                        close()

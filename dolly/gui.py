@@ -79,6 +79,7 @@ class DollyApp:
         self.game_path = tk.StringVar()
         self.demo_path = tk.StringVar()
         self.protocol = tk.StringVar(value="Netconsole")
+        self.camera_driver = tk.StringVar(value="Native (experimental)")
         self.status_text = tk.StringVar(value="Choose a replay, then launch into the hideout to initialize the unlocker.")
         self.session_text = tk.StringVar(value="Game not connected")
         self.project_text = tk.StringVar(value="Untitled shot")
@@ -278,6 +279,14 @@ class DollyApp:
         ttk.Label(connection, text="Console link", style="CardMuted.TLabel").pack(side="left", padx=(0, 9))
         ttk.Combobox(connection, textvariable=self.protocol, values=("Netconsole", "VConsole"), state="readonly", width=13).pack(side="left")
         ttk.Label(connection, text="Developer mode  ·  -insecure", style="CardMuted.TLabel").pack(side="right")
+        driver = ttk.Frame(intro, style="Card.TFrame")
+        driver.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        ttk.Label(driver, text="Camera driver", style="CardMuted.TLabel").pack(side="left", padx=(0, 9))
+        self.camera_driver_combo = ttk.Combobox(driver, textvariable=self.camera_driver,
+            values=("Native (experimental)", "Console (legacy)"), state="readonly", width=23)
+        self.camera_driver_combo.pack(side="left")
+        ttk.Label(driver, text="Choose before launch. Native follows rendered views.",
+                  style="CardMuted.TLabel").pack(side="left", padx=(12, 0))
         flow = ttk.Frame(tab, padding=(0, 14))
         flow.grid(row=1, column=0, sticky="ew")
         for column in range(3):
@@ -928,11 +937,12 @@ class DollyApp:
         smoothing = ttk.Frame(frame)
         smoothing.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         ttk.Label(smoothing, text="Smoothing", style="Muted.TLabel").pack(side="left", padx=(0, 6))
-        ttk.Combobox(smoothing, textvariable=self.smoothing,
-                     values=("Off", "Light", "Balanced", "Strong"), state="readonly", width=10).pack(side="left")
+        self.smoothing_combo = ttk.Combobox(smoothing, textvariable=self.smoothing,
+                     values=("Off", "Light", "Balanced", "Strong"), state="readonly", width=10)
+        self.smoothing_combo.pack(side="left")
         ttk.Label(smoothing, text="Light 80 ms · Balanced 160 ms · Strong 280 ms (real time)",
                   style="Muted.TLabel").pack(side="left", padx=(12, 0))
-        ttk.Label(frame, text="Stronger smoothing adds a small camera delay. Off uses prior playback.",
+        ttk.Label(frame, text="Smoothing applies to Console playback. Native uses render time; Updates / s controls effect cvars only.",
                   style="Muted.TLabel").grid(row=4, column=0, sticky="w", pady=(3, 0))
 
     def _worker_loop(self):
@@ -1030,6 +1040,10 @@ class DollyApp:
             self.session_text.set("Playing camera path" if self.playing else session_label)
             unlocker_ready = bool(status.get("unlocker_ready"))
             available = not self.busy and not self.playing
+            running = bool(status.get("game_running"))
+            self.camera_driver_combo.configure(state="disabled" if running or self.busy else "readonly")
+            native = status.get("camera_backend") == "native" if running else self.camera_driver.get() == "Native (experimental)"
+            self.smoothing_combo.configure(state="disabled" if native or self.playing else "readonly")
             self.aspect_curve.set_enabled(available)
             startup_buttons = (
                 (self.launch_button, available),
@@ -1094,8 +1108,9 @@ class DollyApp:
             self._error("Choose game and replay", ValueError("Select the Deadlock executable and a local .dem replay first."))
             return
         protocol = "vconsole" if self.protocol.get() == "VConsole" else "netcon"
+        native = self.camera_driver.get() == "Native (experimental)"
         self._close_paused_camera(stop=False)
-        self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol), self._session_result)
+        self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol, native=native), self._session_result)
 
     def _session_result(self, result):
         if result is not None:

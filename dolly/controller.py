@@ -1,4 +1,4 @@
-"""Replay-only camera controller using the game's console, not memory offsets.
+"""Replay-only camera controller with console and native view playback.
 
 The camera command backend is experimental until checked on the installed game.
 Playback follows acknowledged demo ticks with a bounded one-tick interpolation
@@ -155,6 +155,9 @@ class Controller:
     def __init__(self, log_callback=None):
         self._log_callback = log_callback
         self._session = None
+        self._native_active = False
+        self._native_last_status = {}
+        self._native_handoff_details = {}
         self._console = None
         self._protocol = "netcon"
         self._port = 29090
@@ -207,6 +210,9 @@ class Controller:
             state = dict(self._state)
         state["connected"] = bool(self._console and self._console.is_connected and self._alive())
         state["unlocker_ready"] = bool(self._alive() and self._unlocker_pid == self._session.pid)
+        state["camera_backend"] = "native" if self._native_bridge() is not None else "console"
+        state["native_holding"] = self._native_active and not state.get("playing", False)
+        state["game_running"] = self._alive()
         if self._session and not self._alive():
             exit_code = self._session.process.poll()
             state["startup_stage"] = "game_closed" if exit_code == 0 else "failed"
@@ -280,7 +286,7 @@ class Controller:
             raise RuntimeError("The replay is recognized, but its current tick was not reported. Export diagnostics before normal playback, or explicitly select Frozen preview.")
         return result
 
-    def launch(self, game_path, demo_path, protocol="netcon"):
+    def launch(self, game_path, demo_path, protocol="netcon", *, native=False):
         with self._op_lock:
             self._launch_attempt = {
                 "game_path": str(game_path),
@@ -288,9 +294,11 @@ class Controller:
                 "protocol": str(protocol),
                 "status": "requested",
             }
+            if native:
+                self._launch_attempt["camera_backend"] = "native"
             LOG.info("Launch requested: %s", self._launch_attempt)
             try:
-                result = self._launch(game_path, demo_path, protocol)
+                result = self._launch(game_path, demo_path, protocol, native=native)
             except Exception as exc:
                 self._launch_attempt.update(status="failed", error=str(exc), error_type=type(exc).__name__)
                 LOG.exception("Launch failed")
@@ -299,7 +307,7 @@ class Controller:
             self._launch_attempt.update(status="started", pid=result["pid"], session_dir=result["session_dir"])
             return result
 
-    def _launch(self, game_path, demo_path, protocol):
+    def _launch(self, game_path, demo_path, protocol, *, native=False):
         with self._op_lock:
             if protocol not in ("vconsole", "netcon"):
                 raise ValueError("Unknown console protocol.")
@@ -311,7 +319,11 @@ class Controller:
             if self._alive():
                 raise RuntimeError("Close the existing Dolly game session before launching again.")
             self.disconnect()
-            self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol)
+            options = {"native": True} if native else {}
+            self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol, **options)
+            self._native_active = False
+            self._native_last_status = {}
+            self._native_handoff_details = {}
             self._demo = path
             self._protocol = protocol
             self._probe_result = {}
@@ -329,7 +341,8 @@ class Controller:
             with self._state_lock:
                 self._state.update(time=0.0, tick=None)
             self._message("Deadlock launched with -dev -insecure. Wait until the hideout is fully loaded, then Connect and Initialize unlocker. The replay has not been loaded.", startup_stage="waiting_hideout")
-            return {"pid": self._session.pid, "session_dir": str(self._session.session_dir)}
+            return {"pid": self._session.pid, "session_dir": str(self._session.session_dir),
+                    "camera_backend": "native" if native else "console"}
 
     def connect(self):
         with self._op_lock:
@@ -471,6 +484,15 @@ class Controller:
                                   "live_tick_available": info.get("tick") is not None,
                                   "camera_effect_verified": False,
                                   "note": "Command availability only. Visual rotation, framing and DOF must be tested in the installed game."}
+            native = self._native_bridge()
+            if native is not None:
+                native_status = native.status()
+                self._native_last_status = native_status
+                self._probe_result["native_camera"] = native_status
+                if native_status.get("state") in ("starting", "fault", "unsupported"):
+                    raise RuntimeError("Native camera is not ready: " + str(native_status.get("message") or native_status.get("state")))
+                if int(native_status.get("frame_count", 0)) <= 0:
+                    raise RuntimeError("Native camera has not seen a rendered replay view. Enter freecam and check camera support again.")
             needed = ("spec_goto", "spec_pos", "cl_citadel_forceangles", "demo_info", "demo_pause", "demo_resume", "demo_gototick", "demo_timescale", self.lens_cvar)
             missing = [name for name in needed if not capabilities.get(name)]
             if missing:
@@ -1324,6 +1346,13 @@ class Controller:
                                                     "nominal_delay_seconds": window / 2,
                                                     "kind": "shared_phase_finite_window"},
                                       "clock_max_lead_ticks": 0 if frozen else 1}
+            native = self._native_bridge()
+            self._playback_details["camera_backend"] = "native" if native is not None else "console"
+            if native is not None:
+                self._playback_details["smoothing"] = {"mode": "off", "requested_mode": smoothing,
+                    "kind": "native_view_time", "window_seconds": 0, "nominal_delay_seconds": 0}
+                self._playback_details["camera_rate"] = "main view callbacks"
+                self._playback_details["cvar_timing"] = "Console updates follow sampled native phase; best effort."
             self._playback_metrics = {"updates": 0, "requested_updates_per_second": rate,
                                       "mean_round_trip_ms": 0, "max_round_trip_ms": 0,
                                       "max_update_interval_ms": 0, "elapsed_seconds": 0,
@@ -1352,6 +1381,27 @@ class Controller:
                     raise RuntimeError("The replay moved during the camera position check. Keep it paused until Dolly starts the shot, then retry.")
                 self._check_position_cancelled()
                 command = self._position_commands(frame)
+                if native is not None:
+                    # The whole shot is published once. HOLD must be acknowledged
+                    # while paused, then PLAY is armed before demo_resume.
+                    self._request(command)
+                    self._native_active = True
+                    native.prepare(project, start, speed, bool(frozen), self._demo.name)
+                    self._native_last_status = native.status()
+                    self._require_native_demo(self._native_last_status)
+                    self._check_position_cancelled()
+                    native.play()
+                    if not frozen:
+                        self._demo_speed_changed = True
+                        self._request("demo_timescale " + numeric(speed) + "; demo_resume")
+                    self._playback_details["initial_tick"] = positioned_demo.get("tick")
+                    self._applied_pose = frame
+                    self._message("Playing native frozen preview." if frozen else
+                                  "Playing native camera path at render time.", playing=True, time=start)
+                    self._thread = threading.Thread(target=self._run_native,
+                        args=(project, start, speed, rate, bool(frozen)), daemon=True, name="DollyNativePlayback")
+                    self._thread.start()
+                    return
                 if not frozen:
                     # Apply the initial camera/lens/cvars before resuming in
                     # one ordered command batch, while the replay is paused.
@@ -1368,8 +1418,219 @@ class Controller:
                 self._thread.start()
             except Exception as exc:
                 self._playback_details["error"] = str(exc)
-                self._finish_playback()
+                if native is not None:
+                    cleanup = self._finish_native_playback()
+                    if cleanup:
+                        LOG.warning("Native startup cleanup: %s", cleanup)
+                else:
+                    self._finish_playback()
                 raise
+
+    def _native_bridge(self):
+        return getattr(self._session, "native", None) if self._session is not None else None
+
+    def _require_native_demo(self, status):
+        name = str(status.get("demo_name") or "").replace("\\", "/").rsplit("/", 1)[-1]
+        if not name or self._demo is None or Path(name).stem.casefold() != self._demo.stem.casefold():
+            raise RuntimeError("Native camera replay identity changed. Camera playback stopped; restart the intended replay through Dolly.")
+        if status.get("state") in ("fault", "unsupported", "starting", "probe", "stopped"):
+            raise RuntimeError("Native camera is unavailable: " + str(status.get("message") or status.get("state")))
+
+    @staticmethod
+    def _native_pose(status, field="applied_pose"):
+        pose = status.get(field)
+        if not isinstance(pose, (tuple, list)) or len(pose) != 7:
+            raise RuntimeError("Native camera telemetry has no valid view pose.")
+        values = [float(value) for value in pose]
+        if not all(math.isfinite(value) for value in values):
+            raise RuntimeError("Native camera telemetry contains a non-finite view pose.")
+        return dict(zip(("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"), values))
+
+    def _handoff_native_camera(self):
+        """Keep the native view held until the underlying spectator catches up.
+
+        spec_pos can report the overridden camera. Only the unmodified view
+        supplied to the native callback can verify this handoff. If the game
+        cannot settle while paused, leave the view held and block competing
+        camera writers; closing the editing session remains available.
+        """
+        bridge = self._native_bridge()
+        if bridge is None or not self._native_active:
+            return
+        if not self._alive():
+            self._native_active = False
+            return
+        status = bridge.status()
+        self._native_last_status = status
+        try:
+            self._require_native_demo(status)
+            self._require_demo(require_tick=False)
+        except Exception:
+            # Never reposition another replay or keep overriding an invalid one.
+            bridge.release()
+            self._native_active = False
+            return
+        if status.get("state") == "playing":
+            bridge.hold()
+            status = bridge.status()
+        self._request("demo_pause")
+        target = self._native_pose(status)
+        target["cvars"] = {}
+        target["time"] = float(status["phase"])
+        self._native_handoff_details = {"verified": False, "target": dict(target), "samples": []}
+        self._request(self._position_commands(target))
+        deadline = time.perf_counter() + 2.0
+        previous_frame = int(status["frame_count"])
+        stable = 0
+        tick = int(status["tick"])
+        # A fresh event is deliberate: Stop has already set _stop_event, but a
+        # bounded held-camera handoff must still complete before another writer.
+        waiter = threading.Event()
+        while time.perf_counter() < deadline:
+            waiter.wait(.04)
+            current = bridge.status()
+            self._native_last_status = current
+            try:
+                self._require_native_demo(current)
+            except Exception:
+                bridge.release()
+                self._native_active = False
+                raise
+            if int(current["tick"]) != tick or not current["paused"]:
+                raise RuntimeError("The replay moved during native camera handoff. The view remains held; pause the replay and use Stop / restore.")
+            frame_count = int(current["frame_count"])
+            if frame_count == previous_frame:
+                continue
+            previous_frame = frame_count
+            original = self._native_pose(current, "original_pose")
+            position_error = math.dist([original[k] for k in CAMERA_AXES], [target[k] for k in CAMERA_AXES])
+            angle_error = max(abs((original[k] - target[k] + 180) % 360 - 180)
+                              for k in ("pitch", "yaw", "roll"))
+            self._native_handoff_details["samples"].append({"frame_count": frame_count,
+                "position_error": position_error, "angle_error": angle_error})
+            stable = stable + 1 if position_error <= CAMERA_POSITION_TOLERANCE and angle_error <= .2 else 0
+            if stable >= 3:
+                bridge.release()
+                self._native_active = False
+                self._native_handoff_details["verified"] = True
+                self._applied_pose = target
+                return
+        raise RuntimeError("Native camera is holding the final view because the underlying free camera did not settle. Use Stop / restore to retry; export diagnostics if it persists. Paused movement is blocked until the handoff succeeds.")
+
+    def _finish_native_playback(self):
+        errors = []
+        bridge = self._native_bridge()
+        if bridge is not None and self._native_active:
+            try:
+                status = bridge.status()
+                if status.get("state") == "playing":
+                    bridge.hold()
+            except Exception as exc:
+                errors.append("Could not hold native camera: " + str(exc))
+        restoration = self._finish_playback()
+        if restoration:
+            errors.append(restoration)
+        try:
+            self._handoff_native_camera()
+        except Exception as exc:
+            errors.append(str(exc))
+        return " ".join(errors) or None
+
+    def _run_native(self, project, start, speed, rate, frozen):
+        """Monitor rendered camera samples; only effect cvars use the console.
+
+        Camera position, rotation and projection never enter the console loop.
+        Effect cvars use the callback's shared phase but remain asynchronous.
+        """
+        bridge = self._native_bridge()
+        began = time.perf_counter()
+        last_fresh = began
+        next_identity = began
+        previous_frame = None
+        first_frame = None
+        previous_tick = None
+        previous_phase = start
+        previous_poll = began
+        last_cvars = dict(project.evaluate(start).get("cvars", {}))
+        updates = 0
+        finished = False
+        failure = None
+        waiter = FrameWait()
+        try:
+            if bridge is None:
+                raise RuntimeError("This session has no native camera bridge. Relaunch with the Native camera driver.")
+            while not self._stop_event.is_set():
+                self._require_connection()
+                now = time.perf_counter()
+                status = bridge.status()
+                self._native_last_status = status
+                self._require_native_demo(status)
+                if status.get("state") not in ("playing", "completed"):
+                    raise RuntimeError("Native playback was interrupted. The camera remains held for a verified handoff.")
+                phase = float(status["phase"])
+                if not math.isfinite(phase) or phase < previous_phase - 1e-5 or phase > project.duration + 1e-5:
+                    raise RuntimeError("Native camera time changed unexpectedly. Playback stopped before following that seek.")
+                tick = int(status["tick"])
+                if previous_tick is not None:
+                    allowed = max(128, project.tick_rate * 2,
+                                  max(0, now - previous_poll) * project.tick_rate * speed * 2 + 4)
+                    if tick < previous_tick or tick - previous_tick > allowed:
+                        raise RuntimeError("The replay jumped during the native shot. Camera playback stopped.")
+                    if frozen and tick != previous_tick:
+                        raise RuntimeError("The scene resumed during native Frozen preview. Camera playback stopped.")
+                frame_count = int(status["frame_count"])
+                if previous_frame is not None and frame_count < previous_frame:
+                    raise RuntimeError("The native view callback restarted unexpectedly. Relaunch the editing session.")
+                if frame_count != previous_frame:
+                    last_fresh = now
+                    if first_frame is None:
+                        first_frame = frame_count
+                elif now - last_fresh > 3:
+                    raise RuntimeError("The native camera stopped receiving rendered views. Restore the game window and export diagnostics.")
+                if now >= next_identity:
+                    self._require_demo(require_tick=not frozen)
+                    next_identity = time.perf_counter() + .5
+                evaluated = project.evaluate(min(project.duration, max(0, phase)))
+                changed = {name: value for name, value in evaluated.get("cvars", {}).items()
+                           if last_cvars.get(name) != value}
+                if changed:
+                    # Project validation performed before native HOLD rejects
+                    # conflicting lens tracks and validates every cvar name.
+                    self._request("; ".join(name + " " + numeric(value) for name, value in sorted(changed.items())))
+                    last_cvars.update(changed)
+                pose = self._native_pose(status)
+                pose.update(time=phase, cvars=dict(evaluated.get("cvars", {})))
+                self._applied_pose = pose
+                updates += 1
+                elapsed = max(0, time.perf_counter() - began)
+                with self._state_lock:
+                    self._state.update(time=phase, tick=tick)
+                    self._playback_samples.append(dict(status, time=phase, camera_backend="native"))
+                    self._playback_metrics = {"camera_backend": "native", "updates": updates,
+                        "monitor_updates_per_second": rate, "elapsed_seconds": elapsed,
+                        "rendered_view_updates": frame_count - first_frame,
+                        "rendered_views_per_second": (frame_count - first_frame) / elapsed if elapsed else 0,
+                        "native_frame_interval_ms": status.get("frame_interval_ms"),
+                        "native_max_frame_interval_ms": status.get("max_frame_interval_ms")}
+                if status.get("state") == "completed":
+                    if abs(phase - project.duration) > 1e-5:
+                        raise RuntimeError("Native completion did not reach the authored endpoint.")
+                    finished = True
+                    break
+                previous_frame, previous_tick, previous_phase, previous_poll = frame_count, tick, phase, now
+                waiter.wait(max(0, 1 / rate - (time.perf_counter() - now)), self._stop_event)
+        except Exception as exc:
+            LOG.exception("Native camera playback stopped")
+            failure = str(exc)
+            if self._playback_details is not None:
+                self._playback_details["error"] = failure
+        finally:
+            waiter.close()
+            restoration = self._finish_native_playback()
+            if failure or restoration:
+                self._message(" ".join(part for part in (failure, restoration) if part), playing=False)
+            elif finished:
+                self._message("Native shot finished. Replay paused, free-camera handoff verified and HUD restored.", playing=False)
 
     def _finish_playback(self):
         # Camera/cvar framing remains available for inspection until Stop.
@@ -1572,6 +1833,7 @@ class Controller:
             if worker.is_alive():
                 raise RuntimeError("Playback is still waiting for the game console. Wait a moment before retrying.")
         self._thread = None
+        self._handoff_native_camera()
         with self._state_lock:
             self._state["playing"] = False
             self._state["paused_flight"] = False
@@ -1637,6 +1899,8 @@ class Controller:
                   "pending_cvar_restoration": self._restore,
                   "pending_playback_restoration": dict(self._playback_restore),
                   "last_playback": self._playback_details,
+                  "native_camera": deepcopy(self._native_last_status),
+                  "native_handoff": deepcopy(self._native_handoff_details),
                   "playback_metrics": dict(self._playback_metrics),
                   "playback_frame_samples": list(self._playback_samples),
                   "paused_camera_samples": list(self._paused_samples),

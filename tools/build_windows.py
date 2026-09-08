@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from dolly import __version__
 from dolly.launcher import UNLOCKER_SHA256
 from release_files import source_zip, sha256
+from build_native import build_native, copy_native_runtime, reject_game_binaries
 
 
 def write_version(path: Path) -> None:
@@ -97,6 +98,7 @@ def main() -> int:
     build = ROOT / "build"
     checks = build / "checks"
     checks.mkdir(parents=True, exist_ok=True)
+    native_info = build_native(ROOT)
     print("Checking source regressions...", flush=True)
     with (checks / "tests.log").open("w", encoding="utf-8") as log:
         subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"],
@@ -113,9 +115,13 @@ def main() -> int:
     if sha256(dll) != UNLOCKER_SHA256:
         raise RuntimeError("The official unlocker changed during packaging")
     copy_runtime_licenses(third_party / "notices")
+    native_report = copy_native_runtime(ROOT, bundle / "_internal" / "native")
+    shutil.copy2(ROOT / "native" / "vendor" / "minhook" / "LICENSE.txt",
+                 third_party / "notices" / "MinHook-LICENSE.txt")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     shutil.copytree(ROOT / "examples", bundle / "examples", dirs_exist_ok=True)
+    reject_game_binaries(bundle)
     executable = bundle / "Dolly.exe"
     pe_report = check_executable(executable, ROOT / "assets" / "dolly.ico")
     print("Checking the actual EXE, icon and editor launch...", flush=True)
@@ -142,7 +148,9 @@ def main() -> int:
             "python": platform.python_version(), "pyinstaller": PyInstaller.__version__,
             "executable": pe_report, "bundle_gui_smoke_passed": True,
             "game_runtime_verified": False, "code_signed": False,
-            "unlocker_sha256": UNLOCKER_SHA256}
+            "unlocker_sha256": UNLOCKER_SHA256,
+            "native_bridge": {"abi": native_info["abi"], "sha256": native_info["sha256"],
+                              "pe": native_report, "game_runtime_verified": False}}
     (bundle / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)

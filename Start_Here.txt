@@ -1,27 +1,36 @@
-DEADLOCK DOLLY 0.3.7 ALPHA - SOURCE PACKAGE
+DEADLOCK DOLLY 0.3.8 ALPHA - SOURCE PACKAGE
 
 This is the clean source package for GitHub and Windows executable builds.
 It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the
 portable Windows package using GitHub Actions or your Windows Python 3.12.
 End users of that built package launch Dolly.exe with the supplied logo and
 do not need to install Python. This source copy also supports the BAT workflow
-below. Camera behavior from 0.3.2 remains included.
+below. Native playback requires the compiled Windows helper; choose Console
+if running the source editor before building that helper.
 
-0.3.7 adds experimental playback smoothing. It also includes 0.3.6's fix for
-the final camera jumping ahead before its movement finishes. You can update
-directly from 0.3.5. In-game smoothness is not yet verified for this revision.
+0.3.8 adds an experimental native camera driver. It evaluates and applies the
+camera during each main rendered view. It supports only the exact client.dll
+and engine2.dll build inspected for this release; a mismatch blocks Native
+launch. Select Console (legacy) before launch to use the existing driver.
+In-game smoothness is not yet verified. Manual paused-camera controls are
+unchanged, and Console playback retains the earlier smoothing options.
 
 1. Updating? Close Deadlock and Dolly, then run Recover_Game_Config.bat from
    the EXISTING Dolly folder first. Extract the new package over that folder,
    keeping logs and saved shots. For a first install, extract the entire ZIP.
-2. Have 64-bit Python 3.10+ with Tcl/Tk installed. No pip packages needed.
+2. Have 64-bit Python 3.10+ with Tcl/Tk installed for source operation. Native
+   playback also needs the Windows helper; see docs/BUILDING.md. The portable
+   Windows package bundles everything required to run the editor.
 3. Open Steam, sign in, and close any running Deadlock game.
 4. Run Launch_Dolly.bat. The console briefly opens, then closes while the
    editor stays open. Startup logging remains in logs/Dolly_startup.log.
    If the editor cannot start, a Windows error dialog points to its logs.
 5. In Session, choose Deadlock's deadlock.exe and a local extracted .dem replay.
    Older citadel.exe installations also work. Do not rename game files.
-6. Keep Link on Netconsole. Click Launch hideout and wait for the hideout.
+6. Keep Link on Netconsole. Camera driver starts on Native (experimental).
+   Choose the driver BEFORE launching; use Console (legacy) if the game build
+   is unsupported or the native helper has not been built. Click Launch hideout
+   and wait for the hideout.
    Click Connect, then Initialize unlocker.
    Only after it succeeds, click Load replay. Wait for the replay to load,
    then click Check camera support.
@@ -34,8 +43,8 @@ directly from 0.3.5. In-game smoothness is not yet verified for this revision.
    graph edits framing only; camera time and position stay unchanged. Smooth
    is the default, with Linear and Step available independently of the path.
    Use Preview to apply the selected camera; graph edits alone do not go live.
-9. Leave Frozen preview OFF and Hide HUD ON. Under Shot playback, choose
-   Smoothing before clicking Play shot; Balanced is the new session default.
+9. Leave Frozen preview OFF and Hide HUD ON, then click Play shot. Native
+   playback uses render time and ignores the Console smoothing filter.
    Dolly returns to the first capture's replay tick, applies the starting camera
    and framing/DOF settings, hides the HUD, checks and corrects camera position
    while paused, then plays the replay and camera path together. Play shot
@@ -44,6 +53,27 @@ directly from 0.3.5. In-game smoothness is not yet verified for this revision.
 10. Save from File. + Depth-of-field preset in Camera variables for native
     focus/aperture keys. Fixed values opens its own dialog on that tab. On
     Cameras, More > Coordinates / timing opens the advanced editor.
+
+FIRST NATIVE CAMERA TEST
+
+1. Capture two nearby views with the same angle for a straight path. Play at
+   Speed 1, then 0.1. Watch a stationary wall or building edge for stepping.
+2. Play a path that combines left/right turning with up/down aiming at both
+   speeds. Keep recording settings the same for each comparison.
+3. Watch the final view and press Pause partway through another run. Dolly
+   holds the native camera while checking the underlying free camera before
+   handing control back. Confirm there is no jump and the HUD returns.
+4. Open Paused camera and check the existing movement, Previous / Next and
+   capture controls. If handoff cannot settle, Dolly retains the native view
+   and blocks other camera writers; Stop / restore retries the handoff.
+5. Export diagnostics immediately after the affected run if a problem remains.
+   Include whether it happened at startup, during movement, or at handoff.
+
+Native position, angles and aspect-ratio framing are applied for each main
+view. DOF and other camera cvars follow sampled native time through console
+updates; those effects are not synchronized to every rendered frame. Updates
+/ s controls those effect updates, not the native camera's render rate.
+Read docs/NATIVE_CAMERA.md before treating this alpha as a public release.
 
 PAUSED CAMERA CONTROLS
 
@@ -126,9 +156,10 @@ Speed changes the replay and camera together. A four-second shot at 0.1x takes
 about 40 real seconds. A smooth spline does not imply constant travel speed:
 the view spacing and arrival times determine speed through each section.
 
-EXPERIMENTAL PLAYBACK SMOOTHING
+EXPERIMENTAL PLAYBACK SMOOTHING - CONSOLE DRIVER ONLY
 
-Choose Smoothing under Shot playback before Play shot. It smooths the shared
+When using Console (legacy), choose Smoothing under Shot playback before
+Play shot. Native playback disables and ignores this filter. It smooths the shared
 playback time, so position, rotation, aspect and depth-of-field tracks remain
 together on the authored path. Step camera-variable keys stay discrete.
 It does not change saved geometry, captures or manual paused-camera movement.
@@ -139,7 +170,7 @@ Light       80 ms                      about 40 ms
 Balanced    160 ms                     about 80 ms
 Strong      280 ms                     about 140 ms
 
-Balanced starts selected whenever Dolly opens. The choice lasts for this
+Balanced is the initial Console smoothing choice. The choice lasts for this
 editor session and is not saved in settings or shot files. Off uses 0.3.6
 playback, including its final-key fix. Stronger smoothing adds camera delay
 relative to the replay action, and completion lets that movement finish.
@@ -152,8 +183,8 @@ publishing the build.
 
 Keep movement keys released during the brief position check. It can move the
 camera in height before verifying its return. Saved keys need no height edit.
-The position correction is measured at the initial view and reused during
-playback, with occasional readbacks to stop persistent visible drift. Gradual
+For Console playback, position correction is measured at the initial view and
+reused during playback, with occasional readbacks to stop persistent visible drift. Gradual
 clock corrections keep camera and framing curves on the same timeline.
 Supported Windows systems use a high-resolution frame timer, with a normal
 wait fallback. The console backend does not provide a render-time camera hook.
@@ -185,7 +216,8 @@ Recover_Game_Config.bat from this same folder before launching normally.
 If anything fails: Export diagnostics in the editor and send the ZIP.
 The ZIP includes the active shot, playback settings, framing readbacks,
 camera-position checks, startup calibration, recent frame/position samples,
-measured update rates, timer backend and action errors. Open Log
+measured update rates, timer backend and action errors. Native runs add sampled
+original/applied view poses, render timing, callback counts and handoff checks. Open Log
 for recent messages.
 If the editor never opens: send logs/Dolly_startup.log.
 If cvar_unhide is not confirmed, stay in the hideout and export diagnostics.

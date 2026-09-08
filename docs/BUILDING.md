@@ -4,26 +4,29 @@ The source is ready for a portable Windows build. This workspace did not have
 a native Windows builder, so **no compiled EXE is included in the source ZIP**.
 The workflow below runs the real build and executable checks on Windows.
 
-## Update an existing 0.3.5 or 0.3.6 GitHub repository to 0.3.7
+## Update an existing GitHub repository to 0.3.8
 
-1. Extract `Deadlock_Dolly_0.3.7_GitHub_Update.zip` locally.
+1. Extract `Deadlock_Dolly_0.3.8_GitHub_Update.zip` locally.
 2. Open the repository's main **Code** page, then **Add file → Upload files**.
 3. Drag all contents from inside the extracted update folder into the uploader.
-   Keep the `dolly`, `tests` and `docs` directories intact; the other update
+   Keep all supplied directories intact, including `native`, `dolly`, `tests`,
+   `tools`, `docs`, and any supplied workflow or packaging directories. The other update
    files belong beside the repository's existing README. Do not upload the
    outer folder or ZIP itself. Matching files are replaced; unrelated files stay.
 4. Commit the update directly to the default branch with a descriptive message.
 5. Select **Actions → Build Windows app → Run workflow** on that branch. Start
    a fresh run; re-running an old job rebuilds its old commit.
 6. Download **Deadlock-Dolly-Windows-x64** from the successful run's artifacts.
-   Extract it, then extract `Deadlock_Dolly_0.3.7-alpha_Windows_x64.zip` inside it.
+   Extract it, then extract `Deadlock_Dolly_0.3.8-alpha_Windows_x64.zip` inside it.
 7. Close the old editing session and follow the recovery/update instructions
    below before replacing its portable files. Copy the complete Windows
    package, including `_internal`; the GitHub update is source, not an EXE patch.
 
-This cumulative update includes the untested 0.3.6 endpoint correction, so you
-can apply it directly over 0.3.5. It preserves the Windows test fixes and executable build
-workflow. It needs no repository deletion, dependency changes or new workflow.
+The native camera source and its vendored dependency must be included in the
+commit. The existing **Build Windows app** workflow now builds both the native
+helper and `Dolly.exe`; there is no separate manual DLL-building step on GitHub.
+Do not upload the game's `client.dll` or `engine2.dll`. Those files are inspected
+from the user's installation at launch and are not distributed with Dolly.
 
 ## Put the project on your own GitHub
 
@@ -51,8 +54,11 @@ release visibility. Build logs and failure reports remain in the workflow run.
 
 ## Build on your Windows PC
 
-Use 64-bit Python 3.12 with Tcl/Tk. Your Python 3.12 installation can be used
-to create the build environment. In a terminal at the source folder, run:
+Install **Visual Studio 2022 Build Tools** with **Desktop development with C++**
+(including the Windows SDK), **CMake 3.21 or newer**, and 64-bit Python 3.12 with
+Tcl/Tk. GitHub's Windows runner provides the compiler toolchain for the workflow.
+Your Python 3.12 installation can create the build environment. In a terminal
+at the source folder, run:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -66,8 +72,8 @@ actual packaged-editor startup fails. Inspect `build/checks/` after a failure.
 
 Successful outputs are under `dist/`:
 
-- `Deadlock_Dolly_0.3.7-alpha_Windows_x64.zip`
-- `Deadlock_Dolly_0.3.7-alpha_Source.zip`
+- `Deadlock_Dolly_0.3.8-alpha_Windows_x64.zip`
+- `Deadlock_Dolly_0.3.8-alpha_Source.zip`
 - `SHA256SUMS.txt`
 
 The portable ZIP contains a `DeadlockDolly` folder with `Dolly.exe`, `_internal`,
@@ -77,6 +83,10 @@ build commands or install Python.
 
 ## What the build includes and checks
 
+- CMake builds the x64 native helper with Visual Studio and runs its C++ tests.
+  The build inspects the helper's architecture and required exports, records
+  its hash, and packages it with its build profile in `_internal/native`.
+  It never packages the game's `client.dll` or `engine2.dll`.
 - PyInstaller creates a windowed x64 EXE with the existing nine-size ICO and
   version information. A PE inspection checks the GUI subsystem and verifies
   every embedded icon frame against the supplied asset.
@@ -98,7 +108,10 @@ build commands or install Python.
 
 The result is an unsigned portable app. No installer, automatic updater or
 certificate-based code signing is configured in this recipe. A successful
-bundle startup check does not establish Deadlock camera compatibility.
+bundle startup or native callback test does not establish Deadlock camera
+compatibility. Complete the [native camera test](NATIVE_CAMERA.md) on the
+supported game build before publishing. Native playback is experimental and
+build-specific; Console remains available as a choice before launch.
 
 ## Recovery and updating
 

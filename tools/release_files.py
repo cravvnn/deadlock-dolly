@@ -18,6 +18,7 @@ def source_files(root: Path) -> list[Path]:
         if (path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name
                 or any(part in {"logs", "dist", "build", "__pycache__", ".git", ".venv"} for part in path.parts)
                 or path.suffix.lower() in {".log", ".zip", ".dem", ".mp4", ".pyc"}
+                or path.name.lower() in {"client.dll", "engine2.dll"}
                 or path.name.startswith(".env")):
             raise ValueError(f"Non-source path in SOURCE_FILES.txt: {name}")
         file = root / name

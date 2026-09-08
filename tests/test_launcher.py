@@ -458,6 +458,118 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), meta["bundled_file_sha256"])
         self.assertEqual(meta["license"], "MIT")
 
+    def _native_fixture(self):
+        pins = {}
+        for relative in launcher.NATIVE_GAME_SHA256:
+            path = self.paths.game_dir / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(("native test " + relative).encode("ascii"))
+            pins[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        native_root = self.folder / "native-resources"
+        dll = native_root / "bin/win64/DollyNative.dll"
+        dll.parent.mkdir(parents=True)
+        binary = bytearray(80)
+        binary[:2] = b"MZ"
+        struct.pack_into("<I", binary, 60, 64)
+        binary[64:68] = b"PE\0\0"
+        struct.pack_into("<H", binary, 68, 0x8664)
+        dll.write_bytes(binary)
+        (native_root / "build_info.json").write_text(json.dumps({
+            "abi": 1, "sha256": hashlib.sha256(binary).hexdigest()}))
+        return native_root, pins, dll
+
+    def test_native_game_hash_mismatch_is_refused_before_any_recovery_or_mount(self):
+        native_root, pins, dll = self._native_fixture()
+        (self.paths.game_dir / next(iter(pins))).write_bytes(b"new Steam build")
+        before = self.paths.gameinfo.read_bytes()
+        with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "NATIVE_ROOT", native_root), patch.object(launcher, "NATIVE_GAME_SHA256", pins), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher, "recover_pending") as recover, patch.object(launcher.subprocess, "Popen") as popen, patch.object(launcher.NativeBridge, "create") as bridge:
+            with self.assertRaisesRegex(launcher.LaunchError, "does not support"):
+                launcher.launch(self.paths.root, native=True)
+        recover.assert_not_called()
+        popen.assert_not_called()
+        bridge.assert_not_called()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+        self.assertFalse(self.package.exists())
+        self.assertFalse(list(self.paths.game_dir.glob("citadel_dolly_*")))
+
+    def test_native_binary_hash_abi_and_architecture_are_validated(self):
+        native_root, pins, dll = self._native_fixture()
+        manifest = native_root / "build_info.json"
+        original = dll.read_bytes()
+        original_manifest = manifest.read_bytes()
+        with patch.object(launcher, "NATIVE_ROOT", native_root), patch.object(launcher, "NATIVE_GAME_SHA256", pins):
+            self.assertEqual(launcher._verified_native(self.paths), dll)
+            dll.write_bytes(original + b"tamper")
+            with self.assertRaisesRegex(launcher.LaunchError, "SHA-256"):
+                launcher._verified_native(self.paths)
+            dll.write_bytes(original)
+            for metadata in ({"abi": 2, "sha256": hashlib.sha256(original).hexdigest()},
+                             {"abi": True, "sha256": hashlib.sha256(original).hexdigest()},
+                             [1, 2]):
+                manifest.write_text(json.dumps(metadata))
+                with self.assertRaisesRegex(launcher.LaunchError, "manifest"):
+                    launcher._verified_native(self.paths)
+            invalid = bytearray(original)
+            struct.pack_into("<H", invalid, 68, 0x14C)
+            dll.write_bytes(invalid)
+            manifest.write_text(json.dumps({"abi": 1, "sha256": hashlib.sha256(invalid).hexdigest()}))
+            with self.assertRaisesRegex(launcher.LaunchError, "x64"):
+                launcher._verified_native(self.paths)
+            manifest.write_bytes(original_manifest)
+            dll.unlink()
+            with self.assertRaisesRegex(launcher.LaunchError, "missing"):
+                launcher._verified_native(self.paths)
+
+    def test_native_launch_starts_heartbeat_before_game_and_mounts_unchanged_unlocker_sibling(self):
+        native_root, pins, dll = self._native_fixture()
+        before = self.paths.gameinfo.read_bytes()
+        process = MagicMock(pid=6781)
+        process.poll.return_value = None
+        bridge = MagicMock(token="a" * 32, editor_pid=5432)
+        def start(*args, **kwargs):
+            create.assert_called_once_with()
+            bridge.bind_game.assert_not_called()
+            return process
+        with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "NATIVE_ROOT", native_root), patch.object(launcher, "NATIVE_GAME_SHA256", pins), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.NativeBridge, "create", return_value=bridge) as create, patch.object(launcher.subprocess, "Popen", side_effect=start) as popen, patch.object(launcher.threading, "Thread"):
+            session = launcher.launch(self.paths.root, native=True)
+        bridge.bind_game.assert_called_once_with(6781)
+        self.assertIs(session.native, bridge)
+        target = session.overlay_dir / "cvar_unlocker/bin/win64"
+        self.assertEqual((target / "server.dll").read_bytes(), dll.read_bytes())
+        self.assertEqual(hashlib.sha256((target / "dolly_cvar_unlocker.dll").read_bytes()).hexdigest(), launcher.UNLOCKER_SHA256)
+        self.assertEqual((target / "dolly_native.cfg").read_bytes(), b"DOLLY_NATIVE_1\n" + b"a" * 32 + b"\n5432\n")
+        args = popen.call_args.args[0]
+        self.assertIn("-dev", args)
+        self.assertIn("-insecure", args)
+        self.assertFalse(any("playdemo" in arg for arg in args))
+        self.assertEqual((self.paths.citadel_dir / "bin/win64/server.dll").read_bytes(), b"original server")
+        self.assertFalse(session.close())
+        bridge.close.assert_not_called()
+        process.poll.return_value = 0
+        self.assertTrue(session.close())
+        bridge.close.assert_called_once_with()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+        self.assertFalse(session.overlay_dir.exists())
+
+    def test_native_failed_process_creation_closes_bridge_and_restores_gameinfo(self):
+        native_root, pins, dll = self._native_fixture()
+        before = self.paths.gameinfo.read_bytes()
+        bridge = MagicMock(token="c" * 32, editor_pid=5432)
+        with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "NATIVE_ROOT", native_root), patch.object(launcher, "NATIVE_GAME_SHA256", pins), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.NativeBridge, "create", return_value=bridge), patch.object(launcher.subprocess, "Popen", side_effect=OSError("test failed create")):
+            with self.assertRaisesRegex(launcher.LaunchError, "test failed create"):
+                launcher.launch(self.paths.root, native=True)
+        bridge.close.assert_called_once_with()
+        bridge.bind_game.assert_not_called()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+        self.assertFalse(list(self.paths.game_dir.glob("citadel_dolly_*")))
+
+    def test_console_launch_does_not_load_or_validate_native(self):
+        with patch.object(launcher, "_verified_native") as native, patch.object(launcher.NativeBridge, "create") as create:
+            session = self._launched_session()
+        native.assert_not_called()
+        create.assert_not_called()
+        self.assertIsNone(session.native)
+
 
 if __name__ == "__main__":
     unittest.main()

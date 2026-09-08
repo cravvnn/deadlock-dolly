@@ -32,7 +32,7 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertIsNone(package.testzip())
 
     def test_export_rejects_accidental_logs_demos_and_traversal(self):
-        for name in ["../private.txt", "/private.txt", "logs/private.txt", "x.dem", ".env", "build/app.py", "dolly\\app.py"]:
+        for name in ["../private.txt", "/private.txt", "logs/private.txt", "x.dem", ".env", "build/app.py", "dolly\\app.py", "native/client.dll", "engine2.dll", "CLIENT.DLL"]:
             with self.subTest(name=name):
                 (self.root / "SOURCE_FILES.txt").write_text(name + "\n")
                 with self.assertRaisesRegex(ValueError, "Non-source"):

@@ -5,13 +5,20 @@ development launcher and the official cvar unlocker. It follows the HLAE
 keyframe workflow: capture views, edit their timing and framing, then play the
 camera along the resulting path.
 
-**0.3.7 adds experimental playback smoothing.** Choose **Smoothing** below
-the playback controls before Play shot. **Balanced** is the session default;
-**Off** retains 0.3.6 playback. It smooths the shared camera timeline without
-changing your saved path or manual paused-camera movement. See
-[the modes and comparison](#experimental-playback-smoothing) below.
+**0.3.8 adds experimental native camera playback.** In Session,
+**Camera driver → Native (experimental)** is selected by default before launch.
+It evaluates and applies position, rotation and aspect-ratio framing during
+each main rendered view. It supports only the exact game `client.dll` and
+`engine2.dll` build inspected for this release. If Dolly reports a mismatch,
+choose **Console (legacy)** before launch. The editor and saved shots work with
+either driver. See the [native camera guide and first test](NATIVE_CAMERA.md).
 
-**The 0.3.6 final-key fix is included; update directly from 0.3.5.** When the replay reaches
+Native playback ignores the earlier temporal smoothing filter. DOF and other
+camera cvars still follow sampled native time through console updates; they are
+not synchronized to every rendered frame. The [smoothing modes](#experimental-playback-smoothing)
+remain available with Console playback.
+
+**The 0.3.6 final-key fix remains in Console playback.** When the replay reaches
 the shot end slightly before the continuous camera, Dolly lets that final
 fraction finish before pausing and restoring the HUD. Completion can therefore
 be slightly later than the first end-tick report. A bounded wait prevents a
@@ -36,14 +43,12 @@ a custom standard available.
 **This is an alpha.** Existing Windows feedback confirms Netconsole connectivity,
 unlocker initialization before replay loading, a readable replay clock and visible
 camera travel, including manual movement while paused, and EXE startup. The
-latest 0.3.5 executable diagnostics confirm successful paused movement and a
-healthy high-resolution clock, alongside a small forced jump at the final
-camera key. The endpoint fix and experimental filter have simulated regression
-coverage. Their in-game result, including mid-path judder, is not yet verified.
-
+native driver changes how path playback reaches the game. Automated tests and
+static inspection do not prove its in-game result: **native smoothness, startup
+and final camera handoff still need testing in Deadlock.** This release does
+not claim the positioning jitter is fixed.
 
 ## Start here
-
 
 1. Extract the **entire Windows ZIP** into a writable folder. When updating an existing
    Dolly installation, first close Deadlock and use Dolly's **File → Recover
@@ -53,7 +58,9 @@ coverage. Their in-game result, including mid-path judder, is not yet verified.
    pending gameinfo recovery journal.
 2. Windows portable builds include Python and Tcl/Tk. Keep `Dolly.exe` and
    `_internal` together in a writable folder. A source installation instead
-   needs 64-bit Python 3.10 or newer with Tcl/Tk.
+   needs 64-bit Python 3.10 or newer with Tcl/Tk. Native playback also requires
+   the compiled Windows helper; see [BUILDING.md](BUILDING.md). Source users can
+   choose Console before launch if that helper has not been built.
 3. Open Steam and sign in. Close any running Deadlock session.
 4. Double-click **Dolly.exe**. It opens the editor directly, with your program
    icon and no console window. Source installations can still use
@@ -63,7 +70,9 @@ coverage. Their in-game result, including mid-path judder, is not yet verified.
    detected automatically where possible. Older installations using `citadel.exe`
    are supported too. Keep the executable's original filename; other Steam
    library drives such as B: are supported.
-6. Leave **Link** set to **Netconsole** and click **Launch hideout**. No replay
+6. Leave **Link** set to **Netconsole**. Choose the **Camera driver** now;
+   Native is the experimental default, and Console retains the previous driver.
+   The choice is fixed for this game session. Click **Launch hideout**. No replay
    is loaded at launch. Wait until the pre-lobby/hideout is fully loaded.
 7. Click **Connect**, then **Initialize unlocker**. Dolly executes
    `cvar_unhide` now and requires both completion summaries before allowing replay
@@ -85,15 +94,19 @@ arguments that could remove them. It connects only to the console port owned by
 the game process it launched and checks the selected demo before controlling it.
 Close this editing session before opening Deadlock normally.
 
+Native launch checks the installed game DLLs against this release's supported
+build. If a game update changes either file, native launch stops with an
+explanation. Choose Console before launching to continue with the existing
+camera commands. Do not replace the game's DLLs or edit the build fingerprint
+to force compatibility.
+
 The default **Link** is Netconsole, matching the successful local connection.
 VConsole remains available as an alternative for testing. Changing the selector
 does not change an already running game's launch options. A successful echo
 checks connectivity; it does not establish visibility of every engine logging
 channel or successful unlocker initialization.
 
-
 ## Switch and move cameras while paused
-
 
 After the usual launch, unlocker initialization and camera-support check, enter
 replay freecam and open **Paused camera…** on the **Cameras** tab. This is a
@@ -147,13 +160,13 @@ together with HUD handling.
 HLAE provides an independent camera input mode through
 [`mirv_input`](https://github.com/advancedfx/advancedfx/wiki/Source:mirv_input).
 Its Source 2 implementation overrides camera state using a frame-time input
-update. Dolly implements the paused workflow through its existing verified
-console connection; native render-time movement and mouse hooks require a
-separate Deadlock implementation. (Possibly coming in future)
-
+update. Dolly implements manual paused movement through its existing console
+connection. It does not add native mouse-look controls. See
+`docs/CONSOLE_RESEARCH.md` for the source references and `docs/VALIDATION.md` for
+what was tested locally. The 0.3.8 native driver applies to authored path
+playback; these manual paused-camera controls retain their existing implementation.
 
 ## Make a first shot
-
 
 Start with two nearby views. No coordinate entry is needed. Confirm each camera
 effect before spending time on a longer shot.
@@ -266,12 +279,12 @@ are interpolated as Euler angles. The game's `spec_pos` output does not include
 roll, so capture keeps Dolly's last
 applied roll, or zero in a new session; edit roll explicitly when needed.
 
-
 ## Framing curve
 
-
 Use **FRAMING CURVE** on **Cameras** for the zoom-like effect. Its horizontal axis
-is shot time and its vertical axis is the value sent to `r_aspectratio`. The graph
+is shot time and its vertical axis is the aspect-ratio framing value. Preview
+and Console playback use `r_aspectratio`; Native playback applies the framing
+directly to each main view. The graph
 shows the entire **0.5–4.0** editing range and a line for the shot's **Normal**
 aspect ratio. These are Dolly's editing limits, not verified native cvar bounds.
 The values are ratios, not FOV degrees; preview them in your scene to judge the
@@ -313,15 +326,39 @@ Saving writes version 2, which older Dolly releases cannot open. Custom tracks o
 fixed values that target an old FOV control or `r_aspectratio` must be removed;
 Dolly reports the conflict so that only the framing curve controls this setting.
 
+## Program icon
+
+Dolly uses the exact reattached, white-backed film-reel logo as its window and
+Windows taskbar icon. Only size conversion is applied to the artwork. The source
+file is preserved byte-for-byte as `assets/logo-original.png`.
+
+Version 0.2.2 corrects an icon-format incompatibility with older Tk 8.6 Windows
+readers: every ICO image now uses an uncompressed 32-bit bitmap with a complete
+transparency mask. Dolly applies it explicitly to its main window and future
+dialogs; PNG is used only if ICO loading fails. Missing icon files are logged
+without preventing startup.
+
+The desktop launcher starts the editor without retaining a Python console
+window or its separate taskbar button. Dolly keeps its dedicated Windows
+application identity. The launcher `.bat` file itself retains its normal File
+Explorer file-type icon. Close the previous Dolly instance before launching
+this version so you can distinguish the current window from an old one.
 
 ## Editor layout
 
-
-**Session** contains the ordered startup controls. 
-**Cameras** keeps the camera list, framing graph, selected-camera controls and top-down path overview together.
+**Session** contains the ordered startup controls. **Cameras** keeps the camera
+list, framing graph, selected-camera controls and top-down path overview together.
 **Camera variables** contains depth-of-field and other numeric tracks. Playback
 controls stay below the active tab. Coordinate entry and advanced timing are in
 **More → Coordinates / timing…**, keeping them out of the normal capture workflow.
+
+At 100% Windows scaling (96 DPI), the window opens at 1180×800 with a minimum
+of 1000×700. Window and dialog sizes scale with DPI to keep the controls readable;
+the minimum is about 1500×1050 at 150% scaling. Panels resize with the window.
+The main pages do not scroll; long tables scroll vertically within their own panel.
+**Log** opens a separate resizable activity window, closed by default.
+The path overview is an XY diagram, not an in-game overlay.
+
 **Frozen preview:** this optional effect is off by default. It moves the camera
 using shot seconds through the scene currently on screen. Preparation checks
 the current tick and can use the adjacent-tick refresh described above; it never
@@ -371,6 +408,11 @@ remove cheat flags. Start with the native Citadel DOF family above; generic
 Leave a track's **Restore value** blank to restore the value read before the
 shot. Filling it in deliberately overrides that restoration value.
 
+With Native playback, DOF and other cvars use the same sampled shot time as the
+camera, but their updates still travel through the console. They are best
+effort and are not synchronized to every rendered frame. **Updates / s** controls
+these effect updates; it does not cap the native camera's view callbacks.
+
 ## Playback behavior
 
 - Smooth or Linear camera paths; Linear, Smooth or Step cvar tracks. A smooth
@@ -381,7 +423,12 @@ shot. Filling it in deliberately overrides that restoration value.
   then resumes. The replay and path
   use the same speed. At **0.1×**, a four-second shot takes about **40 real
   seconds**; at **1×**, it takes about four.
-- Normal camera timing follows acknowledged replay ticks. New integer ticks
+- **Native playback** publishes the complete shot before the replay resumes.
+  The helper evaluates position, rotation and aspect for each main rendered
+  view using the game's time. The Console smoothing filter is disabled for
+  this driver. Manual paused flight and saved-view capture keep their existing
+  controls and project format.
+- **Console playback** timing follows acknowledged replay ticks. New integer ticks
   adjust the clock gradually rather than snapping the camera's fractional
   position. Position, rotation, aspect and cvar curves share that clock. Its
   underlying estimate can briefly lag a tick, leads by at most one tick, and holds at that
@@ -390,7 +437,7 @@ shot. Filling it in deliberately overrides that restoration value.
   to arrive, then explicitly applies the final key. A small final clock lag gets
   a bounded finishing period instead of an immediate jump to the endpoint.
 - Startup checks require approximately one-to-one XYZ movement and a verified
-  return. During movement, occasional position readbacks check for persistent
+  return. During Console movement, occasional position readbacks check for persistent
   divergence from recent commands. A large sustained mismatch stops movement;
   it does not train a new correction from unreliable paused-camera responses.
   Diagnostics retain separate startup measurements and bounded frame traces.
@@ -409,27 +456,33 @@ shot. Filling it in deliberately overrides that restoration value.
 - **Pause** holds the current camera and lens/DOF values and pauses the replay,
   while restoring the HUD and the temporary playback controls above. At the end
   of a path the final view also remains in place with the replay paused.
+- **Native camera handoff:** on completion, Pause or Stop, Dolly holds the
+  native view while positioning the underlying free camera. It checks fresh
+  unmodified view samples before releasing the override. If that camera cannot
+  settle within the bounded check, the view remains held and other camera
+  writers stay blocked. Keep the replay paused and use **Stop / restore** to
+  retry, then export diagnostics if it persists.
 - **Stop / restore** restores the captured cvar baseline (including the exact original `r_aspectratio`) and returns replay
   speed to **1×** if Dolly changed it. It leaves the camera position/orientation
   and the paused replay where they are. Previous replay speed is not queried.
-- Playback speed is 0.05×–4×. Command-rate choices are 30/60/120 per second.
-  These are requested rates, not guaranteed game or recording frame rates.
+- Playback speed is 0.05×–4×. Updates / s choices are 30/60/120. They control
+  camera commands with Console, and effect-cvar updates with Native. They do
+  not set the game's render or recording frame rate.
 - On supported Windows versions, frame pacing uses a dedicated high-resolution
   waitable timer. An unavailable timer falls back to normal event waits and is
   reported in diagnostics. No system-wide timer setting is changed.
 
-This version sends camera commands through the console. It does **not** hook
-Deadlock's render-time camera, provide HLAE's per-render-frame synchronization,
-or record video. Use your existing capture software. Console latency, demo tick
-resolution and game updates may limit smoothness; they must be assessed locally.
-If that is insufficient, the next implementation step is a verified native
-Deadlock view hook while retaining this editor and path format.
-
+Native playback is the experimental render-time implementation in this release.
+It is restricted to the inspected game build and has not yet been tested inside
+Deadlock. Console remains available for comparison and other game builds.
+Neither driver records video; use your existing capture software. Follow the
+[first native camera test](NATIVE_CAMERA.md#first-in-game-test) before deciding
+whether this build is ready to publish.
 
 ## Experimental playback smoothing
 
-
-Choose **Smoothing** under Shot playback before pressing **Play shot**. It
+**These settings apply only to Console playback.** Native disables and ignores
+the filter. For Console, choose **Smoothing** under Shot playback before pressing **Play shot**. It
 averages the shared playback time over a short real-time window, then evaluates
 position, rotation, aspect and camera-variable tracks together at that time.
 The authored path geometry stays intact; Step cvar tracks still change
@@ -443,7 +496,7 @@ paused-camera flight, saved-view previews or capture.
 | Balanced | 160 ms | About 80 ms |
 | Strong | 280 ms | About 140 ms |
 
-**Balanced** is selected each time Dolly starts. The choice remains for this
+**Balanced** is the initial Console smoothing choice. It remains for this
 editor session and is not saved in settings or project files. Changing it
 during a shot affects the next Play shot. **Off** preserves the 0.3.6 command
 sequence, including its smooth endpoint completion.
@@ -488,13 +541,10 @@ identify the backup to compare. Existing standard `citadel/cvar_unlocker`
 mounts are temporarily replaced in the session and restored with the original
 file. Steam launch settings and pre-existing mod files are not changed.
 
-
 ## If something fails
 
-
 Use **Export diagnostics** in Dolly and send the resulting ZIP with a short
-description of the failed step to my Discord @Cravvnn / or depo to the GitHub Repo.
-It includes the active shot and playback
+description of the failed step. It includes the active shot and playback
 settings, measured playback update rates, console responses, capability results
 and launch logs, including local file paths. Preview diagnostics include the
 complete requested frame, its aspect ratio, and the action's result or error.
@@ -505,7 +555,11 @@ launch attempts also record your selected executable/replay paths and the error,
 failed before a game session existed. This version adds a bounded raw console
 history and logs from up to eight recent sessions, so a successful retry does
 not hide a preceding crashed launch. New session journals retain exit code/time.
-It does not include the replay itself or game assets.
+Native runs also retain sampled original/applied view poses, callback counts,
+native timing and handoff checks. These are diagnostic samples, not a complete
+record of every rendered frame. The export does not include the replay itself
+or game assets. The support check verifies commands and native readiness, not visual
+camera effects: mention separately whether position, rotation, aspect-ratio framing or DOF failed.
 
 If the camera-position check fails, make sure the replay is in roaming/freecam,
 release all movement keys, and retry the selected camera's Preview once. Wait for the
@@ -526,12 +580,12 @@ If the game launch changes or breaks after a Deadlock update, the pinned unlocke
 may need a compatible release. Dolly will not silently replace it with a new
 binary. Run recovery as described above if a configuration edit remains pending.
 
-
 ## Package and development
-
 
 - `dolly/`: complete Python editor, controller, path engine, launcher and console source.
 - `tests/`: automated path, transport, controller and launcher/recovery checks.
+- `native/`: native camera source, exact-build profile, C++ tests and vendored dependency.
+- `docs/NATIVE_CAMERA.md`: native driver scope, compatibility and first test.
 - `examples/demo_shot.dolly.json`: a **synthetic** example of file structure.
   Its coordinates are not a verified location in your replay; capture your own.
 - `docs/CONSOLE_RESEARCH.md`: source evidence and remaining integration questions.

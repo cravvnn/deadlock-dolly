@@ -26,10 +26,16 @@ from dataclasses import dataclass, field
 from typing import Any
 import uuid
 from .runtime import application_root, resource_root, external_program_environment
+from .native_bridge import NativeBridge
 
 PACKAGE_ROOT = application_root(Path(__file__).resolve().parent.parent)
 UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_party" / "cvar_unlocker"
+NATIVE_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "native"
 UNLOCKER_SHA256 = "e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba"
+NATIVE_GAME_SHA256 = {
+    "citadel/bin/win64/client.dll": "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
+    "bin/win64/engine2.dll": "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb",
+}
 STEAM_APP_ID = "1422450"
 GAME_EXECUTABLE_NAMES = ("deadlock.exe", "citadel.exe")
 
@@ -484,6 +490,36 @@ def _verified_unlocker() -> Path:
     return dll
 
 
+def _verified_native(paths: GamePaths) -> Path:
+    """Fail closed on changed game binaries or a missing native release build."""
+    for relative, expected in NATIVE_GAME_SHA256.items():
+        installed = paths.game_dir / relative
+        try:
+            with installed.open("rb") as stream:
+                hasher = hashlib.sha256()
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+                digest = hasher.hexdigest()
+        except OSError as exc:
+            raise LaunchError(f"Native camera needs the supported installed game file: {installed}") from exc
+        if digest != expected:
+            raise LaunchError(f"Native camera does not support this {installed.name} build. Game files were not changed. Choose Console camera mode or use a native Dolly build for this Deadlock update.")
+    dll = NATIVE_ROOT / "bin/win64/DollyNative.dll"
+    try:
+        metadata = json.loads((NATIVE_ROOT / "build_info.json").read_text(encoding="utf-8"))
+        data = dll.read_bytes()
+    except (OSError, ValueError) as exc:
+        raise LaunchError("The native camera build is missing. Extract the complete Windows Dolly release, or choose Console camera mode.") from exc
+    if not isinstance(metadata, dict) or type(metadata.get("abi")) is not int or metadata["abi"] != 1 or not isinstance(metadata.get("sha256"), str) or re.fullmatch(r"[a-f0-9]{64}", metadata["sha256"]) is None:
+        raise LaunchError("The native camera build manifest is invalid; extract a fresh Windows Dolly release.")
+    if hashlib.sha256(data).hexdigest() != metadata["sha256"]:
+        raise LaunchError("The native camera DLL failed its SHA-256 check; extract a fresh Windows Dolly release.")
+    offset = struct.unpack_from("<I", data, 60)[0] if len(data) >= 64 else len(data)
+    if data[:2] != b"MZ" or offset + 6 > len(data) or data[offset:offset + 4] != b"PE\0\0" or struct.unpack_from("<H", data, offset + 4)[0] != 0x8664:
+        raise LaunchError("The native camera DLL is not an x64 Windows DLL.")
+    return dll
+
+
 def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
     """Replace one file atomically after flushing its new contents to disk."""
     descriptor, name = tempfile.mkstemp(prefix=".dolly-write-", suffix=".tmp", dir=path.parent)
@@ -600,6 +636,7 @@ class Session:
     command: tuple[str, ...]
     port: int
     protocol: str = "netcon"
+    native: NativeBridge | None = field(default=None, repr=False)
     _log_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _restore_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -661,6 +698,8 @@ class Session:
         """
         if self.running:
             return False
+        if self.native is not None:
+            self.native.close()
         self.restore_gameinfo()
         marker = self.overlay_dir / ".dolly-session.json"
         if marker.is_file():
@@ -674,7 +713,7 @@ class Session:
         return True
 
 
-def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon") -> Session:
+def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False) -> Session:
     _check_runtime()
     paths = validate_game(game_path)
     port = _validate_port(port)
@@ -684,6 +723,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
     processes = running_processes()
     if _game_is_running(processes):
         raise LaunchError("Deadlock is already running. Exit it before using Dolly; Dolly only controls the development session it launches.")
+    if not isinstance(native, bool):
+        raise LaunchError("Native camera selection must be a boolean.")
+    native_dll = _verified_native(paths) if native else None
     recover_pending(paths.root)
     if "steam.exe" not in processes:
         raise LaunchError("Open Steam and sign in before launching Deadlock through Dolly.")
@@ -697,6 +739,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             raise LaunchError(f"Console port {port} is busy. Close the previous Dolly/game session or choose another port.") from exc
     dll = _verified_unlocker()
     process = None
+    bridge = None
     try:
         original_data = paths.gameinfo.read_bytes()
         original = original_data.decode("utf-8")
@@ -708,15 +751,27 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
     session_dir = PACKAGE_ROOT / "logs" / ident
     log_path = session_dir / "launch.log"
     try:
+        if native:
+            bridge = NativeBridge.create()
         session_dir.mkdir(parents=True, exist_ok=False)
         overlay.mkdir(exist_ok=False)
         marker = {"owner": "Deadlock Dolly", "session_dir": str(session_dir), "original_gameinfo": str(paths.gameinfo), "original_sha256": hashlib.sha256(original_data).hexdigest()}
         (overlay / ".dolly-session.json").write_text(json.dumps(marker, indent=2), encoding="utf-8")
         target = overlay / "cvar_unlocker" / "bin" / "win64"
         target.mkdir(parents=True)
-        shutil.copyfile(dll, target / "server.dll")
+        if native_dll is None:
+            shutil.copyfile(dll, target / "server.dll")
+        else:
+            shutil.copyfile(native_dll, target / "server.dll")
+            shutil.copyfile(dll, target / "dolly_cvar_unlocker.dll")
+            (target / "dolly_native.cfg").write_text(
+                f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
+                encoding="ascii", newline="\n")
         command = build_command(paths, overlay, port, demo, protocol)
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
+        if native:
+            metadata["native_camera"] = {"abi": 1, "game_sha256": NATIVE_GAME_SHA256,
+                                         "dll_sha256": hashlib.sha256(native_dll.read_bytes()).hexdigest()}
         # Durably save the original and journal before touching the installed file.
         _atomic_write(session_dir / "original.gameinfo.gi", original_data)
         _save_record(session_dir, metadata)
@@ -733,7 +788,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             with external_program_environment() as environment:
                 options = {} if environment is None else {"env": environment}
                 process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
-        session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol)
+        session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)
+        if bridge is not None:
+            bridge.bind_game(process.pid)
         try:
             session.log(f"Created development process PID {session.pid}; -dev and -insecure are mandatory.")
             session.log("Replay loading deferred until the controller confirms cvar_unhide in the pre-lobby/hideout.")
@@ -767,6 +824,8 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         threading.Thread(target=watch, name="dolly-game-exit", daemon=True).start()
         return session
     except Exception as exc:
+        if bridge is not None:
+            bridge.close()
         if process is None:
             if (session_dir / "session.json").is_file():
                 try:
