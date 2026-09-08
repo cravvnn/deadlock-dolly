@@ -21,7 +21,6 @@ venv/
 .DS_Store
 Thumbs.db
 Desktop.ini
-Start_Here.txt
 
 # The one pinned official game plugin is intentionally versioned.
 # Do not add a blanket *.dll rule that would drop it from GitHub builds.

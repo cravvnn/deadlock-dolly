@@ -1,0 +1,162 @@
+DEADLOCK DOLLY 0.3.3 ALPHA - SOURCE PACKAGE
+
+This is the clean source package for GitHub and Windows executable builds.
+It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the
+portable Windows package using GitHub Actions or your Windows Python 3.12.
+End users of that built package launch Dolly.exe with the supplied logo and
+do not need to install Python. This source copy also supports the BAT workflow
+below. Camera behavior from 0.3.2 remains included.
+
+1. Updating? Close Deadlock and Dolly, then run Recover_Game_Config.bat from
+   the EXISTING Dolly folder first. Extract the new package over that folder,
+   keeping logs and saved shots. For a first install, extract the entire ZIP.
+2. Have 64-bit Python 3.10+ with Tcl/Tk installed. No pip packages needed.
+3. Open Steam, sign in, and close any running Deadlock game.
+4. Run Launch_Dolly.bat. The console briefly opens, then closes while the
+   editor stays open. Startup logging remains in logs/Dolly_startup.log.
+   If the editor cannot start, a Windows error dialog points to its logs.
+5. In Session, choose Deadlock's deadlock.exe and a local extracted .dem replay.
+   Older citadel.exe installations also work. Do not rename game files.
+6. Keep Link on Netconsole. Click Launch hideout and wait for the hideout.
+   Click Connect, then Initialize unlocker.
+   Only after it succeeds, click Load replay. Wait for the replay to load,
+   then click Check camera support.
+7. Enter replay freecam and frame your first view. On Cameras, leave
+   Timed shot selected and click Start path here. Fly to another view and
+   click + Capture camera. Views are three seconds apart by default.
+   Capture pauses a playing replay; paused captures work too.
+8. Framing now uses r_aspectratio. Select a camera and drag its point vertically
+   in FRAMING CURVE, or enter its Aspect ratio and click Update camera. The
+   graph edits framing only; camera time and position stay unchanged. Smooth
+   is the default, with Linear and Step available independently of the path.
+   Use Preview to apply the selected camera; graph edits alone do not go live.
+9. Leave Frozen preview OFF and Hide HUD ON. Click Play shot.
+   Dolly returns to the first capture's replay tick, applies the starting camera
+   and framing/DOF settings, hides the HUD, checks and corrects camera position
+   while paused, then plays the replay and camera path together. Play shot
+   always starts at zero. The HUD returns when the shot ends, on Pause or Stop,
+   or on a playback error.
+10. Save from File. + Depth-of-field preset in Camera variables for native
+    focus/aperture keys. Fixed values opens its own dialog on that tab. On
+    Cameras, More > Coordinates / timing opens the advanced editor.
+
+PAUSED CAMERA CONTROLS
+
+After Check camera support, enter replay freecam. Open Paused camera on Cameras.
+Previous / Next switches saved views at the CURRENT replay moment; it never
+seeks to the camera's arrival time. Aspect and other camera values follow the
+selected view. The panel displays the fixed replay tick.
+Preparation briefly refreshes that SAME tick and reapplies the requested view;
+it does not change the replay moment. Release keys during the XYZ movement check.
+If movement still responds only partially, controls stay off with an explanation.
+
+Start camera controls, releasing movement keys during the initial position
+check. Hold the movement buttons, or focus the movement pad and use its keys.
+Enable keyboard flight in the panel to control the camera with Deadlock focused:
+  WASD: move relative to the camera    Space / Ctrl: up / down
+  Arrow keys: look around             Shift: 4x movement speed
+  Escape: stop camera controls and keep the replay paused
+
+Capture view adds a camera to the shot; your enabled capture binding also works.
+Use Timed shot spacing to capture several views at one paused replay moment.
+Replay timing still needs different replay moments for distinct arrival times.
+Stop camera controls or close the panel to leave the current view paused.
+The main Stop / restore button restores earlier camera cvar values.
+
+Keyboard flight starts off and only observes Dolly's foreground game session.
+Release held keys after returning from another window. Stop flight before
+typing into the in-game console: this build cannot detect when it is open.
+Movement keys keep their existing game actions. Mouse-look hooks are not part
+of this build; arrow keys provide look control. After updating, retry paused
+movement followed by Deadlock's own Play button, and Play shot at 0.1x. This
+revision has simulated regression coverage but needs that in-game check.
+
+NORMAL FRAMING AND OLD SHOTS
+
+Normal starts at 16:9 (about 1.77778), with 16:10, 21:9, 4:3 and custom ratios
+available. Reset puts the selected camera at Normal. Changing Normal does not
+replace every framing key. The allowed curve range is 0.5-4.0: Dolly's editing
+range, not a verified native cvar limit. These values are ratios, not FOV degrees.
+With the graph focused, Up/Down adjusts a point by 0.01; add Shift for 0.1.
+
+Capture keeps an explicit positive r_aspectratio. If the game reports automatic
+0, capture uses the launched game's visible client ratio, or Normal if that
+cannot be read. Zero is never interpolated. Stop / restore restores the exact
+original cvar, including automatic 0. Pause and shot completion keep framing.
+
+Older shots keep their camera positions, rotations, timing and other tracks.
+Old FOV numbers remain inactive metadata; imported framing starts at 16:9.
+Rebuild only the framing curve, with no need to recapture the camera path.
+Saving uses project version 2, which older Dolly versions cannot open. Remove
+old custom FOV or duplicate r_aspectratio tracks/values if Dolly reports them;
+the framing curve now owns this control.
+
+CAPTURE AND PLAYBACK
+
+To capture without switching windows, open Capture binding on Cameras or File.
+Choose Mouse4/Mouse5 for a side button, MiddleMouse, or a keyboard key; check
+any required Ctrl/Alt/Shift modifiers. Save, then enable In-game capture.
+Ctrl+Alt+K is the default. Your choice is saved in
+%APPDATA%/DeadlockDolly/settings.json and survives program-folder updates.
+The enable switch starts off each launch. A held button does not repeat;
+bare Mouse4/Mouse5 also works while holding Ctrl to move the freecam lower.
+Dolly does not block the button's existing game action. If mouse software
+remaps it to a keyboard key, choose that key instead.
+Replace selected captures a new pose at that camera's existing time. To retime
+it, edit Arrive in the selected-camera controls and click Update camera.
+
+Timed shot uses your chosen spacing between views while the replay plays.
+For views at specific replay moments, choose Replay timing before Start path
+here and advance the replay between captures. Keep Frozen preview OFF to play
+the action. Normal playback requires a readable current replay tick; if it is
+unavailable, export diagnostics. Frozen preview deliberately moves through the
+currently paused scene. Setup refreshes that same tick when readable, without
+resuming or jumping to the shot's start time.
+
+Speed changes the replay and camera together. A four-second shot at 0.1x takes
+about 40 real seconds. A smooth spline does not imply constant travel speed:
+the view spacing and arrival times determine speed through each section.
+
+Keep movement keys released during the brief position check. It can move the
+camera in height before verifying its return. Saved keys need no height edit.
+The position correction is measured at the initial view and reused during
+playback, with occasional readbacks to stop persistent visible drift. Gradual
+clock corrections keep camera and framing curves on the same timeline.
+Supported Windows systems use a high-resolution frame timer, with a normal
+wait fallback. The console backend does not provide a render-time camera hook.
+
+EDITOR LAYOUT
+
+Playback controls stay visible below the active tab. The main pages do not
+scroll; long tables scroll vertically within their own panels. At 100% Windows
+scaling the window opens at 1180x800, with a 1000x700 minimum. Sizes scale with
+DPI to keep controls readable (about 1500x1050 minimum at 150% scaling).
+Log opens a separate resizable activity window, closed by default.
+
+PROGRAM ICON
+
+The window/taskbar icon uses the exact white-backed film-reel image supplied.
+Version 0.2.2 fixes its Windows ICO encoding and sets the main-window icon
+explicitly. Normal startup no longer retains a separate Python console button.
+The original image is preserved in assets/logo-original.png; all icon sizes
+are format/size conversions of that file. Close the old Dolly instance before
+opening the updated one. The BAT file itself keeps its normal file-type icon.
+
+STARTUP RECOVERY AND DIAGNOSTICS
+
+The launcher always uses -dev -insecure. It temporarily mounts the bundled
+cvar unlocker through gameinfo.gi with an exact original backup and automatic
+restoration. After an interrupted launch, close Deadlock and run
+Recover_Game_Config.bat from this same folder before launching normally.
+
+If anything fails: Export diagnostics in the editor and send the ZIP.
+The ZIP includes the active shot, playback settings, framing readbacks,
+camera-position checks, startup calibration, recent frame/position samples,
+measured update rates, timer backend and action errors. Open Log
+for recent messages.
+If the editor never opens: send logs/Dolly_startup.log.
+If cvar_unhide is not confirmed, stay in the hideout and export diagnostics.
+Do not manually load the replay before initialization succeeds.
+
+Read docs/USER_GUIDE.md for controls, restoration and current limits.
+All Dolly Python source and automated tests are included.
