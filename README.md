@@ -2,14 +2,15 @@
 
 # Deadlock Dolly
 
+A camera-path editor for local Deadlock replays. Capture the free camera,
+shape a shot and play it back with animated framing and camera variables.
+
 THIS IS AN "INJECTION" TO THE GAME - PLEASE USE AT YOUR OWN RISK
 
-This is due to the mod using source2's native camera to render the dolly paths, without this, we would not have dolly's
+This is due to the mod using source2's native camera to render the dolly paths. Without this, we would not have dolly's
 
 PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
 
-A camera-path editor for local Deadlock replays. Capture the free camera,
-shape a shot and play it back with animated framing and camera variables.
 
 **Current source: 0.3.10 alpha.** Python and Tcl/Tk are bundled; end users do not need to install them.
 
