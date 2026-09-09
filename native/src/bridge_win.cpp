@@ -27,6 +27,7 @@ constexpr char kClientHash[]="c7d068857c617c9c41d2c501865a94d93c52f3081864623ae2
 // Each client is statically reviewed and pinned; no wildcard acceptance.
 constexpr char kUpdatedClientHash[]="769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b";
 constexpr char kEngineHash[]="887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb";
+constexpr char kUpdatedEngineHash[]="301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d";
 constexpr char kUnlockerHash[]="e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba";
 constexpr std::uintptr_t kSetup=0x16bcfb0, kCaller=0x16b6744, kViewTable=0x2349178;
 constexpr std::uintptr_t kGlobals=0x2f09170, kEngineClient=0x37f6740;
@@ -303,7 +304,7 @@ static DWORD WINAPI worker(void*) {
   while(now_seconds()-began<120 && WaitForSingleObject(gEditor,0)==WAIT_TIMEOUT){
    client=GetModuleHandleW(L"client.dll");engine=GetModuleHandleW(L"engine2.dll");if(client&&engine)break;Sleep(20);
   }
-  if((!module_matches(client,kClientHash,63733760)&&!module_matches(client,kUpdatedClientHash,63733760))||!module_matches(engine,kEngineHash,0x969000)){
+  if((!module_matches(client,kClientHash,63733760)&&!module_matches(client,kUpdatedClientHash,63733760))||(!module_matches(engine,kEngineHash,0x969000)&&!module_matches(engine,kUpdatedEngineHash,0x969000))){
    startup_status(State::Unsupported,21,"Installed game modules do not match this native build. Use Console camera and provide updated DLLs.");return 0;
   }
   gClient=reinterpret_cast<std::uintptr_t>(client);gEngine=reinterpret_cast<std::uintptr_t>(engine);

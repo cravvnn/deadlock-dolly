@@ -33,12 +33,18 @@ UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_p
 NATIVE_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "native"
 UNLOCKER_SHA256 = "e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba"
 NATIVE_GAME_SHA256 = {
-    "bin/win64/tier0.dll": "b4300eb0abfe73e1e877516ab6b8bdd1a1bdb4ffc47c7515a349d0623b852f69",
+    "bin/win64/tier0.dll": (
+        "b4300eb0abfe73e1e877516ab6b8bdd1a1bdb4ffc47c7515a349d0623b852f69",
+        "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+    ),
     "citadel/bin/win64/client.dll": (
         "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
         "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
     ),
-    "bin/win64/engine2.dll": "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb",
+    "bin/win64/engine2.dll": (
+        "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb",
+        "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d",
+    ),
 }
 STEAM_APP_ID = "1422450"
 GAME_EXECUTABLE_NAMES = ("deadlock.exe", "citadel.exe")
@@ -496,6 +502,7 @@ def _verified_unlocker() -> Path:
 
 def _verified_native(paths: GamePaths) -> Path:
     """Fail closed on changed game binaries or a missing native release build."""
+    unsupported = []
     for relative, expected in NATIVE_GAME_SHA256.items():
         installed = paths.game_dir / relative
         try:
@@ -508,7 +515,9 @@ def _verified_native(paths: GamePaths) -> Path:
             raise LaunchError(f"Native camera needs the supported installed game file: {installed}") from exc
         accepted = (expected,) if isinstance(expected, str) else expected
         if digest not in accepted:
-            raise LaunchError(f"Native camera does not support this {installed.name} build. Game files were not changed. Choose Console camera mode or use a native Dolly build for this Deadlock update.")
+            unsupported.append(installed.name)
+    if unsupported:
+        raise LaunchError(f"Native camera does not support this {', '.join(unsupported)} build. Game files were not changed. Choose Console camera mode or use a native Dolly build for this Deadlock update.")
     dll = NATIVE_ROOT / "bin/win64/DollyNative.dll"
     try:
         metadata = json.loads((NATIVE_ROOT / "build_info.json").read_text(encoding="utf-8"))

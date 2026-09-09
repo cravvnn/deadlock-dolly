@@ -130,3 +130,5 @@ docs/NATIVE_EFFECTS.md
 
 native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
 docs/GAME_UPDATES.md
+
+native/profiles/deadlock-2026-09-09-complete.json

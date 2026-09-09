@@ -507,6 +507,18 @@ class LauncherTests(unittest.TestCase):
             with self.assertRaisesRegex(launcher.LaunchError, "does not support this client.dll"):
                 launcher._verified_native(self.paths)
 
+    def test_native_reports_all_changed_modules_before_modifying_game(self):
+        native_root, pins, dll = self._native_fixture()
+        for relative in pins:
+            (self.paths.game_dir / relative).write_bytes(b"new unreviewed module")
+        before = self.paths.gameinfo.read_bytes()
+        with patch.object(launcher, "NATIVE_ROOT", native_root), patch.object(launcher, "NATIVE_GAME_SHA256", pins):
+            with self.assertRaises(launcher.LaunchError) as raised:
+                launcher._verified_native(self.paths)
+        for name in ("client.dll", "engine2.dll", "tier0.dll"):
+            self.assertIn(name, str(raised.exception))
+        self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+
     def test_native_binary_hash_abi_and_architecture_are_validated(self):
         native_root, pins, dll = self._native_fixture()
         manifest = native_root / "build_info.json"

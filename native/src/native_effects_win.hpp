@@ -1,6 +1,7 @@
 // Included after the bridge's checked-memory helpers. Exact supplied tier0
 // fingerprints gate these private ABI calls; never fall back to guessed slots.
 constexpr char kTier0Hash[]="b4300eb0abfe73e1e877516ab6b8bdd1a1bdb4ffc47c7515a349d0623b852f69";
+constexpr char kUpdatedTier0Hash[]="b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc";
 constexpr std::uintptr_t kCvarTable=0x3106e8,kCvarSet=0x20ec60;
 std::uintptr_t gTier0=0,gCvar=0;
 struct CvarRef { std::uint64_t id=0xffffffff; std::uintptr_t data=0; };
@@ -80,7 +81,7 @@ struct NativeEffectState {
 NativeEffectState gEffects;
 static bool init_cvar_interface() {
  auto tier0=GetModuleHandleW(L"tier0.dll");
- if(!module_matches(tier0,kTier0Hash,0x400000))return false;
+ if(!module_matches(tier0,kTier0Hash,0x400000)&&!module_matches(tier0,kUpdatedTier0Hash,0x400000))return false;
  gTier0=reinterpret_cast<std::uintptr_t>(tier0);
  auto factory=reinterpret_cast<Factory>(GetProcAddress(tier0,"CreateInterface"));
  if(!factory)return false;

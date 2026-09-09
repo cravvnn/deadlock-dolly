@@ -1,7 +1,7 @@
-0.3.12 CLIENT COMPATIBILITY UPDATE
-Supports the reviewed September 9 client alongside the previous build.
-Rebuild the Windows app and replace the complete extracted package.
-Unknown engine2.dll or tier0.dll builds still require review. See docs/GAME_UPDATES.md.
+0.3.13 COMPLETE SEPTEMBER 9 COMPATIBILITY UPDATE
+Supports the reviewed client.dll, engine2.dll and tier0.dll builds.
+Use this complete source package for GitHub; build and extract a fresh Windows app.
+Unknown builds remain blocked. See docs/GAME_UPDATES.md.
 
 DEADLOCK DOLLY 0.3.11 ALPHA - SOURCE PACKAGE
 

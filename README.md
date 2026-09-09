@@ -7,6 +7,14 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
+
+THIS IS AN "INJECTION" TO THE GAME - PLEASE USE AT YOUR OWN RISK
+
+This is due to the mod using source2's native camera to render the dolly paths. Without this, we would not have dolly's
+
+PLEASE STILL LAUNCH GAME WITH -insecure IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
+
+
 **Current source: 0.3.12 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; end users do not need to install them.
 
@@ -97,4 +105,7 @@ rendering and paused movement are unchanged. Rebuild the complete Windows packag
 do not mix its editor or `_internal` files with earlier releases.
 
 **0.3.12:** compatibility update for the reviewed September 9 Deadlock client.
+Previous client support remains. See [game updates](docs/GAME_UPDATES.md).
+
+**0.3.13:** compatibility update for the reviewed September 9 client, engine2 and tier0.
 Previous client support remains. See [game updates](docs/GAME_UPDATES.md).

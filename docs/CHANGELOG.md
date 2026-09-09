@@ -1,5 +1,17 @@
 # Changes
 
+## 0.3.13 alpha — complete September 9 module compatibility
+
+- Add the supplied engine2.dll and tier0.dll builds to the reviewed fingerprints.
+  Existing reviewed modules remain supported; unknown binaries remain blocked.
+- Verify engine mapped sections differ only in debug metadata. Verify 3,530
+  saved tier0 instructions, including the full typed setter, and inspect the
+  current lookup/data-accessor ABI and unchanged interface slots.
+- Report all mismatching game module names together in the launcher.
+- Keep native camera and DOF timing, movement and interpolation unchanged.
+- Distribute a complete source package, including native DOF sources/tests;
+  this update does not depend on applying earlier incremental ZIPs.
+
 ## 0.3.12 alpha — September 9 client compatibility
 
 - Support the reviewed September 9 client.dll alongside the September 7 build.

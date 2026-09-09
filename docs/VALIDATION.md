@@ -1,3 +1,36 @@
+# Validation — 0.3.13 alpha
+
+Static review covers the supplied updated client, engine2 and tier0 files.
+The new engine mapped sections match the previous engine except for debug
+entry timestamps and CodeView PDB age. Code, data, exception entries, relocation
+entries and image layout are unchanged. For tier0, 3,530 saved instructions
+match, including every byte of the complete 633-byte typed setter. The current
+lookup and data-accessor functions were disassembled and their ABI/table slots
+reviewed; those RVAs and the scalar layout remain unchanged.
+
+The new compatibility profile records these hashes and review evidence.
+Startup retains both old and new reviewed module fingerprints. An unknown
+build remains blocked, and all mismatching module names are reported together.
+No other game DLL is a native-camera compatibility dependency.
+
+The Windows EXE and current game are not executed in this Linux workspace.
+GitHub Windows CTest and an in-game camera/DOF playback check remain required.
+
+## Local 0.3.13 checks
+
+- The actual three uploaded game files pass the updated launcher compatibility
+  gate using the newly compiled helper and its verified metadata.
+- Python suite: 616 tests, OK, one platform-dependent skip.
+- Launcher tests cover unknown builds and reporting all changed modules together.
+  Profile, launcher and native pins match for all three game modules.
+- Windows x64 helper cross-compilation and PE export/import checks passed.
+- Native camera callback and DOF writer match 0.3.12 apart from fingerprint
+  gates. Camera controller, interpolation and paused navigation are unchanged.
+- Full source ZIP checked against SOURCE_FILES.txt and every CMake source path;
+  the complete DOF source/header/test files are included.
+
+## Earlier validation
+
 # Validation — 0.3.12 alpha
 
 Static comparison reconstructed both previous camera functions from saved

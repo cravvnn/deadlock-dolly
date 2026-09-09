@@ -16,16 +16,21 @@ from release_files import sha256
 
 
 class NativePackagingTests(unittest.TestCase):
-    def test_reviewed_client_profiles_match_both_launcher_and_native_pins(self):
+    def test_reviewed_module_profiles_match_both_launcher_and_native_pins(self):
         from dolly.launcher import NATIVE_GAME_SHA256
         root = TOOLS.parent
-        pins = set(NATIVE_GAME_SHA256["citadel/bin/win64/client.dll"])
-        profiles = {json.loads(p.read_text())["client"]["client_sha256"]
-                    for p in (root / "native/profiles").glob("*.json")}
-        source = (root / "native/src/bridge_win.cpp").read_text()
-        native_pins = set(re.findall(r'constexpr char k(?:Updated)?ClientHash\[\]="([a-f0-9]{64})";', source))
-        self.assertEqual(pins, profiles)
-        self.assertEqual(pins, native_pins)
+        profiles = [json.loads(p.read_text()) for p in (root / "native/profiles").glob("*.json")]
+        for module, relative, key, symbol, file in (
+            ("client", "citadel/bin/win64/client.dll", "client_sha256", "Client", "bridge_win.cpp"),
+            ("engine", "bin/win64/engine2.dll", "sha256", "Engine", "bridge_win.cpp"),
+            ("tier0", "bin/win64/tier0.dll", "sha256", "Tier0", "native_effects_win.hpp"),
+        ):
+            with self.subTest(module=module):
+                pins = set(NATIVE_GAME_SHA256[relative])
+                source = (root / "native/src" / file).read_text()
+                native_pins = set(re.findall(r'constexpr char k(?:Updated)?' + symbol + r'Hash\[\]="([a-f0-9]{64})";', source))
+                self.assertEqual(pins, {p[module][key] for p in profiles})
+                self.assertEqual(pins, native_pins)
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="Dolly native package ")
