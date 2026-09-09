@@ -2,7 +2,10 @@
 
 # Deadlock Dolly
 
-PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS.
+THIS IS AN "INJECTION" TO THE GAME - PLEASE USE AT YOUR OWN RISK
+(This is due to the mod using source2's native camera to render the dolly paths, without this, we would not have the mod)
+
+PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
 
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
