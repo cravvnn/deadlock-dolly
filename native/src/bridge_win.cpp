@@ -17,11 +17,15 @@
 #include <vector>
 #include "MinHook.h"
 #include "dolly_path.hpp"
+#include "dolly_effects.hpp"
 #include "dolly_protocol.hpp"
 
 namespace {
 using namespace dolly;
 constexpr char kClientHash[]="c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b";
+// September 9: same hook, fields and clock; six original calls relocated.
+// Each client is statically reviewed and pinned; no wildcard acceptance.
+constexpr char kUpdatedClientHash[]="769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b";
 constexpr char kEngineHash[]="887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb";
 constexpr char kUnlockerHash[]="e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba";
 constexpr std::uintptr_t kSetup=0x16bcfb0, kCaller=0x16b6744, kViewTable=0x2349178;
@@ -47,6 +51,7 @@ INIT_ONCE gWorkerOnce=INIT_ONCE_STATIC_INIT;
 struct Command {
  ControlHeader wire{};
  std::shared_ptr<const NativePath> path;
+ std::shared_ptr<const NativeShot> shot;
 };
 std::shared_ptr<const Command> gCommand;
 
@@ -130,6 +135,8 @@ static bool module_matches(HMODULE module,const char* expected,std::uint32_t ima
  auto base=reinterpret_cast<std::uintptr_t>(module);IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS64 nt{};
  return read_value(base,dos)&&dos.e_magic==IMAGE_DOS_SIGNATURE&&dos.e_lfanew>0&&dos.e_lfanew<4096&&read_value(base+dos.e_lfanew,nt)&&nt.Signature==IMAGE_NT_SIGNATURE&&nt.FileHeader.Machine==IMAGE_FILE_MACHINE_AMD64&&nt.OptionalHeader.SizeOfImage==image_size;
 }
+#include "native_effects_win.hpp"
+
 struct DemoState {bool playing=false,paused=false,seeking=false;int tick=0;double time=0;double interval=0;char name[512]{};};
 static bool read_demo(DemoState& result) noexcept {
  std::uintptr_t demo=0,table=0,engine_client=0,engine_table=0,globals=0;
@@ -204,7 +211,10 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
  DemoState demo{};bool demo_ok=read_demo(demo);status.tick=demo.tick;status.paused=demo.paused;status.engine_time=demo.time;
  std::snprintf(status.demo_name,sizeof(status.demo_name),"%s",demo.name);
  status.ack_command=seen;status.phase=phase;
- auto finish=[&](State state,unsigned error,const char* message){status.state=std::uint32_t(state);status.error=error;status.phase=phase;std::snprintf(status.message,sizeof(status.message),"%s",message);write_status(status);};
+ auto finish=[&](State state,unsigned error,const char* message){
+  if((state==State::Fault||state==State::Stopped)&&!gEffects.restore()){state=State::Fault;error=36;message="Native effect restoration failed; retry Stop / restore.";}
+  status.effect_count=gEffects.count;status.effect_error=gEffects.error;status.effect_frames=gEffects.frames;status.effect_phase=gEffects.phase;
+  status.state=std::uint32_t(state);status.error=error;status.phase=phase;std::snprintf(status.message,sizeof(status.message),"%s",message);write_status(status);};
  if(!command){finish(State::Probe,0,"Native view hook ready; load a local replay to test a camera.");return;}
  const auto& c=command->wire;
  if(c.command!=seen){
@@ -258,6 +268,9 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
   fov=2*180/pi*std::atan(std::tan(double(original_fov)*pi/360)*applied[6]/original_aspect);
   if(!std::isfinite(fov)||fov<=1||fov>=179){fault=17;finish(State::Fault,fault,"Native aspect produced an unsupported field of view.");return;}
  }
+ // DOF render-graph construction reads these cvars after main-view setup.
+ // Apply the same phase as XYZ/angles, using the native typed setter.
+ if(!gEffects.apply(command->shot,phase)){fault=35;finish(State::Fault,fault,"Native DOF setting was unavailable, deferred or clamped; shot stopped and originals restored.");return;}
  float xyz[3],angles[3];
  for(int i=0;i<3;++i){xyz[i]=float(applied[i]);angles[i]=float(std::remainder(applied[i+3],360.0));}
  // The verified callback owns this live main-view object at this point.
@@ -290,10 +303,11 @@ static DWORD WINAPI worker(void*) {
   while(now_seconds()-began<120 && WaitForSingleObject(gEditor,0)==WAIT_TIMEOUT){
    client=GetModuleHandleW(L"client.dll");engine=GetModuleHandleW(L"engine2.dll");if(client&&engine)break;Sleep(20);
   }
-  if(!module_matches(client,kClientHash,63733760)||!module_matches(engine,kEngineHash,0x969000)){
+  if((!module_matches(client,kClientHash,63733760)&&!module_matches(client,kUpdatedClientHash,63733760))||!module_matches(engine,kEngineHash,0x969000)){
    startup_status(State::Unsupported,21,"Installed game modules do not match this native build. Use Console camera and provide updated DLLs.");return 0;
   }
   gClient=reinterpret_cast<std::uintptr_t>(client);gEngine=reinterpret_cast<std::uintptr_t>(engine);
+  if(!init_cvar_interface()){startup_status(State::Unsupported,26,"The tier0 cvar interface does not match this native build. Use Console camera mode.");return 0;}
   unsigned char prologue[sizeof(kSetupBytes)]{};
   if(!read_memory(gClient+kSetup,prologue,sizeof(prologue))||std::memcmp(prologue,kSetupBytes,sizeof(prologue))){startup_status(State::Unsupported,22,"Native view function bytes differ; no hook was installed.");return 0;}
   HMODULE pinned=nullptr;
@@ -307,7 +321,7 @@ static DWORD WINAPI worker(void*) {
   gHookInstalled=true;
   // Hook and original trampoline remain resident until process exit. Losing
   // the editor only releases ownership, avoiding code-unload races in a view.
-  std::shared_ptr<const NativePath> path;
+  std::shared_ptr<const NativeShot> shot;
   std::uint32_t accepted=0;std::uint64_t heartbeat=0;
   std::vector<unsigned char> payload;
   for(;;){
@@ -319,11 +333,12 @@ static DWORD WINAPI worker(void*) {
     // CreateProcess can reach the proxy before the launcher receives the PID.
     if(control.game_pid==0){Sleep(5);continue;}
     if(control.editor_pid!=editor_pid||control.game_pid!=GetCurrentProcessId()||control.mode>3||control.flags&~(kFrozen|kAspect)||!std::isfinite(control.start_phase)||control.start_phase<0||!std::isfinite(control.speed)||control.speed<.05||control.speed>4||!std::memchr(control.demo_name,0,sizeof(control.demo_name))){gWorkerError=31;Sleep(10);continue;}
-    auto candidate=path;
-    if(control.payload_bytes){auto parsed=std::make_shared<NativePath>();std::string error;if(!parsed->load(payload.data(),payload.size(),error)){gWorkerError=32;Sleep(10);continue;}candidate=parsed;}
-    if(control.mode && (!candidate||control.start_phase>candidate->duration())){gWorkerError=33;Sleep(10);continue;}
-    auto command=std::make_shared<Command>();command->wire=control;command->path=candidate;
-    path=candidate;accepted=control.command;gWorkerError=0;
+    auto candidate=shot;
+    if(control.payload_bytes){auto parsed=std::make_shared<NativeShot>();std::string error;if(!parsed->load(payload.data(),payload.size(),error)){gWorkerError=32;Sleep(10);continue;}candidate=parsed;}
+    if(control.mode && (!candidate||control.start_phase>candidate->camera.duration())){gWorkerError=33;Sleep(10);continue;}
+    auto command=std::make_shared<Command>();command->wire=control;command->shot=candidate;
+    if(candidate)command->path=std::shared_ptr<const NativePath>(candidate,&candidate->camera);
+    shot=candidate;accepted=control.command;gWorkerError=0;
     std::atomic_store_explicit(&gCommand,std::shared_ptr<const Command>(command),std::memory_order_release);
    }
    Sleep(5);

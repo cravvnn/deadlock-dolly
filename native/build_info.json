@@ -1,13 +1,13 @@
 {
-  "abi": 1,
-  "version": "0.3.9-alpha",
-  "sha256": "ad007b39fe73dde495fd4dfa2cfde741c5b3689642ffe1f1b3afaee31f6e93b0",
+  "abi": 2,
+  "version": "0.3.12-alpha",
+  "sha256": "5b2bf574b7ce83aed1f8b50424ec2098d4516d535e533d6ee407fa0c263b8eef",
   "compiler": "Zig 0.14.1 clang, cross-compiled on Linux for Windows x64",
   "configuration": "Release",
   "runtime": "static",
   "native_path_tests_passed": true,
   "native_callback_tests_passed": false,
-  "native_callback_tests_note": "Updated callback/atomic harness awaits GitHub Windows execution. Supplied 0.3.8 native-build.log confirms prior two CTest tests passed.",
+  "native_callback_tests_note": "Windows helper cross-compiled successfully; Windows CTest callback execution remains required in GitHub Actions.",
   "game_runtime_verified": false,
   "pe": {
     "machine": "x64",
@@ -32,5 +32,7 @@
       "api-ms-win-crt-string-l1-1-0.dll",
       "bcrypt.dll"
     ]
-  }
+  },
+  "built_utc": "2026-09-09T20:55:25.431876+00:00",
+  "native_effect_tests_passed": true
 }

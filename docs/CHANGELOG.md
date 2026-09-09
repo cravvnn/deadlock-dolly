@@ -1,5 +1,28 @@
 # Changes
 
+## 0.3.12 alpha — September 9 client compatibility
+
+- Support the reviewed September 9 client.dll alongside the September 7 build.
+- Verify both complete camera functions against the previous disassembly: only
+  six original calls moved to relocated helpers. Verify the relocated aspect
+  helper retains its instructions and absolute import/data targets.
+- Keep native camera/DOF timing, interpolation, offsets and ABI 2 unchanged.
+- Keep exact engine2.dll and tier0.dll checks; unknown builds still stop before
+  game configuration is modified. See GAME_UPDATES.md for update guidance.
+
+## 0.3.11 alpha — native DOF curves
+
+- Compile seven verified DOF controls with the camera path; evaluate them at
+  the same main-view phase using typed native setters and immediate readback.
+- Support fixed values, smooth/linear numeric curves, stepped switches and
+  restore overrides. Reject unsupported native effect tracks before playback.
+- Keep final camera/DOF held together until Play or Stop. Restore native effect
+  snapshots on release, fault or expired editor heartbeat.
+- Add tier0 fingerprint/interface checks and bridge ABI 2. Rebuild the complete
+  Windows package; old editor/helper combinations are rejected.
+- Add parser/parity, transport, replay lifecycle and native callback regressions.
+  Camera clock/curve math, manual paused movement and unlocker startup remain.
+
 ## 0.3.10 alpha — restart a finished native shot
 
 - Keep an unsettled final spectator handoff as a held view, not a failed shot.

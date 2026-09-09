@@ -1,5 +1,6 @@
 """Native release gates are inspected without executing game or fixture DLLs."""
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,17 @@ from release_files import sha256
 
 
 class NativePackagingTests(unittest.TestCase):
+    def test_reviewed_client_profiles_match_both_launcher_and_native_pins(self):
+        from dolly.launcher import NATIVE_GAME_SHA256
+        root = TOOLS.parent
+        pins = set(NATIVE_GAME_SHA256["citadel/bin/win64/client.dll"])
+        profiles = {json.loads(p.read_text())["client"]["client_sha256"]
+                    for p in (root / "native/profiles").glob("*.json")}
+        source = (root / "native/src/bridge_win.cpp").read_text()
+        native_pins = set(re.findall(r'constexpr char k(?:Updated)?ClientHash\[\]="([a-f0-9]{64})";', source))
+        self.assertEqual(pins, profiles)
+        self.assertEqual(pins, native_pins)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="Dolly native package ")
         self.addCleanup(temporary.cleanup)
@@ -41,7 +53,7 @@ class NativePackagingTests(unittest.TestCase):
         dll = native / build_native.DLL_RELATIVE
         dll.parent.mkdir(parents=True)
         dll.write_bytes(b"Dolly test fixture, never executable")
-        info = {"abi": 1, "sha256": sha256(dll)}
+        info = {"abi": 2, "sha256": sha256(dll)}
         metadata = native / "build_info.json"
         metadata.write_text(json.dumps(info))
         profiles = native / "profiles"
@@ -78,7 +90,7 @@ class NativePackagingTests(unittest.TestCase):
     def test_runtime_allowlist_omits_sources_vendor_builds_and_game_binaries(self):
         native, dll, metadata = self.runtime_fixture()
         for relative in ("src/bridge_win.cpp", "include/dolly_protocol.hpp", "build/test.exe",
-                         "vendor/minhook/src/hook.c", "client.dll", "engine2.dll",
+                         "vendor/minhook/src/hook.c", "client.dll", "engine2.dll", "tier0.dll",
                          "profiles/private.bin"):
             path = native / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,8 +116,8 @@ class NativePackagingTests(unittest.TestCase):
     def test_runtime_requires_matching_hash_supported_abi_and_object_profile(self):
         native, dll, metadata = self.runtime_fixture()
         original = metadata.read_text()
-        cases = [({"abi": 1, "sha256": "0" * 64}, "hash"),
-                 ({"abi": 2, "sha256": sha256(dll)}, "ABI"),
+        cases = [({"abi": 2, "sha256": "0" * 64}, "hash"),
+                 ({"abi": 1, "sha256": sha256(dll)}, "ABI"),
                  ({"abi": True, "sha256": sha256(dll)}, "ABI")]
         for info, message in cases:
             metadata.write_text(json.dumps(info))
@@ -127,7 +139,7 @@ class NativePackagingTests(unittest.TestCase):
                 build_native.copy_native_runtime(self.root, output)
 
     def test_game_binaries_are_rejected_anywhere_in_binary_bundle(self):
-        for name in ("client.dll", "ENGINE2.DLL"):
+        for name in ("client.dll", "ENGINE2.DLL", "tier0.dll"):
             with tempfile.TemporaryDirectory() as folder:
                 path = Path(folder) / "_internal" / "unintended" / name
                 path.parent.mkdir(parents=True)
@@ -155,7 +167,7 @@ class NativePackagingTests(unittest.TestCase):
         self.assertEqual(configure[configure.index("-A") + 1], "x64")
         self.assertTrue(all(call.kwargs["check"] for call in run.call_args_list))
         self.assertEqual(info["sha256"], sha256(dll))
-        self.assertEqual(info["abi"], 1)
+        self.assertEqual(info["abi"], 2)
         self.assertFalse(info["game_runtime_verified"])
         self.assertEqual(json.loads(metadata.read_text()), info)
 

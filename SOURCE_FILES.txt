@@ -119,3 +119,14 @@ third_party/notices/tk-license.terms
 tools/build_native.py
 tools/build_windows.py
 tools/release_files.py
+
+dolly/native_effects.py
+native/include/dolly_effects.hpp
+native/src/dolly_effects.cpp
+native/src/native_effects_win.hpp
+native/tests/effect_tests.cpp
+tests/test_native_effects.py
+docs/NATIVE_EFFECTS.md
+
+native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
+docs/GAME_UPDATES.md

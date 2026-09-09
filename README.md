@@ -1,12 +1,3 @@
-<img src="assets/dolly.png" width="96" alt="Deadlock Dolly logo">
-
-# Deadlock Dolly
-
-A camera-path editor for local Deadlock replays. Capture the free camera,
-shape a shot and play it back with animated framing and camera variables.
-
-THIS IS AN "INJECTION" TO THE GAME - PLEASE USE AT YOUR OWN RISK
-
 This is due to the mod using source2's native camera to render the dolly paths. Without this, we would not have dolly's
 
 PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
@@ -88,7 +79,13 @@ Dolly source uses the [MIT license](LICENSE.txt). The bundled official unlocker
 and other components retain their own notices under `third_party/`. Artwork
 is separate from the source-code license; see [assets/README.md](assets/README.md).
 
-0.3.10 fixes restarting after a native shot holds its last view. Play releases
+**0.3.10:** fixes restarting after a native shot holds its last view. Play releases
 the old override before the normal seek and calibration. Stop / restore returns
 control to the game; its spectator view may differ from the final shot. Native
 rendering and paused movement are unchanged. Rebuild the complete Windows package.
+
+**0.3.11:** adds native DOF curves and ABI 2. Rebuild the complete Windows package;
+do not mix its editor or `_internal` files with earlier releases.
+
+**0.3.12:** compatibility update for the reviewed September 9 Deadlock client.
+Previous client support remains. See [game updates](docs/GAME_UPDATES.md).
