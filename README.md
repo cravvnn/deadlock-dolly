@@ -44,11 +44,6 @@ each main-view callback. It supports only the exact `client.dll` and
 `engine2.dll` build inspected for this release. If your installation differs,
 choose **Console (legacy)** before launching; Dolly does not guess new offsets.
 
-The working manual paused-camera controls are unchanged. DOF and other camera
-variables still use sampled console updates and are not synchronized to every
-rendered frame. **In-game smoothness is not yet verified for the native driver.**
-Use the short [native camera test](docs/NATIVE_CAMERA.md) before publishing.
-
 The GitHub **Source code** download and the source ZIP contain the source and
 build recipe. They do not contain an already compiled Windows executable.
 
