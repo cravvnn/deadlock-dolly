@@ -18,16 +18,16 @@ import threading
 import time
 import uuid
 
-from .native_path import compile_project
+from .native_effects import compile_shot
 from .runtime import resource_root
 
-ABI = 1
+ABI = 2
 CONTROL_BYTES = 2 * 1024 * 1024
 MAPPING_BYTES = CONTROL_BYTES + 4096
 PAYLOAD_OFFSET = 1024
 MAX_PAYLOAD_BYTES = CONTROL_BYTES - PAYLOAD_OFFSET
 CONTROL = struct.Struct("<8s6IQ2I2d512s")
-STATUS = struct.Struct("<8s6IQ3diI14d2dQ256s512s2d")
+STATUS = struct.Struct("<8s6IQ3diI14d2dQ256s512s2d2IQd")
 CONTROL_MAGIC = b"DLYCAM01"
 STATUS_MAGIC = b"DLYSTAT1"
 STATES = ("starting", "probe", "armed", "playing", "completed", "stopped", "fault", "unsupported")
@@ -268,8 +268,11 @@ class NativeBridge:
                 raise NativeBridgeError("Native camera returned an invalid state or command acknowledgment")
             frame_count, real_time, engine_time, phase, tick, paused = values[7:13]
             original, applied = list(values[13:20]), list(values[20:27])
-            original_fov, applied_fov, hook_calls, message, demo, maximum_ms, interval_ms = values[27:]
-            numbers = [real_time, engine_time, phase, *original, *applied,
+            original_fov, applied_fov, hook_calls, message, demo, maximum_ms, interval_ms = values[27:34]
+            effect_count, effect_error, effect_frames, effect_phase = values[34:]
+            if effect_count > 7 or effect_error > 3:
+                raise NativeBridgeError("Native effect status is invalid")
+            numbers = [effect_phase, real_time, engine_time, phase, *original, *applied,
                        original_fov, applied_fov, maximum_ms, interval_ms]
             if not all(math.isfinite(value) for value in numbers) or paused not in (0, 1):
                 raise NativeBridgeError("Native camera returned non-finite view or timing data")
@@ -281,6 +284,8 @@ class NativeBridge:
                     "original_pose": original, "applied_pose": applied,
                     "original_fov": original_fov, "applied_fov": applied_fov,
                     "hook_calls": hook_calls,
+                    "effect_count": effect_count, "effect_error": effect_error,
+                    "effect_frames": effect_frames, "effect_phase": effect_phase,
                     "message": message.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
                     "demo_name": demo.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
                     "max_frame_interval_ms": maximum_ms, "frame_interval_ms": interval_ms}
@@ -315,7 +320,7 @@ class NativeBridge:
         demo = demo_name.encode("utf-8")
         if len(demo) >= 512:
             raise ValueError("Replay name is too long for the native camera protocol")
-        payload = compile_project(project)
+        payload = compile_shot(project)
         if start > project.duration:
             raise ValueError("Native start time exceeds the shot duration")
         with self._operations:

@@ -29,6 +29,7 @@ from .navigation import CameraMotion, move_camera
 from .pacing import FrameWait
 from .runtime import application_root
 from . import launcher
+from .native_effects import compile_effects
 
 ROOT = application_root(Path(__file__).resolve().parents[1])
 LOG = logging.getLogger("dolly")
@@ -1321,6 +1322,8 @@ class Controller:
         # The main UI starts at zero; explicit API callers may choose a start.
         # Reject invalid experimental modes before stopping a working camera.
         window = smoothing_window(smoothing)
+        if self._native_bridge() is not None:
+            compile_effects(project)  # Reject unsupported tracks before stopping a working shot.
         with self._op_lock:
             self.stop()
             if self._playback_restore or self._restore or self._demo_speed_changed:
@@ -1352,7 +1355,7 @@ class Controller:
                 self._playback_details["smoothing"] = {"mode": "off", "requested_mode": smoothing,
                     "kind": "native_view_time", "window_seconds": 0, "nominal_delay_seconds": 0}
                 self._playback_details["camera_rate"] = "main view callbacks"
-                self._playback_details["cvar_timing"] = "Console updates follow sampled native phase; best effort."
+                self._playback_details["cvar_timing"] = "Verified DOF curves apply at native main-view phase, with typed setter readback."
             self._playback_metrics = {"updates": 0, "requested_updates_per_second": rate,
                                       "mean_round_trip_ms": 0, "max_round_trip_ms": 0,
                                       "max_update_interval_ms": 0, "elapsed_seconds": 0,
@@ -1368,6 +1371,8 @@ class Controller:
                     if positioned_demo.get("tick") is not None:
                         positioned_demo = self._seek_tick(positioned_demo["tick"])
                 frame = project.evaluate(start)
+                if native is not None:
+                    frame["cvars"] = {}  # Native preparation snapshots originals before the first effect write.
                 try:
                     self._position_direct_frame(frame, positioned_demo.get("tick"))
                 finally:
@@ -1474,6 +1479,14 @@ class Controller:
         if status.get("state") == "playing":
             bridge.hold()
             status = bridge.status()
+        if status.get("effect_count", 0):
+            # Keep the shot's final DOF and camera together until explicit Stop.
+            # Releasing would restore native effect snapshots for one frame.
+            self._native_handoff_details = {"verified": False, "pending": True,
+                "reason": "Final native camera and DOF held until Play or Stop"}
+            if allow_hold:
+                return
+            raise RuntimeError("Native camera and DOF are held together. Use Stop / restore before manual camera controls, or Play shot to restart.")
         self._request("demo_pause")
         target = self._native_pose(status)
         target["cvars"] = {}
@@ -1559,11 +1572,7 @@ class Controller:
         return " ".join(errors) or None
 
     def _run_native(self, project, start, speed, rate, frozen):
-        """Monitor rendered camera samples; only effect cvars use the console.
-
-        Camera position, rotation and projection never enter the console loop.
-        Effect cvars use the callback's shared phase but remain asynchronous.
-        """
+        """Monitor native camera and DOF samples; no animated console writes."""
         bridge = self._native_bridge()
         began = time.perf_counter()
         last_fresh = began
@@ -1573,7 +1582,7 @@ class Controller:
         previous_tick = None
         previous_phase = start
         previous_poll = began
-        last_cvars = dict(project.evaluate(start).get("cvars", {}))
+        expected_effects = len(project.evaluate(start)["cvars"])
         updates = 0
         finished = False
         failure = None
@@ -1613,13 +1622,11 @@ class Controller:
                     self._require_demo(require_tick=not frozen)
                     next_identity = time.perf_counter() + .5
                 evaluated = project.evaluate(min(project.duration, max(0, phase)))
-                changed = {name: value for name, value in evaluated.get("cvars", {}).items()
-                           if last_cvars.get(name) != value}
-                if changed:
-                    # Project validation performed before native HOLD rejects
-                    # conflicting lens tracks and validates every cvar name.
-                    self._request("; ".join(name + " " + numeric(value) for name, value in sorted(changed.items())))
-                    last_cvars.update(changed)
+                if status.get("effect_count", 0) != expected_effects:
+                    raise RuntimeError("Native effect count does not match the shot. Rebuild the complete Windows package.")
+                if expected_effects and (status.get("effect_error", 0) or
+                        abs(float(status.get("effect_phase", -1)) - phase) > 1e-9):
+                    raise RuntimeError("Native effects did not acknowledge the camera phase. Playback stopped.")
                 pose = self._native_pose(status)
                 pose.update(time=phase, cvars=dict(evaluated.get("cvars", {})))
                 self._applied_pose = pose
@@ -1632,6 +1639,8 @@ class Controller:
                         "monitor_updates_per_second": rate, "elapsed_seconds": elapsed,
                         "rendered_view_updates": frame_count - first_frame,
                         "rendered_views_per_second": (frame_count - first_frame) / elapsed if elapsed else 0,
+                        "effect_frames": status.get("effect_frames", 0),
+                        "effect_phase": status.get("effect_phase"),
                         "native_frame_interval_ms": status.get("frame_interval_ms"),
                         "native_max_frame_interval_ms": status.get("max_frame_interval_ms")}
                 if status.get("state") == "completed":

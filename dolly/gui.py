@@ -942,7 +942,7 @@ class DollyApp:
         self.smoothing_combo.pack(side="left")
         ttk.Label(smoothing, text="Light 80 ms · Balanced 160 ms · Strong 280 ms (real time)",
                   style="Muted.TLabel").pack(side="left", padx=(12, 0))
-        ttk.Label(frame, text="Smoothing applies to Console playback. Native uses render time; Updates / s controls effect cvars only.",
+        ttk.Label(frame, text="Native synchronizes camera + supported DOF curves. Updates / s changes monitoring only; smoothing is for Console.",
                   style="Muted.TLabel").grid(row=4, column=0, sticky="w", pady=(3, 0))
 
     def _worker_loop(self):

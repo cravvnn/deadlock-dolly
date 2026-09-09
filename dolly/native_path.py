@@ -15,8 +15,8 @@ position and the segment duration. Unknown bits, versions and trailing bytes
 are rejected by the native parser. No console command or cvar name is stored.
 
 Channel order is X, Y, Z, pitch, yaw, roll, aspect ratio. FOV is legacy shot
-metadata. Other cvar tracks stay with the existing console effects backend;
-their final timestamp still extends the overall native shot duration.
+metadata. native_effects wraps this unchanged camera blob with supported DOF
+curves; their final timestamp extends the overall native shot duration.
 """
 
 from __future__ import annotations
