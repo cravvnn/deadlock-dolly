@@ -9,13 +9,13 @@ camera along the resulting path.
 **Camera driver → Native (experimental)** is selected by default before launch.
 It evaluates and applies position, rotation and aspect-ratio framing during
 each main rendered view. It supports only the exact game `client.dll` and
-`engine2.dll` build inspected for this release. If Dolly reports a mismatch,
+`engine2.dll` and `tier0.dll` builds inspected for this release. If Dolly reports a mismatch,
 choose **Console (legacy)** before launch. The editor and saved shots work with
 either driver. See the [native camera guide and first test](NATIVE_CAMERA.md).
 
-Native playback ignores the earlier temporal smoothing filter. DOF and other
-camera cvars still follow sampled native time through console updates; they are
-not synchronized to every rendered frame. The [smoothing modes](#experimental-playback-smoothing)
+Native playback ignores the earlier temporal smoothing filter. In 0.3.11, the
+seven [supported DOF controls](NATIVE_EFFECTS.md) run at the native camera phase.
+Other camera variables require Console mode. The [smoothing modes](#experimental-playback-smoothing)
 remain available with Console playback.
 
 **The 0.3.6 final-key fix remains in Console playback.** When the replay reaches
@@ -408,10 +408,10 @@ remove cheat flags. Start with the native Citadel DOF family above; generic
 Leave a track's **Restore value** blank to restore the value read before the
 shot. Filling it in deliberately overrides that restoration value.
 
-With Native playback, DOF and other cvars use the same sampled shot time as the
-camera, but their updates still travel through the console. They are best
-effort and are not synchronized to every rendered frame. **Updates / s** controls
-these effect updates; it does not cap the native camera's view callbacks.
+With Native playback, supported DOF curves use the camera's frame phase and
+native typed setters with readback. **Updates / s** affects editor monitoring
+only. See [native DOF support](NATIVE_EFFECTS.md) for the exact controls and
+restoration behavior. Other camera cvars require Console mode.
 
 ## Playback behavior
 

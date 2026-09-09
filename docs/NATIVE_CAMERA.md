@@ -1,4 +1,4 @@
-# Native camera playback — 0.3.10 alpha
+# Native camera playback — 0.3.11 alpha
 
 The Native driver moves authored path playback into Deadlock's main-view setup.
 The editor sends the complete shot before playback starts. The native helper
@@ -7,8 +7,7 @@ each main rendered view, using game time. Camera delivery no longer depends on
 the editor sending a new position command for that frame.
 
 This is an experimental implementation. Automated tests and inspection of the
-supplied game binaries do not establish in-game smoothness or stability. The user reports smooth native panning with 0.3.9. The 0.3.10 restart
-correction has automated coverage but still needs an in-game check.
+supplied game binaries do not establish in-game smoothness or stability. The user reports smooth native panning with 0.3.9. The native DOF extension has automated coverage but still needs an in-game check.
 
 ## Choose the driver before launch
 
@@ -17,7 +16,7 @@ Keep Netconsole selected and follow the normal sequence: launch the hideout,
 connect, initialize the unlocker, load the replay, then check camera support.
 The launcher retains `-dev -insecure` and the selected local replay checks.
 
-Native supports only the exact `client.dll` and `engine2.dll` files inspected
+Native supports only the exact `client.dll`, `engine2.dll` and `tier0.dll` files inspected
 for this release. Dolly checks their SHA-256 hashes before native launch.
 A Steam update can change either file and make this profile unsupported.
 If that happens, select **Console (legacy)** before launching. Do not replace
@@ -33,8 +32,9 @@ The original game DLLs are not included in a Dolly release.
 | --- | --- |
 | Position and rotation | Evaluated and applied during each main-view callback |
 | Aspect-ratio framing | Applied to the main view using the saved framing curve |
-| DOF and other cvars | Console updates follow sampled native time; best effort |
-| Updates / s | Controls effect-cvar updates, not the native camera's render rate |
+| Supported DOF cvars | Native curves evaluated and read back at the camera phase |
+| Other cvars | Use Console mode; Native rejects unsupported shot variables |
+| Updates / s | Editor monitoring rate; native camera and DOF follow rendered views |
 | Smoothing | Disabled; the older temporal filter applies only to Console |
 | Manual paused camera | Existing movement, switching and capture implementation retained |
 
@@ -43,9 +43,9 @@ replace authored Euler rotations with quaternion curves or add HLAE's entire
 feature set. The native callback addresses when the view receives the camera;
 it does not guarantee constant path speed or repair dropped recorded frames.
 
-DOF and other cvars are **not synchronized to every rendered frame**. They use
-the native camera's sampled shot time but still depend on console delivery.
-Start by testing the camera without animated effects, then add them back.
+Supported DOF curves now run in the native view callback. See
+[NATIVE_EFFECTS.md](NATIVE_EFFECTS.md) for the seven supported variables, curve
+modes, restoration behavior and the live test checklist.
 
 ## First in-game test
 
@@ -73,6 +73,10 @@ select **Console (legacy)**, relaunch and repeat it. Changing the selector does
 not switch the driver inside an already running game.
 
 ## Returning control to the free camera
+
+Shots with native DOF keep the final camera and effects held until Play or
+Stop, which restores their snapshot. Camera-only shots retain the verified
+handoff below.
 
 Completion and cancellation hold the native view while Dolly pauses the replay
 and positions the underlying free camera. Dolly checks fresh view samples from
