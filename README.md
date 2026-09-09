@@ -1,9 +1,14 @@
-This is due to the mod using source2's native camera to render the dolly paths. Without this, we would not have dolly's
-
-PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
+<img src="assets/dolly.png" width="96" alt="Deadlock Dolly logo">
 
 
-**Current source: 0.3.11 alpha.** Python and Tcl/Tk are bundled; end users do not need to install them.
+# Deadlock Dolly
+
+
+A camera-path editor for local Deadlock replays. Capture the free camera,
+shape a shot and play it back with animated framing and camera variables.
+
+**Current source: 0.3.12 alpha.** The portable Windows build opens through
+`Dolly.exe`. Python and Tcl/Tk are bundled; end users do not need to install them.
 
 
 ## Features
@@ -29,10 +34,10 @@ been published. Extract it completely to a writable folder and double-click
 point to the EXE. See the included `Start_Here.txt` and the
 [user guide](docs/USER_GUIDE.md) for the replay workflow.
 
-In 0.3.9, **Camera driver → Native (experimental)** is selected by default
+In 0.3.12, **Camera driver → Native (experimental)** is selected by default
 before launch. It applies position, rotation and aspect-ratio framing during
 each main-view callback. It supports only the exact `client.dll` and
-`engine2.dll` build inspected for this release. If your installation differs,
+`engine2.dll` and `tier0.dll` builds inspected for this release. If your installation differs,
 choose **Console (legacy)** before launching; Dolly does not guess new offsets.
 
 The GitHub **Source code** download and the source ZIP contain the source and
@@ -73,7 +78,11 @@ excluded from Git. `SOURCE_FILES.txt` is the explicit source-archive list.
 
 
 Native playback uses a Deadlock-specific view hook; Console playback and manual
-paused flight retain the console implementation. 
+paused flight retain the console implementation. The user reports smooth native panning in 0.3.9;
+the new native DOF support still needs an in-game check. Windows packaging and game behavior are separate
+validation steps. Consult
+[VALIDATION.md](docs/VALIDATION.md) and the generated Windows `BUILD_INFO.json`
+for the checks that have actually run.
 
 Dolly source uses the [MIT license](LICENSE.txt). The bundled official unlocker
 and other components retain their own notices under `third_party/`. Artwork
