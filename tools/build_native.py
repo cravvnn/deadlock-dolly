@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 from dolly import __version__
 from release_files import sha256
 
-BRIDGE_ABI = 1
+BRIDGE_ABI = 2
 DLL_RELATIVE = Path("bin/win64/DollyNative.dll")
 REQUIRED_EXPORTS = {
     "CreateInterface", "DollyNativeProtocolVersion",
@@ -97,9 +97,9 @@ def copy_native_runtime(root: Path, destination: Path) -> dict:
 
 
 def reject_game_binaries(bundle: Path) -> None:
-    if any(path.name.lower() in {"client.dll", "engine2.dll"}
+    if any(path.name.lower() in {"client.dll", "engine2.dll", "tier0.dll"}
            for path in Path(bundle).rglob("*") if path.is_file()):
-        raise RuntimeError("Game client.dll/engine2.dll must never enter a Dolly release")
+        raise RuntimeError("Game client.dll/engine2.dll/tier0.dll must never enter a Dolly release")
 
 
 def build_native(root: Path = ROOT) -> dict:
