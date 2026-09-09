@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from dolly import native_bridge as nb
-from dolly.native_path import compile_project
+from dolly.native_effects import compile_shot as compile_project
 from dolly.path import Keyframe, Project
 
 
@@ -53,14 +53,14 @@ class NativeBridgeTests(unittest.TestCase):
     def header(self):
         return nb.CONTROL.unpack(self.memory[:nb.CONTROL.size])
 
-    def publish_status(self, *, state=2, pid=2002, ack=None, abi=1,
+    def publish_status(self, *, state=2, pid=2002, ack=None, abi=2,
                        phase=0.5, message=b"Ready", sequence=2, paused=1):
         data = nb.STATUS.pack(
             nb.STATUS_MAGIC, sequence, abi, state, pid,
             self.header()[3] if ack is None else ack, 0,
             42, 10.0, 28.0, phase, 112181, paused,
             *range(7), *range(10, 17), 75.0, 70.0, 45,
-            message, b"replays/example.dem", 16.8, 8.3)
+            message, b"replays/example.dem", 16.8, 8.3, 0, 0, 0, phase)
         self.memory[nb.CONTROL_BYTES:nb.CONTROL_BYTES + len(data)] = data
 
     def respond(self):
@@ -73,8 +73,8 @@ class NativeBridgeTests(unittest.TestCase):
 
     def test_layout_matches_native_header_and_private_mapping_name(self):
         self.assertEqual(nb.CONTROL.size, 576)
-        self.assertEqual(nb.STATUS.size, 992)
-        self.assertEqual(self.header()[:2], (nb.CONTROL_MAGIC, 1))
+        self.assertEqual(nb.STATUS.size, 1016)
+        self.assertEqual(self.header()[:2], (nb.CONTROL_MAGIC, 2))
         self.assertEqual(self.header()[5:7], (1001, 2002))
         factory = unittest.mock.Mock(return_value=Memory(nb.MAPPING_BYTES))
         bridge = nb.NativeBridge.create(mapping_factory=factory, start_heartbeat=False,
@@ -149,7 +149,7 @@ class NativeBridgeTests(unittest.TestCase):
             self.bridge.status()
 
     def test_wrong_pid_abi_state_ack_and_nonfinite_status_are_refused(self):
-        for kwargs in ({"pid": 999}, {"abi": 2}, {"state": 8}, {"ack": 99},
+        for kwargs in ({"pid": 999}, {"abi": 1}, {"state": 8}, {"ack": 99},
                        {"phase": math.nan}, {"paused": 2}):
             with self.subTest(kwargs=kwargs):
                 self.publish_status(**kwargs)

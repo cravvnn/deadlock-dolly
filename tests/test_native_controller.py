@@ -36,6 +36,8 @@ class Bridge:
         self.change_demo = False
         self.rewind = False
         self.frozen = False
+        self.effect_originals = {}
+        self.effect_samples = []
         self.roll = 0
         request = console.request
 
@@ -54,6 +56,7 @@ class Bridge:
         if self.fail_prepare:
             raise RuntimeError("Native prepare timed out")
         self.project = deepcopy(project)
+        self.effect_originals = {name:self.console.values[name] for name in project.evaluate(start)["cvars"]}
         self.phase, self.speed, self.frozen = start, speed, frozen
         self.state = "armed"
 
@@ -68,6 +71,8 @@ class Bridge:
     def release(self, timeout=3):
         self.events.append("native.release")
         self.state = "stopped"
+        self.console.values.update(self.effect_originals)
+        self.effect_originals = {}
 
     def status(self):
         self.clock.advance(.008)
@@ -84,10 +89,13 @@ class Bridge:
         if self.rewind and self.phase > .25:
             self.phase = 0
         frame = self.project.evaluate(self.phase) if self.project else dict(x=0, y=0, z=0, pitch=0, yaw=0, roll=0, aspect_ratio=16/9)
+        effects = self.project.evaluate(self.phase)["cvars"] if self.project and self.state in ("armed", "playing", "completed") else {}
+        self.console.values.update(effects)
+        if effects:self.effect_samples.append((self.phase, dict(effects)))
         original = self.console.pose + [self.roll, self.console.values["r_aspectratio"]]
         if self.fail_handoff:
             original[0] += 100
-        return {"state": self.state, "phase": self.phase, "frame_count": self.frame_count,
+        return {"effect_count": len(effects), "effect_error": 0, "effect_frames": len(self.effect_samples), "effect_phase": self.phase, "state": self.state, "phase": self.phase, "frame_count": self.frame_count,
             "tick": self.console.tick, "paused": self.console.paused,
             "demo_name": self.console.demo_name, "game_pid": 1234,
             "original_pose": original,
@@ -106,6 +114,8 @@ class NativeControllerTests(unittest.TestCase):
                 Keyframe(1, 80, 40, 120, 25, 380, 10, aspect_ratio=1)], tracks=[
                 CvarTrack("r_citadel_depthoffield_focus_distance", [TrackKey(0, 600), TrackKey(1, 1200)]),
                 CvarTrack("r_citadel_depthoffield_enable", [TrackKey(0, 0), TrackKey(.5, 1)], interpolation="step")])
+        self.effect_tracks = self.project.tracks
+        self.project.tracks = []
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch("dolly.controller.time.perf_counter", lambda: self.clock.now))
@@ -162,26 +172,57 @@ class NativeControllerTests(unittest.TestCase):
         self.assertTrue(self.console.paused)
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
         self.assertEqual(self.console.values["demo_timescale"], 1)
-        self.assertEqual(self.console.values["r_citadel_depthoffield_focus_distance"], 1200)
-        self.assertEqual(self.console.values["r_citadel_depthoffield_enable"], 1)
         self.assertIn("Native shot finished", self.controller.status()["message"])
         self.assertEqual(self.controller._playback_samples[-1]["time"], 1)
 
-    def test_effect_tracks_follow_native_phase_and_only_changed_values_are_sent(self):
+    def test_effects_are_published_with_shot_and_no_animated_console_writes(self):
+        self.project.tracks = self.effect_tracks
+        originals = dict(self.console.values)
         self.prepare()
         self.run_native()
-        focus = []
-        for state, batch in self.bridge.requests:
-            if state not in ("playing", "completed"):
-                continue
-            for command in batch.split(";"):
-                if command.strip().startswith("r_citadel_depthoffield_focus_distance "):
-                    focus.append(float(command.split()[-1]))
-        expected = [600 + 600 * i / 8 for i in range(1, 9)]
-        self.assertEqual(focus, expected)
-        step = [batch for state, batch in self.bridge.requests if state in ("playing", "completed")
-                and "r_citadel_depthoffield_enable " in batch]
-        self.assertEqual(len(step), 1)
+        self.assertTrue(self.bridge.effect_samples)
+        for phase, effects in self.bridge.effect_samples:
+            self.assertEqual(effects, self.project.evaluate(phase)["cvars"])
+        self.assertEqual(self.console.values["r_citadel_depthoffield_focus_distance"], 1200)
+        self.assertTrue(self.controller._native_active)
+        self.assertTrue(self.controller._native_handoff_details["pending"])
+        for _, command in self.bridge.requests:
+            self.assertNotIn("r_citadel_depthoffield_focus_distance ", command)
+            self.assertNotIn("r_citadel_depthoffield_enable ", command)
+        self.controller.stop()
+        self.assertFalse(self.controller._native_active)
+        for track in self.effect_tracks:self.assertEqual(self.console.values[track.name], originals[track.name])
+
+    def test_repeated_native_dof_shots_release_before_restarting(self):
+        self.project.tracks = self.effect_tracks
+        for _ in range(3):
+            self.prepare();self.run_native()
+            self.assertTrue(self.controller._native_active)
+        self.assertEqual(self.bridge.events.count("native.release"), 2)
+        self.controller.stop()
+        self.assertEqual(self.bridge.events.count("native.release"), 3)
+
+    def test_wrong_effect_phase_stops_instead_of_reporting_synchronization(self):
+        self.project.tracks = self.effect_tracks
+        self.prepare()
+        get_status = self.bridge.status
+        def wrong_phase():
+            result = get_status()
+            result["effect_phase"] += .1
+            return result
+        self.bridge.status = wrong_phase
+        self.run_native()
+        self.assertFalse(self.controller.status()["playing"])
+        self.assertIn("did not acknowledge", self.controller.status()["message"])
+        self.controller.stop()
+
+    def test_unsupported_native_effect_rejected_before_stopping_current_shot(self):
+        self.prepare()
+        self.project.setup_values["cam_idealdist"] = 100
+        before = list(self.bridge.events)
+        with self.assertRaisesRegex(ValueError, "Not supported"):
+            self.prepare()
+        self.assertEqual(before, self.bridge.events)
 
     def test_handoff_uses_original_view_and_accepts_wrapped_angles(self):
         self.prepare()
