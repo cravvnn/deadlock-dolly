@@ -228,10 +228,10 @@ class PausedCameraTests(unittest.TestCase):
             requests.append((owner, command))
             return original_request(command, **kwargs)
 
-        def observed_halt():
+        def observed_halt(**kwargs):
             if threading.current_thread().name == 'PausedCameraAction':
                 halting.set()
-            return original_halt()
+            return original_halt(**kwargs)
 
         def action():
             try:

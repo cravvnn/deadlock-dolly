@@ -120,8 +120,13 @@ class NativeControllerTests(unittest.TestCase):
         # suites; retain all native publication ordering and settings handling.
         def position(frame, tick):
             self.controller._request(self.controller._position_commands(frame))
-        with patch.object(self.controller, "_seek", return_value={"tick": 100}), \
-             patch.object(self.controller, "_seek_tick", return_value={"tick": 100}), \
+        def seek(*args):
+            self.bridge.events.append("seek")
+            self.console.tick = 100
+            self.console.paused = True
+            return {"tick": 100}
+        with patch.object(self.controller, "_seek", side_effect=seek), \
+             patch.object(self.controller, "_seek_tick", side_effect=seek), \
              patch.object(self.controller, "_position_direct_frame", side_effect=position):
             self.controller.play(self.project, speed=.1, rate=120, frozen=frozen, smoothing="balanced")
         self.controller._thread = None
@@ -197,14 +202,53 @@ class NativeControllerTests(unittest.TestCase):
         self.run_native()
         self.assertTrue(self.controller._native_active)
         self.assertNotEqual(self.bridge.state, "stopped")
-        self.assertIn("did not settle", self.controller.status()["message"])
+        self.assertIn("final camera held", self.controller.status()["message"])
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
         with self.assertRaisesRegex(RuntimeError, "did not settle"):
             self.controller.begin_paused_camera()
-        self.bridge.fail_handoff = False
         self.controller.stop()
         self.assertFalse(self.controller._native_active)
         self.assertEqual(self.console.values["r_aspectratio"], 0)
+
+    def test_repeated_play_releases_stalled_endpoint_before_new_preparation(self):
+        self.bridge.fail_handoff = True
+        for attempt in range(3):
+            before = len(self.bridge.events)
+            self.prepare()
+            events = self.bridge.events[before:]
+            if attempt:
+                self.assertLess(events.index("native.release"), events.index("seek"))
+                self.assertLess(events.index("native.release"), events.index("native.prepare"))
+                self.assertLess(events.index("native.release"), next(i for i, e in enumerate(events) if "spec_goto " in e))
+            self.run_native()
+            self.assertTrue(self.controller._native_active)
+            self.assertTrue(self.controller._native_handoff_details["pending"])
+            self.assertIn("Native shot finished", self.controller.status()["message"])
+        self.controller.stop()
+        self.assertFalse(self.controller._native_active)
+        self.assertFalse(self.controller._native_handoff_details["verified"])
+        self.assertTrue(self.controller._native_handoff_details["released"])
+
+    def test_pause_keeps_stalled_final_view_without_blocking_stop(self):
+        self.prepare()
+        self.bridge.fail_handoff = True
+        self.run_native()
+        self.controller.pause()
+        self.assertTrue(self.controller._native_active)
+        self.assertTrue(self.console.paused)
+        self.controller.stop()
+        self.assertFalse(self.controller._native_active)
+
+    def test_release_failure_blocks_restart_before_camera_commands(self):
+        self.prepare()
+        self.bridge.fail_handoff = True
+        self.run_native()
+        before = len(self.bridge.events)
+        with patch.object(self.bridge, "release", side_effect=RuntimeError("release timed out")):
+            with self.assertRaisesRegex(RuntimeError, "release timed out"):
+                self.prepare()
+        self.assertTrue(self.controller._native_active)
+        self.assertEqual(self.bridge.events[before:], [])
 
     def test_cancel_holds_before_pausing_and_restores_hud_then_hands_off(self):
         self.prepare()

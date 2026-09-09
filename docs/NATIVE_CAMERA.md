@@ -1,4 +1,4 @@
-# Native camera playback — 0.3.8 alpha
+# Native camera playback — 0.3.10 alpha
 
 The Native driver moves authored path playback into Deadlock's main-view setup.
 The editor sends the complete shot before playback starts. The native helper
@@ -7,8 +7,8 @@ each main rendered view, using game time. Camera delivery no longer depends on
 the editor sending a new position command for that frame.
 
 This is an experimental implementation. Automated tests and inspection of the
-supplied game binaries do not establish in-game smoothness or stability. The
-first live test is still needed; this release does not claim the jitter is fixed.
+supplied game binaries do not establish in-game smoothness or stability. The user reports smooth native panning with 0.3.9. The 0.3.10 restart
+correction has automated coverage but still needs an in-game check.
 
 ## Choose the driver before launch
 
@@ -81,10 +81,15 @@ This avoids treating the overridden visible position as proof that the underlyin
 camera has caught up.
 
 If the underlying camera does not settle within the bounded check, Dolly leaves
-the view held and blocks competing camera controls. Keep the replay paused and
-use **Stop / restore** to retry. Export diagnostics if it persists. Close the
-editing game session if you need to leave that held state. This behavior needs
-the live completion/cancellation checks above.
+the final view held without reporting a failed shot. **Play shot** releases
+that override before the normal start seek and fresh position calibration.
+**Stop / restore** releases it and returns control to the game, whose spectator
+view can be elsewhere. Release acknowledgement is required before another
+writer starts; a release timeout still stops the operation.
+
+**Pause** can retain a held view. If paused movement or capture reports an
+unsettled handoff, use **Stop / restore** first, then enter those controls.
+Their existing movement implementation is unchanged.
 
 ## Build and validation boundary
 

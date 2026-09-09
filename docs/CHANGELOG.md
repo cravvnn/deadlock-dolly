@@ -1,5 +1,15 @@
 # Changes
 
+## 0.3.10 alpha — restart a finished native shot
+
+- Keep an unsettled final spectator handoff as a held view, not a failed shot.
+- Play and Stop release the old native override with acknowledgement before
+  seeking or restoring settings; neither requires that frozen spectator to
+  converge. Reset stale position calibration on explicit release.
+- Preserve strict handoff checks for competing manual camera writers.
+- Add repeated-play, pause/stop and failed-release regressions.
+- Native DLL, render callback, interpolation and paused movement are unchanged.
+
 ## 0.3.9 alpha — Windows native connection build fix
 
 - Fix the confirmed Windows-only test/startup error: Python looked up

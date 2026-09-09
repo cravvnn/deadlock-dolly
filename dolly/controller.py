@@ -1446,13 +1446,14 @@ class Controller:
             raise RuntimeError("Native camera telemetry contains a non-finite view pose.")
         return dict(zip(("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"), values))
 
-    def _handoff_native_camera(self):
+    def _handoff_native_camera(self, *, allow_hold=False):
         """Keep the native view held until the underlying spectator catches up.
 
         spec_pos can report the overridden camera. Only the unmodified view
         supplied to the native callback can verify this handoff. If the game
         cannot settle while paused, leave the view held and block competing
-        camera writers; closing the editing session remains available.
+        camera writers. Explicit Stop releases ownership without requiring a
+        position match; Play uses that release before its normal seek.
         """
         bridge = self._native_bridge()
         if bridge is None or not self._native_active:
@@ -1515,7 +1516,28 @@ class Controller:
                 self._native_handoff_details["verified"] = True
                 self._applied_pose = target
                 return
-        raise RuntimeError("Native camera is holding the final view because the underlying free camera did not settle. Use Stop / restore to retry; export diagnostics if it persists. Paused movement is blocked until the handoff succeeds.")
+        self._native_handoff_details["pending"] = True
+        if allow_hold:
+            return
+        raise RuntimeError("Native camera is holding the final view because the underlying free camera did not settle. Use Play shot to restart, or Stop / restore to return control to the game before using paused movement.")
+
+    def _release_native_camera(self):
+        """Abandon a held view on explicit Stop, before any new seek or writer."""
+        bridge = self._native_bridge()
+        if not self._native_active:
+            return
+        if self._alive():
+            if bridge is None:
+                raise RuntimeError("Cannot release native camera: its bridge is unavailable.")
+            # release waits for acknowledgement. Keep ownership on failure so
+            # a new camera writer cannot race an override that is still active.
+            bridge.release()
+        self._native_active = False
+        self._reset_camera_position()
+        if self._native_handoff_details is not None:
+            self._native_handoff_details.update(pending=False, released=True,
+                release_reason="explicit_stop")
+
 
     def _finish_native_playback(self):
         errors = []
@@ -1531,7 +1553,7 @@ class Controller:
         if restoration:
             errors.append(restoration)
         try:
-            self._handoff_native_camera()
+            self._handoff_native_camera(allow_hold=True)
         except Exception as exc:
             errors.append(str(exc))
         return " ".join(errors) or None
@@ -1630,7 +1652,7 @@ class Controller:
             if failure or restoration:
                 self._message(" ".join(part for part in (failure, restoration) if part), playing=False)
             elif finished:
-                self._message("Native shot finished. Replay paused, free-camera handoff verified and HUD restored.", playing=False)
+                self._message("Native shot finished. Replay paused and final camera held. Play shot restarts; Stop / restore returns control to the game." if self._native_active else "Native shot finished. Replay paused, free-camera handoff verified and HUD restored.", playing=False)
 
     def _finish_playback(self):
         # Camera/cvar framing remains available for inspection until Stop.
@@ -1825,7 +1847,7 @@ class Controller:
             elif finished:
                 self._message("Shot finished. Replay paused and playback settings restored; Stop restores lens/cvar values.", playing=False)
 
-    def _halt(self):
+    def _halt(self, *, native_action="handoff"):
         self._stop_event.set()
         worker = self._thread
         if worker and worker is not threading.current_thread():
@@ -1833,13 +1855,16 @@ class Controller:
             if worker.is_alive():
                 raise RuntimeError("Playback is still waiting for the game console. Wait a moment before retrying.")
         self._thread = None
-        self._handoff_native_camera()
+        if native_action == "release":
+            self._release_native_camera()
+        else:
+            self._handoff_native_camera(allow_hold=native_action == "hold")
         with self._state_lock:
             self._state["playing"] = False
             self._state["paused_flight"] = False
 
     def pause(self):
-        self._halt()
+        self._halt(native_action="hold")
         restoration_error = self._restore_playback_settings()
         if self._console and self._console.is_connected and self._alive():
             self._require_demo(require_tick=False)
@@ -1848,7 +1873,7 @@ class Controller:
         self._message(restoration_error or "Paused. HUD restored; the current camera and lens values are held.", playing=False)
 
     def stop(self):
-        self._halt()
+        self._halt(native_action="release")
         self._invalidate_paused_camera()
         restoration_error = self._restore_playback_settings()
         if (self._restore or self._demo_speed_changed) and self._console and self._console.is_connected and self._alive():

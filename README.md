@@ -2,14 +2,16 @@
 
 # Deadlock Dolly
 
+PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS.
+
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.3.9 alpha.** The portable Windows build opens through
-`Dolly.exe`, with the supplied logo embedded in the executable. Python and
-Tcl/Tk are bundled; end users do not need to install them.
+**Current source: 0.3.10 alpha.** Python and Tcl/Tk are bundled; end users do not need to install them.
+
 
 ## Features
+
 
 - Capture camera keys from the game, including configurable keyboard and mouse bindings.
 - Smooth position paths, rotation and camera bank.
@@ -21,7 +23,9 @@ Tcl/Tk are bundled; end users do not need to install them.
 - Replay playback with HUD handling, settings restoration and diagnostics.
 - Development launcher with `-dev -insecure` and unlocker initialization before replay loading.
 
+
 ## Using the Windows app
+
 
 Download a **Windows x64** ZIP from this repository's Releases when one has
 been published. Extract it completely to a writable folder and double-click
@@ -43,21 +47,9 @@ Use the short [native camera test](docs/NATIVE_CAMERA.md) before publishing.
 The GitHub **Source code** download and the source ZIP contain the source and
 build recipe. They do not contain an already compiled Windows executable.
 
-## Building and publishing your own copy
-
-The included [Build Windows app workflow](.github/workflows/windows.yml) runs
-on GitHub's Windows runner. Open **Actions → Build Windows app → Run workflow**
-after putting these source files in your repository. A successful run supplies
-a Windows ZIP, source ZIP and checksums as a downloadable artifact.
-
-It builds the native helper and executable, runs their automated checks, and
-checks the embedded logo and an actual editor startup before packaging.
-It does not launch Deadlock, create a release,
-or publish anything automatically. You can attach the Windows ZIP to your own
-GitHub Release after testing it. See [BUILDING.md](docs/BUILDING.md) for local
-Windows build commands, repository setup and the release layout.
 
 ## Development
+
 
 Run from source with Python 3.10+ and Tcl/Tk:
 
@@ -85,11 +77,13 @@ helper. Executable builds use the pinned dependencies in `requirements-build.txt
 Logs, replays, personal shots, virtual environments and build outputs are
 excluded from Git. `SOURCE_FILES.txt` is the explicit source-archive list.
 
+
 ## Status and license
 
+
 Native playback uses a Deadlock-specific view hook; Console playback and manual
-paused flight retain the console implementation. This alpha has not yet passed
-a live Deadlock rendering test. Windows packaging and game behavior are separate
+paused flight retain the console implementation. The user reports smooth native panning in 0.3.9;
+this restart correction still needs an in-game check. Windows packaging and game behavior are separate
 validation steps. Consult
 [VALIDATION.md](docs/VALIDATION.md) and the generated Windows `BUILD_INFO.json`
 for the checks that have actually run.
@@ -98,6 +92,7 @@ Dolly source uses the [MIT license](LICENSE.txt). The bundled official unlocker
 and other components retain their own notices under `third_party/`. Artwork
 is separate from the source-code license; see [assets/README.md](assets/README.md).
 
-0.3.9 fixes the Windows native shared-memory startup test (`InterlockedExchange`
-not found). Camera playback behavior is unchanged from 0.3.8. Update the source
-and rebuild the complete Windows package; the native DLL must match the editor.
+0.3.10 fixes restarting after a native shot holds its last view. Play releases
+the old override before the normal seek and calibration. Stop / restore returns
+control to the game; its spectator view may differ from the final shot. Native
+rendering and paused movement are unchanged. Rebuild the complete Windows package.

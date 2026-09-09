@@ -1,87 +1,53 @@
-# Validation — 0.3.9 alpha
+# Validation — 0.3.10 alpha
 
-Date: 8 September 2026.
+## Observed failure
 
-This update fixes the confirmed Windows shared-memory startup error in 0.3.8.
-It does not change camera movement, curves or timing. The correction has passed
-local regression checks and Windows cross-compilation; a fresh GitHub Windows
-build must execute the updated native and shared-memory tests.
+The supplied 0.3.9 diagnostics show a completed native shot at 1.84375 seconds,
+with the demo paused at tick 112274. Across 42 fresh handoff samples, the
+underlying spectator remained about 328.44 units from the held final camera;
+angle error was only 0.0125 degrees. Both Play and Stop called the same strict
+handoff before proceeding, so neither could clear the held view. The user's
+character-cycle workaround is consistent with refreshing that spectator state.
+The video link could not be retrieved; this diagnosis is based on the logs.
 
-## Confirmed failure in the supplied GitHub artifact
+## Scope of correction
 
-The supplied `native-build.log` shows successful MSVC 19.44 compilation and
-both native CTest tests passing: `native_path_tests` and
-`native_bridge_callback_smoke`. The subsequent `tests.log` reports 590 tests
-run with exactly one error:
+An unsettled endpoint remains held without turning successful completion into
+an error. Explicit Stop releases the native override with acknowledgement and
+invalidates the previous position calibration. Play already calls Stop before
+its normal seek, fresh calibration and native publication, so it can restart.
+A failed release still blocks all subsequent restart writes. Pause can preserve
+an unsettled held view; manual camera entry retains its strict handoff check.
+Use Stop first if that entry asks to return control to the game.
 
-```
-ERROR: test_windows_mapping_is_readable_by_a_second_handle_and_heartbeat_advances
-native_bridge.py:107
-self._atomic32 = kernel.InterlockedExchange
-AttributeError: function 'InterlockedExchange' not found
-```
+No native source or DLL bytes changed from 0.3.9. The render callback, clock,
+path interpolation, console path loop and manual paused movement methods are
+unchanged. The bundled native metadata still accurately identifies its 0.3.9
+build; the existing Windows workflow rebuilds it for the current app version.
 
-Other logged camera exceptions occurred during negative regression cases; they
-are not additional failed tests. The failing test exposed a real startup bug:
-the production native connection uses the same Windows-only initialization.
-The executable packaging stage was not reached.
+## Checks
 
-## Correction
+The Python suite includes repeated native completion/restart with a spectator
+that never reaches the target, release-before-seek ordering, Pause then Stop,
+settings restoration, failed-release blocking, normal verified handoff and
+unchanged manual flight cancellation coverage. Source exports use the explicit
+allowlist; the update ZIP is compared against the 0.3.9 source and checked to
+reconstruct the complete 0.3.10 source without unrelated files.
 
-DollyNative.dll now exports `DollyAtomicExchange32`, `DollyAtomicExchange64`
-and `DollyAtomicCompareExchange32`. These wrap the compiler's Windows atomic
-operations, preserving memory barriers and return values. Python binds to
-these explicit exports rather than assuming kernel32 exposes the operations.
-The shared-memory layout and ABI remain version 1. See Microsoft's
-[Interlocked intrinsic documentation](https://learn.microsoft.com/en-us/cpp/intrinsics/interlockedexchange-intrinsic-functions?view=msvc-170).
+Python suite: **602 tests run, 601 passed, 1 Windows-only test skipped**.
+Python compilation passed. Native source and DLL byte comparison passed.
+The skipped Windows named-memory check remains in the Windows Actions gate.
 
-Before loading the helper, the editor checks its SHA-256, ABI metadata and x64
-DLL format, then verifies its exported protocol. It uses an absolute DLL path
-and restricted Windows dependency search. Loading the helper in the editor
-does not call `CreateInterface` or start its game worker/hooks. Missing atomic
-exports produce a clear incomplete/old-package error.
+## Remaining live check
 
-The original real Windows mapping test stays enabled on Windows. It now checks
-all three functions, unsigned sequence values and a heartbeat beyond 32 bits.
-Its heartbeat wait is bounded and polls for actual progress. Native CTest also
-checks exchange/CAS return values and signed/high-bit behavior.
+The user reports that native panning is now smooth. This correction has not
+been run against Deadlock here, and no Windows EXE was built in this workspace.
+Build a fresh Windows Actions run from the updated commit, extract the entire
+Windows package, and play the same shot to completion three times at 0.1 speed
+without cycling characters. Then test Stop / restore followed by Play once.
+Stop can visibly return to the game's spectator view at a different position;
+finishing a shot continues to hold its final authored camera.
 
-The build script still stops when any test fails. It now prints the final 150
-lines of the test log in Actions, while retaining the full UTF-8 log in the
-Windows-build-diagnostics artifact.
-
-## Completed verification
-
-- **599 Python tests run: 598 passed, one Windows-only test skipped on Linux.**
-  Six new binding/loader tests exercise real anonymous mapped memory with
-  C-callable fixtures, typed 32/64-bit arguments, high bits, missing exports,
-  bad hashes/ABI/PE format, load failures and mapping cleanup.
-- Two build-log tests run real child unittest processes, checking that failures
-  remain fatal, the traceback is visible, output stays bounded, the entire log
-  is saved, and UTF-8 survives an inherited ASCII environment.
-- The packaging test rejects each missing atomic export individually.
-- Updated DollyNative.dll and callback/atomic harness cross-compile for Windows
-  x64 using Zig 0.14.1/clang. PE inspection confirms all five exports and no
-  separate compiler runtime DLL dependency.
-- Disassembly of the compiled wrappers shows 32/64-bit memory `xchg` and
-  `lock cmpxchg` instructions, with no kernel32 Interlocked import lookup.
-- Source comparison against 0.3.8 confirms the entire controller and the native
-  view callback, clock, worker and game loader functions are unchanged.
-
-The original 0.3.8 native CTests passed on the user's Windows runner. The
-updated atomic checks, actual Windows ctypes loading, named mapping and final
-packaged EXE startup still require the fresh GitHub workflow. Cross-compilation
-and portable tests do not substitute for that execution. Live Deadlock visual
-smoothness remains unverified, as documented for the native-camera preview.
-
-## Applying the update
-
-Apply `Deadlock_Dolly_0.3.9_GitHub_Update.zip` over the existing 0.3.8 source
-repository and commit its contents. Start **Actions → Build Windows app → Run
-workflow** on the updated branch. Re-running the old job would use its old
-commit. Extract the complete resulting Windows package, including `_internal`.
-
-The helper DLL and Python bindings must be updated together. Saved shots and
-capture preferences do not need conversion. The source/archive manifest excludes
-logs, recordings, game binaries and build intermediates. No GitHub repository
-or public release was modified by this work.
+The same diagnostic session later records game exit 0xC0000005 without a crash
+stack. This patch does not establish the cause or fix that access violation.
+If it recurs, retain its crash dump along with the exported diagnostics.
