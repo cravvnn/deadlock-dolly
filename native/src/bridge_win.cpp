@@ -344,6 +344,18 @@ static BOOL CALLBACK load_unlocker(PINIT_ONCE,PVOID,PVOID*) {
 }
 }
 extern "C" __declspec(dllexport) unsigned DollyNativeProtocolVersion(){return dolly::kBridgeAbi;}
+// Win64 implements these operations as intrinsics, so kernel32 need not export
+// callable functions for ctypes. Expose our own stable C entry points instead.
+// This shared-memory utility does not initialize the unlocker or camera hook.
+extern "C" __declspec(dllexport) LONG DollyAtomicExchange32(volatile LONG* target,LONG value) {
+ return InterlockedExchange(target,value);
+}
+extern "C" __declspec(dllexport) LONG64 DollyAtomicExchange64(volatile LONG64* target,LONG64 value) {
+ return InterlockedExchange64(target,value);
+}
+extern "C" __declspec(dllexport) LONG DollyAtomicCompareExchange32(volatile LONG* target,LONG value,LONG comparand) {
+ return InterlockedCompareExchange(target,value,comparand);
+}
 extern "C" __declspec(dllexport) void* CreateInterface(const char* name,int* result) {
  try {
   InitOnceExecuteOnce(&gLoaderOnce,load_unlocker,nullptr,nullptr);

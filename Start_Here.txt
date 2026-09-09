@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.3.8 ALPHA - SOURCE PACKAGE
+DEADLOCK DOLLY 0.3.9 ALPHA - SOURCE PACKAGE
 
 This is the clean source package for GitHub and Windows executable builds.
 It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the
@@ -8,7 +8,7 @@ do not need to install Python. This source copy also supports the BAT workflow
 below. Native playback requires the compiled Windows helper; choose Console
 if running the source editor before building that helper.
 
-0.3.8 adds an experimental native camera driver. It evaluates and applies the
+0.3.8 added an experimental native camera driver. It evaluates and applies the
 camera during each main rendered view. It supports only the exact client.dll
 and engine2.dll build inspected for this release; a mismatch blocks Native
 launch. Select Console (legacy) before launch to use the existing driver.
@@ -225,3 +225,8 @@ Do not manually load the replay before initialization succeeds.
 
 Read docs/USER_GUIDE.md for controls, restoration and current limits.
 All Dolly Python source and automated tests are included.
+
+0.3.9 WINDOWS BUILD FIX
+Fixes the missing InterlockedExchange Windows export by using compiled atomics
+in DollyNative.dll. Rebuild through Actions and extract the whole Windows ZIP,
+including _internal. Camera movement and the native protocol are unchanged.

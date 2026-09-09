@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(DollyNative VERSION 0.3.8 LANGUAGES C CXX)
+project(DollyNative VERSION 0.3.9 LANGUAGES C CXX)
 
 # Native interpolation tests also build on Linux/macOS. The game bridge is an
 # x64 Windows DLL and is deliberately absent from non-Windows targets.

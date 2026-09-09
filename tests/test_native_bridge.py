@@ -261,6 +261,7 @@ class NativeBridgeTests(unittest.TestCase):
     def test_windows_mapping_is_readable_by_a_second_handle_and_heartbeat_advances(self):
         bridge = nb.NativeBridge.create()
         self.addCleanup(bridge.close)
+        self.assertIsNotNone(bridge._atomic_library)
         reader = nb.mmap.mmap(-1, nb.MAPPING_BYTES,
             tagname="Local\\DeadlockDollyNative_" + bridge.token, access=nb.mmap.ACCESS_READ)
         try:
@@ -268,8 +269,18 @@ class NativeBridgeTests(unittest.TestCase):
             self.assertEqual(header[:2], (nb.CONTROL_MAGIC, nb.ABI))
             self.assertEqual(header[5], os.getpid())
             initial = struct.unpack_from("<Q", reader, 32)[0]
-            nb.threading.Event().wait(0.15)
+            deadline = nb.time.monotonic() + 2
+            while struct.unpack_from("<Q", reader, 32)[0] <= initial and nb.time.monotonic() < deadline:
+                nb.threading.Event().wait(0.01)
             self.assertGreater(struct.unpack_from("<Q", reader, 32)[0], initial)
+            # Exercise the actual loaded CAS export as well as both exchanges.
+            bridge._store(nb.CONTROL_BYTES + 8, 0xFFFFFFFE)
+            self.assertEqual(bridge._load_sequence(), 0xFFFFFFFE)
+            with bridge._lock:
+                bridge._heartbeat = 0x100000000
+                bridge._beat()
+                self.assertEqual(struct.unpack_from("<Q", reader, 32)[0], 0x100000001)
+            bridge._store(nb.CONTROL_BYTES + 8, 0)
         finally:
             reader.close()
 

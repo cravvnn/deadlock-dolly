@@ -26,7 +26,10 @@ class NativePackagingTests(unittest.TestCase):
             OPTIONAL_HEADER=SimpleNamespace(Magic=0x20B),
             DIRECTORY_ENTRY_EXPORT=SimpleNamespace(symbols=[
                 SimpleNamespace(name=b"CreateInterface"),
-                SimpleNamespace(name=b"DollyNativeProtocolVersion")]),
+                SimpleNamespace(name=b"DollyNativeProtocolVersion"),
+                SimpleNamespace(name=b"DollyAtomicExchange32"),
+                SimpleNamespace(name=b"DollyAtomicExchange64"),
+                SimpleNamespace(name=b"DollyAtomicCompareExchange32")]),
             DIRECTORY_ENTRY_IMPORT=[SimpleNamespace(dll=b"KERNEL32.dll")],
             parse_data_directories=Mock(), close=Mock())
         module = SimpleNamespace(PE=Mock(return_value=image), DIRECTORY_ENTRY={
@@ -86,6 +89,17 @@ class NativePackagingTests(unittest.TestCase):
         self.assertEqual({p.relative_to(output).as_posix() for p in output.rglob("*") if p.is_file()},
                          {"bin/win64/DollyNative.dll", "build_info.json", "profiles/supported-build.json"})
         self.assertEqual(sha256(output / build_native.DLL_RELATIVE), sha256(dll))
+
+    def test_pe_gate_requires_every_atomic_export(self):
+        for missing in ("DollyAtomicExchange32", "DollyAtomicExchange64", "DollyAtomicCompareExchange32"):
+            image, module = self.pe_fixture()
+            image.DIRECTORY_ENTRY_EXPORT.symbols = [
+                symbol for symbol in image.DIRECTORY_ENTRY_EXPORT.symbols
+                if symbol.name != missing.encode("ascii")]
+            with self.subTest(missing=missing), patch.dict(sys.modules, {"pefile": module}):
+                with self.assertRaisesRegex(ValueError, "required bridge exports"):
+                    build_native.verify_native_dll(self.root / "DollyNative.dll")
+                image.close.assert_called_once()
 
     def test_runtime_requires_matching_hash_supported_abi_and_object_profile(self):
         native, dll, metadata = self.runtime_fixture()

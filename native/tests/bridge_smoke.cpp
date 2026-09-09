@@ -5,6 +5,7 @@
 #include "../src/bridge_win.cpp"
 
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace smoke {
@@ -218,7 +219,36 @@ struct Fixture {
     }
 };
 
+void atomic_exports() {
+    static_assert(sizeof(LONG) == 4 && sizeof(LONG64) == 8, "Atomic export widths must match the bridge wire format");
+    alignas(8) volatile LONG word = 7;
+    const LONG high32 = std::numeric_limits<LONG>::min();
+    require(DollyAtomicExchange32(&word, high32) == 7 && word == high32,
+            "32-bit atomic exchange lost its return value or sign bit");
+    require(DollyAtomicCompareExchange32(&word, 9, 7) == high32 && word == high32,
+            "Mismatched atomic compare-exchange changed memory or truncated the sign bit");
+    require(DollyAtomicCompareExchange32(&word, -1, high32) == high32 && word == -1,
+            "Matched atomic compare-exchange did not preserve signed high bits");
+    require(DollyAtomicCompareExchange32(&word, 0, 0) == -1 && word == -1,
+            "Atomic sequence read did not return the complete 32-bit value");
+    require(DollyAtomicExchange32(&word, 0) == -1 && word == 0,
+            "32-bit atomic exchange must return the previous value");
+
+    alignas(8) volatile LONG64 heartbeat = 0;
+    const LONG64 high64 = std::numeric_limits<LONG64>::min();
+    const LONG64 wide64 = 0x1234567887654321LL;
+    require(DollyAtomicExchange64(&heartbeat, high64) == 0 && heartbeat == high64,
+            "64-bit atomic exchange lost the sign bit");
+    require(DollyAtomicExchange64(&heartbeat, wide64) == high64 && heartbeat == wide64,
+            "64-bit atomic exchange truncated a heartbeat or its previous value");
+    require(DollyAtomicExchange64(&heartbeat, -1) == wide64 && heartbeat == -1,
+            "64-bit atomic exchange did not preserve all high bits");
+    require(DollyAtomicExchange64(&heartbeat, 0) == -1 && heartbeat == 0,
+            "64-bit atomic exchange must return the previous signed value");
+}
+
 void run() {
+    atomic_exports();
     Fixture f;
     auto status = f.frame();
     require(status.state == static_cast<unsigned>(State::Probe), "No command must leave the hook in probe mode");

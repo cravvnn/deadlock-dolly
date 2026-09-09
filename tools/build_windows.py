@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from collections import deque
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import platform
 import re
@@ -85,6 +87,27 @@ def copy_runtime_licenses(destination: Path) -> None:
     shutil.copy2(distribution.locate_file(candidates[0]), destination / "PyInstaller-COPYING.txt")
 
 
+def run_regression_tests(root: Path, log_path: Path) -> None:
+    """Keep the complete test log and expose failures in the Actions job output."""
+    environment = os.environ.copy()
+    environment["PYTHONIOENCODING"] = "utf-8"
+    try:
+        with log_path.open("w", encoding="utf-8") as log:
+            subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"],
+                           cwd=root, stdout=log, stderr=subprocess.STDOUT, check=True,
+                           env=environment)
+    except subprocess.CalledProcessError:
+        # Read after closing the writer, including when the child exits early.
+        with log_path.open(encoding="utf-8", errors="replace") as log:
+            tail = "".join(deque(log, maxlen=150))
+        print("Source regression tests failed. Last 150 log lines:\n" + tail,
+              file=sys.stderr, flush=True)
+        print(f"Complete test log: {log_path}\n"
+              "On GitHub Actions, download the Windows-build-diagnostics artifact for tests.log.",
+              file=sys.stderr, flush=True)
+        raise
+
+
 def main() -> int:
     if sys.platform != "win32" or struct.calcsize("P") != 8 or platform.machine().lower() not in {"amd64", "x86_64"}:
         raise RuntimeError("Build Dolly.exe on Windows x64 or use the included GitHub Actions workflow")
@@ -100,9 +123,7 @@ def main() -> int:
     checks.mkdir(parents=True, exist_ok=True)
     native_info = build_native(ROOT)
     print("Checking source regressions...", flush=True)
-    with (checks / "tests.log").open("w", encoding="utf-8") as log:
-        subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"],
-                       cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+    run_regression_tests(ROOT, checks / "tests.log")
     write_version(build / "windows-version.txt")
     print("Building the windowed executable and bundled runtime...", flush=True)
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",

@@ -1,6 +1,9 @@
 """Source export privacy and embedded-icon release gates."""
+from contextlib import redirect_stderr
+import io
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -89,6 +92,45 @@ class ReleasePackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Windows x64"):
                 build_windows.main()
         run.assert_not_called()
+
+    def test_failed_regressions_print_traceback_tail_and_preserve_fatal_gate(self):
+        tests = self.root / "tests"
+        tests.mkdir()
+        (tests / "test_failure.py").write_text(
+            "import unittest\n"
+            "class Failure(unittest.TestCase):\n"
+            "    def test_failure(self):\n"
+            "        for index in range(200):\n"
+            "            print(f'fixture noise {index:03d}', flush=True)\n"
+            "        self.fail('native connection fixture failure')\n", encoding="utf-8")
+        log = self.root / "tests.log"
+        output = io.StringIO()
+        with redirect_stderr(output), self.assertRaises(subprocess.CalledProcessError) as raised:
+            build_windows.run_regression_tests(self.root, log)
+        self.assertNotEqual(raised.exception.returncode, 0)
+        self.assertIn("fixture noise 000", log.read_text(encoding="utf-8"))
+        self.assertNotIn("fixture noise 000", output.getvalue())
+        self.assertIn("Traceback (most recent call last)", output.getvalue())
+        self.assertIn("AssertionError: native connection fixture failure", output.getvalue())
+        self.assertIn("Windows-build-diagnostics", output.getvalue())
+        self.assertIn(str(log), output.getvalue())
+        self.assertLessEqual(len(output.getvalue().splitlines()), 154)
+
+    def test_successful_regressions_keep_utf8_log_without_failure_output(self):
+        tests = self.root / "tests"
+        tests.mkdir()
+        (tests / "test_success.py").write_text(
+            "import unittest\n"
+            "class Success(unittest.TestCase):\n"
+            "    def test_success(self):\n"
+            "        print('Camera \u2192 ready')\n", encoding="utf-8")
+        log = self.root / "tests.log"
+        output = io.StringIO()
+        with redirect_stderr(output), patch.dict("os.environ", {"PYTHONIOENCODING": "ascii"}):
+            build_windows.run_regression_tests(self.root, log)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("Camera \u2192 ready", log.read_text(encoding="utf-8"))
+        self.assertIn("OK", log.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

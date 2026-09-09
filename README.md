@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.3.8 alpha.** The portable Windows build opens through
+**Current source: 0.3.9 alpha.** The portable Windows build opens through
 `Dolly.exe`, with the supplied logo embedded in the executable. Python and
 Tcl/Tk are bundled; end users do not need to install them.
 
@@ -29,7 +29,7 @@ been published. Extract it completely to a writable folder and double-click
 point to the EXE. See the included `Start_Here.txt` and the
 [user guide](docs/USER_GUIDE.md) for the replay workflow.
 
-In 0.3.8, **Camera driver → Native (experimental)** is selected by default
+In 0.3.9, **Camera driver → Native (experimental)** is selected by default
 before launch. It applies position, rotation and aspect-ratio framing during
 each main-view callback. It supports only the exact `client.dll` and
 `engine2.dll` build inspected for this release. If your installation differs,
@@ -97,3 +97,7 @@ for the checks that have actually run.
 Dolly source uses the [MIT license](LICENSE.txt). The bundled official unlocker
 and other components retain their own notices under `third_party/`. Artwork
 is separate from the source-code license; see [assets/README.md](assets/README.md).
+
+0.3.9 fixes the Windows native shared-memory startup test (`InterlockedExchange`
+not found). Camera playback behavior is unchanged from 0.3.8. Update the source
+and rebuild the complete Windows package; the native DLL must match the editor.

@@ -4,9 +4,9 @@ The source is ready for a portable Windows build. This workspace did not have
 a native Windows builder, so **no compiled EXE is included in the source ZIP**.
 The workflow below runs the real build and executable checks on Windows.
 
-## Update an existing GitHub repository to 0.3.8
+## Update an existing GitHub repository to 0.3.9
 
-1. Extract `Deadlock_Dolly_0.3.8_GitHub_Update.zip` locally.
+1. Extract `Deadlock_Dolly_0.3.9_GitHub_Update.zip` locally.
 2. Open the repository's main **Code** page, then **Add file → Upload files**.
 3. Drag all contents from inside the extracted update folder into the uploader.
    Keep all supplied directories intact, including `native`, `dolly`, `tests`,
@@ -17,7 +17,7 @@ The workflow below runs the real build and executable checks on Windows.
 5. Select **Actions → Build Windows app → Run workflow** on that branch. Start
    a fresh run; re-running an old job rebuilds its old commit.
 6. Download **Deadlock-Dolly-Windows-x64** from the successful run's artifacts.
-   Extract it, then extract `Deadlock_Dolly_0.3.8-alpha_Windows_x64.zip` inside it.
+   Extract it, then extract `Deadlock_Dolly_0.3.9-alpha_Windows_x64.zip` inside it.
 7. Close the old editing session and follow the recovery/update instructions
    below before replacing its portable files. Copy the complete Windows
    package, including `_internal`; the GitHub update is source, not an EXE patch.
@@ -72,8 +72,8 @@ actual packaged-editor startup fails. Inspect `build/checks/` after a failure.
 
 Successful outputs are under `dist/`:
 
-- `Deadlock_Dolly_0.3.8-alpha_Windows_x64.zip`
-- `Deadlock_Dolly_0.3.8-alpha_Source.zip`
+- `Deadlock_Dolly_0.3.9-alpha_Windows_x64.zip`
+- `Deadlock_Dolly_0.3.9-alpha_Source.zip`
 - `SHA256SUMS.txt`
 
 The portable ZIP contains a `DeadlockDolly` folder with `Dolly.exe`, `_internal`,
@@ -143,3 +143,11 @@ Primary references:
 - [Bundled resource and executable paths](https://pyinstaller.org/en/stable/runtime-information.html)
 - [Windowed streams and launching external programs](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html)
 - [GitHub workflow artifacts](https://docs.github.com/en/actions/tutorials/store-and-share-data)
+
+## 0.3.9 Windows build correction
+
+The 0.3.8 run compiled the native helper and passed both C++ tests, then failed
+its Windows shared-memory test with `InterlockedExchange` not found. This update
+uses Dolly-owned compiled atomic exports. Keep the test enabled and rebuild
+through the existing workflow. Future Python test failures print a bounded log
+tail directly in Actions and retain the complete Windows-build-diagnostics artifact.

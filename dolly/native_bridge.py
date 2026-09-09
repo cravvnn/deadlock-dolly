@@ -7,6 +7,8 @@ command snapshots, so a long wait cannot look like an abandoned editor.
 from __future__ import annotations
 
 import ctypes
+import hashlib
+import json
 import math
 import mmap
 import os
@@ -17,6 +19,7 @@ import time
 import uuid
 
 from .native_path import compile_project
+from .runtime import resource_root
 
 ABI = 1
 CONTROL_BYTES = 2 * 1024 * 1024
@@ -32,6 +35,47 @@ STATES = ("starting", "probe", "armed", "playing", "completed", "stopped", "faul
 
 class NativeBridgeError(RuntimeError):
     """Native camera is unavailable or did not acknowledge a command."""
+
+
+def _load_atomic_library():
+    """Load the verified Dolly helper, without invoking its game factory.
+
+    Windows x64 implements the Interlocked APIs as compiler intrinsics; they
+    cannot be assumed to exist as kernel32 exports for ctypes. Dolly exports
+    small wrappers compiled with those intrinsics and their memory barriers.
+    Loading this DLL initializes no game hooks: only CreateInterface can start
+    the separate game-side loader, and the editor never calls that export.
+    """
+    native = resource_root() / "native"
+    dll = native / "bin" / "win64" / "DollyNative.dll"
+    try:
+        metadata = json.loads((native / "build_info.json").read_text(encoding="utf-8"))
+        data = dll.read_bytes()
+    except (OSError, ValueError) as exc:
+        raise NativeBridgeError("The native camera helper is missing or invalid. Extract the complete Dolly package or rebuild it.") from exc
+    if (not isinstance(metadata, dict) or type(metadata.get("abi")) is not int
+            or metadata["abi"] != ABI
+            or metadata.get("sha256") != hashlib.sha256(data).hexdigest()):
+        raise NativeBridgeError("The native camera helper failed its ABI or SHA-256 check. Extract the complete matching Dolly package.")
+    offset = struct.unpack_from("<I", data, 60)[0] if len(data) >= 64 else len(data)
+    if (data[:2] != b"MZ" or offset < 64 or offset + 26 > len(data)
+            or data[offset:offset + 4] != b"PE\0\0"
+            or struct.unpack_from("<H", data, offset + 4)[0] != 0x8664
+            or not struct.unpack_from("<H", data, offset + 22)[0] & 0x2000
+            or struct.unpack_from("<H", data, offset + 24)[0] != 0x20B):
+        raise NativeBridgeError("The native camera helper must be a Windows x64 DLL.")
+    try:
+        # An absolute path and restricted dependency search avoid selecting
+        # an unrelated DLL from the editor's working directory or PATH.
+        library = ctypes.WinDLL(str(dll.resolve()), use_last_error=True, winmode=0x1100)
+        protocol = library.DollyNativeProtocolVersion
+        protocol.argtypes = []
+        protocol.restype = ctypes.c_uint32
+        if protocol() != ABI:
+            raise NativeBridgeError("The loaded native camera helper has a different protocol. Restart Dolly with the complete updated package.")
+        return library
+    except (OSError, AttributeError) as exc:
+        raise NativeBridgeError("The native camera helper could not load. Rebuild Dolly or extract the complete updated package.") from exc
 
 
 def _number(value, label, *, positive=False):
@@ -102,15 +146,19 @@ class NativeBridge:
         self._mode = 0
         self._atomic32 = self._atomic64 = None
         self._read32 = None
+        self._atomic_library = None
         if os.name == "nt" and isinstance(mapping, mmap.mmap):
-            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-            self._atomic32 = kernel.InterlockedExchange
+            self._atomic_library = _load_atomic_library()
+            try:
+                self._atomic32 = self._atomic_library.DollyAtomicExchange32
+                self._atomic64 = self._atomic_library.DollyAtomicExchange64
+                self._read32 = self._atomic_library.DollyAtomicCompareExchange32
+            except AttributeError as exc:
+                raise NativeBridgeError("This native camera helper is from an older build. Rebuild Dolly and replace the complete package, including _internal.") from exc
             self._atomic32.argtypes = [ctypes.POINTER(ctypes.c_int32), ctypes.c_int32]
             self._atomic32.restype = ctypes.c_int32
-            self._atomic64 = kernel.InterlockedExchange64
             self._atomic64.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.c_int64]
             self._atomic64.restype = ctypes.c_int64
-            self._read32 = kernel.InterlockedCompareExchange
             self._read32.argtypes = [ctypes.POINTER(ctypes.c_int32), ctypes.c_int32, ctypes.c_int32]
             self._read32.restype = ctypes.c_int32
         mapping[:] = b"\0" * MAPPING_BYTES

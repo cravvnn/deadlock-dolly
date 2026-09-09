@@ -1,19 +1,22 @@
 {
   "abi": 1,
-  "version": "0.3.8-alpha",
-  "sha256": "3dd7f019abd5be8752e04a25f556b1d9c15297bea6f79b0a5945503d59f7976e",
+  "version": "0.3.9-alpha",
+  "sha256": "ad007b39fe73dde495fd4dfa2cfde741c5b3689642ffe1f1b3afaee31f6e93b0",
   "compiler": "Zig 0.14.1 clang, cross-compiled on Linux for Windows x64",
   "configuration": "Release",
   "runtime": "static",
   "native_path_tests_passed": true,
   "native_callback_tests_passed": false,
-  "native_callback_tests_note": "Windows callback harness is part of the GitHub build gate; not executed in this Linux workspace.",
+  "native_callback_tests_note": "Updated callback/atomic harness awaits GitHub Windows execution. Supplied 0.3.8 native-build.log confirms prior two CTest tests passed.",
   "game_runtime_verified": false,
   "pe": {
     "machine": "x64",
     "dll": true,
     "exports": [
       "CreateInterface",
+      "DollyAtomicCompareExchange32",
+      "DollyAtomicExchange32",
+      "DollyAtomicExchange64",
       "DollyNativeProtocolVersion"
     ],
     "import_libraries": [

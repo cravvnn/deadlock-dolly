@@ -1,5 +1,22 @@
 # Changes
 
+## 0.3.9 alpha — Windows native connection build fix
+
+- Fix the confirmed Windows-only test/startup error: Python looked up
+  `InterlockedExchange` as a kernel32 DLL export, which was unavailable.
+  Export and call three compiled atomic wrappers from DollyNative.dll instead.
+  Keep atomic memory barriers and shared-memory ABI 1.
+- Verify the helper hash, x64 DLL format and protocol before using its exports;
+  report incomplete or mixed-version packages clearly. Loading the helper in
+  the editor does not call its game factory or install camera hooks.
+- Require the atomic exports in the Windows packaging check. Retain and extend
+  the real Windows named-memory test; add portable binding/error regressions
+  and C++ atomic return-value/high-bit checks.
+- Show a bounded test-log tail in Actions when Python regressions fail, while
+  keeping the complete diagnostic artifact and stopping the build on failure.
+- Camera paths, native timing, hook locations, manual paused movement, unlocker
+  sequence and game compatibility fingerprints are unchanged from 0.3.8.
+
 ## 0.3.8 alpha — experimental native main-view camera
 
 - Add a Native (experimental) camera driver selected before launch. Evaluate

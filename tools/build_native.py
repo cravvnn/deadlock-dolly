@@ -17,7 +17,10 @@ from release_files import sha256
 
 BRIDGE_ABI = 1
 DLL_RELATIVE = Path("bin/win64/DollyNative.dll")
-REQUIRED_EXPORTS = {"CreateInterface", "DollyNativeProtocolVersion"}
+REQUIRED_EXPORTS = {
+    "CreateInterface", "DollyNativeProtocolVersion",
+    "DollyAtomicExchange32", "DollyAtomicExchange64", "DollyAtomicCompareExchange32",
+}
 
 
 def verify_native_dll(path: Path) -> dict:
