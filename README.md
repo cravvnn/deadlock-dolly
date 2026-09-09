@@ -82,11 +82,7 @@ excluded from Git. `SOURCE_FILES.txt` is the explicit source-archive list.
 
 
 Native playback uses a Deadlock-specific view hook; Console playback and manual
-paused flight retain the console implementation. The user reports smooth native panning in 0.3.9;
-this restart correction still needs an in-game check. Windows packaging and game behavior are separate
-validation steps. Consult
-[VALIDATION.md](docs/VALIDATION.md) and the generated Windows `BUILD_INFO.json`
-for the checks that have actually run.
+paused flight retain the console implementation. 
 
 Dolly source uses the [MIT license](LICENSE.txt). The bundled official unlocker
 and other components retain their own notices under `third_party/`. Artwork
