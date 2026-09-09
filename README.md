@@ -3,7 +3,8 @@
 # Deadlock Dolly
 
 THIS IS AN "INJECTION" TO THE GAME - PLEASE USE AT YOUR OWN RISK
-(This is due to the mod using source2's native camera to render the dolly paths, without this, we would not have the mod)
+
+This is due to the mod using source2's native camera to render the dolly paths, without this, we would not have dolly's
 
 PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
 
