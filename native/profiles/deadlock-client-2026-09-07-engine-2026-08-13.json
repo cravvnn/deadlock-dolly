@@ -1,6 +1,6 @@
 {
   "profile_format": 1,
-  "native_abi": 1,
+  "native_abi": 2,
   "validation": "Static exact-build verification. Native view cadence and visual smoothness require the user test.",
   "client": {
     "client_sha256": "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
@@ -191,5 +191,52 @@
       "evidence": "engine ctor 0x8049e + SetGlobals call 0x80d5b. ClientFrameSimulate 0x6c66b-0x6c6ab computes (integerTick+fraction)*interval; helper0x631f0 writes globals+0x30. Render-time dynamics must still be validated live.",
       "context_tick_semantics": "nearest integer from already float-quantized curtime/interval +0.5; NOT the base tick to pair with fraction+0x38"
     }
+  },
+  "tier0": {
+    "sha256": "b4300eb0abfe73e1e877516ab6b8bdd1a1bdb4ffc47c7515a349d0623b852f69",
+    "size_of_image": "0x400000",
+    "interface": "VEngineCvar007",
+    "vtable_rva": "0x3106e8",
+    "find_cvar": {
+      "slot": 11,
+      "rva": "0x6bef0",
+      "abi": "void*(void* cvar,uint64* return_storage,const char* name,int allow_defensive)"
+    },
+    "get_data": {
+      "slot": 43,
+      "rva": "0x6be30",
+      "abi": "void*(void* cvar,uint64 reference)"
+    },
+    "set_value": {
+      "rva": "0x20ec60",
+      "abi": "void(ConVarRefAbstract*,int slot,const CVValue* new_value,CVValue* current_value,void* context)",
+      "first16": "4c8944241848894c2408555657415441"
+    },
+    "data_offsets": {
+      "name": "0x0",
+      "type_int16": "0x28",
+      "change_count": "0x2c",
+      "flags": "0x30",
+      "scalar_value": "0x58"
+    },
+    "validated_by": "Supplied tier0 disassembly; setter retains filters, clamps, increments and callbacks. Synthetic Windows execution and live rendering remain separate gates."
+  },
+  "native_effects": {
+    "supported": [
+      "r_citadel_depthoffield_enable",
+      "r_citadel_depthoffield_focus_distance",
+      "r_citadel_depthoffield_aperture_diameter",
+      "r_citadel_depthoffield_sensor_size",
+      "r_citadel_depthoffield_mode",
+      "r_citadel_depthoffield_debug",
+      "r_depth_of_field"
+    ],
+    "dof_graph_reads_rva": [
+      "0x5af688",
+      "0x5af69e",
+      "0x5af752",
+      "0x5af77c"
+    ],
+    "timing": "Apply at the same verified main-view phase as camera, before DOF graph parameter construction; visual synchronization needs in-game confirmation."
   }
 }

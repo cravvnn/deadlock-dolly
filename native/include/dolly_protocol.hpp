@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace dolly {
-constexpr std::uint32_t kBridgeAbi = 1;
+constexpr std::uint32_t kBridgeAbi = 2;
 constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 constexpr std::size_t kMappingBytes = kControlBytes + 4096;
 constexpr std::size_t kPayloadOffset = 1024;
@@ -53,11 +53,15 @@ struct Status {
  char demo_name[512];
  double max_frame_interval_ms;
  double frame_interval_ms;
+ std::uint32_t effect_count;
+ std::uint32_t effect_error;
+ std::uint64_t effect_frames;
+ double effect_phase;
 };
 #pragma pack(pop)
 static_assert(sizeof(ControlHeader)==576, "Python control layout must match");
 static_assert(offsetof(ControlHeader, heartbeat)==32, "Heartbeat requires aligned atomic access");
 static_assert(offsetof(Status, original_pose)==72, "Python status layout must match");
 static_assert(offsetof(Status, message)==208, "Python message layout must match");
-static_assert(sizeof(Status)==992, "Python status size must match");
+static_assert(sizeof(Status)==1016, "Python status size must match");
 }

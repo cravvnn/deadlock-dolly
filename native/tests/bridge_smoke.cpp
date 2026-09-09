@@ -247,6 +247,89 @@ void atomic_exports() {
             "64-bit atomic exchange must return the previous signed value");
 }
 
+// Test the production typed effect binding and lifecycle with synthetic convars.
+Allocation* effect_data=nullptr;
+bool reject_effect_write=false;
+void* __fastcall find_effect(void*,std::uint64_t* out,const char* name,int) {
+ *out=0xffffffff;
+ for(unsigned i=0;i<kEffects.size();++i)if(!std::strcmp(name,kEffects[i].name))*out=i;
+ return out;
+}
+std::uintptr_t __fastcall get_effect(void*,std::uint64_t id) {
+ return id<kEffects.size()?effect_data->address()+id*0x100:0;
+}
+void __fastcall set_effect(CvarRef* ref,int slot,const void* value,void* current,void* context) {
+ require(slot==0&&context==nullptr,"Incorrect verified setter call arguments");
+ require(current==reinterpret_cast<void*>(ref->data+0x58),"Setter used an incorrect value slot");
+ if(reject_effect_write)return;
+ std::memcpy(current,value,kEffects[ref->id].type==0?1:4);
+}
+void effect_checks(Fixture& f) {
+ Allocation values{4096};effect_data=&values;
+ gCvar=1;gFindCvar=find_effect;gGetCvarData=get_effect;gSetCvar=set_effect;
+ for(unsigned i=0;i<kEffects.size();++i){
+  auto at=values.address()+i*0x100;
+  put(at,reinterpret_cast<std::uintptr_t>(kEffects[i].name));
+  put(at+0x28,static_cast<std::uint16_t>(kEffects[i].type));
+  put(at+0x30,std::uint64_t(8));
+  if(kEffects[i].type==7)put(at+0x58,600.0f);
+ }
+ auto shot=std::make_shared<NativeShot>();shot->camera=*f.path;
+ EffectTrack focus;focus.id=1;focus.first=100;focus.last=900;focus.last_time=1;
+ focus.segments.push_back({0,1,1,1,100,900,0,0});
+ EffectTrack enabled;enabled.id=0;enabled.first=0;enabled.last=1;enabled.last_time=.5;
+ enabled.segments.push_back({0,.5,0,1,0,1,0,0});
+ EffectTrack mode=enabled;mode.id=4;mode.last=2;mode.segments[0].right=2;
+ shot->effects={focus,enabled,mode};
+ auto command=[&](Mode mode){
+  f.command(mode);
+  auto c=std::make_shared<Command>(*std::atomic_load(&gCommand));c->shot=shot;
+  std::atomic_store(&gCommand,std::shared_ptr<const Command>(c));
+ };
+ f.fresh_hold();command(Mode::Hold);auto status=f.frame();
+ require(status.effect_count==3&&!status.error,"Native effects did not arm");
+ double value=0;require(gEffects.bindings[0].read(value)&&value==100,"First effect not applied before resume");
+ command(Mode::Play);f.frame();paused=false;
+ for(int n=1;n<=8;++n){
+  f.clock(64+n/1024.0f,4096);status=f.frame();
+  require(status.effect_phase==status.phase&&!status.effect_error,"Effect and camera phases differ");
+  require(gEffects.bindings[0].read(value),"Effect readback failed");
+  close_to(value,100+800*status.phase,"Effect stepped instead of following fractional view time");
+ }
+ for(int n=1;n<=4;++n){f.clock(64+n/8.0f,4096+n*8);status=f.frame();require(!status.error,"DOF progression failed");}
+ require(gEffects.bindings[1].read(value)&&value==1,"Boolean DOF step did not apply");
+ require(gEffects.bindings[2].read(value)&&value==2,"Integer DOF mode did not apply");
+ command(Mode::HoldCurrent);status=f.frame();double held=status.effect_phase;
+ f.clock(64.125f,4104);status=f.frame();close_to(status.effect_phase,held,"Held effect advanced");
+ command(Mode::Release);status=f.frame();
+ float restored=0;read_value(values.address()+0x100+0x58,restored);
+ require(status.effect_count==0&&restored==600,"Stop did not restore original effect");
+ // Force a setter/readback mismatch: stop before camera write, then restore.
+ f.fresh_hold();command(Mode::Hold);reject_effect_write=true;
+ status=f.frame();require(status.error==35,"A refused effect setter was reported as synchronized");
+ f.unchanged();reject_effect_write=false;command(Mode::Release);f.frame();
+ // Lease expiry must restore settings without an editor console round trip.
+ f.fresh_hold();command(Mode::Hold);f.frame();gHeartbeatTime=now_seconds()-3;
+ status=f.frame(0,false);read_value(values.address()+0x100+0x58,restored);
+ require(status.error==10&&restored==600&&status.effect_count==0,"Editor loss did not restore effects");
+ f.command(Mode::Release);f.frame();
+ // Invalid binding is refused before any shot cvar changes.
+ put(values.address()+0x100+0x28,std::uint16_t(3));
+ f.fresh_hold();command(Mode::Hold);status=f.frame();
+ require(status.error==35&&status.effect_count==0,"Wrong native type was accepted");
+ f.unchanged();put(values.address()+0x100+0x28,std::uint16_t(7));
+ f.command(Mode::Release);f.frame();
+ // Failed restoration must not acknowledge a successful release.
+ f.fresh_hold();command(Mode::Hold);f.frame();reject_effect_write=true;
+ command(Mode::Release);status=f.frame();require(status.error==36&&status.effect_count==3,"Failed restore was acknowledged");
+ reject_effect_write=false;status=f.frame();require(status.state==static_cast<unsigned>(State::Stopped)&&status.effect_count==0,"Restore retry did not clear ownership");
+ // Explicit restore overrides survive native completion/release.
+ shot->effects[0].restore_override=true;shot->effects[0].restore=123;
+ f.fresh_hold();command(Mode::Hold);f.frame();command(Mode::Release);status=f.frame();
+ read_value(values.address()+0x100+0x58,restored);require(restored==123&&!status.error,"Restore override was lost");
+ gCvar=0;gFindCvar=nullptr;gGetCvarData=nullptr;gSetCvar=nullptr;effect_data=nullptr;
+}
+
 void run() {
     atomic_exports();
     Fixture f;
@@ -351,6 +434,8 @@ void run() {
     f.applied(status.phase);
     f.clock(64, 4097); status = f.frame();
     require(status.error == 14, "Moving frozen replay must release the native camera"); f.unchanged();
+
+    effect_checks(f);
 
     std::cout << "Actual native callback smoke tests passed (synthetic Windows memory; no game runtime claim)\n";
 }
