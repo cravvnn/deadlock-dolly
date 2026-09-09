@@ -1,16 +1,9 @@
 0.3.13 COMPLETE SEPTEMBER 9 COMPATIBILITY UPDATE
 Supports the reviewed client.dll, engine2.dll and tier0.dll builds.
-Use this complete source package for GitHub; build and extract a fresh Windows app.
-Unknown builds remain blocked. See docs/GAME_UPDATES.md.
 
 DEADLOCK DOLLY 0.3.11 ALPHA - SOURCE PACKAGE
 
-This is the clean source package for GitHub and Windows executable builds.
-It does not include a compiled Dolly.exe. Read docs/BUILDING.md to create the
-portable Windows package using GitHub Actions or your Windows Python 3.12.
-End users of that built package launch Dolly.exe with the supplied logo and
-do not need to install Python. This source copy also supports the BAT workflow
-below. Native playback requires the compiled Windows helper; choose Console
+Native playback requires the compiled Windows helper; choose Console
 if running the source editor before building that helper.
 
 0.3.8 added an experimental native camera driver. It evaluates and applies the
@@ -59,7 +52,9 @@ unchanged, and Console playback retains the earlier smoothing options.
     focus/aperture keys. Fixed values opens its own dialog on that tab. On
     Cameras, More > Coordinates / timing opens the advanced editor.
 
+
 FIRST NATIVE CAMERA TEST
+
 
 1. Capture two nearby views with the same angle for a straight path. Play at
    Speed 1, then 0.1. Watch a stationary wall or building edge for stepping.
@@ -80,7 +75,9 @@ updates; those effects are not synchronized to every rendered frame. Updates
 / s controls those effect updates, not the native camera's render rate.
 Read docs/NATIVE_CAMERA.md before treating this alpha as a public release.
 
+
 PAUSED CAMERA CONTROLS
+
 
 After Check camera support, enter replay freecam. Open Paused camera on Cameras.
 Previous / Next switches saved views at the CURRENT replay moment; it never
@@ -115,7 +112,9 @@ of this build; arrow keys provide look control. After updating, retry paused
 movement followed by Deadlock's own Play button, and Play shot at 0.1x. This
 revision has simulated regression coverage but needs that in-game check.
 
+
 NORMAL FRAMING AND OLD SHOTS
+
 
 Normal starts at 16:9 (about 1.77778), with 16:10, 21:9, 4:3 and custom ratios
 available. Reset puts the selected camera at Normal. Changing Normal does not
@@ -135,7 +134,9 @@ Saving uses project version 2, which older Dolly versions cannot open. Remove
 old custom FOV or duplicate r_aspectratio tracks/values if Dolly reports them;
 the framing curve now owns this control.
 
+
 CAPTURE AND PLAYBACK
+
 
 To capture without switching windows, open Capture binding on Cameras or File.
 Choose Mouse4/Mouse5 for a side button, MiddleMouse, or a keyboard key; check
@@ -161,7 +162,9 @@ Speed changes the replay and camera together. A four-second shot at 0.1x takes
 about 40 real seconds. A smooth spline does not imply constant travel speed:
 the view spacing and arrival times determine speed through each section.
 
+
 EXPERIMENTAL PLAYBACK SMOOTHING - CONSOLE DRIVER ONLY
+
 
 When using Console (legacy), choose Smoothing under Shot playback before
 Play shot. Native playback disables and ignores this filter. It smooths the shared
@@ -194,24 +197,9 @@ clock corrections keep camera and framing curves on the same timeline.
 Supported Windows systems use a high-resolution frame timer, with a normal
 wait fallback. The console backend does not provide a render-time camera hook.
 
-EDITOR LAYOUT
-
-Playback controls stay visible below the active tab. The main pages do not
-scroll; long tables scroll vertically within their own panels. At 100% Windows
-scaling the window opens at 1180x800, with a 1000x700 minimum. Sizes scale with
-DPI to keep controls readable (about 1500x1050 minimum at 150% scaling).
-Log opens a separate resizable activity window, closed by default.
-
-PROGRAM ICON
-
-The window/taskbar icon uses the exact white-backed film-reel image supplied.
-Version 0.2.2 fixes its Windows ICO encoding and sets the main-window icon
-explicitly. Normal startup no longer retains a separate Python console button.
-The original image is preserved in assets/logo-original.png; all icon sizes
-are format/size conversions of that file. Close the old Dolly instance before
-opening the updated one. The BAT file itself keeps its normal file-type icon.
 
 STARTUP RECOVERY AND DIAGNOSTICS
+
 
 The launcher always uses -dev -insecure. It temporarily mounts the bundled
 cvar unlocker through gameinfo.gi with an exact original backup and automatic
@@ -230,6 +218,10 @@ Do not manually load the replay before initialization succeeds.
 
 Read docs/USER_GUIDE.md for controls, restoration and current limits.
 All Dolly Python source and automated tests are included.
+
+
+Please contact me on Discord @Cravvnn / & or please submit an issue on the GitHub page if there is anything not working as intended.
+
 
 0.3.9 WINDOWS BUILD FIX
 Fixes the missing InterlockedExchange Windows export by using compiled atomics
