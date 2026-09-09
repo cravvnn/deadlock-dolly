@@ -12,7 +12,7 @@ This is due to the mod using source2's native camera to render the dolly paths. 
 PLEASE STILL LAUNCH GAME WITH `-insecure` IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
 
 
-**Current source: 0.3.10 alpha.** Python and Tcl/Tk are bundled; end users do not need to install them.
+**Current source: 0.3.11 alpha.** Python and Tcl/Tk are bundled; end users do not need to install them.
 
 
 ## Features
