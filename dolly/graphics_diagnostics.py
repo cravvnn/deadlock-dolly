@@ -5,8 +5,13 @@ import re
 import struct
 
 OFFSET = 2 * 1024 * 1024 + 1024
-WIRE = struct.Struct("<8s4I9Q10I65s7x192s112x")
+WIRE = struct.Struct("<8s4I9Q10I65s7x192s11Q24x")
 MAGIC = b"DLYGFX01"
+OVERLAY_FIELDS = (
+    "overlay_draw_frames", "guide_frames", "overlay_last_us", "overlay_max_us",
+    "present_last_us", "present_max_us", "overlay_lock_skips",
+    "overlay_active_since_ms", "present_active_since_ms", "guide_lines", "guide_labels",
+)
 STATES = ("waiting", "supported", "unsupported", "unreadable", "racing")
 COUNTERS = ("sample", "uptime_ms", "main_view_frames", "present_calls",
             "panel_frames", "init_attempts", "init_successes", "release_calls", "resize_calls")
@@ -20,16 +25,17 @@ def unpack(data: bytes) -> dict | None:
         return None  # Older ABI 3 helpers do not publish this optional block.
     values = WIRE.unpack(data)
     magic, sequence, abi, state, flags = values[:5]
-    if magic != MAGIC or sequence & 1 or abi != 1 or state >= len(STATES) or flags & ~127:
+    if magic != MAGIC or sequence & 1 or abi not in (1, 2) or state >= len(STATES) or flags & ~127:
         raise ValueError("Unrecognized graphics diagnostic snapshot")
-    digest = values[-2].split(b"\0", 1)[0].decode("ascii")
+    digest = values[24].split(b"\0", 1)[0].decode("ascii")
     if digest and re.fullmatch(r"[0-9a-f]{64}", digest) is None:
         raise ValueError("Invalid renderer diagnostic fingerprint")
     result = dict(zip(COUNTERS, values[5:14]))
     result.update(zip(RENDERER_FIELDS, values[14:24]))
     result.update(state=STATES[state], flags=flags, renderer_sha256=digest,
                   header_consistent=bool(flags & 2),
-                  message=values[-1].split(b"\0", 1)[0].decode("utf-8", errors="replace"))
+                  message=values[25].split(b"\0", 1)[0].decode("utf-8", errors="replace"))
+    result.update(zip(OVERLAY_FIELDS, values[26:37] if abi == 2 else (None,) * len(OVERLAY_FIELDS)))
     for key in RENDERER_FIELDS[:5]:
         if not flags & 1:
             result[key] = None

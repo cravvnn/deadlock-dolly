@@ -77,6 +77,56 @@ class NativeFlightControllerTests(unittest.TestCase):
     def setUp(self):
         self.controller, self.console, self.bridge = configured_controller()
 
+    def test_first_flight_hands_off_default_game_cursor_before_arming(self):
+        original_values = dict(self.console.values)
+        start_flight = self.bridge.start_flight
+
+        def require_handoff(*args, **kwargs):
+            self.assertEqual(self.console.values["hud_free_cursor"], 0)
+            self.assertEqual(self.console.values["citadel_hide_replay_hud"], 1)
+            self.assertEqual(self.console.values["citadel_hud_visible"], 0)
+            return start_flight(*args, **kwargs)
+
+        self.bridge.start_flight = require_handoff
+        self.assertFalse(self.controller._game_ui_visible)
+        self.controller.enter_native_flight()
+        self.controller.enter_native_flight()
+        self.controller.stop()
+        self.assertEqual(self.console.values, original_values)
+
+    def test_first_flight_rejects_unapplied_cursor_before_camera_arm(self):
+        request = self.console.request
+
+        def ignore_cursor(command, *args, **kwargs):
+            result = request(command, *args, **kwargs)
+            if "hud_free_cursor 0" in command:
+                self.console.values["hud_free_cursor"] = -1
+            return result
+
+        self.console.request = ignore_cursor
+        with self.assertRaisesRegex(RuntimeError, "did not apply hud_free_cursor"):
+            self.controller.enter_native_flight()
+        self.assertNotIn("native.flight", self.console.events)
+        self.assertEqual(self.controller._game_ui_restore["hud_free_cursor"], -1)
+        self.controller.stop()
+        self.assertFalse(self.controller._game_ui_restore)
+
+    def test_first_flight_missing_cursor_preserves_game_before_any_ui_write(self):
+        del self.console.values["hud_free_cursor"]
+        original_values = dict(self.console.values)
+        with self.assertRaisesRegex(ValueError, "hud_free_cursor"):
+            self.controller.enter_native_flight()
+        self.assertNotIn("native.flight", self.console.events)
+        self.assertEqual(self.console.values, original_values)
+
+    def test_first_flight_closes_known_console_without_prior_f9(self):
+        self.controller.toggle_console(True)
+        self.controller.enter_native_flight()
+        self.assertFalse(self.controller._console_open)
+        self.assertLess(self.console.events.index("hideconsole"),
+                        self.console.events.index("native.flight"))
+        self.assertEqual(self.bridge.owner, "flight")
+
     def test_paused_native_entry_uses_visible_height_without_console_calibration(self):
         self.console.pose[2] = 118  # Player-eye readback disagrees with visible native view.
         pose = self.controller.begin_paused_camera()

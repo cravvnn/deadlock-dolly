@@ -1,7 +1,23 @@
-# Stage 2 test notes — 0.4.5 alpha
+# Stage 2 test notes — 0.4.6 alpha
 
 Use the complete matching Windows package and a local replay in DX11.
 Stage 1 startup, cleanup, console, game UI and capture checks still apply.
+
+## Startup mouse and crash diagnostics
+
+- Launch a fresh replay with Play replay. Before playing a shot or using F9,
+  check mouse look, arrow look and WASD in paused flight.
+- Open/close F7, F8 and F9, then tab out and return. Check mouse look resumes
+  without a jump or lost held input. Stop should restore the original HUD/cursor.
+- Capture a first view, advance and pause the replay, then capture a second
+  view. Check with Show path guides enabled and disabled as separate runs.
+- If frame rate collapses, export diagnostics before restarting Dolly where
+  possible. Preserve the matching newly written game .mdmp if the game exits.
+  The renderer overflow is not considered fixed in this build.
+- Input diagnostics distinguish received relative packets from consumed motion.
+  cursor_clipped records Dolly's last successful cursor request, not an
+  independently observed OS clipping rectangle. Graphics ABI 2 adds guide,
+  draw and original-Present timing; older snapshots lack those observations.
 
 ## Playback controls
 

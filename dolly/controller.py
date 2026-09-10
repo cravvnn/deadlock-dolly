@@ -1407,11 +1407,15 @@ class Controller:
             restoration_error = self._restore_playback_settings()
             if restoration_error:
                 raise RuntimeError(restoration_error)
-            if self._game_ui_visible:
-                if self._console_open:
-                    self.toggle_console(enabled=False)
-                self._hide_game_ui()
-                self._game_ui_visible = False
+            # Automatic startup has not passed through F9. The replay can
+            # still own an automatic/free cursor even though our UI flag is
+            # false. Establish the same explicit handoff on every flight
+            # entry, preserving the pre-edit HUD/cursor for Stop / restore.
+            self._remember_game_ui_settings()
+            if self._console_open:
+                self.toggle_console(enabled=False)
+            self._hide_game_ui()
+            self._game_ui_visible = False
             self._request("demo_pause; demo_timescale 1" if self._demo_speed_changed else "demo_pause")
             self._demo_speed_changed = False
             self._check_paused_cancelled()
@@ -1506,10 +1510,7 @@ class Controller:
                 self._message("Deadlock owns the camera and replay UI. Select a hero, then return to Dolly editing.")
                 return self.status()
             if self._game_ui_visible or not (self._native_active and self._native_manual):
-                was_game_ui = self._game_ui_visible
                 self.enter_native_flight()
-                if not was_game_ui:
-                    self._hide_game_ui()
             else:
                 self._hide_game_ui()
                 if callable(configure):
@@ -1520,14 +1521,15 @@ class Controller:
     def _remember_game_ui_settings(self):
         names = ("citadel_hud_visible", "citadel_hide_replay_hud", "hud_free_cursor")
         missing = [name for name in names if name not in self._game_ui_restore]
-        if not missing:
-            return
-        output = self._request("; ".join(missing))
-        current = {name: read_cvar_value(name, output) for name in missing}
+        # Validate all controls before releasing a camera or writing the HUD.
+        # Only missing originals are saved: repeated handoffs must never
+        # replace the baseline with temporary editing/playback values.
+        output = self._request("; ".join(names))
+        current = {name: read_cvar_value(name, output) for name in names}
         # Take one complete snapshot, before any UI write or camera release.
         # A playing shot's temporary hidden values are not the restore target.
         self._game_ui_restore.update({name: self._playback_restore.get(name, value)
-                                      for name, value in current.items()})
+                                      for name, value in current.items() if name in missing})
 
     def _hide_game_ui(self):
         # Hiding only the replay controls leaves the spectated hero HUD on

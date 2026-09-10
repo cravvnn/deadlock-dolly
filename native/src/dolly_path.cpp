@@ -15,8 +15,7 @@ static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559,
 
 class Reader {
 public:
-    explicit Reader(const void* data)
-        : cursor_(static_cast<const std::uint8_t*>(data)) {}
+    explicit Reader(const void* data) : cursor_(static_cast<const std::uint8_t*>(data)) {}
 
     std::uint32_t u32() noexcept {
         std::uint32_t value = 0;
@@ -40,7 +39,8 @@ private:
 
 bool finite_pose(const CameraPose& pose) noexcept {
     for (double value : pose)
-        if (!std::isfinite(value)) return false;
+        if (!std::isfinite(value))
+            return false;
     return true;
 }
 
@@ -71,16 +71,18 @@ bool NativePath::load(const void* data, std::size_t bytes, std::string& error) {
     candidate.duration_ = reader.number();
     candidate.first_time_ = reader.number();
     candidate.last_time_ = reader.number();
-    for (double& value : candidate.first_) value = reader.number();
-    for (double& value : candidate.last_) value = reader.number();
+    for (double& value : candidate.first_)
+        value = reader.number();
+    for (double& value : candidate.last_)
+        value = reader.number();
     if (!std::isfinite(candidate.duration_) || !std::isfinite(candidate.first_time_) ||
         !std::isfinite(candidate.last_time_) || candidate.first_time_ < 0 ||
         candidate.last_time_ < candidate.first_time_ ||
-        candidate.duration_ < candidate.last_time_ ||
-        !finite_pose(candidate.first_) || !finite_pose(candidate.last_))
+        candidate.duration_ < candidate.last_time_ || !finite_pose(candidate.first_) ||
+        !finite_pose(candidate.last_))
         return fail("Native path header contains nonfinite or unordered values");
-    if (count == 0 && (candidate.first_time_ != candidate.last_time_ ||
-                       candidate.first_ != candidate.last_))
+    if (count == 0 &&
+        (candidate.first_time_ != candidate.last_time_ || candidate.first_ != candidate.last_))
         return fail("A single-key native path must have identical endpoints");
 
     try {
@@ -103,12 +105,12 @@ bool NativePath::load(const void* data, std::size_t bytes, std::string& error) {
                 channel.right = reader.number();
                 channel.left_derivative = reader.number();
                 channel.right_derivative = reader.number();
-                if (channel.kind > 2 || channel.flags > 1 ||
-                    !std::isfinite(channel.left) || !std::isfinite(channel.right) ||
-                    !std::isfinite(channel.left_derivative) ||
+                if (channel.kind > 2 || channel.flags > 1 || !std::isfinite(channel.left) ||
+                    !std::isfinite(channel.right) || !std::isfinite(channel.left_derivative) ||
                     !std::isfinite(channel.right_derivative) ||
                     channel.left != previous[channel_index])
-                    return fail("Native path channel has invalid coefficients or disconnected endpoints");
+                    return fail(
+                        "Native path channel has invalid coefficients or disconnected endpoints");
                 previous[channel_index] = channel.right;
             }
             candidate.segments_.push_back(segment);
@@ -125,7 +127,8 @@ bool NativePath::load(const void* data, std::size_t bytes, std::string& error) {
 }
 
 bool NativePath::evaluate(double shot_seconds, CameraPose& out) const noexcept {
-    if (!loaded_ || !std::isfinite(shot_seconds)) return false;
+    if (!loaded_ || !std::isfinite(shot_seconds))
+        return false;
     if (shot_seconds <= first_time_ || segments_.empty()) {
         out = first_;
         return true;
@@ -139,8 +142,10 @@ bool NativePath::evaluate(double shot_seconds, CameraPose& out) const noexcept {
     std::size_t low = 0, high = segments_.size();
     while (low < high) {
         const std::size_t middle = low + (high - low) / 2;
-        if (segments_[middle].begin <= shot_seconds) low = middle + 1;
-        else high = middle;
+        if (segments_[middle].begin <= shot_seconds)
+            low = middle + 1;
+        else
+            high = middle;
     }
     const Segment& segment = segments_[low - 1];
     const double span = segment.end - segment.begin;
@@ -153,17 +158,18 @@ bool NativePath::evaluate(double shot_seconds, CameraPose& out) const noexcept {
         if (channel.kind == 1) {
             value = (1 - u) * channel.left + u * channel.right;
         } else if (channel.kind == 2) {
-            value = ((2 * u3 - 3 * u2 + 1) * channel.left
-                     + (u3 - 2 * u2 + u) * span * channel.left_derivative
-                     + (-2 * u3 + 3 * u2) * channel.right
-                     + (u3 - u2) * span * channel.right_derivative);
+            value =
+                ((2 * u3 - 3 * u2 + 1) * channel.left +
+                 (u3 - 2 * u2 + u) * span * channel.left_derivative +
+                 (-2 * u3 + 3 * u2) * channel.right + (u3 - u2) * span * channel.right_derivative);
             if (!std::isfinite(value))
                 value = (1 - u) * channel.left + u * channel.right;
             else if (channel.flags & 1)
                 value = std::max(std::min(channel.left, channel.right),
                                  std::min(std::max(channel.left, channel.right), value));
         }
-        if (!std::isfinite(value)) return false;
+        if (!std::isfinite(value))
+            return false;
         result[i] = value;
     }
     out = result;

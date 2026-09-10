@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.5 alpha.** The portable Windows build opens through
+**Current source: 0.4.6 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -71,8 +71,10 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.5 is an alpha. New path guides and range DOF need checking against the
-installed game build. ReShade compatibility is unverified.
+0.4.6 is an alpha. Startup mouse handoff is corrected. A reported DX11
+vertex-buffer overflow during paused editing remains under investigation;
+this update adds diagnostics and does not claim to fix that crash.
+ReShade compatibility is unverified.
 Validation details are in
 [VALIDATION.md](docs/VALIDATION.md). Expanded in-game curve editing remains
 Stage 2; video/render-pass export remains Stage 3.
@@ -131,6 +133,10 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.4.6:** corrects the initial flight HUD/cursor handoff and delayed camera
+readiness, adds mouse and expanded graphics diagnostics, and consistently
+formats owned C++ sources. The reported renderer overflow remains unresolved.
 
 **0.4.5:** adds paused in-game camera/path guides, shared playback controls,
 four-component range DOF and a portable supported-cvar list.

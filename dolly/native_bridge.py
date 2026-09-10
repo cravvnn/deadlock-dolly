@@ -160,6 +160,9 @@ class NativeBridge:
         self._graphics_samples = deque(maxlen=120)
         self._graphics_sample_at = -math.inf
         self._graphics_error = ""
+        self._input_samples = deque(maxlen=120)
+        self._input_sample_at = -math.inf
+        self._input_error = ""
         self._mode = 0
         self._atomic32 = self._atomic64 = None
         self._read32 = None
@@ -259,6 +262,7 @@ class NativeBridge:
         with self._lock:
             self._check_open()
             self._sample_graphics()
+            self._sample_input()
             for _ in range(8):
                 first = self._load_sequence()
                 if first & 1:
@@ -550,6 +554,45 @@ class NativeBridge:
                     "read_error": self._graphics_error,
                     "note": "Read-only asynchronous observations; no renderer state or camera timing is changed."}
 
+    def _sample_input(self, *, force=False):
+        """Bound optional telemetry reads; an input probe cannot fault the camera."""
+        if self._closed:
+            return
+        now = self._clock()
+        if not force and now - self._input_sample_at < 1:
+            return
+        self._input_sample_at = now
+        from . import input_diagnostics as wire
+        try:
+            for _ in range(2):
+                before = self._load_sequence(wire.OFFSET + 8)
+                if before & 1:
+                    continue
+                data = bytes(self._mapping[wire.OFFSET:wire.OFFSET + wire.WIRE.size])
+                after = self._load_sequence(wire.OFFSET + 8)
+                if before != after or struct.unpack_from("<I", data, 8)[0] != before:
+                    continue
+                sample = wire.unpack(data)
+                if sample is not None and (not self._input_samples or
+                        sample["sequence"] != self._input_samples[-1]["sequence"]):
+                    self._input_samples.append(sample)
+                self._input_error = ""
+                return
+            self._input_error = "Input snapshot was being updated; retained previous samples."
+        except (NativeBridgeError, OSError, ValueError, struct.error) as exc:
+            self._input_error = str(exc)
+
+    def input_diagnostics(self):
+        with self._lock:
+            self._sample_input(force=True)
+            samples = deepcopy(list(self._input_samples))
+            return {"cached_after_close": self._closed, "samples": samples,
+                    "latest": samples[-1] if samples else None,
+                    "read_error": self._input_error,
+                    "note": "Read-only observations; cursor_clipped records Dolly's last successful cursor request. "
+                            "Packet counters cover configured, focused input. "
+                            "No mouse registration, cursor state or camera timing is changed."}
+
     def _viewer_store_sequence(self, value):
         from . import visualization_wire as wire
         if self._atomic32 is None:
@@ -664,6 +707,7 @@ class NativeBridge:
         except (NativeBridgeError, OSError, ValueError) as exc:
             result = {"state": "unavailable", "message": str(exc)}
         result["graphics"] = self.graphics_diagnostics()
+        result["input"] = self.input_diagnostics()
         result["visualization"] = self.visualization_diagnostics()
         return result
 
@@ -674,6 +718,7 @@ class NativeBridge:
                 return
             with self._lock:
                 self._sample_graphics(force=True)
+                self._sample_input(force=True)
             try:
                 self.release(timeout=0.25)
             except (NativeBridgeError, OSError, ValueError):

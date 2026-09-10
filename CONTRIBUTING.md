@@ -19,3 +19,19 @@ files that should be part of a source release.
 For bug reports, include the Dolly version, the action that failed and the
 relevant error text. Review diagnostics before posting them publicly: a local
 diagnostic export can contain installation paths and replay names.
+
+## C++ formatting
+
+Owned files under native/include, native/src and native/tests use clang-format
+18.1.8. The formatter is a contributor tool; it is not needed to run Dolly or
+build the Windows EXE. Vendor sources keep their upstream formatting.
+
+```console
+python -m pip install clang-format==18.1.8
+python tools/format_cpp.py --check
+python tools/format_cpp.py --write
+```
+
+The helper checks protected tokens, literals, preprocessing boundaries and a
+second formatting pass before writing. Keep formatting changes separate from
+behavior changes so both are reviewable.

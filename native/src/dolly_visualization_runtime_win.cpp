@@ -36,7 +36,8 @@ std::uint32_t read_sequence() noexcept {
 
 void collect_retired() {
     retired.erase(std::remove_if(retired.begin(), retired.end(),
-        [](const auto& path) { return path.use_count() == 1; }), retired.end());
+                                 [](const auto& path) { return path.use_count() == 1; }),
+                  retired.end());
 }
 
 bool publish(std::shared_ptr<const VisualizationPath> path) {
@@ -45,7 +46,8 @@ bool publish(std::shared_ptr<const VisualizationPath> path) {
     if (previous) {
         // A stalled reader cannot force unbounded worker allocations. Retry
         // the newest revision next tick after pending readers have finished.
-        if (retired.size() >= max_retired) return false;
+        if (retired.size() >= max_retired)
+            return false;
         retired.push_back(previous);
     }
     std::atomic_store_explicit(&current, std::move(path), std::memory_order_release);
@@ -53,17 +55,24 @@ bool publish(std::shared_ptr<const VisualizationPath> path) {
 }
 
 void close_mapping() noexcept {
-    if (memory) { UnmapViewOfFile(memory); memory = nullptr; }
-    if (mapping) { CloseHandle(mapping); mapping = nullptr; }
+    if (memory) {
+        UnmapViewOfFile(memory);
+        memory = nullptr;
+    }
+    if (mapping) {
+        CloseHandle(mapping);
+        mapping = nullptr;
+    }
     have_revision = false;
     sampled = false;
     name.clear();
 }
 
 bool header_bytes(const VisualizationHeader& h, std::size_t& bytes) noexcept {
-    if (std::memcmp(h.magic, "DLYVIS01", 8) || h.abi != kVisualizationAbi ||
-        h.enabled > 1 || h.camera_count > NativePath::max_camera_keys ||
-        h.path_bytes > NativePath::max_bytes || h.sequence == 0 || (h.sequence & 1)) return false;
+    if (std::memcmp(h.magic, "DLYVIS01", 8) || h.abi != kVisualizationAbi || h.enabled > 1 ||
+        h.camera_count > NativePath::max_camera_keys || h.path_bytes > NativePath::max_bytes ||
+        h.sequence == 0 || (h.sequence & 1))
+        return false;
     const std::size_t times = std::size_t(h.camera_count) * sizeof(double);
     bytes = kVisualizationHeaderBytes + times + std::size_t(h.path_bytes);
     return bytes <= kVisualizationMappingBytes;
@@ -72,33 +81,41 @@ bool header_bytes(const VisualizationHeader& h, std::size_t& bytes) noexcept {
 void read_snapshot() {
     for (unsigned attempt = 0; attempt < 2; ++attempt) {
         const auto before = read_sequence();
-        if (before & 1) continue;
-        if (have_revision && before == revision) return;
+        if (before & 1)
+            continue;
+        if (have_revision && before == revision)
+            return;
         VisualizationHeader header{};
         std::memcpy(&header, memory, sizeof(header));
         MemoryBarrier();
-        if (read_sequence() != before || header.sequence != before) continue;
+        if (read_sequence() != before || header.sequence != before)
+            continue;
         std::size_t bytes = 0;
         if (!header_bytes(header, bytes)) {
-            if (publish(nullptr)) { revision = before; have_revision = true; }
+            if (publish(nullptr)) {
+                revision = before;
+                have_revision = true;
+            }
             state.store(VisualizationRuntimeState::Invalid, std::memory_order_release);
             return;
         }
         std::vector<unsigned char> packet(bytes);
         std::memcpy(packet.data(), memory, bytes);
         MemoryBarrier();
-        if (read_sequence() != before ||
-            std::memcmp(packet.data(), &header, sizeof(header))) continue;
+        if (read_sequence() != before || std::memcmp(packet.data(), &header, sizeof(header)))
+            continue;
         auto candidate = std::make_shared<VisualizationPath>();
         std::string error;
         const bool valid = candidate->load(packet.data(), packet.size(), error);
         const bool enabled = valid && candidate->enabled();
-        if (!publish(enabled ? std::move(candidate) : nullptr)) return;
+        if (!publish(enabled ? std::move(candidate) : nullptr))
+            return;
         revision = before;
         have_revision = true;
-        state.store(!valid ? VisualizationRuntimeState::Invalid : enabled ?
-            VisualizationRuntimeState::Ready : VisualizationRuntimeState::Disabled,
-            std::memory_order_release);
+        state.store(!valid    ? VisualizationRuntimeState::Invalid
+                    : enabled ? VisualizationRuntimeState::Ready
+                              : VisualizationRuntimeState::Disabled,
+                    std::memory_order_release);
         return;
     }
     state.store(VisualizationRuntimeState::Updating, std::memory_order_release);
@@ -107,7 +124,8 @@ void read_snapshot() {
 
 void visualization_worker_tick(const wchar_t* main_mapping_name, bool connected) noexcept {
     try {
-        if (retired.capacity() < max_retired) retired.reserve(max_retired);
+        if (retired.capacity() < max_retired)
+            retired.reserve(max_retired);
         collect_retired();
         if (!connected || !main_mapping_name || !*main_mapping_name) {
             publish(nullptr);
@@ -132,15 +150,19 @@ void visualization_worker_tick(const wchar_t* main_mapping_name, bool connected)
             name = std::move(requested);
         }
         const auto now = GetTickCount64();
-        if (sampled && now - sampled_at < 100) return;
+        if (sampled && now - sampled_at < 100)
+            return;
         sampled_at = now;
         sampled = true;
         if (!memory) {
             mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, name.c_str());
             if (mapping) {
-                memory = static_cast<const unsigned char*>(MapViewOfFile(
-                    mapping, FILE_MAP_READ, 0, 0, kVisualizationMappingBytes));
-                if (!memory) { CloseHandle(mapping); mapping = nullptr; }
+                memory = static_cast<const unsigned char*>(
+                    MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, kVisualizationMappingBytes));
+                if (!memory) {
+                    CloseHandle(mapping);
+                    mapping = nullptr;
+                }
             }
             if (!memory) {
                 state.store(VisualizationRuntimeState::Waiting, std::memory_order_release);
@@ -151,7 +173,10 @@ void visualization_worker_tick(const wchar_t* main_mapping_name, bool connected)
     } catch (...) {
         // Viewer sampling is optional. Allocation or parsing failures must
         // not terminate the camera worker or alter input ownership.
-        try { publish(nullptr); } catch (...) {}
+        try {
+            publish(nullptr);
+        } catch (...) {
+        }
         state.store(VisualizationRuntimeState::Unavailable, std::memory_order_release);
     }
 }

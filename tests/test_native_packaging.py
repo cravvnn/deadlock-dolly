@@ -28,7 +28,7 @@ class NativePackagingTests(unittest.TestCase):
             with self.subTest(module=module):
                 pins = set(NATIVE_GAME_SHA256[relative])
                 source = (root / "native/src" / file).read_text()
-                native_pins = set(re.findall(r'constexpr char k(?:Updated)?' + symbol + r'Hash\[\]="([a-f0-9]{64})";', source))
+                native_pins = set(re.findall(r'constexpr\s+char\s+k(?:Updated)?' + symbol + r'Hash\s*\[\s*\]\s*=\s*"([a-f0-9]{64})"\s*;', source))
                 self.assertEqual(pins, {p[module][key] for p in profiles})
                 self.assertEqual(pins, native_pins)
 

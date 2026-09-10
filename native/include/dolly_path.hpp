@@ -17,8 +17,7 @@ public:
     static constexpr std::size_t max_camera_keys = 4096;
     static constexpr std::size_t header_bytes = 160;
     static constexpr std::size_t segment_bytes = 296;
-    static constexpr std::size_t max_bytes = header_bytes +
-        (max_camera_keys - 1) * segment_bytes;
+    static constexpr std::size_t max_bytes = header_bytes + (max_camera_keys - 1) * segment_bytes;
 
     // Load once on the non-render thread. Failure leaves a previous valid
     // object untouched. Publish a successful object immutably to the view

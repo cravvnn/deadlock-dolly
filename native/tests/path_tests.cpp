@@ -16,42 +16,55 @@
 namespace {
 
 void require(bool value, const char* message) {
-    if (!value) throw std::runtime_error(message);
+    if (!value)
+        throw std::runtime_error(message);
 }
 
 void u32(std::vector<std::uint8_t>& data, std::uint32_t value) {
-    for (unsigned i = 0; i < 4; ++i) data.push_back(std::uint8_t(value >> (i * 8)));
+    for (unsigned i = 0; i < 4; ++i)
+        data.push_back(std::uint8_t(value >> (i * 8)));
 }
 
 void number(std::vector<std::uint8_t>& data, double value) {
     std::uint64_t bits;
     std::memcpy(&bits, &value, sizeof(bits));
-    for (unsigned i = 0; i < 8; ++i) data.push_back(std::uint8_t(bits >> (i * 8)));
+    for (unsigned i = 0; i < 8; ++i)
+        data.push_back(std::uint8_t(bits >> (i * 8)));
 }
 
 void set_number(std::vector<std::uint8_t>& data, std::size_t offset, double value) {
     std::vector<std::uint8_t> encoded;
     number(encoded, value);
-    for (std::size_t i = 0; i < encoded.size(); ++i) data.at(offset + i) = encoded[i];
+    for (std::size_t i = 0; i < encoded.size(); ++i)
+        data.at(offset + i) = encoded[i];
 }
 
 std::vector<std::uint8_t> fixture() {
     const char magic[] = "DLYPATH";
     std::vector<std::uint8_t> data(magic, magic + 8);
-    u32(data, 1); u32(data, 2); u32(data, 7); u32(data, 0);
-    number(data, 8); number(data, 1); number(data, 4);
-    for (int i = 0; i < 7; ++i) number(data, i);
-    for (int i = 0; i < 7; ++i) number(data, i + 30);
+    u32(data, 1);
+    u32(data, 2);
+    u32(data, 7);
+    u32(data, 0);
+    number(data, 8);
+    number(data, 1);
+    number(data, 4);
+    for (int i = 0; i < 7; ++i)
+        number(data, i);
+    for (int i = 0; i < 7; ++i)
+        number(data, i + 30);
     const double times[] = {1, 2, 4};
     const double values[] = {0, 10, 30};
     for (int segment = 0; segment < 2; ++segment) {
-        number(data, times[segment]); number(data, times[segment + 1]);
+        number(data, times[segment]);
+        number(data, times[segment + 1]);
         for (int i = 0; i < 7; ++i) {
             u32(data, i == 6 ? 0 : (i == 0 ? 2 : 1));
             u32(data, i >= 3 ? 1 : 0);
             number(data, i + values[segment]);
             number(data, i + values[segment + 1]);
-            number(data, i == 0 ? 10 : 0); number(data, i == 0 ? 10 : 0);
+            number(data, i == 0 ? 10 : 0);
+            number(data, i == 0 ? 10 : 0);
         }
     }
     return data;
@@ -86,23 +99,28 @@ void self_test() {
     for (auto offset : byte_offsets) {
         changed = bytes;
         changed[offset] = 0xff;
-        require(!path.load(changed.data(), changed.size(), error), "Malformed header/channel accepted");
+        require(!path.load(changed.data(), changed.size(), error),
+                "Malformed header/channel accepted");
     }
     const std::size_t finite_offsets[] = {24, 32, 40, 48, 104, 160, 168, 184, 192, 200, 208};
     for (auto offset : finite_offsets) {
         changed = bytes;
         set_number(changed, offset, std::numeric_limits<double>::infinity());
-        require(!path.load(changed.data(), changed.size(), error), "Nonfinite coefficient accepted");
+        require(!path.load(changed.data(), changed.size(), error),
+                "Nonfinite coefficient accepted");
     }
     changed = bytes;
     set_number(changed, 160 + dolly::NativePath::segment_bytes, 2.1);
-    require(!path.load(changed.data(), changed.size(), error), "Disconnected time intervals accepted");
+    require(!path.load(changed.data(), changed.size(), error),
+            "Disconnected time intervals accepted");
     changed = bytes;
     set_number(changed, 184 + dolly::NativePath::segment_bytes, 11);
-    require(!path.load(changed.data(), changed.size(), error), "Disconnected channel endpoints accepted");
+    require(!path.load(changed.data(), changed.size(), error),
+            "Disconnected channel endpoints accepted");
     changed = bytes;
     set_number(changed, 24, 3);
-    require(!path.load(changed.data(), changed.size(), error), "Duration before final camera key accepted");
+    require(!path.load(changed.data(), changed.size(), error),
+            "Duration before final camera key accepted");
     require(path.evaluate(3, pose) && pose[0] == 20, "Failed load corrupted previous valid path");
 
     // A cubic overflow falls back to weighted linear interpolation, as it
@@ -116,7 +134,8 @@ void self_test() {
     }
     set_number(changed, 200, std::numeric_limits<double>::max());
     set_number(changed, 208, -std::numeric_limits<double>::max());
-    require(path.load(changed.data(), changed.size(), error), "Finite extreme derivatives rejected");
+    require(path.load(changed.data(), changed.size(), error),
+            "Finite extreme derivatives rejected");
     require(path.evaluate(1.5, pose) && pose[0] == 1.6e308, "Extreme derivative fallback failed");
     std::cout << "Native path self-tests passed\n";
 }
@@ -127,13 +146,17 @@ void self_test() {
 // the real compiler output and compares these values to Project.evaluate.
 int main(int argc, char** argv) {
     try {
-        if (argc == 1) { self_test(); return 0; }
+        if (argc == 1) {
+            self_test();
+            return 0;
+        }
         std::ifstream input(argv[1], std::ios::binary);
         require(bool(input), "Cannot open test path blob");
         std::vector<char> bytes((std::istreambuf_iterator<char>(input)), {});
         dolly::NativePath path;
         std::string error;
-        if (!path.load(bytes.data(), bytes.size(), error)) throw std::runtime_error(error);
+        if (!path.load(bytes.data(), bytes.size(), error))
+            throw std::runtime_error(error);
         std::cout << std::setprecision(17);
         for (int i = 2; i < argc; ++i) {
             char* end = nullptr;

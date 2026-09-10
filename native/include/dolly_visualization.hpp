@@ -44,6 +44,7 @@ public:
     const std::vector<CameraPose>& points() const noexcept { return points_; }
     const std::vector<VisualizationCamera>& cameras() const noexcept { return cameras_; }
     const std::vector<std::uint8_t>& breaks() const noexcept { return breaks_; }
+
 private:
     bool enabled_ = false;
     std::uint32_t selected_camera_ = 0;
@@ -62,7 +63,9 @@ struct VisualizationView {
     double near_plane = 1;
 };
 enum class VisualizationKind : std::uint32_t { Path = 0, Camera = 1, SelectedCamera = 2 };
-struct VisualizationPoint { float x = 0, y = 0; };
+struct VisualizationPoint {
+    float x = 0, y = 0;
+};
 struct VisualizationLine {
     VisualizationPoint a{}, b{};
     VisualizationKind kind = VisualizationKind::Path;
@@ -72,7 +75,8 @@ struct VisualizationLabel {
     std::uint32_t camera_index = 0;
     bool selected = false;
 };
-constexpr std::size_t kVisualizationMaxLines = kVisualizationMaxSamples - 1 + kVisualizationMaxMarkers * 8;
+constexpr std::size_t kVisualizationMaxLines =
+    kVisualizationMaxSamples - 1 + kVisualizationMaxMarkers * 8;
 struct VisualizationGeometry {
     std::array<VisualizationLine, kVisualizationMaxLines> lines{};
     std::array<VisualizationLabel, kVisualizationMaxMarkers> labels{};

@@ -11,6 +11,7 @@ from tests.test_native_flight_controller import configured_controller
 class GameUiHandoffTests(unittest.TestCase):
     def setUp(self):
         self.controller, self.console, self.bridge = configured_controller()
+        self.original_values = dict(self.console.values)
         self.controller.begin_paused_camera()
 
     def test_source2_missing_command_help_is_not_support(self):
@@ -68,9 +69,11 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertEqual(self.bridge.owner, "panel")
 
     def test_stop_restores_original_automatic_cursor_and_hud_values(self):
+        self.controller.stop()
         self.console.values["citadel_hud_visible"] = 0
         originals = {name: self.console.values[name] for name in
                      ("citadel_hud_visible", "citadel_hide_replay_hud", "hud_free_cursor")}
+        self.controller.begin_paused_camera()
         self.controller.toggle_game_ui(True)
         self.controller.toggle_game_ui(False)
         self.controller.toggle_game_ui(True)
@@ -154,11 +157,10 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 0)
 
     def test_f9_after_stop_restores_the_pre_edit_hud_and_cursor(self):
-        originals = dict(self.console.values)
         self.controller.toggle_game_ui(True)
         self.controller.toggle_game_ui(False)
         self.controller.stop()
-        self.assertEqual(self.console.values, originals)
+        self.assertEqual(self.console.values, self.original_values)
 
     def test_repeated_f9_does_not_resnapshot_temporary_hidden_values(self):
         self.controller.toggle_game_ui(True)

@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.5 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.6 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -94,8 +94,10 @@ Machine-readable list: Supported_Camera_Cvars.json
 
 COMPATIBILITY AND UPDATES
 
-0.4.5 is an alpha. New path guides and range DOF need checking against the
-installed game build. ReShade compatibility is unverified. Expanded in-game
+0.4.6 is an alpha. Startup mouse handoff is corrected. A reported DX11
+vertex-buffer overflow during paused editing remains under investigation;
+this update adds diagnostics and does not claim to fix that crash.
+ReShade compatibility is unverified. Expanded in-game
 curve editing remains Stage 2; video/render-pass export remains Stage 3.
 
 Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.

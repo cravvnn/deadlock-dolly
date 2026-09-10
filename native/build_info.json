@@ -1,8 +1,8 @@
 {
   "abi": 3,
-  "version": "0.4.5-alpha",
-  "sha256": "24ae3327dc4122fd1ce851ebdf310cf3cc8053a41d98000cfe77d7bfb8381f07",
-  "built_utc": "2026-09-10T08:29:48.354217+00:00",
+  "version": "0.4.6-alpha",
+  "sha256": "04f76a9304ff40d1f7247d7864a7af896bc212ccde269cc979c1354b87f8770b",
+  "built_utc": "2026-09-10T09:27:33.121610+00:00",
   "compiler": "Zig 0.14.1 clang, cross-compiled on Linux for Windows x64",
   "configuration": "Release",
   "runtime": "static",
@@ -11,7 +11,7 @@
   "native_flight_tests_passed": true,
   "native_callback_tests_passed": false,
   "native_overlay_tests_passed": false,
-  "native_callback_tests_note": "Expanded Windows callback, typed Vector4 and DX11 WARP guide/mapping/resource-lifetime harnesses compiled and linked; not executed in this Linux workspace. GitHub Windows CTest runs them.",
+  "native_callback_tests_note": "Windows x64 callback/input-readiness and DX11 WARP guide/timing/resource-lifetime harnesses compiled and linked; not executed in this Linux workspace. GitHub Windows CTest runs them.",
   "game_runtime_verified": false,
   "pe": {
     "machine": "x64",

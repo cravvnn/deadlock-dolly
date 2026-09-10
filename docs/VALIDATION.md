@@ -1,3 +1,74 @@
+# Validation — 0.4.6 alpha
+
+## Startup input
+
+Automatic flight entry previously left hud_free_cursor at its automatic value
+until an explicit game-UI round trip. Flight entry now reads the original
+HUD/cursor together, verifies the explicit hide/cursor handoff before arming,
+and preserves that original baseline across later entries for Stop / restore.
+A failed read or unapplied cursor setting prevents camera arming.
+
+The native owner could also become Flight before the first ready replay view.
+Cursor confinement was only reconciled on owner/focus/overlay changes, so that
+ready transition could be missed. The view callback now marks a refresh; the
+control worker applies it without resetting held keys or accumulated mouse
+motion. No additional hook, device registration or mouse-warp fallback is added.
+The fixes address demonstrated startup gaps; live mouse delivery still needs
+confirmation on Windows.
+
+## Crash investigation
+
+The supplied September 10 dump matches the log's fatal vertex-buffer retirement
+list overflow at 32,767 entries. AMD64 unwind through the matching renderer
+confirms the same allocation-limit path as the previous dump. The queue drains
+between bursts, then grows during very slow frames; it is not a permanently
+stopped retirement clock. The fatal append handles one 10,816-byte upload backed
+by a 64 KiB engine vertex buffer. Multiple distinct engine buffer objects are
+captured, rather than evidence of a single oversized path-guide draw.
+
+Other captured worker stacks contain particle/material calls into the renderer's
+constant-buffer allocation path. This is a lead, not proof of the initiating
+fault. The dump omits the command-stream allocation and retirement-list backing
+storage needed to identify the exact producer. Matching particles.dll and
+materialsystem2.dll are needed to trace the remaining call sites. No particle
+suppression, renderer-memory mutation or allocation-limit increase is applied.
+**The crash remains unresolved.**
+
+The optional graphics diagnostic block now distinguishes guide/panel/total
+rendering, Dolly draw time, original-Present time, active calls and skipped
+locks. Its ABI 2 uses existing padding; the reader also accepts ABI 1 without
+inventing missing observations. Camera ABI 3 is unchanged. An optional input
+block records raw mouse registration, received/accepted/consumed motion and
+cursor request failures. It retains a bounded history after game closure.
+The cursor-clipped flag records Dolly's last successful request; it is not an
+independent OS cursor-rectangle measurement.
+
+## Source cleanup and checks
+
+- All 24 owned C++ files use clang-format 18.1.8. Formatting was applied after
+  recording functional changes and verified for protected token/literal and
+  preprocessing-boundary preservation plus idempotence. Vendor sources are
+  untouched. Contributor formatting is optional for builds.
+- Full Python suite: 814 tests run, no failures, two Windows-only skips.
+- Native path, effect, flight and visualization test programs compiled and
+  passed on Linux. Targeted one-/two-camera viewer cases also passed address
+  and undefined-behavior sanitizers; leak checking was unavailable here.
+- Current Windows x64 sources compiled and linked into the native DLL and
+  callback/DX11 WARP test executables. New Windows cases cover delayed input
+  readiness, preserved motion, input wire publication and guide/Present timing.
+  The Windows executables were not executed in this Linux workspace.
+- Native PE exports, runtime allowlist, version and DLL SHA-256 metadata match.
+  All 190 source entries, archive integrity and clean re-export were verified.
+  Game DLLs, diagnostics, dumps, recordings and private authoring context are
+  excluded. Existing cvar catalog and camera-path formats remain compatible.
+
+GitHub Windows CI remains the packaged-EXE and native Windows test gate.
+STAGE2_TESTING.md covers fresh-launch mouse testing and capture with guides
+shown/hidden. Camera interpolation, playback clock and effect evaluation have
+no behavioral changes in this update.
+
+## Earlier validation records
+
 # Validation — 0.4.5 alpha
 
 ## Changes and scope

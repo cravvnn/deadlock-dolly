@@ -184,3 +184,8 @@ third_party/notices/tk-license.terms
 tools/build_native.py
 tools/build_windows.py
 tools/release_files.py
+.clang-format
+tools/format_cpp.py
+tests/test_cpp_format.py
+dolly/input_diagnostics.py
+tests/test_input_diagnostics.py

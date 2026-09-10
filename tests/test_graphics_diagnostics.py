@@ -6,11 +6,12 @@ from dolly import graphics_diagnostics as gfx
 from dolly import native_bridge as nb
 
 
-def packet(sample=1, *, sequence=2, state=1, flags=127, abi=1):
+def packet(sample=1, *, sequence=2, state=1, flags=127, abi=2):
     return gfx.WIRE.pack(gfx.MAGIC, sequence, abi, state, flags,
                          sample, 1000 * sample, 100, 101, 12, 1, 1, 0, 0,
                          42, 128, 50, 0, 49, 98, 100, 99, 101, 0x4d6000,
-                         b"a" * 64, b"Read-only renderer sample")
+                         b"a" * 64, b"Read-only renderer sample",
+                         90, 78, 200, 1500, 300, 5000, 2, 0, 0, 40, 2)
 
 
 class ClosedMemory(bytearray):
@@ -53,6 +54,26 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
         self.assertEqual(sample["head_buffer_frame"], 99)
         self.assertEqual(sample["tail_buffer_frame"], 101)
 
+    def test_guide_drawing_and_present_timings_are_distinct(self):
+        sample = gfx.unpack(packet())
+        self.assertEqual(sample["panel_frames"], 12)
+        self.assertEqual(sample["overlay_draw_frames"], 90)
+        self.assertEqual(sample["guide_frames"], 78)
+        self.assertEqual(sample["overlay_last_us"], 200)
+        self.assertEqual(sample["present_max_us"], 5000)
+        self.assertEqual(sample["overlay_lock_skips"], 2)
+        self.assertEqual(sample["guide_lines"], 40)
+        self.assertEqual(sample["guide_labels"], 2)
+
+    def test_older_snapshot_has_no_invented_overlay_timings(self):
+        old_wire = struct.Struct("<8s4I9Q10I65s7x192s112x")
+        current = gfx.WIRE.unpack(packet(abi=1))
+        sample = gfx.unpack(old_wire.pack(*current[:26]))
+        self.assertEqual(sample["pending_count"], 42)
+        self.assertEqual(sample["panel_frames"], 12)
+        for key in gfx.OVERLAY_FIELDS:
+            self.assertIsNone(sample[key])
+
     def test_absent_or_unsupported_probe_does_not_prevent_camera_status(self):
         self.assertEqual(self.bridge.status()["state"], "starting")
         self.assertIsNone(self.bridge.diagnostics()["graphics"]["latest"])
@@ -66,7 +87,7 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
     def test_odd_or_invalid_probe_preserves_last_sample_and_controls(self):
         self.publish()
         self.bridge.graphics_diagnostics()
-        for values in ({"sequence": 3}, {"abi": 2}, {"state": 99}, {"flags": 128}):
+        for values in ({"sequence": 3}, {"abi": 3}, {"state": 99}, {"flags": 128}):
             self.publish(sample=2, **values)
             self.advance(1)
             self.assertEqual(self.bridge.status()["state"], "starting")

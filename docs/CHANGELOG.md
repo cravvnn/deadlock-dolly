@@ -1,5 +1,18 @@
 # Changes
 
+## 0.4.6 alpha — Startup mouse handoff and source cleanup
+
+- Apply the same explicit game HUD/cursor handoff on first flight and F9 return,
+  preserving the pre-edit values for Stop / restore.
+- Reconcile cursor confinement when the first camera view becomes ready, from
+  the control worker. Preserve held movement and accumulated mouse input.
+- Add optional raw-mouse/cursor diagnostics and distinguish guide/panel drawing
+  time from time spent inside the original game Present call.
+- Format owned C++ sources consistently with a pinned formatter, protected
+  token/literal checks and an idempotence check. Vendor sources stay unchanged.
+- The reported DX11 vertex-buffer overflow remains unresolved. No renderer
+  allocation limit, camera interpolation or playback clock is changed.
+
 ## 0.4.5 alpha — Path guides, playback controls and range DOF
 
 - Add numbered, projected camera guides and the authored spline in paused
