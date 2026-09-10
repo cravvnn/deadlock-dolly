@@ -27,5 +27,7 @@ static_assert(kMediaStatusOffset + sizeof(MediaStatus) <= kMediaMappingBytes,
               "Media status fits mapping");
 // Optional transport derived from the verified, private native session name.
 // Only the existing native worker calls this. No rendering thread waits for it.
+// Independent of manual editor ownership; expires with the verified session heartbeat.
+bool media_session_active() noexcept;
 void media_worker_tick(const wchar_t* session_name, bool connected) noexcept;
 }

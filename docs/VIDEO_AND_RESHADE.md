@@ -8,7 +8,7 @@
 3. Return to Deadlock, open **F8**, and click **Record video**. Wait for the
    recording counter, then play the shot with **Play shot** or **F5**.
 4. Open **F8** and click **Finish recording**. The MP4 is ready after
-   finalization. Returning to the desktop also finishes an active recording.
+   finalization. Recording continues through camera handoffs and desktop controls.
 
 Capture uses the current game resolution, up to 3840 × 2160. Both dimensions
 must be even. SDR RGBA/BGRA backbuffers are supported; HDR is not. Change the

@@ -5,6 +5,7 @@
 #include "dolly_visualization.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_video.hpp"
+#include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
 #include "MinHook.h"
 #include <d3d11_1.h>
@@ -886,10 +887,10 @@ void render_overlay(IDXGISwapChain* chain) {
     const auto state = editor_snapshot();
     if (resizing.load(std::memory_order_acquire))
         return;
-    if (!state.enabled) {
-        // Disconnect disables editor input before its optional media commands
-        // arrive. Retire media at the next real render boundary even then;
-        // neither the camera worker nor the window thread waits for rendering.
+    const bool media_live = media_session_active();
+    if (!state.enabled && !media_live) {
+        // Playback may disable manual editor input. Only a lost session retires
+        // media here; control ownership and camera readiness are transient.
         if (!media_suspended && chain == swapchain && immediate) {
             video::reset_resources();
             reshade_set_enabled(false);
@@ -923,10 +924,11 @@ void render_overlay(IDXGISwapChain* chain) {
     const auto clean_frame = [](IDXGISwapChain* capture_chain, ID3D11Device* capture_device,
                                 ID3D11DeviceContext* capture_context, void*) {
         const auto editor = editor_snapshot();
-        if (editor.ready && editor.focused)
+        const auto recording = video::status().state;
+        // Focus gates the first frame only. Desktop controls and a transient
+        // missing editor pose must not finish an already running MP4.
+        if (media_session_active() && (recording == video::State::recording || editor.focused))
             video::capture(capture_chain, capture_device, capture_context);
-        else if (video::status().state == video::State::recording)
-            video::stop(false);
     };
     bool effects_handled = false;
     if (reshade_enabled() || reshade_overlay_pending()) {
@@ -942,6 +944,11 @@ void render_overlay(IDXGISwapChain* chain) {
     if (!effects_handled)
         clean_frame(chain, device, immediate, nullptr);
     if (reshade_overlay_open() || reshade_overlay_pending()) {
+        clear_pending_input();
+        editor_text_input_active(false);
+        return;
+    }
+    if (!state.enabled) {
         clear_pending_input();
         editor_text_input_active(false);
         return;

@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.0 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.5.1 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -107,8 +107,7 @@ Full guide: Video_and_ReShade.md
 
 Choose a new MP4 filename, 30/60 FPS and bitrate on the desktop Export tab.
 Return to the game and use F8 > Record video, then Play shot or F5.
-F8 > Finish recording saves the MP4. Returning to the desktop also finishes
-an active recording. Wait for finalization before closing Deadlock.
+F8 > Finish recording saves the MP4. Recording continues through camera handoffs and desktop controls. Wait for finalization before closing Deadlock.
 
 Capture uses the current even-sized SDR game resolution, up to 3840 x 2160.
 It records in real time without audio. Missed capture slots are counted; lower
@@ -129,7 +128,7 @@ Deadlock. The loaded DLL remains resident until the editing game exits.
 
 COMPATIBILITY AND UPDATES
 
-0.5.0 is an alpha. The camera hook and interpolation remain unchanged from
+0.5.1 is an alpha. The camera hook and interpolation remain unchanged from
 0.4.7. Recorded-demo handling from 0.4.8 is retained. Earlier renderer slowdowns
 do not have a confirmed general fix. MP4 and ReShade need in-game testing.
 Fixed-step rendering, audio, separate layers and expanded in-game curves

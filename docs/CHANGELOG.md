@@ -1,5 +1,13 @@
 # Changes
 
+## 0.5.1 alpha — Recording handoff
+
+- Recording follows the verified native session, independently of manual camera input.
+- Transient camera readiness changes and returning to desktop controls no longer finish an active MP4.
+- Finish recording saves the file; disconnect and expired session heartbeat retain automatic finalization. Resizing still finishes recording.
+- Added a Windows Present/encoder regression for camera handoffs and focus changes.
+- Camera movement, interpolation and ReShade API remain unchanged.
+
 ## 0.5.0 alpha — MP4 and ReShade
 
 - Real-time, video-only H.264 MP4 capture at 30/60 FPS and current SDR game resolution.

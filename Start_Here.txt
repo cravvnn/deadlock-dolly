@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.0 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.5.1 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -137,8 +137,7 @@ Full guide: docs/VIDEO_AND_RESHADE.md
 
 Choose a new MP4 filename, 30/60 FPS and bitrate on the desktop Export tab.
 Return to the game and use F8 > Record video, then Play shot or F5.
-F8 > Finish recording saves the MP4. Returning to the desktop also finishes
-an active recording. Wait for finalization before closing Deadlock.
+F8 > Finish recording saves the MP4. Recording continues through camera handoffs and desktop controls. Wait for finalization before closing Deadlock.
 
 Capture uses the current even-sized SDR game resolution, up to 3840 x 2160.
 It records in real time without audio. Missed capture slots are counted; lower
@@ -163,7 +162,7 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.5.0 is an alpha. The camera hook and interpolation remain unchanged from
+0.5.1 is an alpha. The camera hook and interpolation remain unchanged from
 0.4.7. Recorded-demo handling from 0.4.8 is retained. Earlier renderer slowdowns
 do not have a confirmed general fix. MP4 and ReShade need in-game testing.
 Fixed-step rendering, audio, separate layers and expanded in-game curves
@@ -175,7 +174,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.5.0 uses
+logs, including any recovery backup. Use the complete new package; 0.5.1 uses
 camera ABI 3 and editor ABI 2 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

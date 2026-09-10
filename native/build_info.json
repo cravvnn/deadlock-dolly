@@ -1,8 +1,8 @@
 {
   "abi": 3,
-  "version": "0.5.0-alpha",
-  "sha256": "dcf271a1556bdfdde1df6a5765cf4c068f81518e2584df2ed9e890f76fe99aac",
-  "built_utc": "2026-09-10T11:30:18.724039+00:00",
+  "version": "0.5.1-alpha",
+  "sha256": "e49132f35cc9dbb9f25beef015ebb78f2a1199c81db99c77e40e739649721169",
+  "built_utc": "2026-09-10T15:36:35.036252+00:00",
   "compiler": "Zig 0.14.1 clang, cross-compiled on Linux for Windows x64",
   "configuration": "Release",
   "runtime": "static",

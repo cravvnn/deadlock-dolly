@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <cwchar>
 #include <string>
@@ -12,6 +13,7 @@
 
 namespace dolly {
 namespace {
+std::atomic<ULONGLONG> session_seen{0};
 HANDLE mapping = nullptr;
 unsigned char* memory = nullptr;
 std::wstring mapping_name;
@@ -149,17 +151,22 @@ void publish() noexcept {
 }
 }
 
+bool media_session_active() noexcept {
+    const auto seen = session_seen.load(std::memory_order_acquire);
+    return seen && GetTickCount64() - seen < 2000;
+}
+
 void media_worker_tick(const wchar_t* session_name, bool connected) noexcept {
     try {
-        if (!connected || !session_name || !*session_name) {
+        if (!connected || !session_name || !*session_name || wcsnlen(session_name, 256) == 256) {
+            session_seen.store(0, std::memory_order_release);
             video::stop(false);
             reshade_set_enabled(false);
             close_mapping();
             return;
         }
-        if (wcsnlen(session_name, 256) == 256)
-            return;
         const auto now = GetTickCount64();
+        session_seen.store(now, std::memory_order_release);
         if (!memory) {
             if (now < next_open)
                 return;
@@ -183,6 +190,7 @@ void media_worker_tick(const wchar_t* session_name, bool connected) noexcept {
             publish();
         }
     } catch (...) {
+        session_seen.store(0, std::memory_order_release);
         video::stop(false);
         reshade_set_enabled(false);
         close_mapping();

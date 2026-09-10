@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.0 alpha.** The portable Windows build opens through
+**Current source: 0.5.1 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -71,7 +71,7 @@ files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
 Choose an MP4 output path and FPS on **Export**, then use **F8 → Record video**
 and **Finish recording** in the game. Video capture excludes Dolly controls
 and path guides. It records in real time without audio; output resolution
-follows the game. Returning to the desktop finishes the active recording.
+follows the game. Recording continues through camera handoffs and desktop controls; use Finish recording to save.
 
 Select a compatible ReShade64.dll on **Export** to enable ReShade color effects.
 **F11** opens its own menu; **Keybinds** changes that shortcut. ReShade is an
@@ -93,7 +93,7 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.5.0 is an alpha. It keeps the camera hook and interpolation from the working
+0.5.1 is an alpha. It keeps the camera hook and interpolation from the working
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. Earlier renderer
 slowdowns do not have a confirmed general fix. The new video and ReShade paths
 need testing in Deadlock; build checks are in [VALIDATION.md](docs/VALIDATION.md).
@@ -154,6 +154,8 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.1:** keeps recording active through camera handoffs and desktop controls.
 
 **0.5.0:** adds real-time MP4 recording, optional ReShade color effects/menu,
 configurable F11, and the REPLAY home heading.

@@ -1,4 +1,27 @@
-# Validation — 0.5.0 alpha
+# Validation — 0.5.1 alpha
+
+## Recording handoff fix
+
+The submitted 0.5.0 diagnostics report a completed 2560×1440 MP4 with 154
+frames over 2.895 seconds and no encoder error. Native camera playback completed
+separately. The diagnostics do not identify which automatic-stop branch fired.
+Code inspection found that editor disable, an unavailable editor pose, or focus
+loss could stop recording independently of the live camera session.
+
+0.5.1 separates media lifetime from editor input ownership. Initial capture waits
+for game focus; an active recording continues across input/readiness/focus changes.
+The verified session heartbeat still gates capture and disconnect finalization.
+The camera hook, path evaluator, effects and flight code were not changed.
+
+Targeted Python checks passed: 72 tests covering media transport, video export,
+native packaging and native playback control. Owned C++ formatting passed.
+
+Windows x64 DLL and all three smoke programs compiled and linked on Linux. The
+new overlay smoke exercises actual Present capture across editor disable, missing
+pose readiness, focus loss, and disconnect. It is compiled here, not executed;
+GitHub Windows CTest runs it. Deadlock runtime validation remains outstanding.
+
+## Previous 0.5.0 validation
 
 ## Scope and completed checks
 

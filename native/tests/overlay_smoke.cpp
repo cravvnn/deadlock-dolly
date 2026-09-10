@@ -5,6 +5,8 @@
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_reshade.hpp"
+#include "dolly_media.hpp"
+#include "dolly_video.hpp"
 #include "MinHook.h"
 #include "imgui.h"
 #include <d3d11.h>
@@ -677,6 +679,47 @@ int main() {
         require(GetCapture() == window, "Raw-only input changed game mouse capture");
         require(present_keeps_os_cursor, "Present is allowed to change the OS mouse cursor");
         ReleaseCapture();
+        // Exercise the real Present capture across the editor-to-path handoff.
+        // A valid session survives loss of manual input, pose readiness and focus.
+        wchar_t temporary[MAX_PATH]{};
+        require(GetTempPathW(MAX_PATH, temporary) != 0, "Video temporary directory unavailable");
+        const auto movie = std::wstring(temporary) + L"DollyHandoff-" +
+                           std::to_wstring(GetCurrentProcessId()) + L".mp4";
+        require(GetFileAttributesW(movie.c_str()) == INVALID_FILE_ATTRIBUTES,
+                "Handoff output already exists");
+        snapshot.focused = true;
+        require(dolly::video::start(movie.c_str(), 30, 2000000), "Handoff recording start failed");
+        const auto saved_snapshot = snapshot;
+        for (unsigned stage = 0; stage < 3; ++stage) {
+            if (stage == 1) {
+                snapshot.enabled = false;
+                snapshot.ready = false;
+            }
+            if (stage == 2)
+                snapshot.focused = false;
+            const auto goal = dolly::video::status().frames_written + 3;
+            const auto deadline = GetTickCount64() + 10000;
+            while (dolly::video::status().frames_written < goal && GetTickCount64() < deadline) {
+                dolly::media_worker_tick(L"Local\\DollyHandoffSmoke", true);
+                const float color[] = {0.2f, 0.5f, 0.8f, 1.0f};
+                context->ClearRenderTargetView(target, color);
+                require(SUCCEEDED(chain->Present(0, 0)), "Handoff recording Present failed");
+                const auto video = dolly::video::status();
+                require(video.state == dolly::video::State::starting ||
+                            video.state == dolly::video::State::recording,
+                        "Camera handoff or focus change stopped the recorder");
+                Sleep(10);
+            }
+            require(dolly::video::status().frames_written >= goal,
+                    "Recording stopped producing frames during camera handoff");
+        }
+        dolly::media_worker_tick(nullptr, false);
+        require(!dolly::media_session_active(), "Disconnected media session remained active");
+        dolly::video::shutdown();
+        require(dolly::video::status().state == dolly::video::State::completed,
+                "Disconnect did not finalize the recording");
+        DeleteFileW(movie.c_str());
+        snapshot = saved_snapshot;
         context->OMSetRenderTargets(0, nullptr, nullptr);
         target->Release();
         backbuffer->Release();
