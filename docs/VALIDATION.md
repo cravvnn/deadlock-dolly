@@ -1,3 +1,81 @@
+# Validation — 0.4.7 alpha
+
+## Paused input and completion
+
+Input history records Flight ownership while manual camera updates are inactive.
+Closing F8 previously selected Flight locally even when the camera was held or
+completed. It now requests the existing acknowledged flight handoff and retains
+the panel while waiting or busy. Normal manual-flight toggles stay immediate;
+active shots and frozen previews are not interrupted. This addresses a confirmed
+input-ownership defect, not every low-frame-rate interval in the diagnostics.
+
+The end-of-shot handoff previously used a rendered tick sampled before the
+console pause had taken effect. It now waits for two fresh paused views at the
+same tick before moving the underlying spectator, then requires the usual three
+matching original views before release. Timeout keeps the native view held.
+A replay change after the pause still prevents handoff.
+
+## Custom recording names
+
+Console, startup and native replay guards now match basenames with or without
+the final .dem suffix. Dots within the name remain significant; a different
+suffix cannot alias the selected file. Native and Python regression cases cover
+dotted extensionless names and rejection of other replay names/extensions.
+
+Dolly already discovers .dem files without a downloaded-versus-recorded origin
+filter. The reported tv_record rejection has not been reproduced. Its exact
+error, fresh diagnostics and a short completed recording are needed to establish
+whether the filename correction resolves it or the engine rejects the contents.
+No recording-header, addon or game-version validation is bypassed.
+
+## Renderer investigation
+
+The supplied particles.dll and materialsystem2.dll match the earlier September
+10 crash dump's PE identities. Exception-directory unwind identifies particle
+rope-render operators performing material binding and small pooled constant-
+buffer allocation. Those are distinct from the fatal vertex-buffer retirement
+list. The captured stacks do not establish an unbounded particle-spawn loop.
+The dump still lacks the command-stream and retirement-list backing allocations
+needed to identify the exact producer.
+
+The latest diagnostics contain repeated slowdowns, not a new fatal event.
+One interval falls to roughly 1.4 main views per second with about 6,169 pending
+renderer buffers. During much of it, guide drawing is inactive and measured
+overlay/original-Present calls finish in fractions of a millisecond. F9 round
+trips correlate with the queue shrinking and frame production recovering.
+These observations place substantial work outside the measured calls; they do
+not rule out an indirect interaction with Dolly. **Severe slowdown and the
+reported renderer overflow remain unresolved.** No additional DLL is currently
+needed. A fresh diagnostic export during the slowdown, before F9 recovery, and
+any same-run crash dump would be more useful.
+
+Input and graphics cached samples now share a monotonic sampled_at observation
+time. This records when the controller first reads a sample, not an exact native
+event time. Duplicate reads preserve it and cached observations survive closure.
+Camera ABI 3 and the native diagnostic wire layouts remain unchanged.
+
+## Verification
+
+- Full Python suite: 824 tests run, no failures, two Windows-only skips.
+- Native path, effect, flight and visualization programs compiled and passed
+  on Linux. Camera evaluation and flight integration are unchanged.
+- Current Windows x64 sources compiled and linked into DollyNative.dll and
+  the callback/DX11 WARP harnesses. New callback cases cover F8 rearming,
+  unavailable-view recovery and extensionless dotted replay identities.
+  Windows executables were compiled, not executed in this Linux workspace.
+- Owned C++ formatting, protected tokens and idempotence pass with clang-format
+  18.1.8. Vendor files remain unchanged.
+- Native PE exports, five-file runtime allowlist and DLL SHA-256 metadata match.
+  All 190 source entries, archive integrity and clean re-export were verified.
+  Game binaries, logs, dumps, recordings and private authoring context are excluded.
+
+GitHub Windows CI remains the packaged-EXE and native Windows runtime test gate.
+Live Deadlock testing is still required for the corrected transitions.
+The camera path, native flight integration and per-rendered-view effects retain
+their established evaluation behavior.
+
+## Earlier validation records
+
 # Validation — 0.4.6 alpha
 
 ## Startup input

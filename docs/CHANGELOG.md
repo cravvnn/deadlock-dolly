@@ -1,5 +1,22 @@
 # Changes
 
+## 0.4.7 alpha — Paused flight return and replay names
+
+- Closing F8 on a paused held/completed camera requests the acknowledged Flight
+  handoff. It no longer claims movement input while manual flight is inactive.
+  Active paths and frozen previews keep playing; busy transitions keep the panel.
+- Wait for two fresh, stable paused views before positioning the spectator at a
+  finished shot. Delayed pause acknowledgement no longer uses a stale running
+  tick as its baseline. A later replay change still blocks the handoff.
+- Match custom replay names with or without their final .dem suffix throughout
+  startup and native playback, preserving dots. Other suffixes cannot alias the
+  selected replay. The reported tv_record-specific rejection is not reproduced.
+- Timestamp bounded input and graphics observations using one monotonic clock,
+  retaining them after game closure for comparison with future slowdowns.
+- The supplied particle/material DLLs match the earlier crash dump. They do not
+  establish a safe renderer fix; severe slowdown and buffer overflow remain
+  unresolved. Camera interpolation and render-time evaluation are unchanged.
+
 ## 0.4.6 alpha — Startup mouse handoff and source cleanup
 
 - Apply the same explicit game HUD/cursor handoff on first flight and F9 return,

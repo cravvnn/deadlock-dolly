@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.6 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.4.7 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -128,9 +128,9 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.4.6 is an alpha. Startup mouse handoff is corrected. A reported DX11
-vertex-buffer overflow during paused editing remains under investigation;
-this update adds diagnostics and does not claim to fix that crash.
+0.4.7 is an alpha. It corrects F8 return to paused flight, the end-of-shot
+pause acknowledgement and custom replay-name matching. Severe renderer
+slowdowns and the reported DX11 vertex-buffer overflow remain unresolved.
 ReShade compatibility is unverified. Expanded in-game
 curve editing remains Stage 2; video/render-pass export remains Stage 3.
 Technical details and validation results are in docs/VALIDATION.md.
@@ -140,7 +140,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.4.6 uses
+logs, including any recovery backup. Use the complete new package; 0.4.7 uses
 ABI 3 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

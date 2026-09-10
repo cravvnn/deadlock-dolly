@@ -308,7 +308,16 @@ static bool same_demo(const char* expected, const char* actual) noexcept {
                 b = p + 1;
         return b;
     };
-    return *expected && *actual && _stricmp(basename(expected), basename(actual)) == 0;
+    expected = basename(expected);
+    actual = basename(actual);
+    const auto expected_length = std::strlen(expected);
+    const auto actual_length = std::strlen(actual);
+    if (expected_length <= 4 || _stricmp(expected + expected_length - 4, ".dem") != 0)
+        return false;
+    // Preserve dots in custom recording names. Only the selected file's final
+    // .dem extension may be omitted by an engine status response.
+    return (actual_length == expected_length || actual_length == expected_length - 4) &&
+           _strnicmp(expected, actual, actual_length) == 0;
 }
 static bool pose_valid(const CameraPose& p) noexcept {
     for (double v : p)

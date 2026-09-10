@@ -165,14 +165,30 @@ class InputDiagnosticsTests(unittest.TestCase):
         self.assertEqual(cached["latest"]["raw_mouse_packets"], 101)
         self.assertEqual(cached["samples"][0]["raw_mouse_packets"], 101)
 
+    def test_observation_time_uses_bridge_clock_and_only_changes_for_new_snapshot(self):
+        self.advance(123.25)
+        self.publish()
+        first = self.bridge.input_diagnostics()["latest"]
+        self.assertEqual(first["sampled_at"], 123.25)
+        self.advance(2)
+        self.assertEqual(self.bridge.input_diagnostics()["latest"], first)
+        self.publish(sequence=4, packets=202)
+        result = self.bridge.input_diagnostics()
+        self.assertEqual(result["latest"]["sampled_at"], 125.25)
+        self.assertEqual(result["samples"][0]["sampled_at"], 123.25)
+        self.assertEqual(result["latest"]["raw_mouse_packets"], 202)
+
     def test_close_captures_final_input_and_preserves_it_after_mapping_closes(self):
+        self.advance(123.25)
         self.publish(sequence=8, packets=707)
         self.bridge.close()
+        self.advance(10)
         self.assertTrue(self.memory.closed)
         result = self.bridge.diagnostics()
         self.assertEqual(result["state"], "unavailable")
         self.assertTrue(result["input"]["cached_after_close"])
         self.assertEqual(result["input"]["latest"]["raw_mouse_packets"], 707)
+        self.assertEqual(result["input"]["latest"]["sampled_at"], 123.25)
 
     def test_controller_archive_includes_cached_native_input_after_close(self):
         from dolly.controller import Controller

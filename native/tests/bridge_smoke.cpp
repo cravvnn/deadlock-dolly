@@ -297,6 +297,21 @@ struct Fixture {
     }
 };
 
+void replay_identity() {
+    require(same_demo("practice.session.01.dem", "replays/practice.session.01.dem"),
+            "Full custom recording name was rejected");
+    require(same_demo("practice.session.01.dem", "replays/practice.session.01"),
+            "Optional final .dem suffix removed part of the custom recording name");
+    require(same_demo("C:\\selected\\Haze aim.01.dem", "replays/HAZE AIM.01.DEM"),
+            "Replay basename case or path separators changed identity");
+    for (const char* other : {"", "practice.session", "practice.session.01.info",
+                              "practice.session.01.dem.info", "practice.session.02.dem"})
+        require(!same_demo("practice.session.01.dem", other),
+                "Native replay guard accepted an incomplete or different recording name");
+    require(!same_demo("practice.session.01", "practice.session.01"),
+            "Selected replay must identify a .dem file");
+}
+
 void atomic_exports() {
     static_assert(sizeof(LONG) == 4 && sizeof(LONG64) == 8,
                   "Atomic export widths must match the bridge wire format");
@@ -586,7 +601,9 @@ void editor_input_checks() {
     // Feed the real key-transition handler after its callers' focus checks.
     // No foreground window or OS input injection is needed for this fixture.
     auto saved = std::atomic_load(&dolly::gConfig);
+    const auto saved_view = editor_snapshot();
     auto configured = std::make_shared<EditorConfig>(*saved);
+    configured->playback_flags = 0;
     configured->bindings[9] = {VK_F8, 0};
     configured->bindings[10] = {VK_F9, 0};
     std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
@@ -598,6 +615,7 @@ void editor_input_checks() {
         dolly::gFocusBlocked[i] = false;
     }
     dolly::gAcknowledged = dolly::gLastEvent;
+    editor_update_view(true, true, true, saved_view.pose);
     editor_set_owner(EditorOwner::Flight);
     auto event_count = [] { return dolly::gLastEvent; };
     auto console_event = [](double value) {
@@ -620,6 +638,64 @@ void editor_input_checks() {
     dolly::key_event(VK_F8, true);
     require(dolly::gOwner == EditorOwner::Flight, "A new F8 press did not close the panel");
     dolly::key_event(VK_F8, false);
+
+    // After a path endpoint or Stop, F8 must actually re-arm the manual
+    // camera. Changing only the input owner leaves every movement key dead.
+    editor_update_view(true, true, false, saved_view.pose);
+    editor_set_owner(EditorOwner::Panel);
+    const auto before_return = event_count();
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Panel && event_count() == before_return + 1,
+            "F8 claimed flight input before re-arming a held camera");
+    require(dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount].action ==
+                std::uint32_t(EditorAction::Flight),
+            "F8 did not request the acknowledged camera flight handoff");
+    dolly::key_event(VK_F8, true);
+    require(event_count() == before_return + 1, "Held F8 repeatedly requested flight");
+    editor_update_view(true, true, true, saved_view.pose);
+    editor_set_owner(EditorOwner::Flight); // controller/render acknowledgement
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Flight && event_count() == before_return + 1,
+            "Flight acknowledgement reopened the panel for the same F8 press");
+    dolly::key_event(VK_F8, false);
+
+    // F8 remains a panel visibility control during a running shot; it must
+    // never send a manual-flight command that stops/replaces that shot.
+    configured = std::make_shared<EditorConfig>(*configured);
+    configured->playback_flags = 1;
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
+    editor_update_view(true, true, false, saved_view.pose); // includes frozen previews
+    editor_set_owner(EditorOwner::Panel);
+    const auto during_shot = event_count();
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Flight && event_count() == during_shot,
+            "F8 interrupted a playing shot with a manual-flight request");
+    dolly::key_event(VK_F8, false);
+    editor_update_view(false, true, false, saved_view.pose);
+    editor_set_owner(EditorOwner::Panel);
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Flight && event_count() == during_shot,
+            "F8 interrupted a known playing shot when its view was temporarily unavailable");
+    dolly::key_event(VK_F8, false);
+    configured = std::make_shared<EditorConfig>(*configured);
+    configured->playback_flags = 2;
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
+    editor_set_owner(EditorOwner::Panel);
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Panel && event_count() == during_shot,
+            "F8 changed camera ownership during an unfinished operation");
+    dolly::key_event(VK_F8, false);
+    configured = std::make_shared<EditorConfig>(*configured);
+    configured->playback_flags = 0;
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
+    editor_update_view(false, true, false, saved_view.pose);
+    editor_set_owner(EditorOwner::Panel);
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Panel && event_count() == during_shot,
+            "F8 hid recovery controls before a usable camera view was available");
+    dolly::key_event(VK_F8, false);
+    editor_update_view(true, true, true, saved_view.pose);
+    editor_set_owner(EditorOwner::Flight);
 
     const auto before_console = event_count();
     dolly::key_event(VK_F7, true);
@@ -707,11 +783,15 @@ void editor_input_checks() {
     require(dolly::key_down('W'), "Movement did not resume after release and a fresh press");
     dolly::key_event('W', false);
     std::atomic_store(&dolly::gConfig, saved);
+    editor_update_view(saved_view.ready, saved_view.paused, saved_view.manual_active,
+                       saved_view.pose, saved_view.phase, saved_view.tick,
+                       saved_view.horizontal_fov, saved_view.view_width, saved_view.view_height);
     dolly::gAcknowledged = dolly::gLastEvent;
 }
 
 void run() {
     atomic_exports();
+    replay_identity();
     Fixture f;
     auto status = f.frame();
     require(status.state == static_cast<unsigned>(State::Probe),
@@ -731,6 +811,14 @@ void run() {
                 status.state == static_cast<unsigned>(State::Armed),
             "HOLD must acknowledge from the actual verified callback");
     f.applied(.25);
+
+    std::snprintf(demo_name, sizeof(demo_name), "replays/native-smoke");
+    f.command(Mode::Hold, .25);
+    status = f.frame();
+    require(status.state == static_cast<unsigned>(State::Armed) && !status.error,
+            "The actual native view rejected the selected replay without its .dem suffix");
+    f.applied(.25);
+    std::snprintf(demo_name, sizeof(demo_name), "replays/native-smoke.dem");
 
     const auto play_id = f.command(Mode::Play, 0);
     status = f.frame();

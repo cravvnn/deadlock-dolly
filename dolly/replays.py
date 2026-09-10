@@ -15,6 +15,26 @@ class ReplayEntry:
     modified_ns: int
 
 
+def same_replay_name(selected: str | os.PathLike[str], reported: str | None) -> bool:
+    """Match an engine basename with or without the final .dem extension.
+
+    A custom recording may contain dots in its name. Only the known .dem
+    extension is optional; stripping arbitrary suffixes can reject that name
+    or mistake a different file type for the selected replay. Replay process
+    ownership and live playback status remain the controller's responsibility.
+    """
+    if not isinstance(reported, str) or any(char in reported for char in "\0\r\n"):
+        return False
+    expected = str(selected).replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    if not expected.endswith(".dem") or len(expected) <= 4:
+        return False
+    actual = reported.strip()
+    if len(actual) >= 2 and actual[0] in "\"'" and actual[-1] == actual[0]:
+        actual = actual[1:-1]
+    actual = actual.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    return actual in {expected, expected[:-4]}
+
+
 def discover_replays(folder: str | os.PathLike[str]) -> list[ReplayEntry]:
     """List local replay files without opening or parsing their binary content.
 

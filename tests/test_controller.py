@@ -253,6 +253,34 @@ class ControllerTests(unittest.TestCase):
             self.controller._require_demo()
         self.assertEqual(self.console.requests, [])
 
+    def test_live_demo_guard_accepts_complete_custom_recording_name_only(self):
+        self.controller._demo = Path("/chosen/practice.session.01.dem")
+        for reported in ("practice.session.01", "practice.session.01.dem",
+                         r"C:\Deadlock\game\citadel\practice.session.01.DEM"):
+            self.console.demo_name = reported
+            with self.subTest(reported=reported):
+                self.assertEqual(self.controller._require_demo()["tick"], 100)
+        for reported in ("practice.session", "practice.session.01.info",
+                         "practice.session.01.dem.info", "practice.session.02.dem"):
+            self.console.demo_name = reported
+            with self.subTest(reported=reported), self.assertRaisesRegex(RuntimeError, "different"):
+                self.controller._require_demo()
+        self.assertEqual(self.console.sent, [])
+
+    def test_native_demo_guard_preserves_custom_name_and_state_checks(self):
+        self.controller._demo = Path("/chosen/practice.session.01.dem")
+        for name in ("practice.session.01", "practice.session.01.dem",
+                     r"C:\Deadlock\game\citadel\practice.session.01.DEM"):
+            with self.subTest(name=name):
+                self.controller._require_native_demo({"demo_name": name, "state": "playing"})
+                self.controller._require_native_demo({"demo_name": name, "state": "probe"}, allow_idle=True)
+                with self.assertRaisesRegex(RuntimeError, "unavailable"):
+                    self.controller._require_native_demo({"demo_name": name, "state": "fault"}, allow_idle=True)
+        for name in (None, "practice.session", "practice.session.01.info",
+                     "practice.session.01.dem.info", "practice.session.02.dem"):
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, "identity changed"):
+                self.controller._require_native_demo({"demo_name": name, "state": "playing"})
+
     def test_status_distinguishes_clean_game_close_from_unexpected_exit(self):
         self.controller._state.update(connected=True, startup_stage="replay_ready",
                                       message="Camera ready.")

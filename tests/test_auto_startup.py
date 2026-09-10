@@ -60,6 +60,21 @@ class AutoStartupTests(unittest.TestCase):
         launch.assert_not_called()
         self.assertEqual(self.console.sent, [])
 
+    def test_one_click_accepts_dotted_recording_without_reported_dem_suffix(self):
+        self.demo = self.demo.with_name("practice.session.01.dem")
+        self.demo.write_bytes(b"fixture")
+        send = self.console.send
+
+        def report_without_suffix(command):
+            send(command)
+            if command.startswith('playdemo "'):
+                self.console.demo_name = self.demo.name[:-4]
+
+        self.console.send = report_without_suffix
+        result = self.start()
+        self.assertEqual(result["startup_stage"], "editing_ready")
+        self.assertTrue(result["paused_flight"])
+
     def test_unknown_or_partial_unlocker_completion_never_loads_demo(self):
         self.console.unhide_output = "Removed hidden flags from 12 cvars"
         with self.assertRaisesRegex(RuntimeError, "could not confirm"):

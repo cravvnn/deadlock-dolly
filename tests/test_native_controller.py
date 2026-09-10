@@ -251,6 +251,64 @@ class NativeControllerTests(unittest.TestCase):
         self.assertFalse(self.controller._native_active)
         self.assertEqual(self.console.values["r_aspectratio"], 0)
 
+    def test_handoff_waits_for_rendered_pause_before_positioning(self):
+        self.prepare()
+        self.bridge.hold()
+        original_status = self.bridge.status
+        samples = iter([(100, False), (101, False), (102, True), (103, True),
+                        (103, True), (103, True), (103, True), (103, True)])
+        delivered = []
+        def delayed_pause():
+            status = original_status()
+            tick, paused = next(samples, (103, True))
+            status.update(tick=tick, paused=paused)
+            delivered.append((tick, paused))
+            return status
+        original_request = self.controller._request
+        placements = []
+        def request(command, *args, **kwargs):
+            if "spec_goto " in command:
+                placements.append(list(delivered))
+            return original_request(command, *args, **kwargs)
+        self.bridge.status = delayed_pause
+        with patch.object(self.controller, "_request", side_effect=request):
+            self.controller._handoff_native_camera()
+        self.assertEqual(len(placements), 1)
+        self.assertEqual(placements[0][-2:], [(103, True), (103, True)])
+        self.assertTrue(self.controller._native_handoff_details["verified"])
+        self.assertEqual(self.controller._native_handoff_details["paused_tick"], 103)
+
+    def test_unacknowledged_pause_keeps_native_view_without_repositioning(self):
+        self.prepare()
+        self.bridge.hold()
+        original_status = self.bridge.status
+        def still_running():
+            status = original_status()
+            status["paused"] = False
+            return status
+        self.bridge.status = still_running
+        self.bridge.requests.clear()
+        self.controller._handoff_native_camera(allow_hold=True)
+        self.assertTrue(self.controller._native_active)
+        self.assertTrue(self.controller._native_handoff_details["pending"])
+        self.assertFalse(any("spec_goto " in command for _, command in self.bridge.requests))
+        self.assertNotEqual(self.bridge.state, "stopped")
+
+    def test_tick_change_after_confirmed_pause_still_blocks_handoff(self):
+        self.prepare()
+        self.bridge.hold()
+        original_status = self.bridge.status
+        samples = iter([100, 100, 100, 101])
+        def moved_after_pause():
+            status = original_status()
+            status.update(tick=next(samples, 101), paused=True)
+            return status
+        self.bridge.status = moved_after_pause
+        with self.assertRaisesRegex(RuntimeError, "replay moved during native camera handoff"):
+            self.controller._handoff_native_camera()
+        self.assertTrue(self.controller._native_active)
+        self.assertNotEqual(self.bridge.state, "stopped")
+
     def test_repeated_play_releases_stalled_endpoint_before_new_preparation(self):
         self.bridge.fail_handoff = True
         for attempt in range(3):

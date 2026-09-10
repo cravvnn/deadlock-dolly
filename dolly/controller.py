@@ -23,6 +23,7 @@ from . import __version__
 from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX,
                    CVAR_COMPONENTS, validate_cvar_value, parse_cvar_value, format_cvar_value)
 from .console import ConsoleClient, error_text, parse_demo_info, parse_demo_tick
+from .replays import same_replay_name
 from .playback import ReplayClock
 from .smoothing import PhaseSmoother, smoothing_window
 from .display import client_aspect_ratio
@@ -304,8 +305,7 @@ class Controller:
                 result.update(tick=current["tick"], total_ticks=current.get("total_ticks"))
         if not result.get("playing"):
             raise RuntimeError("A local demo must be playing. Load the selected replay, then reconnect/probe.")
-        name = str(result.get("name") or "").replace("\\", "/").rsplit("/", 1)[-1]
-        if not self._demo or Path(name).stem.casefold() != self._demo.stem.casefold():
+        if not self._demo or not same_replay_name(self._demo, result.get("name")):
             raise RuntimeError("The open replay is different from the local .dem chosen for this launch. Restart through Dolly with the intended file.")
         with self._state_lock:
             self._state["tick"] = int(result["tick"]) if result.get("tick") is not None else None
@@ -514,8 +514,7 @@ class Controller:
                         current = bridge.status()
                         if current.get("state") in ("fault", "unsupported"):
                             raise RuntimeError("Native camera failed while loading: " + str(current.get("message")))
-                        name = str(current.get("demo_name") or "").replace("\\", "/").rsplit("/", 1)[-1]
-                        if not name or Path(name).stem.casefold() != self._demo.stem.casefold():
+                        if self._demo is None or not same_replay_name(self._demo, current.get("demo_name")):
                             return None
                         if int(current.get("frame_count", 0)) <= initial_frame:
                             return None
@@ -2035,8 +2034,7 @@ class Controller:
         return getattr(self._session, "native", None) if self._session is not None else None
 
     def _require_native_demo(self, status, *, allow_idle=False):
-        name = str(status.get("demo_name") or "").replace("\\", "/").rsplit("/", 1)[-1]
-        if not name or self._demo is None or Path(name).stem.casefold() != self._demo.stem.casefold():
+        if self._demo is None or not same_replay_name(self._demo, status.get("demo_name")):
             raise RuntimeError("Native camera replay identity changed. Camera playback stopped; restart the intended replay through Dolly.")
         disallowed = ("fault", "unsupported", "starting") if allow_idle else ("fault", "unsupported", "starting", "probe", "stopped")
         if status.get("state") in disallowed:
@@ -2093,11 +2091,11 @@ class Controller:
         target["cvars"] = {}
         target["time"] = float(status["phase"])
         self._native_handoff_details = {"verified": False, "target": dict(target), "samples": []}
-        self._request(self._position_commands(target))
         deadline = time.perf_counter() + 2.0
         previous_frame = int(status["frame_count"])
         stable = 0
-        tick = int(status["tick"])
+        tick = None
+        paused_tick = None
         # A fresh event is deliberate: Stop has already set _stop_event, but a
         # bounded held-camera handoff must still complete before another writer.
         waiter = threading.Event()
@@ -2111,12 +2109,27 @@ class Controller:
                 bridge.release()
                 self._native_active = False
                 raise
-            if int(current["tick"]) != tick or not current["paused"]:
-                raise RuntimeError("The replay moved during native camera handoff. The view remains held; pause the replay and use Stop / restore.")
             frame_count = int(current["frame_count"])
             if frame_count == previous_frame:
                 continue
             previous_frame = frame_count
+            current_tick = int(current["tick"])
+            if tick is None:
+                # Console delivery can precede the render callback's pause
+                # acknowledgement. Do not use its older running tick as the
+                # handoff baseline or reposition before a settled paused view.
+                if current["paused"] and current_tick >= 0:
+                    if paused_tick == current_tick:
+                        tick = current_tick
+                        self._native_handoff_details["paused_tick"] = tick
+                        self._request(self._position_commands(target))
+                        deadline = time.perf_counter() + 2.0
+                    paused_tick = current_tick
+                else:
+                    paused_tick = None
+                continue
+            if current_tick != tick or not current["paused"]:
+                raise RuntimeError("The replay moved during native camera handoff. The view remains held; pause the replay and use Stop / restore.")
             original = self._native_pose(current, "original_pose")
             position_error = math.dist([original[k] for k in CAMERA_AXES], [target[k] for k in CAMERA_AXES])
             angle_error = max(abs((original[k] - target[k] + 180) % 360 - 180)
@@ -2131,6 +2144,11 @@ class Controller:
                 self._applied_pose = target
                 return
         self._native_handoff_details["pending"] = True
+        if tick is None:
+            self._native_handoff_details["reason"] = "Waiting for rendered pause acknowledgement"
+            if allow_hold:
+                return
+            raise RuntimeError("The renderer has not confirmed a paused replay for camera handoff. The view remains held; use Stop / restore or retry after the game responds.")
         if allow_hold:
             return
         raise RuntimeError("Native camera is holding the final view because the underlying free camera did not settle. Use Play shot to restart, or Stop / restore to return control to the game before using paused movement.")

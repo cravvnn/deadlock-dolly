@@ -1,7 +1,21 @@
-# Stage 2 test notes — 0.4.6 alpha
+# Stage 2 test notes — 0.4.7 alpha
 
 Use the complete matching Windows package and a local replay in DX11.
 Stage 1 startup, cleanup, console, game UI and capture checks still apply.
+
+## Held-camera return and replay names
+
+- Finish a shot, open F8, then close it while paused. Mouse look and WASD should
+  resume without an F9 round trip. Repeat after Preview selected view and Stop.
+- Hold F8 through the transition: one handoff should occur. While an operation
+  is busy, keep the panel available; active paths/frozen previews must continue.
+- Play several shots at 0.1x. End-of-shot handoff waits for a rendered pause;
+  a late console pause must not produce the old stale-tick error.
+- Test a completed custom recording with a dotted filename, such as
+  practice.session.01.dem. Check startup, capture, playback and restart.
+- For a rejected tv_record demo, retain its exact filename and Export diagnostics
+  immediately after failure. Check whether ordinary Deadlock playdemo opens the
+  same file. A short completed .dem helps reproduce content-specific failures.
 
 ## Startup mouse and crash diagnostics
 
@@ -16,7 +30,8 @@ Stage 1 startup, cleanup, console, game UI and capture checks still apply.
   The renderer overflow is not considered fixed in this build.
 - Input diagnostics distinguish received relative packets from consumed motion.
   cursor_clipped records Dolly's last successful cursor request, not an
-  independently observed OS clipping rectangle. Graphics ABI 2 adds guide,
+  independently observed OS clipping rectangle. Input and graphics sampled_at values use the same monotonic observation clock;
+  they are read times, not exact native event times. Graphics ABI 2 adds guide,
   draw and original-Present timing; older snapshots lack those observations.
 
 ## Playback controls

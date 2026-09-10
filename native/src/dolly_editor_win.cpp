@@ -178,7 +178,26 @@ void dispatch(EditorAction action) noexcept {
             editor_enqueue(EditorAction::Panel, 1);
             return;
         }
-        editor_set_owner(owner == EditorOwner::Panel ? EditorOwner::Flight : EditorOwner::Panel);
+        if (owner == EditorOwner::Panel) {
+            const auto state = editor_snapshot();
+            // A held endpoint or Stop has no manual camera writer. Merely
+            // hiding the panel steals game input without moving the camera.
+            // Return through the same acknowledged flight handoff as the
+            // Fly camera button; keep recovery controls visible until ready.
+            // A missing/coherency-retry view cannot confirm a usable camera.
+            // Keep the panel available for recovery unless a known shot is
+            // running, when F8 should remain only a visibility control.
+            if (state.busy || (!state.ready && !state.playing))
+                return;
+            if (state.ready && state.paused && !state.manual_active && !state.playing) {
+                editor_enqueue(EditorAction::Flight);
+                return;
+            }
+            // Active manual flight needs no new command, and closing the
+            // panel during playback must not interrupt the running shot.
+            editor_set_owner(EditorOwner::Flight);
+        } else
+            editor_set_owner(EditorOwner::Panel);
         return;
     }
     if (action == EditorAction::GameUI) {

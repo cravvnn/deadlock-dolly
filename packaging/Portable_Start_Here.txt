@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.6 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.7 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -94,9 +94,9 @@ Machine-readable list: Supported_Camera_Cvars.json
 
 COMPATIBILITY AND UPDATES
 
-0.4.6 is an alpha. Startup mouse handoff is corrected. A reported DX11
-vertex-buffer overflow during paused editing remains under investigation;
-this update adds diagnostics and does not claim to fix that crash.
+0.4.7 is an alpha. It corrects F8 return to paused flight, the end-of-shot
+pause acknowledgement and custom replay-name matching. Severe renderer
+slowdowns and the reported DX11 vertex-buffer overflow remain unresolved.
 ReShade compatibility is unverified. Expanded in-game
 curve editing remains Stage 2; video/render-pass export remains Stage 3.
 

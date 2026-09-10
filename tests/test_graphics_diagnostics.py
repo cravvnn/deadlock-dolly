@@ -121,14 +121,30 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
         result["latest"]["pending_count"] = 99999
         self.assertEqual(self.bridge.graphics_diagnostics()["latest"]["pending_count"], 42)
 
+    def test_observation_time_uses_bridge_clock_and_only_changes_for_new_snapshot(self):
+        self.advance(123.25)
+        self.publish()
+        first = self.bridge.graphics_diagnostics()["latest"]
+        self.assertEqual(first["sampled_at"], 123.25)
+        self.advance(2)
+        self.assertEqual(self.bridge.graphics_diagnostics()["latest"], first)
+        self.publish(sample=2, sequence=4)
+        result = self.bridge.graphics_diagnostics()
+        self.assertEqual(result["latest"]["sampled_at"], 125.25)
+        self.assertEqual(result["samples"][0]["sampled_at"], 123.25)
+        self.assertEqual(result["latest"]["sample"], 2)
+
     def test_final_graphics_sample_survives_mapping_close_after_game_crash(self):
+        self.advance(123.25)
         self.publish(sample=7)
         self.bridge.close()
+        self.advance(10)
         self.assertTrue(self.memory.closed)
         result = self.bridge.diagnostics()
         self.assertEqual(result["state"], "unavailable")
         self.assertTrue(result["graphics"]["cached_after_close"])
         self.assertEqual(result["graphics"]["latest"]["sample"], 7)
+        self.assertEqual(result["graphics"]["latest"]["sampled_at"], 123.25)
 
 
 if __name__ == "__main__":

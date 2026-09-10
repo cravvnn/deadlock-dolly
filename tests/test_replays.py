@@ -3,7 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
+from dolly.replays import (discover_replays, find_replay_folder,
+                          parse_launch_options, same_replay_name)
 
 
 class ReplayBrowserTests(unittest.TestCase):
@@ -40,6 +41,24 @@ class ReplayBrowserTests(unittest.TestCase):
                          base / "game" / "bin" / "win64" / "citadel.exe"):
             with self.subTest(selected=selected):
                 self.assertEqual(find_replay_folder(selected), expected)
+
+
+class ReplayIdentityTests(unittest.TestCase):
+    def test_custom_recording_names_keep_dots_spaces_and_unicode(self):
+        for basename in ("practice.session.01", "Haze aim test", "試合.01", "take.dem"):
+            selected = Path("selected") / f"{basename}.dem"
+            for reported in (basename, f"{basename}.DEM", f"replays/{basename}",
+                             f'"C:\\Deadlock\\game\\citadel\\{basename}.dem"'):
+                with self.subTest(selected=selected, reported=reported):
+                    self.assertTrue(same_replay_name(selected, reported))
+
+    def test_other_suffixes_and_incomplete_identity_are_not_the_selected_replay(self):
+        for reported in (None, "", " ", "practice.session", "practice.session.01.info",
+                         "practice.session.01.dem.info", "practice.session.02.dem",
+                         "practice.session.01.dem\n", "practice.session.01\0.dem"):
+            with self.subTest(reported=reported):
+                self.assertFalse(same_replay_name("practice.session.01.dem", reported))
+        self.assertFalse(same_replay_name("practice.session.01", "practice.session.01"))
 
 
 class LaunchOptionsTests(unittest.TestCase):

@@ -538,6 +538,9 @@ class NativeBridge:
                 sample = wire.unpack(data)
                 if sample is not None and (not self._graphics_samples or
                         sample["sample"] != self._graphics_samples[-1]["sample"]):
+                    # First observation time on the same monotonic bridge
+                    # clock as input samples; leave cached times unchanged.
+                    sample["sampled_at"] = now
                     self._graphics_samples.append(sample)
                 self._graphics_error = ""
                 return
@@ -552,7 +555,8 @@ class NativeBridge:
             return {"cached_after_close": self._closed, "samples": samples,
                     "latest": samples[-1] if samples else None,
                     "read_error": self._graphics_error,
-                    "note": "Read-only asynchronous observations; no renderer state or camera timing is changed."}
+                    "note": "Read-only asynchronous observations; sampled_at is the first observation in monotonic bridge-clock seconds, not the native frame time. "
+                            "No renderer state or camera timing is changed."}
 
     def _sample_input(self, *, force=False):
         """Bound optional telemetry reads; an input probe cannot fault the camera."""
@@ -575,6 +579,7 @@ class NativeBridge:
                 sample = wire.unpack(data)
                 if sample is not None and (not self._input_samples or
                         sample["sequence"] != self._input_samples[-1]["sequence"]):
+                    sample["sampled_at"] = now
                     self._input_samples.append(sample)
                 self._input_error = ""
                 return
@@ -591,6 +596,7 @@ class NativeBridge:
                     "read_error": self._input_error,
                     "note": "Read-only observations; cursor_clipped records Dolly's last successful cursor request. "
                             "Packet counters cover configured, focused input. "
+                            "sampled_at is the first observation in monotonic bridge-clock seconds, not the native input event time. "
                             "No mouse registration, cursor state or camera timing is changed."}
 
     def _viewer_store_sequence(self, value):
