@@ -1,5 +1,20 @@
 # Changes
 
+## 0.4.2 alpha — Replay UI, capture and restart fixes
+
+- F9 explicitly shows the replay HUD and releases the game cursor. Returning
+  hides the replay controls before native flight takes over. Unsupported
+  console commands are no longer mistaken for confirmed capabilities.
+- F7 returns from the console to the previous UI. F8 returns to Dolly's panel.
+  Alt-tab preserves input ownership; Stop restores the original HUD/cursor.
+- Capture while replay time advances keeps the in-game keypress pose and tick.
+  Desktop capture waits for a fresh paused rendered view. Both leave the
+  replay paused, and capture after P restores native manual movement.
+- Restart shots beginning at tick 0 when the replay explicitly identifies
+  tick 1 as its first seekable packet. Camera and effect time start at the
+  corresponding fraction of a second; saved keyframes are unchanged.
+- Keep native path interpolation, frame timing and DOF evaluation unchanged.
+
 ## 0.4.1 alpha — Native editor startup and controls
 
 - Wait for the paused replay view, DX11 panel and native input before entering

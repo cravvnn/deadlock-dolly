@@ -92,13 +92,13 @@ bool reserved_input(unsigned vk) noexcept {
 void dispatch(EditorAction action) noexcept {
  auto owner=gOwner.load();
  if(action==EditorAction::Panel){
-  if(owner==EditorOwner::Console){editor_enqueue(EditorAction::Console,0);return;}
+  if(owner==EditorOwner::Console){editor_enqueue(EditorAction::Panel,1);return;}
   if(owner==EditorOwner::GameUI){editor_enqueue(EditorAction::Panel,1);return;}
   editor_set_owner(owner==EditorOwner::Panel?EditorOwner::Flight:EditorOwner::Panel);return;
  }
  if(action==EditorAction::GameUI){
   bool open=owner!=EditorOwner::GameUI;
-  if(editor_enqueue(action,open?1:0))editor_set_owner(open?EditorOwner::GameUI:EditorOwner::Flight);
+  if(editor_enqueue(action,open?1:0)&&open)editor_set_owner(EditorOwner::GameUI);
   return;
  }
  editor_enqueue(action);
@@ -198,7 +198,9 @@ BOOL WINAPI clip_cursor_hook(const RECT* rect){if(owns_input()&&gOwner.load()==E
 EditorSnapshot editor_snapshot() noexcept {
  EditorSnapshot result{};auto c=std::atomic_load(&gConfig);
  if(c){result.enabled=c->enabled&&gConnected.load();result.selected_camera=c->selected_camera;result.camera_count=c->camera_count;result.sensitivity=c->sensitivity;result.duration=c->duration;result.playing=(c->playback_flags&1)!=0;result.busy=(c->playback_flags&2)!=0;std::memcpy(result.shot_name,c->shot_name,sizeof(result.shot_name));std::memcpy(result.message,c->message,sizeof(result.message));}
- result.focused=focused();result.owner=result.focused?gOwner.load():EditorOwner::Unfocused;result.speed=gSpeed.load();result.overlay_available=gOverlay.load();result.input_available=gInput.load();result.dropped_events=gDropped.load();
+ // Focus and ownership are separate facts. A desktop error dialog must not
+ // erase which UI owns input, or recovery can steal the game's mouse/console.
+ result.focused=focused();result.owner=gOwner.load();result.speed=gSpeed.load();result.overlay_available=gOverlay.load();result.input_available=gInput.load();result.dropped_events=gDropped.load();
  // Atomic field seqlock gives an internally coherent capture pose and tick.
  // Bounded retries never wait for the render callback.
  for(int attempt=0;attempt<4;++attempt){

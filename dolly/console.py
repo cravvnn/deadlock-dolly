@@ -41,6 +41,7 @@ def error_text(output: str) -> str | None:
     """Return a recognizable console rejection, or None (not proof of success)."""
     patterns = (
         r"\bunknown (?:command|convar|cvar)\b", r"\bno such (?:command|convar|cvar)\b",
+        r"\bno (?:cvar|convar) or command named\b",
         r"\b(?:command|convar|cvar).+\bnot found\b", r"\bis cheat protected\b",
         r"\bcheat command.+\bignored\b", r"\b(?:cannot|can't) (?:change|set|use)\b",
         r"\bnot currently playing back a demo\b", r"^\s*(?:\[[^\]]*\]\s*)*error\s*[:\-]",

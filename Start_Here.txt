@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.1 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.4.2 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -59,7 +59,8 @@ sensitivity. F7 is reserved for the console. Settings are stored in
 %APPDATA%/DeadlockDolly/settings.json and survive program-folder updates.
 
 The console receives normal typing without moving the camera or triggering
-Dolly shortcuts. F7, F8 or Escape closes it and returns to the Dolly panel.
+Dolly shortcuts. F7 or Escape closes it and returns to the previous UI.
+F8 closes the console and opens the Dolly panel.
 From Deadlock's replay UI, F8 returns to the panel and F9 returns to flight.
 Release held movement keys after switching windows before pressing them again.
 
@@ -67,6 +68,10 @@ Release held movement keys after switching windows before pressing them again.
 CAMERAS, FRAMING AND PLAYBACK
 
 Native capture uses the displayed camera position, rotation and framing.
+Capture also works while the replay is playing and leaves it paused.
+The in-game capture key saves the rendered view and tick at the keypress.
+Desktop capture waits for a paused rendered view before saving its tick.
+
 Previous/next and saved-view preview change the camera at the CURRENT paused
 replay moment. They do not seek to that camera's arrival time. F10 continues
 flight from the displayed view.
@@ -98,7 +103,7 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.4.1 is an alpha. The startup and input-switching fixes need an in-game check;
+0.4.2 is an alpha. Replay UI, capture and seek fixes need an in-game check.
 ReShade compatibility is unverified. In-world path markers, full
 in-game curve editing and video/render-pass export are planned for later updates.
 Technical details and validation results are in docs/VALIDATION.md.
@@ -108,7 +113,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.4.1 uses
+logs, including any recovery backup. Use the complete new package; 0.4.2 uses
 ABI 3 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

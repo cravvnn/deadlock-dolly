@@ -86,8 +86,8 @@ selection, replay/path playback and movement-speed controls. Change movement spe
 **Keybinds**; the in-game speed control updates the same saved setting.
 
 **F7** gives the console input ownership before the open command is dispatched,
-so typing cannot create keys or move the camera. F7 closes it again; Escape
-also requests console closure. **F9** returns the camera and mouse to Deadlock's
+so typing cannot create keys or move the camera. F7 or Escape closes it and
+returns to the previous UI; F8 closes it and opens the Dolly panel. **F9** returns the camera and mouse to Deadlock's
 original replay UI for selecting a hero. Return through F8 for the panel or F9
 for flight; Dolly seeds from the currently displayed view rather than a stale
 camera from before hero selection.
@@ -132,12 +132,22 @@ camera in the panel, or use PageUp/PageDown, to apply its position, rotation,
 aspect and supported DOF at the **current replay moment**. This does not seek
 to that key's arrival time. F10 continues flight from the displayed view.
 
+Capture also works while replay time advances and leaves the replay paused.
+The in-game keybind saves the pose and tick sampled with its input event;
+desktop Capture waits for a paused rendered view and saves that frame's tick.
+Small delivery delays do not change the keybind capture's authored timestamp.
+
 P controls replay time. If replay time advances while manual flight is active,
 the current manual camera is held; pause again to continue paused editing.
 P during a normal authored native shot pauses/resumes replay time without
 restarting the path. Use F5 to restart the authored shot. Stop a frozen preview
 before trying to resume replay time. Comma/Period uses the project's ticks per
 second; check that value in **More → Coordinates / timing…** before timing work.
+
+Some replays initially expose tick 0 but can only seek back to tick 1. When
+the game confirms that boundary, Play shot starts at tick 1 with the matching
+camera/effect phase (1/64 second for a shot starting at zero at 64 ticks/sec).
+The saved cameras and arrival times stay intact.
 
 **Console legacy movement:** the older paused-camera dialog remains available
 when launching the Console driver. It uses a bounded camera calibration and

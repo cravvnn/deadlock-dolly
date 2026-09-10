@@ -406,7 +406,12 @@ void editor_input_checks() {
     dolly::key_event(VK_F7, false);
 
     editor_set_owner(EditorOwner::Console);
-    dolly::key_event(VK_F8, true); console_event(0);
+    dolly::key_event(VK_F8, true);
+    {
+        const auto& event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+        require(event.action == std::uint32_t(EditorAction::Panel) && event.value == 1,
+                "F8 from console must return to Dolly rather than the underlying game UI");
+    }
     const auto close_requested = event_count();
     require(dolly::gOwner == EditorOwner::Console, "F8 bypassed console close confirmation");
     dolly::key_event(VK_F8, true);
@@ -415,13 +420,29 @@ void editor_input_checks() {
             "F8 close confirmation flashed the panel");
     dolly::key_event(VK_F8, false);
 
+    // F9 returns input only after the controller has hidden the game's replay
+    // HUD and the native view has acknowledged flight. Alt-tab preserves owner.
+    editor_set_owner(EditorOwner::Flight);
+    dolly::key_event(VK_F9, true); dolly::key_event(VK_F9, false);
+    require(dolly::gOwner == EditorOwner::GameUI, "F9 did not suspend editor input");
+    auto unfocused = editor_snapshot();
+    require(!unfocused.focused && unfocused.owner == EditorOwner::GameUI,
+            "Alt-tab erased game UI ownership from native status");
+    dolly::key_event(VK_F9, true); dolly::key_event(VK_F9, false);
+    require(dolly::gOwner == EditorOwner::GameUI, "F9 released input before flight confirmation");
+    const auto& return_event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+    require(return_event.action == std::uint32_t(EditorAction::GameUI) && return_event.value == 0,
+            "F9 did not request explicit game UI close");
+    editor_set_owner(EditorOwner::Flight);
+    const auto after_game_ui = event_count();
+
     // A configurable text key must remain available for typing in the console.
     configured = std::make_shared<EditorConfig>(*configured);
     configured->bindings[9] = {'H', 0};
     std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
     editor_set_owner(EditorOwner::Console);
     dolly::key_event('H', true); dolly::key_event('H', false);
-    require(event_count() == close_requested, "Custom text binding stole console typing");
+    require(event_count() == after_game_ui, "Custom text binding stole console typing");
     dolly::key_event(VK_ESCAPE, true); console_event(0);
     const auto escape_requested = event_count();
     dolly::key_event(VK_ESCAPE, true);

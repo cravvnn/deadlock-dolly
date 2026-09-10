@@ -1,3 +1,65 @@
+# Validation — 0.4.2 alpha
+
+## Reported failures and changes
+
+Three diagnostic exports and the supplied replay-editor clip were reviewed.
+The recent console output repeatedly rejects `demoui` with "no cvar or command
+named". The capability parser nevertheless accepted that reply. F9 now uses
+explicit `citadel_hud_visible`, `citadel_hide_replay_hud` and `hud_free_cursor`
+values with readback verification. Their registration/types and cursor/HUD
+uses were inspected in the supplied client binary. Original values, including
+cursor auto mode -1, are restored by Stop/disconnect. F7/F8 and Alt-Tab keep
+the intended input owner across the console, Dolly and the game replay UI.
+
+The failed shot starts at tick 0. Both initial and corrective seeks report
+"from full packet 1", then remain at tick 1. That failure is an unavailable
+replay boundary, not proof that the renderer cannot keep up. Only project
+Play/Seek accepts this explicitly reported boundary, after repeated paused
+readbacks and an exact retry. Other seeks remain strict. The actual tick is
+recorded, and camera/effect phase starts at 1/64 second for the supplied shot.
+Saved keyframes and their authored timing are not modified.
+
+Desktop capture previously mixed console ticks with a later native pose,
+then rejected the mismatch. It now waits for fresh paused render telemetry
+and samples pose/tick together. In-game capture retains its input event's
+pose/tick while waiting for the replay to pause; an ordinary advancing replay
+is allowed, while stale paused captures and rewind are rejected. The current
+paused tick stays separate from an earlier captured event tick. Capture after
+P re-arms held manual movement without a console position write. Flight entry
+compares native acknowledgement with native status, avoiding stale console
+pause timing.
+
+The native path interpolation, main-view callback/clock, DOF evaluator and
+manual movement integrator match 0.4.1 byte-for-byte. Native changes are limited
+to UI input ownership/status and associated regression tests. The diagnostic
+that ends with game exit code 1 has no crash stack; this update does not claim
+to identify or repair that separate process exit.
+
+## Checks completed here
+
+- Full Python suite: 724 tests, no failures, one Windows-only skip. The 33 new
+  regressions cover HUD/cursor handoffs and restoration, delayed paused render
+  samples, captures while playing, stale/rewound snapshots, and the exact
+  tick-zero/full-packet-one seek boundary.
+- All current Windows native sources compiled and linked into the x64 helper,
+  callback harness and DX11 WARP harness. PE architecture, required exports,
+  static runtime and native build metadata/hash were verified.
+- New callback cases exercise F8 console/game-UI return, F9 ownership while
+  waiting for acknowledgement, and preserved owner status while unfocused.
+  These Windows cases compiled here; execution is a GitHub Windows CTest gate.
+- Source archive integrity, manifest completeness and clean-extraction source
+  re-export were checked. Uploaded game DLLs, diagnostics, video and private
+  authoring context are excluded.
+
+## Remaining validation
+
+The packaged Windows EXE and Deadlock cannot run in this Linux workspace.
+GitHub must rebuild the EXE and execute the Windows native/startup checks.
+The live F9 → F7 → F8/F9 transitions, captures after P, and reopened tick-zero
+shots still need an in-game check. See STAGE1_TESTING.md for those cases.
+
+## Earlier validation records
+
 # Validation — 0.4.1 alpha
 
 ## Reported failure and changes

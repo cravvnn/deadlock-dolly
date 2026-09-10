@@ -86,7 +86,11 @@ def _native_operation(app, label, function, bridge):
             # Preserve F7/ordinary game input recovery after a failed transition.
             try:
                 state = bridge.editor_status()
-                owner = "console" if state.get("console_open") else ("game_ui" if state.get("game_ui") else "panel")
+                # Native F9 suspends input optimistically before the worker
+                # runs. A failed opening must not be mistaken for confirmed
+                # game-UI ownership; keep Dolly's retry controls available.
+                confirmed_ui = app.controller.status().get("game_ui_visible", False)
+                owner = "console" if state.get("console_open") else ("game_ui" if confirmed_ui else "panel")
                 bridge.configure_editor(owner=owner)
             except (RuntimeError, ValueError, OSError):
                 LOG.exception("Could not restore native input after a failed action")
@@ -132,6 +136,10 @@ def dispatch(app, event, bridge):
         # camera ownership before displaying the editor panel.
         if event["value"] == 1:
             def return_to_editor():
+                # F8 from the console is a return to Dolly, whereas F7 closes
+                # the console back to the underlying game UI when it was open.
+                if getattr(app.controller, "_console_open", False) is True:
+                    app.controller.toggle_console(enabled=False)
                 app.controller.toggle_game_ui(enabled=False)
                 bridge.configure_editor(owner="panel")
             _native_operation(app, "Opening in-game editor", return_to_editor, bridge)

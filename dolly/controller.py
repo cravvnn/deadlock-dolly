@@ -59,6 +59,7 @@ SEEK_SETTLE_SAMPLES = 3
 CAMERA_READBACK_INTERVAL = .25
 CAMERA_DRIFT_LIMIT = 64.0
 CAMERA_DRIFT_SAMPLES = 3
+NATIVE_PAUSE_TIMEOUT = 3.0
 
 
 class CameraPositionError(RuntimeError):
@@ -159,6 +160,7 @@ class Controller:
         self._native_active = False
         self._native_manual = False
         self._game_ui_visible = False
+        self._game_ui_restore = {}
         self._console_open = None
         self._native_last_status = {}
         self._native_handoff_details = {}
@@ -334,6 +336,7 @@ class Controller:
             self._native_active = False
             self._native_manual = False
             self._game_ui_visible = False
+            self._game_ui_restore.clear()
             self._console_open = None
             self._native_last_status = {}
             self._native_handoff_details = {}
@@ -679,15 +682,8 @@ class Controller:
         with self._op_lock:
             native = self._native_bridge()
             if native is not None and hasattr(native, "start_flight"):
-                if not self._native_manual:
-                    self._halt(native_action="native_hold")
-                self._require_demo(require_tick=False)
-                self._request("demo_pause")
-                status = native.status()
-                self._require_native_demo(status, allow_idle=True)
-                pose = status["applied_pose"] if self._native_active else status["original_pose"]
-                frame, _ = self.capture_native_snapshot({"pose": pose, "tick": int(status["tick"]),
-                                                         "paused": bool(status["paused"])}, shot_time)
+                snapshot = self._sample_paused_native_view()
+                frame, _ = self._record_native_capture(snapshot, shot_time, pause=False)
                 return frame
             self._halt()
             paused_tick = self._paused_tick
@@ -725,8 +721,49 @@ class Controller:
             self._message("Captured the current freecam view and aspect ratio; replay paused. Roll keeps Dolly's last applied value, or zero; edit Bank if needed.")
             return frame
 
+    def _wait_paused_native_view(self, bridge, after_frame, *, timeout=None):
+        """Wait for fresh, settled render telemetry after a pause command."""
+        deadline = time.perf_counter() + (NATIVE_PAUSE_TIMEOUT if timeout is None else timeout)
+        previous_tick = None
+        previous_frame = int(after_frame)
+        while True:
+            self._require_connection()
+            self._check_paused_cancelled()
+            current = bridge.status()
+            self._require_native_demo(current, allow_idle=True)
+            frame = int(current.get("frame_count", 0))
+            if frame > previous_frame:
+                tick = int(current["tick"])
+                if current.get("paused") and tick >= 0:
+                    if previous_tick == tick:
+                        return current
+                    previous_tick = tick
+                else:
+                    previous_tick = None
+                previous_frame = frame
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                raise RuntimeError("The renderer has not confirmed a paused replay view. Return to Deadlock and retry Capture; no camera was added.")
+            time.sleep(min(.01, remaining))
+
+    def _sample_paused_native_view(self):
+        """Desktop capture takes its pose and timestamp from one rendered frame."""
+        if not self._native_manual:
+            self._halt(native_action="native_hold")
+        self._require_demo(require_tick=False)
+        bridge = self._native_bridge()
+        before = bridge.status()
+        self._require_native_demo(before, allow_idle=True)
+        self._request("demo_pause")
+        current = self._wait_paused_native_view(bridge, before["frame_count"])
+        field = "applied_pose" if self._native_active else "original_pose"
+        return {"pose": list(current[field]), "tick": int(current["tick"]), "paused": True}
+
     def capture_native_snapshot(self, snapshot, time=0.0):
-        """Capture the view sampled with the native key event, not a later pose."""
+        """Keep the input event's pose/tick even if its worker runs a little later."""
+        return self._record_native_capture(snapshot, time)
+
+    def _record_native_capture(self, snapshot, time=0.0, *, pause=True):
         with self._op_lock:
             if not isinstance(snapshot, dict):
                 raise ValueError("Native capture requires a camera snapshot.")
@@ -756,9 +793,37 @@ class Controller:
             # An authored path still stops before becoming an editing capture.
             if not self._native_manual:
                 self._halt(native_action="native_hold")
-            self._request("demo_pause")
+            if pause:
+                self._request("demo_pause")
+                current = self._wait_paused_native_view(bridge, current["frame_count"])
+            if not current.get("paused"):
+                raise RuntimeError("The replay resumed during Capture. Capture the current view again.")
+            if (snapshot["paused"] and int(current["tick"]) != tick) or int(current["tick"]) < tick:
+                raise RuntimeError("The replay moved after this camera capture. Capture the current view again.")
             frame = Keyframe(time=shot_time, **pose)
-            self._message("Captured the rendered camera view. Replay paused.", tick=tick)
+            # P temporarily changes Manual into HoldCurrent. A capture pauses
+            # the replay too, so re-arm native movement without changing its
+            # visible seed or taking focus from the open editor panel.
+            if self._native_manual and not self.status().get("paused_flight"):
+                owner = "panel"
+                if callable(getattr(bridge, "editor_status", None)):
+                    editor = bridge.editor_status()
+                    owner = editor.get("owner", editor.get("input_mode", "panel"))
+                    if owner not in ("panel", "flight", "console", "game_ui"):
+                        owner = "panel"
+                armed = bridge.start_flight(self._demo.name)
+                bridge.configure_editor(owner=owner)
+                self._require_native_demo(armed)
+                if not armed.get("paused") or int(armed["tick"]) != int(current["tick"]):
+                    self._release_native_camera()
+                    raise RuntimeError("The replay moved while returning to paused camera movement. Capture again.")
+                paused_pose = self._native_pose(armed)
+                paused_pose.update(time=float(armed.get("phase", 0)), cvars={})
+                self._set_paused_pose(paused_pose, int(armed["tick"]))
+                with self._state_lock:
+                    self._state["paused_flight"] = True
+            self._message("Captured the rendered camera view. Replay paused.",
+                          tick=int(current["tick"]), captured_tick=tick, replay_paused=True)
             return frame, tick
 
     def current_tick(self):
@@ -775,6 +840,14 @@ class Controller:
                 start_tick = float(start_tick)
                 if not math.isfinite(start_tick) or start_tick < 0 or not start_tick.is_integer():
                     raise ValueError("Shot start tick must be a nonnegative integer.")
+            if self._supports_native_flight():
+                snapshot = self._sample_paused_native_view()
+                tick = snapshot["tick"]
+                shot_time = 0.0 if start_tick is None else (tick - start_tick) / tick_rate
+                if shot_time < 0:
+                    raise ValueError("Replay is before this shot's start. Start a new path here or choose Timed shot.")
+                frame, _ = self._record_native_capture(snapshot, shot_time, pause=False)
+                return frame
             if not self._native_manual:
                 self._halt()
             self._require_demo()
@@ -1315,9 +1388,14 @@ class Controller:
             restoration_error = self._restore_playback_settings()
             if restoration_error:
                 raise RuntimeError(restoration_error)
+            if self._game_ui_visible:
+                if self._console_open:
+                    self.toggle_console(enabled=False)
+                self._request("hud_free_cursor 0; citadel_hide_replay_hud 1")
+                self._verify_game_ui_values({"hud_free_cursor": 0, "citadel_hide_replay_hud": 1})
+                self._game_ui_visible = False
             self._request("demo_pause; demo_timescale 1" if self._demo_speed_changed else "demo_pause")
             self._demo_speed_changed = False
-            info = self._require_demo()
             self._check_paused_cancelled()
             bridge = self._native_bridge()
             # With no supplied pose, the callback seeds from the currently
@@ -1325,12 +1403,14 @@ class Controller:
             # paused player-eye calibration can move that seed vertically.
             if isinstance(pose, dict):
                 pose = tuple(pose[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"))
-            bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled)
+            armed = bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled)
             self._native_active = True
             self._native_manual = True
             current = bridge.status()
             self._require_native_demo(current)
-            if not current.get("paused") or int(current["tick"]) != int(info["tick"]):
+            # The acknowledgement is sampled by the renderer after it pauses.
+            # Console telemetry may still describe the frame before that pause.
+            if not armed.get("paused") or not current.get("paused") or int(current["tick"]) != int(armed["tick"]):
                 self._release_native_camera()
                 raise RuntimeError("The replay moved while opening the paused camera. Pause it and try again.")
             frame = self._native_pose(current)
@@ -1340,7 +1420,7 @@ class Controller:
             self._stop_event.clear()
             self._game_ui_visible = False
             self._message("Paused camera ready. Use the in-game movement controls; F7 opens the console.",
-                          playing=False, paused_flight=True)
+                          playing=False, paused_flight=True, replay_paused=True)
             return deepcopy(frame)
 
     def toggle_console(self, enabled=None):
@@ -1363,7 +1443,7 @@ class Controller:
                 self._request(command)
             elif self._console_open == enabled:
                 if not enabled and callable(editor_configure):
-                    editor_configure(owner="panel")
+                    editor_configure(owner="game_ui" if self._game_ui_visible else "panel")
                 return self.status()
             elif self._console_open is not None and self._console.supports("toggleconsole"):
                 self._request("toggleconsole")
@@ -1371,7 +1451,7 @@ class Controller:
                 raise RuntimeError("This game build did not confirm " + command + "; the console's current visibility is unknown. Console access was not changed.")
             self._console_open = enabled
             if not enabled and callable(editor_configure):
-                editor_configure(owner="panel")
+                editor_configure(owner="game_ui" if self._game_ui_visible else "panel")
             self._message("Console open. Editor movement is suspended while typing." if enabled else "Console closed. Return to the editor to continue.")
             return self.status()
 
@@ -1382,26 +1462,69 @@ class Controller:
             if not isinstance(enabled, bool):
                 raise ValueError("Game UI visibility must be a boolean.")
             self._require_demo(require_tick=False)
+            # Deadlock has no registered `demoui` command in the reviewed build.
+            # These readable cvars control the replay HUD and its real cursor;
+            # explicit values also survive manual UI changes and delayed events.
+            names = ("citadel_hud_visible", "citadel_hide_replay_hud", "hud_free_cursor")
+            current = {name: read_cvar_value(name, self._request(name)) for name in names}
+            for name, value in current.items():
+                # A playing shot may temporarily hide the HUD. Restore the
+                # pre-shot value on Stop, not that transient hidden state.
+                self._game_ui_restore.setdefault(name, self._playback_restore.get(name, value))
+            bridge = self._native_bridge()
+            configure = getattr(bridge, "configure_editor", None)
+            if callable(configure):
+                # Keep ordinary game input available until native flight is
+                # actually ready on return; never optimistically enable flight.
+                configure(owner="game_ui")
+            if self._console_open:
+                self.toggle_console(enabled=False)
+                if callable(configure):
+                    configure(owner="game_ui")
             if enabled:
-                bridge = self._native_bridge()
-                if bridge is not None and callable(getattr(bridge, "configure_editor", None)):
-                    bridge.configure_editor(owner="game_ui")
                 self._halt(native_action="release")
                 self._invalidate_paused_camera()
                 restoration_error = self._restore_playback_settings()
                 if restoration_error:
                     raise RuntimeError(restoration_error)
-                commands = ["citadel_hud_visible 1"]
-                if self._console.supports("demoui"):
-                    commands.append("demoui")
-                self._request("; ".join(commands))
+                self._request("citadel_hud_visible 1; citadel_hide_replay_hud 0; hud_free_cursor 1")
+                self._verify_game_ui_values({"citadel_hud_visible": 1, "citadel_hide_replay_hud": 0, "hud_free_cursor": 1})
                 self._game_ui_visible = True
                 self._message("Deadlock owns the camera and replay UI. Select a hero, then return to Dolly editing.")
                 return self.status()
-            if self._console.supports("demoui"):
-                self._request("demoui")
-            self.enter_native_flight()
+            self._request("hud_free_cursor 0; citadel_hide_replay_hud 1")
+            self._verify_game_ui_values({"hud_free_cursor": 0, "citadel_hide_replay_hud": 1})
+            if self._game_ui_visible or not (self._native_active and self._native_manual):
+                self.enter_native_flight()
+                # Stopping a running shot restores its temporary HUD settings.
+                # Reassert the explicit editor view after that cleanup.
+                self._request("hud_free_cursor 0; citadel_hide_replay_hud 1")
+                self._verify_game_ui_values({"hud_free_cursor": 0, "citadel_hide_replay_hud": 1})
+            elif callable(configure):
+                configure(owner="flight")
+            self._game_ui_visible = False
             return self.status()
+
+    def _verify_game_ui_values(self, values):
+        output = self._request("; ".join(values))
+        for name, expected in values.items():
+            if read_cvar_value(name, output) != expected:
+                raise RuntimeError("The game did not apply " + name + ". Retry the replay UI control.")
+
+    def _restore_game_ui_settings(self):
+        """Restore the original automatic cursor/HUD on Stop or disconnect."""
+        if not self._game_ui_restore:
+            return None
+        try:
+            self._require_connection()
+            self._request("; ".join(name + " " + numeric(value) for name, value in self._game_ui_restore.items()))
+            self._verify_game_ui_values(self._game_ui_restore)
+            self._game_ui_restore.clear()
+            self._game_ui_visible = False
+        except (RuntimeError, ValueError, OSError) as exc:
+            LOG.warning("Replay UI restoration remains pending: %s", exc)
+            return "Replay UI settings could not be restored; reconnect and use Stop / restore. " + str(exc)
+        return None
 
     def toggle_replay(self):
         """Pause/resume replay time without restarting an authored native path."""
@@ -1629,17 +1752,38 @@ class Controller:
 
     def _seek(self, project, shot_time):
         target = int(round(project.start_tick + shot_time * project.tick_rate))
-        return self._seek_tick(target)
+        return self._seek_tick(target, allow_start_boundary=True)
 
-    def _seek_tick(self, target):
-        """Verify an exact paused tick, correcting one settled small overshoot."""
+    def _seek_shot_time(self, project, shot_time, info):
+        """Keep authored keys aligned when the engine cannot reconstruct tick 0."""
+        if not info.get("seek_boundary"):
+            return shot_time
+        actual_time = (info["tick"] - project.start_tick) / project.tick_rate
+        if actual_time > project.duration:
+            raise RuntimeError("This replay's first seekable tick is 1, after this shot ends. "
+                               "Extend the shot past that tick or preview the camera without seeking.")
+        self._message("Replay tick 0 precedes its first seekable packet. "
+                      f"Starting at tick 1 ({actual_time:.6f} shot seconds); saved camera times are unchanged.")
+        return actual_time
+
+    def _seek_tick(self, target, *, allow_start_boundary=False):
+        """Verify a paused tick; optionally recognize the replay's packet-1 floor."""
         target = int(target)
         self._check_position_cancelled()
         # Current engine help: demo_goto <tick> [relative] [pause].
         # demo_gototick follows the same command in the reference command list.
         self._request("demo_pause")
         self._check_position_cancelled()
-        self._request(f"demo_gototick {target} 0 1", timeout=6)
+        seek_output = self._request(f"demo_gototick {target} 0 1", timeout=6)
+        # Some replays initially expose tick 0, but their first reconstructible
+        # full packet is tick 1. Recognize only that explicitly reported floor;
+        # a nearby tick alone is never sufficient evidence to change a target.
+        boundary_pattern = (r"Demo Skipping:\s*skipping to demo tick 0\s+"
+                            r"\(game tick \d+\)\s+from full packet 1\s+\(")
+        boundary_reported = bool(allow_start_boundary and target == 0 and
+                                 re.search(boundary_pattern, seek_output, re.IGNORECASE))
+        boundary_samples = 0
+        boundary_pause_confirmed = False
         self._check_position_cancelled()
         end = time.perf_counter() + 15
         samples = deque(maxlen=32)
@@ -1657,6 +1801,23 @@ class Controller:
             observed = int(info["tick"])
             samples.append({"at": time.perf_counter(), "tick": observed})
             self._last_seek_details["samples"] = list(samples)
+            if boundary_reported and corrections and observed == 1:
+                boundary_samples += 1
+                if boundary_samples >= SEEK_SETTLE_SAMPLES:
+                    if boundary_pause_confirmed:
+                        self._last_seek_details.update(verified=True,
+                            actual_tick=1, boundary="first_full_packet",
+                            boundary_delta_ticks=1)
+                        # Return the real tick. Playback must evaluate the path
+                        # at that tick rather than silently move every keyframe.
+                        return dict(info, seek_boundary={"requested_tick": 0,
+                            "actual_tick": 1, "reason": "first_full_packet"})
+                    self._request("demo_pause")
+                    boundary_pause_confirmed = True
+                    boundary_samples = 0
+            else:
+                boundary_samples = 0
+                boundary_pause_confirmed = False
             stable = stable + 1 if observed == target else 0
             if stable >= SEEK_SETTLE_SAMPLES:
                 if pause_confirmed:
@@ -1693,7 +1854,9 @@ class Controller:
                     corrections.append({"from_tick": confirmed, "target_tick": target,
                                         "at": time.perf_counter(),
                                         "samples_before": list(samples)})
-                    self._request(f"demo_gototick {target} 0 1", timeout=6)
+                    correction_output = self._request(f"demo_gototick {target} 0 1", timeout=6)
+                    boundary_reported = bool(boundary_reported and
+                        re.search(boundary_pattern, correction_output, re.IGNORECASE))
                     self._check_position_cancelled()
                     stable = 0
                     overshoot_tick = None
@@ -1711,9 +1874,9 @@ class Controller:
             self._require_demo()
             self._snapshot(project)
             shot_time = self._shot_time(project, shot_time)
-            self._seek(project, shot_time)
-            self._position_direct_frame(project.evaluate(shot_time),
-                                        int(round(project.start_tick + shot_time * project.tick_rate)))
+            positioned_demo = self._seek(project, shot_time)
+            shot_time = self._seek_shot_time(project, shot_time, positioned_demo)
+            self._position_direct_frame(project.evaluate(shot_time), positioned_demo["tick"])
             self._message("Replay paused at the requested path time.", time=shot_time)
 
     def play(self, project, time=0, speed=1, rate=60, frozen=False, hide_hud=True, smoothing="off"):
@@ -1724,7 +1887,7 @@ class Controller:
             compile_effects(project)  # Reject unsupported tracks before stopping a working shot.
         with self._op_lock:
             self.stop()
-            if self._playback_restore or self._restore or self._demo_speed_changed:
+            if self._playback_restore or self._restore or self._game_ui_restore or self._demo_speed_changed:
                 raise RuntimeError("Previous settings still need restoration. Reconnect and use Stop / restore before playing again.")
             self._stop_event.clear()
             self._require_probe()
@@ -1763,6 +1926,12 @@ class Controller:
                 self._prepare_playback_settings(hide_hud)
                 if not frozen:
                     positioned_demo = self._seek(project, start)
+                    actual_start = self._seek_shot_time(project, start, positioned_demo)
+                    if positioned_demo.get("seek_boundary"):
+                        self._playback_details.update(requested_start_time=start,
+                            start_time=actual_start,
+                            seek_boundary=deepcopy(positioned_demo["seek_boundary"]))
+                        start = actual_start
                 else:
                     self._request("demo_pause")
                     positioned_demo = self._require_demo(require_tick=False)
@@ -2311,6 +2480,8 @@ class Controller:
                 LOG.exception("Could not open the editor panel after Stop")
         self._invalidate_paused_camera()
         restoration_error = self._restore_playback_settings()
+        ui_error = self._restore_game_ui_settings()
+        restoration_error = " ".join(part for part in (restoration_error, ui_error) if part) or None
         if (self._restore or self._demo_speed_changed) and self._console and self._console.is_connected and self._alive():
             try:
                 self._require_demo(require_tick=False)
@@ -2358,6 +2529,7 @@ class Controller:
                   "recent_console_responses": self._last_output,
                   "pending_cvar_restoration": self._restore,
                   "pending_playback_restoration": dict(self._playback_restore),
+                  "pending_game_ui_restoration": dict(self._game_ui_restore),
                   "last_playback": self._playback_details,
                   "native_camera": deepcopy(self._native_last_status),
                   "native_handoff": deepcopy(self._native_handoff_details),

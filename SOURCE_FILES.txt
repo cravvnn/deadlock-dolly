@@ -124,12 +124,14 @@ tests/test_editor_bridge.py
 tests/test_editor_session.py
 tests/test_editor_settings.py
 tests/test_endpoint_playback.py
+tests/test_game_ui_handoff.py
 tests/test_gui_capture.py
 tests/test_hotkey.py
 tests/test_launcher.py
 tests/test_motion_clock.py
 tests/test_native_atomics.py
 tests/test_native_bridge.py
+tests/test_native_capture_timing.py
 tests/test_native_controller.py
 tests/test_native_effects.py
 tests/test_native_flight_controller.py
@@ -148,6 +150,7 @@ tests/test_portable.py
 tests/test_preview_convergence.py
 tests/test_release_packaging.py
 tests/test_replays.py
+tests/test_seek_boundary.py
 tests/test_seek_overshoot.py
 tests/test_settings.py
 tests/test_smoothed_playback.py

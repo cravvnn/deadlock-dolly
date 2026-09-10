@@ -1,4 +1,4 @@
-# Stage 1 manual test checklist — 0.4.1-alpha
+# Stage 1 manual test checklist — 0.4.2-alpha
 
 This is the Windows/Deadlock acceptance check for the new native-input and DX11
 panel workflow. Automated tests, cross compilation and an editor startup check
@@ -6,7 +6,7 @@ are useful evidence, but none proves this integration in a running game.
 **These manual checks have not been performed in the Linux workspace.**
 
 Keep the previous working package and a copy of your saved shots. Use a fully
-extracted, newly built 0.4.1-alpha Windows folder with its matching ABI 3 helper.
+extracted, newly built 0.4.2-alpha Windows folder with its matching ABI 3 helper.
 Record the source commit, BUILD_INFO.json version and supported game build with
 results. Mark each result PASS, FAIL or NOT TESTED; do not treat an untested
 check as a pass.
@@ -47,6 +47,9 @@ check as a pass.
       distinct replay moments and rejects duplicate times with a clear message.
 - [ ] Pause/resume replay time with P, then resume paused camera movement. Check
       that the manual camera does not jump when replay time begins advancing.
+- [ ] Press P, then capture while time advances, using the keybind and desktop
+      Capture separately. Each adds a camera and leaves the replay paused.
+      Continue moving without reopening the paused-camera controls.
 
 ## 3. Input ownership and UI
 
@@ -59,10 +62,13 @@ check as a pass.
 - [ ] F7 opens the console. Type commands containing W/A/S/D/P/Q/E and the
       capture key; camera movement, replay toggling and capture remain suspended.
 - [ ] Close the console with F7 and separately with Escape. It stays closed;
-      no duplicate toggle reopens it, and the Dolly panel returns. F8 resumes
+      no duplicate toggle reopens it, and the previous UI returns. F8 resumes
       camera input; F10 enters native flight if the camera was released.
 - [ ] F9 gives control to the original replay UI. Click to select a hero, then
       return through F8/F9. The new view seeds flight instead of the old shot.
+- [ ] Repeat F9 → F7 → F7 and F9 → F7 → F8. Console closure returns to the
+      expected UI, hero selection has a working cursor, and Dolly panel clicks
+      do not reach Deadlock underneath. Repeat after Alt-Tab.
 - [ ] Alt-tab while holding a movement key, release it outside the game, return
       and move again. No stuck movement, mouse delta burst or teleport occurs.
 - [ ] Change capture to Mouse4/Mouse5 and an ordinary keyboard chord in turn.
@@ -75,6 +81,9 @@ check as a pass.
 
 - [ ] Open a previous saved shot. Key timing, position, rotation and aspect keys
       are retained. Desktop edits appear in the shared in-game camera selection.
+- [ ] Reopen Dolly and replay a saved shot beginning at tick 0. If the game
+      reports first full packet 1, playback starts at tick 1 without deleting
+      cameras; all saved key times and later effect/camera phases stay intact.
 - [ ] Play a straight path and a diagonal rotation path at 1x and 0.1x. Compare
       with the previous working native build using the same recording settings.
 - [ ] Pause partway, stop/restore, play to the end, then play again at least

@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.1 alpha.** The portable Windows build opens through
+**Current source: 0.4.2 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -47,7 +47,8 @@ Move to a view and press **Ctrl+Alt+K** to capture it. **Replay timing** is the
 default: advance the replay, frame the next view and capture again.
 **F8** opens the in-game panel, **F7** opens the console, and
 **F9** switches to Deadlock's replay UI for hero selection. Bindings, movement
-speed and mouse sensitivity are saved from **Keybinds**.
+speed and mouse sensitivity are saved from **Keybinds**. Capture also works
+while the replay is playing and leaves it paused.
 
 See `Start_Here.txt` and the [user guide](docs/USER_GUIDE.md) for the full controls.
 The GitHub **Source code** download and source ZIP contain the source and build
@@ -60,8 +61,8 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.1 is an alpha. This update fixes native editor startup and input switching;
-these fixes still need an in-game check. ReShade compatibility is unverified.
+0.4.2 is an alpha. This update fixes replay UI switching, capture during
+playback and tick-zero shot restart. These fixes still need an in-game check. ReShade compatibility is unverified.
 Validation details are in
 [VALIDATION.md](docs/VALIDATION.md). In-world camera markers, full in-game curve
 editing and video/render-pass export are planned for later updates.
@@ -107,6 +108,10 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.4.2:** fixes F9 HUD/cursor handoffs, captures during replay playback, and
+restarting shots at the replay's first available tick. Saved keyframes retain
+their authored timing.
 
 **0.4.0:** adds the replay browser, automatic startup, configurable editor
 bindings, native paused movement and the DX11 in-game panel.

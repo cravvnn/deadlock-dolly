@@ -67,6 +67,7 @@ class FakeConsole:
             "demo_timescale": 0.5,
             "citadel_hud_visible": 1.0,
             "citadel_hide_replay_hud": 0.0,
+            "hud_free_cursor": -1.0,
             "engine_no_focus_sleep": 20.0,
         }
         self.pose = [1, 2, 3, 4, 5]

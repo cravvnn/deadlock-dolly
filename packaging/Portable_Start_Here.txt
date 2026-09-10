@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.1 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.2 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -51,9 +51,14 @@ sensitivity. F7 is reserved for the console. Settings survive updates in
 %APPDATA%/DeadlockDolly/settings.json.
 
 The console receives normal typing without moving the camera or triggering
-Dolly shortcuts. F7, F8 or Escape closes it and returns to the Dolly panel.
+Dolly shortcuts. F7 or Escape closes it and returns to the previous UI.
+F8 closes the console and opens the Dolly panel.
 From Deadlock's replay UI, F8 returns to the panel and F9 returns to flight.
 Release held movement keys after switching windows before pressing them again.
+
+Capture also works while the replay is playing and leaves it paused.
+The in-game capture key saves the rendered view and tick at the keypress.
+Desktop capture waits for a paused rendered view before saving its tick.
 
 Replay timing is the default: advance the replay between captures to set their
 arrival times. Timed shot can space multiple views at one paused tick. Framing
@@ -64,7 +69,7 @@ which may be elsewhere, and restores camera settings.
 
 COMPATIBILITY AND UPDATES
 
-0.4.1 is an alpha. The startup and input-switching fixes need an in-game check;
+0.4.2 is an alpha. Replay UI, capture and seek fixes need an in-game check.
 ReShade compatibility is unverified. In-world path markers, full
 in-game curve editing and video/render-pass export are planned for later updates.
 
