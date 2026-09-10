@@ -82,14 +82,19 @@ def _run(argv: list[str]) -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--recover", action="store_true", help="Restore pending game configuration; close Deadlock first")
     group.add_argument("--self-test", metavar="REPORT_JSON", type=Path, help="Check this bundle without launching a game")
+    group.add_argument("--cleanup-session", nargs=2, metavar=("SESSION", "HANDLE"), help=argparse.SUPPRESS)
     options = parser.parse_args(argv)
+    if options.cleanup_session:
+        from .session_cleanup import wait_and_cleanup
+        directory, handle = options.cleanup_session
+        return wait_and_cleanup(Path(directory), int(handle))
     if options.self_test:
         return bundle_self_test(options.self_test)
     if options.recover:
         from .launcher import recover_pending
         restored = recover_pending()
-        _message(f"Recovered {len(restored)} pending configuration(s)." if restored else
-                 "No pending game configuration recovery is needed.")
+        _message(f"Recovered or cleaned {len(restored)} session(s)." if restored else
+                 "No pending recovery or temporary-folder cleanup is needed.")
         return 0
     from .__main__ import main as gui_main
     return gui_main()

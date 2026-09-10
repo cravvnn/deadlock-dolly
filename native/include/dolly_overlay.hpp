@@ -1,6 +1,12 @@
 #pragma once
+#include <cstdint>
 
 namespace dolly {
+struct OverlayDiagnostics {
+ std::uint64_t present_calls=0,panel_frames=0,init_attempts=0,init_successes=0,release_calls=0,resize_calls=0;
+};
+// Independent monotonic counters; sampled off the render thread.
+OverlayDiagnostics overlay_diagnostics() noexcept;
 // Called by the native worker only after game fingerprints, development flags,
 // the camera guard and MinHook initialization have succeeded. Never DllMain.
 // Failure leaves the camera bridge and external editor available.

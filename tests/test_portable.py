@@ -117,7 +117,7 @@ class PortableRuntimeTests(unittest.TestCase):
             self.assertEqual(desktop.main(["--recover"]), 0)
         recover.assert_called_once_with()
         gui.assert_not_called()
-        self.assertIn("Recovered 1", message.call_args.args[0])
+        self.assertIn("Recovered or cleaned 1 session", message.call_args.args[0])
 
     def test_recovery_failure_keeps_error_visible_and_logged(self):
         with self.frozen(), patch("dolly.launcher.recover_pending", side_effect=RuntimeError("Close Deadlock")), \

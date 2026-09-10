@@ -559,8 +559,11 @@ def _save_record(session_dir: Path, record: dict[str, Any]) -> None:
 
 def _load_record(session_dir: Path) -> dict[str, Any]:
     try:
+        from .session_cleanup import _plain_path, _plain_ancestors
+        if not _plain_ancestors(session_dir) or not _plain_path(session_dir / "session.json"):
+            raise ValueError("linked session directory or journal")
         record = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
-        if record.get("owner") != "Deadlock Dolly" or Path(record["session_dir"]).resolve() != session_dir.resolve():
+        if not isinstance(record, dict) or record.get("owner") != "Deadlock Dolly" or Path(record["session_dir"]).resolve() != session_dir.resolve():
             raise ValueError("unrecognized session owner or directory")
         paths = validate_game(Path(record["original_gameinfo"]).parent)
         if paths.gameinfo.resolve() != Path(record["original_gameinfo"]).resolve():
@@ -584,6 +587,9 @@ def _restore_record(session_dir: Path) -> bool:
     target = Path(record["original_gameinfo"])
     backup = session_dir / record["backup_name"]
     try:
+        from .session_cleanup import _plain_path
+        if not _plain_path(backup) or not _plain_path(target):
+            raise LaunchError("Linked game configuration or backup left untouched during recovery.")
         original = backup.read_bytes()
         if hashlib.sha256(original).hexdigest() != record["original_sha256"]:
             raise LaunchError(f"Dolly's original gameinfo backup failed its hash check. Nothing was overwritten. Backup: {backup}")
@@ -614,33 +620,46 @@ def recover_pending(game_path: str | os.PathLike[str] | None = None) -> list[str
     _check_runtime()
     if _game_is_running(running_processes()):
         raise LaunchError("Exit Deadlock before recovering a previous Dolly game configuration.")
-    expected = validate_game(game_path).gameinfo if game_path is not None else None
+    from .session_cleanup import remove_overlay, recover_orphans
+    selected = validate_game(game_path) if game_path is not None else None
+    expected = selected.gameinfo if selected is not None else None
+    installations = {selected.game_dir: selected} if selected is not None else {}
     recovered: list[str] = []
     for journal in sorted((PACKAGE_ROOT / "logs").glob("*/session.json")):
         try:
             preliminary = json.loads(journal.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise LaunchError(f"Unreadable Dolly session journal: {journal}. Check this file before relaunching: {exc}") from exc
-        if preliminary.get("owner") != "Deadlock Dolly" or "patched_sha256" not in preliminary:
-            continue
-        if preliminary.get("config_state") == "restored":
+        if not isinstance(preliminary, dict) or preliminary.get("owner") != "Deadlock Dolly" or "patched_sha256" not in preliminary:
             continue
         if expected is not None and Path(preliminary.get("original_gameinfo", "")).resolve() != expected.resolve():
             continue
-        _restore_record(journal.parent)
-        recovered.append(str(journal.parent))
-        # Only our unique runtime directory is removed, never game content.
+        pending = preliminary.get("config_state") != "restored"
+        if not pending and not Path(preliminary.get("overlay_dir", "")).exists():
+            continue
+        if not pending and Path(preliminary.get("session_dir", "")).resolve() != journal.parent.resolve():
+            # A portable folder may have been moved with its historical logs.
+            # Do not rewrite that old journal's identity; discover its marked
+            # mount independently and verify the current game search paths.
+            paths = validate_game(Path(preliminary["original_gameinfo"]).parent)
+            installations[paths.game_dir] = paths
+            continue
         record = _load_record(journal.parent)
+        paths = validate_game(Path(record["original_gameinfo"]).parent)
+        installations[paths.game_dir] = paths
+        _restore_record(journal.parent)
         overlay = Path(record["overlay_dir"])
-        marker = overlay / ".dolly-session.json"
-        if marker.is_file():
-            try:
-                owner = json.loads(marker.read_text(encoding="utf-8"))
-                if owner.get("owner") == "Deadlock Dolly" and owner.get("session_dir") == str(journal.parent):
-                    shutil.rmtree(overlay)
-            except (OSError, ValueError):
-                pass
-    return recovered
+        removed = remove_overlay(overlay, paths, journal.parent)
+        if pending or removed:
+            recovered.append(str(journal.parent))
+    if selected is None:
+        discovered = discover_game()
+        if discovered is not None:
+            paths = validate_game(discovered)
+            installations[paths.game_dir] = paths
+    for paths in installations.values():
+        recovered.extend(recover_orphans(paths))
+    return list(dict.fromkeys(recovered))
 
 
 @dataclass
@@ -655,6 +674,7 @@ class Session:
     native: NativeBridge | None = field(default=None, repr=False)
     _log_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _restore_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _cleanup_handed_off: bool = field(default=False, repr=False)
 
     @property
     def pid(self) -> int:
@@ -716,17 +736,45 @@ class Session:
             return False
         if self.native is not None:
             self.native.close()
+            self.record_native_diagnostics()
         self.restore_gameinfo()
-        marker = self.overlay_dir / ".dolly-session.json"
-        if marker.is_file():
-            try:
-                metadata = json.loads(marker.read_text(encoding="utf-8"))
-                if metadata.get("session_dir") == str(self.session_dir) and metadata.get("owner") == "Deadlock Dolly":
-                    shutil.rmtree(self.overlay_dir)
-                    self.log("Removed the temporary plugin directory after game exit.")
-            except (OSError, ValueError) as exc:
-                self.log(f"Temporary plugin directory cleanup deferred: {exc}")
+        from .session_cleanup import remove_overlay
+        try:
+            record = _load_record(self.session_dir)
+            paths = validate_game(Path(record["original_gameinfo"]).parent)
+            if remove_overlay(self.overlay_dir, paths, self.session_dir):
+                self.log("Removed the temporary plugin directory after game exit.")
+        except (OSError, ValueError, LaunchError) as exc:
+            self.log(f"Temporary plugin directory cleanup deferred: {exc}")
         return True
+
+    def record_native_diagnostics(self) -> None:
+        if self.native is None:
+            return
+        try:
+            snapshot = self.native.diagnostics()
+            if isinstance(snapshot, dict):
+                _atomic_write(self.session_dir / "native_diagnostics.json",
+                              (json.dumps(snapshot, indent=2) + "\n").encode("utf-8"))
+        except (OSError, ValueError, TypeError):
+            pass  # Diagnostics must not prevent configuration recovery.
+
+    def handoff_cleanup(self) -> bool:
+        """Keep game-exit cleanup alive when the desktop editor is closing."""
+        if not self.running:
+            return self.close()
+        if self._cleanup_handed_off:
+            return True
+        self.record_native_diagnostics()
+        from .session_cleanup import start_waiter
+        try:
+            start_waiter(self)
+            self._cleanup_handed_off = True
+            self.log("Dolly is closing; a background cleanup helper will remove its temporary plugin files after this game process exits.")
+            return True
+        except (OSError, ValueError) as exc:
+            self.log(f"Could not start background cleanup; the next Dolly launch will retry temporary-file removal: {exc}")
+            return False
 
 
 def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "") -> Session:
@@ -868,7 +916,7 @@ def _main() -> int:
         return 0
     try:
         restored = recover_pending(options.game)
-        print(f"Recovered {len(restored)} pending Dolly configuration(s)." if restored else "No pending Dolly configuration recovery is needed.")
+        print(f"Recovered or cleaned {len(restored)} Dolly session(s)." if restored else "No pending Dolly recovery or temporary-folder cleanup is needed.")
         for directory in restored:
             print(directory)
         return 0

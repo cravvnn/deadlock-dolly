@@ -1039,6 +1039,7 @@ class ControllerTests(unittest.TestCase):
             current.mkdir()
             (old / "session.json").write_text('{"exit_code": -1073741819}')
             (old / "game_stdout.log").write_text("previous process output")
+            (old / "native_diagnostics.json").write_text('{"graphics": {"latest": {"pending_count": 32000}}}')
             (old / "original.gameinfo.gi").write_text("private backup is not part of diagnostics")
             (current / "session.json").write_text('{"pid": 1234}')
             self.controller._session.session_dir = current
@@ -1048,6 +1049,7 @@ class ControllerTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 self.assertIn("late unlocker completion", archive.read("logs/recent_console.txt").decode())
                 self.assertIn("previous process output", archive.read("previous_sessions/" + old.name + "/game_stdout.log").decode())
+                self.assertEqual(json.loads(archive.read("previous_sessions/" + old.name + "/native_diagnostics.json"))["graphics"]["latest"]["pending_count"], 32000)
                 self.assertIn("session/session.json", archive.namelist())
                 self.assertFalse(any("original.gameinfo.gi" in name for name in archive.namelist()))
                 self.assertFalse(any("previous_sessions/" + current.name in name for name in archive.namelist()))

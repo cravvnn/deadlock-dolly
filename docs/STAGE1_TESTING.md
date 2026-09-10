@@ -1,4 +1,4 @@
-# Stage 1 manual test checklist — 0.4.3-alpha
+# Stage 1 manual test checklist — 0.4.4-alpha
 
 This is the Windows/Deadlock acceptance check for the new native-input and DX11
 panel workflow. Automated tests, cross compilation and an editor startup check
@@ -6,7 +6,7 @@ are useful evidence, but none proves this integration in a running game.
 **These manual checks have not been performed in the Linux workspace.**
 
 Keep the previous working package and a copy of your saved shots. Use a fully
-extracted, newly built 0.4.3-alpha Windows folder with its matching ABI 3 helper.
+extracted, newly built 0.4.4-alpha Windows folder with its matching ABI 3 helper.
 Record the source commit, BUILD_INFO.json version and supported game build with
 results. Mark each result PASS, FAIL or NOT TESTED; do not treat an untested
 check as a pass.
@@ -129,3 +129,21 @@ checks pass. Keep any untested configuration explicitly unverified. Send the
 Windows-build-diagnostics artifact for build errors; use Dolly's Export
 diagnostics for in-game errors. Game DLLs and replay videos are not included in
 normal source or release packages.
+
+## 0.4.4 cleanup and crash investigation
+
+- [ ] Close Deadlock first: its citadel_dolly session folder disappears and
+      the original game configuration remains restored.
+- [ ] Close Dolly first: the session folder remains while Deadlock uses its
+      DLLs, then disappears after Deadlock exits. The cleanup helper exits too.
+- [ ] With Deadlock closed, Recover game configuration removes marked older
+      session folders whose plugins are no longer mounted. Keep any reported
+      conflict's backup; recovery must not overwrite external gameinfo edits.
+- [ ] Reproduce paused movement and F7/F8/F9 switching. Export diagnostics
+      before restarting Dolly if frame rate falls or Deadlock crashes.
+      native_editor_runtime.graphics contains the latest sample and history.
+      A supported renderer probe reports queue counts, frame markers and
+      overlay counters; unsupported/unreadable/racing states are observations,
+      not proof that the renderer is broken or that the camera is unsupported.
+- [ ] Treat the vertex-buffer overflow as unresolved until the runtime evidence
+      identifies its cause and a targeted change passes the same reproduction.

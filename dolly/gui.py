@@ -1397,8 +1397,8 @@ class DollyApp:
     def _recover_game_config(self):
         def complete(restored):
             messagebox.showinfo("Game configuration",
-                f"Recovered {len(restored)} pending configuration(s)." if restored else
-                "No pending game configuration recovery is needed.", parent=self.root)
+                f"Recovered or cleaned {len(restored)} session(s)." if restored else
+                "No pending recovery or temporary-folder cleanup is needed.", parent=self.root)
         # recover_pending verifies that Deadlock is closed and retains any
         # conflicting user/Steam changes. The usual worker owns this action.
         self._submit("Recovering game configuration", recover_pending, complete)

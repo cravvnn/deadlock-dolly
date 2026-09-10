@@ -21,6 +21,7 @@
 #include "dolly_protocol.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_overlay.hpp"
+#include "dolly_renderer_diagnostics.hpp"
 
 namespace {
 using namespace dolly;
@@ -366,11 +367,26 @@ static DWORD WINAPI worker(void*) {
   std::uint32_t accepted=0;std::uint64_t heartbeat=0;
   bool manual=false;
   std::vector<unsigned char> payload;
+  HMODULE diagnostic_renderer=nullptr;ULONGLONG next_renderer_probe=0;
   for(;;){
    if(WaitForSingleObject(gEditor,0)!=WAIT_TIMEOUT){gWorkerError=30;editor_worker_tick(gMemory,false);break;}
    auto hb=static_cast<std::uint64_t>(InterlockedCompareExchange64(reinterpret_cast<volatile LONG64*>(gMemory+32),0,0));
    if(hb!=heartbeat){heartbeat=hb;gHeartbeatTime=now_seconds();}
    editor_worker_tick(gMemory,now_seconds()-gHeartbeatTime.load()<2.0);
+   const auto diagnostic_now=GetTickCount64();
+   if(diagnostic_now>=next_renderer_probe){
+    next_renderer_probe=diagnostic_now+1000;
+    const auto module=GetModuleHandleW(L"rendersystemdx11.dll");
+    if(module!=diagnostic_renderer){
+     diagnostic_renderer=module;
+     // Optional observation only. Fingerprint failures must never stop the
+     // camera worker, alter ownership, or write into the game renderer.
+     try {const auto hash=module?hash_file(module_path(module)):std::string();
+      renderer_diagnostics_probe(reinterpret_cast<std::uintptr_t>(module),hash.c_str());
+     }catch(...){renderer_diagnostics_probe(reinterpret_cast<std::uintptr_t>(module),"");}
+    }
+   }
+   renderer_diagnostics_tick(gMemory);
    ControlHeader control{};
    if(read_control(control,payload,accepted)){
     // CreateProcess can reach the proxy before the launcher receives the PID.

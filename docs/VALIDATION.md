@@ -1,3 +1,78 @@
+# Validation — 0.4.4 alpha
+
+## Crash analysis and limits
+
+The supplied minidump and matching rendersystemdx11.dll identify Source2's
+pending vertex-buffer retirement list as the fatal allocation path. The
+renderer tries to exceed its 32,767-entry limit. Unwinding the render worker
+confirms that path; the dump does not contain the queue header/backing storage
+or the pointer needed to establish the completion threshold at failure.
+A captured buffer stamp is 11226 and a render-worker frame field is 11225;
+these are rendering counters, not the paused replay tick. No causal link to
+mouse input has been demonstrated.
+
+This update does not fix that overflow. It adds read-only samples once per
+second for the reviewed renderer fingerprint, plus overlay Present, drawing,
+initialization, release and resize counters. Reads touch a fixed queue header
+and at most two nodes. Head/tail stamps are samples, not minimum/maximum values
+for the whole queue; consistency checks cannot establish an atomic snapshot
+of multiple render threads. Unknown renderer builds skip the private probe
+without changing camera support. No engine resource is deleted, frame marker
+advanced, allocator limit raised, or GPU state changed by this probe.
+
+The editor retains up to 120 distinct samples and caches the last observation
+before closing shared memory. Session native_diagnostics.json preserves that
+snapshot across an editor restart; diagnostic exports include recent sessions.
+Native camera input, path evaluation, flight integration and effects match
+0.4.3. Changes to the native view bridge are confined to its control worker's
+diagnostic calls; overlay changes are atomic counters only.
+
+## Temporary session cleanup
+
+Folders under game/citadel_dolly_... are created per editing launch. The
+original gameinfo.gi is restored after unlocker initialization and on normal
+editor closure. If Dolly closes while Deadlock remains open, a hidden helper
+inherits a wait-only handle to that exact game process, waits for its exit,
+removes the generated plugin files and exits. It neither injects nor launches
+a game. Failure to start or complete the helper is logged for later recovery.
+
+Recovery retries already-restored journals and discovers marked leftovers
+from older/moved portable folders. It verifies ownership, the installation,
+current search paths and allowed generated entries before removal. Referenced
+mounts, external gameinfo edits, unknown files, links/junctions, logs and
+original backups remain intact. Forced termination or power loss can defer
+recovery until the next Dolly launch or explicit Recover action.
+
+## Verification
+
+- Python suite: 762 tests run, no failures, two Windows-only skips.
+- Current native path, effects and flight tests compiled with g++ and passed.
+- All Windows x64 native sources compiled and linked into DollyNative.dll,
+  the callback test executable and the DX11 WARP test executable.
+- Native PE architecture, required exports, runtime contents and SHA-256
+  metadata verified. Windows callback/WARP executables were not run here.
+- Source archive integrity, all 174 manifest entries, required new modules
+  and clean re-export contents verified byte-for-byte. Uploaded game DLLs, dumps,
+  diagnostics, personal files and private authoring context are excluded.
+
+Windows CI runs the real process-handle inheritance and DX11 WARP tests.
+The frozen helper's entry routing is covered by a dispatch test; its complete
+packaged runtime still needs a Windows check.
+
+The WARP graphics test now cycles Panel/Flight/GameUI for 384 frames with 768
+fresh vertex/index buffers. Private-data lifetime sentinels verify retired
+buffers are released after state clearing and GPU completion. Existing pixel,
+state, cursor, input, resize and shutdown checks remain. The optional diagnostic
+block is checked for layout, untouched surrounding bytes, missing renderer and
+unknown-fingerprint behavior. WARP does not reproduce Source2's private queue.
+
+Neither Deadlock nor the packaged Windows EXE can run in this Linux workspace.
+Export diagnostics after reproducing the slowdown/crash, before restarting
+Dolly where possible. The read-only measurements are the next evidence needed
+to choose a targeted crash fix. See STAGE1_TESTING.md for the runtime checklist.
+
+## Earlier validation records
+
 # Validation — 0.4.3 alpha
 
 ## Reported failures and changes

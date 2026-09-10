@@ -23,6 +23,8 @@ using ResizeFn=HRESULT (STDMETHODCALLTYPE*)(IDXGISwapChain*,UINT,UINT,UINT,DXGI_
 PresentFn original_present=nullptr;
 ResizeFn original_resize=nullptr;
 std::atomic<bool> installed{false},enabled{false},resizing{false};
+std::atomic<std::uint64_t> diagnostic_present{0},diagnostic_panel{0},diagnostic_init_attempts{0},
+    diagnostic_init_successes{0},diagnostic_releases{0},diagnostic_resizes{0};
 std::atomic<const char*> last_error{"Waiting for the DirectX 11 game window."};
 std::recursive_mutex render_mutex;
 struct InputMessage {
@@ -111,6 +113,7 @@ void feed_pending_input() {
  }
 }
 void release_device() noexcept {
+ if(device||imgui)diagnostic_releases.fetch_add(1,std::memory_order_relaxed);
  editor_overlay_available(false);editor_text_input_active(false);
  clear_pending_input();
  release_target();
@@ -235,6 +238,7 @@ struct DeviceStateScope {
 
 
 bool initialize_device(IDXGISwapChain* chain) {
+ diagnostic_init_attempts.fetch_add(1,std::memory_order_relaxed);
  DXGI_SWAP_CHAIN_DESC description{};
  if(FAILED(chain->GetDesc(&description))||!suitable_window(description.OutputWindow))return false;
  if(FAILED(chain->GetDevice(__uuidof(ID3D11Device),reinterpret_cast<void**>(&device)))){
@@ -291,6 +295,7 @@ bool initialize_device(IDXGISwapChain* chain) {
   if(replaced)SetPropW(game_window,kWindowProperty,reinterpret_cast<HANDLE>(replaced));
  }
  last_error="";editor_attach_window(game_window);editor_overlay_available(true);
+ diagnostic_init_successes.fetch_add(1,std::memory_order_relaxed);
  return true;
 }
 
@@ -493,6 +498,7 @@ void render_overlay(IDXGISwapChain* chain) {
  ImGui::Render();
  immediate->OMSetRenderTargets(1,&target,nullptr);
  ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+ diagnostic_panel.fetch_add(1,std::memory_order_relaxed);
 }
 
 HRESULT STDMETHODCALLTYPE present_hook(IDXGISwapChain* chain,UINT interval,UINT flags) {
@@ -500,6 +506,7 @@ HRESULT STDMETHODCALLTYPE present_hook(IDXGISwapChain* chain,UINT interval,UINT 
  if(entered)return original_present(chain,interval,flags);
  entered=true;
  if(enabled.load(std::memory_order_acquire) && !(flags&DXGI_PRESENT_TEST)){
+  diagnostic_present.fetch_add(1,std::memory_order_relaxed);
   std::unique_lock<std::recursive_mutex> lock(render_mutex,std::try_to_lock);
   if(lock.owns_lock()){
    try{render_overlay(chain);}catch(...){last_error="DirectX editor stopped after a rendering error; external controls remain available.";release_device();enabled=false;}
@@ -518,7 +525,7 @@ HRESULT STDMETHODCALLTYPE resize_hook(IDXGISwapChain* chain,UINT count,UINT widt
  bool game_resize=false;
  {
   std::lock_guard<std::recursive_mutex> lock(render_mutex);
-  if(chain==swapchain){game_resize=true;resizing=true;release_target();}
+  if(chain==swapchain){diagnostic_resizes.fetch_add(1,std::memory_order_relaxed);game_resize=true;resizing=true;release_target();}
  }
  const HRESULT result=original_resize(chain,count,width,height,format,flags);
  if(game_resize){
@@ -602,6 +609,11 @@ bool install_overlay_hooks() noexcept {
   if(MH_EnableHook(present)!=MH_OK){last_error="Could not enable the DirectX 11 presentation callback.";MH_DisableHook(resize);MH_RemoveHook(present);return false;}
   installed=true;enabled=true;return true;
  }catch(...){last_error="DirectX 11 overlay initialization failed.";enabled=false;return false;}
+}
+OverlayDiagnostics overlay_diagnostics() noexcept {
+ return {diagnostic_present.load(std::memory_order_relaxed),diagnostic_panel.load(std::memory_order_relaxed),
+     diagnostic_init_attempts.load(std::memory_order_relaxed),diagnostic_init_successes.load(std::memory_order_relaxed),
+     diagnostic_releases.load(std::memory_order_relaxed),diagnostic_resizes.load(std::memory_order_relaxed)};
 }
 const char* overlay_last_error() noexcept{return last_error.load(std::memory_order_acquire);}
 void shutdown_overlay() noexcept {

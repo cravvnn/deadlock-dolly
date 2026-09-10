@@ -2573,7 +2573,7 @@ class Controller:
                 if path.is_file():
                     archive.writestr("logs/" + path.name, _tail_file(path))
             if self._session:
-                for name in ("session.json", "launch.log", "game_stdout.log"):
+                for name in ("session.json", "launch.log", "game_stdout.log", "native_diagnostics.json"):
                     file = self._session.session_dir / name
                     if file.is_file():
                         archive.writestr("session/" + name, _tail_file(file))
@@ -2583,7 +2583,7 @@ class Controller:
                 folder = journal.parent
                 if self._session and folder.resolve() == self._session.session_dir.resolve():
                     continue
-                for name in ("session.json", "launch.log", "game_stdout.log"):
+                for name in ("session.json", "launch.log", "game_stdout.log", "native_diagnostics.json"):
                     file = folder / name
                     if file.is_file():
                         archive.writestr("previous_sessions/" + folder.name + "/" + name, _tail_file(file, 512_000))
@@ -2595,6 +2595,9 @@ class Controller:
             self.disconnect()
         finally:
             if self._session:
-                self._session.restore_gameinfo()
-                if self._session.process.poll() is not None:
-                    self._session.close()
+                try:
+                    self._session.restore_gameinfo()
+                finally:
+                    # A daemon thread cannot clean up after the editor exits.
+                    # The helper only waits for this launched process to end.
+                    self._session.handoff_cleanup()

@@ -7,6 +7,8 @@ command snapshots, so a long wait cannot look like an abandoned editor.
 from __future__ import annotations
 
 import ctypes
+from collections import deque
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -148,6 +150,9 @@ class NativeBridge:
         self._editor_sequence = 0
         self._editor_owner_sequence = 0
         self._editor_ack = 0
+        self._graphics_samples = deque(maxlen=120)
+        self._graphics_sample_at = -math.inf
+        self._graphics_error = ""
         self._mode = 0
         self._atomic32 = self._atomic64 = None
         self._read32 = None
@@ -246,6 +251,7 @@ class NativeBridge:
         """Return one coherent, validated native status snapshot."""
         with self._lock:
             self._check_open()
+            self._sample_graphics()
             for _ in range(8):
                 first = self._load_sequence()
                 if first & 1:
@@ -478,6 +484,7 @@ class NativeBridge:
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
+            self._sample_graphics()
             for _ in range(4):
                 first = self._load_sequence(wire.STATUS_OFFSET + 8)
                 if first & 1:
@@ -499,6 +506,43 @@ class NativeBridge:
             self._editor_ack = sequence
             self.configure_editor()
 
+    def _sample_graphics(self, *, force=False):
+        """Read at most once a second; probe errors cannot stop camera input."""
+        if self._closed:
+            return
+        now = self._clock()
+        if not force and now - self._graphics_sample_at < 1:
+            return
+        self._graphics_sample_at = now
+        from . import graphics_diagnostics as wire
+        try:
+            for _ in range(2):
+                before = self._load_sequence(wire.OFFSET + 8)
+                if before & 1:
+                    continue
+                data = bytes(self._mapping[wire.OFFSET:wire.OFFSET + wire.WIRE.size])
+                after = self._load_sequence(wire.OFFSET + 8)
+                if before != after or struct.unpack_from("<I", data, 8)[0] != before:
+                    continue
+                sample = wire.unpack(data)
+                if sample is not None and (not self._graphics_samples or
+                        sample["sample"] != self._graphics_samples[-1]["sample"]):
+                    self._graphics_samples.append(sample)
+                self._graphics_error = ""
+                return
+            self._graphics_error = "Graphics snapshot was being updated; retained previous samples."
+        except (NativeBridgeError, OSError, ValueError, struct.error) as exc:
+            self._graphics_error = str(exc)
+
+    def graphics_diagnostics(self):
+        with self._lock:
+            self._sample_graphics(force=True)
+            samples = deepcopy(list(self._graphics_samples))
+            return {"cached_after_close": self._closed, "samples": samples,
+                    "latest": samples[-1] if samples else None,
+                    "read_error": self._graphics_error,
+                    "note": "Read-only asynchronous observations; no renderer state or camera timing is changed."}
+
     def diagnostics(self):
         try:
             result = self.status()
@@ -506,15 +550,18 @@ class NativeBridge:
                 result["editor"] = self.editor_status()
             except (NativeBridgeError, ValueError) as exc:
                 result["editor"] = {"message": str(exc)}
-            return result
         except (NativeBridgeError, OSError, ValueError) as exc:
-            return {"state": "unavailable", "message": str(exc)}
+            result = {"state": "unavailable", "message": str(exc)}
+        result["graphics"] = self.graphics_diagnostics()
+        return result
 
     def close(self):
         """Release once, stop heartbeats, and close the mapping even after faults."""
         with self._operations:
             if self._closed:
                 return
+            with self._lock:
+                self._sample_graphics(force=True)
             try:
                 self.release(timeout=0.25)
             except (NativeBridgeError, OSError, ValueError):

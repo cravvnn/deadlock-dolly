@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.3 alpha.** The portable Windows build opens through
+**Current source: 0.4.4 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -61,11 +61,25 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.3 is an alpha. This update corrects F9 HUD hiding and overlay mouse
-ownership. The rendering-stall changes still need an in-game check. ReShade compatibility is unverified.
+0.4.4 is an alpha. The DX11 vertex-buffer crash remains under investigation;
+this update adds graphics diagnostics and fixes temporary-session cleanup.
+ReShade compatibility is unverified.
 Validation details are in
 [VALIDATION.md](docs/VALIDATION.md). In-world camera markers, full in-game curve
 editing and video/render-pass export are planned for later updates.
+
+## Session files
+
+Each editing launch creates a temporary `game/citadel_dolly_…` folder for its
+plugins. The original `gameinfo.gi` is restored after unlocker initialization.
+The temporary folder is removed when the game exits. If Dolly closes first,
+a background helper waits for that game process and then removes its files.
+It exits afterward and does not start another game.
+
+Older marked folders are checked on the next Dolly launch or through
+**File → Recover game configuration** with Deadlock closed. Referenced mounts,
+configuration conflicts and unrecognized files are left intact. Logs and
+original configuration backups remain beside Dolly for diagnostics/recovery.
 
 ## Development
 
@@ -108,6 +122,10 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.4.4:** cleans temporary session folders after game exit, recovers older
+leftovers and retains read-only DX11 diagnostics after a crash. The reported
+vertex-buffer overflow is not yet fixed.
 
 **0.4.3:** hides the full game HUD when returning from F9 and corrects overlay
 mouse handling during UI transitions.

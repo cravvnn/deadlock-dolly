@@ -36,6 +36,7 @@ dolly/display.py
 dolly/editor_actions.py
 dolly/editor_session.py
 dolly/editor_wire.py
+dolly/graphics_diagnostics.py
 dolly/gui.py
 dolly/hotkey.py
 dolly/launcher.py
@@ -49,6 +50,7 @@ dolly/path.py
 dolly/playback.py
 dolly/replays.py
 dolly/runtime.py
+dolly/session_cleanup.py
 dolly/settings.py
 dolly/smoothing.py
 examples/demo_shot.dolly.json
@@ -61,6 +63,7 @@ native/include/dolly_flight.hpp
 native/include/dolly_overlay.hpp
 native/include/dolly_path.hpp
 native/include/dolly_protocol.hpp
+native/include/dolly_renderer_diagnostics.hpp
 native/profiles/deadlock-2026-09-09-complete.json
 native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json
 native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
@@ -69,6 +72,7 @@ native/src/dolly_editor_win.cpp
 native/src/dolly_effects.cpp
 native/src/dolly_overlay_win.cpp
 native/src/dolly_path.cpp
+native/src/dolly_renderer_diagnostics_win.cpp
 native/src/native_effects_win.hpp
 native/tests/bridge_smoke.cpp
 native/tests/effect_tests.cpp
@@ -125,6 +129,7 @@ tests/test_editor_session.py
 tests/test_editor_settings.py
 tests/test_endpoint_playback.py
 tests/test_game_ui_handoff.py
+tests/test_graphics_diagnostics.py
 tests/test_gui_capture.py
 tests/test_hotkey.py
 tests/test_launcher.py
@@ -152,6 +157,7 @@ tests/test_release_packaging.py
 tests/test_replays.py
 tests/test_seek_boundary.py
 tests/test_seek_overshoot.py
+tests/test_session_cleanup.py
 tests/test_settings.py
 tests/test_smoothed_playback.py
 tests/test_smoothing.py

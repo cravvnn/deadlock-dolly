@@ -1,5 +1,20 @@
 # Changes
 
+## 0.4.4 alpha — Session cleanup and crash diagnostics
+
+- Remove generated plugin folders after the game exits, including when Dolly
+  closes first. A background helper waits on the exact launched process and
+  exits after cleanup; it does not load plugins or start another game.
+- Retry cleanup for restored sessions and marked leftovers from older portable
+  folders. Preserve current game search paths, external edits, unknown files,
+  links, diagnostic logs and recovery backups.
+- Add bounded, read-only DX11 retirement-queue and overlay observations to
+  diagnostics. Retain the latest samples when the game exits or crashes.
+  Unknown renderer builds skip the private probe without disabling the camera.
+- Add sustained graphics-resource lifetime checks to the Windows build gate.
+- The reported DX11 vertex-buffer overflow is still unresolved. Camera paths,
+  render timing, paused movement and mouse handling are unchanged.
+
 ## 0.4.3 alpha — HUD visibility and overlay input
 
 - Returning from F9 hides both the replay controls and the character HUD.

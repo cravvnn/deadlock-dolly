@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.3 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.4 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -70,7 +70,8 @@ which may be elsewhere, and restores camera settings.
 
 COMPATIBILITY AND UPDATES
 
-0.4.3 is an alpha. HUD/input and rendering-stall fixes need an in-game check.
+0.4.4 is an alpha. The DX11 vertex-buffer crash remains under investigation.
+This update fixes temporary-session cleanup and adds read-only graphics diagnostics.
 ReShade compatibility is unverified. In-world path markers, full
 in-game curve editing and video/render-pass export are planned for later updates.
 
@@ -83,6 +84,22 @@ pending recovery backups. Use the complete new portable folder; _internal must
 match Dolly.exe. After an interrupted launch, close Deadlock and use
 File > Recover game configuration, or run:
   Dolly.exe --recover
+
+
+SESSION FILES
+
+The game/citadel_dolly_... folder is created per editing launch, not by a
+diagnostic export. Dolly restores the original gameinfo.gi after unlocker
+initialization and removes the temporary plugin folder when Deadlock exits.
+If Dolly closes first, a background helper waits for that exact game process,
+removes its generated files and exits. Loaded DLLs cannot be removed while
+the game still uses them. Close the editing game before a normal Steam launch.
+
+The next Dolly launch also checks marked leftovers from older versions.
+With Deadlock closed, File > Recover game configuration runs that cleanup
+without starting a game. Configuration conflicts and unrecognized files are
+left untouched. Keep logs and original backups for diagnostics/recovery;
+personal settings and saved shots are not removed.
 
 
 SUPPORT
