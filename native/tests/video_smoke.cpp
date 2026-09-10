@@ -37,7 +37,7 @@ bool wait_terminal() {
     return false;
 }
 bool inspect_mp4(const wchar_t* path, std::uint64_t expected_frames,
-                 std::uint64_t expected_duration) {
+                 std::uint64_t expected_duration, std::uint32_t expected_fps = 30) {
     // Read the muxed H.264 samples back without requiring a video decoder.
     const auto platform = LoadLibraryExW(L"mfplat.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     const auto readwrite =
@@ -69,10 +69,12 @@ bool inspect_mp4(const wchar_t* path, std::uint64_t expected_frames,
         reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
         reader->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
         IMFMediaType* type = nullptr;
-        UINT32 width = 0, height = 0;
+        UINT32 width = 0, height = 0, fps_n = 0, fps_d = 0;
         ok = SUCCEEDED(reader->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, &type)) &&
              SUCCEEDED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width, &height)) &&
-             width == 320 && height == 240;
+             width == 320 && height == 240 &&
+             SUCCEEDED(MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &fps_n, &fps_d)) &&
+             fps_n == expected_fps && fps_d == 1;
         release(type);
     }
     std::uint64_t frames = 0;
@@ -202,6 +204,33 @@ int main() {
         ok = GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &after) &&
              before.nFileSizeHigh == after.nFileSizeHigh &&
              before.nFileSizeLow == after.nFileSizeLow && ok;
+    }
+    const auto high_path = path + L"-120.mp4";
+    if (ok) {
+        ok = check(GetFileAttributesW(high_path.c_str()) == INVALID_FILE_ATTRIBUTES,
+                   "120 FPS output must not exist") &&
+             check(start(high_path.c_str(), 120, 2000000), "120 FPS job starts");
+        const auto high_deadline = GetTickCount64() + 10000;
+        while (ok && status().frames_written < 6 && GetTickCount64() < high_deadline) {
+            const float color[] = {0.1f, 0.6f, 0.3f, 1.0f};
+            context->ClearRenderTargetView(view, color);
+            capture(swapchain, device, context);
+            swapchain->Present(0, 0);
+            ok = check(!terminal(status().state), "120 FPS encoder remains active");
+            Sleep(2);
+        }
+        ok = check(status().frames_written >= 6, "120 FPS encoder produces real samples") && ok;
+        stop();
+        ok = check(wait_terminal() && status().state == State::completed,
+                   "120 FPS finalization completes") &&
+             ok;
+        const auto high_result = status();
+        shutdown();
+        reset_resources();
+        if (ok)
+            ok = inspect_mp4(high_path.c_str(), high_result.frames_written,
+                             high_result.duration_100ns, 120);
+        DeleteFileW(high_path.c_str());
     }
     const auto cancel_path = path + L"-cancel.mp4";
     if (ok) {

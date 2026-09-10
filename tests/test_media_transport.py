@@ -83,13 +83,21 @@ class MediaTransportTests(unittest.TestCase):
         self.assertIsNone(self.bridge._media_mapping)
         self.assertEqual(self.bridge.media_status()["state"], "completed")
 
+    def test_120_fps_command_and_status_round_trip(self):
+        command = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4", fps=120))
+        self.assertEqual(command[4], 120)
+        self.bridge.start_video("C:\\Videos\\one.mp4", fps=120)
+        # Native status must accept the requested rate instead of dropping telemetry.
+        struct.pack_into("<I", self.bridge._media_mapping, wire.STATUS_OFFSET + 28, 120)
+        self.assertEqual(self.bridge.media_status()["fps"], 120)
+
     def test_protocol_layout_and_invalid_paths(self):
         self.assertEqual(wire.COMMAND.size, 4128)
         self.assertEqual(wire.STATUS.size, 2384)
         for path in ("relative.mp4", "C:relative.mp4", "\\root-only.mp4", "C:\\bad\0.mp4", "C:\\" + "x" * 1024):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 wire.pack_command(2, "start_video", path=path)
-        for fps in (True, 0, 24, 120):
+        for fps in (True, 0, 24, 240):
             with self.subTest(fps=fps), self.assertRaises(ValueError):
                 wire.pack_command(2, "start_video", path="C:\\ok.mp4", fps=fps)
 

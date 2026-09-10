@@ -3,7 +3,7 @@
 ## Record an MP4
 
 1. Open a replay through Dolly using DirectX 11 and Native camera mode.
-2. On the desktop **Export** tab, choose a new `.mp4` filename, 30 or 60 FPS,
+2. On the desktop **Export** tab, choose a new `.mp4` filename, 30, 60 or 120 FPS,
    and a bitrate. 20 Mbps is the default.
 3. Return to Deadlock, open **F8**, and click **Record video**. Wait for the
    recording counter, then play the shot with **Play shot** or **F5**.
@@ -35,6 +35,22 @@ available without it.
 
 Fixed-step offline rendering, audio, separate layers and arbitrary output
 resizing are not included in this version.
+
+## 120 FPS
+
+Choose 120 in Export → Video FPS before starting a recording. The in-game
+Record video button uses that selection. Playback speed and camera update rate
+are separate settings; changing video FPS does not change either.
+
+This remains real-time capture. 120 distinct frames per second requires the
+game and encoder to sustain that throughput. Dolly reports missed capture
+slots and preserves elapsed time; it does not synthesize missing frames or
+slow the demo to wait for encoding. Encoder support depends on the selected
+resolution and Windows codec. Lower the resolution or choose 60 if the encoder
+rejects the configuration.
+
+Depth, hero-only and world-only export are not available in this build. See
+[LAYER_EXPORT.md](LAYER_EXPORT.md) for renderer requirements.
 
 ## Set up ReShade
 

@@ -197,6 +197,7 @@ dolly/media_wire.py
 dolly/media_transport.py
 dolly/video_export.py
 docs/VIDEO_AND_RESHADE.md
+docs/LAYER_EXPORT.md
 native/include/dolly_media.hpp
 native/include/dolly_video.hpp
 native/include/dolly_video_math.hpp

@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.1 alpha.** The portable Windows build opens through
+**Current source: 0.5.2 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -33,7 +33,7 @@ Close that session before launching Deadlock normally.
 - In-game playback speed and monitoring rate shared with desktop controls.
 - Replay playback with HUD handling, settings restoration and diagnostics.
 - Console fallback with Off, Light, Balanced and Strong smoothing choices.
-- Real-time H.264 MP4 video recording at the game resolution, with 30/60 FPS capture.
+- Real-time H.264 MP4 video recording at the game resolution, with 30/60/120 FPS capture.
 - Optional ReShade color effects and its in-game menu on a configurable F11 key.
 
 ## Using the Windows app
@@ -93,7 +93,7 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.5.1 is an alpha. It keeps the camera hook and interpolation from the working
+0.5.2 is an alpha. It keeps the camera hook and interpolation from the working
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. Earlier renderer
 slowdowns do not have a confirmed general fix. The new video and ReShade paths
 need testing in Deadlock; build checks are in [VALIDATION.md](docs/VALIDATION.md).
@@ -154,6 +154,8 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.2:** adds 120 FPS recording. Layer export requirements are documented; depth, hero-only and world-only passes are not included yet.
 
 **0.5.1:** keeps recording active through camera handoffs and desktop controls.
 

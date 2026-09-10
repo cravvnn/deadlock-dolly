@@ -490,7 +490,7 @@ bool initialize_resources(Session& s, IDXGISwapChain* swapchain, ID3D11Device* d
 
 bool start(const wchar_t* path, std::uint32_t fps, std::uint32_t bitrate) noexcept {
     try {
-        if (!path || !*path || std::wcslen(path) > 1023 || (fps != 30 && fps != 60) ||
+        if (!path || !*path || std::wcslen(path) > 1023 || (fps != 30 && fps != 60 && fps != 120) ||
             bitrate < 1000000 || bitrate > 100000000)
             return false;
         // Refuse relative paths and URLs. The picker passes an absolute local

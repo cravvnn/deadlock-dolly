@@ -22,7 +22,7 @@ struct Status {
     wchar_t error[256]{};
 };
 // Starts a video-only, real-time MP4. The encoder initializes asynchronously
-// after the next Present supplies dimensions. 30/60 FPS, current even-sized
+// after the next Present supplies dimensions. 30/60/120 FPS, current even-sized
 // SDR game resolution, up to 3840 x 2160. Existing destinations are refused.
 // Calls return promptly; disk/codec failures are reported through status().
 bool start(const wchar_t* path, std::uint32_t fps, std::uint32_t bitrate) noexcept;

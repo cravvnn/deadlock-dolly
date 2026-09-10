@@ -1,4 +1,27 @@
-# Validation — 0.5.1 alpha
+# Validation — 0.5.2 alpha
+
+## 120 FPS update
+
+- 120 FPS is accepted by desktop options, native command/status transport and
+  the encoder. The default remains 60 FPS.
+- 53 targeted Python tests passed for video export, media transport and native
+  packaging.
+- Portable video math tests passed, including 120 Hz cadence, skipped slots and
+  one-hour timestamp drift checks.
+- Windows x64 native DLL and bridge/overlay/video smoke programs compiled and
+  linked. The video smoke now writes and inspects a 120 FPS MP4, including its
+  advertised rate and increasing sample timestamps. Windows programs were not
+  executed in this Linux workspace; GitHub Windows CTest runs them.
+- Owned C++ formatting passed.
+- Camera hook, interpolation, ReShade integration and recording handoff logic
+  are unchanged from 0.5.1.
+
+The owner reports successful recording and ReShade loading in 0.5.1. Sustained
+120 FPS throughput and the new output mode still need a Windows/Deadlock test.
+Separated layers are not implemented; renderer evidence requirements are in
+[LAYER_EXPORT.md](LAYER_EXPORT.md).
+
+## Previous 0.5.1 checks
 
 ## Recording handoff fix
 

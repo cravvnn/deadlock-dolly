@@ -147,6 +147,7 @@ def main() -> int:
     video_guide = video_guide.replace(
         "](VALIDATION.md)", "](https://github.com/cravvnn/deadlock-dolly/blob/main/docs/VALIDATION.md)")
     (bundle / "Video_and_ReShade.md").write_text(video_guide, encoding="utf-8")
+    shutil.copy2(ROOT / "docs" / "LAYER_EXPORT.md", bundle / "LAYER_EXPORT.md")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     for extension in ("md", "json"):

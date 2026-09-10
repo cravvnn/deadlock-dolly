@@ -400,7 +400,7 @@ class DollyApp:
         options = ttk.Frame(card, style="Card.TFrame")
         options.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
         ttk.Label(options, text="Video FPS", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
-        self.video_fps_combo = ttk.Combobox(options, textvariable=self.video_fps, values=("30", "60"), state="readonly", width=5)
+        self.video_fps_combo = ttk.Combobox(options, textvariable=self.video_fps, values=("30", "60", "120"), state="readonly", width=5)
         self.video_fps_combo.pack(side="left", padx=(0, 18))
         ttk.Label(options, text="Bitrate", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
         self.video_bitrate_combo = ttk.Combobox(options, textvariable=self.video_bitrate, values=tuple(BITRATE_PRESETS), state="readonly", width=10)
@@ -414,7 +414,7 @@ class DollyApp:
         self.video_cancel_button = ttk.Button(actions, text="Discard recording", style="Quiet.TButton", command=lambda: self._stop_video_recording(cancel=True), state="disabled")
         self.video_cancel_button.pack(side="left")
         ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(tab, text="Start recording, return to Deadlock, then press F5 to play the shot. Finish from the in-game panel, or return to Dolly to finish automatically. Slow rendering can miss frames.",
+        ttk.Label(tab, text="Start recording, return to Deadlock, then press F5 to play the shot. Use Finish recording in either interface to save. Actual capture FPS depends on rendering and encoder speed.",
                   style="Muted.TLabel", wraplength=900).grid(row=1, column=0, sticky="w", padx=4, pady=(10, 14))
         shade = ttk.Frame(tab, style="Card.TFrame", padding=18)
         shade.grid(row=2, column=0, sticky="ew")

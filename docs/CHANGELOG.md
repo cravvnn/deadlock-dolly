@@ -1,5 +1,13 @@
 # Changes
 
+## 0.5.2 alpha — 120 FPS recording
+
+- Added 120 FPS alongside 30/60 in Export, command transport and the native encoder.
+- Added 120 FPS cadence, protocol, controller and Windows MP4 metadata regressions.
+- Corrected Export help text: returning to desktop controls does not finish recording.
+- Retains the 0.5.1 recording handoff fix and existing camera/ReShade integration.
+- Depth, hero-only and world-only exports require further renderer integration and are not shipped in this build.
+
 ## 0.5.1 alpha — Recording handoff
 
 - Recording follows the verified native session, independently of manual camera input.

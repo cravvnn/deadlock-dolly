@@ -29,6 +29,17 @@ int main() {
     ntsc_clock.fps = 30;
     require(ntsc_clock.sample(0, pts, missed));
     require(ntsc_clock.sample(3579545, pts, missed) && pts == 10000000 && missed == 29);
+    // At 120 Hz the rational timestamp clock must not drift over one hour.
+    // A 60 Hz game cannot supply 120 distinct frames: account for skipped slots.
+    Cadence high_rate;
+    high_rate.frequency = 12000000;
+    high_rate.fps = 120;
+    require(high_rate.sample(0, pts, missed));
+    require(high_rate.sample(100000, pts, missed) && pts == 83333 && missed == 0);
+    require(!high_rate.sample(100001, pts, missed));
+    require(high_rate.sample(300000, pts, missed) && pts == 250000 && missed == 1);
+    require(high_rate.sample(3600ULL * high_rate.frequency, pts, missed) && pts == 36000000000ULL &&
+            high_rate.last_slot == 432000);
     // RGB ordering and row stride are independent of Windows' RGB DIB
     // conventions. Top is red, bottom blue; padding must never be sampled.
     const std::array<std::uint8_t, 24> rgba = {255, 0, 0,   255, 255, 0, 0,   255, 99, 99, 99, 99,
