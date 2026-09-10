@@ -1,4 +1,4 @@
-# Stage 1 manual test checklist — 0.4.2-alpha
+# Stage 1 manual test checklist — 0.4.3-alpha
 
 This is the Windows/Deadlock acceptance check for the new native-input and DX11
 panel workflow. Automated tests, cross compilation and an editor startup check
@@ -6,7 +6,7 @@ are useful evidence, but none proves this integration in a running game.
 **These manual checks have not been performed in the Linux workspace.**
 
 Keep the previous working package and a copy of your saved shots. Use a fully
-extracted, newly built 0.4.2-alpha Windows folder with its matching ABI 3 helper.
+extracted, newly built 0.4.3-alpha Windows folder with its matching ABI 3 helper.
 Record the source commit, BUILD_INFO.json version and supported game build with
 results. Mark each result PASS, FAIL or NOT TESTED; do not treat an untested
 check as a pass.
@@ -52,6 +52,15 @@ check as a pass.
       Continue moving without reopening the paused-camera controls.
 
 ## 3. Input ownership and UI
+
+- [ ] Repeat F9 open/close with both the replay controls and a spectated hero's
+      HUD visible. Returning to Dolly hides both; F9 shows them again.
+- [ ] Drag a replay control while the game UI owns input, release the mouse,
+      and return to Dolly. The game's mouse interaction remains usable.
+- [ ] Alternate F7/F8/F9, click and drag Dolly controls, and move the mouse while
+      paused. FPS stays comparable to the same scene before opening the panel.
+      Check diagnostics for repeated QueuePresentAndWait warnings if it drops.
+
 
 - [ ] F8 opens the Dolly panel with a usable mouse pointer. Clicking a button
       does not also switch heroes or send a gameplay action underneath it.

@@ -143,7 +143,7 @@ class NativeFlightControllerTests(unittest.TestCase):
         self.bridge.original[2] = 900
         self.controller.toggle_game_ui(False)
         self.assertEqual(self.controller._paused_pose["z"], 900)
-        self.assertTrue(self.console.values["citadel_hud_visible"])
+        self.assertFalse(self.console.values["citadel_hud_visible"])
 
     def test_explicit_stop_opens_controls_instead_of_leaving_inert_flight_input(self):
         self.controller.begin_paused_camera()

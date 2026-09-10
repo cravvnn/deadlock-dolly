@@ -1,3 +1,60 @@
+# Validation — 0.4.3 alpha
+
+## Reported failures and changes
+
+The supplied 0.4.2 recording visibly reports 5 FPS. Native samples show frame
+intervals around 228–264 ms, with no authored path or animated effects running.
+Console output includes 86 instances of QueuePresentAndWait waiting 21–22
+iterations without a present event. This is a presentation-stall symptom;
+it does not indicate a camera spline/timestamp problem.
+
+F9 previously hid only citadel_hide_replay_hud, leaving citadel_hud_visible
+set to 1. Returning now hides both the replay controls and character HUD.
+Opening F9 shows both again. Original HUD/cursor settings are read together
+once and restored on Stop. Redundant writes during return-to-flight were
+removed; each return applies one complete hide operation and verifies it.
+
+The overlay forwarded mouse releases to ImGui while Deadlock owned input.
+The Win32 backend could consequently ReleaseCapture on the game's window
+even though Dolly did not own that click. Queued pointer events also reached
+Win32 capture handling from Present, and each visible frame allowed Win32
+cursor updates. Those calls can interfere with a window thread waiting for
+frame presentation.
+
+Pointer events now update ImGui input directly, hidden panels discard their
+pending events, and Present disables Win32 cursor changes. Cursor hiding is
+handled on the game's window-message thread. Dolly does not acquire new OS
+mouse capture; dragging works outside the panel within the game window, but
+not beyond the entire window. The native camera callback, interpolation,
+paused-flight integrator and effects remain byte-identical to 0.4.2.
+
+## Checks completed here
+
+- Python suite: 727 tests, no failures, one Windows-only skip. HUD regression
+  checks cover full hide/show, original-value restoration and one hide write
+  per return. Existing capture, seeking, playback and UI tests remain enabled.
+- Complete Windows x64 crosscompile/link passed for the helper and both test
+  executables. PE architecture/exports and native metadata/hash were verified.
+- Expanded real DX11 WARP smoke tests verify game mouse capture survives a
+  hidden-panel mouse release, legacy/raw pointer input still reaches Dolly,
+  the first click after reopening survives, and Present retains game capture
+  with OS cursor changes disabled. These compiled here; Windows executes them
+  through the existing CTest gate, with its timeout retained.
+- Full source ZIP integrity, manifest contents and clean extraction/re-export
+  were checked. Uploaded game binaries, recordings, diagnostics and private
+  authoring context are excluded.
+
+## Remaining validation
+
+Neither Deadlock nor the Windows EXE can run in this Linux workspace. The
+mouse-ownership errors and unsafe render-side call paths are corrected, but
+live testing must establish whether the 5 FPS stall is fully resolved. Build
+the full Windows package, restart both Dolly and Deadlock, and check F7/F8/F9,
+replay/hero UI clicks, panel dragging and frame rate. Repeated presentation
+waits after this update would require another diagnostic export.
+
+## Earlier validation records
+
 # Validation — 0.4.2 alpha
 
 ## Reported failures and changes

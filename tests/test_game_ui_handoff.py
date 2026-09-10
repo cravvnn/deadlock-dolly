@@ -41,6 +41,7 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertEqual(self.console.events.count("native.flight"), count)
         self.assertEqual(self.console.values["hud_free_cursor"], 0)
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 1)
+        self.assertEqual(self.console.values["citadel_hud_visible"], 0)
         self.assertEqual(self.bridge.owner, "flight")
 
     def test_f7_closes_console_back_to_game_ui_with_cursor_available(self):
@@ -62,6 +63,7 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertFalse(self.controller._game_ui_visible)
         self.assertEqual(self.console.values["hud_free_cursor"], 0)
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 1)
+        self.assertEqual(self.console.values["citadel_hud_visible"], 0)
         self.assertTrue(self.controller._native_manual)
         self.assertEqual(self.bridge.owner, "panel")
 
@@ -136,7 +138,37 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertFalse(self.controller._console_open)
         self.assertEqual(self.console.values["hud_free_cursor"], 0)
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 1)
+        self.assertEqual(self.console.values["citadel_hud_visible"], 0)
         self.assertEqual(self.bridge.owner, "flight")
+
+    def test_f9_round_trip_hides_character_hud_and_writes_it_only_once(self):
+        self.controller.toggle_game_ui(True)
+        self.console.requests.clear()
+        self.controller.toggle_game_ui(False)
+        self.assertEqual(self.console.values["citadel_hud_visible"], 0)
+        writes = [cmd for cmd in self.console.requests if "citadel_hide_replay_hud 1" in cmd]
+        self.assertEqual(len(writes), 1)
+        self.assertIn("citadel_hud_visible 0", writes[0])
+        self.controller.toggle_game_ui(True)
+        self.assertEqual(self.console.values["citadel_hud_visible"], 1)
+        self.assertEqual(self.console.values["citadel_hide_replay_hud"], 0)
+
+    def test_f9_after_stop_restores_the_pre_edit_hud_and_cursor(self):
+        originals = dict(self.console.values)
+        self.controller.toggle_game_ui(True)
+        self.controller.toggle_game_ui(False)
+        self.controller.stop()
+        self.assertEqual(self.console.values, originals)
+
+    def test_repeated_f9_does_not_resnapshot_temporary_hidden_values(self):
+        self.controller.toggle_game_ui(True)
+        saved = dict(self.controller._game_ui_restore)
+        self.controller.toggle_game_ui(False)
+        self.console.requests.clear()
+        self.controller.toggle_game_ui(True)
+        self.assertEqual(self.controller._game_ui_restore, saved)
+        self.assertFalse(any(cmd in ("citadel_hud_visible", "citadel_hide_replay_hud", "hud_free_cursor")
+                             for cmd in self.console.requests))
 
 
 if __name__ == "__main__":

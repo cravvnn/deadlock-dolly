@@ -294,7 +294,9 @@ bool editor_window_message(HWND window,UINT message,WPARAM wparam,LPARAM lparam,
  if(mousekey){bool reserved=reserved_input(mousekey);key_event(mousekey,down);if(reserved){result=(message==WM_XBUTTONDOWN||message==WM_XBUTTONUP)?TRUE:0;return true;}}
  if(before&&(message>=WM_MOUSEFIRST&&message<=WM_MOUSELAST)){result=(message==WM_XBUTTONDOWN||message==WM_XBUTTONUP)?TRUE:0;return true;}
  if(before&&(message==WM_CHAR||message==WM_SYSCHAR||message==WM_UNICHAR))return true;
- if(before&&message==WM_SETCURSOR&&gOwner.load()==EditorOwner::Flight){SetCursor(nullptr);result=TRUE;return true;}
+ // Hide the OS pointer on its owning window thread. The panel draws its own
+ // pointer; Present must not change OS cursor/capture ownership.
+ if(before&&message==WM_SETCURSOR){SetCursor(nullptr);result=TRUE;return true;}
  return false;
 }
 void editor_worker_tick(unsigned char* memory,bool connected) noexcept {

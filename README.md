@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.2 alpha.** The portable Windows build opens through
+**Current source: 0.4.3 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -61,8 +61,8 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.2 is an alpha. This update fixes replay UI switching, capture during
-playback and tick-zero shot restart. These fixes still need an in-game check. ReShade compatibility is unverified.
+0.4.3 is an alpha. This update corrects F9 HUD hiding and overlay mouse
+ownership. The rendering-stall changes still need an in-game check. ReShade compatibility is unverified.
 Validation details are in
 [VALIDATION.md](docs/VALIDATION.md). In-world camera markers, full in-game curve
 editing and video/render-pass export are planned for later updates.
@@ -109,9 +109,11 @@ separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
 
-**0.4.2:** fixes F9 HUD/cursor handoffs, captures during replay playback, and
-restarting shots at the replay's first available tick. Saved keyframes retain
-their authored timing.
+**0.4.3:** hides the full game HUD when returning from F9 and corrects overlay
+mouse handling during UI transitions.
+
+**0.4.2:** fixes capture during replay playback and restarting shots at the
+replay's first available tick. Saved keyframes retain their authored timing.
 
 **0.4.0:** adds the replay browser, automatic startup, configurable editor
 bindings, native paused movement and the DX11 in-game panel.

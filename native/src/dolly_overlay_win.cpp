@@ -64,6 +64,33 @@ void release_target() noexcept {release(target);}
 void clear_pending_input() {
  std::lock_guard<std::mutex> lock(input_mutex);pending_input.clear();input_overflow=false;
 }
+void feed_window_input(const InputMessage& message) {
+ // The official Win32 mouse handler changes OS capture and cursor ownership.
+ // Never replay those side effects from Present: the game's window thread
+ // may be waiting for this frame. Dolly also must not release a mouse capture
+ // that belongs to Deadlock's hero/replay UI. Mouse events only update ImGui.
+ auto& io=ImGui::GetIO();const auto msg=message.message;
+ int button=-1;bool down=false;
+ switch(msg){
+  case WM_LBUTTONDOWN:case WM_LBUTTONDBLCLK:button=0;down=true;break;
+  case WM_RBUTTONDOWN:case WM_RBUTTONDBLCLK:button=1;down=true;break;
+  case WM_MBUTTONDOWN:case WM_MBUTTONDBLCLK:button=2;down=true;break;
+  case WM_XBUTTONDOWN:case WM_XBUTTONDBLCLK:button=HIWORD(message.wparam)==XBUTTON1?3:4;down=true;break;
+  case WM_LBUTTONUP:button=0;break;case WM_RBUTTONUP:button=1;break;
+  case WM_MBUTTONUP:button=2;break;
+  case WM_XBUTTONUP:button=HIWORD(message.wparam)==XBUTTON1?3:4;break;
+  case WM_MOUSEMOVE:
+   io.AddMousePosEvent(float(static_cast<short>(LOWORD(message.lparam))),float(static_cast<short>(HIWORD(message.lparam))));return;
+  case WM_MOUSEWHEEL:io.AddMouseWheelEvent(0,float(static_cast<short>(HIWORD(message.wparam)))/WHEEL_DELTA);return;
+  case WM_MOUSEHWHEEL:io.AddMouseWheelEvent(-float(static_cast<short>(HIWORD(message.wparam)))/WHEEL_DELTA,0);return;
+  case WM_SETCURSOR:return; // Native window-message handling owns the OS cursor.
+  default:break;
+ }
+ if(button>=0){io.AddMouseButtonEvent(button,down);return;}
+ // Keyboard, text and focus handling do not change Win32 mouse ownership.
+ if((msg>=WM_KEYFIRST&&msg<=WM_KEYLAST)||msg==WM_SETFOCUS||msg==WM_KILLFOCUS)
+  ImGui_ImplWin32_WndProcHandler(message.window,msg,message.wparam,message.lparam);
+}
 void feed_pending_input() {
  std::deque<InputMessage> messages;bool overflow=false;
  {std::lock_guard<std::mutex> lock(input_mutex);messages.swap(pending_input);overflow=input_overflow;input_overflow=false;}
@@ -73,7 +100,7 @@ void feed_pending_input() {
   if(message.raw_kind==1)io.AddMouseButtonEvent(message.button,message.down);
   else if(message.raw_kind==2)io.AddMouseWheelEvent(message.horizontal,message.vertical);
   else{
-   ImGui_ImplWin32_WndProcHandler(message.window,message.message,message.wparam,message.lparam);
+   feed_window_input(message);
    if(message.raw_kind==3){
     io.AddKeyEvent(ImGuiMod_Ctrl,(GetAsyncKeyState(VK_CONTROL)&0x8000)!=0);
     io.AddKeyEvent(ImGuiMod_Shift,(GetAsyncKeyState(VK_SHIFT)&0x8000)!=0);
@@ -450,14 +477,15 @@ void render_overlay(IDXGISwapChain* chain) {
  }
  if(!target && !create_target(chain))return;
  GuiContextScope gui_scope(imgui);
- feed_pending_input();
  const bool panel=editor_panel_visible()&&state.focused;
  auto& io=ImGui::GetIO();
  if(panel!=last_panel){io.ClearInputKeys();io.ClearInputMouse();last_panel=panel;}
- io.ConfigFlags=panel?ImGuiConfigFlags_NavEnableKeyboard:ImGuiConfigFlags_NoMouseCursorChange;
+ // Present must never perform OS cursor updates on the game's behalf.
+ io.ConfigFlags=ImGuiConfigFlags_NoMouseCursorChange|(panel?ImGuiConfigFlags_NavEnableKeyboard:0);
  io.MouseDrawCursor=panel;
  // Hidden panels perform no GPU work and do not draw hints into recordings.
- if(!panel){editor_text_input_active(false);return;}
+ if(!panel){clear_pending_input();io.ClearEventsQueue();editor_text_input_active(false);return;}
+ feed_pending_input();
  DeviceStateScope graphics_scope;
  ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
  draw_panel(state);
@@ -507,17 +535,14 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
  // Preserve UI input when the render thread is busy without blocking the
  // game's message thread (which a graphics driver may synchronously need).
  // Raw mouse data and editor bindings are handled immediately below.
- const bool release_message=message==WM_KEYUP||message==WM_SYSKEYUP||message==WM_LBUTTONUP||
-     message==WM_RBUTTONUP||message==WM_MBUTTONUP||message==WM_XBUTTONUP;
  const bool ui_message=(message>=WM_KEYFIRST&&message<=WM_KEYLAST)||
      (message>=WM_MOUSEFIRST&&message<=WM_MOUSELAST)||message==WM_SETFOCUS||
      message==WM_KILLFOCUS||message==WM_SETCURSOR;
- if(window==game_window&&ui_message&&(editor_panel_visible()||release_message||
-                                    message==WM_KILLFOCUS||message==WM_SETFOCUS)){
+ if(window==game_window&&ui_message&&editor_panel_visible()){
   std::unique_lock<std::recursive_mutex> lock(render_mutex,std::try_to_lock);
   if(lock.owns_lock()&&imgui){
    GuiContextScope scope(imgui);feed_pending_input();
-   ImGui_ImplWin32_WndProcHandler(window,message,wparam,lparam);
+   feed_window_input({window,message,wparam,lparam});
   }else{
    std::lock_guard<std::mutex> input_lock(input_mutex);
    if(pending_input.size()>=512){pending_input.clear();input_overflow=true;}

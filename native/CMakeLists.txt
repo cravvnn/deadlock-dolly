@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(DollyNative VERSION 0.4.2 LANGUAGES C CXX)
+project(DollyNative VERSION 0.4.3 LANGUAGES C CXX)
 
 # Native interpolation tests also build on Linux/macOS. The game bridge is an
 # x64 Windows DLL and is deliberately absent from non-Windows targets.
@@ -73,7 +73,7 @@ if(WIN32)
         add_test(NAME native_bridge_callback_smoke COMMAND bridge_smoke)
         set_tests_properties(native_bridge_callback_smoke PROPERTIES TIMEOUT 30)
         add_executable(overlay_smoke tests/overlay_smoke.cpp)
-        target_include_directories(overlay_smoke PRIVATE include)
+        target_include_directories(overlay_smoke PRIVATE include vendor/imgui)
         target_link_libraries(overlay_smoke PRIVATE dolly_overlay minhook)
         add_test(NAME native_dx11_overlay_smoke COMMAND overlay_smoke)
         set_tests_properties(native_dx11_overlay_smoke PROPERTIES TIMEOUT 45)

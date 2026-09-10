@@ -1,5 +1,16 @@
 # Changes
 
+## 0.4.3 alpha — HUD visibility and overlay input
+
+- Returning from F9 hides both the replay controls and the character HUD.
+  Opening F9 shows them again with game mouse interaction. Stop restores the
+  original HUD/cursor values.
+- Read original UI settings once and apply each return transition once,
+  removing repeated console writes during flight entry.
+- Keep Win32 mouse-capture/cursor changes out of the Present input queue.
+  Hidden Dolly panels no longer receive mouse releases intended for Deadlock.
+- Preserve the existing native camera interpolation and frame-synced effects.
+
 ## 0.4.2 alpha — Replay UI, capture and restart fixes
 
 - F9 explicitly shows the replay HUD and releases the game cursor. Returning

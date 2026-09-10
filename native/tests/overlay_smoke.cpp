@@ -3,6 +3,7 @@
 #include "dolly_overlay.hpp"
 #include "dolly_editor.hpp"
 #include "MinHook.h"
+#include "imgui.h"
 #include <d3d11.h>
 #include <dxgi.h>
 #include <cstdio>
@@ -13,6 +14,8 @@ namespace {
 bool available=false;
 HWND attached=nullptr;
 dolly::EditorSnapshot snapshot;
+bool observed_mouse_down[5]{};
+bool present_keeps_os_cursor=false;
 void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
 }
 namespace dolly {
@@ -21,7 +24,13 @@ bool editor_enqueue(EditorAction,double) noexcept{return true;}
 bool editor_panel_visible() noexcept{return snapshot.owner==EditorOwner::Panel;}
 void editor_set_owner(EditorOwner value) noexcept{snapshot.owner=value;}
 void editor_overlay_available(bool value) noexcept{available=value;}
-void editor_text_input_active(bool) noexcept{}
+void editor_text_input_active(bool) noexcept{
+ if(ImGui::GetCurrentContext()){
+  const auto& io=ImGui::GetIO();
+  for(int i=0;i<5;++i)observed_mouse_down[i]=io.MouseDown[i];
+  present_keeps_os_cursor=(io.ConfigFlags&ImGuiConfigFlags_NoMouseCursorChange)!=0;
+ }
+}
 void editor_attach_window(HWND value) noexcept{attached=value;}
 bool editor_window_message(HWND,UINT,WPARAM,LPARAM,LRESULT&) noexcept{return false;}
 }
@@ -76,6 +85,31 @@ int main(){
   const bool drawn=sample[2]<180;
   context->Unmap(staging,0);staging->Release();
   require(drawn,"Present ran but the in-game panel did not change the backbuffer");
+  // F9 gives Deadlock its own mouse capture for hero/replay UI interaction.
+  // A hidden ImGui backend used to receive every mouse-up and ReleaseCapture
+  // even when Dolly did not own the click. Do not touch that capture.
+  SetCapture(window);require(GetCapture()==window,"Could not establish game mouse capture");
+  snapshot.owner=dolly::EditorOwner::GameUI;
+  SendMessageW(window,WM_LBUTTONUP,0,0);
+  require(GetCapture()==window,"Hidden overlay released the game's mouse capture");
+  require(SUCCEEDED(chain->Present(0,0)),"Hidden-overlay Present failed");
+  require(GetCapture()==window,"Hidden-overlay Present changed game mouse capture");
+  snapshot.owner=dolly::EditorOwner::Panel;
+  SendMessageW(window,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(30,30));
+  require(SUCCEEDED(chain->Present(0,0)),"Panel Present for legacy mouse-down failed");
+  require(observed_mouse_down[0],"Legacy mouse-down did not reach the panel");
+  SendMessageW(window,WM_LBUTTONUP,0,MAKELPARAM(30,30));
+  require(GetCapture()==window,"Panel input changed an existing game mouse capture");
+  require(SUCCEEDED(chain->Present(0,0)),"Panel Present after UI handoff failed");
+  require(!observed_mouse_down[0],"Legacy mouse-up did not reach the panel");
+  require(GetCapture()==window,"Panel Present changed game mouse capture");
+  dolly::overlay_raw_mouse_button(0,true);
+  require(SUCCEEDED(chain->Present(0,0))&&observed_mouse_down[0],"Raw-only mouse-down did not reach the panel");
+  dolly::overlay_raw_mouse_button(0,false);
+  require(SUCCEEDED(chain->Present(0,0))&&!observed_mouse_down[0],"Raw-only mouse-up did not reach the panel");
+  require(GetCapture()==window,"Raw-only input changed game mouse capture");
+  require(present_keeps_os_cursor,"Present is allowed to change the OS mouse cursor");
+  ReleaseCapture();
   context->OMSetRenderTargets(0,nullptr,nullptr);target->Release();backbuffer->Release();
   require(SUCCEEDED(chain->ResizeBuffers(1,720,480,DXGI_FORMAT_UNKNOWN,0)),
           "Overlay retained a backbuffer reference across ResizeBuffers");
@@ -84,7 +118,7 @@ int main(){
   require(!available&&attached==nullptr,"Shutdown did not release editor ownership");
   require(GetWindowLongPtrW(window,GWLP_WNDPROC)==before_proc,"Shutdown did not restore the original window callback");
   context->Release();device->Release();chain->Release();DestroyWindow(window);UnregisterClassW(wc.lpszClassName,instance);
-  std::puts("DX11 WARP overlay: actual render, state restoration and resize passed.");return 0;
+  std::puts("DX11 WARP overlay: render, state restoration, resize and UI mouse ownership passed.");return 0;
  }catch(const std::exception& error){
   dolly::shutdown_overlay();std::fprintf(stderr,"Overlay smoke failed: %s\n",error.what());return 1;
  }
