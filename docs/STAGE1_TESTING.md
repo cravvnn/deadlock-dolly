@@ -1,5 +1,8 @@
 # Stage 1 manual test checklist — 0.4.4-alpha
 
+For the 0.4.5 playback, path-guide and range-DOF checks, see
+[STAGE2_TESTING.md](STAGE2_TESTING.md). The checks below remain the Stage 1 baseline.
+
 This is the Windows/Deadlock acceptance check for the new native-input and DX11
 panel workflow. Automated tests, cross compilation and an editor startup check
 are useful evidence, but none proves this integration in a running game.

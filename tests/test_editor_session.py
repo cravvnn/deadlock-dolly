@@ -8,6 +8,17 @@ from dolly.path import Project, Keyframe
 from dolly.settings import AppSettings
 
 
+class Value:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
 class EditorSessionTests(unittest.TestCase):
     def setUp(self):
         self.bridge = Mock()
@@ -21,6 +32,8 @@ class EditorSessionTests(unittest.TestCase):
             status_text=Mock(), _disable_external_input=Mock(), _capture_view=Mock(),
             _error=Mock(), _submit=Mock(return_value=True))
         self.app.status_text.get.return_value = "Ready"
+        self.app.speed = Value("1")
+        self.app.rate = Value("60")
 
     def test_poll_during_startup_does_not_disable_the_arming_native_camera(self):
         self.app.busy = True
@@ -98,6 +111,112 @@ class EditorSessionTests(unittest.TestCase):
         session.dispatch(self.app, {"action": "seek_back", "value": 0}, self.bridge)
         self.app._submit.call_args.args[1]()
         self.controller.seek_relative.assert_called_once_with(-1, tick_rate=128)
+
+    def test_playback_options_sync_both_directions_without_game_commands(self):
+        self.app.native_editor_active = True
+        self.app.speed.set("0.1")
+        self.app.rate.set("120")
+        session.configure(self.app)
+        config = self.bridge.configure_editor.call_args.kwargs
+        self.assertEqual((config["playback_speed"], config["playback_rate"]), (.1, 120))
+        self.assertTrue(session.dispatch(self.app, {"action": "set_playback_speed", "value": .25}, self.bridge))
+        self.assertTrue(session.dispatch(self.app, {"action": "set_playback_rate", "value": 30}, self.bridge))
+        self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("0.25", "30"))
+        config = self.bridge.configure_editor.call_args.kwargs
+        self.assertEqual((config["playback_speed"], config["playback_rate"]), (.25, 30))
+        self.app._submit.assert_not_called()
+
+    def test_unfinished_speed_edit_does_not_block_editor_configuration(self):
+        self.app.native_editor_active = True
+        self.app.speed.set(".5")
+        session.configure(self.app)
+        for text in ("", "-", "nan", "99"):
+            self.app.speed.set(text)
+            self.app.status_text.get.return_value = "Editing " + text
+            session.configure(self.app)
+            config = self.bridge.configure_editor.call_args.kwargs
+            self.assertEqual(config["playback_speed"], .5)
+            self.assertEqual(config["message"], "Editing " + text)
+            self.assertEqual(self.app.speed.get(), text)
+
+    def test_invalid_in_game_playback_options_do_not_change_desktop_state(self):
+        for action, invalid in (("set_playback_speed", (0, .01, 4.1, float("nan"), True)),
+                                ("set_playback_rate", (0, 60.1, 90, float("inf"), True))):
+            for value in invalid:
+                with self.subTest(action=action, value=value), self.assertRaises(ValueError):
+                    session.dispatch(self.app, {"action": action, "value": value}, self.bridge)
+                self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("1", "60"))
+        self.bridge.configure_editor.assert_not_called()
+
+    def test_busy_or_playing_cannot_change_running_shot_settings(self):
+        for action, value in (("set_playback_speed", .1), ("set_playback_rate", 120)):
+            self.app.busy = True
+            self.assertFalse(session.dispatch(self.app, {"action": action, "value": value}, self.bridge))
+            self.app.busy = False
+            self.controller.status.return_value["playing"] = True
+            # Consume a stale event without applying it after a shot started.
+            self.assertTrue(session.dispatch(self.app, {"action": action, "value": value}, self.bridge))
+            self.controller.status.return_value["playing"] = False
+            self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("1", "60"))
+
+    def test_in_game_options_are_acknowledged_once_after_application(self):
+        self.app.native_editor_active = True
+        self.bridge.editor_status.return_value = {"events": [
+            {"sequence": 1, "action": "set_playback_speed", "value": .1},
+            {"sequence": 2, "action": "set_playback_rate", "value": 120}]}
+        session.poll(self.app)
+        self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("0.1", "120"))
+        self.assertEqual([call.args[0] for call in self.bridge.acknowledge_editor_event.call_args_list], [1, 2])
+
+    def test_path_guides_publish_only_when_camera_shape_or_selection_changes(self):
+        self.app.native_editor_active = True
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(1, 7, 8, 9, 10, 11, 12)]
+        session.configure(self.app)
+        self.bridge.publish_visualization.assert_called_once_with(self.app.project, enabled=True, selected_camera=0)
+        self.app.shot_time = .5
+        self.app.speed.set(".1")
+        session.configure(self.app)
+        self.bridge.publish_visualization.assert_called_once()
+        # Mutable camera objects must not mutate the cached comparison too.
+        self.app.project.keyframes[0].z += 10
+        session.configure(self.app)
+        self.assertEqual(self.bridge.publish_visualization.call_count, 2)
+        self.app._selection_index = lambda _: 1
+        session.configure(self.app)
+        self.bridge.publish_visualization.assert_called_with(self.app.project, enabled=True, selected_camera=1)
+        self.app.project.rotation_mode = "unwrapped"
+        session.configure(self.app)
+        self.assertEqual(self.bridge.publish_visualization.call_count, 4)
+
+    def test_optional_viewer_failure_does_not_interrupt_editor_or_retry_every_poll(self):
+        self.app.native_editor_active = True
+        self.bridge.publish_visualization.return_value = False
+        self.bridge.visualization_diagnostics.return_value = {"error": "viewer unavailable"}
+        with self.assertLogs(session.LOG, level="WARNING") as logs:
+            session.configure(self.app)
+            self.app.status_text.get.return_value = "Camera ready"
+            session.configure(self.app)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("viewer unavailable", logs.output[0])
+        self.assertEqual(self.bridge.configure_editor.call_args.kwargs["message"], "Camera ready")
+        self.bridge.publish_visualization.assert_called_once()
+        self.app._error.assert_not_called()
+
+    def test_clear_and_new_bridge_refresh_guides_without_changing_input_owner(self):
+        self.app.native_editor_active = True
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6)]
+        session.configure(self.app)
+        self.app.project.keyframes.clear()
+        session.configure(self.app)
+        self.assertEqual(self.bridge.publish_visualization.call_count, 2)
+        replacement = Mock()
+        self.controller._native_bridge.return_value = replacement
+        session.configure(self.app)
+        replacement.publish_visualization.assert_called_once_with(self.app.project, enabled=True, selected_camera=0)
+        self.controller.status.return_value["connected"] = False
+        session.configure(self.app)
+        replacement.publish_visualization.assert_called_with(self.app.project, enabled=False, selected_camera=0)
+        self.assertNotIn("owner", replacement.configure_editor.call_args.kwargs)
 
     def test_bridge_failure_during_recovery_does_not_hide_original_error(self):
         self.controller.toggle_console.side_effect = RuntimeError("console command failed")

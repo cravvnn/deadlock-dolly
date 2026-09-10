@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 
-from .native_effects import compile_shot
+from .native_effects import compile_shot, EFFECTS
 from .runtime import resource_root
 
 ABI = 3
@@ -116,17 +116,24 @@ class NativeBridge:
         else:
             mapping = mapping_factory(name, MAPPING_BYTES)
         try:
-            return cls(mapping, token, editor_pid, clock, sleep, start_heartbeat)
+            return cls(mapping, token, editor_pid, clock, sleep, start_heartbeat,
+                       mapping_factory=mapping_factory)
         except Exception:
             close = getattr(mapping, "close", None)
             if close is not None:
                 close()
             raise
 
-    def __init__(self, mapping, token, editor_pid, clock, sleep, start_heartbeat):
+    def __init__(self, mapping, token, editor_pid, clock, sleep, start_heartbeat,
+                 *, mapping_factory=None):
         if len(mapping) != MAPPING_BYTES:
             raise NativeBridgeError("Native camera mapping has an unexpected size")
         self._mapping = mapping
+        self._mapping_factory = mapping_factory
+        self._viewer_mapping = None
+        self._viewer_sequence = 0
+        self._viewer_enabled = False
+        self._viewer_error = ""
         self.token = token
         self.editor_pid = editor_pid
         self.game_pid = 0
@@ -280,7 +287,7 @@ class NativeBridge:
             original, applied = list(values[13:20]), list(values[20:27])
             original_fov, applied_fov, hook_calls, message, demo, maximum_ms, interval_ms = values[27:34]
             effect_count, effect_error, effect_frames, effect_phase = values[34:]
-            if effect_count > 7 or effect_error > 3:
+            if effect_count > len(EFFECTS) or effect_error > 3:
                 raise NativeBridgeError("Native effect status is invalid")
             numbers = [effect_phase, real_time, engine_time, phase, *original, *applied,
                        original_fov, applied_fov, maximum_ms, interval_ms]
@@ -543,6 +550,110 @@ class NativeBridge:
                     "read_error": self._graphics_error,
                     "note": "Read-only asynchronous observations; no renderer state or camera timing is changed."}
 
+    def _viewer_store_sequence(self, value):
+        from . import visualization_wire as wire
+        if self._atomic32 is None:
+            struct.pack_into("<I", self._viewer_mapping, wire.SEQUENCE_OFFSET, value)
+        else:
+            slot = ctypes.c_int32.from_buffer(self._viewer_mapping, wire.SEQUENCE_OFFSET)
+            self._atomic32(ctypes.byref(slot), ctypes.c_int32(value))
+
+    def _viewer_write(self, packet):
+        """Commit through the helper's release barrier, leaving no torn packet."""
+        from . import visualization_wire as wire
+        sequence = struct.unpack_from("<I", packet, wire.SEQUENCE_OFFSET)[0]
+        self._viewer_store_sequence(sequence - 1)
+        self._viewer_mapping[:wire.SEQUENCE_OFFSET] = packet[:wire.SEQUENCE_OFFSET]
+        self._viewer_mapping[wire.SEQUENCE_OFFSET + 4:len(packet)] = packet[wire.SEQUENCE_OFFSET + 4:]
+        self._viewer_store_sequence(sequence)
+        self._viewer_sequence = sequence
+        self._viewer_enabled = bool(struct.unpack_from("<I", packet, 16)[0])
+
+    def publish_visualization(self, project=None, *, enabled=True, selected_camera=0):
+        """Publish optional in-game guides without changing camera transport.
+
+        Call only after a shot, selection, or visibility change; compilation
+        runs on the editor side and never streams samples during playback.
+        Viewer failures remain diagnostic and cannot fail camera operations.
+        """
+        from . import visualization_wire as wire
+        with self._lock:
+            try:
+                self._check_open()
+                sequence = self._viewer_sequence + 2
+                if sequence > 0xFFFFFFFE:
+                    sequence = 2
+                packet = wire.build_visualization(project, sequence=sequence,
+                                                   enabled=enabled, selected_camera=selected_camera)
+                if self._viewer_mapping is None:
+                    # A disabled or empty shot needs no additional OS object.
+                    if not struct.unpack_from("<I", packet, 16)[0]:
+                        self._viewer_enabled = False
+                        self._viewer_error = ""
+                        return True
+                    name = "Local\\DeadlockDollyNative_" + self.token + ".viewer"
+                    if self._mapping_factory is None:
+                        if os.name != "nt":
+                            raise NativeBridgeError("Path viewer transport requires Windows")
+                        mapping = mmap.mmap(-1, wire.MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
+                    else:
+                        mapping = self._mapping_factory(name, wire.MAPPING_BYTES)
+                    if len(mapping) != wire.MAPPING_BYTES:
+                        close = getattr(mapping, "close", None)
+                        if close is not None:
+                            close()
+                        raise NativeBridgeError("Path viewer mapping has an unexpected size")
+                    self._viewer_mapping = mapping
+                    mapping[:] = b"\0" * wire.MAPPING_BYTES
+                self._viewer_write(packet)
+                self._viewer_error = ""
+                return True
+            except Exception as exc:
+                self._viewer_error = str(exc)
+                # Invalid edits must not leave an earlier path misleadingly
+                # visible. A clearing packet is independent of shot parsing.
+                if self._viewer_mapping is not None:
+                    try:
+                        sequence = self._viewer_sequence + 2
+                        if sequence > 0xFFFFFFFE:
+                            sequence = 2
+                        self._viewer_write(wire.build_visualization(None, sequence=sequence, enabled=False))
+                    except Exception:
+                        self._viewer_enabled = False
+                return False
+
+    def _close_visualization(self):
+        """Clear before unmapping: the game may still hold its read-only view."""
+        if self._viewer_mapping is None:
+            return
+        from . import visualization_wire as wire
+        mapping = self._viewer_mapping
+        try:
+            sequence = self._viewer_sequence + 2
+            if sequence > 0xFFFFFFFE:
+                sequence = 2
+            self._viewer_store_sequence(sequence - 1)
+            mapping[:8] = b"\0" * 8
+            mapping[12:] = b"\0" * (wire.MAPPING_BYTES - 12)
+            self._viewer_store_sequence(sequence)
+            self._viewer_enabled = False
+        except Exception as exc:
+            self._viewer_error = "Path viewer close: " + str(exc)
+        finally:
+            self._viewer_mapping = None
+            close = getattr(mapping, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception as exc:
+                    self._viewer_error = "Path viewer close: " + str(exc)
+
+    def visualization_diagnostics(self):
+        with self._lock:
+            return {"mapping_open": self._viewer_mapping is not None,
+                    "enabled": self._viewer_enabled, "revision": self._viewer_sequence,
+                    "error": self._viewer_error}
+
     def diagnostics(self):
         try:
             result = self.status()
@@ -553,6 +664,7 @@ class NativeBridge:
         except (NativeBridgeError, OSError, ValueError) as exc:
             result = {"state": "unavailable", "message": str(exc)}
         result["graphics"] = self.graphics_diagnostics()
+        result["visualization"] = self.visualization_diagnostics()
         return result
 
     def close(self):
@@ -571,6 +683,7 @@ class NativeBridge:
                 if self._thread is not None and self._thread is not threading.current_thread():
                     self._thread.join(timeout=0.5)
                 with self._lock:
+                    self._close_visualization()
                     self._closed = True
                     close = getattr(self._mapping, "close", None)
                     if close is not None:

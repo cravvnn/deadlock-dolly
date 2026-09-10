@@ -1,5 +1,19 @@
 # Changes
 
+## 0.4.5 alpha — Path guides, playback controls and range DOF
+
+- Add numbered, projected camera guides and the authored spline in paused
+  flight. Highlight the selected camera and hide guides during playback,
+  console use, the game UI and loss of focus. F8 toggles Show path guides.
+- Share in-game playback speed and Updates / s with the desktop controls.
+  Native camera/effects still update at render cadence.
+- Clear dropdown commit highlighting while preserving text editing and focus.
+- Add synchronized r_dof_override_ranges and the related override controls,
+  with four-value keys/restoration and a Range DOF preset.
+- Include a readable/JSON supported-camera-cvar list in the portable package.
+- Keep the established camera clock, interpolation and paused flight behavior.
+  Expanded in-game curves remain Stage 2; export remains Stage 3.
+
 ## 0.4.4 alpha — Windows build correction
 
 - Write BOM-bearing cleanup test fixtures explicitly as UTF-8 and compare the

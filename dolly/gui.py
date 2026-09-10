@@ -28,7 +28,7 @@ from dolly.hotkey import CaptureHotkey
 from dolly.launcher import discover_game, recover_pending
 from dolly.navigation import CameraMotion
 from dolly.navigation_input import CameraInput
-from dolly.path import CvarTrack, Keyframe, Project, TrackKey
+from dolly.path import CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value, format_cvar_value
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.smoothing import smoothing_window
 
@@ -61,6 +61,21 @@ def _finite(value: str, label: str) -> float:
     if not math.isfinite(number):
         raise ValueError(f"{label} must be finite.")
     return number
+
+
+def _clear_committed_combobox_selection(event):
+    """Remove Tk's automatic text highlight after choosing a dropdown item.
+
+    Leave focus, the insertion cursor, and ordinary typing/drag selection
+    alone. Waiting for idle lets the platform's combobox binding finish.
+    """
+    widget = event.widget
+    def clear():
+        try:
+            widget.selection_clear()
+        except tk.TclError:
+            pass  # The option's callback may have closed its dialog.
+    widget.after_idle(clear)
 
 
 def _binding_event_key(event):
@@ -231,6 +246,8 @@ class DollyApp:
         style.configure("TLabelframe.Label", foreground=MUTED)
         self.root.option_add("*TCombobox*Listbox.background", "#10151c")
         self.root.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.root.bind_class("TCombobox", "<<ComboboxSelected>>",
+                             _clear_committed_combobox_selection, add="+")
 
     def _build_menu(self):
         menu = tk.Menu(self.root)
@@ -1263,7 +1280,8 @@ class DollyApp:
         intro.grid(row=0, column=0, sticky="ew", pady=(2, 10))
         ttk.Label(intro, text="CAMERA VARIABLES", style="Section.TLabel").pack(side="left")
         ttk.Button(intro, text="Fixed values…", command=self._show_fixed_values).pack(side="right", padx=(8, 0))
-        ttk.Button(intro, text="+ Depth-of-field preset", command=self._dof_preset).pack(side="right")
+        ttk.Button(intro, text="+ Citadel DOF", command=self._dof_preset).pack(side="right", padx=(8, 0))
+        ttk.Button(intro, text="+ Range DOF", command=self._range_dof_preset).pack(side="right")
         body = ttk.Frame(tab)
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(0, weight=2, minsize=255)
@@ -1292,7 +1310,7 @@ class DollyApp:
         ttk.Label(settings, text="Curve", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
         ttk.Combobox(settings, textvariable=self.track_mode, values=("step", "linear", "smooth"), state="readonly", width=8).pack(side="left")
         ttk.Label(settings, text="Restore · optional", style="CardMuted.TLabel").pack(side="left", padx=(15, 6))
-        ttk.Entry(settings, textvariable=self.restore_value, width=9).pack(side="left")
+        ttk.Entry(settings, textvariable=self.restore_value, width=18).pack(side="left")
         track_controls = ttk.Frame(right, style="Card.TFrame")
         track_controls.grid(row=2, column=0, sticky="w", pady=(0, 8))
         ttk.Button(track_controls, text="Create track", command=self._create_track).pack(side="left")
@@ -1301,12 +1319,15 @@ class DollyApp:
         frame.grid(row=3, column=0, sticky="nsew")
         value_controls = ttk.Frame(right, style="Card.TFrame")
         value_controls.grid(row=4, column=0, sticky="ew", pady=(8, 0))
-        ttk.Label(value_controls, text="Time", style="CardMuted.TLabel").pack(side="left")
-        ttk.Entry(value_controls, textvariable=self.track_time, width=7).pack(side="left", padx=(5, 9))
-        ttk.Label(value_controls, text="Value", style="CardMuted.TLabel").pack(side="left")
-        ttk.Entry(value_controls, textvariable=self.track_value, width=8).pack(side="left", padx=5)
-        ttk.Button(value_controls, text="Add / replace", command=self._put_value).pack(side="left", padx=5)
-        ttk.Button(value_controls, text="Delete", style="Quiet.TButton", command=self._delete_value).pack(side="left")
+        value_controls.columnconfigure(1, weight=1)
+        ttk.Label(value_controls, text="Time", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Entry(value_controls, textvariable=self.track_time, width=9).grid(row=0, column=1, sticky="w", padx=(8, 12), pady=(0, 6))
+        ttk.Label(value_controls, text="Value", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w")
+        ttk.Entry(value_controls, textvariable=self.track_value, width=23).grid(row=1, column=1, sticky="ew", padx=(8, 12))
+        ttk.Button(value_controls, text="Add / replace", command=self._put_value).grid(row=0, column=2, sticky="ew", pady=(0, 6))
+        ttk.Button(value_controls, text="Delete", style="Quiet.TButton", command=self._delete_value).grid(row=1, column=2, sticky="ew")
+        ttk.Label(right, text="Range DOF: near blurry · near crisp · far crisp · far blurry. Enter four numbers separated by spaces.",
+                  style="CardMuted.TLabel", wraplength=430).grid(row=5, column=0, sticky="w", pady=(8, 0))
         self.track_tree.bind("<<TreeviewSelect>>", self._select_track)
         self.value_tree.bind("<<TreeviewSelect>>", self._select_value)
         self.value_tree.bind("<Delete>", lambda _event: self._delete_value())
@@ -1327,10 +1348,10 @@ class DollyApp:
         frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
         fixed_form = ttk.Frame(setup, style="Card.TFrame")
         fixed_form.grid(row=1, column=1, sticky="n")
-        ttk.Entry(fixed_form, textvariable=self.setup_name, width=26).grid(row=0, column=0, sticky="ew")
-        ttk.Entry(fixed_form, textvariable=self.setup_value, width=7).grid(row=0, column=1, padx=(7, 0))
-        ttk.Button(fixed_form, text="Set value", command=self._set_fixed).grid(row=1, column=0, sticky="w", pady=(7, 0))
-        ttk.Button(fixed_form, text="Remove", style="Quiet.TButton", command=self._remove_fixed).grid(row=1, column=1, pady=(7, 0))
+        ttk.Entry(fixed_form, textvariable=self.setup_name, width=26).grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Entry(fixed_form, textvariable=self.setup_value, width=26).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
+        ttk.Button(fixed_form, text="Set value", command=self._set_fixed).grid(row=2, column=0, sticky="w", pady=(7, 0))
+        ttk.Button(fixed_form, text="Remove", style="Quiet.TButton", command=self._remove_fixed).grid(row=2, column=1, pady=(7, 0))
         self.setup_tree.bind("<<TreeviewSelect>>", self._select_fixed)
         self.fixed_dialog.withdraw()
 
@@ -1360,14 +1381,18 @@ class DollyApp:
                                      ("Preview frame", self._apply_frame, "Quiet.TButton"),
                                      ("Seek replay", self._seek, "Quiet.TButton")):
             ttk.Button(controls, text=text, command=command, style=style).pack(side="left", padx=(0, 6))
-        ttk.Combobox(controls, textvariable=self.speed, values=("0.1", "0.25", "0.5", "1", "2"), width=5).pack(side="right")
+        self.speed_combo = ttk.Combobox(controls, textvariable=self.speed,
+                                       values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"), width=5)
+        self.speed_combo.pack(side="right")
         ttk.Label(controls, text="Speed", style="Muted.TLabel").pack(side="right", padx=(9, 6))
         options = ttk.Frame(frame)
         options.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         ttk.Checkbutton(options, text="Hide HUD", variable=self.hide_hud).pack(side="left")
         ttk.Checkbutton(options, text="Frozen preview", variable=self.frozen).pack(side="left", padx=(16, 0))
         ttk.Label(options, text="Play shot resumes the replay from the first camera.", style="Muted.TLabel").pack(side="left", padx=(18, 0))
-        ttk.Combobox(options, textvariable=self.rate, values=("30", "60", "120"), state="readonly", width=5).pack(side="right")
+        self.rate_combo = ttk.Combobox(options, textvariable=self.rate,
+                                      values=("30", "60", "120"), state="readonly", width=5)
+        self.rate_combo.pack(side="right")
         ttk.Label(options, text="Updates / s", style="Muted.TLabel").pack(side="right", padx=(9, 6))
         smoothing = ttk.Frame(frame)
         smoothing.grid(row=3, column=0, sticky="ew", pady=(8, 0))
@@ -1493,6 +1518,8 @@ class DollyApp:
             self.cancel_startup_button.configure(state="normal" if self.startup_cancel is not None and not self.startup_cancel.is_set() else "disabled")
             unlocker_ready = bool(status.get("unlocker_ready"))
             available = not self.busy and not self.playing
+            self.speed_combo.configure(state="normal" if available else "disabled")
+            self.rate_combo.configure(state="readonly" if available else "disabled")
             running = bool(status.get("game_running"))
             self.camera_driver_combo.configure(state="disabled" if running or self.busy else "readonly")
             native = status.get("camera_backend") == "native" if running else self.camera_driver.get() == "Native (experimental)"
@@ -2115,6 +2142,8 @@ class DollyApp:
             if not .05 <= speed <= 4:
                 raise ValueError("Playback speed must be between 0.05 and 4.")
             rate, frozen, hide_hud = int(self.rate.get()), self.frozen.get(), self.hide_hud.get()
+            if rate not in (30, 60, 120):
+                raise ValueError("Choose a playback update rate of 30, 60, or 120.")
             smoothing = self.smoothing.get().lower()
             smoothing_window(smoothing)
             self._close_paused_camera(stop=False)
@@ -2148,7 +2177,7 @@ class DollyApp:
     def _track_settings(self, keys):
         raw_restore = self.restore_value.get().strip()
         return CvarTrack(name=self.track_name.get().strip(), keys=keys, interpolation=self.track_mode.get(),
-                         restore_value=_finite(raw_restore, "Restore value") if raw_restore else None)
+                         restore_value=parse_cvar_value(self.track_name.get().strip(), raw_restore, "Restore value") if raw_restore else None)
 
     def _commit_tracks(self, tracks, selected=None):
         candidate = copy.deepcopy(self.project)
@@ -2161,7 +2190,7 @@ class DollyApp:
     def _create_track(self):
         def operation():
             # A new track begins with the entered key, so it is valid immediately.
-            key = TrackKey(time=_finite(self.track_time.get(), "Shot seconds"), value=_finite(self.track_value.get(), "Camera value"))
+            key = TrackKey(time=_finite(self.track_time.get(), "Shot seconds"), value=parse_cvar_value(self.track_name.get().strip(), self.track_value.get(), "Camera value"))
             track = self._track_settings([key])
             if any(existing.name == track.name for existing in self.project.tracks):
                 raise ValueError("That variable already has a track. Select it to add keys or update settings.")
@@ -2191,9 +2220,9 @@ class DollyApp:
             return
         self.track_name.set(track.name)
         self.track_mode.set(track.interpolation)
-        self.restore_value.set("" if track.restore_value is None else _number(track.restore_value))
+        self.restore_value.set("" if track.restore_value is None else format_cvar_value(track.restore_value))
         for index, key in enumerate(track.keys):
-            self.value_tree.insert("", "end", iid=str(index), values=(_number(key.time), _number(key.value)))
+            self.value_tree.insert("", "end", iid=str(index), values=(_number(key.time), format_cvar_value(key.value)))
 
     def _select_value(self, _event=None):
         index = self._selection_index(self.value_tree)
@@ -2205,12 +2234,12 @@ class DollyApp:
         except (ValueError, IndexError):
             return
         self.track_time.set(_number(key.time))
-        self.track_value.set(_number(key.value))
+        self.track_value.set(format_cvar_value(key.value))
 
     def _put_value(self):
         def operation():
             index, existing = self._selected_track()
-            key = TrackKey(time=_finite(self.track_time.get(), "Shot seconds"), value=_finite(self.track_value.get(), "Camera value"))
+            key = TrackKey(time=_finite(self.track_time.get(), "Shot seconds"), value=parse_cvar_value(existing.name, self.track_value.get(), "Camera value"))
             tracks = copy.deepcopy(self.project.tracks)
             tracks[index].keys = sorted([*(item for item in existing.keys if item.time != key.time), key], key=lambda item: item.time)
             self._commit_tracks(tracks, index)
@@ -2232,7 +2261,8 @@ class DollyApp:
     def _set_fixed(self):
         def operation():
             candidate = copy.deepcopy(self.project)
-            candidate.setup_values[self.setup_name.get().strip()] = _finite(self.setup_value.get(), "Fixed camera value")
+            name = self.setup_name.get().strip()
+            candidate.setup_values[name] = parse_cvar_value(name, self.setup_value.get(), "Fixed camera value")
             candidate.validate()
             self.project = candidate
             self._mark_dirty()
@@ -2281,6 +2311,27 @@ class DollyApp:
             self.status_text.set("Depth-of-field preset added. Focus and aperture values are editable; verify the look in your replay.")
         self._guard("Depth-of-field preset", operation)
 
+    def _range_dof_preset(self):
+        def operation():
+            candidate = copy.deepcopy(self.project)
+            name = "r_dof_override_ranges"
+            if any(track.name == name for track in candidate.tracks):
+                if not messagebox.askyesno("Replace range DOF track?", "Replace the existing four-component range track with the preset?", parent=self.root):
+                    return
+            end = candidate.duration if candidate.duration > 0 else 5.0
+            # Verified generic DOF defaults; four zeros disables this override.
+            ranges = (-100.0, 0.0, 180.0, 2000.0)
+            track = CvarTrack(name, [TrackKey(0.0, ranges), TrackKey(end, ranges)], "smooth")
+            candidate.tracks = [existing for existing in candidate.tracks if existing.name != name] + [track]
+            candidate.setup_values.update({"r_depth_of_field": 1.0, "r_dof_override": 1.0})
+            candidate.validate()
+            self.project = candidate
+            self._mark_dirty()
+            self._refresh_tracks(len(candidate.tracks) - 1)
+            self._refresh_fixed()
+            self.status_text.set("Range DOF added. Edit four numbers: near blurry, near crisp, far crisp, far blurry.")
+        self._guard("Range depth-of-field preset", operation)
+
     def _refresh_project(self):
         self.start_tick.set(_number(self.project.start_tick))
         self.tick_rate.set(_number(self.project.tick_rate))
@@ -2328,7 +2379,7 @@ class DollyApp:
     def _refresh_fixed(self):
         self.setup_tree.delete(*self.setup_tree.get_children())
         for index, (name, value) in enumerate(sorted(self.project.setup_values.items())):
-            self.setup_tree.insert("", "end", iid=str(index), values=(name, _number(value)))
+            self.setup_tree.insert("", "end", iid=str(index), values=(name, format_cvar_value(value)))
 
     def _draw_path(self):
         if not hasattr(self, "canvas"):

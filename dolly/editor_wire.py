@@ -13,13 +13,13 @@ STATUS_OFFSET = 2 * 1024 * 1024 + 2048
 EDITOR_ABI = 1
 CONFIG_MAGIC = b"DLYEDIT1"
 STATUS_MAGIC = b"DLYEDS01"
-CONFIG = struct.Struct("<8s10I2d52H96s128s2diI32s")
+CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI20s")
 HEADER = struct.Struct("<8s8Id7d128sdiIQ")
 EVENT = struct.Struct("<IId7diI")
 EVENT_COUNT = 16
 STATUS_BYTES = HEADER.size + EVENT.size * EVENT_COUNT
 OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused")
-EXTRA_ACTIONS = ("console", "set_speed", "select_view")
+EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate")
 
 
 def _text(value, capacity):
@@ -60,6 +60,9 @@ def pack_config(sequence, owner_sequence, ack_event, values):
     tick = values.get("replay_tick", 0)
     if isinstance(tick, bool) or not isinstance(tick, int) or not -0x80000000 <= tick <= 0x7fffffff:
         raise ValueError("Invalid replay tick")
+    playback_rate = _uint(values.get("playback_rate", 60), "playback update rate")
+    if playback_rate not in (30, 60, 120):
+        raise ValueError("Native editor playback update rate must be 30, 60, or 120")
     return CONFIG.pack(
         CONFIG_MAGIC, _uint(sequence, "sequence"), EDITOR_ABI, int(enabled), OWNERS.index(owner),
         _uint(owner_sequence, "owner sequence"), selected, count, _uint(ack_event, "event acknowledgement"),
@@ -69,7 +72,9 @@ def pack_config(sequence, owner_sequence, ack_event, values):
         *wire, _text(values.get("shot_name", "Untitled shot"), 96), _text(values.get("message", ""), 128),
         _finite(values.get("duration", 0), 0, 1e9, "duration"),
         _finite(values.get("playhead", 0), 0, 1e9, "playhead"), tick,
-        int(bool(values.get("playing", False))) | int(bool(values.get("busy", False))) << 1, b"\0" * 32)
+        int(bool(values.get("playing", False))) | int(bool(values.get("busy", False))) << 1,
+        _finite(values.get("playback_speed", 1.0), .05, 4, "playback speed"),
+        playback_rate, b"\0" * 20)
 
 
 def unpack_status(data, ack_event=0):
@@ -109,4 +114,6 @@ def unpack_status(data, ack_event=0):
             "console_open": owner == 4, "game_ui": owner == 3,
             "selected_camera": selected, "camera_count": count, "last_event": latest, "dropped_events": dropped,
             "speed": speed, "applied_pose": pose, "message": message.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
+            "visualization_state": ({0: "disconnected", 1: "waiting", 2: "ready", 3: "disabled",
+                                     4: "invalid", 5: "updating", 6: "unavailable"}.get(reserved, "unknown")),
             "phase": phase, "tick": tick, "frame_count": frames, "events": events}

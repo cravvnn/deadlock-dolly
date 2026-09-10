@@ -268,6 +268,7 @@ void atomic_exports() {
 // Test the production typed effect binding and lifecycle with synthetic convars.
 Allocation* effect_data=nullptr;
 bool reject_effect_write=false;
+unsigned vector_effect_writes=0;
 void* __fastcall find_effect(void*,std::uint64_t* out,const char* name,int) {
  *out=0xffffffff;
  for(unsigned i=0;i<kEffects.size();++i)if(!std::strcmp(name,kEffects[i].name))*out=i;
@@ -280,7 +281,8 @@ void __fastcall set_effect(CvarRef* ref,int slot,const void* value,void* current
  require(slot==0&&context==nullptr,"Incorrect verified setter call arguments");
  require(current==reinterpret_cast<void*>(ref->data+0x58),"Setter used an incorrect value slot");
  if(reject_effect_write)return;
- std::memcpy(current,value,kEffects[ref->id].type==0?1:4);
+ if(kEffects[ref->id].components==4)++vector_effect_writes;
+ std::memcpy(current,value,kEffects[ref->id].type==0?1:4*kEffects[ref->id].components);
 }
 void effect_checks(Fixture& f) {
  Allocation values{4096};effect_data=&values;
@@ -349,6 +351,26 @@ void effect_checks(Fixture& f) {
  shot->effects[0].restore_override=true;shot->effects[0].restore=123;
  f.fresh_hold();command(Mode::Hold);f.frame();command(Mode::Release);status=f.frame();
  read_value(values.address()+0x100+0x58,restored);require(restored==123&&!status.error,"Restore override was lost");
+ // Four authored lanes must become one typed Vector4 write and restore.
+ auto vector_shot=std::make_shared<NativeShot>();vector_shot->camera=*f.path;
+ const std::array<float,4> original{{-100,0,180,2000}};
+ put(values.address()+8*0x100+0x58,original);
+ for(unsigned component=0;component<4;++component){
+  EffectTrack lane;lane.id=8;lane.component=component;lane.last_time=1;
+  lane.first=10+component;lane.last=20+component;
+  lane.segments.push_back({0,1,1,1,lane.first,lane.last,0,0});vector_shot->effects.push_back(lane);
+ }
+ gExtendedCvarSupported=false;
+ require(!gEffects.apply(vector_shot,0)&&gEffects.count==0,"Unverified Vector4 profile was accepted");
+ gExtendedCvarSupported=true;vector_effect_writes=0;
+ require(gEffects.apply(vector_shot,.5)&&gEffects.count==1&&vector_effect_writes==1,"Vector was not written once as a complete value");
+ EffectValue vector_value{};require(gEffects.bindings[0].read(vector_value),"Vector readback failed");
+ for(unsigned component=0;component<4;++component)require(vector_value[component]==15+component,"Vector lane order changed");
+ require(gEffects.apply(vector_shot,.5)&&vector_effect_writes==1,"Unchanged vector was rewritten");
+ require(gEffects.restore()&&vector_effect_writes==2,"Vector original was not restored in one call");
+ std::array<float,4> restored_vector{};read_value(values.address()+8*0x100+0x58,restored_vector);
+ require(restored_vector==original,"Vector restore lost a component");
+ gExtendedCvarSupported=false;
  gCvar=0;gFindCvar=nullptr;gGetCvarData=nullptr;gSetCvar=nullptr;effect_data=nullptr;
 }
 
@@ -625,6 +647,28 @@ void run() {
     require(dolly::gAcknowledged==kEditorEventCount,"Contended acknowledgement was lost after accepting config");
     close_to(editor_snapshot().sensitivity,10,"Native sensitivity limit differs from Python settings");
     require(editor_enqueue(EditorAction::Capture),"Acknowledged ring space was not reusable");
+    // Playback settings use appended event IDs and the existing shared
+    // configuration; they must never alter the live camera clock.
+    config.sequence+=2;config.playback_speed=.1;config.playback_rate=120;
+    std::memcpy(f.mapping.data()+kEditorConfigOffset,&config,sizeof(config));
+    editor_worker_tick(f.mapping.data(),true);
+    close_to(editor_snapshot().playback_speed,.1,"In-game playback speed differs from the desktop setting");
+    require(editor_snapshot().playback_rate==120,"In-game update rate differs from the desktop setting");
+    const auto before_settings=dolly::gLastEvent;
+    require(!editor_enqueue(EditorAction::SetPlaybackSpeed,0)&&!editor_enqueue(EditorAction::SetPlaybackSpeed,4.1),"Invalid playback speed entered the event queue");
+    require(!editor_enqueue(EditorAction::SetPlaybackRate,90),"Invalid playback rate entered the event queue");
+    require(editor_enqueue(EditorAction::SetPlaybackSpeed,.25)&&editor_enqueue(EditorAction::SetPlaybackRate,60),"Playback controls could not queue valid choices");
+    require(dolly::gLastEvent==before_settings+2,"Playback control validation changed event numbering");
+    const auto& speed_event=dolly::gEvents[before_settings%kEditorEventCount];
+    const auto& rate_event=dolly::gEvents[(before_settings+1)%kEditorEventCount];
+    require(speed_event.action==29&&speed_event.value==.25&&rate_event.action==30&&rate_event.value==60,"Playback action IDs or values differ from Python");
+    config.sequence+=2;config.playback_flags=1;
+    std::memcpy(f.mapping.data()+kEditorConfigOffset,&config,sizeof(config));
+    editor_worker_tick(f.mapping.data(),true);
+    require(!editor_enqueue(EditorAction::SetPlaybackSpeed,1)&&!editor_enqueue(EditorAction::SetPlaybackRate,30),"Playback controls changed settings during a playing shot");
+    config.sequence+=2;config.playback_flags=0;
+    std::memcpy(f.mapping.data()+kEditorConfigOffset,&config,sizeof(config));
+    editor_worker_tick(f.mapping.data(),true);
     f.manual();dolly::gInput=false;status=f.frame();require(status.error==19,"Manual flight bypassed missing input hooks");f.unchanged();dolly::gInput=true;
     f.manual();seeking=true;status=f.frame();require(status.error==12,"Manual flight ignored a replay seek");f.unchanged();seeking=false;
     f.manual();gHeartbeatTime=now_seconds()-3;status=f.frame(0,false);require(status.error==10,"Manual flight retained camera after editor loss");f.unchanged();

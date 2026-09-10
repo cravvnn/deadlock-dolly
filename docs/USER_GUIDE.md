@@ -195,10 +195,16 @@ Rotation still uses Euler angle curves. `shortest` crosses yaw/roll wrap
 boundaries by the shorter route; `unwrapped` permits an intentional 0 → 360
 turn. This stage does not replace the established path clock or spline math.
 
-The desktop XY path overview is not an in-world overlay. In-game camera
-markers, spline visualization and expanded position/rotation/aspect curve
-editing remain Stage 2. Video export and depth/world/hero/effect passes remain
-Stage 3. ReShade coexistence is unverified; test it separately after clean DX11.
+The F8 panel's **Show path guides** displays numbered camera positions,
+facing directions and the spline in the game during paused flight. The selected
+view is gold. Guides show through walls and hide during playback, game UI,
+console use and loss of focus. Camera glyphs indicate orientation and aspect;
+they are not live previews or exact lens frustums. Large paths draw a reduced
+set of markers and always include the selected view. The desktop XY overview
+remains available.
+
+Expanded in-game position/rotation/aspect curve editing remains Stage 2. Video
+export and depth/world/hero/effect passes remain Stage 3. ReShade coexistence is unverified; test it separately after clean DX11.
 
 ## Framing curve
 
@@ -288,7 +294,7 @@ frozen preview determines whether replay time advances during playback.
 
 ## Depth of field and other camera variables
 
-On **Effects**, use **+ Depth-of-field preset** as a starting point. The preset
+On **Effects**, use **+ Citadel DOF** as a starting point. The preset
 enables the native Citadel DOF controls and creates focus and aperture tracks.
 Select each track and edit its time/value keys. Increase the preset's aperture
 only as much as the shot needs; the effect must be checked at your game settings.
@@ -381,17 +387,19 @@ restoration behavior. Other camera cvars require Console mode.
 - **Stop / restore** restores the captured cvar baseline (including the exact original `r_aspectratio`) and returns replay
   speed to **1×** if Dolly changed it. It leaves replay time paused and returns
   native camera ownership to the game; the underlying spectator view can differ. Previous replay speed is not queried.
-- Playback speed is 0.05×–4×. Updates / s choices are 30/60/120. They control
+- Playback speed is 0.05×–4×. F8 shares **Playback speed** and **Updates / s**
+  with the desktop. Stop the current shot before changing them. Updates / s
+  choices are 30/60/120. They control
   camera commands with Console, and editor monitoring with Native. They do
   not set the game's render or recording frame rate.
 - On supported Windows versions, frame pacing uses a dedicated high-resolution
   waitable timer. An unavailable timer falls back to normal event waits and is
   reported in diagnostics. No system-wide timer setting is changed.
 
-The new native input/render integration is restricted to reviewed builds and
-still needs a Windows/Deadlock run. Console remains available for comparison.
-Neither driver records video in Stage 1; use existing capture software. Complete
-[STAGE1_TESTING.md](STAGE1_TESTING.md) before publishing the alpha to users.
+Native input/render integration is restricted to reviewed game builds. Console
+remains available for comparison. Neither driver records video; capture uses
+existing recording software. Runtime checks are listed in
+[STAGE1_TESTING.md](STAGE1_TESTING.md) and [STAGE2_TESTING.md](STAGE2_TESTING.md).
 
 ## Experimental playback smoothing
 

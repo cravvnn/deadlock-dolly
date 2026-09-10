@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.4 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.5 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -68,12 +68,35 @@ while the scene stays paused. Stop / restore returns to the game's camera,
 which may be elsewhere, and restores camera settings.
 
 
+IN-GAME PLAYBACK AND PATH GUIDES
+
+F8 opens Playback speed, Updates / s and Show path guides. Speed changes the
+next shot's playback rate; Updates / s controls monitoring in Native mode.
+Camera and supported effects still follow every rendered frame. Stop playback
+before changing those settings. Desktop and in-game choices stay synchronized.
+
+Path guides show camera positions, facing direction and the authored spline
+while editing in paused flight. The selected camera is gold. Guides hide during
+playback, console use and the game UI. They show through walls and are editing
+guides; the camera glyphs are not live camera thumbnails. Large paths reduce
+marker density while keeping the selected view visible.
+
+On the desktop Effects tab, + Range DOF adds r_dof_override_ranges. Enter four
+numbers separated by spaces: near blurry, near crisp, far crisp, far blurry.
+Example: -100 0 180 2000. Each component can animate with the shot. Four zeros
+turn off the direct range override. + Citadel DOF keeps the existing preset.
+Vector shots save as project format 3 and require this or a newer version;
+existing scalar-only shots keep format 2.
+
+Supported commands and examples: Supported_Camera_Cvars.md
+Machine-readable list: Supported_Camera_Cvars.json
+
+
 COMPATIBILITY AND UPDATES
 
-0.4.4 is an alpha. The DX11 vertex-buffer crash remains under investigation.
-This update fixes temporary-session cleanup and adds read-only graphics diagnostics.
-ReShade compatibility is unverified. In-world path markers, full
-in-game curve editing and video/render-pass export are planned for later updates.
+0.4.5 is an alpha. New path guides and range DOF need checking against the
+installed game build. ReShade compatibility is unverified. Expanded in-game
+curve editing remains Stage 2; video/render-pass export remains Stage 3.
 
 Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains

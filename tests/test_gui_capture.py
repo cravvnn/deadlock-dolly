@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dolly.gui import DollyApp, FIELDS
+from dolly.editor_session import dispatch as dispatch_editor_action
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING
 from dolly.settings import AppSettings
 from dolly.path import STANDARD_ASPECT, Keyframe, Project, CvarTrack, TrackKey
@@ -314,6 +315,19 @@ class GuiCaptureTests(unittest.TestCase):
                 self.harness.finish()
                 self.assertEqual(self.app.controller.play.call_args.kwargs["smoothing"], choice.lower())
                 self.assertEqual(self.app.project, original)
+        self.assertEqual(self.harness.errors, [])
+
+    def test_in_game_playback_choices_are_used_by_the_next_desktop_play_shot(self):
+        self.harness.capture()
+        self.app._snapshot = lambda: self.app.project
+        self.app.controller.play = Mock()
+        self.app.controller._native_bridge = lambda: None
+        for action, value in (("set_playback_speed", .1), ("set_playback_rate", 120)):
+            self.assertTrue(dispatch_editor_action(self.app, {"action": action, "value": value}, Mock()))
+        self.app._play()
+        self.harness.finish()
+        settings = self.app.controller.play.call_args.kwargs
+        self.assertEqual((settings["speed"], settings["rate"]), (.1, 120))
         self.assertEqual(self.harness.errors, [])
 
     def test_invalid_smoothing_keeps_paused_controls_and_does_not_queue_playback(self):

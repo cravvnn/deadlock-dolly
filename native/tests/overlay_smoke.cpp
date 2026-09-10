@@ -3,6 +3,7 @@
 #include "dolly_overlay.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_renderer_diagnostics.hpp"
+#include "dolly_visualization_runtime.hpp"
 #include "MinHook.h"
 #include "imgui.h"
 #include <d3d11.h>
@@ -13,7 +14,7 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
-#include <vector>
+#include <string>
 
 namespace {
 bool available=false;
@@ -22,6 +23,162 @@ dolly::EditorSnapshot snapshot;
 bool observed_mouse_down[5]{};
 bool present_keeps_os_cursor=false;
 void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
+
+void append_u32(std::vector<unsigned char>& out,std::uint32_t value){
+ for(unsigned i=0;i<4;++i)out.push_back(static_cast<unsigned char>(value>>(8*i)));
+}
+void append_double(std::vector<unsigned char>& out,double value){
+ std::uint64_t bits=0;std::memcpy(&bits,&value,sizeof(bits));
+ for(unsigned i=0;i<8;++i)out.push_back(static_cast<unsigned char>(bits>>(8*i)));
+}
+std::vector<unsigned char> viewer_packet(){
+ // These two synthetic cameras project to the right of the panel. Their
+ // connecting segment and glyphs must remain visible in paused flight.
+ const dolly::CameraPose a{100,-60,0,0,0,0,4.0/3.0};
+ const dolly::CameraPose b{100,-90,15,0,0,0,4.0/3.0};
+ std::vector<unsigned char> path{'D','L','Y','P','A','T','H',0};
+ append_u32(path,1);append_u32(path,1);append_u32(path,7);append_u32(path,0);
+ append_double(path,3);append_double(path,0);append_double(path,3);
+ for(double value:a)append_double(path,value);
+ for(double value:b)append_double(path,value);
+ append_double(path,0);append_double(path,3);
+ for(unsigned i=0;i<7;++i){
+  append_u32(path,1);append_u32(path,i>=3?1:0);
+  append_double(path,a[i]);append_double(path,b[i]);append_double(path,0);append_double(path,0);
+ }
+ std::vector<unsigned char> packet{'D','L','Y','V','I','S','0','1'};
+ append_u32(packet,2);append_u32(packet,1);append_u32(packet,1);append_u32(packet,1);
+ append_u32(packet,2);append_u32(packet,static_cast<std::uint32_t>(path.size()));
+ append_u32(packet,128);append_u32(packet,8);packet.resize(dolly::kVisualizationHeaderBytes);
+ append_double(packet,0);append_double(packet,3);
+ packet.insert(packet.end(),path.begin(),path.end());return packet;
+}
+class SyntheticViewer {
+ HANDLE mapping=nullptr;
+ unsigned char* memory=nullptr;
+ std::wstring name,viewer_name;
+ std::uint32_t sequence=0;
+public:
+ SyntheticViewer(){
+  name=L"Local\\Dolly.Overlay.Smoke."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(GetTickCount64());
+  viewer_name=name+L".viewer";
+  dolly::visualization_worker_tick(name.c_str(),true);
+  require(dolly::visualization_runtime_state()==dolly::VisualizationRuntimeState::Waiting&&
+          !dolly::visualization_snapshot(),"Missing optional viewer mapping must not publish guides");
+  dolly::visualization_worker_tick(name.c_str(),false);
+  mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,
+                            static_cast<DWORD>(dolly::kVisualizationMappingBytes),viewer_name.c_str());
+  require(mapping!=nullptr,"Could not create synthetic viewer mapping");
+  memory=static_cast<unsigned char*>(MapViewOfFile(mapping,FILE_MAP_ALL_ACCESS,0,0,dolly::kVisualizationMappingBytes));
+  if(!memory){CloseHandle(mapping);mapping=nullptr;throw std::runtime_error("Could not map synthetic viewer packet");}
+  publish(viewer_packet());dolly::visualization_worker_tick(name.c_str(),true);
+  const auto path=dolly::visualization_snapshot();
+  require(dolly::visualization_runtime_state()==dolly::VisualizationRuntimeState::Ready&&
+          path&&path->enabled()&&path->camera_count()==2,"Valid optional viewer mapping did not publish cameras");
+ }
+ ~SyntheticViewer(){close();}
+ void close()noexcept{
+  dolly::visualization_worker_tick(name.c_str(),false);
+  if(memory){UnmapViewOfFile(memory);memory=nullptr;}
+  if(mapping){CloseHandle(mapping);mapping=nullptr;}
+ }
+ void publish(const std::vector<unsigned char>& packet){
+  require(packet.size()>=12&&packet.size()<=dolly::kVisualizationMappingBytes,"Invalid synthetic viewer packet size");
+  sequence+=2;
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(memory+8),static_cast<LONG>(sequence-1));
+  std::memcpy(memory,packet.data(),8);
+  std::memcpy(memory+12,packet.data()+12,packet.size()-12);
+  MemoryBarrier();
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(memory+8),static_cast<LONG>(sequence));
+ }
+ void tick(){Sleep(110);dolly::visualization_worker_tick(name.c_str(),true);}
+ void check_lifecycle(){
+  const auto before=dolly::visualization_snapshot();
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(memory+8),static_cast<LONG>(sequence+1));
+  tick();
+  require(dolly::visualization_runtime_state()==dolly::VisualizationRuntimeState::Updating&&
+          dolly::visualization_snapshot()==before,"In-progress viewer write must retain the last complete snapshot");
+  auto invalid=viewer_packet();invalid[0]='X';publish(invalid);tick();
+  require(dolly::visualization_runtime_state()==dolly::VisualizationRuntimeState::Invalid&&
+          !dolly::visualization_snapshot(),"Invalid viewer packet left stale guides active");
+  publish(viewer_packet());tick();
+  require(dolly::visualization_runtime_state()==dolly::VisualizationRuntimeState::Ready&&
+          dolly::visualization_snapshot(),"Viewer did not recover after a valid replacement packet");
+  close();
+  require(dolly::visualization_runtime_state()==dolly::VisualizationRuntimeState::Disconnected&&
+          !dolly::visualization_snapshot(),"Disconnected editor left guides active");
+  HANDLE remaining=OpenFileMappingW(FILE_MAP_READ,FALSE,viewer_name.c_str());
+  if(remaining)CloseHandle(remaining);
+  require(remaining==nullptr,"Viewer retained its mapping after disconnect");
+ }
+};
+
+struct DrawRegions {std::size_t panel=0,guides=0;};
+DrawRegions render_regions(IDXGISwapChain* chain,ID3D11Device* device,ID3D11DeviceContext* context,
+                           ID3D11RenderTargetView* target,ID3D11Texture2D* backbuffer){
+ // Compare broad regions rather than exact antialiased pixels or UI text
+ // positions. Clear each frame so hidden guides cannot pass with old pixels.
+ const FLOAT clear[4]={.04f,.08f,.95f,1};
+ context->ClearRenderTargetView(target,clear);context->OMSetRenderTargets(1,&target,nullptr);
+ require(SUCCEEDED(chain->Present(0,0)),"Viewer visibility Present failed");
+ D3D11_TEXTURE2D_DESC desc{};backbuffer->GetDesc(&desc);
+ desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+ desc.BindFlags=0;desc.MiscFlags=0;ID3D11Texture2D* staging=nullptr;
+ require(SUCCEEDED(device->CreateTexture2D(&desc,nullptr,&staging)),"Viewer readback texture creation failed");
+ context->CopyResource(staging,backbuffer);D3D11_MAPPED_SUBRESOURCE pixels{};
+ if(FAILED(context->Map(staging,0,D3D11_MAP_READ,0,&pixels))){
+  staging->Release();throw std::runtime_error("Viewer backbuffer readback failed");
+ }
+ DrawRegions result;
+ for(UINT y=40;y<desc.Height-40;++y){
+  const auto* row=static_cast<const unsigned char*>(pixels.pData)+y*pixels.RowPitch;
+  for(UINT x=30;x<desc.Width-10;++x){
+   const auto* pixel=row+x*4;
+   const bool changed=pixel[0]<7||pixel[0]>13||pixel[1]<17||pixel[1]>23||pixel[2]<239||pixel[2]>245;
+   if(changed){if(x<450)++result.panel;else if(x>540)++result.guides;}
+  }
+ }
+ context->Unmap(staging,0);staging->Release();return result;
+}
+void check_guide_visibility(IDXGISwapChain* chain,ID3D11Device* device,ID3D11DeviceContext* context,
+                            ID3D11RenderTargetView* target,ID3D11Texture2D* backbuffer){
+ const auto original=snapshot;
+ snapshot.owner=dolly::EditorOwner::Flight;
+ const auto flight=snapshot;
+ auto draw=[&](){return render_regions(chain,device,context,target,backbuffer);};
+ auto pixels=draw();
+ require(pixels.guides>30&&pixels.panel==0,"Paused flight did not render visible camera guides without the panel");
+ snapshot.owner=dolly::EditorOwner::Panel;pixels=draw();
+ require(pixels.panel>100&&pixels.guides>30,"Opening the panel hid the paused camera guides");
+ snapshot.playing=true;pixels=draw();
+ require(pixels.panel>100&&pixels.guides==0,"Playback must hide guides while keeping the open panel visible");
+ struct HiddenCase{const char* reason;unsigned field;};
+ const HiddenCase cases[]={
+  {"Shot playback",0},{"Running replay",1},{"Game UI",2},{"Console",3},{"Unfocused owner",4},
+  {"Lost game focus",5},{"Unready replay",6},{"Native flight inactive",7},{"Busy editor",8},
+  {"Unknown viewport",9},{"Disabled editor",10},{"Camera facing away",11},{"Unknown view lens",12}
+ };
+ for(const auto& test:cases){
+  snapshot=flight;
+  switch(test.field){
+   case 0:snapshot.playing=true;break;case 1:snapshot.paused=false;break;
+   case 2:snapshot.owner=dolly::EditorOwner::GameUI;break;
+   case 3:snapshot.owner=dolly::EditorOwner::Console;break;
+   case 4:snapshot.owner=dolly::EditorOwner::Unfocused;break;
+   case 5:snapshot.focused=false;break;case 6:snapshot.ready=false;break;
+   case 7:snapshot.manual_active=false;break;case 8:snapshot.busy=true;break;
+   case 9:snapshot.view_width=0;break;case 10:snapshot.enabled=false;break;
+   case 11:snapshot.pose[4]=180;break;case 12:snapshot.horizontal_fov=0;break;
+  }
+  pixels=draw();
+  if(pixels.panel||pixels.guides){
+   char message[128]{};std::snprintf(message,sizeof(message),"%s left editing graphics visible",test.reason);
+   throw std::runtime_error(message);
+  }
+ }
+ snapshot=original;
+ std::puts("DX11 WARP viewer: paused flight/panel drawing and playback/UI/focus visibility gates passed.");
+}
 
 struct BufferLifetime {std::atomic<bool> retired{false};};
 // SetPrivateDataInterface holds one COM reference until the owning device
@@ -98,6 +255,7 @@ void stress_game_buffer_lifetimes(IDXGISwapChain* chain,ID3D11Device* device,
   for(int frame=0;frame<frames;++frame){
    MSG message{};while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}
    snapshot.owner=owners[(frame/4)%3];
+   require(dolly::visualization_snapshot()!=nullptr,"Buffer lifetime stress lost its camera guides");
    D3D11_BUFFER_DESC buffer_desc{};buffer_desc.ByteWidth=1024;
    buffer_desc.Usage=D3D11_USAGE_DEFAULT;buffer_desc.BindFlags=D3D11_BIND_VERTEX_BUFFER;
    ID3D11Buffer* vertex=nullptr;ID3D11Buffer* index=nullptr;
@@ -129,7 +287,7 @@ void stress_game_buffer_lifetimes(IDXGISwapChain* chain,ID3D11Device* device,
   }
  }catch(...){completed->Release();throw;}
  completed->Release();snapshot.owner=dolly::EditorOwner::Panel;
- std::puts("DX11 WARP lifetime stress: 384 owner-toggle frames, 768 game buffers retired.");
+ std::puts("DX11 WARP lifetime stress: 384 panel/guide/game-UI frames, 768 game buffers retired.");
 }
 }
 namespace dolly {
@@ -188,6 +346,9 @@ int main(){
   require(MH_Initialize()==MH_OK,"MinHook initialization failed");
   require(dolly::install_overlay_hooks(),"DXGI public-method hook installation failed");
   snapshot.enabled=true;snapshot.focused=true;snapshot.ready=true;snapshot.paused=true;
+  snapshot.manual_active=true;snapshot.horizontal_fov=90;snapshot.view_width=800;snapshot.view_height=600;
+  snapshot.pose={0,0,0,0,0,0,4.0/3.0};
+  SyntheticViewer viewer;
   snapshot.owner=dolly::EditorOwner::Panel;snapshot.camera_count=2;snapshot.duration=3;
   std::snprintf(snapshot.shot_name,sizeof(snapshot.shot_name),"Synthetic editor smoke");
   ID3D11Texture2D* backbuffer=nullptr;ID3D11RenderTargetView* target=nullptr;
@@ -219,7 +380,9 @@ int main(){
   const bool drawn=sample[2]<180;
   context->Unmap(staging,0);staging->Release();
   require(drawn,"Present ran but the in-game panel did not change the backbuffer");
+  check_guide_visibility(chain,device,context,target,backbuffer);
   stress_game_buffer_lifetimes(chain,device,context,target);
+  viewer.check_lifecycle();
   // F9 gives Deadlock its own mouse capture for hero/replay UI interaction.
   // A hidden ImGui backend used to receive every mouse-up and ReleaseCapture
   // even when Dolly did not own the click. Do not touch that capture.
@@ -253,7 +416,7 @@ int main(){
   require(!available&&attached==nullptr,"Shutdown did not release editor ownership");
   require(GetWindowLongPtrW(window,GWLP_WNDPROC)==before_proc,"Shutdown did not restore the original window callback");
   context->Release();device->Release();chain->Release();DestroyWindow(window);UnregisterClassW(wc.lpszClassName,instance);
-  std::puts("DX11 WARP overlay: render, state restoration, buffer retirement, resize and UI mouse ownership passed.");return 0;
+  std::puts("DX11 WARP overlay: panel/guides, mapping lifecycle, state restoration, buffer retirement, resize and UI mouse ownership passed.");return 0;
  }catch(const std::exception& error){
   dolly::shutdown_overlay();std::fprintf(stderr,"Overlay smoke failed: %s\n",error.what());return 1;
  }

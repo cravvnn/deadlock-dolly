@@ -1,4 +1,4 @@
-# Native DOF curves — 0.4.0 alpha
+# Native DOF curves — 0.4.5 alpha
 
 Native mode now publishes DOF curves with the camera path. The game evaluates
 both at the same main-view shot phase. It uses the verified native typed cvar
@@ -8,15 +8,21 @@ use the same bounded cubic interpolation as the editor.
 
 ## Supported controls
 
-| Variable | Values | Curve |
-| --- | --- | --- |
-| `r_citadel_depthoffield_enable` | 0 or 1 | Step |
-| `r_citadel_depthoffield_focus_distance` | 0–10,000 | Smooth, Linear or Step |
-| `r_citadel_depthoffield_aperture_diameter` | 0–3 | Smooth, Linear or Step |
-| `r_citadel_depthoffield_sensor_size` | 0.5–3 | Smooth, Linear or Step |
-| `r_citadel_depthoffield_mode` | 0, 1 or 2 | Step |
-| `r_citadel_depthoffield_debug` | 0 or 1 | Step |
-| `r_depth_of_field` | 0 or 1 | Step |
+The complete table and JSON catalog are in
+[SUPPORTED_CAMERA_CVARS.md](SUPPORTED_CAMERA_CVARS.md) and
+[SUPPORTED_CAMERA_CVARS.json](SUPPORTED_CAMERA_CVARS.json). There are fourteen
+native effect controls, including the four-component `r_dof_override_ranges`.
+Use **+ Range DOF** for the new range track or **+ Citadel DOF** for the existing
+focus/aperture preset. Range key values and optional restore values accept
+four numbers separated by spaces, in near blurry / near crisp / far crisp /
+far blurry order. A value such as `-100 0 180 2000` is accepted.
+
+All components of a range key evaluate at the camera's shot phase and enter
+one typed setter call; they are not sent as four console commands. Four zeros
+turns off the direct range override. Range/tilt controls require the reviewed
+September 9 tier0 build; the older reviewed tier0 retains the original seven
+controls. Unsupported native types/profiles fail before any effect writes.
+Vector shots use project format 3; scalar-only shots retain format 2.
 
 These support both fixed shot values and animated tracks. Framing continues to
 use the native aspect-ratio camera curve. Other camera variables remain
@@ -31,7 +37,7 @@ them through an asynchronous fallback or claim they are synchronized.
    matching editor and native helper. Close the old editing game before updating.
 2. Use Home → Play replay to initialize the unlocker in the hideout before
    loading and pausing the selected replay with the native camera.
-3. In Effects, use **+ Depth-of-field preset**. This adds animated
+3. In Effects, use **+ Citadel DOF**. This adds animated
    focus/aperture and fixed enable switches. Edit the keys as usual.
 4. Play the shot. Native camera and supported DOF curves use the same phase.
    Updates / s affects editor monitoring, not native camera/DOF delivery.
@@ -64,7 +70,7 @@ existing Stop / restore snapshot.
 
 The supplied `tier0.dll` SHA-256 is pinned alongside the existing client/engine
 fingerprints. The VEngineCvar007 table, lookup/data accessors, setter prologue,
-scalar types and flags are checked. The game DLLs are never distributed. The
+scalar/Vector4 types and flags are checked. The game DLLs are never distributed. The
 launcher retains development mode, `-insecure` and local-replay restrictions.
 
 The camera's clock, interpolation coefficients and view-write positions are

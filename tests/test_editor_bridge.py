@@ -59,6 +59,25 @@ class EditorBridgeTests(unittest.TestCase):
             self.bridge.configure_editor(speed=float("nan"))
         self.assertEqual(bytes(self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]), before)
 
+    def test_playback_controls_use_reserved_config_space_and_keep_offsets(self):
+        self.assertEqual(w.CONFIG.size, 448)
+        self.bridge.configure_editor(playback_speed=.1, playback_rate=120)
+        config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
+        self.assertEqual(struct.unpack_from("<dI", config, 416), (.1, 120))
+        self.assertEqual(config[428:], b"\0"*20)
+        before = bytes(config)
+        for setting in ({"playback_speed": 0}, {"playback_speed": float("nan")},
+                        {"playback_rate": 90}, {"playback_rate": 60.0}, {"playback_rate": True}):
+            with self.subTest(setting=setting), self.assertRaises(ValueError):
+                self.bridge.configure_editor(**setting)
+            self.assertEqual(bytes(self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]), before)
+
+    def test_playback_action_ids_preserve_existing_action_order(self):
+        self.publish([(1, 28, 1), (2, 29, .25), (3, 30, 120)])
+        events = self.bridge.editor_status()["events"]
+        self.assertEqual([(event["action"], event["value"]) for event in events],
+                         [("select_view", 1), ("set_playback_speed", .25), ("set_playback_rate", 120)])
+
     def test_capture_keeps_pose_tick_and_event_order_and_ack_is_exactly_once(self):
         self.publish([(2, 26, 0), (1, 0, 0)])
         status = self.bridge.editor_status()

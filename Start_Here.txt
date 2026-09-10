@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.4 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.4.5 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -93,9 +93,33 @@ stays paused. Stop / restore releases the camera and restores its settings;
 the game's spectator view may be elsewhere.
 
 Supported native DOF curves run at the same rendered-view phase as the camera.
-The seven supported controls are listed in docs/NATIVE_EFFECTS.md. Updates / s
+The fourteen supported controls are listed in docs/SUPPORTED_CAMERA_CVARS.md. Updates / s
 sets the monitoring rate in Native mode. Playback smoothing applies only to
 Console (legacy).
+
+
+IN-GAME PLAYBACK AND PATH GUIDES
+
+F8 opens Playback speed, Updates / s and Show path guides. Speed changes the
+next shot's playback rate; Updates / s controls monitoring in Native mode.
+Camera and supported effects still follow every rendered frame. Stop playback
+before changing those settings. Desktop and in-game choices stay synchronized.
+
+Path guides show camera positions, facing direction and the authored spline
+while editing in paused flight. The selected camera is gold. Guides hide during
+playback, console use and the game UI. They show through walls and are editing
+guides; the camera glyphs are not live camera thumbnails. Large paths reduce
+marker density while keeping the selected view visible.
+
+On the desktop Effects tab, + Range DOF adds r_dof_override_ranges. Enter four
+numbers separated by spaces: near blurry, near crisp, far crisp, far blurry.
+Example: -100 0 180 2000. Each component can animate with the shot. Four zeros
+turn off the direct range override. + Citadel DOF keeps the existing preset.
+Vector shots save as project format 3 and require this or a newer version;
+existing scalar-only shots keep format 2.
+
+Supported commands and examples: docs/SUPPORTED_CAMERA_CVARS.md
+Machine-readable list: docs/SUPPORTED_CAMERA_CVARS.json
 
 
 COMPATIBILITY
@@ -104,10 +128,9 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.4.4 is an alpha. The DX11 vertex-buffer crash remains under investigation.
-This update fixes temporary-session cleanup and adds read-only graphics diagnostics.
-ReShade compatibility is unverified. In-world path markers, full
-in-game curve editing and video/render-pass export are planned for later updates.
+0.4.5 is an alpha. New path guides and range DOF need checking against the
+installed game build. ReShade compatibility is unverified. Expanded in-game
+curve editing remains Stage 2; video/render-pass export remains Stage 3.
 Technical details and validation results are in docs/VALIDATION.md.
 
 
@@ -115,7 +138,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.4.4 uses
+logs, including any recovery backup. Use the complete new package; 0.4.5 uses
 ABI 3 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

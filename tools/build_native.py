@@ -129,6 +129,7 @@ def build_native(root: Path = ROOT) -> dict:
             "built_utc": datetime.now(timezone.utc).isoformat(),
             "compiler": "Visual Studio 17 2022", "configuration": "Release",
             "runtime": "static", "native_path_tests_passed": True,
+            "native_effect_tests_passed": True, "native_visualization_tests_passed": True,
             "native_callback_tests_passed": True,
             "native_flight_tests_passed": True, "native_overlay_tests_passed": True,
             "game_runtime_verified": False, "pe": report}

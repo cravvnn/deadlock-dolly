@@ -21,6 +21,9 @@ docs/HISTORY_VALIDATION.md
 docs/NATIVE_CAMERA.md
 docs/NATIVE_EFFECTS.md
 docs/STAGE1_TESTING.md
+docs/STAGE2_TESTING.md
+docs/SUPPORTED_CAMERA_CVARS.json
+docs/SUPPORTED_CAMERA_CVARS.md
 docs/USER_GUIDE.md
 docs/VALIDATION.md
 dolly/__init__.py
@@ -53,6 +56,7 @@ dolly/runtime.py
 dolly/session_cleanup.py
 dolly/settings.py
 dolly/smoothing.py
+dolly/visualization_wire.py
 examples/demo_shot.dolly.json
 native/CMakeLists.txt
 native/bin/win64/DollyNative.dll
@@ -64,6 +68,8 @@ native/include/dolly_overlay.hpp
 native/include/dolly_path.hpp
 native/include/dolly_protocol.hpp
 native/include/dolly_renderer_diagnostics.hpp
+native/include/dolly_visualization.hpp
+native/include/dolly_visualization_runtime.hpp
 native/profiles/deadlock-2026-09-09-complete.json
 native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json
 native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
@@ -73,12 +79,15 @@ native/src/dolly_effects.cpp
 native/src/dolly_overlay_win.cpp
 native/src/dolly_path.cpp
 native/src/dolly_renderer_diagnostics_win.cpp
+native/src/dolly_visualization.cpp
+native/src/dolly_visualization_runtime_win.cpp
 native/src/native_effects_win.hpp
 native/tests/bridge_smoke.cpp
 native/tests/effect_tests.cpp
 native/tests/flight_tests.cpp
 native/tests/overlay_smoke.cpp
 native/tests/path_tests.cpp
+native/tests/visualization_tests.cpp
 native/vendor/imgui/LICENSE.txt
 native/vendor/imgui/UPSTREAM.json
 native/vendor/imgui/backends/imgui_impl_dx11.cpp
@@ -162,6 +171,8 @@ tests/test_settings.py
 tests/test_smoothed_playback.py
 tests/test_smoothing.py
 tests/test_stage1_gui.py
+tests/test_visualization_transport.py
+tests/test_visualization_wire.py
 third_party/cvar_unlocker/LICENSE.md
 third_party/cvar_unlocker/THIRD_PARTY.json
 third_party/cvar_unlocker/bin/win64/server.dll

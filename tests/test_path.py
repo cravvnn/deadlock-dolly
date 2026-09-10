@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from dolly.path import CvarTrack, Keyframe, Project, TrackKey, validate_cvar_name
+from dolly.path import CvarTrack, Keyframe, Project, TrackKey, validate_cvar_name, parse_cvar_value, format_cvar_value
 
 
 def key(time, x=0, y=0, z=0, pitch=0, yaw=0, roll=0, fov=90):
@@ -12,6 +12,44 @@ def key(time, x=0, y=0, z=0, pitch=0, yaw=0, roll=0, fov=90):
 
 
 class PathTests(unittest.TestCase):
+    def test_vector_dof_text_and_project_roundtrip(self):
+        name = "r_dof_override_ranges"
+        self.assertEqual(parse_cvar_value(name, "-100 0 180 2000"), (-100, 0, 180, 2000))
+        self.assertEqual(format_cvar_value((-100, 0, 180, 2000)), "-100 0 180 2000")
+        for bad in ("1", "1 2 3", "1 2 3 4 5", "1 1 1 1; quit", "nan 0 0 0", "1e400 0 0 0"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                parse_cvar_value(name, bad)
+        project = Project(keyframes=[key(0)], setup_values={name: (0, 0, 0, 0)}, tracks=[
+            CvarTrack(name, [TrackKey(0, (-100, 0, 180, 2000)), TrackKey(2, (0, 100, 500, 3000))], "linear", (0, 0, 0, 0))])
+        encoded = project.to_dict()
+        self.assertEqual(encoded["version"], 3)
+        restored = Project.from_dict(json.loads(json.dumps(encoded)))
+        self.assertEqual(restored.to_dict(), encoded)
+        self.assertEqual(restored.evaluate(1)["cvars"][name], (-50, 50, 340, 2500))
+        self.assertEqual(restored.evaluate(0)["cvars"][name], (-100, 0, 180, 2000))
+        encoded["version"] = 2
+        with self.assertRaisesRegex(ValueError, "version 3"):
+            Project.from_dict(encoded)
+
+    def test_vector_smooth_components_hold_endpoints_without_overshoot(self):
+        name = "r_dof_override_ranges"
+        authored = [(-100, 0, 180, 2000), (-50, 50, 900, 1800), (30, 100, 300, 4000)]
+        project = Project(keyframes=[key(0)], tracks=[CvarTrack(name,
+            [TrackKey(t, value) for t, value in zip((0, .25, 4), authored)], "smooth")])
+        for time in [i / 100 for i in range(401)]:
+            values = project.evaluate(time)["cvars"][name]
+            left, right = (authored[0], authored[1]) if time < .25 else (authored[1], authored[2])
+            for component, value in enumerate(values):
+                self.assertGreaterEqual(value, min(left[component], right[component]))
+                self.assertLessEqual(value, max(left[component], right[component]))
+        self.assertEqual(project.evaluate(-1)["cvars"][name], authored[0])
+        self.assertEqual(project.evaluate(5)["cvars"][name], authored[-1])
+        for value in ((1, 2, 3), (1, 2, 3, True), (1, 2, 3, float("inf")), "1 2 3 4"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                Project(setup_values={name: value}).validate()
+        with self.assertRaises(ValueError):
+            Project(setup_values={"r_depth_of_field": (1, 1, 1, 1)}).validate()
+
     def test_empty_new_project_can_save_but_cannot_play(self):
         project = Project()
         project.validate()

@@ -2,6 +2,8 @@
 // second window, console-command renderer, or replacement for path evaluation.
 #include "dolly_overlay.hpp"
 #include "dolly_editor.hpp"
+#include "dolly_visualization.hpp"
+#include "dolly_visualization_runtime.hpp"
 #include "MinHook.h"
 #include <d3d11_1.h>
 #include <dxgi.h>
@@ -47,6 +49,8 @@ ImFont* title_font=nullptr;
 float panel_scale=1.0f;
 std::atomic<HWND> game_window{nullptr};
 bool win32_ready=false,dx11_ready=false,last_panel=false;
+bool show_path_guides=true;
+VisualizationGeometry guide_geometry;
 ULONGLONG next_initialization=0;
 constexpr wchar_t kWindowProperty[]=L"DeadlockDolly.Overlay.OriginalWindowProcedure";
 
@@ -351,6 +355,40 @@ void replay_badge(const EditorSnapshot& state) {
   }
  }
 }
+bool guides_visible(const EditorSnapshot& state) noexcept {
+ return show_path_guides&&state.enabled&&state.focused&&state.ready&&state.paused&&
+        state.manual_active&&!state.playing&&!state.busy&&state.view_width>0&&state.view_height>0&&
+        (state.owner==EditorOwner::Flight||state.owner==EditorOwner::Panel);
+}
+void draw_path_guides(const EditorSnapshot& state,const std::shared_ptr<const VisualizationPath>& path) {
+ if(!path||!path->enabled()||!guides_visible(state))return;
+ const auto size=ImGui::GetIO().DisplaySize;
+ VisualizationView view{state.pose,state.horizontal_fov,double(size.x),double(size.y),1};
+ if(!project_visualization(*path,view,guide_geometry))return;
+ auto* draw=ImGui::GetBackgroundDrawList();
+ draw->PushClipRect(ImVec2(0,0),size,true);
+ for(std::size_t i=0;i<guide_geometry.line_count;++i){
+  const auto& line=guide_geometry.lines[i];
+  const bool selected=line.kind==VisualizationKind::SelectedCamera;
+  const auto color=selected?IM_COL32(255,205,115,245):
+      line.kind==VisualizationKind::Path?IM_COL32(100,214,195,205):IM_COL32(153,185,226,220);
+  const ImVec2 a(line.a.x,line.a.y),b(line.b.x,line.b.y);
+  const float width=(selected?2.0f:1.3f)*panel_scale;
+  draw->AddLine(a,b,IM_COL32(8,12,17,170),width+2*panel_scale);
+  draw->AddLine(a,b,color,width);
+ }
+ for(std::size_t i=0;i<guide_geometry.label_count;++i){
+  const auto& label=guide_geometry.labels[i];char text[32]{};
+  std::snprintf(text,sizeof(text),"%u",label.camera_index+1);
+  const ImVec2 point(label.point.x+5*panel_scale,label.point.y+5*panel_scale);
+  const auto measured=ImGui::CalcTextSize(text);
+  draw->AddRectFilled(ImVec2(point.x-3*panel_scale,point.y-2*panel_scale),
+      ImVec2(point.x+measured.x+3*panel_scale,point.y+measured.y+2*panel_scale),
+      IM_COL32(14,19,26,210),3*panel_scale);
+  draw->AddText(point,label.selected?IM_COL32(255,205,115,255):IM_COL32(208,223,243,255),text);
+ }
+ draw->PopClipRect();
+}
 void draw_panel(const EditorSnapshot& state) {
  auto& io=ImGui::GetIO();
  const float margin=std::min(20.0f*panel_scale,std::min(io.DisplaySize.x,io.DisplaySize.y)*.04f);
@@ -412,6 +450,18 @@ void draw_panel(const EditorSnapshot& state) {
     action_button("Previous view",EditorAction::PreviousView,half);ImGui::SameLine();
     action_button("Next view",EditorAction::NextView,half);
     ImGui::EndDisabled();
+    ImGui::Spacing();
+    ImGui::Checkbox("Show path guides",&show_path_guides);
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("Camera positions and spline while editing a paused replay. The selected camera is gold. Guides show through walls and hide during playback.");
+    const auto guides=visualization_snapshot();
+    if(show_path_guides&&state.camera_count&&!guides){
+     const auto viewer_state=visualization_runtime_state();
+     if(viewer_state==VisualizationRuntimeState::Invalid||viewer_state==VisualizationRuntimeState::Unavailable)
+      ImGui::TextWrapped("Path guides unavailable. Export diagnostics from the desktop editor.");
+    }
+    if(show_path_guides&&guides&&guides->camera_count()>guides->cameras().size())
+     ImGui::TextDisabled("%u of %u camera markers; selected included",
+         unsigned(guides->cameras().size()),unsigned(guides->camera_count()));
    }
    end_panel_card();
    if(begin_panel_card("##replay-card")){
@@ -428,6 +478,31 @@ void draw_panel(const EditorSnapshot& state) {
     action_button(state.paused?"Play replay":"Pause replay",EditorAction::PlayPause,half);
     action_button("Back 1 second",EditorAction::SeekBack,half);ImGui::SameLine();
     action_button("Forward 1 second",EditorAction::SeekForward,half);
+    ImGui::Spacing();
+    ImGui::BeginDisabled(state.playing);
+    ImGui::TextUnformatted("Playback speed");
+    ImGui::SetNextItemWidth(-1);
+    char playback_speed[32]{};std::snprintf(playback_speed,sizeof(playback_speed),"%.3g x",state.playback_speed);
+    if(ImGui::BeginCombo("##playback-speed",playback_speed)){
+     for(double value: {.05,.1,.25,.5,1.0,2.0,4.0}){
+      char label[32]{};std::snprintf(label,sizeof(label),"%.3g x",value);
+      if(ImGui::Selectable(label,value==state.playback_speed))editor_enqueue(EditorAction::SetPlaybackSpeed,value);
+     }
+     ImGui::EndCombo();
+    }
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("Playback speed for the next Play shot. Shared with the desktop controls.");
+    ImGui::TextUnformatted("Updates / s");
+    ImGui::SetNextItemWidth(-1);
+    char playback_rate[32]{};std::snprintf(playback_rate,sizeof(playback_rate),"%u",state.playback_rate);
+    if(ImGui::BeginCombo("##playback-rate",playback_rate)){
+     for(unsigned value: {30u,60u,120u}){
+      char label[32]{};std::snprintf(label,sizeof(label),"%u",value);
+      if(ImGui::Selectable(label,value==state.playback_rate))editor_enqueue(EditorAction::SetPlaybackRate,double(value));
+     }
+     ImGui::EndCombo();
+    }
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
+    ImGui::EndDisabled();
    }
    end_panel_card();
    if(begin_panel_card("##flight-card")){
@@ -483,22 +558,28 @@ void render_overlay(IDXGISwapChain* chain) {
  if(!target && !create_target(chain))return;
  GuiContextScope gui_scope(imgui);
  const bool panel=editor_panel_visible()&&state.focused;
+ const auto guides=guides_visible(state)?visualization_snapshot():nullptr;
+ const bool draw_guides=guides&&guides->enabled();
  auto& io=ImGui::GetIO();
  if(panel!=last_panel){io.ClearInputKeys();io.ClearInputMouse();last_panel=panel;}
  // Present must never perform OS cursor updates on the game's behalf.
  io.ConfigFlags=ImGuiConfigFlags_NoMouseCursorChange|(panel?ImGuiConfigFlags_NavEnableKeyboard:0);
+ io.ConfigNavMoveSetMousePos=false;
+ io.WantSetMousePos=false;
  io.MouseDrawCursor=panel;
- // Hidden panels perform no GPU work and do not draw hints into recordings.
- if(!panel){clear_pending_input();io.ClearEventsQueue();editor_text_input_active(false);return;}
- feed_pending_input();
+ // Paused editing may show guides without the panel. Playback, game UI,
+ // console and unfocused windows do not draw editing guides into the scene.
+ if(!panel){clear_pending_input();io.ClearEventsQueue();editor_text_input_active(false);if(!draw_guides)return;}
+ else feed_pending_input();
  DeviceStateScope graphics_scope;
  ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
- draw_panel(state);
- editor_text_input_active(ImGui::GetIO().WantTextInput);
+ if(draw_guides)draw_path_guides(state,guides);
+ if(panel)draw_panel(state);
+ editor_text_input_active(panel&&ImGui::GetIO().WantTextInput);
  ImGui::Render();
  immediate->OMSetRenderTargets(1,&target,nullptr);
  ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
- diagnostic_panel.fetch_add(1,std::memory_order_relaxed);
+ if(panel)diagnostic_panel.fetch_add(1,std::memory_order_relaxed);
 }
 
 HRESULT STDMETHODCALLTYPE present_hook(IDXGISwapChain* chain,UINT interval,UINT flags) {

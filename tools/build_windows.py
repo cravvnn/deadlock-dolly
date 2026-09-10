@@ -143,6 +143,9 @@ def main() -> int:
                  third_party / "notices" / "Dear-ImGui-LICENSE.txt")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
+    for extension in ("md", "json"):
+        shutil.copy2(ROOT / "docs" / f"SUPPORTED_CAMERA_CVARS.{extension}",
+                     bundle / f"Supported_Camera_Cvars.{extension}")
     shutil.copytree(ROOT / "examples", bundle / "examples", dirs_exist_ok=True)
     reject_game_binaries(bundle)
     executable = bundle / "Dolly.exe"

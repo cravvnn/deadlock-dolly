@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(DollyNative VERSION 0.4.4 LANGUAGES C CXX)
+project(DollyNative VERSION 0.4.5 LANGUAGES C CXX)
 
 # Native interpolation tests also build on Linux/macOS. The game bridge is an
 # x64 Windows DLL and is deliberately absent from non-Windows targets.
@@ -10,7 +10,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_library(dolly_path STATIC src/dolly_path.cpp src/dolly_effects.cpp)
+add_library(dolly_path STATIC src/dolly_path.cpp src/dolly_effects.cpp src/dolly_visualization.cpp)
 target_include_directories(dolly_path PUBLIC include)
 
 include(CTest)
@@ -24,6 +24,9 @@ if(BUILD_TESTING)
     add_executable(flight_tests tests/flight_tests.cpp)
     target_link_libraries(flight_tests PRIVATE dolly_path)
     add_test(NAME native_flight_tests COMMAND flight_tests)
+    add_executable(visualization_tests tests/visualization_tests.cpp)
+    target_link_libraries(visualization_tests PRIVATE dolly_path)
+    add_test(NAME native_visualization_tests COMMAND visualization_tests)
 endif()
 
 if(WIN32)
@@ -43,6 +46,7 @@ if(WIN32)
     add_library(dolly_overlay STATIC
         src/dolly_overlay_win.cpp
         src/dolly_renderer_diagnostics_win.cpp
+        src/dolly_visualization_runtime_win.cpp
         vendor/imgui/imgui.cpp
         vendor/imgui/imgui_draw.cpp
         vendor/imgui/imgui_tables.cpp
@@ -52,7 +56,7 @@ if(WIN32)
     target_include_directories(dolly_overlay PRIVATE include vendor/imgui vendor/imgui/backends)
     target_compile_definitions(dolly_overlay PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
         IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
-    target_link_libraries(dolly_overlay PUBLIC minhook d3d11 dxgi d3dcompiler dwmapi gdi32)
+    target_link_libraries(dolly_overlay PUBLIC dolly_path minhook d3d11 dxgi d3dcompiler dwmapi gdi32)
 
     add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp)
     target_include_directories(DollyNative PRIVATE include)

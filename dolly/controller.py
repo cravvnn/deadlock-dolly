@@ -20,7 +20,8 @@ import time
 import zipfile
 
 from . import __version__
-from .path import Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX
+from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX,
+                   CVAR_COMPONENTS, validate_cvar_value, parse_cvar_value, format_cvar_value)
 from .console import ConsoleClient, error_text, parse_demo_info, parse_demo_tick
 from .playback import ReplayClock
 from .smoothing import PhaseSmoother, smoothing_window
@@ -92,6 +93,23 @@ def read_cvar_value(name, output):
     """Parse the current value, never a value from the default/range description."""
     escaped = re.escape(name)
     for line in output.splitlines():
+        if name in CVAR_COMPONENTS:
+            # Read all components from the current-value field. Never accept a
+            # short vector, a fifth component, or numbers in a default caption.
+            prefix = re.search(r'(?<![\w])"?' + escaped + r'"?\s*(?:=|:)\s*', line, re.I)
+            if not prefix:
+                continue
+            raw = line[prefix.end():].strip()
+            if raw.startswith('"'):
+                if '"' not in raw[1:]:
+                    continue
+                raw = raw[1:raw.find('"', 1)]
+            else:
+                raw = re.split(r'\s*(?:\(|\[|//)', raw, maxsplit=1)[0].strip()
+            try:
+                return parse_cvar_value(name, raw)
+            except ValueError:
+                continue
         match = re.search(r'(?<![\w])"?' + escaped + r'"?\s*(?:=|:)\s*"?(' + NUMBER + r'|true|false)(?=["\s,)\]]|$)', line, re.I)
         if match:
             raw = match.group(1).lower()
@@ -141,6 +159,7 @@ def frame_commands(frame, lens_cvar=ASPECT_CVAR):
                 ASPECT_CVAR + " " + numeric(aspect)]
     for name, value in sorted(frame.get("cvars", {}).items()):
         validate_cvar_name(name)
+        value = validate_cvar_value(name, value)
         if name == ASPECT_CVAR or name in LEGACY_FOV_CONTROLS:
             raise ValueError("Use the Framing curve for aspect ratio. Legacy FOV and duplicate aspect tracks are disabled.")
         if name in DOF_RANGES:
@@ -149,7 +168,7 @@ def frame_commands(frame, lens_cvar=ASPECT_CVAR):
                 raise ValueError(f"{name} must be between {lo:g} and {hi:g}.")
         if name in DISCRETE and float(value) != int(float(value)):
             raise ValueError(f"{name} needs whole-number values and a Step track.")
-        commands.append(name + " " + numeric(value))
+        commands.append(name + " " + format_cvar_value(value))
     return "; ".join(commands)
 
 
@@ -2500,7 +2519,7 @@ class Controller:
                 commands = []
                 for name, value in sorted(self._restore.items()):
                     validate_cvar_name(name)
-                    commands.append(name + " " + numeric(value))
+                    commands.append(name + " " + format_cvar_value(validate_cvar_value(name, value)))
                 if self._demo_speed_changed:
                     # demo_timescale is a command, not a readable cvar. Stop
                     # explicitly returns speed to 1x rather than guessing a

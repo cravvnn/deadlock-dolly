@@ -35,15 +35,17 @@ bool NativeShot::load(const void* data,std::size_t size,std::string& error){
  NativeShot candidate;
  if(!candidate.camera.load(r.p,camera_bytes,error))return false;
  r.p+=camera_bytes;r.remaining-=camera_bytes;
- if(std::memcmp(r.p,"DLYEFX01",8))return fail("Invalid effect format");
+ const bool vector_format=!std::memcmp(r.p,"DLYEFX02",8);
+ if(!vector_format&&std::memcmp(r.p,"DLYEFX01",8))return fail("Invalid effect format");
  r.p+=8;r.remaining-=8;auto count=r.u32();reserved=r.u32();
- if(count>kEffects.size()||reserved)return fail("Invalid effect count");
- unsigned used=0;
+ if(count>kEffects.size()+3||reserved)return fail("Invalid effect count");
+ std::array<unsigned,kEffects.size()> used{},restore_mask{};
  for(unsigned i=0;i<count;++i){
   if(r.remaining<56)return fail("Truncated effect header");
-  EffectTrack t;t.id=r.u32();auto n=r.u32(),override_value=r.u32();reserved=r.u32();
-  if(t.id>=kEffects.size()||used&(1u<<t.id)||n>=4096||override_value>1||reserved||r.remaining<40+std::size_t(n)*56)return fail("Invalid effect track header");
-  used|=1u<<t.id;t.restore_override=override_value!=0;
+  EffectTrack t;t.id=r.u32();auto n=r.u32(),override_value=r.u32();t.component=r.u32();
+  if(t.id>=kEffects.size()||t.component>=kEffects[t.id].components||(!vector_format&&t.component)||used[t.id]&(1u<<t.component)||n>=4096||override_value>1||r.remaining<40+std::size_t(n)*56)return fail("Invalid effect track header");
+  used[t.id]|=1u<<t.component;t.restore_override=override_value!=0;
+  if(t.restore_override)restore_mask[t.id]|=1u<<t.component;
   t.first_time=r.number();t.last_time=r.number();t.first=r.number();t.last=r.number();t.restore=r.number();
   if(!std::isfinite(t.first_time)||!std::isfinite(t.last_time)||t.first_time<0||t.last_time<t.first_time||t.last_time>candidate.camera.duration()||!valid(t.id,t.first)||!valid(t.id,t.last)||!std::isfinite(t.restore)||(t.restore_override&&!valid(t.id,t.restore)))return fail("Invalid effect endpoint or restore value");
   double previous_time=t.first_time,previous=t.first;
@@ -54,6 +56,11 @@ bool NativeShot::load(const void* data,std::size_t size,std::string& error){
   }
   if(previous_time!=t.last_time||previous!=t.last)return fail("Disconnected effect endpoint");
   candidate.effects.push_back(std::move(t));
+ }
+ for(unsigned id=0;id<kEffects.size();++id){
+  const auto full=(1u<<kEffects[id].components)-1;
+  if(used[id]&&used[id]!=full)return fail("Incomplete vector effect");
+  if(restore_mask[id]&&restore_mask[id]!=full)return fail("Incomplete vector restore");
  }
  if(r.remaining)return fail("Trailing native effect bytes");
  *this=std::move(candidate);return true;

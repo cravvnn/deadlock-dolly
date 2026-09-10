@@ -39,6 +39,23 @@ def metadata_demo(name="example.dem"):
     )
 
 
+class VectorCvarConsoleTests(unittest.TestCase):
+    def test_current_vector_readback_and_command_format(self):
+        name = "r_dof_override_ranges"
+        for text in ('r_dof_override_ranges = "-100 0 180 2000" (default "0 0 0 0")',
+                     'r_dof_override_ranges: -100 0 180 2000'):
+            self.assertEqual(read_cvar_value(name, text), (-100, 0, 180, 2000))
+        for text in ('r_dof_override_ranges = 1 2 3', 'r_dof_override_ranges = 1 2 3 4 5',
+                     'r_dof_override_ranges = invalid (default 1 2 3 4)'):
+            with self.assertRaises(ValueError):read_cvar_value(name, text)
+        frame = make_project().evaluate(0)
+        frame["cvars"] = {name: (-100, 0, 180, 2000)}
+        self.assertIn(name + " -100 0 180 2000", frame_commands(frame))
+        for bad in ((1, 2, 3), "1 2 3 4;quit", (1, 2, 3, float("inf"))):
+            frame["cvars"] = {name: bad}
+            with self.assertRaises(ValueError):frame_commands(frame)
+
+
 class FakeConsole:
     def __init__(self):
         self.is_connected = True

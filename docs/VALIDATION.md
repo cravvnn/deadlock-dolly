@@ -1,3 +1,56 @@
+# Validation — 0.4.5 alpha
+
+## Changes and scope
+
+The F8 panel shares playback speed and Updates / s with the desktop. Changes
+apply to the next shot. In Native mode, Updates / s controls monitoring;
+camera and supported effects still follow the rendered view. Desktop dropdown
+commit highlights clear without removing keyboard focus or manual text selection.
+
+Optional paused-editing guides show the authored spline, numbered camera poses
+and selected view. A separate bounded mapping supplies immutable geometry from
+the worker; drawing uses the existing DX11 overlay. Guides hide during playback,
+console/game UI ownership and loss of focus. Projection clips the near plane
+and viewport edges. Camera glyphs are symbolic, draw through walls and do not
+provide live thumbnails or exact lens cones. Native camera path evaluation,
+flight integration and playback clock behavior are unchanged.
+
+Seven reviewed range-DOF controls extend the original seven supported native
+effects. r_dof_override_ranges uses the verified Vector4 type: each component
+samples the same shot time, then one typed setter call applies the whole value.
+Restoration also uses the whole value. New controls require the reviewed
+September 9 tier0 fingerprint; older reviewed builds retain the original seven.
+Validation rejects unsupported types, incomplete vectors and non-finite values
+before effect writes. Vector projects use format 3; scalar-only projects remain
+format 2. These checks do not establish image quality or an anti-aliasing gain.
+
+## Verification
+
+- Full Python suite: 791 tests run, no failures, two Windows-only skips.
+- Current native path, effects, flight and visualization tests compiled and
+  passed on Linux. Guide sampling matches the existing Python/native path.
+- All current Windows x64 native sources compiled and linked into DollyNative.dll,
+  the callback test executable and the DX11 WARP test executable.
+- Expanded Windows harnesses cover shared playback settings, vector write/readback
+  and restoration, guide pixels/visibility, mapping lifecycle and existing DX11
+  state/cursor/resize checks. The 384-frame/768-buffer lifetime check now includes
+  guide-only flight. These Windows executables were compiled, not executed here.
+- Native PE architecture, required exports, runtime files, DLL SHA-256 and build
+  metadata verified. The readable and JSON cvar catalogs match supported controls
+  and are included beside the EXE by the Windows packager.
+- All 185 source manifest entries, archive integrity and clean extraction/
+  re-export verified byte-for-byte. Game binaries, diagnostics, recordings,
+  personal files and private authoring context are excluded.
+
+The previous 0.4.4 build was reported working smoothly. This update has not run
+in Deadlock or as a packaged Windows EXE in this Linux workspace. GitHub Windows
+CI runs the native callback/WARP tests and packaged startup checks; live-game
+checks for the new features are in STAGE2_TESTING.md. Expanded in-game curve
+editing remains Stage 2. Video/render-pass export remains Stage 3; ReShade
+coexistence is unverified.
+
+## Earlier validation records
+
 # Validation — 0.4.4 alpha
 
 ## Windows build correction

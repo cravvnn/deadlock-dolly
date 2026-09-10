@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from dolly.native_effects import EFFECTS, SHOT_HEADER, compile_effects, compile_shot
 from dolly.native_path import compile_project, CHANNELS
-from dolly.path import Project, Keyframe, TrackKey, CvarTrack
+from dolly.path import Project, Keyframe, TrackKey, CvarTrack, CVAR_COMPONENTS
 
 
 def project():
@@ -62,6 +62,44 @@ class NativeEffectEvaluationTests(unittest.TestCase):
             expected=p.evaluate(time);values=[expected[n] for n in CHANNELS]+[expected['cvars'][n] for n in names]
             for actual,wanted in zip(map(float,row.split()),values):self.assertAlmostEqual(actual,wanted,places=9)
         self.assertEqual(len(result.stdout.splitlines()),len(times))
+    def test_vector_effect_matches_all_editor_components_and_rewinds(self):
+        p = project()
+        p.setup_values.update({"r_dof_override": 1, "r_dof_override_tilt_to_ground": .5})
+        p.tracks.append(CvarTrack("r_dof_override_ranges", [
+            TrackKey(0, (-100, 0, 180, 2000)), TrackKey(.7, (-10, 50, 300, 4000)),
+            TrackKey(3, (-50, 0, 900, 2000))], "smooth", (0, 0, 0, 0)))
+        times = [-1, 0, .25, .7, 1, 2, 3, 4, .5, 0]
+        result = self.run_blob(compile_shot(p), *times)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = sorted(p.evaluate(0)["cvars"], key=lambda n: EFFECTS[n][0])
+        for time, row in zip(times, result.stdout.splitlines()):
+            expected = p.evaluate(time)
+            values = [expected[name] for name in CHANNELS]
+            for name in names:
+                value = expected["cvars"][name]
+                values.extend(value if isinstance(value, tuple) else (value,))
+            actual = list(map(float, row.split()))
+            self.assertEqual(len(actual), len(values))
+            for value, wanted in zip(actual, values):
+                self.assertAlmostEqual(value, wanted, places=9)
+
+    def test_native_vector_rejects_partial_duplicate_and_mixed_restore(self):
+        p = project();p.tracks=[];p.setup_values={"r_dof_override_ranges": (1, 2, 3, 4)}
+        data = compile_shot(p)
+        offset = 24 + SHOT_HEADER.unpack_from(data)[2]
+        self.assertEqual(data[offset:offset + 8], b"DLYEFX02")
+        cases = []
+        for where, value in [(offset + 16 + 12, 4), (offset + 16 + 56 + 12, 0), (offset + 16 + 8, 1)]:
+            bad = bytearray(data);struct.pack_into("<I", bad, where, value);cases.append(bad)
+        # Truncate an otherwise valid fourth lane and make both lengths honest.
+        bad = bytearray(data[:-56]);struct.pack_into("<I", bad, 16, len(bad) - offset)
+        struct.pack_into("<I", bad, offset + 8, 3);cases.append(bad)
+        bad = bytearray(data);bad[offset:offset + 8] = b"DLYEFX01";cases.append(bad)
+        for bad in cases:
+            self.assertNotEqual(self.run_blob(bad).returncode, 0)
+        p.setup_values["r_dof_override_ranges"] = (1e39, 0, 0, 0)
+        with self.assertRaises(ValueError):compile_shot(p)
+
     def test_rejects_corrupt_or_truncated_payload(self):
         data=compile_shot(project());offset=24+SHOT_HEADER.unpack_from(data)[2]
         cases=[data[:n] for n in [0,8,23,24,len(data)-1]]+[data+b'\0']
@@ -69,6 +107,6 @@ class NativeEffectEvaluationTests(unittest.TestCase):
             bad=bytearray(data);struct.pack_into('<I',bad,where,value);cases.append(bad)
         for bad in cases:self.assertNotEqual(self.run_blob(bad).returncode,0)
     def test_all_supported_controls_and_no_effect_shots(self):
-        p=project();p.tracks=[];p.setup_values={n:spec[1] for n,spec in EFFECTS.items()}
+        p=project();p.tracks=[];p.setup_values={n:((spec[1],)*CVAR_COMPONENTS[n] if n in CVAR_COMPONENTS else spec[1]) for n,spec in EFFECTS.items()}
         self.assertEqual(self.run_blob(compile_shot(p),0,1,2).returncode,0)
         p.setup_values={};self.assertEqual(self.run_blob(compile_shot(p),0,1,2).returncode,0)

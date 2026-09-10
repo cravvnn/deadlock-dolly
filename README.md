@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.4 alpha.** The portable Windows build opens through
+**Current source: 0.4.5 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -28,7 +28,9 @@ Close that session before launching Deadlock normally.
 - In-game panel for capture, saved views, replay controls and movement speed.
 - Replay browser and automatic startup, with the unlocker initialized before the demo loads.
 - Animated `r_aspectratio` framing with an editable desktop curve.
-- Seven supported DOF controls synchronized with the native camera.
+- Fourteen supported DOF controls synchronized with the native camera, including four-value range tracks.
+- Numbered in-game camera guides and spline preview during paused editing.
+- In-game playback speed and monitoring rate shared with desktop controls.
 - Replay playback with HUD handling, settings restoration and diagnostics.
 - Console fallback with Off, Light, Balanced and Strong smoothing choices.
 
@@ -50,6 +52,14 @@ default: advance the replay, frame the next view and capture again.
 speed and mouse sensitivity are saved from **Keybinds**. Capture also works
 while the replay is playing and leaves it paused.
 
+In the F8 panel, use **Playback speed**, **Updates / s** and **Show path guides**.
+Guides appear in paused flight and hide during playback. Native camera and
+supported effects follow each rendered frame; Updates / s controls monitoring.
+
+On the desktop Effects tab, **+ Range DOF** creates a four-value range track.
+Its value order is near blurry, near crisp, far crisp, far blurry. See the
+[supported camera cvars](docs/SUPPORTED_CAMERA_CVARS.md) for values and examples.
+
 See `Start_Here.txt` and the [user guide](docs/USER_GUIDE.md) for the full controls.
 The GitHub **Source code** download and source ZIP contain the source and build
 files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
@@ -61,12 +71,11 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.4 is an alpha. The DX11 vertex-buffer crash remains under investigation;
-this update adds graphics diagnostics and fixes temporary-session cleanup.
-ReShade compatibility is unverified.
+0.4.5 is an alpha. New path guides and range DOF need checking against the
+installed game build. ReShade compatibility is unverified.
 Validation details are in
-[VALIDATION.md](docs/VALIDATION.md). In-world camera markers, full in-game curve
-editing and video/render-pass export are planned for later updates.
+[VALIDATION.md](docs/VALIDATION.md). Expanded in-game curve editing remains
+Stage 2; video/render-pass export remains Stage 3.
 
 ## Session files
 
@@ -122,6 +131,9 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.4.5:** adds paused in-game camera/path guides, shared playback controls,
+four-component range DOF and a portable supported-cvar list.
 
 **0.4.4:** cleans temporary session folders after game exit, recovers older
 leftovers and retains read-only DX11 diagnostics after a crash. The reported

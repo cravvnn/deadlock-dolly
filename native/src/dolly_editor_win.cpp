@@ -11,6 +11,7 @@
 #include "dolly_editor.hpp"
 #include "dolly_flight.hpp"
 #include "dolly_overlay.hpp"
+#include "dolly_visualization_runtime.hpp"
 namespace dolly { namespace {
 std::atomic<HWND> gWindow{nullptr};
 std::atomic<bool> gConnected{false},gOverlay{false},gInput{false},gFocused{false};
@@ -26,6 +27,8 @@ std::uint32_t gLastEvent=0,gAcknowledged=0;
 std::atomic<std::uint32_t> gDropped{0};
 std::atomic<std::uint32_t> gViewSequence{0},gViewFlags{0};
 std::atomic<double> gPose[7]{},gPhase{0};
+std::atomic<double> gHorizontalFov{0};
+std::atomic<std::uint32_t> gViewWidth{0},gViewHeight{0};
 std::atomic<std::int32_t> gTick{0};
 std::atomic<std::uint64_t> gFrame{0};
 using RawDataFn=UINT(WINAPI*)(HRAWINPUT,UINT,LPVOID,PUINT,UINT);
@@ -198,6 +201,10 @@ BOOL WINAPI clip_cursor_hook(const RECT* rect){if(owns_input()&&gOwner.load()==E
 EditorSnapshot editor_snapshot() noexcept {
  EditorSnapshot result{};auto c=std::atomic_load(&gConfig);
  if(c){result.enabled=c->enabled&&gConnected.load();result.selected_camera=c->selected_camera;result.camera_count=c->camera_count;result.sensitivity=c->sensitivity;result.duration=c->duration;result.playing=(c->playback_flags&1)!=0;result.busy=(c->playback_flags&2)!=0;std::memcpy(result.shot_name,c->shot_name,sizeof(result.shot_name));std::memcpy(result.message,c->message,sizeof(result.message));}
+ if(c){
+  if(std::isfinite(c->playback_speed)&&c->playback_speed>=.05&&c->playback_speed<=4)result.playback_speed=c->playback_speed;
+  if(c->playback_rate==30||c->playback_rate==60||c->playback_rate==120)result.playback_rate=c->playback_rate;
+ }
  // Focus and ownership are separate facts. A desktop error dialog must not
  // erase which UI owns input, or recovery can steal the game's mouse/console.
  result.focused=focused();result.owner=gOwner.load();result.speed=gSpeed.load();result.overlay_available=gOverlay.load();result.input_available=gInput.load();result.dropped_events=gDropped.load();
@@ -207,14 +214,17 @@ EditorSnapshot editor_snapshot() noexcept {
   auto before=gViewSequence.load(std::memory_order_acquire);if(before&1)continue;
   auto flags=gViewFlags.load();result.ready=(flags&1)!=0;result.paused=(flags&2)!=0;result.manual_active=(flags&4)!=0;
   for(unsigned i=0;i<7;++i)result.pose[i]=gPose[i].load();result.phase=gPhase.load();result.tick=gTick.load();
+  result.horizontal_fov=gHorizontalFov.load();result.view_width=gViewWidth.load();result.view_height=gViewHeight.load();
   if(before==gViewSequence.load(std::memory_order_acquire))return result;
  }
  result.ready=false;return result;
 }
 bool editor_enqueue(EditorAction action,double value) noexcept {
- if(!std::isfinite(value)||std::uint32_t(action)>std::uint32_t(EditorAction::SelectView))return false;
+ if(!std::isfinite(value)||std::uint32_t(action)>std::uint32_t(EditorAction::SetPlaybackRate))return false;
  auto state=editor_snapshot();if(!state.enabled)return false;
  if(action==EditorAction::SetSpeed){if(value<1||value>10000)return false;}
+ if(action==EditorAction::SetPlaybackSpeed&&(value<.05||value>4||state.playing||state.busy))return false;
+ if(action==EditorAction::SetPlaybackRate&&((value!=30&&value!=60&&value!=120)||state.playing||state.busy))return false;
  if((action==EditorAction::Capture||action==EditorAction::Replace)&&!state.ready)return false;
  if(gEventLock.test_and_set(std::memory_order_acquire)){++gDropped;return false;}
  if(gLastEvent-gAcknowledged>=kEditorEventCount){gEventLock.clear(std::memory_order_release);++gDropped;return false;}
@@ -243,10 +253,11 @@ bool editor_install_input_hooks() noexcept {
  if(enabled!=4){for(int i=0;i<enabled;++i)MH_DisableHook(addresses[i]);for(int i=0;i<created;++i)MH_RemoveHook(addresses[i]);return false;}
  gInput=true;return true;
 }
-void editor_update_view(bool ready,bool paused,bool manual,const CameraPose& pose,double phase,std::int32_t tick) noexcept {
+void editor_update_view(bool ready,bool paused,bool manual,const CameraPose& pose,double phase,std::int32_t tick,double horizontal_fov,std::uint32_t width,std::uint32_t height) noexcept {
  gViewSequence.fetch_add(1,std::memory_order_acq_rel);
  gViewFlags=(ready?1u:0u)|(paused?2u:0u)|(manual?4u:0u);
  for(unsigned i=0;i<7;++i)gPose[i]=pose[i];gPhase=phase;gTick=tick;++gFrame;
+ gHorizontalFov=horizontal_fov;gViewWidth=width;gViewHeight=height;
  gViewSequence.fetch_add(1,std::memory_order_release);
 }
 void editor_integrate_flight(CameraPose& pose,double dt) noexcept {
@@ -339,6 +350,7 @@ void editor_worker_tick(unsigned char* memory,bool connected) noexcept {
  auto state=editor_snapshot();EditorStatus status{};std::memcpy(status.magic,"DLYEDS01",8);status.abi=kEditorAbi;status.owner=std::uint32_t(state.owner);
  status.flags=(state.enabled?1u:0u)|(state.focused?2u:0u)|(state.paused?4u:0u)|(state.manual_active?8u:0u)|(state.ready?16u:0u)|(state.overlay_available?32u:0u)|(state.input_available?64u:0u);
  status.selected_camera=state.selected_camera;status.camera_count=state.camera_count;status.speed=state.speed;status.phase=state.phase;status.tick=state.tick;status.frame_count=gFrame.load();status.dropped_events=gDropped.load();
+ status.reserved=static_cast<std::uint32_t>(visualization_runtime_state());
  std::memcpy(status.message,state.message,sizeof(status.message));
  if(state.enabled&&!state.input_available)std::snprintf(status.message,sizeof(status.message),"Native raw-input interception could not be installed; original game controls remain available.");
  else if(state.enabled&&!state.overlay_available)std::snprintf(status.message,sizeof(status.message),"%s",overlay_last_error());

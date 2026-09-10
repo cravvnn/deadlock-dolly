@@ -20,6 +20,7 @@ from typing import Any, Iterable
 
 FORMAT_NAME = "deadlock-dolly"
 FORMAT_VERSION = 2
+VECTOR_FORMAT_VERSION = 3
 MAX_PROJECT_BYTES = 8 * 1024 * 1024
 MAX_KEYS = 100_000
 STANDARD_ASPECT = 16.0 / 9.0
@@ -40,6 +41,10 @@ CAMERA_CVAR_NAMES = frozenset({
     "spec_fov", "r_aspectratio", "r_drawviewmodel", "cl_drawhud", "citadel_hud_visible",
     "mat_depth_blur_focal_distance", "mat_depth_blur_strength",
 })
+# Only verified multi-component camera controls accept numeric arrays.
+CVAR_COMPONENTS = {"r_dof_override_ranges": 4}
+CvarValue = float | tuple[float, ...]
+_CVAR_NUMBER = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?\Z", re.ASCII)
 _CVAR_IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{0,95}\Z", re.ASCII)
 
 
@@ -67,6 +72,43 @@ def _finite(value: Any, label: str) -> float:
     if not math.isfinite(number):
         raise ValueError(f"{label} must be a finite number")
     return number
+
+
+def validate_cvar_value(name: str, value: Any, label: str = "Camera value") -> CvarValue:
+    """Validate a scalar or the exact component count for a known vector cvar."""
+    validate_cvar_name(name)
+    count = CVAR_COMPONENTS.get(name, 1)
+    if count == 1:
+        return _finite(value, label)
+    if not isinstance(value, (tuple, list)) or len(value) != count:
+        raise ValueError(f"{name} needs {count} numbers separated by spaces")
+    return tuple(_finite(component, f"{label} component {i + 1}")
+                 for i, component in enumerate(value))
+
+
+def parse_cvar_value(name: str, text: str, label: str = "Camera value") -> CvarValue:
+    """Parse editor text without accepting console syntax or arbitrary strings."""
+    validate_cvar_name(name)
+    if not isinstance(text, str):
+        raise ValueError(f"{label} must be numeric text")
+    parts = text.strip().split()
+    count = CVAR_COMPONENTS.get(name, 1)
+    if len(parts) != count or any(not _CVAR_NUMBER.fullmatch(part) for part in parts):
+        if count > 1:
+            raise ValueError(f"{name} needs {count} numbers separated by spaces")
+        raise ValueError(f"{label} must be a finite number")
+    numbers = tuple(float(part) for part in parts)
+    return validate_cvar_value(name, numbers if count > 1 else numbers[0], label)
+
+
+def format_cvar_value(value: CvarValue) -> str:
+    """Format already validated scalar/vector data for display or console use."""
+    values = value if isinstance(value, (tuple, list)) else (value,)
+    return " ".join(format(_finite(component, "Camera value"), ".9g") for component in values)
+
+
+def _json_cvar_value(value: CvarValue):
+    return list(value) if isinstance(value, (tuple, list)) else value
 
 
 def _choice(value: Any, options: tuple[str, ...], label: str) -> None:
@@ -110,7 +152,7 @@ class Keyframe:
 @dataclass
 class TrackKey:
     time: float
-    value: float
+    value: CvarValue
 
 
 @dataclass
@@ -118,7 +160,7 @@ class CvarTrack:
     name: str
     keys: list[TrackKey] = field(default_factory=list)
     interpolation: str = "linear"
-    restore_value: float | None = None
+    restore_value: CvarValue | None = None
 
 
 CAMERA_FIELDS = ("x", "y", "z", "pitch", "yaw", "roll", "fov", "aspect_ratio")
@@ -243,7 +285,7 @@ class Project:
     rotation_mode: str = "shortest"
     start_tick: int = 0
     tick_rate: float = 64.0
-    setup_values: dict[str, float] = field(default_factory=dict)
+    setup_values: dict[str, CvarValue] = field(default_factory=dict)
     standard_aspect: float = STANDARD_ASPECT
     lens_interpolation: str = "smooth"
 
@@ -288,15 +330,15 @@ class Project:
             for index, key in enumerate(track.keys):
                 if not isinstance(key, TrackKey):
                     raise ValueError(f"{track.name} key {index} must be a TrackKey")
-                _finite(key.value, f"{track.name} key {index}.value")
+                validate_cvar_value(track.name, key.value, f"{track.name} key {index}.value")
             _validate_times(track.keys, track.name)
             if track.restore_value is not None:
-                _finite(track.restore_value, f"{track.name} restore value")
+                validate_cvar_value(track.name, track.restore_value, f"{track.name} restore value")
 
         _object(self.setup_values, "Setup values")
         for name, value in self.setup_values.items():
             validate_cvar_name(name)
-            _finite(value, f"{name} setup value")
+            validate_cvar_value(name, value, f"{name} setup value")
 
     @property
     def duration(self) -> float:
@@ -332,14 +374,18 @@ class Project:
             interpolation = self.lens_interpolation if name == "aspect_ratio" else self.interpolation
             value = _sample(times, values, time, interpolation, monotone=name not in ("x", "y", "z"))
             result[name] = value
-        cvars = {name: float(value) for name, value in self.setup_values.items()}
+        cvars = {name: validate_cvar_value(name, value) for name, value in self.setup_values.items()}
         for track in self.tracks:
             if track.keys:
-                cvars[track.name] = _sample(
-                    [float(key.time) for key in track.keys],
-                    [float(key.value) for key in track.keys],
-                    time, track.interpolation,
-                )
+                key_times = [float(key.time) for key in track.keys]
+                values = [validate_cvar_value(track.name, key.value) for key in track.keys]
+                count = CVAR_COMPONENTS.get(track.name, 1)
+                if count == 1:
+                    cvars[track.name] = _sample(key_times, values, time, track.interpolation)
+                else:
+                    cvars[track.name] = tuple(_sample(
+                        key_times, [value[i] for value in values], time, track.interpolation,
+                    ) for i in range(count))
         result["cvars"] = cvars
         return result
 
@@ -347,7 +393,8 @@ class Project:
         self.validate()
         return {
             "format": FORMAT_NAME,
-            "version": FORMAT_VERSION,
+            "version": VECTOR_FORMAT_VERSION if (any(name in CVAR_COMPONENTS for name in self.setup_values)
+                         or any(track.name in CVAR_COMPONENTS for track in self.tracks)) else FORMAT_VERSION,
             "name": self.name,
             "interpolation": self.interpolation,
             "rotation_mode": self.rotation_mode,
@@ -355,12 +402,12 @@ class Project:
             "lens_interpolation": self.lens_interpolation,
             "start_tick": self.start_tick,
             "tick_rate": self.tick_rate,
-            "setup_values": dict(self.setup_values),
+            "setup_values": {name: _json_cvar_value(value) for name, value in self.setup_values.items()},
             "keyframes": [{"time": key.time, **{name: getattr(key, name) for name in CAMERA_FIELDS}}
                           for key in self.keyframes],
             "tracks": [{"name": track.name, "interpolation": track.interpolation,
-                        "restore_value": track.restore_value,
-                        "keys": [{"time": key.time, "value": key.value} for key in track.keys]}
+                        "restore_value": _json_cvar_value(track.restore_value),
+                        "keys": [{"time": key.time, "value": _json_cvar_value(key.value)} for key in track.keys]}
                        for track in self.tracks],
         }
 
@@ -370,23 +417,23 @@ class Project:
         if obj.get("format", FORMAT_NAME) != FORMAT_NAME:
             raise ValueError("This is not a Deadlock Dolly project")
         version = obj.get("version")
-        if isinstance(version, bool) or not isinstance(version, int) or version not in (1, FORMAT_VERSION):
-            raise ValueError(f"Unsupported project version: {version!r}; expected 1 or {FORMAT_VERSION}")
+        if isinstance(version, bool) or not isinstance(version, int) or version not in (1, FORMAT_VERSION, VECTOR_FORMAT_VERSION):
+            raise ValueError(f"Unsupported project version: {version!r}; expected 1, {FORMAT_VERSION}, or {VECTOR_FORMAT_VERSION}")
         allowed = ("format", "version", "name", "interpolation", "rotation_mode",
                    "start_tick", "tick_rate", "setup_values", "keyframes", "tracks")
-        if version == FORMAT_VERSION:
+        if version >= FORMAT_VERSION:
             allowed += ("standard_aspect", "lens_interpolation")
             for required in ("standard_aspect", "lens_interpolation"):
                 if required not in obj:
-                    raise ValueError(f"Project version {FORMAT_VERSION} is missing required field: {required}")
+                    raise ValueError(f"Project version {version} is missing required field: {required}")
         _members(obj, allowed, "project")
         keyframes: list[Keyframe] = []
         for i, raw in enumerate(_array(obj.get("keyframes", []), "Camera keyframes")):
             key = _object(raw, f"Camera keyframe {i}")
-            fields = CAMERA_FIELDS if version == FORMAT_VERSION else _LEGACY_CAMERA_FIELDS
+            fields = CAMERA_FIELDS if version >= FORMAT_VERSION else _LEGACY_CAMERA_FIELDS
             _members(key, ("time", *fields), "camera keyframe")
             # A corrupt v2 shot must never silently lose its authored zoom.
-            if version == FORMAT_VERSION and "aspect_ratio" not in key:
+            if version >= FORMAT_VERSION and "aspect_ratio" not in key:
                 raise ValueError(f"Camera keyframe {i} is missing required field: aspect_ratio")
             if version == 1 and "fov" not in key:
                 raise ValueError(f"Camera keyframe {i} is missing required field: fov")
@@ -422,6 +469,10 @@ class Project:
                       standard_aspect=obj.get("standard_aspect", STANDARD_ASPECT),
                       lens_interpolation=obj.get("lens_interpolation", "smooth"))
         project.validate()
+        if version < VECTOR_FORMAT_VERSION and (
+                any(name in CVAR_COMPONENTS for name in project.setup_values)
+                or any(track.name in CVAR_COMPONENTS for track in project.tracks)):
+            raise ValueError("Multi-component camera variables require project version 3")
         return project
 
     def save(self, path: str | Path) -> None:

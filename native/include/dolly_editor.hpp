@@ -14,7 +14,7 @@ constexpr std::size_t kEditorStatusOffset=2*1024*1024+2048;
 constexpr std::uint32_t kEditorAbi=1;
 constexpr std::size_t kEditorBindingCount=26,kEditorEventCount=16;
 enum class EditorOwner : std::uint32_t { Disabled=0,Flight=1,Panel=2,GameUI=3,Console=4,Unfocused=5 };
-enum class EditorAction : std::uint32_t { Capture=0,Replace,PlayPause,PlayPath,Stop,PreviousView,NextView,SeekBack,SeekForward,Panel,GameUI,Flight,MoveForward,MoveBack,MoveLeft,MoveRight,MoveUp,MoveDown,MoveFast,MoveSlow,LookLeft,LookRight,LookUp,LookDown,RollLeft,RollRight,Console,SetSpeed,SelectView };
+enum class EditorAction : std::uint32_t { Capture=0,Replace,PlayPause,PlayPath,Stop,PreviousView,NextView,SeekBack,SeekForward,Panel,GameUI,Flight,MoveForward,MoveBack,MoveLeft,MoveRight,MoveUp,MoveDown,MoveFast,MoveSlow,LookLeft,LookRight,LookUp,LookDown,RollLeft,RollRight,Console,SetSpeed,SelectView,SetPlaybackSpeed,SetPlaybackRate };
 #pragma pack(push,1)
 struct EditorBinding {std::uint16_t vk,modifiers;};
 struct EditorConfig {
@@ -26,7 +26,9 @@ struct EditorConfig {
  double duration,playhead;
  std::int32_t replay_tick;
  std::uint32_t playback_flags;
- unsigned char padding[32];
+ double playback_speed;
+ std::uint32_t playback_rate;
+ unsigned char padding[20];
 };
 struct EditorEvent {std::uint32_t sequence,action;double value;double pose[7];std::int32_t tick;std::uint32_t paused;};
 struct EditorStatus {
@@ -43,6 +45,8 @@ struct EditorStatus {
 };
 #pragma pack(pop)
 static_assert(sizeof(EditorConfig)==448,"Python editor configuration layout");
+static_assert(offsetof(EditorConfig,playback_speed)==416,"Python playback speed offset");
+static_assert(offsetof(EditorConfig,playback_rate)==424,"Python playback rate offset");
 static_assert(offsetof(EditorStatus,events)==256,"Python editor events offset");
 static_assert(sizeof(EditorStatus)==1536,"Python editor status layout");
 // Status flags: enabled1, focused2, paused4, manual8, ready16, overlay32,
@@ -55,6 +59,10 @@ struct EditorSnapshot {
  double speed=400,sensitivity=.08,phase=0,duration=0;
  std::int32_t tick=0;
  bool playing=false,busy=false;
+ double playback_speed=1;
+ std::uint32_t playback_rate=60;
+ double horizontal_fov=0;
+ std::uint32_t view_width=0,view_height=0;
  CameraPose pose{};
  char shot_name[96]{},message[128]{};
 };
@@ -66,7 +74,7 @@ void editor_overlay_available(bool available) noexcept;
 void editor_text_input_active(bool active) noexcept;
 bool editor_install_input_hooks() noexcept;
 void editor_worker_tick(unsigned char* mapping,bool connected) noexcept;
-void editor_update_view(bool replay_ready,bool paused,bool manual,const CameraPose& pose,double phase=0,std::int32_t tick=0) noexcept;
+void editor_update_view(bool replay_ready,bool paused,bool manual,const CameraPose& pose,double phase=0,std::int32_t tick=0,double horizontal_fov=0,std::uint32_t width=0,std::uint32_t height=0) noexcept;
 void editor_integrate_flight(CameraPose& pose,double delta_seconds) noexcept;
 void editor_reset_motion() noexcept;
 #ifdef _WIN32

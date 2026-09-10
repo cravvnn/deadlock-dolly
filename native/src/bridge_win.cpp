@@ -22,6 +22,7 @@
 #include "dolly_editor.hpp"
 #include "dolly_overlay.hpp"
 #include "dolly_renderer_diagnostics.hpp"
+#include "dolly_visualization_runtime.hpp"
 
 namespace {
 using namespace dolly;
@@ -225,7 +226,7 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
   bool editor_ready=demo_ok&&demo.playing&&!demo.seeking&&view_ok&&pose_valid(original)&&std::isfinite(original_fov)&&original_fov>1&&original_fov<179&&width>0&&height>0&&!(flags&2)&&state!=State::Fault&&state!=State::Unsupported;
   CameraPose shown{};for(int i=0;i<7;++i)shown[i]=status.applied_pose[i];
   if(editor_ready){displayed_pose=shown;displayed_valid=true;}
-  editor_update_view(editor_ready,demo.paused,editor_ready&&state==State::Armed&&command&&command->manual,shown,phase,demo.tick);
+  editor_update_view(editor_ready,demo.paused,editor_ready&&state==State::Armed&&command&&command->manual,shown,phase,demo.tick,status.applied_fov,width>0?std::uint32_t(width):0,height>0?std::uint32_t(height):0);
   status.state=std::uint32_t(state);status.error=error;status.phase=phase;std::snprintf(status.message,sizeof(status.message),"%s",message);write_status(status);};
  if(!command){finish(State::Probe,0,"Native view hook ready; load a local replay to test a camera.");return;}
  const auto& c=command->wire;
@@ -369,10 +370,11 @@ static DWORD WINAPI worker(void*) {
   std::vector<unsigned char> payload;
   HMODULE diagnostic_renderer=nullptr;ULONGLONG next_renderer_probe=0;
   for(;;){
-   if(WaitForSingleObject(gEditor,0)!=WAIT_TIMEOUT){gWorkerError=30;editor_worker_tick(gMemory,false);break;}
+   if(WaitForSingleObject(gEditor,0)!=WAIT_TIMEOUT){gWorkerError=30;editor_worker_tick(gMemory,false);visualization_worker_tick(nullptr,false);break;}
    auto hb=static_cast<std::uint64_t>(InterlockedCompareExchange64(reinterpret_cast<volatile LONG64*>(gMemory+32),0,0));
    if(hb!=heartbeat){heartbeat=hb;gHeartbeatTime=now_seconds();}
    editor_worker_tick(gMemory,now_seconds()-gHeartbeatTime.load()<2.0);
+   visualization_worker_tick(mapping.c_str(),now_seconds()-gHeartbeatTime.load()<2.0);
    const auto diagnostic_now=GetTickCount64();
    if(diagnostic_now>=next_renderer_probe){
     next_renderer_probe=diagnostic_now+1000;
@@ -407,7 +409,7 @@ static DWORD WINAPI worker(void*) {
    }
    Sleep(5);
   }
- } catch(...){gWorkerError=99;if(!gHookInstalled)startup_status(State::Fault,99,"Native bridge initialization failed; console unlocker remains available.");}
+ } catch(...){visualization_worker_tick(nullptr,false);gWorkerError=99;if(!gHookInstalled)startup_status(State::Fault,99,"Native bridge initialization failed; console unlocker remains available.");}
  return 0;
 }
 static BOOL CALLBACK start_worker(PINIT_ONCE,PVOID,PVOID*) {

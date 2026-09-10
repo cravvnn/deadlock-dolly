@@ -1,0 +1,271 @@
+{
+  "format": "deadlock-dolly-supported-camera-cvars",
+  "version": 1,
+  "scope": "Native camera effects. Presence and exact native type are checked in the launched replay session; unsupported builds are rejected.",
+  "framing": {
+    "command": "r_aspectratio",
+    "editor_range": [
+      0.5,
+      4
+    ],
+    "authored_in": "camera framing curve",
+    "frame_synchronized": true
+  },
+  "controls": [
+    {
+      "command": "r_citadel_depthoffield_enable",
+      "components": 1,
+      "type": "boolean",
+      "interpolation": [
+        "step"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        1
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_citadel_depthoffield_focus_distance",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        10000
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_citadel_depthoffield_aperture_diameter",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        3
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_citadel_depthoffield_sensor_size",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0.5,
+        3
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_citadel_depthoffield_mode",
+      "components": 1,
+      "type": "integer",
+      "interpolation": [
+        "step"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        2
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_citadel_depthoffield_debug",
+      "components": 1,
+      "type": "boolean",
+      "interpolation": [
+        "step"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        1
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_depth_of_field",
+      "components": 1,
+      "type": "boolean",
+      "interpolation": [
+        "step"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        1
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered"
+    },
+    {
+      "command": "r_dof_override",
+      "components": 1,
+      "type": "boolean",
+      "interpolation": [
+        "step"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        0,
+        1
+      ],
+      "bounds_kind": "native range",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": 0
+    },
+    {
+      "command": "r_dof_override_ranges",
+      "components": 4,
+      "type": "vector4",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38
+      ],
+      "bounds_kind": "float32 representation",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "component_order": [
+        "near blurry",
+        "near crisp",
+        "far crisp",
+        "far blurry"
+      ],
+      "input_example": "-100 0 180 2000",
+      "note": "Four zeros disables the range override. All four components update together each rendered camera frame."
+    },
+    {
+      "command": "r_dof_override_near_blurry",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38
+      ],
+      "bounds_kind": "float32 representation",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": -100
+    },
+    {
+      "command": "r_dof_override_near_crisp",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38
+      ],
+      "bounds_kind": "float32 representation",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": 0
+    },
+    {
+      "command": "r_dof_override_far_crisp",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38
+      ],
+      "bounds_kind": "float32 representation",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": 180
+    },
+    {
+      "command": "r_dof_override_far_blurry",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38
+      ],
+      "bounds_kind": "float32 representation",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": 2000
+    },
+    {
+      "command": "r_dof_override_tilt_to_ground",
+      "components": 1,
+      "type": "float32",
+      "interpolation": [
+        "step",
+        "linear",
+        "smooth"
+      ],
+      "frame_synchronized": true,
+      "bounds": [
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38
+      ],
+      "bounds_kind": "float32 representation",
+      "restore": "original full value unless a track restore value is entered",
+      "verified_tier0_sha256": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
+      "game_default": 0.5
+    }
+  ]
+}

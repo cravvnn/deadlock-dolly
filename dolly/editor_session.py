@@ -25,6 +25,57 @@ def _value(app, name, default=None):
     return value.get() if hasattr(value, "get") else value
 
 
+def _playback_values(app):
+    # The editable desktop speed can briefly be empty, '-' or out of range
+    # while typing. Keep publishing the last valid setting until it is valid;
+    # an unfinished edit must never block input-owner/camera-count refreshes.
+    previous = getattr(app, "_native_editor_config_cache", None) or {}
+    speed = previous.get("playback_speed", 1.0)
+    rate = previous.get("playback_rate", 60)
+    try:
+        candidate = float(_value(app, "speed", 1.0))
+        if math.isfinite(candidate) and .05 <= candidate <= 4:
+            speed = candidate
+    except (ValueError, TypeError):
+        pass
+    try:
+        candidate = float(_value(app, "rate", 60))
+        if candidate in (30, 60, 120):
+            rate = int(candidate)
+    except (ValueError, TypeError):
+        pass
+    return speed, rate
+
+
+def _configure_visualization(app, bridge, active, selected):
+    publish = getattr(bridge, "publish_visualization", None)
+    if publish is None:
+        return
+    project = app.project
+    # Keep primitives, not mutable Keyframe objects: replacing an in-place
+    # camera must invalidate the published guides. The native path limit also
+    # bounds work on the Tk thread for oversized, console-only projects.
+    from .native_path import CHANNELS, MAX_CAMERA_KEYS
+    keys = (tuple((key.time, *(getattr(key, name) for name in CHANNELS))
+                  for key in project.keyframes)
+            if len(project.keyframes) <= MAX_CAMERA_KEYS else len(project.keyframes))
+    signature = (active, selected, project.interpolation, project.rotation_mode,
+                 project.lens_interpolation, project.standard_aspect, project.duration, keys)
+    if (getattr(app, "_native_visualization_bridge", None) is bridge
+            and getattr(app, "_native_visualization_cache", None) == signature):
+        return
+    # Remember failures too. Guides are optional; a malformed/oversized shot
+    # must not retry compilation or flood logs on every editor poll.
+    app._native_visualization_bridge = bridge
+    app._native_visualization_cache = signature
+    try:
+        if publish(project, enabled=active, selected_camera=selected) is False:
+            details = bridge.visualization_diagnostics()
+            LOG.warning("Path guides unavailable: %s", details.get("error") or "publication failed")
+    except (RuntimeError, ValueError, OSError) as exc:
+        LOG.warning("Path guides unavailable: %s", exc)
+
+
 def configure(app):
     bridge = _bridge(app)
     if bridge is None or getattr(app, "closed", False):
@@ -48,19 +99,22 @@ def configure(app):
     selected = app._selection_index(app.camera_tree)
     selected = selected if selected is not None and 0 <= selected < count else 0
     playhead = float(_value(app, "shot_time", 0) or 0)
+    playback_speed, playback_rate = _playback_values(app)
     values = dict(enabled=active, bindings=settings.action_bindings,
                   speed=settings.movement_speed, sensitivity=settings.mouse_sensitivity,
                   selected_camera=selected, camera_count=count,
                   shot_name=app.project.name, message=str(_value(app, "status_text", "")),
                   duration=float(app.project.duration), playhead=max(0.0, playhead),
                   replay_tick=int(status.get("tick") or 0),
-                  playing=bool(status.get("playing")), busy=bool(app.busy))
+                  playing=bool(status.get("playing")), busy=bool(app.busy),
+                  playback_speed=playback_speed, playback_rate=playback_rate)
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
     # Explicit owner changes are handled only by command transitions below.
     if getattr(app, "_native_editor_config_cache", None) != values or getattr(app, "_native_editor_bridge", None) is not bridge:
         bridge.configure_editor(**values)
         app._native_editor_config_cache = values
         app._native_editor_bridge = bridge
+    _configure_visualization(app, bridge, active, selected)
 
 
 def _select(app, index):
@@ -155,6 +209,24 @@ def dispatch(app, event, bridge):
                 app.editor_move_speed.set(f"{value:g}")
             configure(app)
         app._submit("Saving movement speed", lambda: save_settings(settings), saved)
+    elif action in ("set_playback_speed", "set_playback_rate"):
+        # These settings apply to the next shot. Changing a running shot's
+        # displayed speed without updating its replay/native clock is unsafe.
+        if app.controller.status().get("playing") or getattr(app, "playing", False):
+            app.status_text.set("Stop path playback before changing playback options.")
+            return True
+        value = event["value"]
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
+            raise ValueError("Playback option must be a finite number")
+        if action == "set_playback_speed":
+            if not .05 <= value <= 4:
+                raise ValueError("Playback speed must be between 0.05 and 4.")
+            app.speed.set(f"{value:g}")
+        else:
+            if value not in (30, 60, 120):
+                raise ValueError("Choose a playback update rate of 30, 60, or 120.")
+            app.rate.set(str(int(value)))
+        configure(app)
     else:
         raise ValueError("The native editor requested an unsupported UI action")
     return True
@@ -167,6 +239,8 @@ def poll(app):
     if bridge is None:
         app.native_editor_active = False
         app._native_editor_bridge = None
+        app._native_visualization_bridge = None
+        app._native_visualization_cache = None
         return
     try:
         # Flight can fail before the controller marks the editor active even
@@ -223,3 +297,5 @@ def close(app):
             pass
     app.native_editor_active = False
     app._native_editor_config_cache = None
+    app._native_visualization_bridge = None
+    app._native_visualization_cache = None
