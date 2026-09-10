@@ -161,6 +161,17 @@ def poll(app):
         app._native_editor_bridge = None
         return
     try:
+        # Flight can fail before the controller marks the editor active even
+        # though DX11/input finish initializing afterwards. Keep that live
+        # panel's console/stop/retry actions connected to the launcher. Do not
+        # interfere with the startup worker while it is still arming flight.
+        if (not getattr(app, "native_editor_active", False) and not app.busy
+                and app.controller.status().get("connected")):
+            recovery = bridge.editor_status()
+            if recovery.get("enabled"):
+                app.native_editor_active = True
+                if hasattr(app, "_disable_external_input"):
+                    app._disable_external_input()
         configure(app)
         if not getattr(app, "native_editor_active", False):
             return

@@ -1,3 +1,65 @@
+# Validation — 0.4.1 alpha
+
+## Reported failure and changes
+
+The supplied 0.4.0 diagnostic records a manual-flight request failing with
+"Native editor input is unavailable" immediately after replay startup. Later
+telemetry shows both DX11 and native input available, but the desktop session
+never marked the editor active. Its console events were left queued.
+
+Startup now waits for enabled editor configuration, a paused replay view,
+DX11 and input readiness before sending a flight command. Foreground focus is
+not a readiness requirement. Pending native configuration or DX11 setup can
+recover without latching a camera fault. Input-hook failure still rejects
+manual control. An initialized panel remains connected to console, Stop and
+retry actions after a failed flight entry.
+
+Ownership changes previously cleared the recorded shortcut edges. Duplicate
+raw/window messages or auto-repeat could turn a held F7/F8 into new toggles.
+Those edges now survive ownership changes and shortcuts fire on their own
+fresh key-down transition. F8 can close the console after hideconsole is
+confirmed; configurable text keys remain available for console typing.
+
+The in-game panel uses the desktop slate/teal palette, installed Windows
+Segoe UI fonts with fallback, grouped controls and a persistent Stop/status
+footer. Replay timing is the default capture mode. Path interpolation and
+the native DOF evaluator are unchanged.
+
+## Checks completed here
+
+- Python suite: 691 tests run, no failures, one Windows-only skip. New regressions cover
+  delayed DX11/input readiness, foreground independence, timeout/cancellation,
+  and console-event dispatch after startup fails.
+- The actual desktop Cameras page was rendered at 1000x700. Replay timing is
+  selected initially, interval spacing is disabled, and selecting Timed shot
+  enables the interval field again.
+- All current native Windows sources compiled and linked into the x64 helper,
+  bridge callback harness and DX11 WARP overlay harness. PE architecture,
+  required exports, static C++ runtime and metadata/hash were inspected.
+- Existing native path, effect and flight evaluator checks passed on Linux.
+- New Windows callback tests exercise production input handlers with duplicate
+  F7/F8 messages, asynchronous console confirmation, typing, movement handoffs,
+  and deferred DX11/configuration readiness. Compiled here; execution remains
+  a Windows CTest check.
+- Panel layout preview uses the actual ImGui draw code with a headless software
+  renderer and substitute Linux fonts. It checks geometry and clipping, not
+  the game's GPU, Windows font rasterization, or ReShade.
+
+## Remaining validation
+
+This Linux workspace cannot run Deadlock or the packaged Windows EXE. The new
+Windows CTest regressions and DX11 smoke test must run in the GitHub build.
+Use STAGE1_TESTING.md to check launch, F7/F8, paused movement and captures in
+the game. These fixes are not yet confirmed in a live Deadlock session.
+
+The prior supplied GitHub run 93281580262 passed all five Windows native tests,
+686 Python tests, the EXE build and its startup checks before source packaging
+failed on a local context-file entry. That entry and its documentation link
+were removed; the source export remains independent of local context files.
+Those earlier Windows results do not validate the new 0.4.1 native changes.
+
+## Earlier validation records
+
 # Validation — 0.4.0 alpha, Stage 1
 
 Stage 1 is a test candidate for Windows and the reviewed Deadlock builds.

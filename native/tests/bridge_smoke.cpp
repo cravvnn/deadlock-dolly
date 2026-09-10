@@ -352,6 +352,97 @@ void effect_checks(Fixture& f) {
  gCvar=0;gFindCvar=nullptr;gGetCvarData=nullptr;gSetCvar=nullptr;effect_data=nullptr;
 }
 
+void editor_input_checks() {
+    // Feed the real key-transition handler after its callers' focus checks.
+    // No foreground window or OS input injection is needed for this fixture.
+    auto saved = std::atomic_load(&dolly::gConfig);
+    auto configured = std::make_shared<EditorConfig>(*saved);
+    configured->bindings[9] = {VK_F8, 0};
+    configured->bindings[10] = {VK_F9, 0};
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
+    dolly::gWindow = nullptr;
+    dolly::gTextInput = false;
+    for (unsigned i = 0; i < 256; ++i) {
+        dolly::gKeys[i] = false; dolly::gBlocked[i] = false; dolly::gFocusBlocked[i] = false;
+    }
+    dolly::gAcknowledged = dolly::gLastEvent;
+    editor_set_owner(EditorOwner::Flight);
+    auto event_count = [] { return dolly::gLastEvent; };
+    auto console_event = [](double value) {
+        const auto& event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+        require(event.action == std::uint32_t(EditorAction::Console) && event.value == value,
+                "Console shortcut queued the wrong requested visibility");
+    };
+
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Panel, "F8 did not open the panel");
+    // Raw + legacy copies and held-key repeat must not toggle the panel back.
+    dolly::key_event(VK_F8, true); dolly::key_event('X', true); dolly::key_event('X', false);
+    dolly::unblock_released(); // OS key polling cannot erase a recorded shortcut edge.
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Panel, "Repeated/duplicate F8 flashed the panel");
+    dolly::key_event(VK_F8, false); dolly::key_event(VK_F8, false);
+    dolly::key_event(VK_F8, true);
+    require(dolly::gOwner == EditorOwner::Flight, "A new F8 press did not close the panel");
+    dolly::key_event(VK_F8, false);
+
+    const auto before_console = event_count();
+    dolly::key_event(VK_F7, true);
+    require(dolly::gOwner == EditorOwner::Console && event_count() == before_console + 1,
+            "F7 did not request the console once");
+    console_event(1);
+    dolly::key_event(VK_F7, true); dolly::key_event('X', true); dolly::key_event('X', false);
+    dolly::unblock_released(); dolly::key_event(VK_F7, true);
+    require(event_count() == before_console + 1, "Held F7 queued duplicate console toggles");
+    dolly::key_event(VK_F7, false); dolly::key_event(VK_F7, false);
+    dolly::key_event(VK_F7, true);
+    require(event_count() == before_console + 2 && dolly::gOwner == EditorOwner::Console,
+            "Console input was released before hideconsole confirmation");
+    console_event(0);
+    editor_set_owner(EditorOwner::Panel); // asynchronous hideconsole confirmation
+    dolly::key_event(VK_F7, true);
+    require(event_count() == before_console + 2 && dolly::gOwner == EditorOwner::Panel,
+            "Controller confirmation converted a held F7 into another toggle");
+    dolly::key_event(VK_F7, false);
+
+    editor_set_owner(EditorOwner::Console);
+    dolly::key_event(VK_F8, true); console_event(0);
+    const auto close_requested = event_count();
+    require(dolly::gOwner == EditorOwner::Console, "F8 bypassed console close confirmation");
+    dolly::key_event(VK_F8, true);
+    editor_set_owner(EditorOwner::Panel); dolly::key_event(VK_F8, true);
+    require(event_count() == close_requested && dolly::gOwner == EditorOwner::Panel,
+            "F8 close confirmation flashed the panel");
+    dolly::key_event(VK_F8, false);
+
+    // A configurable text key must remain available for typing in the console.
+    configured = std::make_shared<EditorConfig>(*configured);
+    configured->bindings[9] = {'H', 0};
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(configured));
+    editor_set_owner(EditorOwner::Console);
+    dolly::key_event('H', true); dolly::key_event('H', false);
+    require(event_count() == close_requested, "Custom text binding stole console typing");
+    dolly::key_event(VK_ESCAPE, true); console_event(0);
+    const auto escape_requested = event_count();
+    dolly::key_event(VK_ESCAPE, true);
+    require(event_count() == escape_requested, "Held Escape queued duplicate close requests");
+    dolly::key_event(VK_ESCAPE, false);
+
+    editor_set_owner(EditorOwner::Flight);
+    dolly::key_event('W', true);
+    require(dolly::key_down('W'), "Fresh flight movement was not recorded");
+    editor_set_owner(EditorOwner::Flight);
+    require(dolly::key_down('W'), "Reasserting the same owner interrupted movement");
+    editor_set_owner(EditorOwner::Panel); editor_set_owner(EditorOwner::Flight);
+    dolly::key_event('W', true);
+    require(!dolly::key_down('W'), "Held movement leaked across an ownership transition");
+    dolly::key_event('W', false); dolly::key_event('W', true);
+    require(dolly::key_down('W'), "Movement did not resume after release and a fresh press");
+    dolly::key_event('W', false);
+    std::atomic_store(&dolly::gConfig, saved);
+    dolly::gAcknowledged = dolly::gLastEvent;
+}
+
 void run() {
     atomic_exports();
     Fixture f;
@@ -458,6 +549,32 @@ void run() {
     require(status.error == 14, "Moving frozen replay must release the native camera"); f.unchanged();
 
     f.enable_synthetic_editor();
+    // Configuration is published separately from camera commands. A view can
+    // observe Manual just before the worker consumes the new enabled config.
+    auto enabled_config = std::atomic_load(&dolly::gConfig);
+    auto pending_config = std::make_shared<EditorConfig>(*enabled_config);
+    pending_config->enabled = 0;
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(pending_config));
+    f.manual(Mode::Manual, &first); status = f.frame();
+    require(status.state == static_cast<unsigned>(State::Starting) && !status.error &&
+            !editor_snapshot().manual_active,
+            "A pending editor config latched a camera fault or armed input");
+    f.unchanged();
+    std::atomic_store(&dolly::gConfig, enabled_config);
+    status = f.frame();
+    require(status.state == static_cast<unsigned>(State::Armed) && !status.error,
+            "The same manual command did not recover after configuration arrived");
+    for (int i = 0; i < 7; ++i) close_to(status.applied_pose[i], first[i], "Pending configuration lost the manual seed");
+    editor_overlay_available(false);
+    f.manual(Mode::Manual, &last); status = f.frame();
+    require(status.state == static_cast<unsigned>(State::Starting) && !status.error &&
+            !editor_snapshot().manual_active,
+            "Pending DX11 initialization latched a camera fault or armed input");
+    f.unchanged();
+    editor_overlay_available(true); status = f.frame();
+    require(status.state == static_cast<unsigned>(State::Armed) && !status.error,
+            "Manual flight did not recover when the DX11 panel became available");
+    for (int i = 0; i < 7; ++i) close_to(status.applied_pose[i], last[i], "Pending DX11 setup lost the manual seed");
     f.fresh_hold(.5);auto selected=f.status();
     f.manual();status=f.frame();
     require(!status.error&&status.state==static_cast<unsigned>(State::Armed),"Manual flight without a path did not arm");
@@ -492,6 +609,7 @@ void run() {
     f.manual();gHeartbeatTime=now_seconds()-3;status=f.frame(0,false);require(status.error==10,"Manual flight retained camera after editor loss");f.unchanged();
     f.command(Mode::Release);f.frame();
     effect_checks(f);
+    editor_input_checks();
 
     std::cout << "Actual native callback smoke tests passed (synthetic Windows memory; no game runtime claim)\n";
 }

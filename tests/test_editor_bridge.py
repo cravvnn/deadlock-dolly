@@ -86,6 +86,7 @@ class EditorBridgeTests(unittest.TestCase):
             self.bridge.editor_status()
 
     def test_manual_can_start_and_hold_without_a_compiled_shot(self):
+        self.publish()
         with patch.object(self.bridge, "_wait", return_value={"state":"armed"}):
             pose = [1,2,3,4,5,6,16/9]
             self.bridge.start_flight("replays/test.dem", pose)
@@ -108,6 +109,40 @@ class EditorBridgeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.bridge.start_flight("test.dem",pose)
         self.assertEqual(self.bridge._command,before)
+
+    def test_flight_waits_for_dx11_and_input_even_when_launcher_has_focus(self):
+        ready = {"enabled": True, "ready": True, "paused": True,
+                 "input_available": True, "overlay_available": True, "focused": False}
+        waiting = dict(ready, input_available=False, overlay_available=False)
+        published = []
+        original = self.bridge._publish
+        def publish(mode, *args):
+            published.append((mode, self.time))
+            return original(mode, *args)
+        with patch.object(self.bridge, "editor_status", side_effect=[waiting, waiting, ready]), \
+             patch.object(self.bridge, "_publish", side_effect=publish), \
+             patch.object(self.bridge, "_wait", return_value={"state": "armed"}):
+            self.bridge.start_flight("test.dem")
+        self.assertEqual(published, [(4, .04)])
+        self.assertTrue(self.bridge._manual)
+
+    def test_unavailable_dx11_never_publishes_a_flight_command(self):
+        self.publish(flags=1 | 4 | 16 | 64)  # Input/view ready, no swapchain yet.
+        modes = []
+        original = self.bridge._publish
+        with patch.object(self.bridge, "_publish", side_effect=lambda mode, *args: (modes.append(mode), original(mode, *args))[1]):
+            with self.assertRaisesRegex(nb.NativeBridgeError, "DX11 panel"):
+                self.bridge.start_flight("test.dem", timeout=.05)
+        self.assertEqual(modes, [0])
+        self.assertFalse(self.bridge._manual)
+        self.assertEqual(self.bridge._editor_values["owner"], "panel")
+
+    def test_flight_readiness_can_be_cancelled_without_moving_camera(self):
+        with patch.object(self.bridge, "_publish", wraps=self.bridge._publish) as publish:
+            with self.assertRaisesRegex(nb.NativeBridgeError, "cancelled"):
+                self.bridge.start_flight("test.dem", cancelled=lambda: True)
+        publish.assert_called_once_with(0)
+        self.assertEqual(self.bridge._editor_values["owner"], "panel")
 
     def test_authored_path_hides_panel_and_failure_restores_controls(self):
         self.bridge.configure_editor(enabled=True, owner="panel")

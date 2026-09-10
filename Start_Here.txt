@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.0 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.4.1 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -23,11 +23,11 @@ GETTING STARTED
    .dem replay. Replays lists demos from the selected replay folder.
 3. Click Play replay. Dolly initializes the unlocker in the hideout before
    loading the replay, then pauses it with native camera controls ready.
-4. Move to the first view and press Ctrl+Alt+K. Fly to another view and capture
-   again. F8 opens the in-game panel for capture, saved views and playback.
+4. Move to the first view and press Ctrl+Alt+K. Advance the replay, frame the
+   next view and capture again. F8 opens capture, saved views and playback.
 5. On the desktop Cameras tab, edit framing, camera bank and arrival times.
-   Timed shot spaces cameras three seconds apart by default. Replay timing
-   uses the replay tick at capture; advance the replay between those views.
+   Replay timing is selected by default and uses the replay tick at capture.
+   Timed shot is optional for placing multiple views at one paused moment.
 6. Click Play shot or press F5. Dolly returns to the shot's start, applies the
    camera and supported DOF settings, then plays the replay and path together.
    Hide HUD controls HUD visibility during playback; it returns afterward.
@@ -59,7 +59,7 @@ sensitivity. F7 is reserved for the console. Settings are stored in
 %APPDATA%/DeadlockDolly/settings.json and survive program-folder updates.
 
 The console receives normal typing without moving the camera or triggering
-Dolly shortcuts. F7 or Escape closes it and returns to the Dolly panel.
+Dolly shortcuts. F7, F8 or Escape closes it and returns to the Dolly panel.
 From Deadlock's replay UI, F8 returns to the panel and F9 returns to flight.
 Release held movement keys after switching windows before pressing them again.
 
@@ -98,8 +98,8 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.4.0 is an alpha. Its new native input and DX11 panel have not yet been tested
-in Deadlock; ReShade compatibility is unverified. In-world path markers, full
+0.4.1 is an alpha. The startup and input-switching fixes need an in-game check;
+ReShade compatibility is unverified. In-world path markers, full
 in-game curve editing and video/render-pass export are planned for later updates.
 Technical details and validation results are in docs/VALIDATION.md.
 
@@ -108,7 +108,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.4.0 uses
+logs, including any recovery backup. Use the complete new package; 0.4.1 uses
 ABI 3 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

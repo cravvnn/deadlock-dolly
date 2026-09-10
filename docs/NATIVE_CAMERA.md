@@ -1,4 +1,4 @@
-# Native camera and editor — 0.4.0 alpha
+# Native camera and editor — 0.4.1 alpha
 
 The Native driver moves authored path playback into Deadlock's main-view setup.
 The editor sends the complete shot before playback starts. The native helper

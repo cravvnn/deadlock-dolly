@@ -224,7 +224,7 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
   bool editor_ready=demo_ok&&demo.playing&&!demo.seeking&&view_ok&&pose_valid(original)&&std::isfinite(original_fov)&&original_fov>1&&original_fov<179&&width>0&&height>0&&!(flags&2)&&state!=State::Fault&&state!=State::Unsupported;
   CameraPose shown{};for(int i=0;i<7;++i)shown[i]=status.applied_pose[i];
   if(editor_ready){displayed_pose=shown;displayed_valid=true;}
-  editor_update_view(editor_ready,demo.paused,editor_ready&&command&&command->manual&&command->wire.mode!=std::uint32_t(Mode::Release),shown,phase,demo.tick);
+  editor_update_view(editor_ready,demo.paused,editor_ready&&state==State::Armed&&command&&command->manual,shown,phase,demo.tick);
   status.state=std::uint32_t(state);status.error=error;status.phase=phase;std::snprintf(status.message,sizeof(status.message),"%s",message);write_status(status);};
  if(!command){finish(State::Probe,0,"Native view hook ready; load a local replay to test a camera.");return;}
  const auto& c=command->wire;
@@ -256,7 +256,12 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
  }
  if(command->manual){
   auto editor=editor_snapshot();
-  if(!editor.enabled||!editor.overlay_available||!editor.input_available){fault=19;finish(State::Fault,fault,"Native editor input is unavailable. Check the DX11 panel and export diagnostics; original game input remains available.");return;}
+  if(!editor.input_available){fault=19;finish(State::Fault,fault,"Native raw-input interception is unavailable; original game input remains available. Export diagnostics and restart the editing session.");return;}
+  // The worker may read a fresh camera command just after reading an older
+  // EditorConfig. DX11 can also still be attaching/recreating its first view.
+  // These are pending states, not permanent camera faults. The controller
+  // bounds startup waiting and cancels on timeout; no view is written here.
+  if(!editor.enabled||!editor.overlay_available){finish(State::Starting,0,!editor.enabled?"Waiting for native editor configuration.":"Waiting for the DirectX 11 editor panel.");return;}
   if(c.mode==std::uint32_t(Mode::Manual))editor_integrate_flight(manual_pose,real_delta);
   if(!pose_valid(manual_pose)){fault=16;finish(State::Fault,fault,"Native flight produced an invalid camera; camera released.");return;}
   double fov=original_fov;

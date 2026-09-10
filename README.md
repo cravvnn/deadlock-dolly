@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.0 alpha.** The portable Windows build opens through
+**Current source: 0.4.1 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -43,8 +43,9 @@ choose the game executable and a local `.dem` replay, or select a file from
 **Replays**. Click **Play replay** to open the game, initialize the unlocker
 in the hideout, load the replay and pause it for editing.
 
-Move to a view and press **Ctrl+Alt+K** to capture it. Fly to another view and
-capture again. **F8** opens the in-game panel, **F7** opens the console, and
+Move to a view and press **Ctrl+Alt+K** to capture it. **Replay timing** is the
+default: advance the replay, frame the next view and capture again.
+**F8** opens the in-game panel, **F7** opens the console, and
 **F9** switches to Deadlock's replay UI for hero selection. Bindings, movement
 speed and mouse sensitivity are saved from **Keybinds**.
 
@@ -59,8 +60,9 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.0 is an alpha. The new native input and DX11 panel have not yet been tested
-in Deadlock; ReShade compatibility is unverified. Validation details are in
+0.4.1 is an alpha. This update fixes native editor startup and input switching;
+these fixes still need an in-game check. ReShade compatibility is unverified.
+Validation details are in
 [VALIDATION.md](docs/VALIDATION.md). In-world camera markers, full in-game curve
 editing and video/render-pass export are planned for later updates.
 

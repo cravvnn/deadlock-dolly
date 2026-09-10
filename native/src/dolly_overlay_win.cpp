@@ -39,6 +39,10 @@ ID3D11DeviceContext1* context1=nullptr;
 ID3DDeviceContextState* overlay_state=nullptr;
 ID3D11RenderTargetView* target=nullptr;
 ImGuiContext* imgui=nullptr;
+ImFont* panel_font=nullptr;
+ImFont* heading_font=nullptr;
+ImFont* title_font=nullptr;
+float panel_scale=1.0f;
 std::atomic<HWND> game_window{nullptr};
 bool win32_ready=false,dx11_ready=false,last_panel=false;
 ULONGLONG next_initialization=0;
@@ -90,7 +94,8 @@ void release_device() noexcept {
   ImGui::DestroyContext(imgui);
   ImGui::SetCurrentContext(previous==imgui?nullptr:previous);
  }
- imgui=nullptr;dx11_ready=win32_ready=last_panel=false;
+ imgui=nullptr;panel_font=heading_font=title_font=nullptr;panel_scale=1.0f;
+ dx11_ready=win32_ready=last_panel=false;
  release(overlay_state);release(context1);release(immediate);release(device);
  if(game_window && IsWindow(game_window)){
   auto previous=reinterpret_cast<WNDPROC>(GetPropW(game_window,kWindowProperty));
@@ -121,29 +126,71 @@ bool create_target(IDXGISwapChain* chain) noexcept {
  buffer->Release();return SUCCEEDED(result);
 }
 
+ImVec4 panel_color(unsigned rgb,float alpha=1.0f) {
+ return ImVec4(float((rgb>>16)&255)/255.0f,float((rgb>>8)&255)/255.0f,float(rgb&255)/255.0f,alpha);
+}
 void style_panel() {
  ImGui::StyleColorsDark();
  auto& style=ImGui::GetStyle();
- style.WindowPadding=ImVec2(18,16);style.FramePadding=ImVec2(10,7);
- style.ItemSpacing=ImVec2(10,9);style.WindowRounding=9;style.FrameRounding=5;
- style.GrabRounding=5;style.WindowBorderSize=1;style.FrameBorderSize=0;
- style.Colors[ImGuiCol_WindowBg]=ImVec4(.065f,.082f,.098f,.98f);
- style.Colors[ImGuiCol_TitleBg]=ImVec4(.07f,.10f,.12f,1);
- style.Colors[ImGuiCol_TitleBgActive]=ImVec4(.08f,.14f,.16f,1);
- style.Colors[ImGuiCol_Border]=ImVec4(.22f,.33f,.36f,.8f);
- style.Colors[ImGuiCol_Text]=ImVec4(.91f,.95f,.96f,1);
- style.Colors[ImGuiCol_TextDisabled]=ImVec4(.53f,.64f,.68f,1);
- style.Colors[ImGuiCol_Button]=ImVec4(.13f,.25f,.27f,1);
- style.Colors[ImGuiCol_ButtonHovered]=ImVec4(.20f,.39f,.40f,1);
- style.Colors[ImGuiCol_ButtonActive]=ImVec4(.25f,.48f,.46f,1);
- style.Colors[ImGuiCol_FrameBg]=ImVec4(.10f,.15f,.18f,1);
- style.Colors[ImGuiCol_FrameBgHovered]=ImVec4(.15f,.25f,.27f,1);
- style.Colors[ImGuiCol_FrameBgActive]=ImVec4(.19f,.32f,.34f,1);
- style.Colors[ImGuiCol_SliderGrab]=ImVec4(.41f,.75f,.69f,1);
- style.Colors[ImGuiCol_SliderGrabActive]=ImVec4(.60f,.87f,.78f,1);
- style.Colors[ImGuiCol_Header]=style.Colors[ImGuiCol_Button];
+ // Keep the in-game editor on the launcher's slate/teal palette.
+ style.WindowPadding=ImVec2(20,18);style.FramePadding=ImVec2(12,8);
+ style.ItemSpacing=ImVec2(10,8);style.ItemInnerSpacing=ImVec2(8,6);
+ style.WindowRounding=12;style.ChildRounding=8;style.FrameRounding=5;
+ style.PopupRounding=6;style.GrabRounding=5;style.ScrollbarRounding=6;
+ style.WindowBorderSize=1;style.ChildBorderSize=0;style.FrameBorderSize=0;
+ style.ScrollbarSize=10;style.GrabMinSize=14;style.DisabledAlpha=.45f;
+ style.Colors[ImGuiCol_WindowBg]=panel_color(0x10151c,.985f);
+ style.Colors[ImGuiCol_ChildBg]=panel_color(0x191f28);
+ style.Colors[ImGuiCol_PopupBg]=panel_color(0x191f28);
+ style.Colors[ImGuiCol_Border]=panel_color(0x303c49);
+ style.Colors[ImGuiCol_Text]=panel_color(0xe8edf3);
+ style.Colors[ImGuiCol_TextDisabled]=panel_color(0x8f9eae);
+ style.Colors[ImGuiCol_Button]=panel_color(0x28323f);
+ style.Colors[ImGuiCol_ButtonHovered]=panel_color(0x374757);
+ style.Colors[ImGuiCol_ButtonActive]=panel_color(0x435768);
+ style.Colors[ImGuiCol_FrameBg]=panel_color(0x0e131a);
+ style.Colors[ImGuiCol_FrameBgHovered]=panel_color(0x25313e);
+ style.Colors[ImGuiCol_FrameBgActive]=panel_color(0x2f4150);
+ style.Colors[ImGuiCol_SliderGrab]=panel_color(0x64d6c3);
+ style.Colors[ImGuiCol_SliderGrabActive]=panel_color(0x8ee7d9);
+ style.Colors[ImGuiCol_CheckMark]=panel_color(0x64d6c3);
+ style.Colors[ImGuiCol_Header]=panel_color(0x274e4b);
  style.Colors[ImGuiCol_HeaderHovered]=style.Colors[ImGuiCol_ButtonHovered];
  style.Colors[ImGuiCol_HeaderActive]=style.Colors[ImGuiCol_ButtonActive];
+ style.Colors[ImGuiCol_Separator]=panel_color(0x303c49);
+ style.Colors[ImGuiCol_ScrollbarBg]=panel_color(0x10151c,0);
+ style.Colors[ImGuiCol_ScrollbarGrab]=panel_color(0x354150);
+ style.Colors[ImGuiCol_ScrollbarGrabHovered]=panel_color(0x526577);
+ style.Colors[ImGuiCol_ScrollbarGrabActive]=panel_color(0x64d6c3);
+ style.Colors[ImGuiCol_ResizeGrip]=panel_color(0x64d6c3,.15f);
+ style.Colors[ImGuiCol_ResizeGripHovered]=panel_color(0x64d6c3,.45f);
+ style.Colors[ImGuiCol_ResizeGripActive]=panel_color(0x64d6c3,.75f);
+ style.Colors[ImGuiCol_NavCursor]=panel_color(0x64d6c3);
+ style.Colors[ImGuiCol_TextSelectedBg]=panel_color(0x274e4b);
+ style.Colors[ImGuiCol_PlotHistogram]=panel_color(0x64d6c3);
+}
+ImFont* installed_font(const char* filename,float size) {
+ char windows[MAX_PATH]{},path[MAX_PATH]{};
+ const UINT length=GetWindowsDirectoryA(windows,MAX_PATH);
+ if(!length||length>=MAX_PATH)return nullptr;
+ const int written=std::snprintf(path,sizeof(path),"%s\\Fonts\\%s",windows,filename);
+ if(written<0||written>=int(sizeof(path)))return nullptr;
+ const DWORD attributes=GetFileAttributesA(path);
+ if(attributes==INVALID_FILE_ATTRIBUTES||(attributes&FILE_ATTRIBUTE_DIRECTORY))return nullptr;
+ ImFontConfig config;config.OversampleH=2;config.OversampleV=2;
+ return ImGui::GetIO().Fonts->AddFontFromFileTTF(path,size,&config);
+}
+void load_panel_fonts(float scale) {
+ // Read the fonts already installed with Windows; no system fonts are
+ // distributed with Dolly. Keep a working fallback on minimal Windows images.
+ panel_font=installed_font("segoeui.ttf",16.0f*scale);
+ if(!panel_font)panel_font=installed_font("arial.ttf",16.0f*scale);
+ if(!panel_font){ImFontConfig config;config.SizePixels=16.0f*scale;panel_font=ImGui::GetIO().Fonts->AddFontDefault(&config);}
+ heading_font=installed_font("seguisb.ttf",16.0f*scale);
+ if(!heading_font)heading_font=panel_font;
+ title_font=installed_font("seguisb.ttf",22.0f*scale);
+ if(!title_font)title_font=heading_font;
+ ImGui::GetIO().FontDefault=panel_font;
 }
 
 // A complete state swap is preferable to assuming what the game or a ReShade
@@ -190,9 +237,9 @@ bool initialize_device(IDXGISwapChain* chain) {
   auto& io=ImGui::GetIO();io.IniFilename=nullptr;io.LogFilename=nullptr;
   io.ConfigFlags=ImGuiConfigFlags_NoMouseCursorChange;
   style_panel();
-  const float scale=std::clamp(ImGui_ImplWin32_GetDpiScaleForHwnd(game_window),1.0f,2.5f);
-  ImFontConfig font;font.SizePixels=16.0f*scale;io.Fonts->AddFontDefault(&font);
-  ImGui::GetStyle().ScaleAllSizes(scale);
+  panel_scale=std::clamp(ImGui_ImplWin32_GetDpiScaleForHwnd(game_window),1.0f,2.5f);
+  load_panel_fonts(panel_scale);
+  ImGui::GetStyle().ScaleAllSizes(panel_scale);
   win32_ready=ImGui_ImplWin32_Init(game_window);
   if(win32_ready)dx11_ready=ImGui_ImplDX11_Init(device,immediate);
  }
@@ -220,81 +267,169 @@ bool initialize_device(IDXGISwapChain* chain) {
  return true;
 }
 
-const char* owner_name(EditorOwner owner) noexcept {
- switch(owner){
- case EditorOwner::Flight:return "Free camera";
- case EditorOwner::Panel:return "Dolly editor";
- case EditorOwner::GameUI:return "Deadlock replay UI";
- case EditorOwner::Console:return "Console";
- case EditorOwner::Unfocused:return "Window unfocused";
- default:return "Waiting for replay";
+void action_button(const char* label,EditorAction action,float width=0,double value=0,bool primary=false) {
+ if(primary){
+  ImGui::PushStyleColor(ImGuiCol_Button,panel_color(0x64d6c3));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered,panel_color(0x8ee7d9));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive,panel_color(0x44baa7));
+  ImGui::PushStyleColor(ImGuiCol_Text,panel_color(0x092620));
+  ImGui::PushFont(heading_font);
+ }
+ if(ImGui::Button(label,ImVec2(width,0)))editor_enqueue(action,value);
+ if(primary){ImGui::PopFont();ImGui::PopStyleColor(4);}
+}
+void section_title(const char* title,const char* detail=nullptr) {
+ ImGui::PushFont(heading_font);ImGui::TextUnformatted(title);ImGui::PopFont();
+ if(detail){
+  const float width=ImGui::CalcTextSize(detail).x;
+  const float right=ImGui::GetWindowContentRegionMax().x;
+  if(ImGui::GetItemRectSize().x+width+24*panel_scale<ImGui::GetContentRegionAvail().x){
+   ImGui::SameLine(right-width);ImGui::TextDisabled("%s",detail);
+  }
  }
 }
-void action_button(const char* label,EditorAction action,float width=0,double value=0) {
- if(ImGui::Button(label,ImVec2(width,0)))editor_enqueue(action,value);
+bool begin_panel_card(const char* name) {
+ ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(14*panel_scale,12*panel_scale));
+ ImGui::PushStyleColor(ImGuiCol_ChildBg,panel_color(0x191f28));
+ return ImGui::BeginChild(name,ImVec2(0,0),
+     ImGuiChildFlags_AutoResizeY|ImGuiChildFlags_AlwaysUseWindowPadding,
+     ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+}
+void end_panel_card(){ImGui::EndChild();ImGui::PopStyleColor();ImGui::PopStyleVar();}
+void replay_badge(const EditorSnapshot& state) {
+ const char* text=state.busy?"Working":!state.ready?"Waiting for replay":
+                  state.playing?"Playing shot":state.paused?"Paused":"Playing";
+ const ImVec2 start=ImGui::GetCursorScreenPos();
+ const ImVec2 text_size=ImGui::CalcTextSize(text);
+ const ImVec2 size(text_size.x+30*panel_scale,text_size.y+10*panel_scale);
+ ImGui::GetWindowDrawList()->AddRectFilled(start,ImVec2(start.x+size.x,start.y+size.y),
+     ImGui::GetColorU32(panel_color(0x203a39)),5*panel_scale);
+ ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(start.x+11*panel_scale,start.y+size.y/2),
+     3*panel_scale,ImGui::GetColorU32(panel_color(0x64d6c3)));
+ ImGui::GetWindowDrawList()->AddText(ImVec2(start.x+20*panel_scale,start.y+5*panel_scale),
+     ImGui::GetColorU32(panel_color(0x9be5d9)),text);
+ ImGui::Dummy(size);
+ if(state.tick>0){
+  char tick[48]{};std::snprintf(tick,sizeof(tick),"Replay tick %d",state.tick);
+  const float width=ImGui::CalcTextSize(tick).x;
+  if(size.x+width+12*panel_scale<ImGui::GetContentRegionAvail().x){
+   ImGui::SameLine(ImGui::GetWindowContentRegionMax().x-width);
+   ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5*panel_scale);
+   ImGui::TextDisabled("%s",tick);
+  }
+ }
 }
 void draw_panel(const EditorSnapshot& state) {
  auto& io=ImGui::GetIO();
- ImGui::SetNextWindowPos(ImVec2(24,24),ImGuiCond_FirstUseEver);
- ImGui::SetNextWindowSize(ImVec2(std::min(480.0f,io.DisplaySize.x-32),0),ImGuiCond_FirstUseEver);
- ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(350.0f,io.DisplaySize.x-16),150),
-                                   ImVec2(std::max(350.0f,io.DisplaySize.x-16),std::max(150.0f,io.DisplaySize.y-32)));
- bool open=true;
- if(ImGui::Begin("DEADLOCK DOLLY",&open,ImGuiWindowFlags_NoCollapse)){
-  ImGui::TextColored(ImVec4(.48f,.83f,.74f,1),"%s",state.shot_name[0]?state.shot_name:"Untitled shot");
-  ImGui::TextDisabled("%s  |  Replay %s",owner_name(state.owner),state.paused?"paused":"playing");
-  if(state.duration>0)ImGui::Text("Shot %.2f / %.2f s",state.phase,state.duration);
-  ImGui::Separator();
-  ImGui::BeginDisabled(!state.ready||state.busy);
-  const float half=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
-  action_button(state.paused?"Play replay":"Pause replay",EditorAction::PlayPause,half);
-  ImGui::SameLine();
-  ImGui::BeginDisabled(state.camera_count<2);
-  action_button("Play shot",EditorAction::PlayPath,half);ImGui::EndDisabled();
-  action_button("Back 1 second",EditorAction::SeekBack,half);ImGui::SameLine();
-  action_button("Forward 1 second",EditorAction::SeekForward,half);
-  ImGui::SeparatorText("Camera views");
-  action_button(state.camera_count?"Capture camera":"Start path here",EditorAction::Capture,half);ImGui::SameLine();
-  ImGui::BeginDisabled(!state.camera_count);
-  action_button("Replace selected",EditorAction::Replace,half);
-  char selected[64]{};
-  if(state.camera_count)std::snprintf(selected,sizeof(selected),"View %u of %u",state.selected_camera+1,state.camera_count);
-  else std::snprintf(selected,sizeof(selected),"No camera views");
-  ImGui::SetNextItemWidth(-1);
-  if(ImGui::BeginCombo("##selected-camera",selected)){
-   const std::uint32_t count=std::min<std::uint32_t>(state.camera_count,10000);
-   for(std::uint32_t i=0;i<count;++i){
-    char name[48]{};std::snprintf(name,sizeof(name),"View %u",i+1);
-    if(ImGui::Selectable(name,i==state.selected_camera))editor_enqueue(EditorAction::SelectView,double(i));
-    if(i==state.selected_camera)ImGui::SetItemDefaultFocus();
+ const float margin=std::min(20.0f*panel_scale,std::min(io.DisplaySize.x,io.DisplaySize.y)*.04f);
+ const ImVec2 maximum(std::max(1.0f,io.DisplaySize.x-2*margin),
+                      std::max(1.0f,io.DisplaySize.y-2*margin));
+ ImGui::SetNextWindowPos(ImVec2(margin,margin),ImGuiCond_FirstUseEver);
+ ImGui::SetNextWindowSize(ImVec2(std::min(470.0f*panel_scale,maximum.x),
+                                 std::min(700.0f*panel_scale,maximum.y)),ImGuiCond_FirstUseEver);
+ ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(340.0f*panel_scale,maximum.x),
+                                            std::min(340.0f*panel_scale,maximum.y)),maximum);
+ bool close=false;
+ if(ImGui::Begin("DEADLOCK DOLLY",nullptr,ImGuiWindowFlags_NoTitleBar|
+                 ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse)){
+  // Keep the panel reachable when the game changes resolution while it is open.
+  const auto position=ImGui::GetWindowPos();const auto size=ImGui::GetWindowSize();
+  ImGui::SetWindowPos(ImVec2(std::clamp(position.x,margin,std::max(margin,io.DisplaySize.x-size.x-margin)),
+                             std::clamp(position.y,margin,std::max(margin,io.DisplaySize.y-size.y-margin))));
+  const float close_width=ImGui::CalcTextSize("Close").x+ImGui::GetStyle().FramePadding.x*2;
+  const float right=ImGui::GetWindowContentRegionMax().x;
+  ImGui::PushFont(title_font);
+  const bool compact_title=ImGui::CalcTextSize("DEADLOCK DOLLY").x+close_width+12*panel_scale>ImGui::GetContentRegionAvail().x;
+  if(compact_title){ImGui::PopFont();ImGui::PushFont(heading_font);}
+  ImGui::AlignTextToFramePadding();ImGui::TextUnformatted("DEADLOCK DOLLY");ImGui::PopFont();
+  ImGui::SameLine(right-close_width);close=ImGui::Button("Close");
+  ImGui::TextWrapped("%s",state.shot_name[0]?state.shot_name:"Untitled shot");
+  replay_badge(state);ImGui::Spacing();
+  // One vertical scroll region holds the cards; essential exit/stop controls
+  // stay visible. There are no nested horizontal scrollbars at small sizes.
+  const float message_height=state.message[0]?ImGui::CalcTextSize(state.message,nullptr,false,
+      ImGui::GetContentRegionAvail().x).y+ImGui::GetStyle().ItemSpacing.y:0;
+  const float footer_height=ImGui::GetFrameHeightWithSpacing()+ImGui::GetTextLineHeightWithSpacing()+
+      message_height+8*panel_scale;
+  ImGui::PushStyleColor(ImGuiCol_ChildBg,ImVec4(0,0,0,0));
+  if(ImGui::BeginChild("##editor-content",ImVec2(0,-footer_height),ImGuiChildFlags_None)){
+   ImGui::BeginDisabled(!state.ready||state.busy);
+   if(begin_panel_card("##cameras-card")){
+    char count[32]{};std::snprintf(count,sizeof(count),"%u saved",state.camera_count);
+    section_title("Cameras",count);
+    action_button(state.camera_count?"Capture camera here":"Start path here",EditorAction::Capture,
+                  ImGui::GetContentRegionAvail().x,0,true);
+    ImGui::BeginDisabled(!state.camera_count);
+    char selected[64]{};
+    if(state.camera_count)std::snprintf(selected,sizeof(selected),"View %u of %u",state.selected_camera+1,state.camera_count);
+    else std::snprintf(selected,sizeof(selected),"No camera views yet");
+    const float replace_width=ImGui::CalcTextSize("Replace").x+ImGui::GetStyle().FramePadding.x*2;
+    ImGui::SetNextItemWidth(std::max(1.0f,ImGui::GetContentRegionAvail().x-replace_width-ImGui::GetStyle().ItemSpacing.x));
+    if(ImGui::BeginCombo("##selected-camera",selected)){
+     const std::uint32_t count=std::min<std::uint32_t>(state.camera_count,10000);
+     for(std::uint32_t i=0;i<count;++i){
+      char name[48]{};std::snprintf(name,sizeof(name),"View %u",i+1);
+      if(ImGui::Selectable(name,i==state.selected_camera))editor_enqueue(EditorAction::SelectView,double(i));
+      if(i==state.selected_camera)ImGui::SetItemDefaultFocus();
+     }
+     ImGui::EndCombo();
+    }
+    ImGui::SameLine();action_button("Replace",EditorAction::Replace,replace_width);
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("Replace the selected view with the current camera.");
+    const float half=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
+    action_button("Previous view",EditorAction::PreviousView,half);ImGui::SameLine();
+    action_button("Next view",EditorAction::NextView,half);
+    ImGui::EndDisabled();
    }
-   ImGui::EndCombo();
+   end_panel_card();
+   if(begin_panel_card("##replay-card")){
+    char timing[64]{};
+    if(state.duration>0)std::snprintf(timing,sizeof(timing),"%.2f / %.2f s",state.phase,state.duration);
+    section_title("Replay",timing[0]?timing:nullptr);
+    if(state.duration>0){
+     ImGui::ProgressBar(std::clamp(float(state.phase/state.duration),0.0f,1.0f),ImVec2(-1,4*panel_scale),"");
+     ImGui::Spacing();
+    }
+    const float half=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
+    ImGui::BeginDisabled(state.camera_count<2);
+    action_button("Play shot",EditorAction::PlayPath,half);ImGui::EndDisabled();ImGui::SameLine();
+    action_button(state.paused?"Play replay":"Pause replay",EditorAction::PlayPause,half);
+    action_button("Back 1 second",EditorAction::SeekBack,half);ImGui::SameLine();
+    action_button("Forward 1 second",EditorAction::SeekForward,half);
+   }
+   end_panel_card();
+   if(begin_panel_card("##flight-card")){
+    // Send one change at the end of a drag, not a settings write per frame.
+    static float speed_draft=400.0f;
+    static bool speed_editing=false;
+    if(!speed_editing)speed_draft=std::clamp(static_cast<float>(state.speed),1.0f,10000.0f);
+    char speed_label[48]{};std::snprintf(speed_label,sizeof(speed_label),"Speed %.0f",speed_draft);
+    section_title("Free camera",speed_label);
+    ImGui::SetNextItemWidth(-1);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,ImVec2(12*panel_scale,3*panel_scale));
+    ImGui::SliderFloat("##flight-speed",&speed_draft,1.0f,10000.0f,"",
+                       ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp);
+    ImGui::PopStyleVar();
+    const bool speed_committed=ImGui::IsItemDeactivatedAfterEdit();
+    speed_editing=ImGui::IsItemActive();
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("Movement speed in world units per second. Ctrl+click to enter a value.");
+    if(speed_committed)editor_enqueue(EditorAction::SetSpeed,double(speed_draft));
+    const float half=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
+    action_button("Fly camera",EditorAction::Flight,half);ImGui::SameLine();
+    action_button("Heroes / game UI",EditorAction::GameUI,half,1);
+   }
+   end_panel_card();
+   ImGui::EndDisabled();
   }
-  action_button("Previous view",EditorAction::PreviousView,half);ImGui::SameLine();
-  action_button("Next view",EditorAction::NextView,half);
-  ImGui::EndDisabled();
-  ImGui::SeparatorText("Free camera");
-  // Keep the user's drag local, then send one settings change on release.
-  // Sending at render frequency floods the acknowledged event queue and
-  // makes the launcher rewrite its settings file for every mouse movement.
-  static float speed_draft=400.0f;
-  static bool speed_editing=false;
-  if(!speed_editing)speed_draft=std::clamp(static_cast<float>(state.speed),1.0f,10000.0f);
-  ImGui::SetNextItemWidth(-1);
-  ImGui::SliderFloat("##flight-speed",&speed_draft,1.0f,10000.0f,"Speed %.0f",
-                     ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp);
-  const bool speed_committed=ImGui::IsItemDeactivatedAfterEdit();
-  speed_editing=ImGui::IsItemActive();
-  if(speed_committed)editor_enqueue(EditorAction::SetSpeed,double(speed_draft));
-  action_button("Fly camera",EditorAction::Flight,half);ImGui::SameLine();
-  action_button("Deadlock UI / heroes",EditorAction::GameUI,half,1);
-  ImGui::EndDisabled();
+  ImGui::EndChild();ImGui::PopStyleColor();
+  ImGui::Spacing();
   action_button("Stop / restore",EditorAction::Stop,ImGui::GetContentRegionAvail().x);
-  if(state.message[0]){ImGui::Spacing();ImGui::TextWrapped("%s",state.message);}
-  ImGui::Spacing();ImGui::TextDisabled("F7 Console  |  Bindings are set in the launcher");
+  if(state.message[0])ImGui::TextWrapped("%s",state.message);
+  ImGui::TextDisabled("F7  Console");
+  if(ImGui::IsItemHovered())ImGui::SetTooltip("Open Deadlock's console. Customize editor shortcuts in the launcher.");
  }
  ImGui::End();
- if(!open)editor_enqueue(EditorAction::Flight);
+ if(close)editor_enqueue(EditorAction::Flight);
 }
 
 

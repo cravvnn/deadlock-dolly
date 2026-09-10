@@ -1,5 +1,18 @@
 # Changes
 
+## 0.4.1 alpha — Native editor startup and controls
+
+- Wait for the paused replay view, DX11 panel and native input before entering
+  flight, including when the launcher is in the foreground. A failed entry
+  keeps the panel's console, Stop and retry actions live.
+- Preserve held-key state when switching input ownership, preventing repeated
+  F7/F8 toggles from one press or duplicate input messages.
+- Match the in-game panel to the desktop palette with proportional text,
+  grouped controls, a prominent capture action and a compact header.
+- Select Replay timing by default and disable interval spacing until Timed
+  shot is selected. Capture still uses the native press-time pose and tick.
+- Keep the source packaging independent of local authoring context files.
+
 ## 0.4.0 alpha — Stage 1 connected editing
 
 - Fix the Windows build's startup-test path comparison for short TEMP names

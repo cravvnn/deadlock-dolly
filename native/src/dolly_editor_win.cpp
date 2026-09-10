@@ -18,8 +18,8 @@ std::atomic<EditorOwner> gOwner{EditorOwner::Disabled};
 std::shared_ptr<const EditorConfig> gConfig;
 std::atomic<double> gSpeed{400};
 std::atomic<long> gMouseX{0},gMouseY{0};
-std::atomic<bool> gKeys[256]{},gBlocked[256]{},gActionDown[kEditorBindingCount]{};
-std::atomic<bool> gConsoleDown{false},gNoLegacyMouse{false},gTextInput{false};
+std::atomic<bool> gKeys[256]{},gBlocked[256]{},gFocusBlocked[256]{};
+std::atomic<bool> gNoLegacyMouse{false},gTextInput{false};
 std::atomic_flag gEventLock=ATOMIC_FLAG_INIT;
 EditorEvent gEvents[kEditorEventCount]{};
 std::uint32_t gLastEvent=0,gAcknowledged=0;
@@ -42,15 +42,23 @@ bool owns_input() noexcept {
  if(!configured()||!focused())return false;
  auto owner=gOwner.load();return (owner==EditorOwner::Flight||owner==EditorOwner::Panel)&&(gViewFlags.load()&1);
 }
-void reset_keys() noexcept {
- for(unsigned i=0;i<256;++i){gKeys[i]=false;gBlocked[i]=(GetAsyncKeyState(int(i))&0x8000)!=0;}
- for(auto& key:gActionDown)key=false;
+void reset_keys(bool lost_input=false) noexcept {
+ for(unsigned i=0;i<256;++i){
+  const bool held=(GetAsyncKeyState(int(i))&0x8000)!=0;
+  if(lost_input){gKeys[i]=false;gBlocked[i]=held;gFocusBlocked[i]=held;}
+  else if(gKeys[i].load()||held){gBlocked[i]=true;}
+ }
+ // Ownership changes must preserve observed down edges. Windows can deliver
+ // the same press through raw and legacy input, followed by auto-repeat. A
+ // reset between those messages used to turn one F7/F8 press into many.
  gMouseX=0;gMouseY=0;
 }
 void unblock_released() noexcept {
  // The worker only clears old-focus blocks; it never creates input from keys
  // pressed while unfocused. Actual movement comes from the game's messages.
- for(unsigned i=1;i<256;++i)if(gBlocked[i].load()&&!(GetAsyncKeyState(int(i))&0x8000))gBlocked[i]=false;
+ for(unsigned i=1;i<256;++i)if(gFocusBlocked[i].load()&&!(GetAsyncKeyState(int(i))&0x8000)){
+  gBlocked[i]=false;gFocusBlocked[i]=false;
+ }
 }
 void cursor_mode(EditorOwner owner) noexcept {
  if(gCursorLock.test_and_set(std::memory_order_acquire))return;
@@ -71,18 +79,20 @@ bool binding_down(const EditorBinding& b,bool movement=false) noexcept {
  if(movement&&b.modifiers==0)return true;
  return actual==b.modifiers;
 }
+bool function_key(unsigned vk) noexcept {return vk>=VK_F1&&vk<=VK_F24;}
 bool reserved_input(unsigned vk) noexcept {
  if(!configured()||!focused())return false;
  if(vk==VK_F7)return true;
  auto owner=gOwner.load();
- if(owner==EditorOwner::Console)return vk==VK_ESCAPE;
+ if(owner==EditorOwner::Console&&vk==VK_ESCAPE)return true;
  auto c=std::atomic_load(&gConfig);if(!c)return false;
- for(unsigned i: {9u,10u})if(c->bindings[i].vk==vk&&c->bindings[i].modifiers==modifiers())return true;
+ for(unsigned i: {9u,10u})if((owner!=EditorOwner::Console||(i==9&&function_key(vk)))&&c->bindings[i].vk==vk&&c->bindings[i].modifiers==modifiers())return true;
  return false;
 }
 void dispatch(EditorAction action) noexcept {
  auto owner=gOwner.load();
  if(action==EditorAction::Panel){
+  if(owner==EditorOwner::Console){editor_enqueue(EditorAction::Console,0);return;}
   if(owner==EditorOwner::GameUI){editor_enqueue(EditorAction::Panel,1);return;}
   editor_set_owner(owner==EditorOwner::Panel?EditorOwner::Flight:EditorOwner::Panel);return;
  }
@@ -93,26 +103,31 @@ void dispatch(EditorAction action) noexcept {
  }
  editor_enqueue(action);
 }
-void update_actions() noexcept {
- if(!configured()||!focused())return;
- bool f7=key_down(VK_F7);
- if(f7&&!gConsoleDown.exchange(f7)){
+void dispatch_key_press(unsigned vk) noexcept {
+ // Raw-input and window-message callers check foreground ownership before
+ // recording a key. Shortcuts run only on that key's fresh down edge, never
+ // when an unrelated modifier changes or a held key sends another message.
+ if(!configured())return;
+ if(vk==VK_F7){
   auto owner=gOwner.load();bool open=owner!=EditorOwner::Console;
   if(editor_enqueue(EditorAction::Console,open?1:0)){
    // Opening suspends input immediately. Closing retains Console ownership
    // until the controller confirms hideconsole and requests Panel ownership.
    if(open)editor_set_owner(EditorOwner::Console);
   }
- }else if(!f7)gConsoleDown=false;
+  return;
+ }
  auto owner=gOwner.load();
- if(owner==EditorOwner::Console||(owner==EditorOwner::Panel&&gTextInput.load()))return;
  auto c=std::atomic_load(&gConfig);if(!c)return;
  for(unsigned i=0;i<12;++i){
+  if(owner==EditorOwner::Console&&(i!=9||!function_key(vk)))continue;
+  if(owner==EditorOwner::Panel&&gTextInput.load()&&((i!=9&&i!=10)||!function_key(vk)))continue;
   // Game UI passes ordinary controls through; only its explicit return key
   // and panel toggle are editor shortcuts in that mode.
   if(owner==EditorOwner::GameUI&&i!=9&&i!=10)continue;
-  bool down=binding_down(c->bindings[i]);bool old=gActionDown[i].exchange(down);
-  if(down&&!old){gMouseX=0;gMouseY=0;dispatch(static_cast<EditorAction>(i));}
+  if(c->bindings[i].vk==vk&&binding_down(c->bindings[i])){
+   gMouseX=0;gMouseY=0;dispatch(static_cast<EditorAction>(i));return;
+  }
  }
 }
 void key_event(unsigned vk,bool down) noexcept {
@@ -121,13 +136,13 @@ void key_event(unsigned vk,bool down) noexcept {
  if(vk==VK_ESCAPE&&down&&!was_down&&!gBlocked[vk].load()&&gOwner.load()==EditorOwner::Console){
   editor_enqueue(EditorAction::Console,0); // release input only after confirmed hideconsole
  }
- gKeys[vk]=down;if(!down)gBlocked[vk]=false;
+ if(!down){gBlocked[vk]=false;gFocusBlocked[vk]=false;}
  // Win32 raw-input keyboard VKs distinguish left/right modifier keys while
  // normal window messages often use the generic VK. Keep generic matches.
  if(vk==VK_LCONTROL||vk==VK_RCONTROL)gKeys[VK_CONTROL]=down||gKeys[vk==VK_LCONTROL?VK_RCONTROL:VK_LCONTROL].load();
  if(vk==VK_LMENU||vk==VK_RMENU)gKeys[VK_MENU]=down||gKeys[vk==VK_LMENU?VK_RMENU:VK_LMENU].load();
  if(vk==VK_LSHIFT||vk==VK_RSHIFT)gKeys[VK_SHIFT]=down||gKeys[vk==VK_LSHIFT?VK_RSHIFT:VK_LSHIFT].load();
- update_actions();
+ if(down&&!was_down&&!gBlocked[vk].load())dispatch_key_press(vk);
 }
 void process_raw(RAWINPUT* raw,bool suppress) noexcept {
  if(!raw)return;
@@ -209,11 +224,12 @@ bool editor_enqueue(EditorAction action,double value) noexcept {
 bool editor_panel_visible() noexcept{return configured()&&focused()&&gOwner.load()==EditorOwner::Panel;}
 void editor_set_owner(EditorOwner owner) noexcept {
  if(owner>EditorOwner::Console)return;
- gOwner=owner;editor_reset_motion();cursor_mode(owner);
+ if(gOwner.exchange(owner)==owner)return;
+ editor_reset_motion();cursor_mode(owner);
 }
-void editor_overlay_available(bool available) noexcept {gOverlay=available;if(!available){editor_reset_motion();cursor_mode(EditorOwner::Disabled);}else cursor_mode(gOwner.load());}
+void editor_overlay_available(bool available) noexcept {gOverlay=available;if(!available){reset_keys(true);cursor_mode(EditorOwner::Disabled);}else cursor_mode(gOwner.load());}
 void editor_text_input_active(bool active) noexcept {gTextInput=active;}
-void editor_attach_window(HWND window) noexcept {gWindow=window;gFocused=focused();editor_reset_motion();}
+void editor_attach_window(HWND window) noexcept {gWindow=window;gFocused=focused();reset_keys(true);}
 void editor_reset_motion() noexcept {reset_keys();}
 bool editor_install_input_hooks() noexcept {
  HMODULE user=GetModuleHandleW(L"user32.dll");if(!user)return false;
@@ -248,8 +264,8 @@ void editor_integrate_flight(CameraPose& pose,double dt) noexcept {
 bool editor_window_message(HWND window,UINT message,WPARAM wparam,LPARAM lparam,LRESULT& result) noexcept {
  result=0;
  if(window!=gWindow.load())return false;
- if(message==WM_KILLFOCUS||(message==WM_ACTIVATEAPP&&!wparam)){gFocused=false;editor_reset_motion();cursor_mode(EditorOwner::Unfocused);return false;}
- if(message==WM_SETFOCUS||(message==WM_ACTIVATEAPP&&wparam)){gFocused=true;editor_reset_motion();cursor_mode(gOwner.load());return false;}
+ if(message==WM_KILLFOCUS||(message==WM_ACTIVATEAPP&&!wparam)){gFocused=false;reset_keys(true);cursor_mode(EditorOwner::Unfocused);return false;}
+ if(message==WM_SETFOCUS||(message==WM_ACTIVATEAPP&&wparam)){gFocused=true;reset_keys(true);cursor_mode(gOwner.load());return false;}
  if(!configured()||!focused())return false;
  bool before=owns_input();
  if(message==WM_INPUT&&before){
@@ -306,8 +322,8 @@ void editor_worker_tick(unsigned char* memory,bool connected) noexcept {
   if(latest->ack_event>=gAcknowledged&&latest->ack_event<=gLastEvent)gAcknowledged=latest->ack_event;
   gEventLock.clear(std::memory_order_release);
  }
- bool current_focus=focused();if(gFocused.exchange(current_focus)!=current_focus){editor_reset_motion();cursor_mode(current_focus?gOwner.load():EditorOwner::Unfocused);}
- if(!connected){gOwner=EditorOwner::Disabled;editor_reset_motion();cursor_mode(EditorOwner::Disabled);}
+ bool current_focus=focused();if(gFocused.exchange(current_focus)!=current_focus){reset_keys(true);cursor_mode(current_focus?gOwner.load():EditorOwner::Unfocused);}
+ if(!connected){gOwner=EditorOwner::Disabled;reset_keys(true);cursor_mode(EditorOwner::Disabled);}
  unblock_released();
  static ULONGLONG last_registration_check=0;auto tick_now=GetTickCount64();
  if(tick_now-last_registration_check>1000){

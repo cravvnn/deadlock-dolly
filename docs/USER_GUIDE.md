@@ -148,12 +148,14 @@ in the game console. The native input behavior above does not apply to it.
 
 ## Make a first shot
 
-1. Use **Timed shot** capture timing on Cameras for a first test. Default key
-   spacing is three seconds, so several views can be created at one paused tick.
+1. **Replay timing** is selected by default on Cameras. Camera arrival times
+   follow the replay moments at which each view is captured.
 2. Frame the first view and use Ctrl+Alt+K or **Start path here**. Dolly records
    the first camera at time zero and sets the shot's replay start tick.
-3. Move to another position and capture again. Change **Spacing (s)** for future
-   keys; edit a selected camera's arrival time to retime an existing key.
+3. Advance the replay, move to another position and capture again. Edit a
+   selected camera's arrival time to retime an existing key. **Timed shot**
+   remains available for several views at one paused tick; its spacing starts
+   at three seconds and can be changed for future captures.
 4. Leave **Frozen preview** off and **Hide HUD** on. F5 or **Play shot** seeks
    to the shot start, applies the starting camera/lens/DOF, then plays the demo
    and path together. Release movement keys while it prepares the shot.

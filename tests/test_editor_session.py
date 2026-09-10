@@ -43,6 +43,23 @@ class EditorSessionTests(unittest.TestCase):
         self.assertFalse(self.app.native_editor_active)
         self.assertFalse(self.bridge.configure_editor.call_args.kwargs["enabled"])
 
+    def test_failed_startup_keeps_live_panel_console_and_retry_actions_working(self):
+        event = {"sequence": 1, "action": "console", "value": 1}
+        self.bridge.editor_status.return_value = {"enabled": True, "events": [event]}
+        session.poll(self.app)
+        self.assertTrue(self.app.native_editor_active)
+        self.app._disable_external_input.assert_called_once()
+        self.app._submit.call_args.args[1]()
+        self.controller.toggle_console.assert_called_once_with(enabled=True)
+        self.bridge.acknowledge_editor_event.assert_called_once_with(1)
+
+    def test_disconnected_bridge_cannot_reactivate_native_input(self):
+        self.controller.status.return_value["connected"] = False
+        self.bridge.editor_status.return_value = {"enabled": True, "events": []}
+        session.poll(self.app)
+        self.assertFalse(self.app.native_editor_active)
+        self.bridge.editor_status.assert_not_called()
+
     def test_busy_retains_event_then_acknowledges_the_exact_capture_once(self):
         event = {"sequence": 1, "action": "capture", "value": 0,
                  "pose": [1, 2, 3, 4, 5, 6, 16/9], "tick": 64, "paused": True}

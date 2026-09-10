@@ -1,4 +1,4 @@
-# Stage 1 manual test checklist — 0.4.0-alpha
+# Stage 1 manual test checklist — 0.4.1-alpha
 
 This is the Windows/Deadlock acceptance check for the new native-input and DX11
 panel workflow. Automated tests, cross compilation and an editor startup check
@@ -6,7 +6,7 @@ are useful evidence, but none proves this integration in a running game.
 **These manual checks have not been performed in the Linux workspace.**
 
 Keep the previous working package and a copy of your saved shots. Use a fully
-extracted, newly built 0.4.0-alpha Windows folder with its matching ABI 3 helper.
+extracted, newly built 0.4.1-alpha Windows folder with its matching ABI 3 helper.
 Record the source commit, BUILD_INFO.json version and supported game build with
 results. Mark each result PASS, FAIL or NOT TESTED; do not treat an untested
 check as a pass.
@@ -42,7 +42,8 @@ check as a pass.
       the keypress view, and flight continues afterward without another setup.
 - [ ] Hold the capture key: it adds only one key. Replace changes the selected
       key at its existing time, rather than adding a duplicate.
-- [ ] Timed shot allows several views at one paused tick. Replay timing records
+- [ ] Replay timing is the default and spacing is disabled. Timed shot remains
+  available for several views at one paused tick. Replay timing records
       distinct replay moments and rejects duplicate times with a clear message.
 - [ ] Pause/resume replay time with P, then resume paused camera movement. Check
       that the manual camera does not jump when replay time begins advancing.

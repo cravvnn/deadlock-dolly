@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.0 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.1 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -20,7 +20,7 @@ GETTING STARTED
    or choose a demo from Replays.
 4. Click Play replay. Dolly initializes the unlocker in the hideout before
    loading the replay, then pauses it with native camera controls ready.
-5. Move to a view and press Ctrl+Alt+K. Fly to another view and capture again.
+5. Move to a view and press Ctrl+Alt+K. Advance the replay and capture the next view.
    F8 opens the in-game panel for capture, saved views and playback.
 6. Edit framing and arrival times on the desktop Cameras tab. Effects contains
    the depth-of-field preset. Save shots from the desktop File menu.
@@ -51,12 +51,12 @@ sensitivity. F7 is reserved for the console. Settings survive updates in
 %APPDATA%/DeadlockDolly/settings.json.
 
 The console receives normal typing without moving the camera or triggering
-Dolly shortcuts. F7 or Escape closes it and returns to the Dolly panel.
+Dolly shortcuts. F7, F8 or Escape closes it and returns to the Dolly panel.
 From Deadlock's replay UI, F8 returns to the panel and F9 returns to flight.
 Release held movement keys after switching windows before pressing them again.
 
-Timed shot spaces cameras three seconds apart by default, including captures
-at the same paused tick. Replay timing uses different replay moments. Framing
+Replay timing is the default: advance the replay between captures to set their
+arrival times. Timed shot can space multiple views at one paused tick. Framing
 uses aspect ratios, with 16:9 as Normal. Frozen preview plays the camera path
 while the scene stays paused. Stop / restore returns to the game's camera,
 which may be elsewhere, and restores camera settings.
@@ -64,8 +64,8 @@ which may be elsewhere, and restores camera settings.
 
 COMPATIBILITY AND UPDATES
 
-0.4.0 is an alpha. Its new native input and DX11 panel have not yet been tested
-in Deadlock; ReShade compatibility is unverified. In-world path markers, full
+0.4.1 is an alpha. The startup and input-switching fixes need an in-game check;
+ReShade compatibility is unverified. In-world path markers, full
 in-game curve editing and video/render-pass export are planned for later updates.
 
 Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.

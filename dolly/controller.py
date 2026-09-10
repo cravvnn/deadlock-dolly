@@ -1325,7 +1325,7 @@ class Controller:
             # paused player-eye calibration can move that seed vertically.
             if isinstance(pose, dict):
                 pose = tuple(pose[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"))
-            bridge.start_flight(self._demo.name, pose=pose)
+            bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled)
             self._native_active = True
             self._native_manual = True
             current = bridge.status()

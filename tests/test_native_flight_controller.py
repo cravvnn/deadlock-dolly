@@ -29,7 +29,7 @@ class FlightBridge:
                 "phase": self.phase, "applied_pose": list(self.pose), "original_pose": list(self.original),
                 "effect_count": 0}
 
-    def start_flight(self, demo_name, pose=None, timeout=3):
+    def start_flight(self, demo_name, pose=None, timeout=3, *, cancelled=None):
         self.events.append("native.flight")
         if pose is not None:
             self.pose = list(pose)

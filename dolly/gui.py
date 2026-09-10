@@ -125,7 +125,7 @@ class DollyApp:
         self.smoothing = tk.StringVar(value="Balanced")
         self.frozen = tk.BooleanVar(value=False)
         self.hide_hud = tk.BooleanVar(value=True)
-        self.capture_mode = tk.StringVar(value="Timed shot")
+        self.capture_mode = tk.StringVar(value="Replay timing")
         self.segment_seconds = tk.StringVar(value="3")
         self.show_coordinates = tk.BooleanVar(value=False)
         self.app_settings = self._load_app_settings()
@@ -774,11 +774,12 @@ class DollyApp:
         timing.grid(row=1, column=0, sticky="ew", pady=(0, 11))
         ttk.Label(timing, text="Capture timing", style="Muted.TLabel").pack(side="left", padx=(0, 7))
         mode = ttk.Combobox(timing, textvariable=self.capture_mode,
-                           values=("Timed shot", "Replay timing"), state="readonly", width=13)
+                           values=("Replay timing", "Timed shot"), state="readonly", width=13)
         mode.pack(side="left")
         mode.bind("<<ComboboxSelected>>", self._capture_mode_changed)
         ttk.Label(timing, text="Spacing", style="Muted.TLabel").pack(side="left", padx=(14, 6))
-        self.segment_entry = ttk.Entry(timing, textvariable=self.segment_seconds, width=5)
+        self.segment_entry = ttk.Entry(timing, textvariable=self.segment_seconds, width=5,
+                                       state="disabled" if self.capture_mode.get() == "Replay timing" else "normal")
         self.segment_entry.pack(side="left")
         ttk.Label(timing, text="s", style="Muted.TLabel").pack(side="left", padx=(4, 12))
         ttk.Label(timing, textvariable=self.path_summary, style="Muted.TLabel").pack(side="right")
