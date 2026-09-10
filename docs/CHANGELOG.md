@@ -2,6 +2,9 @@
 
 ## 0.4.0 alpha — Stage 1 connected editing
 
+- Fix the Windows build's startup-test path comparison for short TEMP names
+  such as RUNNER~1. The test checks the resolved, quoted replay path and keeps
+  unlocker-before-replay ordering checks. Application behavior is unchanged.
 - Add Home, Replays and Keybinds pages while retaining Dolly's existing style,
   camera/effect editing and supplied logo.
 - Add one-click Play replay: connect to the launched process, require rendered

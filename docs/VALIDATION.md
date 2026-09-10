@@ -31,6 +31,26 @@ input actions, automatic startup and a reorganized desktop editor.
 
 ## Required Windows and in-game validation
 
+### Windows build log received September 10
+
+The supplied GitHub logs for run 93278796097 show a successful MSVC native
+build and all five Windows CTest checks passing: path, effects, flight, bridge
+callback and DX11 WARP overlay. The run then stopped at one of 686 Python
+tests. Its expected replay command retained the short Windows TEMP spelling
+RUNNER~1, while the launcher correctly used the resolved path.
+
+The startup test now compares the resolved path. Its fixture includes an
+existing parent-directory alias and a directory with spaces, reproducing the
+same mismatch on Linux. The original assertion fails on that fixture; the
+corrected startup suite passes and still checks exactly one quoted replay
+command after unlocker initialization. No application or native code changed.
+
+The EXE packaging/startup steps were not reached in that Windows run. A fresh
+Windows build is needed to complete them. These synthetic Windows checks do
+not establish live Deadlock or ReShade compatibility.
+
+### Remaining game checks
+
 No Windows executable, DX11 WARP harness, or Deadlock session has been run in
 this Linux workspace. Cross-compilation does not establish that native input
 routes, foreground focus, console closure, renderer state or ReShade work in

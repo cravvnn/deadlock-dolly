@@ -21,7 +21,13 @@ class AutoStartupTests(unittest.TestCase):
         self.session.restore_gameinfo.side_effect = lambda: self.console.events.append("restore_gameinfo")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.demo = Path(self.temp.name) / "example.dem"
+        # Keep an unresolved spelling on every OS: Windows runners may use an
+        # 8.3 TEMP alias (RUNNER~1), which Path.resolve expands before launch.
+        # A parent segment reproduces that distinction without Windows-only
+        # filesystem setup; spaces also exercise the quoted console argument.
+        replay_dir = Path(self.temp.name) / "Replay files"
+        (replay_dir / "nested").mkdir(parents=True)
+        self.demo = replay_dir / "nested" / ".." / "example.dem"
         self.demo.write_bytes(b"fixture")
 
     def start(self, **kwargs):
@@ -32,7 +38,8 @@ class AutoStartupTests(unittest.TestCase):
     def test_one_click_waits_for_hideout_then_unlocks_once_before_replay(self):
         result = self.start()
         events = self.console.events
-        command = 'playdemo "' + self.demo.as_posix() + '"'
+        command = 'playdemo "' + self.demo.resolve().as_posix() + '"'
+        self.assertEqual([event for event in events if event.startswith("playdemo ")], [command])
         self.assertEqual(events.count("cvar_unhide"), 1)
         self.assertLess(events.index("cvar_unhide"), events.index("restore_gameinfo"))
         self.assertLess(events.index("restore_gameinfo"), events.index(command))
