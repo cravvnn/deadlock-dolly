@@ -24,6 +24,7 @@ from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPEC
                    CVAR_COMPONENTS, validate_cvar_value, parse_cvar_value, format_cvar_value)
 from .console import ConsoleClient, error_text, parse_demo_info, parse_demo_tick
 from .replays import same_replay_name
+from .demo_packets import packet_index
 from .playback import ReplayClock
 from .smoothing import PhaseSmoother, smoothing_window
 from .display import client_aspect_ratio
@@ -1784,13 +1785,48 @@ class Controller:
 
     def _seek(self, project, shot_time):
         target = int(round(project.start_tick + shot_time * project.tick_rate))
+        # SourceTV recordings may store one packet per several simulation
+        # ticks. Normal pausing can expose a tick between those records, but
+        # rebuilding that tick stops at a later packet. Only native shot seeks
+        # opt into a boundary backed by the selected, completed replay file.
+        # Legacy position refresh and relative controls retain exact semantics.
+        if target > 0 and self._native_bridge() is not None:
+            index = packet_index(self._demo, check_cancelled=self._check_position_cancelled)
+            actual = index.following(target) if index is not None else None
+            if actual is not None and actual != target:
+                self._check_position_cancelled()
+                live = self._require_demo()
+                if live.get("total_ticks") not in (None, index.total_ticks):
+                    # A same-named file may have been replaced since playback
+                    # loaded it. Its new index cannot adjust this live replay.
+                    return self._seek_tick(target, allow_start_boundary=True)
+                if (actual - project.start_tick) / project.tick_rate > project.duration:
+                    raise RuntimeError(f"The next recorded replay packet is tick {actual}, after this shot ends. "
+                                       "Extend the shot or preview its camera without seeking.")
+                self._check_position_cancelled()
+                info = self._seek_tick(actual)
+                self._last_seek_details.update(target_tick=target, commanded_tick=actual,
+                    actual_tick=actual, boundary="recorded_packet",
+                    boundary_delta_ticks=actual - target)
+                return dict(info, seek_boundary={"requested_tick": target,
+                    "actual_tick": actual, "reason": "recorded_packet"})
         return self._seek_tick(target, allow_start_boundary=True)
 
     def _seek_shot_time(self, project, shot_time, info):
-        """Keep authored keys aligned when the engine cannot reconstruct tick 0."""
+        """Sample the original shot timeline at an explicit reconstruction tick."""
         if not info.get("seek_boundary"):
             return shot_time
         actual_time = (info["tick"] - project.start_tick) / project.tick_rate
+        boundary = info["seek_boundary"]
+        if boundary.get("reason") == "recorded_packet":
+            if actual_time > project.duration:
+                raise RuntimeError(f"The next recorded replay packet is tick {info['tick']}, after this shot ends. "
+                                   "Extend the shot or preview its camera without seeking.")
+            skipped = (info["tick"] - boundary["requested_tick"]) / project.tick_rate
+            self._message(f"Replay tick {boundary['requested_tick']} falls between recorded packets. "
+                          f"Starting at tick {info['tick']}; skipping the first {skipped:.6f} shot seconds of this playback. "
+                          "Saved camera and effect times are unchanged.")
+            return actual_time
         if actual_time > project.duration:
             raise RuntimeError("This replay's first seekable tick is 1, after this shot ends. "
                                "Extend the shot past that tick or preview the camera without seeking.")
@@ -1909,7 +1945,13 @@ class Controller:
             positioned_demo = self._seek(project, shot_time)
             shot_time = self._seek_shot_time(project, shot_time, positioned_demo)
             self._position_direct_frame(project.evaluate(shot_time), positioned_demo["tick"])
-            self._message("Replay paused at the requested path time.", time=shot_time)
+            boundary = positioned_demo.get("seek_boundary")
+            if boundary:
+                self._message(f"Replay paused at recorded tick {positioned_demo['tick']} "
+                              f"({shot_time:.6f} shot seconds); requested tick {boundary['requested_tick']}. "
+                              "Saved camera and effect times are unchanged.", time=shot_time)
+            else:
+                self._message("Replay paused at the requested path time.", time=shot_time)
 
     def play(self, project, time=0, speed=1, rate=60, frozen=False, hide_hud=True, smoothing="off"):
         # The main UI starts at zero; explicit API callers may choose a start.
@@ -1964,6 +2006,18 @@ class Controller:
                             start_time=actual_start,
                             seek_boundary=deepcopy(positioned_demo["seek_boundary"]))
                         start = actual_start
+                elif native is not None:
+                    # A frozen native preview needs the current rendered scene,
+                    # including a paused tick between SourceTV packet records.
+                    # Seeking it or calibrating the console player eye can move
+                    # that scene. Confirm two fresh paused views, then prepare
+                    # the native camera directly without a replay rebuild.
+                    before = native.status()
+                    self._require_native_demo(before, allow_idle=True)
+                    self._request("demo_pause")
+                    paused_view = self._wait_paused_native_view(native, before["frame_count"])
+                    positioned_demo = dict(self._require_demo(require_tick=False),
+                                           tick=int(paused_view["tick"]))
                 else:
                     self._request("demo_pause")
                     positioned_demo = self._require_demo(require_tick=False)
@@ -1972,12 +2026,18 @@ class Controller:
                 frame = project.evaluate(start)
                 if native is not None:
                     frame["cvars"] = {}  # Native preparation snapshots originals before the first effect write.
-                try:
-                    self._position_direct_frame(frame, positioned_demo.get("tick"))
-                finally:
-                    self._playback_details["startup_calibration"] = deepcopy(self._camera_calibration)
-                    self._playback_details["startup_seek"] = (deepcopy(self._last_seek_details)
-                        if positioned_demo.get("tick") is not None else None)
+                if native is not None and frozen:
+                    self._playback_details["startup_calibration"] = {
+                        "method": "native_frozen_view", "prepared_tick": positioned_demo["tick"],
+                        "console_calibration_required": False}
+                    self._playback_details["startup_seek"] = None
+                else:
+                    try:
+                        self._position_direct_frame(frame, positioned_demo.get("tick"))
+                    finally:
+                        self._playback_details["startup_calibration"] = deepcopy(self._camera_calibration)
+                        self._playback_details["startup_seek"] = (deepcopy(self._last_seek_details)
+                            if positioned_demo.get("tick") is not None else None)
                 self._reset_motion_observations(frame)
                 checked_demo = self._require_demo(require_tick=not frozen)
                 if (positioned_demo.get("tick") is not None and
@@ -1988,11 +2048,15 @@ class Controller:
                 if native is not None:
                     # The whole shot is published once. HOLD must be acknowledged
                     # while paused, then PLAY is armed before demo_resume.
-                    self._request(command)
+                    if not frozen:
+                        self._request(command)
                     self._native_active = True
                     native.prepare(project, start, speed, bool(frozen), self._demo.name)
                     self._native_last_status = native.status()
                     self._require_native_demo(self._native_last_status)
+                    if frozen and (not self._native_last_status.get("paused") or
+                                   int(self._native_last_status["tick"]) != positioned_demo["tick"]):
+                        raise RuntimeError("The replay moved while preparing frozen native preview. Pause it and retry.")
                     self._check_position_cancelled()
                     native.play()
                     if not frozen:
@@ -2557,6 +2621,10 @@ class Controller:
             self._message(restoration_error, playing=False)
 
     def disconnect(self):
+        bridge = self._native_bridge()
+        close_media = getattr(bridge, "_close_media", None)
+        if callable(close_media):
+            close_media()
         self.stop()
         if self._console:
             self._console.close()

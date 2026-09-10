@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(DollyNative VERSION 0.4.7 LANGUAGES C CXX)
+project(DollyNative VERSION 0.5.0 LANGUAGES C CXX)
 
 # Native interpolation tests also build on Linux/macOS. The game bridge is an
 # x64 Windows DLL and is deliberately absent from non-Windows targets.
@@ -27,6 +27,9 @@ if(BUILD_TESTING)
     add_executable(visualization_tests tests/visualization_tests.cpp)
     target_link_libraries(visualization_tests PRIVATE dolly_path)
     add_test(NAME native_visualization_tests COMMAND visualization_tests)
+    add_executable(video_math_tests tests/video_math_tests.cpp)
+    target_include_directories(video_math_tests PRIVATE include)
+    add_test(NAME native_video_math_tests COMMAND video_math_tests)
 endif()
 
 if(WIN32)
@@ -46,6 +49,9 @@ if(WIN32)
     add_library(dolly_overlay STATIC
         src/dolly_overlay_win.cpp
         src/dolly_renderer_diagnostics_win.cpp
+        src/dolly_video_win.cpp
+        src/dolly_reshade_win.cpp
+        src/dolly_media_win.cpp
         src/dolly_visualization_runtime_win.cpp
         vendor/imgui/imgui.cpp
         vendor/imgui/imgui_draw.cpp
@@ -56,7 +62,7 @@ if(WIN32)
     target_include_directories(dolly_overlay PRIVATE include vendor/imgui vendor/imgui/backends)
     target_compile_definitions(dolly_overlay PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
         IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
-    target_link_libraries(dolly_overlay PUBLIC dolly_path minhook d3d11 dxgi d3dcompiler dwmapi gdi32)
+    target_link_libraries(dolly_overlay PUBLIC dolly_path minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32)
 
     add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp)
     target_include_directories(DollyNative PRIVATE include)
@@ -82,6 +88,11 @@ if(WIN32)
         target_link_libraries(overlay_smoke PRIVATE dolly_overlay minhook)
         add_test(NAME native_dx11_overlay_smoke COMMAND overlay_smoke)
         set_tests_properties(native_dx11_overlay_smoke PROPERTIES TIMEOUT 45)
+        add_executable(video_smoke tests/video_smoke.cpp)
+        target_include_directories(video_smoke PRIVATE include)
+        target_link_libraries(video_smoke PRIVATE dolly_overlay)
+        add_test(NAME native_video_encoder_smoke COMMAND video_smoke)
+        set_tests_properties(native_video_encoder_smoke PROPERTIES TIMEOUT 45)
     endif()
 
     if(MSVC)

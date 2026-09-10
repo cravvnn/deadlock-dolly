@@ -101,6 +101,7 @@ def configure(app):
     playhead = float(_value(app, "shot_time", 0) or 0)
     playback_speed, playback_rate = _playback_values(app)
     values = dict(enabled=active, bindings=settings.action_bindings,
+                  reshade_binding=settings.reshade_binding,
                   speed=settings.movement_speed, sensitivity=settings.mouse_sensitivity,
                   selected_camera=selected, camera_count=count,
                   shot_name=app.project.name, message=str(_value(app, "status_text", "")),
@@ -164,6 +165,10 @@ def dispatch(app, event, bridge):
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":
         app._play()
+    elif action == "start_video":
+        app._start_video_recording()
+    elif action == "stop_video":
+        app._stop_video_recording(cancel=False)
     elif action == "stop":
         _native_operation(app, "Stopping and restoring", app.controller.stop, bridge)
     elif action in ("previous_view", "next_view", "select_view"):

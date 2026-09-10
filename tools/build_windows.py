@@ -141,6 +141,12 @@ def main() -> int:
                  third_party / "notices" / "MinHook-LICENSE.txt")
     shutil.copy2(ROOT / "native" / "vendor" / "imgui" / "LICENSE.txt",
                  third_party / "notices" / "Dear-ImGui-LICENSE.txt")
+    shutil.copy2(ROOT / "native" / "vendor" / "reshade" / "LICENSE.md",
+                 third_party / "notices" / "ReShade-API-LICENSE.md")
+    video_guide = (ROOT / "docs" / "VIDEO_AND_RESHADE.md").read_text(encoding="utf-8")
+    video_guide = video_guide.replace(
+        "](VALIDATION.md)", "](https://github.com/cravvnn/deadlock-dolly/blob/main/docs/VALIDATION.md)")
+    (bundle / "Video_and_ReShade.md").write_text(video_guide, encoding="utf-8")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     for extension in ("md", "json"):

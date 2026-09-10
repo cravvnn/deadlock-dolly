@@ -4,6 +4,7 @@
 #include "dolly_editor.hpp"
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_visualization_runtime.hpp"
+#include "dolly_reshade.hpp"
 #include "MinHook.h"
 #include "imgui.h"
 #include <d3d11.h>
@@ -511,6 +512,12 @@ bool editor_window_message(HWND, UINT, WPARAM, LPARAM, LRESULT&) noexcept {
 }
 int main() {
     try {
+        dolly::reshade_set_enabled(false);
+        require(!dolly::reshade_overlay_pending() && !dolly::reshade_overlay_open() &&
+                    !dolly::reshade_available(),
+                "An unconfigured optional ReShade runtime must not hide the editor");
+        require(!dolly::reshade_request_overlay(true),
+                "Opening absent ReShade must leave ordinary editor input available");
         const auto instance = GetModuleHandleW(nullptr);
         WNDCLASSW wc{};
         wc.lpfnWndProc = DefWindowProcW;

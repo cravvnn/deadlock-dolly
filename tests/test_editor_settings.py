@@ -63,7 +63,7 @@ class EditorSettingsTests(unittest.TestCase):
         save_settings(settings, self.path)
         self.assertEqual(load_settings(self.path), settings)
         raw = json.loads(self.path.read_text())
-        self.assertEqual(raw["version"], 2)
+        self.assertEqual(raw["version"], 3)
         self.assertNotIn("migration_warnings", raw)
         self.assertNotIn("enabled", raw)
         self.assertEqual(raw["capture_binding"]["key"], "Mouse4")
@@ -108,6 +108,55 @@ class EditorSettingsTests(unittest.TestCase):
         self.path.write_text(json.dumps(raw))
         with self.assertRaisesRegex(ValueError, "disagree"):
             load_settings(self.path)
+
+    def test_reshade_binding_and_runtime_roundtrip(self):
+        settings = dataclasses.replace(AppSettings().with_reshade_binding(EditorBinding("Mouse5")),
+                                       reshade_runtime_path="D:/Effects/ReShade64.dll")
+        save_settings(settings, self.path)
+        self.assertEqual(load_settings(self.path), settings)
+        self.assertEqual(load_settings(self.path).reshade_binding.label, "Mouse5")
+        save_settings(settings.with_reshade_binding(None), self.path)
+        self.assertIsNone(load_settings(self.path).reshade_binding)
+
+    def test_reshade_conflicts_fail_in_both_directions(self):
+        for binding in (EditorBinding("F8"), EditorBinding("Ctrl"), EditorBinding("K", True, True)):
+            with self.subTest(binding=binding), self.assertRaises(ValueError):
+                AppSettings().with_reshade_binding(binding)
+        bindings = default_action_bindings()
+        bindings["play_path"] = EditorBinding("F11")
+        with self.assertRaisesRegex(ValueError, "ReShade menu and Play camera path"):
+            AppSettings().with_action_bindings(bindings)
+        cleared = AppSettings().with_reshade_binding(None)
+        self.assertEqual(cleared.with_action_bindings(bindings).action_bindings["play_path"].key, "F11")
+
+    def test_v2_migration_keeps_existing_f11_and_unbinds_new_menu(self):
+        settings = AppSettings().with_reshade_binding(None)
+        bindings = dict(settings.action_bindings)
+        bindings["play_path"] = EditorBinding("F11")
+        save_settings(settings.with_action_bindings(bindings), self.path)
+        raw = json.loads(self.path.read_text())
+        raw["version"] = 2
+        raw.pop("reshade_binding")
+        raw.pop("reshade_runtime_path")
+        self.path.write_text(json.dumps(raw))
+        before = self.path.read_bytes()
+        loaded = load_settings(self.path)
+        self.assertIsNone(loaded.reshade_binding)
+        self.assertEqual(loaded.action_bindings["play_path"].key, "F11")
+        self.assertIn("existing F11 binding was kept", loaded.migration_warnings[0])
+        self.assertEqual(before, self.path.read_bytes())
+
+    def test_v1_f11_capture_migration_does_not_lose_capture(self):
+        self.write_legacy(CaptureBinding("F11", False, False))
+        settings = load_settings(self.path)
+        self.assertIsNone(settings.reshade_binding)
+        self.assertEqual(settings.capture_binding.key, "F11")
+
+    def test_invalid_reshade_path_and_binding_do_not_save(self):
+        for values in ({"reshade_runtime_path": "bad\npath"},
+                       {"reshade_binding": {}}, {"reshade_runtime_path": 42}):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                AppSettings(**values)
 
 
 class EditorBindingTests(unittest.TestCase):

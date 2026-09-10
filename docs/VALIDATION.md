@@ -1,3 +1,133 @@
+# Validation — 0.5.0 alpha
+
+## Scope and completed checks
+
+This build adds real-time MP4 recording and an optional ReShade manual runtime.
+It does not relocate the main-view hook or change the camera clock. The
+`on_view`/hook block, path evaluator, effects evaluator and flight-math header
+were compared with the 0.4.7 source archive and remain byte-for-byte identical.
+The owner reports stable playback with 0.4.7; earlier renderer crashes still
+do not have a confirmed general cause/fix.
+
+- Python regression suite: 899 tests run, no failures, two platform-specific skips.
+- Five portable native test programs passed: camera paths, effects, flight,
+  visualization, and video cadence/timestamps/color conversion/row orientation.
+- Windows x64 native DLL, bridge smoke, overlay smoke and video encoder smoke
+  compiled and linked with Zig/Clang. These Windows programs were not executed
+  in this Linux workspace.
+- The video smoke test writes and reopens an MP4, checks dimensions, timestamps,
+  sample count/duration, finalization without further Presents, no-overwrite,
+  and cancellation. GitHub's Windows CTest gate executes it.
+- The frozen Windows GUI gate checks the new Export controls at minimum window
+  size. No local graphical display or Windows desktop was available here.
+- Owned C++ formatting passed token-preservation and idempotence checks.
+- Native PE architecture, required exports, static runtime and artifact hash
+  were checked. Media Foundation is loaded optionally; the camera DLL has no
+  mandatory Media Foundation DLL import.
+
+Optional media commands use a separate bounded mapping (media ABI 1), retaining
+camera ABI 3. Editor ABI 2 adds the ReShade binding/owner and recording actions;
+its configuration remains 448 bytes. Settings v3 migrates older preferences
+while preserving conflicting existing keybindings.
+
+## New behavior requiring Windows/Deadlock verification
+
+ReShade 6.8.0/API 20 full-add-on headers are pinned. Manual API signatures and
+single-sample SDR callback ordering were checked against official source.
+Capture follows effects and precedes both interfaces. MSAA/HDR ReShade
+swapchains are refused. There is no supplied game depth texture.
+
+DLL loading runs on an optional loader thread. Menu transitions use the input
+worker; render callbacks do not move/confine the OS cursor. Closing Dolly or
+losing its heartbeat requests finalization and processes render-resource/menu
+teardown on the next real Present. Unconfigured ReShade cannot leave a pending
+menu request that hides the editor.
+
+Before publishing this feature build, verify these in an editing session:
+
+1. Clean launch, paused flight, capture, repeated playback, F7/F8/F9 and focus
+   changes with ReShade unconfigured.
+2. Record 30/60 FPS at the chosen game resolution; finish, replay the MP4,
+   compare elapsed time and inspect the missed-slot count. Confirm markers and
+   both editor interfaces stay out of the file.
+3. Record with a visible color effect, then with effects disabled. Test F11,
+   F7 return, rebinding, preset reload, and ordinary paused movement afterward.
+4. Finish on focus loss/resize, cancel, close Dolly while keeping the game open,
+   and verify that the file finalizes and mouse input returns.
+
+This is real-time video-only capture. It does not provide fixed-step simulation,
+audio synchronization, depth/world/hero/effect layers or arbitrary output sizing.
+
+# Validation — 0.4.8 alpha
+
+## Recorded-demo evidence and scope
+
+The supplied completed SourceTV demo contains 17,019 ordinary packets with
+three-/four-tick spacing. Its FileInfo reports 51,585 ticks in 806.015625 seconds.
+The supplied 0.3.13 logs show successful replay loading followed by a paused-
+camera calibration failure: tick 48,393 is absent, while 48,394 is recorded;
+the same issue occurs around 22,636/22,637. A normal paused render tick can also
+lie between packets. Current native flight avoids that old calibration path,
+but native shot starts still needed explicit recorded-packet handling.
+
+The new reader inspects framing and bounded metadata, skips payloads, requires
+a completed header/Stop/FileInfo relationship, and caches two file identities.
+Bounds, replacement, growth/truncation and cancellation are checked. Unavailable
+indexes preserve strict seeking. This is not a decoder or a replacement for
+the game's recording-content validation.
+
+Native shot playback/seek targets the indexed following packet when needed,
+then retains exact stable tick/pause validation and replay identity checks.
+Camera and effect phase use the actual tick on the unchanged authored timeline.
+The initial skipped fraction is reported. Targets past the shot end fail.
+Frozen native preview instead confirms fresh paused telemetry and prepares its
+camera without a seek or console position calibration, preserving that scene.
+It checks the same paused tick again before starting native motion.
+
+Generic legacy seeks remain exact. Normal native playback's existing console
+position-calibration recovery can still request an unavailable adjacent tick.
+That separate recovery is not claimed fixed. Future deterministic export needs
+preroll to preserve its first requested frame, rather than an initial skip.
+
+## Renderer research and observations
+
+Static comparison with HLAE found that Dolly overrides after Deadlock stores
+derived main-camera caches. A verified particle-system query reads those cached
+position/angle values. This can disagree with the rendered Dolly view, but the
+fatal dynamic call chain and resulting buffer growth have not been proved.
+An earlier hook needs separate pose/projection stages and full lifecycle review;
+no hook relocation or renderer-memory patch is shipped here.
+
+View history reuses already validated status reads, at most once per second,
+with a 120-sample bound and copied poses. It shares the input/graphics monotonic
+observation clock and survives close or invalid later telemetry. Original pose
+is the game-provided view before override, not a separate cache measurement.
+The native DLL, camera clock/interpolation and native ABI remain unchanged.
+Severe FPS drops and the renderer overflow remain unresolved.
+
+STAGE3_PLAN.md records the primary-source research on ReShade ordering, fixed
+simulation timing, bounded readback, video encoding and separate scene passes.
+Those are proposed implementations, not features delivered by this patch.
+
+## Verification
+
+- Full Python suite: 849 tests run, no failures, two Windows-only skips.
+- The actual supplied demo indexes 17,019 packets in about 0.05 seconds locally.
+  Its observed missing-tick boundaries match the new reader. Synthetic cases
+  cover framing/metadata bounds, partial files, changed-file caches, cancellation,
+  strict seek/identity checks, phase alignment and frozen-scene preservation.
+- Native source, includes, tests, vendor code and DollyNative.dll are byte-for-
+  byte unchanged from 0.4.7. The same checked five-file native runtime is included;
+  its source package metadata identifies the unchanged native build. No new
+  native compilation or live-game renderer-fix claim is made for this patch.
+- All 194 source entries, archive integrity and clean re-export were verified.
+  The supplied demo, private logs, game DLLs and authoring context are excluded.
+
+GitHub Windows CI remains the packaged-EXE build/runtime gate. No live
+Windows/Deadlock execution was available for the new Python behavior.
+
+## Earlier validation records
+
 # Validation — 0.4.7 alpha
 
 ## Paused input and completion

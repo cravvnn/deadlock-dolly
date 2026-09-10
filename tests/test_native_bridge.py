@@ -148,6 +148,38 @@ class NativeBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(nb.NativeBridgeError, "busy"):
             self.bridge.status()
 
+    def test_view_history_is_bounded_rate_limited_and_independent_of_returned_pose(self):
+        self.publish_status()
+        status = self.bridge.status()
+        status["original_pose"][0] = 999
+        self.now = .5
+        self.bridge.status()
+        self.assertEqual(len(self.bridge._view_samples), 1)
+        self.assertEqual(self.bridge._view_samples[0]["original_pose"][0], 0)
+        for second in range(1, 126):
+            self.now = float(second)
+            self.bridge.status()
+        result = self.bridge.diagnostics()["view_history"]
+        self.assertEqual(len(result["samples"]), 120)
+        self.assertEqual(result["samples"][0]["sampled_at"], 6)
+        self.assertEqual(result["samples"][-1]["sampled_at"], 125)
+        result["samples"][-1]["applied_pose"][0] = 999
+        self.assertEqual(self.bridge._view_samples[-1]["applied_pose"][0], 10)
+
+    def test_view_history_retains_valid_sample_after_fault_or_close(self):
+        self.publish_status()
+        self.bridge.status()
+        saved = list(self.bridge._view_samples)
+        self.now = 2
+        self.publish_status(pid=999)
+        result = self.bridge.diagnostics()
+        self.assertEqual(result["state"], "unavailable")
+        self.assertEqual(result["view_history"]["samples"], saved)
+        self.bridge.close()
+        result = self.bridge.diagnostics()["view_history"]
+        self.assertTrue(result["cached_after_close"])
+        self.assertEqual(result["samples"], saved)
+
     def test_wrong_pid_abi_state_ack_and_nonfinite_status_are_refused(self):
         for kwargs in ({"pid": 999}, {"abi": 1}, {"state": 8}, {"ack": 99},
                        {"phase": math.nan}, {"paused": 2}):

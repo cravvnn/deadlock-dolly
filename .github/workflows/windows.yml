@@ -24,6 +24,19 @@ jobs:
           cache-dependency-path: requirements-build.txt
       - name: Install pinned build dependencies
         run: python -m pip install -r requirements-build.txt
+      - name: Prepare Windows video encoder tests
+        shell: powershell
+        run: |
+          $mediaFeature = Get-WindowsFeature -Name Server-Media-Foundation
+          if (-not $mediaFeature.Installed) {
+            $mediaInstall = Install-WindowsFeature -Name Server-Media-Foundation -ErrorAction Stop
+            if (-not $mediaInstall.Success) {
+              throw "Windows Media Foundation could not be enabled for the MP4 encoder test."
+            }
+            if ($mediaInstall.RestartNeeded -eq "Yes") {
+              throw "The runner requires a restart after enabling Media Foundation. Use a runner with this feature preinstalled."
+            }
+          }
       - name: Test, build and verify Dolly.exe
         run: python tools/build_windows.py
       - name: Downloadable release files

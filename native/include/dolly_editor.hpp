@@ -12,7 +12,7 @@ namespace dolly {
 constexpr std::size_t kEditorConfigOffset = 576;
 constexpr std::size_t kEditorStatusOffset = 2 * 1024 * 1024 + 2048;
 constexpr std::size_t kEditorInputDiagnosticsOffset = 2 * 1024 * 1024 + 3584;
-constexpr std::uint32_t kEditorAbi = 1;
+constexpr std::uint32_t kEditorAbi = 2;
 constexpr std::size_t kEditorBindingCount = 26, kEditorEventCount = 16;
 enum class EditorOwner : std::uint32_t {
     Disabled = 0,
@@ -20,7 +20,8 @@ enum class EditorOwner : std::uint32_t {
     Panel = 2,
     GameUI = 3,
     Console = 4,
-    Unfocused = 5
+    Unfocused = 5,
+    ReShade = 6
 };
 enum class EditorAction : std::uint32_t {
     Capture = 0,
@@ -53,8 +54,13 @@ enum class EditorAction : std::uint32_t {
     SetSpeed,
     SelectView,
     SetPlaybackSpeed,
-    SetPlaybackRate
+    SetPlaybackRate,
+    ReShade,
+    StartVideo,
+    StopVideo
 };
+static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
+static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
@@ -71,7 +77,8 @@ struct EditorConfig {
     std::uint32_t playback_flags;
     double playback_speed;
     std::uint32_t playback_rate;
-    unsigned char padding[20];
+    EditorBinding reshade_binding;
+    unsigned char padding[16];
 };
 struct EditorEvent {
     std::uint32_t sequence, action;
@@ -108,6 +115,7 @@ struct EditorInputDiagnostics {
 static_assert(sizeof(EditorConfig) == 448, "Python editor configuration layout");
 static_assert(offsetof(EditorConfig, playback_speed) == 416, "Python playback speed offset");
 static_assert(offsetof(EditorConfig, playback_rate) == 424, "Python playback rate offset");
+static_assert(offsetof(EditorConfig, reshade_binding) == 428, "Python ReShade binding offset");
 static_assert(offsetof(EditorStatus, events) == 256, "Python editor events offset");
 static_assert(sizeof(EditorStatus) == 1536, "Python editor status layout");
 static_assert(sizeof(EditorInputDiagnostics) == 128, "Optional input diagnostic layout");

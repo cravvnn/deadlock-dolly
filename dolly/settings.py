@@ -22,7 +22,8 @@ from .editor_actions import (
 )
 from .replays import parse_launch_options
 
-SETTINGS_VERSION = 2
+SETTINGS_VERSION = 3
+DEFAULT_RESHADE_BINDING = EditorBinding("F11")
 MAX_SETTINGS_BYTES = 64 * 1024
 
 
@@ -36,6 +37,8 @@ class AppSettings:
     movement_speed: float = 320.0
     mouse_sensitivity: float = 0.12
     action_bindings: dict[str, EditorBinding | None] = field(default_factory=dict)
+    reshade_binding: EditorBinding | None = field(default_factory=lambda: DEFAULT_RESHADE_BINDING)
+    reshade_runtime_path: str = ""
     migration_warnings: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -43,7 +46,7 @@ class AppSettings:
             raise ValueError("capture_binding must be a CaptureBinding.")
         # Validate here as well as at the JSON boundary before saving anything.
         CaptureBinding.from_dict(self.capture_binding.to_dict())
-        for name in ("game_path", "replay_folder", "demo_path"):
+        for name in ("game_path", "replay_folder", "demo_path", "reshade_runtime_path"):
             value = getattr(self, name)
             if not isinstance(value, str) or len(value) > 32768 or any(ord(char) < 32 for char in value):
                 raise ValueError(f"{name} must be a path without control characters.")
@@ -66,6 +69,7 @@ class AppSettings:
                 raise ValueError("capture_binding and the capture editor action disagree. Use with_action_bindings to update bindings together.")
             object.__setattr__(self, "capture_binding", legacy)
         object.__setattr__(self, "action_bindings", bindings)
+        object.__setattr__(self, "reshade_binding", validate_reshade_binding(self.reshade_binding, bindings))
         if (not isinstance(self.migration_warnings, tuple)
                 or any(not isinstance(item, str) for item in self.migration_warnings)):
             raise ValueError("migration_warnings must be a tuple of messages.")
@@ -83,6 +87,36 @@ class AppSettings:
         capture = normalized["capture"]
         legacy = CaptureBinding.from_dict(capture.to_dict()) if capture is not None else self.capture_binding
         return replace(self, capture_binding=legacy, action_bindings=normalized, migration_warnings=())
+
+    def with_reshade_binding(self, binding: EditorBinding | None) -> AppSettings:
+        return replace(self, reshade_binding=binding, migration_warnings=())
+
+
+def validate_reshade_binding(binding, bindings):
+    """Keep the optional menu shortcut separate from existing action IDs."""
+    if binding is None:
+        return None
+    if not isinstance(binding, EditorBinding):
+        raise ValueError("ReShade menu binding must be an EditorBinding or None.")
+    binding = EditorBinding.from_dict(binding.to_dict())
+    if binding.key in ("Ctrl", "Alt", "Shift"):
+        raise ValueError("ReShade menu needs a keyboard key or mouse button, not a modifier alone.")
+    for name, other in bindings.items():
+        if other is not None and (binding.vk, binding.modifiers) == (other.vk, other.modifiers):
+            raise ValueError(f"{binding.label} is assigned to both ReShade menu and {ACTION_LABELS[name]}. Choose a different binding or clear one.")
+    return binding
+
+
+def _migrate_reshade_binding(bindings, warnings):
+    binding = DEFAULT_RESHADE_BINDING
+    if binding in bindings.values():
+        warnings.append("Your existing F11 binding was kept. ReShade menu is unbound; choose a key in Keybinds.")
+        return None
+    return binding
+
+
+def reshade_config_path() -> Path:
+    return settings_path().parent / "ReShade" / "ReShade.ini"
 
 
 def settings_path() -> Path:
@@ -110,7 +144,7 @@ def _decode_settings(data: bytes) -> AppSettings:
         raise ValueError("Dolly settings are not valid UTF-8 JSON.") from exc
     if not isinstance(raw, dict) or "version" not in raw:
         raise ValueError("Dolly settings must contain a version and preferences.")
-    if type(raw["version"]) is not int or raw["version"] not in (1, SETTINGS_VERSION):
+    if type(raw["version"]) is not int or raw["version"] not in (1, 2, SETTINGS_VERSION):
         raise ValueError(f"Unsupported Dolly settings version: {raw['version']!r}.")
     if raw["version"] == 1:
         if set(raw) != {"version", "capture_binding"}:
@@ -124,14 +158,25 @@ def _decode_settings(data: bytes) -> AppSettings:
             if name != "capture" and binding == bindings["capture"]:
                 bindings[name] = None
                 warnings.append(f"Your existing capture key {capture.label} was kept. {ACTION_LABELS[name]} is unbound because its new default conflicts; choose a replacement in Keybinds.")
-        return AppSettings(capture_binding=capture, action_bindings=bindings, migration_warnings=tuple(warnings))
+        reshade_binding = _migrate_reshade_binding(bindings, warnings)
+        return AppSettings(capture_binding=capture, action_bindings=bindings,
+                           reshade_binding=reshade_binding, migration_warnings=tuple(warnings))
     fields = {"capture_binding", "game_path", "replay_folder", "demo_path", "launch_options",
               "movement_speed", "mouse_sensitivity", "action_bindings"}
+    if raw["version"] == SETTINGS_VERSION:
+        fields |= {"reshade_binding", "reshade_runtime_path"}
     if set(raw) != fields | {"version"}:
-        raise ValueError("Version 2 Dolly settings have missing or unknown preference fields.")
+        raise ValueError(f"Version {raw['version']} Dolly settings have missing or unknown preference fields.")
     values = {name: raw[name] for name in fields}
     values["capture_binding"] = CaptureBinding.from_dict(raw["capture_binding"])
     values["action_bindings"] = bindings_from_dict(raw["action_bindings"])
+    if raw["version"] == 2:
+        warnings = []
+        values["reshade_binding"] = _migrate_reshade_binding(values["action_bindings"], warnings)
+        values["migration_warnings"] = tuple(warnings)
+    else:
+        value = raw["reshade_binding"]
+        values["reshade_binding"] = EditorBinding.from_dict(value) if value is not None else None
     return AppSettings(**values)
 
 
@@ -197,6 +242,8 @@ def save_settings(
         "movement_speed": settings.movement_speed,
         "mouse_sensitivity": settings.mouse_sensitivity,
         "action_bindings": bindings_to_dict(settings.action_bindings),
+        "reshade_binding": settings.reshade_binding.to_dict() if settings.reshade_binding is not None else None,
+        "reshade_runtime_path": settings.reshade_runtime_path,
     }
     data = (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     _decode_settings(data)

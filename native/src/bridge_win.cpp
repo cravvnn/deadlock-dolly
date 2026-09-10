@@ -23,6 +23,8 @@
 #include "dolly_overlay.hpp"
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_visualization_runtime.hpp"
+#include "dolly_media.hpp"
+#include "dolly_video.hpp"
 
 namespace {
 using namespace dolly;
@@ -754,6 +756,8 @@ static DWORD WINAPI worker(void*) {
                 gWorkerError = 30;
                 editor_worker_tick(gMemory, false);
                 visualization_worker_tick(nullptr, false);
+                media_worker_tick(nullptr, false);
+                video::shutdown();
                 break;
             }
             auto hb = static_cast<std::uint64_t>(InterlockedCompareExchange64(
@@ -764,6 +768,7 @@ static DWORD WINAPI worker(void*) {
             }
             editor_worker_tick(gMemory, now_seconds() - gHeartbeatTime.load() < 2.0);
             visualization_worker_tick(mapping.c_str(), now_seconds() - gHeartbeatTime.load() < 2.0);
+            media_worker_tick(mapping.c_str(), now_seconds() - gHeartbeatTime.load() < 2.0);
             const auto diagnostic_now = GetTickCount64();
             if (diagnostic_now >= next_renderer_probe) {
                 next_renderer_probe = diagnostic_now + 1000;
@@ -855,6 +860,7 @@ static DWORD WINAPI worker(void*) {
         }
     } catch (...) {
         visualization_worker_tick(nullptr, false);
+        media_worker_tick(nullptr, false);
         gWorkerError = 99;
         if (!gHookInstalled)
             startup_status(

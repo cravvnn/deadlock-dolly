@@ -1,14 +1,12 @@
 # Deadlock Dolly — user guide
 
-**0.4.0-alpha adds Stage 1 connected editing:** a cleaner launcher and replay
-browser, configurable controls, native paused flight with mouse look, and a
-DirectX 11 in-game panel. The desktop editor and in-game panel operate on the
-same camera project. Existing framing/effect editing remains on the desktop.
+Dolly connects its desktop editor and in-game panel to the same camera project.
+Version 0.5.0 adds real-time MP4 recording and an optional ReShade color-effects
+runtime. The existing native camera hook and interpolation are unchanged.
 
-The new Windows/game integration and ReShade coexistence still need live
-validation. Follow [STAGE1_TESTING.md](STAGE1_TESTING.md) before public release.
-Automated tests and a Windows package startup check are separate from a
-successful Deadlock session. This is an alpha test candidate.
+[Video and ReShade setup](VIDEO_AND_RESHADE.md) covers output settings, F11,
+installation and current limits. Windows/Deadlock validation is recorded in
+[VALIDATION.md](VALIDATION.md).
 
 ## Start here
 
@@ -203,8 +201,9 @@ they are not live previews or exact lens frustums. Large paths draw a reduced
 set of markers and always include the selected view. The desktop XY overview
 remains available.
 
-Expanded in-game position/rotation/aspect curve editing remains Stage 2. Video
-export and depth/world/hero/effect passes remain Stage 3. ReShade coexistence is unverified; test it separately after clean DX11.
+Expanded in-game position/rotation/aspect curves remain planned. Real-time MP4
+and ReShade color effects are available in 0.5.0; fixed-step rendering, audio
+and depth/world/hero/effect passes remain future Stage 3 work.
 
 ## Framing curve
 
@@ -397,8 +396,9 @@ restoration behavior. Other camera cvars require Console mode.
   reported in diagnostics. No system-wide timer setting is changed.
 
 Native input/render integration is restricted to reviewed game builds. Console
-remains available for comparison. Neither driver records video; capture uses
-existing recording software. Runtime checks are listed in
+remains available for comparison. The Native session now offers real-time MP4
+recording through Export and F8; Console mode still uses external recording
+software. Runtime checks are listed in
 [STAGE1_TESTING.md](STAGE1_TESTING.md) and [STAGE2_TESTING.md](STAGE2_TESTING.md).
 
 ## Experimental playback smoothing

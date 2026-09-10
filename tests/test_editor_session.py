@@ -106,6 +106,25 @@ class EditorSessionTests(unittest.TestCase):
         self.assertEqual(events, ["camera", "panel"])
         self.controller.toggle_game_ui.assert_called_once_with(enabled=False)
 
+    def test_video_buttons_use_same_handlers_as_desktop_without_camera_stop(self):
+        self.app._start_video_recording = Mock()
+        self.app._stop_video_recording = Mock()
+        session.dispatch(self.app, {"action": "start_video", "value": 0}, self.bridge)
+        session.dispatch(self.app, {"action": "stop_video", "value": 0}, self.bridge)
+        self.app._start_video_recording.assert_called_once_with()
+        self.app._stop_video_recording.assert_called_once_with(cancel=False)
+        self.controller.stop.assert_not_called()
+        self.app._submit.assert_not_called()
+
+    def test_reshade_binding_published_without_changing_input_owner(self):
+        from dolly.editor_actions import EditorBinding
+        self.app.native_editor_active = True
+        self.app.app_settings = self.app.app_settings.with_reshade_binding(EditorBinding("Mouse5"))
+        session.configure(self.app)
+        config = self.bridge.configure_editor.call_args.kwargs
+        self.assertEqual(config["reshade_binding"], EditorBinding("Mouse5"))
+        self.assertNotIn("owner", config)
+
     def test_seek_uses_project_tick_rate(self):
         self.app.project.tick_rate = 128
         session.dispatch(self.app, {"action": "seek_back", "value": 0}, self.bridge)

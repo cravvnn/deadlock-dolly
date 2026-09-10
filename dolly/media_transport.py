@@ -1,0 +1,148 @@
+"""Commands for the optional native recorder and ReShade runtime."""
+from __future__ import annotations
+
+import ctypes
+import mmap
+import os
+import struct
+from copy import deepcopy
+
+from . import media_wire as wire
+
+
+class MediaTransport:
+    def _init_media(self):
+        self._media_mapping = None
+        self._media_sequence = 0
+        self._media_last_command = ""
+        self._media_last = {"available": False, "state": "idle", "ack": 0,
+                            "reshade": {"state": 0, "open": False}}
+
+    def _media_atomic(self, offset, value=None):
+        if self._atomic32 is None:
+            if value is None:
+                return struct.unpack_from("<I", self._media_mapping, offset)[0]
+            struct.pack_into("<I", self._media_mapping, offset, value)
+        else:
+            slot = ctypes.c_int32.from_buffer(self._media_mapping, offset)
+            if value is None:
+                return self._read32(ctypes.byref(slot), 0, 0) & 0xffffffff
+            self._atomic32(ctypes.byref(slot), ctypes.c_int32(value))
+
+    def _ensure_media(self):
+        from .native_bridge import NativeBridgeError
+        self._check_open()
+        if self._media_mapping is not None:
+            return
+        name = "Local\\DeadlockDollyNative_" + self.token + ".media"
+        if self._mapping_factory is None:
+            if os.name != "nt":
+                raise NativeBridgeError("Video and ReShade require Windows")
+            mapping = mmap.mmap(-1, wire.MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
+        else:
+            mapping = self._mapping_factory(name, wire.MAPPING_BYTES)
+        if len(mapping) != wire.MAPPING_BYTES:
+            close = getattr(mapping, "close", None)
+            if close:
+                close()
+            raise NativeBridgeError("Unexpected media mapping size")
+        mapping[:] = b"\0" * wire.MAPPING_BYTES
+        self._media_mapping = mapping
+
+    def media_status(self):
+        from .native_bridge import NativeBridgeError
+        with self._lock:
+            if self._media_mapping is None or self._closed:
+                return deepcopy(self._media_last)
+            for _ in range(3):
+                before = self._media_atomic(wire.STATUS_OFFSET + 8)
+                if before & 1:
+                    continue
+                data = bytes(self._media_mapping[wire.STATUS_OFFSET:wire.STATUS_OFFSET + wire.STATUS.size])
+                if before == self._media_atomic(wire.STATUS_OFFSET + 8):
+                    try:
+                        self._media_last = wire.unpack_status(data)
+                        return deepcopy(self._media_last)
+                    except ValueError as exc:
+                        raise NativeBridgeError(str(exc)) from exc
+            # A transient concurrent publication must not interrupt a recording.
+            return deepcopy(self._media_last)
+
+    def video_status(self):
+        return self.media_status()
+
+    def _media_command(self, command, **options):
+        from .native_bridge import NativeBridgeError
+        with self._operations:
+            with self._lock:
+                self._ensure_media()
+                seq = self._media_sequence + 2
+                if seq > 0xfffffffe:
+                    seq = 2
+                packet = wire.pack_command(seq, command, **options)
+                self._media_atomic(8, seq - 1)
+                self._media_mapping[:8] = packet[:8]
+                self._media_mapping[12:len(packet)] = packet[12:]
+                self._media_atomic(8, seq)
+                self._media_sequence = seq
+                self._media_last_command = command
+            deadline = self._clock() + 5
+            while self._clock() < deadline:
+                self._check_open()
+                status = self.media_status()
+                if status.get("ack") == seq:
+                    if status.get("command_error"):
+                        raise NativeBridgeError(status.get("command_message") or "Native media command was rejected")
+                    return status
+                self._sleep(.02)
+            raise NativeBridgeError("Native media did not acknowledge the request. Reconnect with the complete matching Dolly build.")
+
+    def start_video(self, path, *, fps=60, bitrate=20000000):
+        return self._media_command("start_video", path=str(path), fps=fps, bitrate=bitrate)
+
+    def stop_video(self, cancel=False):
+        if type(cancel) is not bool:
+            raise ValueError("Video cancel must be a boolean")
+        return self._media_command("cancel_video" if cancel else "stop_video")
+
+    def configure_reshade(self, dll_path, config_path):
+        return self._media_command("configure_reshade", path=str(dll_path), config_path=str(config_path))
+
+    def disable_reshade(self):
+        return self._media_command("disable_reshade")
+
+    def toggle_reshade(self):
+        return self._media_command("toggle_reshade")
+
+    def _close_media(self):
+        """Request finalization while the game worker still has our heartbeat."""
+        with self._operations:
+            self._finish_media_and_unmap()
+
+    def _finish_media_and_unmap(self):
+        import logging
+        if self._media_mapping is None:
+            return
+        try:
+            state = self.media_status()
+            unconfirmed_start = (self._media_last_command == "start_video"
+                                 and state.get("ack") != self._media_sequence)
+            if state.get("state") in ("starting", "recording", "finalizing") or unconfirmed_start:
+                self.stop_video()
+                deadline = self._clock() + 10
+                while self._clock() < deadline:
+                    if self.media_status().get("state") not in ("starting", "recording", "finalizing"):
+                        break
+                    self._sleep(.05)
+                else:
+                    logging.getLogger(__name__).warning("Video is still finalizing; keep Deadlock open until the output is complete.")
+            if state.get("reshade", {}).get("state"):
+                self.disable_reshade()
+        except (RuntimeError, OSError, ValueError):
+            logging.getLogger(__name__).exception("Could not finish native media before disconnect; game heartbeat recovery will request finalization")
+        finally:
+            with self._lock:
+                mapping, self._media_mapping = self._media_mapping, None
+                close = getattr(mapping, "close", None)
+                if close:
+                    close()

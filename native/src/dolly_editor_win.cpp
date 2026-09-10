@@ -11,12 +11,17 @@
 #include "dolly_editor.hpp"
 #include "dolly_flight.hpp"
 #include "dolly_overlay.hpp"
+#include "dolly_reshade.hpp"
 #include "dolly_visualization_runtime.hpp"
 namespace dolly {
 namespace {
 std::atomic<HWND> gWindow{nullptr};
 std::atomic<bool> gConnected{false}, gOverlay{false}, gInput{false}, gFocused{false};
 std::atomic<EditorOwner> gOwner{EditorOwner::Disabled};
+// Unfocused is never an assigned owner and marks an inactive menu handoff.
+std::atomic<EditorOwner> gReShadePriorOwner{EditorOwner::Unfocused};
+// Deferred F7/F8/F9 transitions run only after the actual ReShade menu closes.
+std::atomic<unsigned> gReShadeDeferred{0};
 std::shared_ptr<const EditorConfig> gConfig;
 std::atomic<double> gSpeed{400};
 std::atomic<long> gMouseX{0}, gMouseY{0};
@@ -62,7 +67,7 @@ bool configured() noexcept {
     return c && c->enabled && gConnected.load() && gOverlay.load() && gInput.load();
 }
 bool owns_input() noexcept {
-    if (!configured() || !focused())
+    if (!configured() || !focused() || reshade_overlay_open())
         return false;
     auto owner = gOwner.load();
     return (owner == EditorOwner::Flight || owner == EditorOwner::Panel) && (gViewFlags.load() & 1);
@@ -161,15 +166,49 @@ bool reserved_input(unsigned vk) noexcept {
     auto c = std::atomic_load(&gConfig);
     if (!c)
         return false;
+    if (owner != EditorOwner::Console && c->reshade_binding.vk == vk &&
+        c->reshade_binding.modifiers == modifiers())
+        return true;
     for (unsigned i : {9u, 10u})
         if ((owner != EditorOwner::Console || (i == 9 && function_key(vk))) &&
             c->bindings[i].vk == vk && c->bindings[i].modifiers == modifiers())
             return true;
     return false;
 }
+bool reshade_owner_tracked() noexcept {
+    return gReShadePriorOwner.load() != EditorOwner::Unfocused;
+}
+void track_reshade_owner() noexcept {
+    auto owner = gOwner.load();
+    auto expected = EditorOwner::Unfocused;
+    gReShadePriorOwner.compare_exchange_strong(
+        expected, owner == EditorOwner::ReShade ? EditorOwner::Panel : owner);
+    editor_set_owner(EditorOwner::ReShade);
+}
+bool close_reshade_for(unsigned transition) noexcept {
+    if (gOwner.load() != EditorOwner::ReShade && !reshade_overlay_open() &&
+        !reshade_overlay_pending())
+        return false;
+    if (reshade_request_overlay(false))
+        gReShadeDeferred = transition;
+    return true;
+}
+void toggle_reshade() noexcept {
+    if (gReShadeDeferred.load())
+        return;
+    const bool opening = gOwner.load() != EditorOwner::ReShade && !reshade_overlay_open();
+    if (reshade_request_overlay(opening) && opening)
+        track_reshade_owner();
+}
 void dispatch(EditorAction action) noexcept {
     auto owner = gOwner.load();
+    if (action == EditorAction::ReShade) {
+        toggle_reshade();
+        return;
+    }
     if (action == EditorAction::Panel) {
+        if (close_reshade_for(2))
+            return;
         if (owner == EditorOwner::Console) {
             editor_enqueue(EditorAction::Panel, 1);
             return;
@@ -201,6 +240,8 @@ void dispatch(EditorAction action) noexcept {
         return;
     }
     if (action == EditorAction::GameUI) {
+        if (close_reshade_for(3))
+            return;
         bool open = owner != EditorOwner::GameUI;
         if (editor_enqueue(action, open ? 1 : 0) && open)
             editor_set_owner(EditorOwner::GameUI);
@@ -215,6 +256,8 @@ void dispatch_key_press(unsigned vk) noexcept {
     if (!configured())
         return;
     if (vk == VK_F7) {
+        if (close_reshade_for(1))
+            return;
         auto owner = gOwner.load();
         bool open = owner != EditorOwner::Console;
         if (editor_enqueue(EditorAction::Console, open ? 1 : 0)) {
@@ -229,7 +272,14 @@ void dispatch_key_press(unsigned vk) noexcept {
     auto c = std::atomic_load(&gConfig);
     if (!c)
         return;
+    if (owner != EditorOwner::Console && c->reshade_binding.vk == vk &&
+        binding_down(c->reshade_binding)) {
+        toggle_reshade();
+        return;
+    }
     for (unsigned i = 0; i < 12; ++i) {
+        if ((owner == EditorOwner::ReShade || reshade_overlay_open()) && i != 9 && i != 10)
+            continue;
         if (owner == EditorOwner::Console && (i != 9 || !function_key(vk)))
             continue;
         if (owner == EditorOwner::Panel && gTextInput.load() &&
@@ -280,8 +330,8 @@ void process_raw(RAWINPUT* raw, bool suppress) noexcept {
             ++gRawMousePackets;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE))
                 ++gRelativeMousePackets;
-            if (gOwner.load() == EditorOwner::Flight && !(m.usFlags & MOUSE_MOVE_ABSOLUTE) &&
-                (gViewFlags.load() & 4)) {
+            if (gOwner.load() == EditorOwner::Flight && !reshade_overlay_open() &&
+                !(m.usFlags & MOUSE_MOVE_ABSOLUTE) && (gViewFlags.load() & 4)) {
                 // Never accumulate motion while blocked by console/UI or stalled frames.
                 auto clamp = [](LONG value) { return std::clamp<LONG>(value, -2000, 2000); };
                 gMouseX.fetch_add(clamp(m.lLastX));
@@ -441,8 +491,12 @@ EditorSnapshot editor_snapshot() noexcept {
     return result;
 }
 bool editor_enqueue(EditorAction action, double value) noexcept {
-    if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetPlaybackRate))
+    // Menu requests may originate from a render-thread button. They only queue
+    // adapter work here; the worker changes input/cursor ownership afterwards.
+    if (action == EditorAction::ReShade)
+        return configured() && !gReShadeDeferred.load() &&
+               reshade_request_overlay(!reshade_overlay_open());
+    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::StopVideo))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -487,7 +541,11 @@ bool editor_panel_visible() noexcept {
     return configured() && focused() && gOwner.load() == EditorOwner::Panel;
 }
 void editor_set_owner(EditorOwner owner) noexcept {
-    if (owner > EditorOwner::Console)
+    if (owner > EditorOwner::ReShade || owner == EditorOwner::Unfocused)
+        return;
+    if (owner != EditorOwner::ReShade && (reshade_overlay_open() || reshade_overlay_pending()))
+        reshade_request_overlay(false);
+    if (owner == EditorOwner::ReShade && !reshade_overlay_open() && !reshade_overlay_pending())
         return;
     if (gOwner.exchange(owner) == owner)
         return;
@@ -726,15 +784,20 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             LONG after = InterlockedCompareExchange(seq, 0, 0);
             bool okay = before == after && !(after & 1) &&
                         std::memcmp(c.magic, "DLYEDIT1", 8) == 0 && c.abi == kEditorAbi &&
-                        c.enabled <= 1 && c.owner <= 4 && c.flags <= 1 && std::isfinite(c.speed) &&
-                        c.speed >= 1 && c.speed <= 10000 && std::isfinite(c.sensitivity) &&
-                        c.sensitivity >= .001 && c.sensitivity <= 10 && std::isfinite(c.duration) &&
-                        c.duration >= 0 && std::isfinite(c.playhead) && c.playhead >= 0 &&
-                        c.camera_count <= 4096 && c.playback_flags <= 3 &&
-                        std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
+                        c.enabled <= 1 && (c.owner <= 4 || c.owner == 6) && c.flags <= 1 &&
+                        std::isfinite(c.speed) && c.speed >= 1 && c.speed <= 10000 &&
+                        std::isfinite(c.sensitivity) && c.sensitivity >= .001 &&
+                        c.sensitivity <= 10 && std::isfinite(c.duration) && c.duration >= 0 &&
+                        std::isfinite(c.playhead) && c.playhead >= 0 && c.camera_count <= 4096 &&
+                        c.playback_flags <= 3 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
                         std::memchr(c.message, 0, sizeof(c.message));
             for (auto& b : c.bindings)
                 okay = okay && b.vk < 256 && b.modifiers < 8 && b.vk != VK_F7;
+            const auto& rb = c.reshade_binding;
+            okay = okay && rb.vk < 256 && rb.modifiers < 8 && rb.vk != VK_F7 &&
+                   rb.vk != VK_CONTROL && rb.vk != VK_MENU && rb.vk != VK_SHIFT;
+            for (const auto& b : c.bindings)
+                okay = okay && (!rb.vk || b.vk != rb.vk || b.modifiers != rb.modifiers);
             if (okay) {
                 std::shared_ptr<const EditorConfig> next;
                 try {
@@ -779,6 +842,56 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
         gOwner = EditorOwner::Disabled;
         reset_keys(true);
         cursor_mode(EditorOwner::Disabled);
+    }
+    ReShadeInputEvent menu_input{};
+    for (unsigned index = 0; index < 128 && reshade_pop_input(menu_input); ++index) {
+        if (!configured() || !focused() ||
+            (!reshade_owner_tracked() && !reshade_overlay_open() && !reshade_overlay_pending()))
+            continue;
+        // The modifier snapshot belongs to this edge, not the later worker
+        // poll. Preserve existing edge deduplication with raw/legacy delivery.
+        key_event(VK_CONTROL, (menu_input.modifiers & 1) != 0);
+        key_event(VK_MENU, (menu_input.modifiers & 2) != 0);
+        key_event(VK_SHIFT, (menu_input.modifiers & 4) != 0);
+        key_event(menu_input.vk, menu_input.down);
+    }
+    if (connected && configured()) {
+        const bool open = reshade_overlay_open(), pending = reshade_overlay_pending();
+        if ((open || pending) && !reshade_owner_tracked())
+            track_reshade_owner();
+        if (!open && !pending && reshade_owner_tracked()) {
+            const auto previous = gReShadePriorOwner.exchange(EditorOwner::Unfocused);
+            // ReShade can consume key-up messages before Dolly's WndProc sees
+            // them. Clear that menu context and block still-held physical keys.
+            reset_keys(true);
+            // An explicit controller owner change takes precedence over a stale
+            // menu-close acknowledgement. Home / the menu close button restore
+            // the owner suspended when the real ReShade menu first opened.
+            if (gOwner.load() == EditorOwner::ReShade) {
+                editor_set_owner(previous == EditorOwner::Unfocused ||
+                                         previous == EditorOwner::ReShade
+                                     ? EditorOwner::Panel
+                                     : previous);
+            }
+            switch (gReShadeDeferred.exchange(0)) {
+            case 1:
+                if (editor_enqueue(EditorAction::Console, 1))
+                    editor_set_owner(EditorOwner::Console);
+                break;
+            case 2:
+                if (editor_enqueue(EditorAction::Panel, 1))
+                    editor_set_owner(EditorOwner::Panel);
+                break;
+            case 3:
+                dispatch(EditorAction::GameUI);
+                break;
+            }
+        }
+    } else {
+        if (gReShadePriorOwner.exchange(EditorOwner::Unfocused) != EditorOwner::Unfocused ||
+            reshade_overlay_open())
+            reshade_request_overlay(false);
+        gReShadeDeferred = 0;
     }
     reconcile_cursor_mode();
     unblock_released();

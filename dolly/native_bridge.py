@@ -22,6 +22,7 @@ import uuid
 
 from .native_effects import compile_shot, EFFECTS
 from .runtime import resource_root
+from .media_transport import MediaTransport
 
 ABI = 3
 CONTROL_BYTES = 2 * 1024 * 1024
@@ -95,7 +96,7 @@ def _pid(value):
     return value
 
 
-class NativeBridge:
+class NativeBridge(MediaTransport):
     @classmethod
     def create(cls, *, mapping_factory=None, clock=time.monotonic,
                sleep=time.sleep, start_heartbeat=True, editor_pid=None, token=None):
@@ -130,6 +131,7 @@ class NativeBridge:
             raise NativeBridgeError("Native camera mapping has an unexpected size")
         self._mapping = mapping
         self._mapping_factory = mapping_factory
+        self._init_media()
         self._viewer_mapping = None
         self._viewer_sequence = 0
         self._viewer_enabled = False
@@ -163,6 +165,8 @@ class NativeBridge:
         self._input_samples = deque(maxlen=120)
         self._input_sample_at = -math.inf
         self._input_error = ""
+        self._view_samples = deque(maxlen=120)
+        self._view_sample_at = -math.inf
         self._mode = 0
         self._atomic32 = self._atomic64 = None
         self._read32 = None
@@ -297,7 +301,7 @@ class NativeBridge:
                        original_fov, applied_fov, maximum_ms, interval_ms]
             if not all(math.isfinite(value) for value in numbers) or paused not in (0, 1):
                 raise NativeBridgeError("Native camera returned non-finite view or timing data")
-            return {"state": STATES[state], "state_code": state, "abi": abi,
+            result = {"state": STATES[state], "state_code": state, "abi": abi,
                     "game_pid": pid, "ack_command": ack, "error": error,
                     "complete": state == 4, "frame_count": frame_count,
                     "real_time": real_time, "engine_time": engine_time,
@@ -310,6 +314,14 @@ class NativeBridge:
                     "message": message.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
                     "demo_name": demo.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
                     "max_frame_interval_ms": maximum_ms, "frame_interval_ms": interval_ms}
+            now = self._clock()
+            if now - self._view_sample_at >= 1:
+                # Reuse this validated read, including outside path playback.
+                # Compare game-provided and applied poses with input/graphics
+                # observations; no additional game reads or writes are needed.
+                self._view_sample_at = now
+                self._view_samples.append({"sampled_at": now, **deepcopy(result)})
+            return result
 
     def _wait(self, command, states, timeout):
         deadline = self._clock() + timeout
@@ -715,6 +727,18 @@ class NativeBridge:
         result["graphics"] = self.graphics_diagnostics()
         result["input"] = self.input_diagnostics()
         result["visualization"] = self.visualization_diagnostics()
+        try:
+            result["media"] = self.media_status()
+        except (NativeBridgeError, OSError, ValueError) as exc:
+            result["media"] = {"error": str(exc)}
+        with self._lock:
+            result["view_history"] = {
+                "samples": deepcopy(list(self._view_samples)),
+                "cached_after_close": self._closed,
+                "note": "At most one validated view observation per second, including manual flight. "
+                        "original_pose is the game-provided view before Dolly's override; "
+                        "it is not a separate measurement of engine camera caches. "
+                        "sampled_at uses the same monotonic observation clock as input and graphics."}
         return result
 
     def close(self):
@@ -722,6 +746,7 @@ class NativeBridge:
         with self._operations:
             if self._closed:
                 return
+            self._close_media()
             with self._lock:
                 self._sample_graphics(force=True)
                 self._sample_input(force=True)

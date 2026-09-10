@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.4.7 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.5.0 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -98,6 +98,15 @@ sets the monitoring rate in Native mode. Playback smoothing applies only to
 Console (legacy).
 
 
+RECORDED DEMOS
+
+Local tv_record .dem files can be selected like other replays. A native shot
+starting between recorded packets uses the next verified packet and reports the
+skipped fraction. Camera and effect key times stay unchanged. Frozen native
+preview keeps the current scene without seeking. Console position-calibration
+recovery can still fail when it needs an unavailable adjacent tick.
+
+
 IN-GAME PLAYBACK AND PATH GUIDES
 
 F8 opens Playback speed, Updates / s and Show path guides. Speed changes the
@@ -122,17 +131,43 @@ Supported commands and examples: docs/SUPPORTED_CAMERA_CVARS.md
 Machine-readable list: docs/SUPPORTED_CAMERA_CVARS.json
 
 
+VIDEO AND RESHADE
+
+Full guide: docs/VIDEO_AND_RESHADE.md
+
+Choose a new MP4 filename, 30/60 FPS and bitrate on the desktop Export tab.
+Return to the game and use F8 > Record video, then Play shot or F5.
+F8 > Finish recording saves the MP4. Returning to the desktop also finishes
+an active recording. Wait for finalization before closing Deadlock.
+
+Capture uses the current even-sized SDR game resolution, up to 3840 x 2160.
+It records in real time without audio. Missed capture slots are counted; lower
+resolution, shader cost or export FPS if the game/encoder cannot keep up.
+Dolly controls and guides are excluded. The game HUD follows playback settings.
+
+ReShade 6.8.0/API 20 with full add-on support is a separate download. Extract ReShade64.dll from the official full
+add-on setup EXE with 7-Zip into a folder outside the game. Select it on Export
+and enable it. F11 opens its own menu; change the shortcut in Keybinds.
+A single-sample SDR swapchain and manual runtime functions are required. Add shader/texture search
+paths and presets through ReShade. Color effects are supported; no game depth
+texture is supplied yet. Native Dolly DOF still works.
+
+ReShade config: %APPDATA%\DeadlockDolly\ReShade\ReShade.ini
+The runtime path is remembered. Disable affects this session; Forget clears
+the saved path for future launches. No graphics loader is installed beside
+Deadlock. The loaded DLL remains resident until the editing game exits.
+
 COMPATIBILITY
 
 Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.4.7 is an alpha. It corrects F8 return to paused flight, the end-of-shot
-pause acknowledgement and custom replay-name matching. Severe renderer
-slowdowns and the reported DX11 vertex-buffer overflow remain unresolved.
-ReShade compatibility is unverified. Expanded in-game
-curve editing remains Stage 2; video/render-pass export remains Stage 3.
+0.5.0 is an alpha. The camera hook and interpolation remain unchanged from
+0.4.7. Recorded-demo handling from 0.4.8 is retained. Earlier renderer slowdowns
+do not have a confirmed general fix. MP4 and ReShade need in-game testing.
+Fixed-step rendering, audio, separate layers and expanded in-game curves
+remain planned.
 Technical details and validation results are in docs/VALIDATION.md.
 
 
@@ -140,8 +175,8 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.4.7 uses
-ABI 3 and its native helper must match the editor.
+logs, including any recovery backup. Use the complete new package; 0.5.0 uses
+camera ABI 3 and editor ABI 2 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game
 configuration or Recover_Game_Config.bat. The portable app also supports:

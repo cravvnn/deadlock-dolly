@@ -1,7 +1,23 @@
-# Stage 2 test notes — 0.4.7 alpha
+# Stage 2 test notes — 0.4.8 alpha
 
 Use the complete matching Windows package and a local replay in DX11.
 Stage 1 startup, cleanup, console, game UI and capture checks still apply.
+
+## Recorded packets and frozen native preview
+
+- Use a completed tv_record recording. Capture a shot starting at a paused
+  tick between packet records and Play shot. The activity log should state the
+  requested/actual tick and skipped fraction; saved camera/effect times stay intact.
+- Repeat from an exact recorded packet. No boundary shift should be reported.
+- At a nonpacket paused tick, run Frozen preview. The scene must stay at that
+  tick without a seek, console calibration, or demo_resume. Repeat at 0.1x.
+- A shot ending before the next packet should explain why it cannot start;
+  it must not resume the demo or silently move keys. Preview without seeking
+  remains available. Normal playback's legacy calibration recovery may still
+  reject an unavailable adjacent tick; export diagnostics for that separate case.
+- Compare original/applied poses in native_editor_runtime.view_history with
+  input/graphics sampled_at times if frame rate drops. This is observational
+  data, not an independent measurement of engine camera globals.
 
 ## Held-camera return and replay names
 

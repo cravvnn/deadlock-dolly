@@ -132,6 +132,8 @@ def build_native(root: Path = ROOT) -> dict:
             "native_effect_tests_passed": True, "native_visualization_tests_passed": True,
             "native_callback_tests_passed": True,
             "native_flight_tests_passed": True, "native_overlay_tests_passed": True,
+            "native_video_math_tests_passed": True, "native_video_encoder_tests_passed": True,
+            "reshade_game_runtime_verified": False,
             "game_runtime_verified": False, "pe": report}
     metadata.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     return info

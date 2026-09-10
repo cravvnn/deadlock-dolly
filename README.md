@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.4.7 alpha.** The portable Windows build opens through
+**Current source: 0.5.0 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -33,6 +33,8 @@ Close that session before launching Deadlock normally.
 - In-game playback speed and monitoring rate shared with desktop controls.
 - Replay playback with HUD handling, settings restoration and diagnostics.
 - Console fallback with Off, Light, Balanced and Strong smoothing choices.
+- Real-time H.264 MP4 video recording at the game resolution, with 30/60 FPS capture.
+- Optional ReShade color effects and its in-game menu on a configurable F11 key.
 
 ## Using the Windows app
 
@@ -64,6 +66,26 @@ See `Start_Here.txt` and the [user guide](docs/USER_GUIDE.md) for the full contr
 The GitHub **Source code** download and source ZIP contain the source and build
 files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
 
+## Video and ReShade
+
+Choose an MP4 output path and FPS on **Export**, then use **F8 → Record video**
+and **Finish recording** in the game. Video capture excludes Dolly controls
+and path guides. It records in real time without audio; output resolution
+follows the game. Returning to the desktop finishes the active recording.
+
+Select a compatible ReShade64.dll on **Export** to enable ReShade color effects.
+**F11** opens its own menu; **Keybinds** changes that shortcut. ReShade is an
+optional separate download. Depth-dependent ReShade shaders are not supported
+yet. See [Video and ReShade](docs/VIDEO_AND_RESHADE.md) for setup and limits.
+
+## Recorded demos
+
+Local tv_record .dem files can be selected like other replays. If a native shot
+starts between recorded packets, Dolly starts at the next verified packet and
+reports the skipped fraction. Camera/effect key times stay unchanged. Frozen
+native preview holds the current scene without seeking. Some console position-
+calibration recoveries still require exact ticks and can fail on sparse recordings.
+
 ## Compatibility
 
 Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
@@ -71,13 +93,12 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 is available under **Home → Troubleshooting** when Native is unavailable.
 See [game updates](docs/GAME_UPDATES.md) for compatibility details.
 
-0.4.7 is an alpha. It corrects F8 return to paused flight, the end-of-shot
-pause acknowledgement and custom replay-name matching. Severe renderer
-slowdowns and the reported DX11 vertex-buffer overflow remain unresolved.
-ReShade compatibility is unverified.
-Validation details are in
-[VALIDATION.md](docs/VALIDATION.md). Expanded in-game curve editing remains
-Stage 2; video/render-pass export remains Stage 3.
+0.5.0 is an alpha. It keeps the camera hook and interpolation from the working
+0.4.7 baseline, plus the recorded-demo handling from 0.4.8. Earlier renderer
+slowdowns do not have a confirmed general fix. The new video and ReShade paths
+need testing in Deadlock; build checks are in [VALIDATION.md](docs/VALIDATION.md).
+Fixed-step rendering, audio, separate render layers and expanded in-game curve
+editing remain planned.
 
 ## Session files
 
@@ -133,6 +154,15 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.0:** adds real-time MP4 recording, optional ReShade color effects/menu,
+configurable F11, and the REPLAY home heading.
+
+**0.4.8:** handles native shot starts between recorded packets, preserves the
+current scene for frozen native previews, and records bounded view history for
+slowdown diagnosis. The native DLL is unchanged. ReShade and layer-export
+research is documented in [STAGE3_PLAN.md](docs/STAGE3_PLAN.md); those features
+are not implemented in this update.
 
 **0.4.7:** restores paused flight when closing F8 from a held camera, waits for
 rendered pause acknowledgement before spectator handoff, and accepts dotted

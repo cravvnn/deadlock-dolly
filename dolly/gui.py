@@ -31,6 +31,7 @@ from dolly.navigation_input import CameraInput
 from dolly.path import CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value, format_cvar_value
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.smoothing import smoothing_window
+from dolly.video_export import ACTIVE_STATES, BITRATE_PRESETS, VideoExport, VideoOptions, default_video_path, format_video_status, recording_ready
 
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -106,6 +107,7 @@ class DollyApp:
         self.file_path: Path | None = None
         self.project = Project(name="Untitled shot", keyframes=[], tracks=[])
         self.controller = Controller(log_callback=self._enqueue_log)
+        self.video_export = VideoExport(self.controller)
         self.worker = threading.Thread(target=self._worker_loop, name="dolly-ui-operations", daemon=True)
         self.worker.start()
         self.game_path = tk.StringVar()
@@ -144,6 +146,12 @@ class DollyApp:
         self.segment_seconds = tk.StringVar(value="3")
         self.show_coordinates = tk.BooleanVar(value=False)
         self.app_settings = self._load_app_settings()
+        self.video_path = tk.StringVar(value=str(default_video_path(self.project.name)))
+        self.video_fps = tk.StringVar(value="60")
+        self.video_bitrate = tk.StringVar(value="20 Mbps")
+        self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
+        self.reshade_runtime_path = tk.StringVar(value=getattr(self.app_settings, "reshade_runtime_path", ""))
+        self.reshade_status_text = tk.StringVar(value="Choose the ReShade runtime to enable its in-game menu.")
         self.game_path.set(self.app_settings.game_path)
         self.demo_path.set(self.app_settings.demo_path)
         self.replay_folder = tk.StringVar(value=self.app_settings.replay_folder)
@@ -286,16 +294,19 @@ class DollyApp:
         self.cvar_tab = ttk.Frame(self.notebook)
         self.replays_tab = ttk.Frame(self.notebook)
         self.keybinds_tab = ttk.Frame(self.notebook)
+        self.export_tab = ttk.Frame(self.notebook)
         self.notebook.add(self.setup_tab, text="Home")
         self.notebook.add(self.replays_tab, text="Replays")
         self.notebook.add(self.keybinds_tab, text="Keybinds")
         self.notebook.add(self.camera_tab, text="Cameras")
         self.notebook.add(self.cvar_tab, text="Effects")
+        self.notebook.add(self.export_tab, text="Export")
         self._build_setup()
         self._build_replays()
         self._build_keybinds()
         self._build_camera()
         self._build_cvars()
+        self._build_export()
         self._build_timeline(outer)
         self.notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._tab_changed()
@@ -330,8 +341,8 @@ class DollyApp:
         card = ttk.Frame(tab, style="Card.TFrame", padding=20)
         card.grid(row=0, column=0, sticky="ew")
         card.columnconfigure(1, weight=1)
-        ttk.Label(card, text="YOUR NEXT SHOT", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        note = ttk.Label(card, text="Choose a replay. Dolly opens the game, prepares the camera tools, and pauses ready to create.", style="CardMuted.TLabel", wraplength=800)
+        ttk.Label(card, text="REPLAY", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
+        note = ttk.Label(card, text="Open a local replay in the paused camera editor.", style="CardMuted.TLabel", wraplength=800)
         note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 18))
         card.bind("<Configure>", lambda e: note.configure(wraplength=max(200, e.width - 40)))
         for row, label, variable, command in ((2, "Deadlock", self.game_path, self._browse_game), (3, "Replay", self.demo_path, self._browse_demo)):
@@ -369,6 +380,234 @@ class DollyApp:
             self.timeline_frame.grid()
         else:
             self.timeline_frame.grid_remove()
+
+    def _build_export(self):
+        tab = self.export_tab
+        tab.columnconfigure(0, weight=1)
+        card = ttk.Frame(tab, style="Card.TFrame", padding=18)
+        card.grid(row=0, column=0, sticky="ew")
+        card.columnconfigure(1, weight=1)
+        ttk.Label(card, text="VIDEO", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
+        note = ttk.Label(card, text="Record the normal scene to MP4 at the current game resolution. Real-time capture · SDR · video only.",
+                         style="CardMuted.TLabel", wraplength=860)
+        note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 14))
+        card.bind("<Configure>", lambda event: note.configure(wraplength=max(220, event.width - 36)))
+        ttk.Label(card, text="Output file", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 12))
+        self.video_path_entry = ttk.Entry(card, textvariable=self.video_path)
+        self.video_path_entry.grid(row=2, column=1, sticky="ew")
+        self.video_browse_button = ttk.Button(card, text="Browse…", command=self._browse_video)
+        self.video_browse_button.grid(row=2, column=2, padx=(10, 0))
+        options = ttk.Frame(card, style="Card.TFrame")
+        options.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ttk.Label(options, text="Video FPS", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
+        self.video_fps_combo = ttk.Combobox(options, textvariable=self.video_fps, values=("30", "60"), state="readonly", width=5)
+        self.video_fps_combo.pack(side="left", padx=(0, 18))
+        ttk.Label(options, text="Bitrate", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
+        self.video_bitrate_combo = ttk.Combobox(options, textvariable=self.video_bitrate, values=tuple(BITRATE_PRESETS), state="readonly", width=10)
+        self.video_bitrate_combo.pack(side="left")
+        actions = ttk.Frame(card, style="Card.TFrame")
+        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(14, 0))
+        self.video_start_button = ttk.Button(actions, text="Start recording", style="Primary.TButton", command=self._start_video_recording)
+        self.video_start_button.pack(side="left", padx=(0, 8))
+        self.video_stop_button = ttk.Button(actions, text="Finish recording", command=self._stop_video_recording, state="disabled")
+        self.video_stop_button.pack(side="left", padx=(0, 8))
+        self.video_cancel_button = ttk.Button(actions, text="Discard recording", style="Quiet.TButton", command=lambda: self._stop_video_recording(cancel=True), state="disabled")
+        self.video_cancel_button.pack(side="left")
+        ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ttk.Label(tab, text="Start recording, return to Deadlock, then press F5 to play the shot. Finish from the in-game panel, or return to Dolly to finish automatically. Slow rendering can miss frames.",
+                  style="Muted.TLabel", wraplength=900).grid(row=1, column=0, sticky="w", padx=4, pady=(10, 14))
+        shade = ttk.Frame(tab, style="Card.TFrame", padding=18)
+        shade.grid(row=2, column=0, sticky="ew")
+        shade.columnconfigure(1, weight=1)
+        ttk.Label(shade, text="RESHADE", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(shade, text="Optional effects and presets. Set the menu shortcut in Keybinds.", style="CardMuted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 12))
+        ttk.Label(shade, text="Runtime DLL", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 12))
+        self.reshade_path_entry = ttk.Entry(shade, textvariable=self.reshade_runtime_path)
+        self.reshade_path_entry.grid(row=2, column=1, sticky="ew")
+        self.reshade_browse_button = ttk.Button(shade, text="Browse…", command=self._browse_reshade)
+        self.reshade_browse_button.grid(row=2, column=2, padx=(10, 0))
+        actions = ttk.Frame(shade, style="Card.TFrame")
+        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        self.reshade_configure_button = ttk.Button(actions, text="Enable ReShade", command=self._configure_reshade)
+        self.reshade_configure_button.pack(side="left", padx=(0, 10))
+        self.reshade_disable_button = ttk.Button(actions, text="Disable for this session", style="Quiet.TButton", command=self._disable_reshade, state="disabled")
+        self.reshade_disable_button.pack(side="left", padx=(0, 10))
+        self.reshade_forget_button = ttk.Button(actions, text="Forget runtime", style="Quiet.TButton", command=self._forget_reshade)
+        self.reshade_forget_button.pack(side="left", padx=(0, 10))
+        ttk.Button(actions, text="Keybinds…", style="Quiet.TButton", command=lambda: self.notebook.select(self.keybinds_tab)).pack(side="left")
+        ttk.Label(shade, textvariable=self.reshade_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+    def _browse_video(self):
+        if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
+            return
+        current = Path(self.video_path.get())
+        path = filedialog.asksaveasfilename(parent=self.root, title="Record video", defaultextension=".mp4",
+                                          initialdir=str(current.parent), initialfile=current.name,
+                                          filetypes=(("MP4 video", "*.mp4"),), confirmoverwrite=False)
+        if path:
+            self.video_path.set(path)
+
+    def _start_video_recording(self):
+        if self.busy:
+            self.status_text.set("Finish the current operation before starting a recording.")
+            return
+        try:
+            options = VideoOptions(Path(self.video_path.get().strip()), int(self.video_fps.get()),
+                                   BITRATE_PRESETS[self.video_bitrate.get()]).validated()
+        except (ValueError, KeyError, OSError) as exc:
+            self._error("Record video", exc)
+            return
+        self._submit("Starting video recording", lambda: self.video_export.start(options), self._video_operation_done)
+
+    def _stop_video_recording(self, cancel=False):
+        if self.busy:
+            self.status_text.set("Finish the current operation before stopping the recording.")
+            return
+        self._submit("Discarding recording" if cancel else "Finishing video recording",
+                     lambda: self.video_export.stop(cancel=cancel), self._video_operation_done)
+
+    def _video_operation_done(self, status):
+        self.video_status_text.set(format_video_status(status))
+        self.status_text.set(self.video_status_text.get())
+        self._last_video_state = status.get("state", "idle")
+        if status.get("state") == "completed" and self.video_export.output_path:
+            self._log("Video saved to " + str(self.video_export.output_path))
+            self.video_path.set(str(default_video_path(self.project.name, self.video_export.output_path.parent)))
+
+    def _refresh_video(self, controller_status):
+        status = self.video_export.status()
+        state = status.get("state", "idle")
+        previous = getattr(self, "_last_video_state", "idle")
+        if state != previous:
+            if state == "completed":
+                self._video_operation_done(status)
+            elif state == "failed":
+                self._log(format_video_status(status))
+            self._last_video_state = state
+        active = state in ACTIVE_STATES
+        ready = recording_ready(controller_status)
+        self.video_status_text.set("Launch a replay to record video." if state == "idle" and not ready else format_video_status(status))
+        self.video_start_button.configure(state="normal" if ready and not active and not self.busy else "disabled")
+        can_stop = state in ("starting", "recording") and not self.busy
+        self.video_stop_button.configure(state="normal" if can_stop else "disabled")
+        self.video_cancel_button.configure(state="normal" if can_stop else "disabled")
+        for widget in (self.video_path_entry, self.video_browse_button):
+            widget.configure(state="disabled" if active or self.busy else "normal")
+        for widget in (self.video_fps_combo, self.video_bitrate_combo):
+            widget.configure(state="disabled" if active or self.busy else "readonly")
+        self.reshade_configure_button.configure(state="normal" if ready and not active and not self.busy and not self.playing else "disabled")
+        self.reshade_forget_button.configure(state="normal" if not active and not self.busy and not self.playing else "disabled")
+        self._refresh_reshade(controller_status, active)
+
+    def _refresh_reshade(self, controller_status, video_active=False):
+        bridge = self.controller._native_bridge()
+        ready = recording_ready(controller_status)
+        try:
+            shade = bridge.media_status().get("reshade", {}) if bridge is not None else {}
+            state = int(shade.get("state", 0))
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            # Optional media telemetry must not stop the camera/session UI or
+            # repeat the same failure in the log ten times every second.
+            message = "ReShade status unavailable: " + str(exc)
+            self.reshade_status_text.set(message)
+            self.reshade_disable_button.configure(state="disabled")
+            self.reshade_configure_button.configure(state="disabled")
+            signature = (id(bridge), message)
+            if getattr(self, "_last_reshade_status_error", None) != signature:
+                self._last_reshade_status_error = signature
+                self._log(message)
+            return
+        self._last_reshade_status_error = None
+        if state == 3:
+            self.reshade_status_text.set("ReShade unavailable: " + str(shade.get("message") or "Runtime loading failed."))
+        elif state == 2:
+            binding = self.app_settings.reshade_binding
+            menu = "Menu open." if shade.get("open") else (f"{binding.label} opens its menu." if binding else "Set its menu shortcut in Keybinds.")
+            self.reshade_status_text.set("ReShade ready. " + menu)
+        elif state == 1:
+            self.reshade_status_text.set("Loading ReShade…")
+        elif not self.busy:
+            self.reshade_status_text.set("ReShade disabled. Choose a runtime DLL to enable its in-game menu.")
+        self.reshade_disable_button.configure(state="normal" if ready and state in (1, 2) and not self.busy and not video_active else "disabled")
+        # A selected runtime is opt-in and remembered across launches. Make one
+        # attempt per bridge; a bad DLL must never create a retry/modal loop.
+        if (ready and not self.busy and not self.playing and not video_active
+                and self.app_settings.reshade_runtime_path
+                and getattr(self, "_auto_reshade_bridge", None) is not bridge):
+            self._auto_reshade_bridge = bridge
+            self._configure_reshade(automatic=True)
+
+    def _browse_reshade(self):
+        path = filedialog.askopenfilename(parent=self.root, title="Choose the ReShade runtime", filetypes=(("ReShade runtime", "*.dll"),))
+        if path:
+            self.reshade_runtime_path.set(path)
+
+    def _configure_reshade(self, automatic=False):
+        def operation():
+            from dolly.settings import reshade_config_path
+            selected = self.app_settings.reshade_runtime_path if automatic else self.reshade_runtime_path.get().strip()
+            path = Path(selected).expanduser().absolute()
+            if path.suffix.lower() != ".dll" or not path.is_file():
+                raise ValueError("Choose the 64-bit ReShade runtime DLL.")
+            settings = replace(self.app_settings, reshade_runtime_path=str(path))
+            config = reshade_config_path()
+            self._auto_reshade_bridge = self.controller._native_bridge()
+            def configure():
+                bridge = self.controller._native_bridge()
+                if bridge is None or not recording_ready(self.controller.status()):
+                    raise RuntimeError("Launch a DirectX 11 replay through Dolly before enabling ReShade.")
+                config.parent.mkdir(parents=True, exist_ok=True)
+                bridge.configure_reshade(str(path), str(config))
+                save_settings(settings)
+            def complete(_result):
+                self.app_settings = settings
+                self.reshade_status_text.set("ReShade requested. Use its menu shortcut to choose effects and presets.")
+            self._submit("Enabling ReShade", configure, complete)
+        if automatic:
+            try:
+                operation()
+            except (RuntimeError, ValueError, OSError) as exc:
+                self.reshade_status_text.set("ReShade unavailable: " + str(exc))
+                self._log("ReShade: " + str(exc))
+        else:
+            self._guard("ReShade", operation)
+
+    def _disable_reshade(self):
+        def operation():
+            bridge = self.controller._native_bridge()
+            if bridge is None:
+                return
+            self._auto_reshade_bridge = bridge
+            self._submit("Disabling ReShade", bridge.disable_reshade)
+        self._guard("ReShade", operation)
+
+    def _forget_reshade(self):
+        def operation():
+            if self.video_export.status().get("state") in ACTIVE_STATES:
+                raise RuntimeError("Finish recording before changing ReShade.")
+            settings = replace(self.app_settings, reshade_runtime_path="")
+            bridge = self.controller._native_bridge()
+            self._auto_reshade_bridge = bridge
+            def forget():
+                warning = ""
+                if bridge is not None:
+                    try:
+                        bridge.disable_reshade()
+                    except (RuntimeError, ValueError, OSError) as exc:
+                        warning = "Current ReShade could not be disabled: " + str(exc)
+                save_settings(settings)
+                return warning
+            def complete(warning):
+                self.app_settings = settings
+                self.reshade_runtime_path.set("")
+                message = "Runtime forgotten. ReShade will not load on the next launch."
+                if warning:
+                    message += " " + warning
+                    self._log(warning)
+                self.reshade_status_text.set(message)
+                self.status_text.set(message)
+            self._submit("Forgetting ReShade runtime", forget, complete)
+        self._guard("ReShade", operation)
 
     def _open_advanced_startup(self):
         self.advanced_startup_dialog.deiconify()
@@ -572,6 +811,8 @@ class DollyApp:
         for action in ACTION_ORDER:
             binding = self.app_settings.action_bindings.get(action)
             self.bindings_tree.insert("", "end", iid=action, values=(ACTION_LABELS[action], binding.label if binding else "Unbound"))
+        binding = self.app_settings.reshade_binding
+        self.bindings_tree.insert("", "end", iid="reshade", values=("Toggle ReShade menu", binding.label if binding else "Unbound"))
         self.bindings_tree.selection_set(selected)
         self._select_binding()
 
@@ -580,8 +821,8 @@ class DollyApp:
         if not selected:
             return
         action = selected[0]
-        self.binding_action.set(ACTION_LABELS[action])
-        self._set_binding_fields(self.app_settings.action_bindings.get(action))
+        self.binding_action.set("Toggle ReShade menu" if action == "reshade" else ACTION_LABELS[action])
+        self._set_binding_fields(self.app_settings.reshade_binding if action == "reshade" else self.app_settings.action_bindings.get(action))
         self.binding_feedback.set("Choose a shortcut, then save. Conflicts are shown before anything changes.")
 
     def _set_binding_fields(self, binding):
@@ -634,15 +875,21 @@ class DollyApp:
                 return
             key = self.binding_key.get()
             binding = None if key == "Unbound" else EditorBinding(key, self.binding_ctrl.get(), self.binding_alt.get(), self.binding_shift.get())
-            bindings = dict(self.app_settings.action_bindings)
-            bindings[selected[0]] = binding
-            settings = self.app_settings.with_action_bindings(validate_action_bindings(bindings))
+            if selected[0] == "reshade":
+                settings = self.app_settings.with_reshade_binding(binding)
+            else:
+                bindings = dict(self.app_settings.action_bindings)
+                bindings[selected[0]] = binding
+                settings = self.app_settings.with_action_bindings(validate_action_bindings(bindings))
             self._persist_preferences(settings, "Binding saved. Your in-game controls use this shortcut.")
         self._guard("Keybind", operation)
 
     def _reset_editor_bindings(self):
         if not self.busy and not self.playing and messagebox.askyesno("Restore bindings", "Restore all editor shortcuts to their defaults?", parent=self.root):
-            self._persist_preferences(self.app_settings.with_action_bindings(default_action_bindings()), "Default editor shortcuts restored.")
+            from dolly.settings import DEFAULT_RESHADE_BINDING
+            settings = replace(self.app_settings, capture_binding=DEFAULT_BINDING,
+                               action_bindings=default_action_bindings(), reshade_binding=DEFAULT_RESHADE_BINDING)
+            self._persist_preferences(settings, "Default editor shortcuts restored.")
 
     def _save_movement_settings(self):
         def operation():
@@ -1548,6 +1795,16 @@ class DollyApp:
                 self._set_time(float(status.get("time", self.shot_time.get())))
         except Exception as exc:
             self._log("Status unavailable: " + str(exc))
+        else:
+            try:
+                self._refresh_video(status)
+                self._last_video_poll_error = None
+            except (RuntimeError, ValueError, TypeError, OSError) as exc:
+                message = "Media status unavailable: " + str(exc)
+                self.video_status_text.set(message)
+                if getattr(self, "_last_video_poll_error", None) != message:
+                    self._last_video_poll_error = message
+                    self._log(message)
         try:
             editor_session.poll(self)
             self.capture_hotkey_checkbox.configure(state="disabled" if self.native_editor_active else "normal")

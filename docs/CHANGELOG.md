@@ -1,5 +1,32 @@
 # Changes
 
+## 0.5.0 alpha — MP4 and ReShade
+
+- Real-time, video-only H.264 MP4 capture at 30/60 FPS and current SDR game resolution.
+- Bounded GPU/CPU queues, encoder worker, missed-slot reporting, exclusive output creation and finalization on stop/focus loss.
+- In-game recording controls; desktop output path, frame rate and bitrate.
+- Optional ReShade manual runtime, color effects, clean capture before its UI, and configurable F11 menu access.
+- ReShade loading runs outside the camera worker; configuration stays outside the game.
+- REPLAY home heading. Camera hook, interpolation and timing remain unchanged.
+- Fixed-step rendering, audio, depth-dependent ReShade shaders and separate layer export are not included.
+
+## 0.4.8 alpha — Recorded packets and frozen native preview
+
+- Read a bounded, cached index of completed Source 2 packet records. Native
+  shot starts between packets explicitly seek the next indexed packet and
+  retain the existing exact pause/tick checks. Unknown, incomplete or changing
+  files keep strict seeking. Tick-zero behavior remains unchanged.
+- Evaluate camera and effects at the actual start on the saved timeline and
+  report the skipped fraction. Reject starts beyond the authored shot end.
+- Prepare frozen native previews directly from confirmed paused render
+  telemetry, with no same-tick seek or console position calibration.
+- Retain at most 120 view observations outside playback too, using the same
+  monotonic clock as input/graphics diagnostics. No additional game reads.
+- Document the camera-cache consistency lead, optional ReShade integration
+  and Stage 3 export design. The native DLL/hook is unchanged; the renderer
+  slowdown and overflow are not fixed here. General legacy calibration remains
+  strict, and deterministic export still needs preroll for sparse recordings.
+
 ## 0.4.7 alpha — Paused flight return and replay names
 
 - Closing F8 on a paused held/completed camera requests the acknowledged Flight

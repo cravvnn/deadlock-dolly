@@ -852,6 +852,15 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         _save_record(session_dir, metadata)
         with (session_dir / "game_stdout.log").open("ab") as output:
             with external_program_environment() as environment:
+                # Dolly owns the one graphics callback for its optional manual
+                # ReShade runtime. Never install a second automatic DXGI hook.
+                # This environment belongs only to the launched development game.
+                if native:
+                    from .settings import reshade_config_path
+                    environment = dict(os.environ if environment is None else environment)
+                    environment["RESHADE_DISABLE_GRAPHICS_HOOK"] = "1"
+                    environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
+                    environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
                 options = {} if environment is None else {"env": environment}
                 process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)

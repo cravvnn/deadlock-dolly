@@ -10,16 +10,16 @@ import struct
 
 CONFIG_OFFSET = 576
 STATUS_OFFSET = 2 * 1024 * 1024 + 2048
-EDITOR_ABI = 1
+EDITOR_ABI = 2
 CONFIG_MAGIC = b"DLYEDIT1"
 STATUS_MAGIC = b"DLYEDS01"
-CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI20s")
+CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI2H16s")
 HEADER = struct.Struct("<8s8Id7d128sdiIQ")
 EVENT = struct.Struct("<IId7diI")
 EVENT_COUNT = 16
 STATUS_BYTES = HEADER.size + EVENT.size * EVENT_COUNT
-OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused")
-EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate")
+OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused", "reshade")
+EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate", "reshade", "start_video", "stop_video")
 
 
 def _text(value, capacity):
@@ -40,13 +40,15 @@ def _uint(value, name):
 
 def pack_config(sequence, owner_sequence, ack_event, values):
     from .editor_actions import ACTION_ORDER, default_action_bindings, validate_action_bindings
+    from .settings import DEFAULT_RESHADE_BINDING, validate_reshade_binding
     enabled = values.get("enabled", False)
     if not isinstance(enabled, bool):
         raise ValueError("Editor enabled must be a boolean")
     owner = values.get("owner", "disabled")
-    if owner not in OWNERS[:-1]:
+    if owner not in OWNERS or owner == "unfocused":
         raise ValueError("Unknown native editor input owner")
     bindings = validate_action_bindings(values.get("bindings") or default_action_bindings())
+    reshade = validate_reshade_binding(values.get("reshade_binding", DEFAULT_RESHADE_BINDING), bindings)
     wire = []
     for name in ACTION_ORDER:
         binding = bindings[name]
@@ -74,7 +76,8 @@ def pack_config(sequence, owner_sequence, ack_event, values):
         _finite(values.get("playhead", 0), 0, 1e9, "playhead"), tick,
         int(bool(values.get("playing", False))) | int(bool(values.get("busy", False))) << 1,
         _finite(values.get("playback_speed", 1.0), .05, 4, "playback speed"),
-        playback_rate, b"\0" * 20)
+        playback_rate, 0 if reshade is None else reshade.vk,
+        0 if reshade is None else reshade.modifiers, b"\0" * 16)
 
 
 def unpack_status(data, ack_event=0):
@@ -111,7 +114,7 @@ def unpack_status(data, ack_event=0):
     return {"ready": bool(flags & 16), "enabled": bool(flags & 1), "focused": bool(flags & 2),
             "paused": bool(flags & 4), "flight_active": bool(flags & 8), "overlay_available": bool(flags & 32),
             "input_available": bool(flags & 64), "input_mode": OWNERS[owner],
-            "console_open": owner == 4, "game_ui": owner == 3,
+            "console_open": owner == 4, "game_ui": owner == 3, "reshade_open": owner == 6,
             "selected_camera": selected, "camera_count": count, "last_event": latest, "dropped_events": dropped,
             "speed": speed, "applied_pose": pose, "message": message.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
             "visualization_state": ({0: "disconnected", 1: "waiting", 2: "ready", 3: "disabled",

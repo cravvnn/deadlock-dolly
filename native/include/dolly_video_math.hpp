@@ -1,0 +1,75 @@
+#pragma once
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+
+namespace dolly::video {
+// Integer quotient/remainder avoids accumulating rounded frame periods.
+inline std::uint64_t clock_units(std::uint64_t ticks, std::uint64_t frequency,
+                                 std::uint64_t units) noexcept {
+    if (!frequency)
+        return 0;
+    return ticks / frequency * units + ticks % frequency * units / frequency;
+}
+struct Cadence {
+    std::uint64_t frequency = 1, start = 0, last_slot = 0;
+    std::uint32_t fps = 30;
+    bool started = false;
+    bool sample(std::uint64_t now, std::uint64_t& pts, std::uint64_t& missed) noexcept {
+        missed = 0;
+        if (!started) {
+            started = true;
+            start = now;
+            last_slot = 0;
+            pts = 0;
+            return true;
+        }
+        if (now < start)
+            return false;
+        const auto elapsed = now - start;
+        const auto slot = clock_units(elapsed, frequency, fps);
+        if (slot <= last_slot)
+            return false;
+        missed = slot - last_slot - 1;
+        last_slot = slot;
+        pts = clock_units(elapsed, frequency, 10000000);
+        return true;
+    }
+};
+
+// Full-range SDR RGB to limited-range BT.709 NV12. Both rows and chroma
+// samples stay top-down. RGB bytes are read explicitly; alpha is ignored.
+// Width and height must be positive/even and both buffers suitably sized.
+inline void rgb_to_nv12(const std::uint8_t* source, std::size_t stride, std::uint8_t* destination,
+                        std::uint32_t width, std::uint32_t height, bool rgba) noexcept {
+    auto* chroma = destination + std::size_t(width) * height;
+    const auto byte = [](int value, int low, int high) {
+        return std::uint8_t(std::max(low, std::min(high, value)));
+    };
+    const auto rounded = [](int value) {
+        return value >= 0 ? (value + 131072) / 262144 : -((-value + 131072) / 262144);
+    };
+    for (std::uint32_t y = 0; y < height; y += 2) {
+        for (std::uint32_t x = 0; x < width; x += 2) {
+            int red = 0, green = 0, blue = 0;
+            for (unsigned dy = 0; dy < 2; ++dy) {
+                const auto* row = source + std::size_t(y + dy) * stride;
+                for (unsigned dx = 0; dx < 2; ++dx) {
+                    const auto* pixel = row + std::size_t(x + dx) * 4;
+                    const int r = pixel[rgba ? 0 : 2], g = pixel[1], b = pixel[rgba ? 2 : 0];
+                    red += r;
+                    green += g;
+                    blue += b;
+                    destination[std::size_t(y + dy) * width + x + dx] =
+                        byte(16 + (11966 * r + 40254 * g + 4064 * b + 32768) / 65536, 16, 235);
+                }
+            }
+            // Average the complete 2x2 block before chroma quantization.
+            chroma[std::size_t(y / 2) * width + x] =
+                byte(128 + rounded(-6596 * red - 22189 * green + 28784 * blue), 16, 240);
+            chroma[std::size_t(y / 2) * width + x + 1] =
+                byte(128 + rounded(28784 * red - 26145 * green - 2639 * blue), 16, 240);
+        }
+    }
+}
+}

@@ -22,7 +22,7 @@ class EditorBridgeTests(unittest.TestCase):
     def publish(self, events=(), *, seq=2, flags=127, owner=1, latest=None):
         latest = max((e[0] for e in events), default=0) if latest is None else latest
         data = bytearray(w.STATUS_BYTES)
-        w.HEADER.pack_into(data, 0, w.STATUS_MAGIC, seq, 1, owner, flags, 0, 2,
+        w.HEADER.pack_into(data, 0, w.STATUS_MAGIC, seq, w.EDITOR_ABI, owner, flags, 0, 2,
                            latest, 0, 320, 10, 20, 30, 5, 6, 7, 16/9,
                            b"Ready", 1.5, 42, 0, 17)
         for index, (serial, action, value) in enumerate(events):
@@ -64,13 +64,45 @@ class EditorBridgeTests(unittest.TestCase):
         self.bridge.configure_editor(playback_speed=.1, playback_rate=120)
         config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
         self.assertEqual(struct.unpack_from("<dI", config, 416), (.1, 120))
-        self.assertEqual(config[428:], b"\0"*20)
+        self.assertEqual(struct.unpack_from("<HH", config, 428), (0x7a, 0))
+        self.assertEqual(config[432:], b"\0"*16)
         before = bytes(config)
         for setting in ({"playback_speed": 0}, {"playback_speed": float("nan")},
                         {"playback_rate": 90}, {"playback_rate": 60.0}, {"playback_rate": True}):
             with self.subTest(setting=setting), self.assertRaises(ValueError):
                 self.bridge.configure_editor(**setting)
             self.assertEqual(bytes(self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]), before)
+
+    def test_reshade_config_preserves_existing_offsets_and_rejects_conflicts(self):
+        self.bridge.configure_editor(reshade_binding=EditorBinding("Mouse5", ctrl=True))
+        config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
+        self.assertEqual(struct.unpack_from("<HH", config, 428), (6, 1))
+        before = bytes(config)
+        with self.assertRaisesRegex(ValueError, "ReShade menu"):
+            self.bridge.configure_editor(reshade_binding=EditorBinding("F8"))
+        self.assertEqual(bytes(self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]), before)
+        self.bridge.configure_editor(reshade_binding=None)
+        self.assertEqual(self.memory[w.CONFIG_OFFSET+428:w.CONFIG_OFFSET+432], b"\0"*4)
+
+    def test_reshade_owner_and_action_follow_existing_ids(self):
+        self.publish([(1, 31, 0)], owner=6)
+        state = self.bridge.editor_status()
+        self.assertEqual(state["input_mode"], "reshade")
+        self.assertTrue(state["reshade_open"])
+        self.assertEqual(state["events"][0]["action"], "reshade")
+        self.assertFalse(state["console_open"])
+        self.assertEqual(w.EDITOR_ABI, 2)
+
+    def test_video_action_ids_follow_reshade(self):
+        self.publish([(1, 32, 0), (2, 33, 0)])
+        self.assertEqual([e["action"] for e in self.bridge.editor_status()["events"]],
+                         ["start_video", "stop_video"])
+
+    def test_old_editor_abi_is_rejected(self):
+        self.publish()
+        struct.pack_into("<I", self.memory, w.STATUS_OFFSET+12, 1)
+        with self.assertRaisesRegex(nb.NativeBridgeError, "protocol"):
+            self.bridge.editor_status()
 
     def test_playback_action_ids_preserve_existing_action_order(self):
         self.publish([(1, 28, 1), (2, 29, .25), (3, 30, 120)])

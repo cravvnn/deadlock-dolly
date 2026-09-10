@@ -4,6 +4,8 @@
 #include "dolly_editor.hpp"
 #include "dolly_visualization.hpp"
 #include "dolly_visualization_runtime.hpp"
+#include "dolly_video.hpp"
+#include "dolly_reshade.hpp"
 #include "MinHook.h"
 #include <d3d11_1.h>
 #include <dxgi.h>
@@ -59,6 +61,7 @@ ImFont* title_font = nullptr;
 float panel_scale = 1.0f;
 std::atomic<HWND> game_window{nullptr};
 bool win32_ready = false, dx11_ready = false, last_panel = false;
+bool media_suspended = false;
 bool show_path_guides = true;
 VisualizationGeometry guide_geometry;
 ULONGLONG next_initialization = 0;
@@ -229,6 +232,8 @@ void feed_pending_input() {
         }
 }
 void release_device() noexcept {
+    video::reset_resources();
+    reshade_release_device();
     if (device || imgui)
         diagnostic_releases.fetch_add(1, std::memory_order_relaxed);
     editor_overlay_available(false);
@@ -794,6 +799,32 @@ void draw_panel(const EditorSnapshot& state) {
                 ImGui::EndDisabled();
             }
             end_panel_card();
+            if (begin_panel_card("##video-card")) {
+                section_title("Video", "MP4");
+                const auto recording = video::status();
+                const bool active = recording.state == video::State::starting ||
+                                    recording.state == video::State::recording;
+                if (active) {
+                    ImGui::Text("%.1f s  |  %llu frames", double(recording.duration_100ns) / 1e7,
+                                static_cast<unsigned long long>(recording.frames_written));
+                    action_button("Finish recording", EditorAction::StopVideo,
+                                  ImGui::GetContentRegionAvail().x);
+                } else {
+                    ImGui::BeginDisabled(recording.state == video::State::finalizing);
+                    action_button(recording.state == video::State::finalizing ? "Finalizing MP4..."
+                                                                              : "Record video",
+                                  EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                }
+                ImGui::TextWrapped(
+                    "Output folder and FPS: desktop Export tab. Video only; game resolution.");
+                if (recording.frames_dropped)
+                    ImGui::Text("Missed capture slots: %llu",
+                                static_cast<unsigned long long>(recording.frames_dropped));
+                if (reshade_available() && ImGui::Button("ReShade", ImVec2(-1, 0)))
+                    editor_enqueue(EditorAction::ReShade);
+            }
+            end_panel_card();
             if (begin_panel_card("##flight-card")) {
                 // Send one change at the end of a drag, not a settings write per frame.
                 static float speed_draft = 400.0f;
@@ -853,8 +884,25 @@ bool try_initialize_device(IDXGISwapChain* chain) {
 }
 void render_overlay(IDXGISwapChain* chain) {
     const auto state = editor_snapshot();
-    if (!state.enabled || resizing.load(std::memory_order_acquire))
+    if (resizing.load(std::memory_order_acquire))
         return;
+    if (!state.enabled) {
+        // Disconnect disables editor input before its optional media commands
+        // arrive. Retire media at the next real render boundary even then;
+        // neither the camera worker nor the window thread waits for rendering.
+        if (!media_suspended && chain == swapchain && immediate) {
+            video::reset_resources();
+            reshade_set_enabled(false);
+            if (context1 && overlay_state) {
+                DeviceStateScope graphics_scope;
+                reshade_release_device();
+            } else
+                reshade_release_device();
+            media_suspended = true;
+        }
+        return;
+    }
+    media_suspended = false;
     if (!swapchain) {
         if (!try_initialize_device(chain))
             return;
@@ -870,6 +918,34 @@ void render_overlay(IDXGISwapChain* chain) {
     }
     if (!target && !create_target(chain))
         return;
+    // Both optional effects and capture share this one real game Present.
+    // Capture runs after effects but before either editor's UI or path guides.
+    const auto clean_frame = [](IDXGISwapChain* capture_chain, ID3D11Device* capture_device,
+                                ID3D11DeviceContext* capture_context, void*) {
+        const auto editor = editor_snapshot();
+        if (editor.ready && editor.focused)
+            video::capture(capture_chain, capture_device, capture_context);
+        else if (video::status().state == video::State::recording)
+            video::stop(false);
+    };
+    bool effects_handled = false;
+    if (reshade_enabled() || reshade_overlay_pending()) {
+        // The manual ReShade API changes graphics state. Restore the exact
+        // engine context before Dolly draws or the real Present continues.
+        DeviceStateScope effects_scope;
+        effects_handled = reshade_render(chain, device, immediate, clean_frame, nullptr);
+    } else {
+        // Applies pending disable/teardown without adding a state swap to the
+        // ordinary camera path when ReShade has never been configured.
+        effects_handled = reshade_render(chain, device, immediate, clean_frame, nullptr);
+    }
+    if (!effects_handled)
+        clean_frame(chain, device, immediate, nullptr);
+    if (reshade_overlay_open() || reshade_overlay_pending()) {
+        clear_pending_input();
+        editor_text_input_active(false);
+        return;
+    }
     GuiContextScope gui_scope(imgui);
     const bool panel = editor_panel_visible() && state.focused;
     const auto guides = guides_visible(state) ? visualization_snapshot() : nullptr;
@@ -967,6 +1043,8 @@ HRESULT STDMETHODCALLTYPE resize_hook(IDXGISwapChain* chain, UINT count, UINT wi
             diagnostic_resizes.fetch_add(1, std::memory_order_relaxed);
             game_resize = true;
             resizing = true;
+            video::reset_resources();
+            reshade_release_device();
             release_target();
         }
     }
