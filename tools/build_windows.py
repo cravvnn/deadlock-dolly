@@ -139,6 +139,8 @@ def main() -> int:
     native_report = copy_native_runtime(ROOT, bundle / "_internal" / "native")
     shutil.copy2(ROOT / "native" / "vendor" / "minhook" / "LICENSE.txt",
                  third_party / "notices" / "MinHook-LICENSE.txt")
+    shutil.copy2(ROOT / "native" / "vendor" / "imgui" / "LICENSE.txt",
+                 third_party / "notices" / "Dear-ImGui-LICENSE.txt")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     shutil.copytree(ROOT / "examples", bundle / "examples", dirs_exist_ok=True)

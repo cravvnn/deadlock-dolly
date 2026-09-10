@@ -14,3 +14,9 @@ The actual Tcl/Tk runtime version is read during the Windows bundle self-test.
 These notices do not assert that a particular Python installation bundles
 exactly 8.6.16. The cvar unlocker retains its separate MIT license and pinned
 provenance under `third_party/cvar_unlocker/`.
+
+The native in-game panel contains Dear ImGui, copyright Omar Cornut and
+contributors, under its MIT license. The exact vendored revision and file
+hashes are recorded in `native/vendor/imgui/UPSTREAM.json`. Its license and
+MinHook's license are copied into the portable notices folder by the Windows
+build script. The project uses the official Win32 and DirectX 11 backends.

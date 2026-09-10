@@ -1,3 +1,51 @@
+# Validation — 0.4.0 alpha, Stage 1
+
+Stage 1 is a test candidate for Windows and the reviewed Deadlock builds.
+The existing rendered-view path interpolation and typed DOF evaluator are
+retained. New code adds native manual flight, DX11 editor rendering, shared
+input actions, automatic startup and a reorganized desktop editor.
+
+## Verified in this workspace
+
+- Python regression suite from a clean extraction of the full source ZIP:
+  686 tests completed successfully, with one Windows-only skip. Coverage
+  includes queued console/game-UI ownership, startup configuration races,
+  capture snapshots and Stop recovery.
+- Native path, effect and manual-flight evaluator tests run on Linux. Flight
+  checks cover frame-rate independence, Z-up movement, diagonal normalization,
+  mouse sensitivity, long-frame discard and preserved framing/bank.
+- Fresh Windows x64 DollyNative.dll and both Windows test harnesses compile and
+  link. PE architecture, required exports, static C++ runtime and the matching
+  ABI 3 build metadata/hash are verified.
+- The callback harness includes manual seed/hold, replay resume, effect phase,
+  capture snapshot/ring overflow and acknowledgement-lock contention cases.
+  These Windows callback tests were compiled, not executed here.
+- The DX11 WARP harness checks actual panel pixels, context-state restoration,
+  resize/backbuffer release and shutdown when executed by Windows CTest.
+- All five desktop tabs were rendered at 1000x700 and 1500x1050 with normal and
+  150% scaling using Xvfb. The layout fits without page-level scrollbars. This
+  checks layout with available Linux fonts, not Windows font rendering.
+- Dear ImGui files match their pinned upstream SHA-256 manifest. Full source
+  packaging includes all new CMake sources, headers, tests and required notices.
+  Supplied game DLLs, private settings, logs and recordings are excluded.
+
+## Required Windows and in-game validation
+
+No Windows executable, DX11 WARP harness, or Deadlock session has been run in
+this Linux workspace. Cross-compilation does not establish that native input
+routes, foreground focus, console closure, renderer state or ReShade work in
+the installed game. The GitHub Windows workflow rebuilds the native helper,
+runs CTest and Python tests, verifies the executable icon, and starts the
+packaged editor. It does not launch Deadlock or publish a release.
+
+Use STAGE1_TESTING.md for automatic startup, held camera/hero switching,
+F7/F8/F9/F10, capture, Alt-Tab, 0.1x paths, repeated shots, supported DOF and
+resize tests. Live results should accompany any pre-release. Stage 2 world
+markers/full in-game curve editing and Stage 3 video/render-pass export are
+not implemented by this candidate.
+
+## Earlier validation records
+
 # Validation — 0.3.13 alpha
 
 Static review covers the supplied updated client, engine2 and tier0 files.

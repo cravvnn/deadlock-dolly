@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 from dolly import __version__
 from release_files import sha256
 
-BRIDGE_ABI = 2
+BRIDGE_ABI = 3
 DLL_RELATIVE = Path("bin/win64/DollyNative.dll")
 REQUIRED_EXPORTS = {
     "CreateInterface", "DollyNativeProtocolVersion",
@@ -130,6 +130,7 @@ def build_native(root: Path = ROOT) -> dict:
             "compiler": "Visual Studio 17 2022", "configuration": "Release",
             "runtime": "static", "native_path_tests_passed": True,
             "native_callback_tests_passed": True,
+            "native_flight_tests_passed": True, "native_overlay_tests_passed": True,
             "game_runtime_verified": False, "pe": report}
     metadata.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     return info

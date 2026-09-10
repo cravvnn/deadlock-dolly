@@ -58,7 +58,7 @@ class NativePackagingTests(unittest.TestCase):
         dll = native / build_native.DLL_RELATIVE
         dll.parent.mkdir(parents=True)
         dll.write_bytes(b"Dolly test fixture, never executable")
-        info = {"abi": 2, "sha256": sha256(dll)}
+        info = {"abi": build_native.BRIDGE_ABI, "sha256": sha256(dll)}
         metadata = native / "build_info.json"
         metadata.write_text(json.dumps(info))
         profiles = native / "profiles"
@@ -121,7 +121,7 @@ class NativePackagingTests(unittest.TestCase):
     def test_runtime_requires_matching_hash_supported_abi_and_object_profile(self):
         native, dll, metadata = self.runtime_fixture()
         original = metadata.read_text()
-        cases = [({"abi": 2, "sha256": "0" * 64}, "hash"),
+        cases = [({"abi": build_native.BRIDGE_ABI, "sha256": "0" * 64}, "hash"),
                  ({"abi": 1, "sha256": sha256(dll)}, "ABI"),
                  ({"abi": True, "sha256": sha256(dll)}, "ABI")]
         for info, message in cases:
@@ -172,7 +172,7 @@ class NativePackagingTests(unittest.TestCase):
         self.assertEqual(configure[configure.index("-A") + 1], "x64")
         self.assertTrue(all(call.kwargs["check"] for call in run.call_args_list))
         self.assertEqual(info["sha256"], sha256(dll))
-        self.assertEqual(info["abi"], 2)
+        self.assertEqual(info["abi"], build_native.BRIDGE_ABI)
         self.assertFalse(info["game_runtime_verified"])
         self.assertEqual(json.loads(metadata.read_text()), info)
 

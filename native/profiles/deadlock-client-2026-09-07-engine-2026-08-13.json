@@ -1,6 +1,6 @@
 {
   "profile_format": 1,
-  "native_abi": 2,
+  "native_abi": 3,
   "validation": "Static exact-build verification. Native view cadence and visual smoothness require the user test.",
   "client": {
     "client_sha256": "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",

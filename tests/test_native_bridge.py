@@ -53,7 +53,7 @@ class NativeBridgeTests(unittest.TestCase):
     def header(self):
         return nb.CONTROL.unpack(self.memory[:nb.CONTROL.size])
 
-    def publish_status(self, *, state=2, pid=2002, ack=None, abi=2,
+    def publish_status(self, *, state=2, pid=2002, ack=None, abi=nb.ABI,
                        phase=0.5, message=b"Ready", sequence=2, paused=1):
         data = nb.STATUS.pack(
             nb.STATUS_MAGIC, sequence, abi, state, pid,
@@ -65,7 +65,7 @@ class NativeBridgeTests(unittest.TestCase):
 
     def respond(self):
         mode = self.header()[4]
-        self.publish_status(state={0: 5, 1: 2, 2: 3, 3: 2}[mode])
+        self.publish_status(state={0: 5, 1: 2, 2: 3, 3: 2, 4: 2}[mode])
 
     def prepare(self):
         self.after_sleep = self.respond
@@ -74,7 +74,7 @@ class NativeBridgeTests(unittest.TestCase):
     def test_layout_matches_native_header_and_private_mapping_name(self):
         self.assertEqual(nb.CONTROL.size, 576)
         self.assertEqual(nb.STATUS.size, 1016)
-        self.assertEqual(self.header()[:2], (nb.CONTROL_MAGIC, 2))
+        self.assertEqual(self.header()[:2], (nb.CONTROL_MAGIC, nb.ABI))
         self.assertEqual(self.header()[5:7], (1001, 2002))
         factory = unittest.mock.Mock(return_value=Memory(nb.MAPPING_BYTES))
         bridge = nb.NativeBridge.create(mapping_factory=factory, start_heartbeat=False,

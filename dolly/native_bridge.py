@@ -21,7 +21,7 @@ import uuid
 from .native_effects import compile_shot
 from .runtime import resource_root
 
-ABI = 2
+ABI = 3
 CONTROL_BYTES = 2 * 1024 * 1024
 MAPPING_BYTES = CONTROL_BYTES + 4096
 PAYLOAD_OFFSET = 1024
@@ -143,6 +143,11 @@ class NativeBridge:
         self._speed = 1.0
         self._demo = b""
         self._prepared = False
+        self._manual = False
+        self._editor_values = {}
+        self._editor_sequence = 0
+        self._editor_owner_sequence = 0
+        self._editor_ack = 0
         self._mode = 0
         self._atomic32 = self._atomic64 = None
         self._read32 = None
@@ -182,8 +187,7 @@ class NativeBridge:
         if self._closed:
             raise NativeBridgeError("Native camera session is closed")
 
-    def _load_sequence(self):
-        offset = CONTROL_BYTES + 8
+    def _load_sequence(self, offset=CONTROL_BYTES + 8):
         if self._read32 is None:
             return struct.unpack_from("<I", self._mapping, offset)[0]
         slot = ctypes.c_int32.from_buffer(self._mapping, offset)
@@ -328,6 +332,7 @@ class NativeBridge:
             if not self.game_pid:
                 raise NativeBridgeError("Native camera requires its launched game process")
             self._prepared = False
+            self._manual = False
             self._start, self._speed, self._demo = start, speed, demo
             self._flags = (1 if frozen else 0) | 2
             command = self._publish(1, payload)
@@ -345,12 +350,18 @@ class NativeBridge:
             self._check_open()
             if not self._prepared:
                 raise NativeBridgeError("Prepare a native camera path before playing")
+            if self._editor_values.get("enabled"):
+                # Authored footage starts with the panel hidden. F8 can reopen
+                # it; manual integration is inactive while the path plays.
+                self.configure_editor(owner="flight")
             command = self._publish(2)
             try:
                 return self._wait(command, {"playing", "completed"}, timeout)
             except Exception:
                 self._prepared = False
                 self._publish(0)
+                if self._editor_values.get("enabled"):
+                    self.configure_editor(owner="panel")
                 raise
 
     def release(self, timeout=3):
@@ -358,6 +369,7 @@ class NativeBridge:
         with self._operations:
             self._check_open()
             self._prepared = False
+            self._manual = False
             command = self._publish(0)
             if not self.game_pid:
                 return self.status()
@@ -368,14 +380,100 @@ class NativeBridge:
         timeout = _number(timeout, "Native acknowledgment timeout")
         with self._operations:
             self._check_open()
-            if not self._prepared:
+            if not self._prepared and not self._manual:
                 raise NativeBridgeError("Prepare a native camera path before holding")
             command = self._publish(3)
             return self._wait(command, {"armed"}, timeout)
 
+    def start_flight(self, demo_name, pose=None, timeout=3):
+        """Enter native manual flight, optionally seeded from a displayed view."""
+        timeout = _number(timeout, "Native acknowledgment timeout")
+        if not isinstance(demo_name, str) or not demo_name or any(c in demo_name for c in "\0\r\n"):
+            raise ValueError("Native flight requires the current replay name")
+        demo = demo_name.encode("utf-8")
+        if len(demo) >= 512:
+            raise ValueError("Replay name is too long")
+        payload = b""
+        if pose is not None:
+            try:
+                numbers = tuple(float(x) for x in pose)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Manual camera requires seven finite values") from exc
+            if len(numbers) != 7 or not all(math.isfinite(x) and abs(x) <= 1e8 for x in numbers) or not .25 <= numbers[6] <= 8:
+                raise ValueError("Manual camera pose is invalid")
+            payload = struct.pack("<7d", *numbers)
+        with self._operations:
+            self._check_open()
+            if not self.game_pid:
+                raise NativeBridgeError("Native flight requires its launched game process")
+            self._prepared = False
+            self._manual = False
+            self._demo, self._flags, self._start, self._speed = demo, 3, 0.0, 1.0
+            self.configure_editor(enabled=True, owner="flight")
+            command = self._publish(4, payload)
+            try:
+                result = self._wait(command, {"armed"}, timeout)
+            except Exception:
+                self._publish(0)
+                self.configure_editor(owner="panel")
+                raise
+            self._manual = True
+            return result
+
+    def configure_editor(self, **values):
+        """Publish UI/input settings without replacing the native camera path."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            changed = dict(self._editor_values)
+            changed.update(values)
+            owner_sequence = self._editor_owner_sequence + int("owner" in values)
+            if owner_sequence > 0xffffffff:
+                raise NativeBridgeError("Editor owner counter exhausted; relaunch Dolly")
+            odd = (self._editor_sequence + 1) & 0xffffffff
+            even = (odd + 1) & 0xffffffff
+            data = wire.pack_config(odd, owner_sequence, self._editor_ack, changed)
+            offset = wire.CONFIG_OFFSET
+            self._store(offset + 8, odd)
+            self._mapping[offset:offset + 8] = data[:8]
+            self._mapping[offset + 12:offset + len(data)] = data[12:]
+            self._store(offset + 8, even)
+            self._editor_sequence, self._editor_owner_sequence = even, owner_sequence
+            self._editor_values = changed
+
+    def editor_status(self):
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            for _ in range(4):
+                first = self._load_sequence(wire.STATUS_OFFSET + 8)
+                if first & 1:
+                    continue
+                data = bytes(self._mapping[wire.STATUS_OFFSET:wire.STATUS_OFFSET + wire.STATUS_BYTES])
+                second = self._load_sequence(wire.STATUS_OFFSET + 8)
+                if first == second and not second & 1 and struct.unpack_from("<I", data, 8)[0] == first:
+                    try:
+                        return wire.unpack_status(data, self._editor_ack)
+                    except ValueError as exc:
+                        raise NativeBridgeError(str(exc)) from exc
+            raise NativeBridgeError("Native editor status is being updated")
+
+    def acknowledge_editor_event(self, sequence):
+        with self._lock:
+            self._check_open()
+            if type(sequence) is not int or sequence != self._editor_ack + 1:
+                raise NativeBridgeError("Native editor actions must be acknowledged in order")
+            self._editor_ack = sequence
+            self.configure_editor()
+
     def diagnostics(self):
         try:
-            return self.status()
+            result = self.status()
+            try:
+                result["editor"] = self.editor_status()
+            except (NativeBridgeError, ValueError) as exc:
+                result["editor"] = {"message": str(exc)}
+            return result
         except (NativeBridgeError, OSError, ValueError) as exc:
             return {"state": "unavailable", "message": str(exc)}
 

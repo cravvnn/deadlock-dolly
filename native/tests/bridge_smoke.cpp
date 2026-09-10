@@ -3,6 +3,7 @@
 // Including the implementation keeps this gate on the production callback, not
 // a second model of its state machine that could pass while the DLL is broken.
 #include "../src/bridge_win.cpp"
+#include "../src/dolly_editor_win.cpp"
 
 #include <iostream>
 #include <limits>
@@ -153,6 +154,23 @@ struct Fixture {
         return next_command;
     }
 
+    void enable_synthetic_editor() {
+        // Only this synthetic test translation unit changes internal flags.
+        // No production entry point bypasses input/overlay installation.
+        EditorConfig config{};std::memcpy(config.magic,"DLYEDIT1",8);config.sequence=2;config.abi=kEditorAbi;
+        config.enabled=1;config.owner=std::uint32_t(EditorOwner::Flight);config.owner_sequence=1;config.speed=400;config.sensitivity=.08;
+        std::memcpy(mapping.data()+kEditorConfigOffset,&config,sizeof(config));
+        dolly::gInput=true;editor_overlay_available(true);editor_worker_tick(mapping.data(),true);
+    }
+
+    void manual(Mode mode=Mode::Manual,const CameraPose* seed=nullptr) {
+        command(mode);
+        auto value=std::make_shared<Command>(*std::atomic_load(&gCommand));
+        value->manual=true;value->path.reset();value->has_manual_pose=seed!=nullptr;
+        if(seed)value->manual_pose=*seed;
+        std::atomic_store(&gCommand,std::shared_ptr<const Command>(value));
+    }
+
     Status status() const {
         Status result{};
         std::memcpy(&result, mapping.data() + kControlBytes, sizeof(result));
@@ -301,6 +319,10 @@ void effect_checks(Fixture& f) {
  require(gEffects.bindings[2].read(value)&&value==2,"Integer DOF mode did not apply");
  command(Mode::HoldCurrent);status=f.frame();double held=status.effect_phase;
  f.clock(64.125f,4104);status=f.frame();close_to(status.effect_phase,held,"Held effect advanced");
+ // Manual reframing must retain the currently selected effect phase.
+ paused=true;f.manual();status=f.frame();
+ require(!status.error&&status.effect_count==3,"Entering manual flight lost selected DOF");
+ close_to(status.effect_phase,held,"Manual flight changed the selected effect phase");
  command(Mode::Release);status=f.frame();
  float restored=0;read_value(values.address()+0x100+0x58,restored);
  require(status.effect_count==0&&restored==600,"Stop did not restore original effect");
@@ -435,6 +457,40 @@ void run() {
     f.clock(64, 4097); status = f.frame();
     require(status.error == 14, "Moving frozen replay must release the native camera"); f.unchanged();
 
+    f.enable_synthetic_editor();
+    f.fresh_hold(.5);auto selected=f.status();
+    f.manual();status=f.frame();
+    require(!status.error&&status.state==static_cast<unsigned>(State::Armed),"Manual flight without a path did not arm");
+    for(int i=0;i<7;++i)close_to(status.applied_pose[i],selected.applied_pose[i],"Manual camera jumped away from the displayed preview");
+    f.manual(Mode::HoldCurrent);status=f.frame();
+    for(int i=0;i<7;++i)close_to(status.applied_pose[i],selected.applied_pose[i],"HoldCurrent lost the manual camera");
+    paused=false;f.clock(65,4160);status=f.frame();
+    require(!status.error,"Resuming replay while holding a manual camera faulted");
+    for(int i=0;i<7;++i)close_to(status.applied_pose[i],selected.applied_pose[i],"Resuming replay moved the held manual view");
+    paused=true;CameraPose seed={500,600,12,-30,120,8,1.5};f.manual(Mode::Manual,&seed);status=f.frame();
+    for(int i=0;i<7;++i)close_to(status.applied_pose[i],seed[i],"Explicit manual seed was ignored");
+    // Ring never overwrites unacknowledged actions or inserts sequence gaps.
+    for(unsigned i=0;i<kEditorEventCount;++i)require(editor_enqueue(EditorAction::Capture),"Editor event ring filled early");
+    require(!editor_enqueue(EditorAction::Capture),"Full event ring overwrote a capture");
+    editor_worker_tick(f.mapping.data(),true);EditorStatus events{};
+    std::memcpy(&events,f.mapping.data()+kEditorStatusOffset,sizeof(events));
+    require(events.last_event==kEditorEventCount&&events.dropped_events==1,"Overflow changed editor event numbering");
+    for(const auto& event:events.events){require(event.tick==tick&&event.paused,"Capture lost its replay-time snapshot");for(int i=0;i<7;++i)close_to(event.pose[i],seed[i],"Capture did not contain the displayed camera");}
+    EditorConfig config{};std::memcpy(&config,f.mapping.data()+kEditorConfigOffset,sizeof(config));config.sequence+=2;config.ack_event=kEditorEventCount;config.sensitivity=10;
+    std::memcpy(f.mapping.data()+kEditorConfigOffset,&config,sizeof(config));
+    // Force the producer lock busy exactly when a fresh config/ack is read.
+    require(!dolly::gEventLock.test_and_set(std::memory_order_acquire),"Synthetic event lock was already occupied");
+    editor_worker_tick(f.mapping.data(),true);
+    require(dolly::gAcknowledged==0,"Worker mutated the ring without its lock");
+    dolly::gEventLock.clear(std::memory_order_release);
+    editor_worker_tick(f.mapping.data(),true); // same config sequence: retry ack
+    require(dolly::gAcknowledged==kEditorEventCount,"Contended acknowledgement was lost after accepting config");
+    close_to(editor_snapshot().sensitivity,10,"Native sensitivity limit differs from Python settings");
+    require(editor_enqueue(EditorAction::Capture),"Acknowledged ring space was not reusable");
+    f.manual();dolly::gInput=false;status=f.frame();require(status.error==19,"Manual flight bypassed missing input hooks");f.unchanged();dolly::gInput=true;
+    f.manual();seeking=true;status=f.frame();require(status.error==12,"Manual flight ignored a replay seek");f.unchanged();seeking=false;
+    f.manual();gHeartbeatTime=now_seconds()-3;status=f.frame(0,false);require(status.error==10,"Manual flight retained camera after editor loss");f.unchanged();
+    f.command(Mode::Release);f.frame();
     effect_checks(f);
 
     std::cout << "Actual native callback smoke tests passed (synthetic Windows memory; no game runtime claim)\n";

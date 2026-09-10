@@ -1,5 +1,8 @@
 # Contributing
 
+Keep README.md and both start guides in the owner's direct, practical style.
+Documentation conventions are in [AGENTS.md](AGENTS.md).
+
 Use Python 3.10+ with Tcl/Tk to run from source. The reference Windows build
 uses Python 3.12 x64; see [BUILDING.md](docs/BUILDING.md).
 

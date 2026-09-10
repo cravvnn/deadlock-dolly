@@ -1,4 +1,4 @@
-# Native DOF curves — 0.3.11 alpha
+# Native DOF curves — 0.4.0 alpha
 
 Native mode now publishes DOF curves with the camera path. The game evaluates
 both at the same main-view shot phase. It uses the verified native typed cvar
@@ -27,22 +27,22 @@ them through an asynchronous fallback or claim they are synchronized.
 ## Use it
 
 1. Rebuild the entire Windows package from this commit and extract it into a
-   fresh folder. Keep `Dolly.exe` and `_internal` together. ABI 2 requires the
+   fresh folder. Keep `Dolly.exe` and `_internal` together. ABI 3 requires the
    matching editor and native helper. Close the old editing game before updating.
-2. Launch using Native (experimental), initialize the unlocker in the hideout,
-   load the replay, and complete the normal camera check.
-3. In Camera variables, use **+ Depth-of-field preset**. This adds animated
+2. Use Home → Play replay to initialize the unlocker in the hideout before
+   loading and pausing the selected replay with the native camera.
+3. In Effects, use **+ Depth-of-field preset**. This adds animated
    focus/aperture and fixed enable switches. Edit the keys as usual.
 4. Play the shot. Native camera and supported DOF curves use the same phase.
    Updates / s affects editor monitoring, not native camera/DOF delivery.
 5. A shot with native DOF keeps its final camera and effects together. **Play
    shot** releases/restores the old shot and starts again. **Stop / restore**
    restores settings and returns to the game's spectator camera, which may be
-   elsewhere. Use Stop before manual paused-camera movement or capture if asked.
+   elsewhere. F10 enters native paused movement from the currently displayed view.
 
-Frozen previews also evaluate these curves while replay time is paused. Static
-selected-frame previews retain the existing console positioning behavior; they
-apply a single chosen effect value, not a streamed animation.
+Frozen previews also evaluate these curves while replay time is paused. Native saved-view selection applies the chosen camera and effects at the current
+paused replay moment. Entering manual flight retains the held effect phase until
+a new shot or Stop restores its settings.
 
 ## Failure and restoration behavior
 

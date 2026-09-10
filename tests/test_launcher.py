@@ -475,7 +475,7 @@ class LauncherTests(unittest.TestCase):
         struct.pack_into("<H", binary, 68, 0x8664)
         dll.write_bytes(binary)
         (native_root / "build_info.json").write_text(json.dumps({
-            "abi": 2, "sha256": hashlib.sha256(binary).hexdigest()}))
+            "abi": 3, "sha256": hashlib.sha256(binary).hexdigest()}))
         return native_root, pins, dll
 
     def test_native_game_hash_mismatch_is_refused_before_any_recovery_or_mount(self):
@@ -539,7 +539,7 @@ class LauncherTests(unittest.TestCase):
             invalid = bytearray(original)
             struct.pack_into("<H", invalid, 68, 0x14C)
             dll.write_bytes(invalid)
-            manifest.write_text(json.dumps({"abi": 2, "sha256": hashlib.sha256(invalid).hexdigest()}))
+            manifest.write_text(json.dumps({"abi": 3, "sha256": hashlib.sha256(invalid).hexdigest()}))
             with self.assertRaisesRegex(launcher.LaunchError, "x64"):
                 launcher._verified_native(self.paths)
             manifest.write_bytes(original_manifest)

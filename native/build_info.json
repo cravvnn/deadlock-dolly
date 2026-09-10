@@ -1,13 +1,17 @@
 {
-  "abi": 2,
-  "version": "0.3.13-alpha",
-  "sha256": "06348c2c369d8074014acf628054fca7631849b269551e7a1488b7aebea65255",
+  "abi": 3,
+  "version": "0.4.0-alpha",
+  "sha256": "629110b72b71bfdee851c167a99cc3573702cf12f772902938236a131a354a54",
+  "built_utc": "2026-09-10T02:34:50.415967+00:00",
   "compiler": "Zig 0.14.1 clang, cross-compiled on Linux for Windows x64",
   "configuration": "Release",
   "runtime": "static",
   "native_path_tests_passed": true,
+  "native_effect_tests_passed": true,
+  "native_flight_tests_passed": true,
   "native_callback_tests_passed": false,
-  "native_callback_tests_note": "Windows helper cross-compiled successfully; Windows CTest callback execution remains required in GitHub Actions.",
+  "native_overlay_tests_passed": false,
+  "native_callback_tests_note": "Windows callback and DX11 WARP harnesses compiled and linked. Their runtime checks execute in GitHub Windows CTest; not executed in this workspace.",
   "game_runtime_verified": false,
   "pe": {
     "machine": "x64",
@@ -20,8 +24,11 @@
       "DollyNativeProtocolVersion"
     ],
     "import_libraries": [
+      "D3DCOMPILER_47.dll",
+      "GDI32.dll",
       "KERNEL32.dll",
       "SHELL32.dll",
+      "USER32.dll",
       "api-ms-win-crt-convert-l1-1-0.dll",
       "api-ms-win-crt-heap-l1-1-0.dll",
       "api-ms-win-crt-locale-l1-1-0.dll",
@@ -30,9 +37,10 @@
       "api-ms-win-crt-runtime-l1-1-0.dll",
       "api-ms-win-crt-stdio-l1-1-0.dll",
       "api-ms-win-crt-string-l1-1-0.dll",
-      "bcrypt.dll"
+      "api-ms-win-crt-utility-l1-1-0.dll",
+      "bcrypt.dll",
+      "d3d11.dll",
+      "dwmapi.dll"
     ]
-  },
-  "built_utc": "2026-09-09T21:44:50.635021+00:00",
-  "native_effect_tests_passed": true
+  }
 }

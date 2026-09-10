@@ -1,43 +1,92 @@
-DEADLOCK DOLLY - WINDOWS PORTABLE
+DEADLOCK DOLLY 0.4.0 ALPHA — WINDOWS PORTABLE
 
-1. Extract the WHOLE ZIP to a writable folder, such as Downloads or a tools
-   folder. Keep Dolly.exe and _internal together. Python is already included.
-2. Double-click Dolly.exe. It uses the Dolly logo and opens without a console.
-   For a desktop shortcut, right-click Dolly.exe > Send to > Desktop, or use
-   Windows' Create shortcut action. Keep the EXE in its original app folder.
-3. Open Steam and close any running Deadlock. In Session, select Deadlock's
-   executable and a local extracted .dem replay. Keep Netconsole selected.
-4. Launch hideout, wait for it to finish loading, then Connect and Initialize
-   unlocker. Only after that succeeds, Load replay and Check camera support.
-5. Enter replay freecam. On Cameras, Start path here, fly to another view and
-   + Capture camera. Capture binding supports Mouse4/Mouse5 and keyboard keys.
-6. Edit framing with the aspect-ratio curve. Leave Frozen preview off to play
-   the replay with your path. Play shot starts from the first view and handles
-   HUD visibility. Paused camera opens the separate movement/switching panel.
-7. Save shots wherever you prefer. Capture preferences stay in
-   %APPDATA%/DeadlockDolly/settings.json. Logs and recovery backups are in
-   logs beside Dolly.exe, and appear after you start using the application.
+A camera-path editor for local Deadlock replays.
 
-UPDATING AN OLDER INSTALLATION
+THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.
+Native mode loads a user-mode DLL for camera rendering and in-game controls.
+It does not install a kernel driver.
 
-Close Deadlock first. In the old Dolly, use File > Recover game configuration
-if present; otherwise close Dolly and run its old Recover_Game_Config.bat.
-Close Dolly before replacing files. Keep the logs folder and all saved shots.
-Never discard a folder containing a pending gameinfo recovery backup.
+KEEP -insecure IN DEADLOCK'S LAUNCH OPTIONS WHILE USING DOLLY.
+The launcher also adds -dev -insecure -console to its editing session.
+Close that session before launching Deadlock normally.
 
-RECOVERY AND ERRORS
 
-Close Deadlock and use File > Recover game configuration. If the editor cannot
-open, open a terminal in the app folder and run:
-  .\Dolly.exe --recover
-Recovery uses the same saved backups and does not overwrite conflicting
-Steam/user edits. It needs no separately installed Python.
+GETTING STARTED
 
-Use Export diagnostics after an in-game problem. If Dolly does not open,
-send logs/Dolly_startup.log and logs/Dolly.log when available.
+1. Extract the whole Windows ZIP and open Dolly.exe. Keep _internal beside it.
+   Python and the native helper are included.
+2. Open Steam, sign in, and close any running Deadlock game. Use DirectX 11.
+3. On Home, choose Deadlock's executable and a local, extracted .dem replay,
+   or choose a demo from Replays.
+4. Click Play replay. Dolly initializes the unlocker in the hideout before
+   loading the replay, then pauses it with native camera controls ready.
+5. Move to a view and press Ctrl+Alt+K. Fly to another view and capture again.
+   F8 opens the in-game panel for capture, saved views and playback.
+6. Edit framing and arrival times on the desktop Cameras tab. Effects contains
+   the depth-of-field preset. Save shots from the desktop File menu.
+7. Click Play shot or press F5 to play the replay and camera path together.
+   Hide HUD controls HUD visibility during playback; it returns afterward.
 
-The launcher always uses -dev -insecure and initializes the bundled unlocker
-before replay loading. Close this editing session before playing normally.
-The included BUILD_INFO.json distinguishes the app's startup check from a
-Deadlock runtime test. Source and game-mod notices are under LICENSE.txt and
-_internal/third_party. No video files or user replays are included.
+
+DEFAULT CONTROLS
+
+Ctrl+Alt+K     Capture camera
+Ctrl+Alt+R     Replace selected camera
+P             Pause/resume replay
+F5 / F6       Play path / Stop and restore
+PageUp/Down   Previous/next saved camera at the current replay moment
+Comma/Period  Seek backward/forward one second
+F7            Open/close console
+F8            Toggle Dolly panel
+F9            Switch to/from Deadlock's replay UI for hero selection
+F10           Enter paused flight from Dolly's panel or a held view
+WASD          Move relative to the camera
+Space/Ctrl    Move up/down
+Mouse/arrows  Look around
+Shift/Alt     Move faster/slower
+Q/E           Camera roll
+
+Keybinds saves keyboard and Mouse4/Mouse5 assignments, movement speed and mouse
+sensitivity. F7 is reserved for the console. Settings survive updates in
+%APPDATA%/DeadlockDolly/settings.json.
+
+The console receives normal typing without moving the camera or triggering
+Dolly shortcuts. F7 or Escape closes it and returns to the Dolly panel.
+From Deadlock's replay UI, F8 returns to the panel and F9 returns to flight.
+Release held movement keys after switching windows before pressing them again.
+
+Timed shot spaces cameras three seconds apart by default, including captures
+at the same paused tick. Replay timing uses different replay moments. Framing
+uses aspect ratios, with 16:9 as Normal. Frozen preview plays the camera path
+while the scene stays paused. Stop / restore returns to the game's camera,
+which may be elsewhere, and restores camera settings.
+
+
+COMPATIBILITY AND UPDATES
+
+0.4.0 is an alpha. Its new native input and DX11 panel have not yet been tested
+in Deadlock; ReShade compatibility is unverified. In-world path markers, full
+in-game curve editing and video/render-pass export are planned for later updates.
+
+Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
+A Deadlock update can require a Dolly update. Home > Troubleshooting contains
+the Console (legacy) driver and manual startup controls.
+
+Close Deadlock and Dolly before updating. Keep saved shots and logs, including
+pending recovery backups. Use the complete new portable folder; _internal must
+match Dolly.exe. After an interrupted launch, close Deadlock and use
+File > Recover game configuration, or run:
+  Dolly.exe --recover
+
+
+SUPPORT
+
+Contact me on Discord @Cravvnn or submit an issue on GitHub:
+https://github.com/cravvnn/deadlock-dolly/issues
+
+Include the Dolly version, the action that failed and the Export diagnostics
+ZIP. If Dolly does not open, include logs/Dolly_startup.log and logs/Dolly.log
+when available. Logs and recovery journals are beside Dolly.exe.
+
+Full guide: https://github.com/cravvnn/deadlock-dolly/blob/main/docs/USER_GUIDE.md
+Component notices are in LICENSE.txt and _internal/third_party.

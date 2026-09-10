@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 import uuid
 from .runtime import application_root, resource_root, external_program_environment
-from .native_bridge import NativeBridge
+from .native_bridge import NativeBridge, ABI as NATIVE_ABI
 
 PACKAGE_ROOT = application_root(Path(__file__).resolve().parent.parent)
 UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_party" / "cvar_unlocker"
@@ -464,7 +464,7 @@ def _validate_port(port: int) -> int:
     return port
 
 
-def build_command(paths: GamePaths, overlay_dir: Path, port: int, demo_path: Path | None = None, protocol: str = "netcon") -> list[str]:
+def build_command(paths: GamePaths, overlay_dir: Path, port: int, demo_path: Path | None = None, protocol: str = "netcon", launch_options: str = "") -> list[str]:
     """Start the development lobby; replay loading waits for unlocker readiness.
 
     The selected replay is still validated here, but neither it nor an unlocker
@@ -481,6 +481,8 @@ def build_command(paths: GamePaths, overlay_dir: Path, port: int, demo_path: Pat
     # Preserve citadel game identity; alternate game names can reject real demos.
     args.extend(["-game", str(paths.citadel_dir.resolve())])
     _validate_demo(demo_path)
+    from .replays import parse_launch_options
+    args.extend(parse_launch_options(launch_options))
     return args
 
 
@@ -524,7 +526,7 @@ def _verified_native(paths: GamePaths) -> Path:
         data = dll.read_bytes()
     except (OSError, ValueError) as exc:
         raise LaunchError("The native camera build is missing. Extract the complete Windows Dolly release, or choose Console camera mode.") from exc
-    if not isinstance(metadata, dict) or type(metadata.get("abi")) is not int or metadata["abi"] != 2 or not isinstance(metadata.get("sha256"), str) or re.fullmatch(r"[a-f0-9]{64}", metadata["sha256"]) is None:
+    if not isinstance(metadata, dict) or type(metadata.get("abi")) is not int or metadata["abi"] != NATIVE_ABI or not isinstance(metadata.get("sha256"), str) or re.fullmatch(r"[a-f0-9]{64}", metadata["sha256"]) is None:
         raise LaunchError("The native camera build manifest is invalid; extract a fresh Windows Dolly release.")
     if hashlib.sha256(data).hexdigest() != metadata["sha256"]:
         raise LaunchError("The native camera DLL failed its SHA-256 check; extract a fresh Windows Dolly release.")
@@ -727,8 +729,10 @@ class Session:
         return True
 
 
-def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False) -> Session:
+def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "") -> Session:
     _check_runtime()
+    from .replays import parse_launch_options
+    parse_launch_options(launch_options)  # Validate before changing game files.
     paths = validate_game(game_path)
     port = _validate_port(port)
     if protocol not in ("vconsole", "netcon"):
@@ -781,10 +785,10 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             (target / "dolly_native.cfg").write_text(
                 f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
                 encoding="ascii", newline="\n")
-        command = build_command(paths, overlay, port, demo, protocol)
+        command = build_command(paths, overlay, port, demo, protocol, launch_options)
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
         if native:
-            metadata["native_camera"] = {"abi": 2, "game_sha256": NATIVE_GAME_SHA256,
+            metadata["native_camera"] = {"abi": NATIVE_ABI, "game_sha256": NATIVE_GAME_SHA256,
                                          "dll_sha256": hashlib.sha256(native_dll.read_bytes()).hexdigest()}
         # Durably save the original and journal before touching the installed file.
         _atomic_write(session_dir / "original.gameinfo.gi", original_data)

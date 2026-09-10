@@ -3,14 +3,14 @@
 #include <cstdint>
 
 namespace dolly {
-constexpr std::uint32_t kBridgeAbi = 2;
+constexpr std::uint32_t kBridgeAbi = 3;
 constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 constexpr std::size_t kMappingBytes = kControlBytes + 4096;
 constexpr std::size_t kPayloadOffset = 1024;
 constexpr std::size_t kMaxPayloadBytes = kControlBytes - kPayloadOffset;
 constexpr char kControlMagic[8] = {'D','L','Y','C','A','M','0','1'};
 constexpr char kStatusMagic[8] = {'D','L','Y','S','T','A','T','1'};
-enum class Mode : std::uint32_t { Release=0, Hold=1, Play=2, HoldCurrent=3 };
+enum class Mode : std::uint32_t { Release=0, Hold=1, Play=2, HoldCurrent=3, Manual=4 };
 enum class State : std::uint32_t { Starting=0, Probe=1, Armed=2, Playing=3, Completed=4, Stopped=5, Fault=6, Unsupported=7 };
 constexpr std::uint32_t kFrozen = 1;
 constexpr std::uint32_t kAspect = 2;

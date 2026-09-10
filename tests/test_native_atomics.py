@@ -37,7 +37,7 @@ class NativeAtomicTests(unittest.TestCase):
         self.addCleanup(self.resource_patch.stop)
 
     def write_manifest(self, **changes):
-        info = {"abi": 2, "sha256": hashlib.sha256(self.dll.read_bytes()).hexdigest()}
+        info = {"abi": nb.ABI, "sha256": hashlib.sha256(self.dll.read_bytes()).hexdigest()}
         info.update(changes)
         self.manifest.write_text(json.dumps(info), encoding="utf-8")
 
@@ -54,7 +54,7 @@ class NativeAtomicTests(unittest.TestCase):
                 pointer[0] = value
             return before
         return SimpleNamespace(
-            DollyNativeProtocolVersion=Mock(return_value=2),
+            DollyNativeProtocolVersion=Mock(return_value=nb.ABI),
             DollyAtomicExchange32=ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.POINTER(ctypes.c_int32), ctypes.c_int32)(exchange),
             DollyAtomicExchange64=ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.POINTER(ctypes.c_int64), ctypes.c_int64)(exchange),
             DollyAtomicCompareExchange32=ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.POINTER(ctypes.c_int32), ctypes.c_int32, ctypes.c_int32)(compare))
@@ -114,7 +114,7 @@ class NativeAtomicTests(unittest.TestCase):
         self.addCleanup(bridge.close)
         self.assertIs(bridge._atomic_library, library)
         self.assertEqual(load.call_args.args[0], str(self.dll.resolve()))
-        self.assertEqual(nb.CONTROL.unpack(memory[:nb.CONTROL.size])[:2], (nb.CONTROL_MAGIC, 2))
+        self.assertEqual(nb.CONTROL.unpack(memory[:nb.CONTROL.size])[:2], (nb.CONTROL_MAGIC, nb.ABI))
         bridge._store(nb.CONTROL_BYTES + 8, 0xFFFFFFFE)
         self.assertEqual(bridge._load_sequence(), 0xFFFFFFFE)
         bridge._heartbeat = 0xFFFFFFFF

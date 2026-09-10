@@ -157,6 +157,9 @@ class Controller:
         self._log_callback = log_callback
         self._session = None
         self._native_active = False
+        self._native_manual = False
+        self._game_ui_visible = False
+        self._console_open = None
         self._native_last_status = {}
         self._native_handoff_details = {}
         self._console = None
@@ -213,6 +216,8 @@ class Controller:
         state["unlocker_ready"] = bool(self._alive() and self._unlocker_pid == self._session.pid)
         state["camera_backend"] = "native" if self._native_bridge() is not None else "console"
         state["native_holding"] = self._native_active and not state.get("playing", False)
+        state["native_editor_active"] = self._native_manual
+        state["game_ui_visible"] = self._game_ui_visible
         state["game_running"] = self._alive()
         if self._session and not self._alive():
             exit_code = self._session.process.poll()
@@ -287,7 +292,7 @@ class Controller:
             raise RuntimeError("The replay is recognized, but its current tick was not reported. Export diagnostics before normal playback, or explicitly select Frozen preview.")
         return result
 
-    def launch(self, game_path, demo_path, protocol="netcon", *, native=False):
+    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options=""):
         with self._op_lock:
             self._launch_attempt = {
                 "game_path": str(game_path),
@@ -295,11 +300,13 @@ class Controller:
                 "protocol": str(protocol),
                 "status": "requested",
             }
+            if launch_options:
+                self._launch_attempt["launch_options"] = str(launch_options)
             if native:
                 self._launch_attempt["camera_backend"] = "native"
             LOG.info("Launch requested: %s", self._launch_attempt)
             try:
-                result = self._launch(game_path, demo_path, protocol, native=native)
+                result = self._launch(game_path, demo_path, protocol, native=native, launch_options=launch_options)
             except Exception as exc:
                 self._launch_attempt.update(status="failed", error=str(exc), error_type=type(exc).__name__)
                 LOG.exception("Launch failed")
@@ -308,7 +315,7 @@ class Controller:
             self._launch_attempt.update(status="started", pid=result["pid"], session_dir=result["session_dir"])
             return result
 
-    def _launch(self, game_path, demo_path, protocol, *, native=False):
+    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options=""):
         with self._op_lock:
             if protocol not in ("vconsole", "netcon"):
                 raise ValueError("Unknown console protocol.")
@@ -321,8 +328,13 @@ class Controller:
                 raise RuntimeError("Close the existing Dolly game session before launching again.")
             self.disconnect()
             options = {"native": True} if native else {}
+            if launch_options:
+                options["launch_options"] = launch_options
             self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol, **options)
             self._native_active = False
+            self._native_manual = False
+            self._game_ui_visible = False
+            self._console_open = None
             self._native_last_status = {}
             self._native_handoff_details = {}
             self._demo = path
@@ -369,6 +381,144 @@ class Controller:
             self._message("Connected. The unlocker was initialized in this game process; load your replay or check camera support." if ready else "Connected. Once you are in the fully loaded hideout, click Initialize unlocker before loading the replay.",
                           connected=True, startup_stage=("loading_replay" if self._replay_requested else "unlocker_ready") if ready else "connected")
             return self.status()
+
+    @staticmethod
+    def _check_startup_cancelled(cancel_event):
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("Editing startup cancelled. The launched game remains open; close it before starting again.")
+
+    def _startup_wait(self, check, label, cancel_event, timeout=120):
+        """Poll observed state, with a deadline; elapsed time is not readiness."""
+        deadline = time.perf_counter() + timeout
+        waiter = cancel_event if cancel_event is not None else threading.Event()
+        while True:
+            self._check_startup_cancelled(cancel_event)
+            if not self._alive():
+                raise RuntimeError("Deadlock closed while " + label + ". Export diagnostics to inspect startup.")
+            result = check()
+            self._check_startup_cancelled(cancel_event)
+            if result is not None and result is not False:
+                return result
+            if time.perf_counter() >= deadline:
+                raise RuntimeError("Timed out " + label + ". The replay was not marked ready. Use the manual startup controls or export diagnostics.")
+            waiter.wait(.25)
+
+    def _automatic_hideout_check(self, initial_frame):
+        """Require a rendered pre-replay scene and loaded command registration.
+
+        Native frame progression proves that view setup is running, not merely
+        that the console socket opened. The launcher forbids replay/map startup
+        commands; an explicit no-demo response therefore bounds this to its
+        initial pre-replay scene. Console-only mode needs named hideout evidence.
+        """
+        output = self._request("demo_info", allow_error=True)
+        try:
+            demo = parse_demo_info(output)
+        except ValueError:
+            return None
+        if demo.get("playing") is True:
+            raise RuntimeError("A replay opened before unlocker initialization. Close the game and launch again through Dolly.")
+        if demo.get("playing") is not False:
+            return None
+        bridge = self._native_bridge()
+        if bridge is not None:
+            native = bridge.status()
+            self._native_last_status = native
+            if native.get("state") in ("fault", "unsupported"):
+                raise RuntimeError("Native startup failed: " + str(native.get("message") or native["state"]))
+            if native.get("demo_name"):
+                return None
+            rendered = int(native.get("frame_count", 0))
+            if rendered <= max(0, initial_frame):
+                return None
+            evidence = {"method": "rendered_pre_replay_scene", "initial_frame": initial_frame,
+                        "rendered_frame": rendered, "demo": demo}
+        else:
+            status = self._request("status", allow_error=True)
+            maps = re.findall(r"(?im)^\s*(?:\[[^]\r\n]+\]\s*)*(?:map|mapname)\s*[:=]\s*[\"']?([^\s\"']+)", status)
+            hideouts = [name for name in maps if "hideout" in re.split(r"[/\\_.-]", name.casefold())]
+            if not hideouts:
+                return None
+            evidence = {"method": "named_hideout_status", "map": hideouts[0], "demo": demo}
+        if not self._console.supports("cvar_unhide"):
+            return None
+        evidence["unlocker_command_registered"] = True
+        return evidence
+
+    def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
+                      launch_options="", cancel_event=None):
+        """Launch, initialize once before the demo, and enter paused editing.
+
+        Every transition uses process, console or rendered-view evidence.
+        This runs on the caller's worker; cancellation does not kill the game.
+        The existing manual launch/initialize/load/probe actions remain usable.
+        """
+        with self._op_lock:
+            try:
+                self._check_startup_cancelled(cancel_event)
+                self.launch(game_path, demo_path, protocol, native=native, launch_options=launch_options)
+                self._message("Starting Deadlock. Waiting for its console connection…", startup_stage="waiting_console")
+
+                def connected():
+                    if not self._session.owns_console_port():
+                        return None
+                    try:
+                        return self.connect()
+                    except (RuntimeError, OSError) as exc:
+                        self._startup_evidence["connection_wait"] = str(exc)
+                        return None
+
+                self._startup_wait(connected, "waiting for the game console", cancel_event)
+                bridge = self._native_bridge()
+                initial_frame = int(bridge.status().get("frame_count", 0)) if bridge is not None else 0
+                self._message("Connected. Waiting for the rendered hideout and unlocker command…", startup_stage="waiting_hideout")
+                readiness = self._startup_wait(lambda: self._automatic_hideout_check(initial_frame),
+                                               "waiting for hideout readiness", cancel_event)
+                self._message("Hideout ready. Initializing the camera CVAR unlocker…", startup_stage="initializing_unlocker")
+                self._check_startup_cancelled(cancel_event)
+                # Exactly one invocation; missing completion never starts a demo.
+                self.initialize_unlocker()
+                self._startup_evidence["automatic_readiness"] = readiness
+                self._check_startup_cancelled(cancel_event)
+                self.load_replay()
+                self._message("Unlocker confirmed. Loading the selected replay…", startup_stage="loading_replay")
+
+                def selected_replay():
+                    try:
+                        info = self._require_demo()
+                    except (RuntimeError, ValueError):
+                        return None
+                    if bridge is not None:
+                        current = bridge.status()
+                        if current.get("state") in ("fault", "unsupported"):
+                            raise RuntimeError("Native camera failed while loading: " + str(current.get("message")))
+                        name = str(current.get("demo_name") or "").replace("\\", "/").rsplit("/", 1)[-1]
+                        if not name or Path(name).stem.casefold() != self._demo.stem.casefold():
+                            return None
+                        if int(current.get("frame_count", 0)) <= initial_frame:
+                            return None
+                    return info
+
+                self._startup_wait(selected_replay, "waiting for the selected replay", cancel_event)
+                self._request("demo_pause")
+                self._message("Replay loaded and paused. Checking camera controls…", startup_stage="checking_camera")
+                self.probe()
+                self._check_startup_cancelled(cancel_event)
+                self._message("Opening the paused camera editor…", startup_stage="entering_editor")
+                if bridge is not None:
+                    # -console preserves access but can leave the console
+                    # visible at startup. Close it explicitly before enabling
+                    # native flight, so its text box cannot share movement keys.
+                    self.toggle_console(False)
+                    self.enter_native_flight(cancelled=cancel_event.is_set if cancel_event is not None else None)
+                else:
+                    self.begin_paused_camera(cancelled=cancel_event.is_set if cancel_event is not None else None)
+                self._message("Replay ready. Move the camera and capture your first view. F7 opens the console.",
+                              startup_stage="editing_ready")
+                return self.status()
+            except Exception as exc:
+                self._message(str(exc), startup_stage="cancelled" if cancel_event is not None and cancel_event.is_set() else "failed")
+                raise
 
     def initialize_unlocker(self):
         """Explicit hideout step; no replay is dispatched by this method.
@@ -527,6 +677,18 @@ class Controller:
 
     def capture(self, shot_time):
         with self._op_lock:
+            native = self._native_bridge()
+            if native is not None and hasattr(native, "start_flight"):
+                if not self._native_manual:
+                    self._halt(native_action="native_hold")
+                self._require_demo(require_tick=False)
+                self._request("demo_pause")
+                status = native.status()
+                self._require_native_demo(status, allow_idle=True)
+                pose = status["applied_pose"] if self._native_active else status["original_pose"]
+                frame, _ = self.capture_native_snapshot({"pose": pose, "tick": int(status["tick"]),
+                                                         "paused": bool(status["paused"])}, shot_time)
+                return frame
             self._halt()
             paused_tick = self._paused_tick
             self._require_demo(require_tick=False)
@@ -563,6 +725,42 @@ class Controller:
             self._message("Captured the current freecam view and aspect ratio; replay paused. Roll keeps Dolly's last applied value, or zero; edit Bank if needed.")
             return frame
 
+    def capture_native_snapshot(self, snapshot, time=0.0):
+        """Capture the view sampled with the native key event, not a later pose."""
+        with self._op_lock:
+            if not isinstance(snapshot, dict):
+                raise ValueError("Native capture requires a camera snapshot.")
+            pose = self._native_pose({"applied_pose": snapshot.get("pose")})
+            tick = snapshot.get("tick")
+            if isinstance(tick, bool) or not isinstance(tick, int) or tick < 0:
+                raise ValueError("Native capture has no valid replay tick.")
+            if not isinstance(snapshot.get("paused"), bool):
+                raise ValueError("Native capture has no valid replay pause state.")
+            shot_time = float(time)
+            if not math.isfinite(shot_time) or shot_time < 0:
+                raise ValueError("Shot time must be a finite, nonnegative number.")
+            if not ASPECT_MIN <= pose["aspect_ratio"] <= ASPECT_MAX:
+                raise ValueError("Native camera framing is outside the supported aspect range.")
+            bridge = self._native_bridge()
+            if bridge is None:
+                raise RuntimeError("The native camera session is no longer available.")
+            self._require_demo()
+            current = bridge.status()
+            self._require_native_demo(current, allow_idle=True)
+            if snapshot["paused"] and int(current["tick"]) != tick:
+                raise RuntimeError("The replay moved after this camera capture. Capture the current view again.")
+            if not snapshot["paused"] and int(current["tick"]) < tick:
+                raise RuntimeError("The replay rewound after this camera capture. Capture the current view again.")
+            # Taking a key must not turn off native flight. The pose belongs
+            # to the input event; later render updates cannot mutate this key.
+            # An authored path still stops before becoming an editing capture.
+            if not self._native_manual:
+                self._halt(native_action="native_hold")
+            self._request("demo_pause")
+            frame = Keyframe(time=shot_time, **pose)
+            self._message("Captured the rendered camera view. Replay paused.", tick=tick)
+            return frame, tick
+
     def current_tick(self):
         with self._op_lock:
             return int(self._require_demo()["tick"])
@@ -577,7 +775,8 @@ class Controller:
                 start_tick = float(start_tick)
                 if not math.isfinite(start_tick) or start_tick < 0 or not start_tick.is_integer():
                     raise ValueError("Shot start tick must be a nonnegative integer.")
-            self._halt()
+            if not self._native_manual:
+                self._halt()
             self._require_demo()
             self._request("demo_pause")
             info = self._require_demo()
@@ -1053,6 +1252,8 @@ class Controller:
 
     def begin_paused_camera(self, *, cancelled=None):
         """Prepare the current freecam view for movement at a fixed demo tick."""
+        if self._supports_native_flight():
+            return self.enter_native_flight(cancelled=cancelled)
         with self._op_lock, self._paused_preparation(cancelled):
             tick = self._prepare_paused_camera()
             aspect = self._capture_aspect_ratio()
@@ -1069,6 +1270,27 @@ class Controller:
 
     def select_paused_camera(self, project, shot_time, *, cancelled=None):
         """Switch the authored camera and lens, keeping the current demo tick."""
+        if self._supports_native_flight():
+            with self._op_lock, self._paused_preparation(cancelled):
+                self._validate_project(project)
+                shot_time = self._shot_time(project, shot_time)
+                self._halt(native_action="native_hold")
+                self._require_probe()
+                self._require_demo()
+                self._request("demo_pause")
+                self._snapshot(project)
+                bridge = self._native_bridge()
+                bridge.prepare(project, shot_time, 1.0, True, self._demo.name)
+                self._native_active = True
+                self._native_manual = True
+                status = bridge.status()
+                self._require_native_demo(status)
+                frame = self._native_pose(status)
+                frame.update(time=shot_time, cvars=dict(project.evaluate(shot_time)["cvars"]))
+                self._set_paused_pose(frame, int(status["tick"]))
+                self._message("Saved camera applied at the current paused replay moment.", time=shot_time,
+                              paused_flight=False)
+                return deepcopy(frame)
         with self._op_lock, self._paused_preparation(cancelled):
             tick = self._prepare_paused_camera()
             self._snapshot(project)
@@ -1076,6 +1298,167 @@ class Controller:
             frame = dict(project.evaluate(shot_time), time=shot_time)
             result = self._verify_paused_camera(frame, tick, "saved_camera")
             self._message("Saved camera applied at the current paused replay moment.", time=shot_time)
+            return result
+
+    def _supports_native_flight(self):
+        bridge = self._native_bridge()
+        return bridge is not None and callable(getattr(bridge, "start_flight", None))
+
+    def enter_native_flight(self, pose=None, *, cancelled=None):
+        """Let the in-game view callback own input and manual camera movement."""
+        with self._op_lock, self._paused_preparation(cancelled):
+            if not self._supports_native_flight():
+                raise RuntimeError("Native paused movement requires the matching native editor build.")
+            self._halt(native_action="native_hold")
+            self._require_probe()
+            self._require_demo()
+            restoration_error = self._restore_playback_settings()
+            if restoration_error:
+                raise RuntimeError(restoration_error)
+            self._request("demo_pause; demo_timescale 1" if self._demo_speed_changed else "demo_pause")
+            self._demo_speed_changed = False
+            info = self._require_demo()
+            self._check_paused_cancelled()
+            bridge = self._native_bridge()
+            # With no supplied pose, the callback seeds from the currently
+            # rendered view, including a held path endpoint. No spec_goto or
+            # paused player-eye calibration can move that seed vertically.
+            if isinstance(pose, dict):
+                pose = tuple(pose[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"))
+            bridge.start_flight(self._demo.name, pose=pose)
+            self._native_active = True
+            self._native_manual = True
+            current = bridge.status()
+            self._require_native_demo(current)
+            if not current.get("paused") or int(current["tick"]) != int(info["tick"]):
+                self._release_native_camera()
+                raise RuntimeError("The replay moved while opening the paused camera. Pause it and try again.")
+            frame = self._native_pose(current)
+            frame.update(time=float(current.get("phase", 0)), cvars={})
+            self._set_paused_pose(frame, int(current["tick"]))
+            self._paused_details.update(source="native_render_input", runtime_verified_in_Deadlock=False)
+            self._stop_event.clear()
+            self._game_ui_visible = False
+            self._message("Paused camera ready. Use the in-game movement controls; F7 opens the console.",
+                          playing=False, paused_flight=True)
+            return deepcopy(frame)
+
+    def toggle_console(self, enabled=None):
+        """Native input is suspended before its console-toggle event arrives."""
+        with self._op_lock:
+            self._require_connection()
+            if enabled is not None and not isinstance(enabled, bool):
+                raise ValueError("Console visibility must be a boolean.")
+            if enabled is None:
+                enabled = not self._console_open if self._console_open is not None else True
+            bridge = self._native_bridge()
+            editor_configure = getattr(bridge, "configure_editor", None)
+            if callable(editor_configure):
+                # A seek already in progress may have overwritten the optimistic
+                # F7 owner before this queued event runs. Suspend input again
+                # for the actual command, including a delayed close operation.
+                editor_configure(owner="console")
+            command = "showconsole" if enabled else "hideconsole"
+            if self._console.supports(command):
+                self._request(command)
+            elif self._console_open == enabled:
+                if not enabled and callable(editor_configure):
+                    editor_configure(owner="panel")
+                return self.status()
+            elif self._console_open is not None and self._console.supports("toggleconsole"):
+                self._request("toggleconsole")
+            else:
+                raise RuntimeError("This game build did not confirm " + command + "; the console's current visibility is unknown. Console access was not changed.")
+            self._console_open = enabled
+            if not enabled and callable(editor_configure):
+                editor_configure(owner="panel")
+            self._message("Console open. Editor movement is suspended while typing." if enabled else "Console closed. Return to the editor to continue.")
+            return self.status()
+
+    def toggle_game_ui(self, enabled=None):
+        """Hand camera/mouse ownership to the game's replay UI, or return."""
+        with self._op_lock:
+            enabled = not self._game_ui_visible if enabled is None else enabled
+            if not isinstance(enabled, bool):
+                raise ValueError("Game UI visibility must be a boolean.")
+            self._require_demo(require_tick=False)
+            if enabled:
+                bridge = self._native_bridge()
+                if bridge is not None and callable(getattr(bridge, "configure_editor", None)):
+                    bridge.configure_editor(owner="game_ui")
+                self._halt(native_action="release")
+                self._invalidate_paused_camera()
+                restoration_error = self._restore_playback_settings()
+                if restoration_error:
+                    raise RuntimeError(restoration_error)
+                commands = ["citadel_hud_visible 1"]
+                if self._console.supports("demoui"):
+                    commands.append("demoui")
+                self._request("; ".join(commands))
+                self._game_ui_visible = True
+                self._message("Deadlock owns the camera and replay UI. Select a hero, then return to Dolly editing.")
+                return self.status()
+            if self._console.supports("demoui"):
+                self._request("demoui")
+            self.enter_native_flight()
+            return self.status()
+
+    def toggle_replay(self):
+        """Pause/resume replay time without restarting an authored native path."""
+        with self._op_lock:
+            self._require_demo()
+            bridge = self._native_bridge()
+            if bridge is None:
+                raise RuntimeError("In-game replay controls require the native editor.")
+            current = bridge.status()
+            self._require_native_demo(current, allow_idle=True)
+            paused = bool(current["paused"])
+            if self._thread and self._thread.is_alive() and (self._playback_details or {}).get("frozen"):
+                raise RuntimeError("Stop the frozen preview before resuming replay time.")
+            if self._native_manual:
+                if paused:
+                    # Hold the last rendered view while replay time advances.
+                    # Movement returns through native flight when paused again.
+                    self._halt(native_action="native_hold")
+                    bridge.configure_editor(owner="panel")
+                else:
+                    self._request("demo_pause")
+                    return self.enter_native_flight()
+            self._request("demo_resume" if paused else "demo_pause")
+            self._message("Replay playing." if paused else "Replay paused.", replay_paused=not paused)
+            return self.status()
+
+    def seek_relative(self, seconds, tick_rate=None):
+        """Seek from the observed demo tick, then retain the displayed camera."""
+        with self._op_lock:
+            seconds = float(seconds)
+            if not math.isfinite(seconds) or abs(seconds) > 3600:
+                raise ValueError("Replay seek must be a finite number of seconds within one hour.")
+            info = self._require_demo()
+            bridge = self._native_bridge()
+            if bridge is None:
+                raise RuntimeError("In-game replay seeking requires the native editor.")
+            status = bridge.status()
+            self._require_native_demo(status, allow_idle=True)
+            pose = self._native_pose(status, "applied_pose" if self._native_active else "original_pose")
+            if tick_rate is None:
+                metadata = parse_demo_info(self._request("demo_info"))
+                tick_rate = metadata.get("tick_rate")
+            if tick_rate is None:
+                tick_rate = (self._probe_result.get("demo") or {}).get("tick_rate")
+            if isinstance(tick_rate, bool) or not isinstance(tick_rate, (int, float)) or not math.isfinite(tick_rate) or tick_rate <= 0:
+                raise RuntimeError("Replay tick rate is unavailable. Set the shot's ticks/second before using relative seek.")
+            target = max(0, int(round(int(info["tick"]) + seconds * tick_rate)))
+            if info.get("total_ticks") is not None:
+                target = min(target, max(0, int(info["total_ticks"]) - 1))
+            # A held native view must release before a seek, including replay
+            # rewind. Preserve its visual pose explicitly for the return trip.
+            self._halt(native_action="release")
+            self._invalidate_paused_camera()
+            self._stop_event.clear()
+            self._seek_tick(target)
+            result = self.enter_native_flight(pose=pose)
+            self._message("Replay paused at the new time; camera position retained.")
             return result
 
     @staticmethod
@@ -1088,12 +1471,15 @@ class Controller:
             raise ValueError("Choose a command rate of 30, 60, or 120.")
         return float(move_speed), float(turn_speed), float(rate)
 
-    def start_paused_flight(self, input_source, move_speed=240, turn_speed=60, rate=60):
+    def start_paused_flight(self, input_source=None, move_speed=240, turn_speed=60, rate=60):
         """Run one bounded console writer using wall time, never replay time.
 
         input_source is called on the worker and must be thread-safe. It must
         return CameraMotion and must not call GUI functions.
         """
+        if self._supports_native_flight():
+            self._flight_options(move_speed, turn_speed, rate)
+            return self.enter_native_flight()
         if not callable(input_source):
             raise ValueError("Paused camera input must be callable.")
         move_speed, turn_speed, rate = self._flight_options(move_speed, turn_speed, rate)
@@ -1198,6 +1584,16 @@ class Controller:
             self._message("Paused camera movement stopped. Current camera settings are held.", paused_flight=False)
 
     def nudge_paused_camera(self, motion, seconds=.1, move_speed=240, turn_speed=60):
+        if self._supports_native_flight():
+            with self._op_lock:
+                self._halt(native_action="native_hold")
+                self._check_paused_tick()
+                native = self._native_bridge()
+                frame = self._native_pose(native.status())
+                frame = move_camera(frame, motion, seconds, move_speed=move_speed, turn_speed=turn_speed)
+                self.enter_native_flight(pose=frame)
+                self._halt(native_action="native_hold")
+                return deepcopy(self._paused_pose)
         with self._op_lock:
             self._halt()
             self._check_paused_tick()
@@ -1209,6 +1605,8 @@ class Controller:
             return deepcopy(self._paused_pose)
 
     def apply(self, project, shot_time):
+        if self._supports_native_flight():
+            return self.select_paused_camera(project, shot_time)
         with self._op_lock:
             self.stop()
             self._stop_event.clear()
@@ -1434,11 +1832,12 @@ class Controller:
     def _native_bridge(self):
         return getattr(self._session, "native", None) if self._session is not None else None
 
-    def _require_native_demo(self, status):
+    def _require_native_demo(self, status, *, allow_idle=False):
         name = str(status.get("demo_name") or "").replace("\\", "/").rsplit("/", 1)[-1]
         if not name or self._demo is None or Path(name).stem.casefold() != self._demo.stem.casefold():
             raise RuntimeError("Native camera replay identity changed. Camera playback stopped; restart the intended replay through Dolly.")
-        if status.get("state") in ("fault", "unsupported", "starting", "probe", "stopped"):
+        disallowed = ("fault", "unsupported", "starting") if allow_idle else ("fault", "unsupported", "starting", "probe", "stopped")
+        if status.get("state") in disallowed:
             raise RuntimeError("Native camera is unavailable: " + str(status.get("message") or status.get("state")))
 
     @staticmethod
@@ -1538,6 +1937,7 @@ class Controller:
         """Abandon a held view on explicit Stop, before any new seek or writer."""
         bridge = self._native_bridge()
         if not self._native_active:
+            self._native_manual = False
             return
         if self._alive():
             if bridge is None:
@@ -1546,6 +1946,7 @@ class Controller:
             # a new camera writer cannot race an override that is still active.
             bridge.release()
         self._native_active = False
+        self._native_manual = False
         self._reset_camera_position()
         if self._native_handoff_details is not None:
             self._native_handoff_details.update(pending=False, released=True,
@@ -1866,6 +2267,20 @@ class Controller:
         self._thread = None
         if native_action == "release":
             self._release_native_camera()
+        elif self._native_active and (self._native_manual or native_action == "native_hold"):
+            bridge = self._native_bridge()
+            if bridge is None:
+                raise RuntimeError("The native camera bridge is unavailable; camera ownership could not be changed.")
+            if self._alive():
+                bridge.hold()
+                status = bridge.status()
+                self._native_last_status = status
+                self._require_native_demo(status)
+                frame = self._native_pose(status)
+                frame.update(time=float(status.get("phase", 0)), cvars={})
+                self._set_paused_pose(frame, int(status["tick"]))
+            else:
+                self._native_active = self._native_manual = False
         else:
             self._handoff_native_camera(allow_hold=native_action == "hold")
         with self._state_lock:
@@ -1883,6 +2298,17 @@ class Controller:
 
     def stop(self):
         self._halt(native_action="release")
+        bridge = self._native_bridge()
+        if bridge is not None and callable(getattr(bridge, "editor_status", None)) and self._alive():
+            try:
+                editor = bridge.editor_status()
+                if editor.get("enabled"):
+                    # Release leaves the camera with the game. Show controls
+                    # instead of leaving an apparently frozen flight mode.
+                    bridge.configure_editor(owner="console" if editor.get("console_open") else "panel")
+            except (RuntimeError, ValueError, OSError):
+                # UI recovery must never prevent the remaining cvar cleanup.
+                LOG.exception("Could not open the editor panel after Stop")
         self._invalidate_paused_camera()
         restoration_error = self._restore_playback_settings()
         if (self._restore or self._demo_speed_changed) and self._console and self._console.is_connected and self._alive():
@@ -1944,6 +2370,11 @@ class Controller:
                   "paused_camera": deepcopy(self._paused_details),
                   "local_demo_name": self._demo.name if self._demo else None,
                   "runtime_verified_in_Deadlock": False}
+        bridge = self._native_bridge()
+        if bridge is not None and callable(getattr(bridge, "diagnostics", None)):
+            # Include current input owner, event queue and overlay availability,
+            # even when the last authored-path sample predates manual editing.
+            report["native_editor_runtime"] = bridge.diagnostics()
         history = None
         if self._console and hasattr(self._console, "recent_output"):
             try:

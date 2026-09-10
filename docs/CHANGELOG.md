@@ -1,5 +1,35 @@
 # Changes
 
+## 0.4.0 alpha — Stage 1 connected editing
+
+- Add Home, Replays and Keybinds pages while retaining Dolly's existing style,
+  camera/effect editing and supplied logo.
+- Add one-click Play replay: connect to the launched process, require rendered
+  pre-replay readiness and unlocker registration, confirm cvar_unhide once,
+  then load the selected demo, pause it and enter native editing. Retain manual
+  startup actions under Troubleshooting and provide cancellation/progress.
+- Add saved action bindings, keyboard/mouse assignment, conflict checks,
+  movement speed and mouse sensitivity. Migrate prior capture preferences;
+  reserve F7 for console access. Validate additive display launch options while
+  retaining -dev -insecure -console and the managed startup sequence.
+- Add native paused movement and mouse look in the rendered camera callback,
+  avoiding repeated console position writes and paused spectator-height
+  calibration. Capture from the native event's displayed pose; taking a key
+  does not stop manual flight.
+- Add a DX11 in-game panel sharing the desktop project: capture/replace, saved
+  views, replay and path controls, movement speed and input-mode switching.
+  F8 opens the panel, F9 returns to the original game UI, F10 enters flight,
+  and F7 gives the console input ownership before typing begins.
+- Add input focus/lifecycle handling, event acknowledgment, retained camera
+  poses during relative seek and explicit release before replay seeks.
+  Preserve existing authored path interpolation and native DOF phase behavior.
+- Introduce native bridge ABI 3. Build and extract a complete matching Windows
+  package; earlier helper/editor combinations are not compatible.
+- Include a Stage 1 manual test checklist. The new Windows/Deadlock workflow
+  and ReShade coexistence remain unverified in the Linux development environment.
+  In-world path markers, expanded in-game curves, video export and separate
+  depth/world/hero/effect passes remain later stages and are not included.
+
 ## 0.3.13 alpha — complete September 9 module compatibility
 
 - Add the supplied engine2.dll and tier0.dll builds to the reviewed fingerprints.

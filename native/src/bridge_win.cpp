@@ -19,6 +19,8 @@
 #include "dolly_path.hpp"
 #include "dolly_effects.hpp"
 #include "dolly_protocol.hpp"
+#include "dolly_editor.hpp"
+#include "dolly_overlay.hpp"
 
 namespace {
 using namespace dolly;
@@ -53,6 +55,8 @@ struct Command {
  ControlHeader wire{};
  std::shared_ptr<const NativePath> path;
  std::shared_ptr<const NativeShot> shot;
+ bool manual=false,has_manual_pose=false;
+ CameraPose manual_pose{};
 };
 std::shared_ptr<const Command> gCommand;
 
@@ -194,6 +198,8 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
  static int last_tick=0;
  static std::uint64_t frames=0;
  static bool started=false,completed=false;
+ static CameraPose manual_pose{},displayed_pose{};
+ static bool displayed_valid=false;
  static unsigned fault=0;
  static std::uint32_t previous_mode=0;
  auto command=std::atomic_load_explicit(&gCommand,std::memory_order_acquire);
@@ -215,6 +221,10 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
  auto finish=[&](State state,unsigned error,const char* message){
   if((state==State::Fault||state==State::Stopped)&&!gEffects.restore()){state=State::Fault;error=36;message="Native effect restoration failed; retry Stop / restore.";}
   status.effect_count=gEffects.count;status.effect_error=gEffects.error;status.effect_frames=gEffects.frames;status.effect_phase=gEffects.phase;
+  bool editor_ready=demo_ok&&demo.playing&&!demo.seeking&&view_ok&&pose_valid(original)&&std::isfinite(original_fov)&&original_fov>1&&original_fov<179&&width>0&&height>0&&!(flags&2)&&state!=State::Fault&&state!=State::Unsupported;
+  CameraPose shown{};for(int i=0;i<7;++i)shown[i]=status.applied_pose[i];
+  if(editor_ready){displayed_pose=shown;displayed_valid=true;}
+  editor_update_view(editor_ready,demo.paused,editor_ready&&command&&command->manual&&command->wire.mode!=std::uint32_t(Mode::Release),shown,phase,demo.tick);
   status.state=std::uint32_t(state);status.error=error;status.phase=phase;std::snprintf(status.message,sizeof(status.message),"%s",message);write_status(status);};
  if(!command){finish(State::Probe,0,"Native view hook ready; load a local replay to test a camera.");return;}
  const auto& c=command->wire;
@@ -222,7 +232,11 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
   // Every new command is first acknowledged by a real matching main view.
   bool was_hold=previous_mode==std::uint32_t(Mode::Hold)||previous_mode==std::uint32_t(Mode::HoldCurrent);
   seen=c.command;status.ack_command=seen;fault=0;
-  if(c.mode==std::uint32_t(Mode::Hold)){phase=c.start_phase;anchor=demo.time;started=false;completed=false;}
+  if(c.mode==std::uint32_t(Mode::Manual)){
+   manual_pose=command->has_manual_pose?command->manual_pose:(displayed_valid?displayed_pose:original);
+   phase=gEffects.count?gEffects.phase:0;anchor=demo.time;started=false;completed=false;editor_reset_motion();
+  }
+  else if(c.mode==std::uint32_t(Mode::Hold)){phase=c.start_phase;anchor=demo.time;started=false;completed=false;}
   else if(c.mode==std::uint32_t(Mode::Play)){
    if(!was_hold){phase=c.start_phase;anchor=demo.time;}
    play_base=phase;
@@ -239,6 +253,23 @@ static void on_view(void* self,std::uintptr_t caller) noexcept {
  }
  if(!demo_ok||!demo.playing||demo.seeking||!same_demo(c.demo_name,demo.name)){
   fault=12;finish(State::Fault,fault,"Replay changed, stopped or is seeking; native camera released.");return;
+ }
+ if(command->manual){
+  auto editor=editor_snapshot();
+  if(!editor.enabled||!editor.overlay_available||!editor.input_available){fault=19;finish(State::Fault,fault,"Native editor input is unavailable. Check the DX11 panel and export diagnostics; original game input remains available.");return;}
+  if(c.mode==std::uint32_t(Mode::Manual))editor_integrate_flight(manual_pose,real_delta);
+  if(!pose_valid(manual_pose)){fault=16;finish(State::Fault,fault,"Native flight produced an invalid camera; camera released.");return;}
+  double fov=original_fov;
+  if(c.flags&kAspect){constexpr double pi=3.14159265358979323846;fov=2*180/pi*std::atan(std::tan(double(original_fov)*pi/360)*manual_pose[6]/original_aspect);}
+  if(!std::isfinite(fov)||fov<=1||fov>=179){fault=17;finish(State::Fault,fault,"Native flight aspect is unsupported; camera released.");return;}
+  // Preserve the selected preview lens/effects while manually reframing.
+  // The frozen effect phase stays owned until an explicit Stop/Release.
+  if(!gEffects.apply(gEffects.shot,gEffects.phase)){fault=35;finish(State::Fault,fault,"Could not maintain the selected camera effects during manual flight.");return;}
+  float xyz[3],angles[3];for(int i=0;i<3;++i){xyz[i]=float(manual_pose[i]);angles[i]=float(std::remainder(manual_pose[i+3],360.0));}
+  std::memcpy(reinterpret_cast<void*>(view+0x4a0),xyz,sizeof(xyz));std::memcpy(reinterpret_cast<void*>(view+0x4b8),angles,sizeof(angles));
+  if(c.flags&kAspect){float value=float(fov),aspect=float(manual_pose[6]);std::memcpy(reinterpret_cast<void*>(view+0x498),&value,4);std::memcpy(reinterpret_cast<void*>(view+0x4d8),&aspect,4);}
+  for(int i=0;i<7;++i)status.applied_pose[i]=manual_pose[i];status.applied_fov=fov;
+  finish(State::Armed,0,c.mode==std::uint32_t(Mode::Manual)?"Native paused flight updates each rendered main view.":"Native manual camera held for capture or playback handoff.");return;
  }
  if(!command->path||command->path->empty()){fault=13;finish(State::Fault,fault,"No valid native path was loaded.");return;}
  if(c.mode==std::uint32_t(Mode::Hold)||c.mode==std::uint32_t(Mode::HoldCurrent)){
@@ -320,24 +351,35 @@ static DWORD WINAPI worker(void*) {
   gHeartbeatTime=now_seconds();
   if(MH_EnableHook(reinterpret_cast<void*>(gClient+kSetup))!=MH_OK){startup_status(State::Fault,24,"Could not enable the native view hook.");return 0;}
   gHookInstalled=true;
+  // Hook discovery and installation happen on the worker, never in DllMain
+  // or the view callback. The main camera remains usable if overlay fails.
+  editor_install_input_hooks();
+  install_overlay_hooks();
   // Hook and original trampoline remain resident until process exit. Losing
   // the editor only releases ownership, avoiding code-unload races in a view.
   std::shared_ptr<const NativeShot> shot;
   std::uint32_t accepted=0;std::uint64_t heartbeat=0;
+  bool manual=false;
   std::vector<unsigned char> payload;
   for(;;){
-   if(WaitForSingleObject(gEditor,0)!=WAIT_TIMEOUT){gWorkerError=30;break;}
+   if(WaitForSingleObject(gEditor,0)!=WAIT_TIMEOUT){gWorkerError=30;editor_worker_tick(gMemory,false);break;}
    auto hb=static_cast<std::uint64_t>(InterlockedCompareExchange64(reinterpret_cast<volatile LONG64*>(gMemory+32),0,0));
    if(hb!=heartbeat){heartbeat=hb;gHeartbeatTime=now_seconds();}
+   editor_worker_tick(gMemory,now_seconds()-gHeartbeatTime.load()<2.0);
    ControlHeader control{};
    if(read_control(control,payload,accepted)){
     // CreateProcess can reach the proxy before the launcher receives the PID.
     if(control.game_pid==0){Sleep(5);continue;}
-    if(control.editor_pid!=editor_pid||control.game_pid!=GetCurrentProcessId()||control.mode>3||control.flags&~(kFrozen|kAspect)||!std::isfinite(control.start_phase)||control.start_phase<0||!std::isfinite(control.speed)||control.speed<.05||control.speed>4||!std::memchr(control.demo_name,0,sizeof(control.demo_name))){gWorkerError=31;Sleep(10);continue;}
+    if(control.editor_pid!=editor_pid||control.game_pid!=GetCurrentProcessId()||control.mode>4||control.flags&~(kFrozen|kAspect)||!std::isfinite(control.start_phase)||control.start_phase<0||!std::isfinite(control.speed)||control.speed<.05||control.speed>4||!std::memchr(control.demo_name,0,sizeof(control.demo_name))){gWorkerError=31;Sleep(10);continue;}
     auto candidate=shot;
-    if(control.payload_bytes){auto parsed=std::make_shared<NativeShot>();std::string error;if(!parsed->load(payload.data(),payload.size(),error)){gWorkerError=32;Sleep(10);continue;}candidate=parsed;}
-    if(control.mode && (!candidate||control.start_phase>candidate->camera.duration())){gWorkerError=33;Sleep(10);continue;}
-    auto command=std::make_shared<Command>();command->wire=control;command->shot=candidate;
+    bool next_manual=control.mode==std::uint32_t(Mode::Manual)||(manual&&control.mode==std::uint32_t(Mode::HoldCurrent));
+    CameraPose seed{};bool has_seed=false;
+    if(control.mode==std::uint32_t(Mode::Manual)){
+     if(control.payload_bytes){if(control.payload_bytes!=sizeof(seed)){gWorkerError=32;Sleep(10);continue;}std::memcpy(seed.data(),payload.data(),sizeof(seed));if(!pose_valid(seed)){gWorkerError=32;Sleep(10);continue;}has_seed=true;}
+    }else if(control.payload_bytes){auto parsed=std::make_shared<NativeShot>();std::string error;if(!parsed->load(payload.data(),payload.size(),error)){gWorkerError=32;Sleep(10);continue;}candidate=parsed;next_manual=false;}
+    if(control.mode&&!next_manual&&(!candidate||control.start_phase>candidate->camera.duration())){gWorkerError=33;Sleep(10);continue;}
+    auto command=std::make_shared<Command>();command->wire=control;command->shot=candidate;command->manual=next_manual;command->has_manual_pose=has_seed;command->manual_pose=seed;
+    manual=next_manual;
     if(candidate)command->path=std::shared_ptr<const NativePath>(candidate,&candidate->camera);
     shot=candidate;accepted=control.command;gWorkerError=0;
     std::atomic_store_explicit(&gCommand,std::shared_ptr<const Command>(command),std::memory_order_release);

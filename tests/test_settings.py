@@ -28,12 +28,15 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(load_settings(self.path), AppSettings())
         self.assertFalse(self.path.parent.exists())
 
-    def test_roundtrip_custom_keyboard_binding_and_only_binding_persists(self):
+    def test_roundtrip_custom_keyboard_binding_and_editor_preferences_persist(self):
         settings = AppSettings(CaptureBinding(key="F8", ctrl=False, alt=False, shift=True))
         save_settings(settings, self.path)
         self.assertEqual(load_settings(self.path), settings)
         raw = json.loads(self.path.read_text("utf-8"))
-        self.assertEqual(set(raw), {"version", "capture_binding"})
+        self.assertEqual(set(raw), {"version", "capture_binding", "game_path", "replay_folder",
+                                   "demo_path", "launch_options", "movement_speed",
+                                   "mouse_sensitivity", "action_bindings"})
+        self.assertEqual(raw["version"], 2)
         self.assertEqual(raw["capture_binding"], settings.capture_binding.to_dict())
         self.assertNotIn("enabled", raw)
 
@@ -114,7 +117,7 @@ class SettingsTests(unittest.TestCase):
     def test_replace_failure_preserves_old_file_and_cleans_temp(self):
         save_settings(AppSettings(), self.path)
         original = self.path.read_bytes()
-        replacement = AppSettings(CaptureBinding(key="F8", ctrl=False, alt=False, shift=False))
+        replacement = AppSettings(CaptureBinding(key="F11", ctrl=False, alt=False, shift=False))
         with patch("dolly.settings.os.replace", side_effect=OSError("simulated save failure")):
             with self.assertRaisesRegex(OSError, "simulated"):
                 save_settings(replacement, self.path)

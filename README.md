@@ -1,59 +1,70 @@
 <img src="assets/dolly.png" width="96" alt="Deadlock Dolly logo">
 
-
 # Deadlock Dolly
-
 
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
+**Current source: 0.4.0 alpha.** The portable Windows build opens through
+`Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
-THIS IS AN "INJECTION" TO THE GAME - PLEASE USE AT YOUR OWN RISK
+**THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
 
-This is due to the mod using source2's native camera to render the dolly paths. Without this, we would not have dolly's
+The Native driver loads a DLL into the game to apply camera movement during
+each main rendered view. It runs in the game's user-mode process; there is no
+kernel driver.
 
-PLEASE STILL LAUNCH GAME WITH -insecure IN THE GAMES LAUNCH SETTINGS, TO BE SAFE.
+**KEEP `-insecure` IN DEADLOCK'S LAUNCH OPTIONS WHILE USING DOLLY.**
 
-
-**Current source: 0.3.12 alpha.** The portable Windows build opens through
-`Dolly.exe`. Python and Tcl/Tk are bundled; end users do not need to install them.
-
+Dolly also adds `-dev -insecure -console` when starting an editing session.
+Close that session before launching Deadlock normally.
 
 ## Features
 
-
-- Capture camera keys from the game, including configurable keyboard and mouse bindings.
+- Capture cameras from the game with configurable keyboard or mouse bindings.
 - Smooth position paths, rotation and camera bank.
-- Experimental native camera playback evaluated for each main rendered view.
-- Console fallback with Off, Light, Balanced and Strong smoothing choices.
-- Animated `r_aspectratio` framing with an editable curve.
-- Depth-of-field and other numeric camera-variable tracks.
-- Paused-camera movement and switching between saved views.
+- Native camera playback evaluated for each main rendered view.
+- Native paused-camera movement with WASD and mouse look.
+- In-game panel for capture, saved views, replay controls and movement speed.
+- Replay browser and automatic startup, with the unlocker initialized before the demo loads.
+- Animated `r_aspectratio` framing with an editable desktop curve.
+- Seven supported DOF controls synchronized with the native camera.
 - Replay playback with HUD handling, settings restoration and diagnostics.
-- Development launcher with `-dev -insecure` and unlocker initialization before replay loading.
-
+- Console fallback with Off, Light, Balanced and Strong smoothing choices.
 
 ## Using the Windows app
 
+Download the **Windows x64** ZIP from [Releases](https://github.com/cravvnn/deadlock-dolly/releases).
+Extract it completely and double-click **Dolly.exe**. Keep `_internal` beside
+the EXE; a desktop shortcut can point to it.
 
-Download a **Windows x64** ZIP from this repository's Releases when one has
-been published. Extract it completely to a writable folder and double-click
-**Dolly.exe**. Keep its `_internal` folder beside it; a desktop shortcut can
-point to the EXE. See the included `Start_Here.txt` and the
-[user guide](docs/USER_GUIDE.md) for the replay workflow.
+Open Steam, close any running Deadlock, and use **DirectX 11**. In Dolly,
+choose the game executable and a local `.dem` replay, or select a file from
+**Replays**. Click **Play replay** to open the game, initialize the unlocker
+in the hideout, load the replay and pause it for editing.
 
-In 0.3.12, **Camera driver → Native (experimental)** is selected by default
-before launch. It applies position, rotation and aspect-ratio framing during
-each main-view callback. It supports only the exact `client.dll` and
-`engine2.dll` and `tier0.dll` builds inspected for this release. If your installation differs,
-choose **Console (legacy)** before launching; Dolly does not guess new offsets.
+Move to a view and press **Ctrl+Alt+K** to capture it. Fly to another view and
+capture again. **F8** opens the in-game panel, **F7** opens the console, and
+**F9** switches to Deadlock's replay UI for hero selection. Bindings, movement
+speed and mouse sensitivity are saved from **Keybinds**.
 
-The GitHub **Source code** download and the source ZIP contain the source and
-build recipe. They do not contain an already compiled Windows executable.
+See `Start_Here.txt` and the [user guide](docs/USER_GUIDE.md) for the full controls.
+The GitHub **Source code** download and source ZIP contain the source and build
+files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
 
+## Compatibility
+
+Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
+`tier0.dll`. A game update can require a Dolly update. **Console (legacy)**
+is available under **Home → Troubleshooting** when Native is unavailable.
+See [game updates](docs/GAME_UPDATES.md) for compatibility details.
+
+0.4.0 is an alpha. The new native input and DX11 panel have not yet been tested
+in Deadlock; ReShade compatibility is unverified. Validation details are in
+[VALIDATION.md](docs/VALIDATION.md). In-world camera markers, full in-game curve
+editing and video/render-pass export are planned for later updates.
 
 ## Development
-
 
 Run from source with Python 3.10+ and Tcl/Tk:
 
@@ -62,50 +73,43 @@ python -m dolly
 python -m unittest discover -s tests -q
 ```
 
-The editor's source runtime needs no pip dependencies. Native playback also
-needs the Windows-built helper. Choose Console to use source without that
-helper. Executable builds use the pinned dependencies in `requirements-build.txt`,
-64-bit Python 3.12, Visual Studio 2022 C++ tools and CMake on Windows.
+The source editor needs no pip dependencies. Native features also require the
+compiled Windows helper. EXE builds use the pinned dependencies in
+`requirements-build.txt`, Python 3.12 x64, Visual Studio 2022 C++ tools and CMake.
 
 | Location | Contents |
 | --- | --- |
-| `dolly/` | Application and replay controller |
-| `native/` | Native camera source, build profiles, tests and vendored dependency |
-| `assets/` | Supplied logo and prepared Windows icon |
+| `dolly/` | Desktop editor, settings and replay controller |
+| `native/` | Native camera, input, DX11 panel, tests and dependencies |
+| `assets/` | Logo and Windows icon |
 | `tests/` | Regression tests |
-| `packaging/`, `tools/` | Executable recipe and release checks |
+| `packaging/`, `tools/` | Executable build and packaging |
 | `examples/` | Example shot |
-| `third_party/` | Pinned official unlocker and component notices |
-| `docs/` | User guide, build instructions, changes and validation evidence |
+| `third_party/` | Bundled unlocker and component notices |
+| `docs/` | User guide, build instructions and technical reference |
 
-Logs, replays, personal shots, virtual environments and build outputs are
-excluded from Git. `SOURCE_FILES.txt` is the explicit source-archive list.
+Logs, replays, personal shots and build outputs are excluded from Git.
+`SOURCE_FILES.txt` lists the source archive contents.
 
+## Support
 
-## Status and license
+Contact **@Cravvnn on Discord** or [submit a GitHub issue](https://github.com/cravvnn/deadlock-dolly/issues)
+if something is not working as intended. Include the Dolly version and the
+ZIP from **Export diagnostics**. If the app does not open, include
+`logs/Dolly_startup.log` and `logs/Dolly.log` when available.
 
+## License
 
-Native playback uses a Deadlock-specific view hook; Console playback and manual
-paused flight retain the console implementation. The user reports smooth native panning in 0.3.9;
-the new native DOF support still needs an in-game check. Windows packaging and game behavior are separate
-validation steps. Consult
-[VALIDATION.md](docs/VALIDATION.md) and the generated Windows `BUILD_INFO.json`
-for the checks that have actually run.
+Dolly source uses the [MIT license](LICENSE.txt). Bundled components retain
+their own notices under `third_party/` and `native/vendor/`. Artwork has
+separate terms in [assets/README.md](assets/README.md).
 
-Dolly source uses the [MIT license](LICENSE.txt). The bundled official unlocker
-and other components retain their own notices under `third_party/`. Artwork
-is separate from the source-code license; see [assets/README.md](assets/README.md).
+## Updates
 
-**0.3.10:** fixes restarting after a native shot holds its last view. Play releases
-the old override before the normal seek and calibration. Stop / restore returns
-control to the game; its spectator view may differ from the final shot. Native
-rendering and paused movement are unchanged. Rebuild the complete Windows package.
+**0.4.0:** adds the replay browser, automatic startup, configurable editor
+bindings, native paused movement and the DX11 in-game panel.
 
-**0.3.11:** adds native DOF curves and ABI 2. Rebuild the complete Windows package;
-do not mix its editor or `_internal` files with earlier releases.
+**0.3.13:** compatibility update for the reviewed September 9 client, engine2
+and tier0 builds. Previous build support remains.
 
-**0.3.12:** compatibility update for the reviewed September 9 Deadlock client.
-Previous client support remains. See [game updates](docs/GAME_UPDATES.md).
-
-**0.3.13:** compatibility update for the reviewed September 9 client, engine2 and tier0.
-Previous client support remains. See [game updates](docs/GAME_UPDATES.md).
+Earlier changes are in [CHANGELOG.md](docs/CHANGELOG.md).

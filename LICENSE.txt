@@ -20,4 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-Third-party components retain their own notices under third_party/.
+Third-party components retain their own notices under third_party/ and
+native/vendor/. Portable releases include these notices under
+_internal/third_party/notices/.
