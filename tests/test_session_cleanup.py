@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -93,14 +92,18 @@ class CleanupTests(unittest.TestCase):
 
     def test_wildcard_search_mount_prevents_deleting_a_referenced_directory(self):
         self.session.restore_gameinfo()
-        self.paths.gameinfo.write_text(GAMEINFO.replace('Game "core"', 'Game "citadel_dolly_*/cvar_unlocker"'))
+        self.paths.gameinfo.write_text(
+            GAMEINFO.replace('Game "core"', 'Game "citadel_dolly_*/cvar_unlocker"'),
+            encoding="utf-8")
         with self.assertRaisesRegex(launcher.LaunchError, "still references"):
             self.recover()
         self.assertTrue(self.session.overlay_dir.exists())
 
     def test_comment_mention_of_old_mount_does_not_prevent_cleanup(self):
         self.session.restore_gameinfo()
-        self.paths.gameinfo.write_text(GAMEINFO + "\n// Previous mount " + self.session.overlay_dir.name)
+        self.paths.gameinfo.write_text(
+            GAMEINFO + "\n// Previous mount " + self.session.overlay_dir.name,
+            encoding="utf-8")
         self.recover()
         self.assertFalse(self.session.overlay_dir.exists())
 
@@ -287,7 +290,9 @@ class CleanupTests(unittest.TestCase):
         with patch.object(cleanup.sys, "platform", "win32"), patch.object(ctypes, "WinDLL", return_value=api, create=True), patch("dolly.runtime.is_frozen", return_value=True), patch.object(cleanup.subprocess, "STARTUPINFO", return_value=startup, create=True), patch.object(cleanup.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), patch.object(cleanup.subprocess, "Popen") as popen:
             cleanup.start_waiter(self.session)
         args, kwargs = popen.call_args
-        self.assertEqual(args[0][1:], ["--cleanup-session", str(self.session.session_dir), "5678"])
+        # Windows TEMP may use an 8.3 alias; the helper receives the resolved
+        # long path so it can reopen the same journal after Dolly exits.
+        self.assertEqual(args[0][1:], ["--cleanup-session", str(self.session.session_dir.resolve()), "5678"])
         self.assertEqual(startup.lpAttributeList, {"handle_list": [5678]})
         self.assertTrue(kwargs["close_fds"])
         self.assertEqual(kwargs["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
@@ -307,14 +312,27 @@ class CleanupTests(unittest.TestCase):
         self.session.restore_gameinfo()
         process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"],
                                    creationflags=subprocess.CREATE_NO_WINDOW)
-        self.addCleanup(lambda: process.kill() if process.poll() is None else None)
+        def reap(child):
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=10)
+        self.addCleanup(reap, process)
         self.session.process = process
-        cleanup.start_waiter(self.session)
+        helpers = []
+        spawn = subprocess.Popen
+        def track_helper(*args, **kwargs):
+            child = spawn(*args, **kwargs)
+            helpers.append(child)
+            self.addCleanup(reap, child)
+            return child
+        # Only this test owns and waits for the helper. Production deliberately
+        # detaches it so closing Dolly never waits for the game to exit.
+        with patch.object(cleanup.subprocess, "Popen", side_effect=track_helper):
+            cleanup.start_waiter(self.session)
+        self.assertEqual(len(helpers), 1)
         self.assertTrue(self.session.overlay_dir.exists())
         process.wait(timeout=10)
-        deadline = time.monotonic() + 10
-        while self.session.overlay_dir.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
+        self.assertEqual(helpers[0].wait(timeout=10), 0, self.session.read_log())
         self.assertFalse(self.session.overlay_dir.exists(), self.session.read_log())
 
 

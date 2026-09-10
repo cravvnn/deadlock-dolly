@@ -1,5 +1,29 @@
 # Validation — 0.4.4 alpha
 
+## Windows build correction
+
+GitHub Actions run 93326745970 compiled the native DLL with MSVC and passed
+all five native tests, including the callback and DX11 WARP tests. Packaging
+then stopped on three cleanup-test failures: two BOM-bearing fixtures used
+Windows' default cp1252 encoding, and one assertion compared a resolved long
+path with the same temporary directory's 8.3 alias.
+
+The fixtures now write UTF-8 explicitly and the assertion compares the
+normalized path. The Windows integration test retains and waits for its
+cleanup helper before removing its temporary directory. Production cleanup,
+editor code and the native DLL are unchanged by this build correction.
+The integration test in the supplied Windows run already passed the real
+process-handle inheritance and generated-folder removal checks.
+
+Local portability checks reproduce all three failures with the original test
+file, then pass with the corrected file under the same cp1252 default and
+alternate-path conditions. These checks emulate the reported differences;
+they do not replace running the corrected build on Windows.
+The corrected full Python suite ran 762 tests without failures, with two
+Windows-only skips. All 174 source archive entries and a clean extraction/
+re-export were verified. Only this validation record, the changelog and
+test_session_cleanup.py differ from the original 0.4.4 package.
+
 ## Crash analysis and limits
 
 The supplied minidump and matching rendersystemdx11.dll identify Source2's

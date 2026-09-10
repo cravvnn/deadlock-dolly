@@ -1,5 +1,12 @@
 # Changes
 
+## 0.4.4 alpha — Windows build correction
+
+- Write BOM-bearing cleanup test fixtures explicitly as UTF-8 and compare the
+  helper's normalized Windows path, including temporary folders with 8.3 names.
+- Wait for the test cleanup helper to exit before removing its temporary
+  directory. Application behavior and the native DLL are unchanged.
+
 ## 0.4.4 alpha — Session cleanup and crash diagnostics
 
 - Remove generated plugin folders after the game exits, including when Dolly
