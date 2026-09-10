@@ -2,7 +2,6 @@
 .gitattributes
 .github/workflows/windows.yml
 .gitignore
-AGENTS.md
 CONTRIBUTING.md
 LICENSE.txt
 Launch_Dolly.bat

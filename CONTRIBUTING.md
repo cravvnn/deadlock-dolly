@@ -1,7 +1,7 @@
 # Contributing
 
-Keep README.md and both start guides in the owner's direct, practical style.
-Documentation conventions are in [AGENTS.md](AGENTS.md).
+Keep documentation concise and focused on setup, controls and troubleshooting.
+Detailed build procedures and test results belong in the guides under docs/.
 
 Use Python 3.10+ with Tcl/Tk to run from source. The reference Windows build
 uses Python 3.12 x64; see [BUILDING.md](docs/BUILDING.md).
