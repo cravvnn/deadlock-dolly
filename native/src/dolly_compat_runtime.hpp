@@ -60,8 +60,12 @@ inline bool section_range(HMODULE module, const char* wanted, std::uintptr_t& st
 
 inline std::uintptr_t relative_target(std::uintptr_t instruction, std::size_t operand_offset,
                                       std::int32_t displacement) {
+    // Route the signed displacement through an unsigned operand to avoid the
+    // MSVC C4293 warning when the pointer arithmetic is the last operand.
+    const std::uint32_t bits = static_cast<std::uint32_t>(displacement);
     return static_cast<std::uintptr_t>(
-        static_cast<std::int64_t>(instruction + operand_offset) + displacement);
+        static_cast<std::int64_t>(instruction) + static_cast<std::int64_t>(operand_offset)
+        + static_cast<std::int64_t>(bits));
 }
 
 // Find the unique return address of a direct call to ``setup`` inside .text.
@@ -212,8 +216,8 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
     std::size_t text_size = 0;
     if (!compat_detail::section_range(client, ".text", text, text_size))
         return result;
-    for (std::size_t i = 0; i < dolly::kCompatClientProfileCount; ++i) {
-        const auto& profile = dolly::kCompatClientProfiles[i];
+    for (std::size_t i = 0; i < dolly::compat_profiles::kCompatClientProfileCount; ++i) {
+        const auto& profile = dolly::compat_profiles::kCompatClientProfiles[i];
         if (!module_matches(client, profile.sha256, profile.image_size))
             continue;
         result.resolved = true;
@@ -228,8 +232,8 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
     }
     if (!allow_signature)
         return result;
-    for (std::size_t i = 0; i < dolly::kCompatClientProfileCount; ++i) {
-        const auto& profile = dolly::kCompatClientProfiles[i];
+    for (std::size_t i = 0; i < dolly::compat_profiles::kCompatClientProfileCount; ++i) {
+        const auto& profile = dolly::compat_profiles::kCompatClientProfiles[i];
         if (!profile.signature || !profile.signature_size)
             continue;
         std::size_t offset = 0;

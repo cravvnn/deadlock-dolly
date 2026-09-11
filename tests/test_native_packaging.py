@@ -23,7 +23,8 @@ class NativePackagingTests(unittest.TestCase):
                     for p in (root / "native/profiles").glob("*.json")
                     if p.name != "manifest.json"]
         sources = {
-            "client": (root / "native/src/dolly_compat_generated.hpp", r'"([a-f0-9]{64})"'),
+            "client": (root / "native/src/dolly_compat_generated.hpp",
+                       r'\{\s*"([a-f0-9]{64})"'),
             "engine": (root / "native/src/bridge_win.cpp",
                        r'k(?:Updated)?EngineHash\[\]\s*=\s*"([a-f0-9]{64})"'),
             "tier0": (root / "native/src/native_effects_win.hpp",

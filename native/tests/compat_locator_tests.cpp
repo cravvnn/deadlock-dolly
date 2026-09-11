@@ -180,7 +180,7 @@ struct Image {
 
 int main() {
     Image image;
-    HMODULE module = image.buffer.data();
+    HMODULE module = reinterpret_cast<HMODULE>(image.buffer.data());
 
     std::uintptr_t start = 0;
     std::size_t size = 0;

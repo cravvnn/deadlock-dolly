@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace dolly {
+namespace dolly::compat_profiles {
 struct CompatClientProfile {
     const char* sha256;
     std::uint32_t image_size;
@@ -31,4 +31,4 @@ inline const CompatClientProfile kCompatClientProfiles[] = {
     { "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b", 63733760, 0x16bcfb0, 0x16b6744, 0x2349178, 0x2f09170, 0x37f6740, nullptr, nullptr, 0 },
 };
 inline constexpr std::size_t kCompatClientProfileCount = sizeof(kCompatClientProfiles) / sizeof(kCompatClientProfiles[0]);
-}  // namespace dolly
+}  // namespace dolly::compat_profiles
