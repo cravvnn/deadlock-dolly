@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(DollyNative VERSION 0.5.2 LANGUAGES C CXX)
+project(DollyNative VERSION 0.5.3 LANGUAGES C CXX)
 
 # Native interpolation tests also build on Linux/macOS. The game bridge is an
 # x64 Windows DLL and is deliberately absent from non-Windows targets.
@@ -30,6 +30,12 @@ if(BUILD_TESTING)
     add_executable(video_math_tests tests/video_math_tests.cpp)
     target_include_directories(video_math_tests PRIVATE include)
     add_test(NAME native_video_math_tests COMMAND video_math_tests)
+    add_executable(pattern_tests tests/pattern_tests.cpp)
+    target_include_directories(pattern_tests PRIVATE include)
+    add_test(NAME native_pattern_tests COMMAND pattern_tests)
+    add_executable(compat_locator_tests tests/compat_locator_tests.cpp)
+    target_include_directories(compat_locator_tests PRIVATE include src)
+    add_test(NAME native_compat_locator_tests COMMAND compat_locator_tests)
 endif()
 
 if(WIN32)

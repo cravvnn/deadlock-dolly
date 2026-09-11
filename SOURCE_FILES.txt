@@ -31,6 +31,7 @@ dolly/__main__.py
 dolly/bindings.py
 dolly/bootstrap.py
 dolly/branding.py
+dolly/compatibility.py
 dolly/console.py
 dolly/controller.py
 dolly/curve.py
@@ -66,6 +67,7 @@ native/include/dolly_effects.hpp
 native/include/dolly_flight.hpp
 native/include/dolly_overlay.hpp
 native/include/dolly_path.hpp
+native/include/dolly_pattern_scan.hpp
 native/include/dolly_protocol.hpp
 native/include/dolly_renderer_diagnostics.hpp
 native/include/dolly_visualization.hpp
@@ -73,7 +75,11 @@ native/include/dolly_visualization_runtime.hpp
 native/profiles/deadlock-2026-09-09-complete.json
 native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json
 native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
+native/profiles/deadlock-2026-09-11-complete.json
+native/profiles/manifest.json
 native/src/bridge_win.cpp
+native/src/dolly_compat_generated.hpp
+native/src/dolly_compat_runtime.hpp
 native/src/dolly_editor_win.cpp
 native/src/dolly_effects.cpp
 native/src/dolly_overlay_win.cpp
@@ -83,10 +89,12 @@ native/src/dolly_visualization.cpp
 native/src/dolly_visualization_runtime_win.cpp
 native/src/native_effects_win.hpp
 native/tests/bridge_smoke.cpp
+native/tests/compat_locator_tests.cpp
 native/tests/effect_tests.cpp
 native/tests/flight_tests.cpp
 native/tests/overlay_smoke.cpp
 native/tests/path_tests.cpp
+native/tests/pattern_tests.cpp
 native/tests/visualization_tests.cpp
 native/vendor/imgui/LICENSE.txt
 native/vendor/imgui/UPSTREAM.json
@@ -130,6 +138,7 @@ tests/test_bindings.py
 tests/test_bootstrap.py
 tests/test_branding.py
 tests/test_camera_position.py
+tests/test_compatibility.py
 tests/test_console.py
 tests/test_controller.py
 tests/test_curve.py
@@ -186,6 +195,7 @@ tools/build_windows.py
 tools/release_files.py
 .clang-format
 tools/format_cpp.py
+tools/generate_profile.py
 tests/test_cpp_format.py
 dolly/input_diagnostics.py
 tests/test_input_diagnostics.py

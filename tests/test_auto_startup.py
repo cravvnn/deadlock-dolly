@@ -127,6 +127,24 @@ class AutoStartupTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Timed out"):
                 self.controller._startup_wait(lambda: None, "waiting for scene", None)
 
+    def test_console_readiness_accepts_named_hideout(self):
+        evidence = Controller._console_hideout_evidence(
+            "map : dl_hideout\nClient:  Connected", {"playing": False})
+        self.assertEqual(evidence["method"], "named_hideout_status")
+        self.assertEqual(evidence["map"], "dl_hideout")
+
+    def test_console_readiness_accepts_settled_status_without_map_name(self):
+        evidence = Controller._console_hideout_evidence(
+            "Server:  Inactive\nClient:  Connected", {"playing": False})
+        self.assertEqual(evidence["method"], "settled_status")
+
+    def test_console_readiness_rejects_level_load(self):
+        self.assertIsNone(Controller._console_hideout_evidence(
+            "Client:  Connected\n@ Current  :  levelload", {"playing": False}))
+        self.assertIsNone(Controller._console_hideout_evidence(
+            "CL:  prerequisite   :  .'CAsyncShaderCompilePrerequisite'", {"playing": False}))
+        self.assertIsNone(Controller._console_hideout_evidence("", {"playing": False}))
+
     def test_extra_launch_options_forwarded_without_embedded_demo_command(self):
         with patch("dolly.controller.launcher.launch", return_value=self.session) as launch, \
              patch("dolly.controller.ConsoleClient", return_value=self.console):

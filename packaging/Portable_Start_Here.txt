@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.2 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.5.3 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -128,7 +128,7 @@ Deadlock. The loaded DLL remains resident until the editing game exits.
 
 COMPATIBILITY AND UPDATES
 
-0.5.2 is an alpha. The camera hook and interpolation remain unchanged from
+0.5.3 is an alpha. The camera hook and interpolation remain unchanged from
 0.4.7. Recorded-demo handling from 0.4.8 is retained. Earlier renderer slowdowns
 do not have a confirmed general fix. MP4 and ReShade need in-game testing.
 Fixed-step rendering, audio, separate layers and expanded in-game curves

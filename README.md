@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.2 alpha.** The portable Windows build opens through
+**Current source: 0.5.3 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -89,16 +89,20 @@ calibration recoveries still require exact ticks and can fail on sparse recordin
 ## Compatibility
 
 Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
-`tier0.dll`. A game update can require a Dolly update. **Console (legacy)**
-is available under **Home → Troubleshooting** when Native is unavailable.
-See [game updates](docs/GAME_UPDATES.md) for compatibility details.
+`tier0.dll`. Every Dolly launch hashes the installed modules against the
+bundled compatibility manifest (`native/profiles/manifest.json`) and reports an
+unrecognized build instead of injecting. **Home → Troubleshooting** has a
+**Check game build** action, and **Console (legacy)** remains available when
+Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
+manifest, signature scanning and profile-generation workflow.
 
-0.5.2 is an alpha. It keeps the camera hook and interpolation from the working
-0.4.7 baseline, plus the recorded-demo handling from 0.4.8. Earlier renderer
-slowdowns do not have a confirmed general fix. The new video and ReShade paths
-need testing in Deadlock; build checks are in [VALIDATION.md](docs/VALIDATION.md).
-Fixed-step rendering, audio, separate render layers and expanded in-game curve
-editing remain planned.
+0.5.3 is an alpha. It keeps the camera hook and interpolation from the working
+0.4.7 baseline, plus the recorded-demo handling from 0.4.8. It adds the
+compatibility scanner and an AOB fallback for byte-identical game updates.
+Earlier renderer slowdowns do not have a confirmed general fix. The new video
+and ReShade paths need testing in Deadlock; build checks are in
+[VALIDATION.md](docs/VALIDATION.md). Fixed-step rendering, audio, separate
+render layers and expanded in-game curve editing remain planned.
 
 ## Session files
 
@@ -154,6 +158,12 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.3:** adds the bundled compatibility manifest and per-launch build scanner,
+a native AOB fallback for game updates whose camera code is byte-identical
+modulo relocated addresses, reviewed support for the September 11 client, and
+`tools/generate_profile.py` to generate a new profile, manifest and native
+header from a real install.
 
 **0.5.2:** adds 120 FPS recording. Layer export requirements are documented; depth, hero-only and world-only passes are not included yet.
 

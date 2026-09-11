@@ -27,25 +27,25 @@ from typing import Any
 import uuid
 from .runtime import application_root, resource_root, external_program_environment
 from .native_bridge import NativeBridge, ABI as NATIVE_ABI
+from . import __version__ as DOLLY_VERSION
+from .compatibility import (
+    CompatibilityError,
+    SUPPORTED,
+    UNSUPPORTED,
+    accepted_pins,
+    scan_game_modules,
+)
 
 PACKAGE_ROOT = application_root(Path(__file__).resolve().parent.parent)
 UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_party" / "cvar_unlocker"
 NATIVE_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "native"
 UNLOCKER_SHA256 = "e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba"
-NATIVE_GAME_SHA256 = {
-    "bin/win64/tier0.dll": (
-        "b4300eb0abfe73e1e877516ab6b8bdd1a1bdb4ffc47c7515a349d0623b852f69",
-        "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
-    ),
-    "citadel/bin/win64/client.dll": (
-        "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
-        "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
-    ),
-    "bin/win64/engine2.dll": (
-        "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb",
-        "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d",
-    ),
-}
+# Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
+# single source of truth shared with the native bridge and its build tests.
+try:
+    NATIVE_GAME_SHA256 = accepted_pins()
+except CompatibilityError:
+    NATIVE_GAME_SHA256 = {}
 STEAM_APP_ID = "1422450"
 GAME_EXECUTABLE_NAMES = ("deadlock.exe", "citadel.exe")
 
@@ -504,22 +504,14 @@ def _verified_unlocker() -> Path:
 
 def _verified_native(paths: GamePaths) -> Path:
     """Fail closed on changed game binaries or a missing native release build."""
-    unsupported = []
-    for relative, expected in NATIVE_GAME_SHA256.items():
-        installed = paths.game_dir / relative
-        try:
-            with installed.open("rb") as stream:
-                hasher = hashlib.sha256()
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    hasher.update(chunk)
-                digest = hasher.hexdigest()
-        except OSError as exc:
-            raise LaunchError(f"Native camera needs the supported installed game file: {installed}") from exc
-        accepted = (expected,) if isinstance(expected, str) else expected
-        if digest not in accepted:
-            unsupported.append(installed.name)
-    if unsupported:
-        raise LaunchError(f"Native camera does not support this {', '.join(unsupported)} build. Game files were not changed. Choose Console camera mode or use a native Dolly build for this Deadlock update.")
+    try:
+        report = scan_game_modules(paths.game_dir, pins=NATIVE_GAME_SHA256)
+    except CompatibilityError as exc:
+        raise LaunchError(str(exc)) from exc
+    if report.state == UNSUPPORTED:
+        raise LaunchError("Game files were not changed. " + report.describe())
+    if report.state != SUPPORTED:
+        raise LaunchError(report.describe())
     dll = NATIVE_ROOT / "bin/win64/DollyNative.dll"
     try:
         metadata = json.loads((NATIVE_ROOT / "build_info.json").read_text(encoding="utf-8"))
@@ -834,7 +826,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
                 encoding="ascii", newline="\n")
         command = build_command(paths, overlay, port, demo, protocol, launch_options)
-        metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
+        metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
         if native:
             metadata["native_camera"] = {"abi": NATIVE_ABI, "game_sha256": NATIVE_GAME_SHA256,
                                          "dll_sha256": hashlib.sha256(native_dll.read_bytes()).hexdigest()}

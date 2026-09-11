@@ -22,7 +22,7 @@ import zipfile
 from . import __version__
 from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX,
                    CVAR_COMPONENTS, validate_cvar_value, parse_cvar_value, format_cvar_value)
-from .console import ConsoleClient, error_text, parse_demo_info, parse_demo_tick
+from .console import ConsoleClient, ConsoleError, error_text, parse_demo_info, parse_demo_tick
 from .replays import same_replay_name
 from .demo_packets import packet_index
 from .playback import ReplayClock
@@ -264,12 +264,38 @@ class Controller:
         if not self._console or not self._console.is_connected:
             raise RuntimeError("The console is disconnected. Use Connect after Deadlock finishes loading.")
 
+    def _game_exit_message(self, command, detail):
+        """Explain a console failure that was really the game process dying.
+
+        The console socket is closed by the operating system when Deadlock
+        crashes, so a raw WinError 10054 hides the real event. A replay that
+        cannot be reconstructed by the installed build fatals the game during
+        demo load; report the crash and the likely cause instead.
+        """
+        exit_code = self._session.process.poll() if self._session else None
+        if exit_code is None:
+            reason = "Deadlock stopped responding"
+        elif exit_code == 0:
+            reason = "Deadlock closed"
+        else:
+            reason = f"Deadlock crashed (exit code {exit_code})"
+        cleaned = str(command).strip().splitlines()[0][:80] if str(command).strip() else "a console command"
+        return (f"{reason} while Dolly was running '{cleaned}'. A replay that this game build cannot "
+                "reconstruct (for example an incompatible or incomplete .dem) can fatal Deadlock as soon as "
+                "it starts playing. Try the latest replay recorded on this build, then launch again through "
+                f"Dolly. Console reported: {detail}")
+
     def _request(self, command, timeout=3.0, allow_error=False, completion_patterns=None):
         self._require_connection()
-        if completion_patterns is None:
-            output = self._console.request(command, timeout=timeout)
-        else:
-            output = self._console.request(command, timeout=timeout, completion_patterns=completion_patterns)
+        try:
+            if completion_patterns is None:
+                output = self._console.request(command, timeout=timeout)
+            else:
+                output = self._console.request(command, timeout=timeout, completion_patterns=completion_patterns)
+        except ConsoleError as exc:
+            if not self._alive():
+                raise RuntimeError(self._game_exit_message(command, exc)) from exc
+            raise
         camera_frame = command.startswith("spec_goto ")
         key = "camera_frame" if camera_frame else command.split(";", 1)[0][:160]
         self._last_output[key] = output[-32000:]
@@ -313,6 +339,26 @@ class Controller:
         if require_tick and result.get("tick") is None:
             raise RuntimeError("The replay is recognized, but its current tick was not reported. Export diagnostics before normal playback, or explicitly select Frozen preview.")
         return result
+
+    def _replay_begun(self, minimum_tick=2):
+        """Require the replay to apply its first full packet before pausing.
+
+        A freshly loaded replay exposes tick 0 while it is still reconstructing
+        its initial full update. Seeking back across that boundary in that state
+        is what fataled Deadlock on replays this build could not reconstruct.
+        Real playback has started once the demo tick advances past the first
+        packet. Returns the demo status, or None while it is still starting.
+        """
+        try:
+            info = self._require_demo()
+        except (RuntimeError, ValueError):
+            if not self._alive():
+                raise
+            return None
+        tick = info.get("tick")
+        if tick is None or int(tick) < int(minimum_tick):
+            return None
+        return info
 
     def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options=""):
         with self._op_lock:
@@ -458,15 +504,40 @@ class Controller:
                         "rendered_frame": rendered, "demo": demo}
         else:
             status = self._request("status", allow_error=True)
-            maps = re.findall(r"(?im)^\s*(?:\[[^]\r\n]+\]\s*)*(?:map|mapname)\s*[:=]\s*[\"']?([^\s\"']+)", status)
-            hideouts = [name for name in maps if "hideout" in re.split(r"[/\\_.-]", name.casefold())]
-            if not hideouts:
+            self._startup_evidence["console_status"] = str(status or "")[:4000]
+            evidence = self._console_hideout_evidence(status, demo)
+            if evidence is None:
                 return None
-            evidence = {"method": "named_hideout_status", "map": hideouts[0], "demo": demo}
         if not self._console.supports("cvar_unhide"):
             return None
         evidence["unlocker_command_registered"] = True
         return evidence
+
+    @staticmethod
+    def _console_hideout_evidence(status, demo):
+        """Prove the console-only pre-replay scene before loading the replay.
+
+        A named hideout map is the strongest signal. Many builds do not expose
+        the map name through ``status``; any non-empty status that is not mid
+        level-load is the same settled pre-replay state the rendered-view path
+        waits for. A replay already playing is rejected earlier, so this stays
+        bounded to the pre-replay scene.
+        """
+        text = str(status or "")
+        maps = re.findall(r"(?im)^\s*(?:\[[^]\r\n]+\]\s*)*(?:map|mapname)\s*[:=]\s*[\"']?([^\s\"']+)", text)
+        hideouts = [name for name in maps if "hideout" in re.split(r"[/\\_.-]", name.casefold())]
+        if hideouts:
+            return {"method": "named_hideout_status", "map": hideouts[0], "demo": demo}
+        folded = text.casefold()
+        # Still loading a level: the engine queues the map and reports startup
+        # prerequisites. Any of these means the hideout is not ready yet.
+        loading = ("levelload", "prerequisite", "waiting for isserverrunning",
+                   "waiting for startup resource", "waiting for first spawn")
+        if any(marker in folded for marker in loading):
+            return None
+        if not folded.strip():
+            return None
+        return {"method": "settled_status", "demo": demo}
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
                       launch_options="", cancel_event=None):
@@ -492,7 +563,10 @@ class Controller:
                         return None
 
                 self._startup_wait(connected, "waiting for the game console", cancel_event)
-                bridge = self._native_bridge()
+                # Honour the requested camera driver. The native bridge only
+                # drives startup when Native was selected; otherwise the console
+                # path must run even if a native build is present.
+                bridge = self._native_bridge() if native else None
                 initial_frame = int(bridge.status().get("frame_count", 0)) if bridge is not None else 0
                 self._message("Connected. Waiting for the rendered hideout and unlocker command…", startup_stage="waiting_hideout")
                 readiness = self._startup_wait(lambda: self._automatic_hideout_check(initial_frame),
@@ -522,6 +596,15 @@ class Controller:
                     return info
 
                 self._startup_wait(selected_replay, "waiting for the selected replay", cancel_event)
+                if bridge is None:
+                    # Console playback starts paused on tick 0 until the first
+                    # full packet is reconstructed. Pause and seek only after
+                    # real playback has advanced, so the paused-camera refresh
+                    # never jumps the replay during its initial full update.
+                    self._message("Replay detected. Waiting for it to begin playing before pausing…",
+                                  startup_stage="loading_replay")
+                    self._startup_wait(self._replay_begun, "waiting for the replay to begin playing",
+                                       cancel_event, timeout=45)
                 self._request("demo_pause")
                 self._message("Replay loaded and paused. Checking camera controls…", startup_stage="checking_camera")
                 self.probe()

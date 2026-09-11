@@ -19,18 +19,33 @@ class NativePackagingTests(unittest.TestCase):
     def test_reviewed_module_profiles_match_both_launcher_and_native_pins(self):
         from dolly.launcher import NATIVE_GAME_SHA256
         root = TOOLS.parent
-        profiles = [json.loads(p.read_text()) for p in (root / "native/profiles").glob("*.json")]
-        for module, relative, key, symbol, file in (
-            ("client", "citadel/bin/win64/client.dll", "client_sha256", "Client", "bridge_win.cpp"),
-            ("engine", "bin/win64/engine2.dll", "sha256", "Engine", "bridge_win.cpp"),
-            ("tier0", "bin/win64/tier0.dll", "sha256", "Tier0", "native_effects_win.hpp"),
+        profiles = [json.loads(p.read_text())
+                    for p in (root / "native/profiles").glob("*.json")
+                    if p.name != "manifest.json"]
+        sources = {
+            "client": (root / "native/src/dolly_compat_generated.hpp", r'"([a-f0-9]{64})"'),
+            "engine": (root / "native/src/bridge_win.cpp",
+                       r'k(?:Updated)?EngineHash\[\]\s*=\s*"([a-f0-9]{64})"'),
+            "tier0": (root / "native/src/native_effects_win.hpp",
+                      r'k(?:Updated)?Tier0Hash\[\]\s*=\s*"([a-f0-9]{64})"'),
+        }
+        for module, relative, key in (
+            ("client", "citadel/bin/win64/client.dll", "client_sha256"),
+            ("engine", "bin/win64/engine2.dll", "sha256"),
+            ("tier0", "bin/win64/tier0.dll", "sha256"),
         ):
             with self.subTest(module=module):
                 pins = set(NATIVE_GAME_SHA256[relative])
-                source = (root / "native/src" / file).read_text()
-                native_pins = set(re.findall(r'constexpr\s+char\s+k(?:Updated)?' + symbol + r'Hash\s*\[\s*\]\s*=\s*"([a-f0-9]{64})"\s*;', source))
                 self.assertEqual(pins, {p[module][key] for p in profiles})
+                source, expression = sources[module]
+                native_pins = set(re.findall(expression, source.read_text()))
                 self.assertEqual(pins, native_pins)
+
+    def test_compatibility_manifest_matches_launcher_pins(self):
+        from dolly import compatibility
+        from dolly.launcher import NATIVE_GAME_SHA256
+        document = compatibility.load_manifest()
+        self.assertEqual(compatibility.accepted_pins(document), NATIVE_GAME_SHA256)
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="Dolly native package ")

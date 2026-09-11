@@ -28,19 +28,19 @@
 
 namespace {
 using namespace dolly;
-constexpr char kClientHash[] = "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b";
-// September 9: same hook, fields and clock; six original calls relocated.
-// Each client is statically reviewed and pinned; no wildcard acceptance.
-constexpr char kUpdatedClientHash[] =
-    "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b";
+// Reviewed client camera profiles come from native/profiles via
+// tools/generate_profile.py (dolly_compat_generated.hpp). Exact SHA-256 matches
+// are the fast path. Each profile also carries an AOB signature (fixed bytes +
+// wildcard mask) that is a fail-closed fallback: it only matches a build whose
+// code is byte-identical modulo relocated addresses, and every derived symbol
+// is validated before the hook is installed.
 constexpr char kEngineHash[] = "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb";
 constexpr char kUpdatedEngineHash[] =
     "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d";
 constexpr char kUnlockerHash[] = "e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba";
-constexpr std::uintptr_t kSetup = 0x16bcfb0, kCaller = 0x16b6744, kViewTable = 0x2349178;
-constexpr std::uintptr_t kGlobals = 0x2f09170, kEngineClient = 0x37f6740;
 constexpr std::uintptr_t kDemoGlobal = 0x61b618, kDemoTable = 0x535730, kEngineTable = 0x540128;
-constexpr unsigned char kSetupBytes[] = {
+// Identical across every reviewed client build; the exact-hash path re-checks it.
+constexpr unsigned char kSetupPrologue[] = {
     0x48, 0x8b, 0xc4, 0x48, 0x89, 0x58, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56,
     0x41, 0x57, 0x48, 0x81, 0xec, 0xc0, 0x08, 0x00, 0x00, 0x0f, 0x29, 0x70, 0xb8, 0x4c, 0x8b, 0xf9};
 HMODULE gModule = nullptr;
@@ -234,7 +234,9 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
            nt.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
            nt.OptionalHeader.SizeOfImage == image_size;
 }
+#include "dolly_compat_runtime.hpp"
 #include "native_effects_win.hpp"
+CompatResolution gCompat;
 
 struct DemoState {
     bool playing = false, paused = false, seeking = false;
@@ -252,7 +254,7 @@ static bool read_demo(DemoState& result) noexcept {
     result.playing = playing(reinterpret_cast<void*>(demo));
     if (!result.playing)
         return true;
-    if (!read_value(gClient + kEngineClient, engine_client) ||
+    if (!read_value(gClient + gCompat.engine_client, engine_client) ||
         !read_value(engine_client, engine_table) || engine_table != gEngine + kEngineTable)
         return false;
     auto active = reinterpret_cast<bool(__fastcall*)(void*)>(gEngine + 0x7bf30);
@@ -290,7 +292,7 @@ static bool read_demo(DemoState& result) noexcept {
     }
     if (!std::memchr(result.name, 0, sizeof(result.name) - 1))
         return false;
-    if (!read_value(gClient + kGlobals, globals))
+    if (!read_value(gClient + gCompat.globals, globals))
         return false;
     float current = 0, interval = 0;
     if (!read_value(globals + 0x30, current) || !read_value(globals + 0x54, interval))
@@ -340,8 +342,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     } exit{entered};
     ++gHookCalls;
     std::uintptr_t table = 0;
-    if (caller != gClient + kCaller || !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
-        table != gClient + kViewTable)
+    if (caller != gClient + gCompat.caller || !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
+        table != gClient + gCompat.view_table)
         return;
     auto view = reinterpret_cast<std::uintptr_t>(self) + 0x10;
     static std::uint32_t seen = 0;
@@ -693,26 +695,31 @@ static DWORD WINAPI worker(void*) {
                 break;
             Sleep(20);
         }
-        if ((!module_matches(client, kClientHash, 63733760) &&
-             !module_matches(client, kUpdatedClientHash, 63733760)) ||
-            (!module_matches(engine, kEngineHash, 0x969000) &&
-             !module_matches(engine, kUpdatedEngineHash, 0x969000))) {
+        if (!module_matches(engine, kEngineHash, 0x969000) &&
+            !module_matches(engine, kUpdatedEngineHash, 0x969000)) {
+            startup_status(
+                State::Unsupported, 21,
+                "The installed engine2.dll does not match this native build. Use Console camera and provide the updated DLL.");
+            return 0;
+        }
+        gClient = reinterpret_cast<std::uintptr_t>(client);
+        gEngine = reinterpret_cast<std::uintptr_t>(engine);
+        gCompat = resolve_client_profile(client, true);
+        if (!gCompat.resolved) {
             startup_status(
                 State::Unsupported, 21,
                 "Installed game modules do not match this native build. Use Console camera and provide updated DLLs.");
             return 0;
         }
-        gClient = reinterpret_cast<std::uintptr_t>(client);
-        gEngine = reinterpret_cast<std::uintptr_t>(engine);
         if (!init_cvar_interface()) {
             startup_status(
                 State::Unsupported, 26,
                 "The tier0 cvar interface does not match this native build. Use Console camera mode.");
             return 0;
         }
-        unsigned char prologue[sizeof(kSetupBytes)]{};
-        if (!read_memory(gClient + kSetup, prologue, sizeof(prologue)) ||
-            std::memcmp(prologue, kSetupBytes, sizeof(prologue))) {
+        unsigned char prologue[sizeof(kSetupPrologue)]{};
+        if (!read_memory(gClient + gCompat.setup, prologue, sizeof(prologue)) ||
+            std::memcmp(prologue, kSetupPrologue, sizeof(prologue))) {
             startup_status(State::Unsupported, 22,
                            "Native view function bytes differ; no hook was installed.");
             return 0;
@@ -726,14 +733,14 @@ static DWORD WINAPI worker(void*) {
             return 0;
         }
         if (MH_Initialize() != MH_OK ||
-            MH_CreateHook(reinterpret_cast<void*>(gClient + kSetup),
+            MH_CreateHook(reinterpret_cast<void*>(gClient + gCompat.setup),
                           reinterpret_cast<void*>(setup_hook),
                           reinterpret_cast<void**>(&gOriginalSetup)) != MH_OK) {
             startup_status(State::Fault, 23, "Could not prepare the native view hook.");
             return 0;
         }
         gHeartbeatTime = now_seconds();
-        if (MH_EnableHook(reinterpret_cast<void*>(gClient + kSetup)) != MH_OK) {
+        if (MH_EnableHook(reinterpret_cast<void*>(gClient + gCompat.setup)) != MH_OK) {
             startup_status(State::Fault, 24, "Could not enable the native view hook.");
             return 0;
         }

@@ -1,6 +1,6 @@
 # Layer export
 
-0.5.2 records the normal scene at 30/60/120 FPS. Separated passes are not
+0.5.3 records the normal scene at 30/60/120 FPS. Separated passes are not
 implemented yet. The existing recorder copies the final color backbuffer;
 it does not receive a verified main-view depth texture or hero draw IDs.
 

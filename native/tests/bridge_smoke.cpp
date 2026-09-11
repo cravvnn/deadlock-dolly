@@ -139,8 +139,18 @@ struct Fixture {
         gClient = client.address();
         gEngine = engine.address();
         gMemory = mapping.data();
-        put(gClient + kEngineClient, engine_client.address());
-        put(gClient + kGlobals, globals.address());
+        // Synthetic profile: the September 11 reviewed layout. The fixture
+        // allocates a full-size client image, so the real offsets fit.
+        gCompat = CompatResolution{};
+        gCompat.resolved = true;
+        gCompat.exact = true;
+        gCompat.setup = 0x16bd550;
+        gCompat.caller = 0x16b6ce4;
+        gCompat.view_table = 0x2349418;
+        gCompat.globals = 0x2f091f0;
+        gCompat.engine_client = 0x37f67c0;
+        put(gClient + gCompat.engine_client, engine_client.address());
+        put(gClient + gCompat.globals, globals.address());
         put(gEngine + kDemoGlobal, demo.address());
         put(demo.address(), gEngine + kDemoTable);
         put(engine_client.address(), gEngine + kEngineTable);
@@ -170,7 +180,7 @@ struct Fixture {
     }
 
     void original_view(unsigned char flags = 0) {
-        put(view.address(), gClient + kViewTable);
+        put(view.address(), gClient + gCompat.view_table);
         const auto camera = view.address() + 0x10;
         const float xyz[3] = {10, 20, 30}, angles[3] = {1, 2, 3};
         std::memcpy(reinterpret_cast<void*>(camera + 0x4a0), xyz, sizeof(xyz));
@@ -237,7 +247,7 @@ struct Fixture {
         original_view(projection_flags);
         if (renew_lease)
             gHeartbeatTime = now_seconds();
-        on_view(view.pointer, gClient + kCaller);
+        on_view(view.pointer, gClient + gCompat.caller);
         return status();
     }
 
@@ -802,7 +812,7 @@ void run() {
     // acknowledge a command that never reached the verified main-view site.
     f.command(Mode::Hold, .25);
     f.original_view();
-    on_view(f.view.pointer, gClient + kCaller + 1);
+    on_view(f.view.pointer, gClient + gCompat.caller + 1);
     require(f.status().frame_count == status.frame_count,
             "Unverified caller updated native status");
     f.unchanged();

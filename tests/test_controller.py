@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import zipfile
 
 from dolly.controller import Controller, frame_commands, parse_camera, read_cvar_value
+from dolly.console import ConsoleError
 from dolly.path import CvarTrack, Keyframe, Project, TrackKey, STANDARD_ASPECT
 
 
@@ -252,6 +253,48 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "disconnected"):
             self.controller._require_demo()
         self.assertEqual(self.console.requests, [])
+
+    def test_dead_process_console_failure_reports_the_crash_not_the_socket(self):
+        process = self.process
+
+        def die_then_raise(command, timeout=3, completion_patterns=None):
+            process.poll = lambda: -1073741819
+            raise ConsoleError("[WinError 10054] An existing connection was forcibly closed by the remote host")
+
+        self.console.request = die_then_raise
+        with self.assertRaises(RuntimeError) as caught:
+            self.controller._request("demo_goto")
+        message = str(caught.exception)
+        self.assertIn("crashed", message)
+        self.assertIn("incompatible", message)
+        self.assertIn("demo_goto", message)
+
+    def test_live_process_console_failure_is_not_reported_as_a_crash(self):
+        def fail(*args, **kwargs):
+            raise ConsoleError("Simulated console timeout")
+
+        self.console.request = fail
+        with self.assertRaisesRegex(RuntimeError, "Simulated console timeout"):
+            self.controller._request("demo_goto")
+
+    def test_replay_begun_waits_until_playback_advances(self):
+        self.console.tick = 0
+        self.assertIsNone(self.controller._replay_begun())
+        self.console.tick = 1
+        self.assertIsNone(self.controller._replay_begun())
+        self.console.tick = 2
+        self.assertEqual(self.controller._replay_begun()["tick"], 2)
+
+    def test_replay_begun_reraises_when_the_game_died(self):
+        process = self.process
+
+        def die(*args, **kwargs):
+            process.poll = lambda: 1
+            raise RuntimeError("Simulated console failure")
+
+        self.console.request = die
+        with self.assertRaisesRegex(RuntimeError, "Simulated console failure"):
+            self.controller._replay_begun()
 
     def test_live_demo_guard_accepts_complete_custom_recording_name_only(self):
         self.controller._demo = Path("/chosen/practice.session.01.dem")

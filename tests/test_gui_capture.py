@@ -72,6 +72,7 @@ class CaptureHarness:
         app.speed = Var("1")
         app.rate = Var("60")
         app.smoothing = Var("Balanced")
+        app.camera_driver = Var("Native (experimental)")
         app.status_text = Var("")
         app.app_settings = AppSettings()
         app.capture_binding = DEFAULT_BINDING

@@ -116,6 +116,7 @@ class DollyApp:
         self.camera_driver = tk.StringVar(value="Native (experimental)")
         self.status_text = tk.StringVar(value="Choose a replay and press Play replay to begin editing.")
         self.session_text = tk.StringVar(value="Game not connected")
+        self.driver_indicator = tk.StringVar(value="DRIVER · NATIVE")
         self.project_text = tk.StringVar(value="Untitled shot")
         self.busy_text = tk.StringVar(value="")
         self.start_tick = tk.StringVar(value="0")
@@ -220,6 +221,10 @@ class DollyApp:
         style.configure("Section.TLabel", font=("Segoe UI", 11, "bold"))
         style.configure("CardTitle.TLabel", background=PANEL, font=("Segoe UI", 11, "bold"))
         style.configure("Accent.TLabel", foreground=ACCENT)
+        style.configure("Pill.TLabel", background="#1d3a36", foreground=ACCENT,
+                        font=("Segoe UI", 9, "bold"), padding=(9, 3))
+        style.configure("PillConsole.TLabel", background="#3a3320", foreground="#e8c76a",
+                        font=("Segoe UI", 9, "bold"), padding=(9, 3))
         style.configure("TButton", background="#28323f", foreground=TEXT, padding=(10, 6), borderwidth=0)
         style.map("TButton", background=[("active", "#374757"), ("disabled", "#202731")],
                   foreground=[("disabled", "#617082")])
@@ -285,7 +290,11 @@ class DollyApp:
         heading.columnconfigure(0, weight=1)
         ttk.Label(heading, text="DEADLOCK DOLLY", style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(heading, textvariable=self.project_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
-        ttk.Label(heading, textvariable=self.session_text, style="Accent.TLabel").grid(row=0, column=1, sticky="e")
+        status_row = ttk.Frame(heading)
+        status_row.grid(row=0, column=1, sticky="e")
+        self.driver_indicator_label = ttk.Label(status_row, textvariable=self.driver_indicator, style="Pill.TLabel")
+        self.driver_indicator_label.pack(side="left", padx=(0, 10))
+        ttk.Label(status_row, textvariable=self.session_text, style="Accent.TLabel").pack(side="left")
         ttk.Label(heading, textvariable=self.busy_text, style="Muted.TLabel").grid(row=1, column=1, sticky="e")
         self.notebook = ttk.Notebook(outer)
         self.notebook.grid(row=1, column=0, sticky="nsew")
@@ -349,8 +358,16 @@ class DollyApp:
             ttk.Label(card, text=label, style="CardMuted.TLabel", width=11).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 10))
             ttk.Entry(card, textvariable=variable).grid(row=row, column=1, sticky="ew", pady=(0, 10))
             ttk.Button(card, text="Browse…", command=command).grid(row=row, column=2, padx=(10, 0), pady=(0, 10))
+        driver = ttk.Frame(card, style="Card.TFrame")
+        driver.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        ttk.Label(driver, text="Camera driver", style="CardMuted.TLabel").pack(side="left", padx=(0, 12))
+        self.home_camera_driver_combo = ttk.Combobox(driver, textvariable=self.camera_driver,
+            values=("Native (experimental)", "Console (legacy)"), state="readonly", width=23)
+        self.home_camera_driver_combo.pack(side="left")
+        ttk.Label(driver, text="Choose before launch. Native follows rendered views.",
+                  style="CardMuted.TLabel").pack(side="left", padx=(12, 0))
         actions = ttk.Frame(card, style="Card.TFrame")
-        actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        actions.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         self.play_replay_button = ttk.Button(actions, text="▶  Play replay", style="Primary.TButton", command=self._start_editing_session)
         self.play_replay_button.pack(side="left")
         self.cancel_startup_button = ttk.Button(actions, text="Cancel startup", style="Quiet.TButton", command=self._cancel_startup, state="disabled")
@@ -613,6 +630,23 @@ class DollyApp:
         self.advanced_startup_dialog.deiconify()
         self.advanced_startup_dialog.lift()
 
+    def _check_game_build(self):
+        """Hash the installed modules and report Native camera compatibility."""
+        from dolly import compatibility
+        from dolly.launcher import LaunchError, validate_game
+        path = self.game_path.get().strip()
+        if not path:
+            self.native_status_text.set("Choose the Deadlock folder first.")
+            return
+        try:
+            paths = validate_game(path)
+            report = compatibility.scan_game_modules(paths.game_dir)
+        except (compatibility.CompatibilityError, LaunchError, OSError) as exc:
+            self.native_status_text.set(str(exc))
+            return
+        self.native_status_text.set(report.describe())
+        self._log(report.details())
+
     def _build_advanced_startup(self):
         dialog = tk.Toplevel(self.root)
         self.advanced_startup_dialog = dialog
@@ -647,6 +681,13 @@ class DollyApp:
         self.camera_driver_combo.pack(side="left")
         ttk.Label(driver, text="Choose before launch. Native follows rendered views.",
                   style="CardMuted.TLabel").pack(side="left", padx=(12, 0))
+        compat = ttk.Frame(intro, style="Card.TFrame")
+        compat.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        self.native_status_text = tk.StringVar(
+            value="Check the installed Deadlock build against Dolly's reviewed Native camera profiles.")
+        ttk.Label(compat, textvariable=self.native_status_text, style="CardMuted.TLabel",
+                  wraplength=790, justify="left").pack(side="left", fill="x", expand=True)
+        ttk.Button(compat, text="Check game build", command=self._check_game_build).pack(side="right", padx=(12, 0))
         flow = ttk.Frame(tab, padding=(0, 14))
         flow.grid(row=1, column=0, sticky="ew")
         for column in range(3):
@@ -963,11 +1004,12 @@ class DollyApp:
                                replay_folder=self.replay_folder.get().strip(), launch_options=options)
             cancel = threading.Event()
             protocol = "vconsole" if self.protocol.get() == "VConsole" else "netcon"
+            native = self.camera_driver.get() == "Native (experimental)"
             self._close_paused_camera(stop=False)
             self._disable_external_input()
             def start():
                 save_settings(settings)
-                return self.controller.start_editing(game, demo, protocol=protocol, native=True,
+                return self.controller.start_editing(game, demo, protocol=protocol, native=native,
                     launch_options=options, cancel_event=cancel)
             def complete(result):
                 self.app_settings = settings
@@ -981,7 +1023,8 @@ class DollyApp:
     def _editing_started(self, result):
         self.startup_cancel = None
         self.startup_bar.stop()
-        self.camera_driver.set("Native (experimental)")
+        # Keep the driver the user selected; the live indicator reports which
+        # backend the running session actually uses.
         self.startup_progress.set("Replay paused and ready. Return to Deadlock to frame your first camera.")
         self.status_text.set("Use your editor shortcut to open the in-game panel. F7 opens the console.")
         editor_session.configure(self)
@@ -1768,8 +1811,13 @@ class DollyApp:
             self.speed_combo.configure(state="normal" if available else "disabled")
             self.rate_combo.configure(state="readonly" if available else "disabled")
             running = bool(status.get("game_running"))
-            self.camera_driver_combo.configure(state="disabled" if running or self.busy else "readonly")
+            driver_state = "disabled" if running or self.busy else "readonly"
+            self.camera_driver_combo.configure(state=driver_state)
+            home_driver_combo = getattr(self, "home_camera_driver_combo", None)
+            if home_driver_combo is not None:
+                home_driver_combo.configure(state=driver_state)
             native = status.get("camera_backend") == "native" if running else self.camera_driver.get() == "Native (experimental)"
+            self._set_driver_indicator(status.get("camera_backend"), running)
             self.smoothing_combo.configure(state="disabled" if native or self.playing else "readonly")
             self.aspect_curve.set_enabled(available)
             startup_buttons = (
@@ -1818,6 +1866,27 @@ class DollyApp:
             self._log("Editor connection unavailable: " + str(exc))
         self._check_capture_listener()
         self.root.after(100, self._poll)
+
+    def _set_driver_indicator(self, backend, running):
+        """Show the camera driver actually in use, live once a session runs."""
+        indicator = getattr(self, "driver_indicator", None)
+        if indicator is None:
+            return
+        driver = getattr(self, "camera_driver", None)
+        selected = driver.get() if driver is not None else "Native (experimental)"
+        if running and backend in ("native", "console"):
+            active = backend
+        else:
+            active = "native" if selected == "Native (experimental)" else "console"
+        if active == "native":
+            indicator.set("DRIVER · NATIVE")
+            style = "Pill.TLabel"
+        else:
+            indicator.set("DRIVER · CONSOLE LEGACY")
+            style = "PillConsole.TLabel"
+        label = getattr(self, "driver_indicator_label", None)
+        if label is not None and label.cget("style") != style:
+            label.configure(style=style)
 
     def _error(self, title, exc):
         text = str(exc) or type(exc).__name__

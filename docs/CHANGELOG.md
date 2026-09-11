@@ -1,5 +1,32 @@
 # Changes
 
+## 0.5.3 alpha — Compatibility scanner and game-update profiles
+
+- Add `native/profiles/manifest.json` as the single source of truth for
+  accepted `client.dll`, `engine2.dll` and `tier0.dll` hashes, shared by the
+  Python launcher, the native bridge and the packaging tests.
+- Add `dolly/compatibility.py`: every launch hashes the installed modules and
+  classifies the build as supported, incomplete or unsupported, with the
+  observed hash, the reviewed date and a newer-than-reviewed hint. No network
+  access and no pip dependency at runtime.
+- Report an unrecognized build through `_verified_native` before any game file
+  or process is touched, and add a **Check game build** action to the Advanced
+  launch dialog.
+- Add `native/src/dolly_compat_generated.hpp` (generated profile table) and an
+  AOB wildcard fallback in the native bridge. Exact SHA-256 matches stay the
+  fast path. A signature match must be unique, all camera symbols must
+  re-derive (caller, CViewRender RTTI vtable, SetGlobals pointer, aspect-source
+  interface) and the reviewed prologue must survive, or the build stays blocked.
+- Add reviewed support for the September 11 `client.dll`. Main view setup,
+  caller, vtable, globals and engine-client pointer all relocated by consistent
+  deltas with byte-identical view field offsets; `engine2.dll` and `tier0.dll`
+  are unchanged.
+- Add `tools/generate_profile.py` (the packer): it locates every client symbol
+  from the installed binaries, carries forward engine/tier0/effects, writes a
+  reviewed profile, refreshes the manifest and emits the native header.
+- Add portable wildcard-scanner tests and compatibility scanner tests. Retain
+  the camera hook, interpolation, recording and ReShade behavior.
+
 ## 0.5.2 alpha — 120 FPS recording
 
 - Added 120 FPS alongside 30/60 in Export, command transport and the native encoder.
