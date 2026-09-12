@@ -114,6 +114,11 @@ def build_native(root: Path = ROOT) -> dict:
     checks.mkdir(parents=True, exist_ok=True)
     metadata = native / "build_info.json"
     metadata.unlink(missing_ok=True)
+    # Force a relink. A shared library left from an earlier build can carry a
+    # timestamp that makes MSBuild treat the target as up to date even after the
+    # generated compat header changed, shipping a DLL whose compiled hash table
+    # disagrees with the manifest. Removing it guarantees the link runs.
+    (native / DLL_RELATIVE).unlink(missing_ok=True)
     ctest = ["ctest", "--test-dir", str(build), "-C", "Release", "--output-on-failure"]
     # The H.264 encoder smoke test needs a machine that can sustain 120 FPS
     # Media Foundation encoding. CI skips it (see native/CMakeLists.txt); a local
