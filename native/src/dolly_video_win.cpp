@@ -1069,10 +1069,10 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
             if (!fixed_backpressure)
                 break;
             // Hold the simulation until the encoder frees queue space. The wait
-            // is bounded so a wedged encoder, stop, or teardown can never pin
-            // the render thread; after the budget we degrade to the real-time
-            // drop path instead of hanging the game.
-            const auto deadline = GetTickCount64() + 5000;
+            // is bounded (under the desktop "not responding" threshold) so a
+            // wedged encoder, stop, or teardown can never pin the render thread;
+            // after the budget we degrade to the real-time drop path.
+            const auto deadline = GetTickCount64() + 3000;
             bool healthy = true;
             while (s.produced.load(std::memory_order_relaxed) -
                        s.consumed.load(std::memory_order_acquire) >=
@@ -1087,8 +1087,15 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
                 std::unique_lock<std::mutex> lock(s.wait_mutex);
                 s.wake.wait_for(lock, std::chrono::milliseconds(2));
             }
-            if (!healthy)
+            if (!healthy) {
+                // Count a genuine timeout as a drop; stop/failure/teardown end
+                // the recording instead.
+                if (!s.stopping.load(std::memory_order_acquire) &&
+                    s.ready.load(std::memory_order_acquire) &&
+                    !FAILED(s.error.load(std::memory_order_relaxed)))
+                    s.dropped.fetch_add(1, std::memory_order_relaxed);
                 return;
+            }
             if (s.produced.load(std::memory_order_relaxed) -
                     s.consumed.load(std::memory_order_acquire) >=
                 kSlots)
