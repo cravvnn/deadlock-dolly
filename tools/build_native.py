@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -113,11 +114,17 @@ def build_native(root: Path = ROOT) -> dict:
     checks.mkdir(parents=True, exist_ok=True)
     metadata = native / "build_info.json"
     metadata.unlink(missing_ok=True)
+    ctest = ["ctest", "--test-dir", str(build), "-C", "Release", "--output-on-failure"]
+    # The H.264 encoder smoke test needs a machine that can sustain 120 FPS
+    # Media Foundation encoding. CI skips it (see native/CMakeLists.txt); a local
+    # builder can opt out the same way for machines that cannot.
+    if os.environ.get("DOLLY_SKIP_VIDEO_SMOKE") == "1":
+        ctest += ["-E", "native_video_encoder_smoke"]
     commands = [
         ["cmake", "-S", str(native), "-B", str(build), "-G", "Visual Studio 17 2022",
          "-A", "x64", "-DBUILD_TESTING=ON"],
         ["cmake", "--build", str(build), "--config", "Release", "--parallel"],
-        ["ctest", "--test-dir", str(build), "-C", "Release", "--output-on-failure"],
+        ctest,
     ]
     print("Building and testing the native x64 camera bridge...", flush=True)
     with (checks / "native-build.log").open("w", encoding="utf-8") as log:
