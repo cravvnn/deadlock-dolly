@@ -1,0 +1,73 @@
+# Native camera visibility
+
+The September 12 camera correction keeps the main view, auxiliary camera
+origins/angles, and cached camera direction vectors on the same authored pose.
+It applies to manual flight, held previews and shot playback. Release, replay
+seeks, invalid views and expired control connections leave the game's current
+camera values untouched.
+
+## Why this changed
+
+The owner reported missing exterior building geometry when flying far from a
+player. It remained missing while the replay advanced. Static inspection of
+the installed September 11b client confirmed that Dolly previously wrote only
+the main origin/angles after SetUpView returned. The game had already retained
+other camera origins, an auxiliary angle, and cached origin/angles plus
+forward/right/up vectors from its original camera.
+
+The correction updates those related fields together. It also clears the view
+flag that selects an independent auxiliary camera, so later view construction
+uses the main camera's matrices. Other view flags are preserved. No global
+occlusion, GPU culling, distance culling or replay-speed setting is changed.
+
+This corrects a verified camera-state mismatch. It does not prove that every
+source of missing geometry is fixed. Visibility work that happens earlier
+inside game camera setup is outside this correction; an earlier callback may
+still be needed if the same scene continues to fail.
+
+## Compatibility and evidence
+
+Existing module fingerprints, main-view caller/type checks, projection checks,
+replay identity and heartbeat checks still apply. Before installing the camera
+hook, the bridge additionally requires unique reviewed SetUpView instruction
+patterns for the auxiliary camera copies and cached basis/pose writes.
+
+Cache addresses and the engine's AngleVectors helper are decoded from signed
+relative operands, not fixed absolute addresses. The split XYZ/angle stores,
+cache spacing, data/text section bounds and helper entry bytes must agree.
+Unsupported layouts reject Native startup before installing the camera hook.
+The engine helper recomputes all three basis vectors, including camera roll.
+
+Inspected client SHA-256:
+`6b574bb0cc044fdf7f76d0abce78e2a10ab17507b92ade14fc2313e5495b7a61`.
+SetUpView is at RVA `0x16bd550`. Its auxiliary-copy block is at `0x16bd771`,
+additional origin copy at `0x16bd7b5`, and cache block at `0x16bda09`.
+The latter resolves cache RVAs `0x3800660` through `0x38006a0` and the basis
+helper at `0x1e98fd0`. The view-builder at `0x160dcd0` checks view flag `0x04`:
+set selects origin/angles at `+0x558/+0x564`; clear copies the primary matrix.
+These addresses record evidence for this file, not production constants.
+
+The real callback's synthetic test checks that active flight/playback update
+all camera values, that the helper receives the same authored angles, and that
+release/fault/seek/heartbeat paths do not change the game's caches. Decoder
+tests reject mismatched split stores, out-of-section helpers, truncated data,
+changed auxiliary layouts and ambiguous cache blocks.
+
+For read-only layout verification on a known client file, the Windows native
+test accepts `bridge_smoke --camera-layout <client.dll> <setup RVA in hex>`.
+It maps the image with `SEC_IMAGE_NO_EXECUTE`; it does not invoke DllMain,
+resolve imports, call the game helper or attach to a game process. This passed
+against the file above. The callback test uses a synthetic helper, so neither
+test establishes live game rendering behavior.
+
+## In-game check
+
+1. Restart Dolly and its local replay using the complete updated package.
+2. Fly from a player to the same distant building and viewpoint that showed
+   missing exterior geometry. Check both paused and advancing replay time.
+3. Play a saved shot through those positions, including rotation and roll.
+4. Use Stop / restore and check the normal game camera still renders correctly.
+
+If it persists, save a RenderDoc frame at the broken viewpoint plus Dolly
+diagnostics before moving away. The earlier captures demonstrate depth and
+shared world/character buffers, but are not proof of this particular failure.

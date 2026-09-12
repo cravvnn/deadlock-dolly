@@ -45,6 +45,13 @@ initial skip to a frame-accurate export.
 
 ## A concrete lead for the severe slowdown
 
+September 12 update: the post-setup camera correction now synchronizes the
+auxiliary origins/angles and cached camera basis described below. It preserves
+the existing camera evaluation timing. See [Native camera visibility](CAMERA_VISIBILITY.md).
+This is a correction for stale camera state, not a demonstrated fix for the
+historical renderer overflow or all visibility consumers inside SetUpView.
+The analysis below records the earlier implementation.
+
 Dolly currently changes the camera after Deadlock's SetUpView function returns,
 before the caller constructs the view matrices. Static inspection of the
 reviewed September 9 client build establishes that SetUpView has already

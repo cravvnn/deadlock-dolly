@@ -242,6 +242,8 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
            nt.OptionalHeader.SizeOfImage == image_size;
 }
 #include "dolly_compat_runtime.hpp"
+#include "native_camera_view.hpp"
+camera_view::Cache gCameraCache;
 #include "native_effects_win.hpp"
 #include "native_relief_win.hpp"
 CompatResolution gCompat;
@@ -495,8 +497,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                "Native camera stopped; restart the shot after checking diagnostics.");
         return;
     }
-    if (!view_ok || !pose_valid(original) || !std::isfinite(original_fov) || original_fov <= 1 ||
-        original_fov >= 179 || width <= 0 || height <= 0 || (flags & 2)) {
+    if (!gCameraCache.basis || !view_ok || !pose_valid(original) || !std::isfinite(original_fov) ||
+        original_fov <= 1 || original_fov >= 179 || width <= 0 || height <= 0 || (flags & 2)) {
         fault = 11;
         finish(State::Fault, fault,
                "This view or projection is unsupported; native camera released.");
@@ -560,8 +562,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             xyz[i] = float(manual_pose[i]);
             angles[i] = float(std::remainder(manual_pose[i + 3], 360.0));
         }
-        std::memcpy(reinterpret_cast<void*>(view + 0x4a0), xyz, sizeof(xyz));
-        std::memcpy(reinterpret_cast<void*>(view + 0x4b8), angles, sizeof(angles));
+        camera_view::apply(gCameraCache, view, xyz, angles);
         if (c.flags & kAspect) {
             float value = float(fov), aspect = float(manual_pose[6]);
             std::memcpy(reinterpret_cast<void*>(view + 0x498), &value, 4);
@@ -652,8 +653,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         angles[i] = float(std::remainder(applied[i + 3], 360.0));
     }
     // The verified callback owns this live main-view object at this point.
-    std::memcpy(reinterpret_cast<void*>(view + 0x4a0), xyz, sizeof(xyz));
-    std::memcpy(reinterpret_cast<void*>(view + 0x4b8), angles, sizeof(angles));
+    camera_view::apply(gCameraCache, view, xyz, angles);
     if (c.flags & kAspect) {
         float value = float(fov), aspect = float(applied[6]);
         std::memcpy(reinterpret_cast<void*>(view + 0x498), &value, 4);
@@ -727,6 +727,13 @@ static DWORD WINAPI worker(void*) {
             startup_status(
                 State::Unsupported, 26,
                 "The tier0 cvar interface does not match this native build. Use Console camera mode.");
+            return 0;
+        }
+        gCameraCache = camera_view::resolve(client, gClient + gCompat.setup);
+        if (!gCameraCache.basis) {
+            startup_status(
+                State::Unsupported, 37,
+                "The native camera visibility layout differs from this Dolly build. Use Console camera mode.");
             return 0;
         }
         unsigned char prologue[sizeof(kSetupPrologue)]{};

@@ -60,6 +60,59 @@ int __fastcall current_tick(void*) {
 const char* __fastcall current_name(void*) {
     return demo_name;
 }
+unsigned basis_calls = 0;
+void __fastcall synthetic_basis(const float* angles, float* forward, float* right, float* up) {
+    ++basis_calls;
+    // Distinct output sentinels prove all three destinations and the input pose
+    // reach the engine helper; this fixture does not replace the engine math.
+    for (unsigned i = 0; i < 3; ++i) {
+        forward[i] = angles[i] + 10;
+        right[i] = angles[i] + 20;
+        up[i] = angles[i] + 30;
+    }
+}
+
+void camera_cache_decoder() {
+    using namespace camera_view;
+    std::vector<unsigned char> code(0x860, 0xcc);
+    std::memcpy(code.data(), kAuxiliaryCopy, sizeof(kAuxiliaryCopy));
+    std::memcpy(code.data() + 0x80, kOriginCopy, sizeof(kOriginCopy));
+    std::memcpy(code.data() + 0x100, kCachePattern, sizeof(kCachePattern));
+    constexpr std::uintptr_t start = 0x100000, data = 0x300000, text = 0x80000;
+    const auto displacement = [&](unsigned operand, std::uintptr_t target) {
+        const auto delta = std::int32_t(std::int64_t(target) - (start + 0x100 + operand + 4));
+        std::memcpy(code.data() + 0x100 + operand, &delta, 4);
+    };
+    displacement(3, data + 64);
+    displacement(16, data + 48);
+    displacement(26, data + 32);
+    displacement(31, text + 32); // Negative RIP displacement must remain signed.
+    displacement(43, data + 100);
+    displacement(51, data);
+    displacement(61, data + 8);
+    displacement(74, data + 16);
+    displacement(83, data + 24);
+    const auto resolve = [&] {
+        return decode(code.data(), code.size(), start, data, 1024, text, 1024);
+    };
+    auto cache = resolve();
+    require(cache.origin == data && cache.up == data + 64 &&
+                reinterpret_cast<std::uintptr_t>(cache.basis) == text + 32,
+            "Reviewed camera cache layout did not decode");
+    displacement(61, data + 9);
+    require(!resolve().basis, "Split origin store mismatch accepted");
+    displacement(61, data + 8);
+    displacement(31, text + 1010);
+    require(!resolve().basis, "Truncated helper outside executable section accepted");
+    displacement(31, text + 32);
+    require(!decode(code.data(), code.size(), start, data, 75, text, 1024).basis,
+            "Truncated camera cache data accepted");
+    code[14] ^= 1;
+    require(!resolve().basis, "Changed auxiliary camera layout accepted");
+    code[14] ^= 1;
+    std::memcpy(code.data() + 0x200, code.data() + 0x100, sizeof(kCachePattern));
+    require(!resolve().basis, "Ambiguous camera cache block accepted");
+}
 
 template <typename Function> void thunk(std::uintptr_t address, Function function) {
     // mov rax, imm64; jmp rax. The synthetic module keeps the production
@@ -149,6 +202,8 @@ struct Fixture {
         gCompat.view_table = 0x2349418;
         gCompat.globals = 0x2f091f0;
         gCompat.engine_client = 0x37f67c0;
+        gCameraCache = {gClient + 0x3800660, gClient + 0x3800670, gClient + 0x3800680,
+                        gClient + 0x3800690, gClient + 0x38006a0, synthetic_basis};
         put(gClient + gCompat.engine_client, engine_client.address());
         put(gClient + gCompat.globals, globals.address());
         put(gEngine + kDemoGlobal, demo.address());
@@ -172,6 +227,7 @@ struct Fixture {
         gMemory = nullptr;
         gClient = 0;
         gEngine = 0;
+        gCameraCache = {};
     }
 
     void clock(float time, int at_tick) {
@@ -185,6 +241,15 @@ struct Fixture {
         const float xyz[3] = {10, 20, 30}, angles[3] = {1, 2, 3};
         std::memcpy(reinterpret_cast<void*>(camera + 0x4a0), xyz, sizeof(xyz));
         std::memcpy(reinterpret_cast<void*>(camera + 0x4b8), angles, sizeof(angles));
+        for (auto offset : {0x558u, 0x570u})
+            std::memcpy(reinterpret_cast<void*>(camera + offset), xyz, sizeof(xyz));
+        std::memcpy(reinterpret_cast<void*>(camera + 0x564), angles, sizeof(angles));
+        std::memcpy(reinterpret_cast<void*>(gCameraCache.origin), xyz, sizeof(xyz));
+        std::memcpy(reinterpret_cast<void*>(gCameraCache.angles), angles, sizeof(angles));
+        for (auto address : {gCameraCache.forward, gCameraCache.right, gCameraCache.up}) {
+            const float seed[3] = {-7, -8, -9};
+            std::memcpy(reinterpret_cast<void*>(address), seed, sizeof(seed));
+        }
         put(camera + 0x498, original_fov);
         put(camera + 0x4d8, original_aspect);
         put(camera + 0x430, 1280);
@@ -248,7 +313,32 @@ struct Fixture {
         if (renew_lease)
             gHeartbeatTime = now_seconds();
         on_view(view.pointer, gClient + gCompat.caller);
-        return status();
+        const auto value = status();
+        if (!value.error &&
+            (value.state == unsigned(State::Armed) || value.state == unsigned(State::Playing) ||
+             value.state == unsigned(State::Completed))) {
+            const auto camera = view.address() + 0x10;
+            for (unsigned i = 0; i < 3; ++i) {
+                const auto xyz = reinterpret_cast<const float*>(camera + 0x4a0)[i];
+                const auto angle = reinterpret_cast<const float*>(camera + 0x4b8)[i];
+                for (auto address : {camera + 0x558, camera + 0x570, gCameraCache.origin})
+                    close_to(reinterpret_cast<const float*>(address)[i], xyz,
+                             "Camera left a player-anchored secondary/cached origin");
+                for (auto address : {camera + 0x564, gCameraCache.angles})
+                    close_to(reinterpret_cast<const float*>(address)[i], angle,
+                             "Camera left stale secondary/cached angles");
+                close_to(reinterpret_cast<const float*>(gCameraCache.forward)[i], angle + 10,
+                         "Forward cache was not derived from authored angles");
+                close_to(reinterpret_cast<const float*>(gCameraCache.right)[i], angle + 20,
+                         "Right cache was not derived from authored angles");
+                close_to(reinterpret_cast<const float*>(gCameraCache.up)[i], angle + 30,
+                         "Up cache was not derived from authored angles");
+            }
+            require(*reinterpret_cast<const unsigned char*>(camera + 0x555) ==
+                        (projection_flags & ~4u),
+                    "Camera did not preserve other view flags while selecting its main view");
+        }
+        return value;
     }
 
     void unchanged() const {
@@ -264,6 +354,17 @@ struct Fixture {
         }
         close_to(fov, original_fov, "Released camera overwrote FOV");
         close_to(aspect, original_aspect, "Released camera overwrote aspect");
+        for (unsigned i = 0; i < 3; ++i) {
+            for (auto address : {camera + 0x558, camera + 0x570, gCameraCache.origin})
+                close_to(reinterpret_cast<const float*>(address)[i], (i + 1) * 10,
+                         "Inactive camera overwrote the game's secondary origin");
+            for (auto address : {camera + 0x564, gCameraCache.angles})
+                close_to(reinterpret_cast<const float*>(address)[i], i + 1,
+                         "Inactive camera overwrote the game's cached angles");
+            for (auto address : {gCameraCache.forward, gCameraCache.right, gCameraCache.up})
+                close_to(reinterpret_cast<const float*>(address)[i], -7 - int(i),
+                         "Inactive camera overwrote the game's basis");
+        }
     }
 
     void applied(double phase, bool aspect_enabled = true) const {
@@ -884,6 +985,7 @@ void editor_framing_checks() {
 }
 
 void run() {
+    camera_cache_decoder();
     atomic_exports();
     replay_identity();
     Fixture f;
@@ -904,6 +1006,10 @@ void run() {
     require(status.ack_command == f.next_command &&
                 status.state == static_cast<unsigned>(State::Armed),
             "HOLD must acknowledge from the actual verified callback");
+    f.applied(.25);
+
+    status = f.frame(0x84);
+    require(!status.error, "Secondary view selection blocked the authored camera");
     f.applied(.25);
 
     std::snprintf(demo_name, sizeof(demo_name), "replays/native-smoke");
@@ -1205,8 +1311,35 @@ void run() {
 
 } // namespace smoke
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        if (argc == 4 && std::strcmp(argv[1], "--camera-layout") == 0) {
+            // Static verification only: SEC_IMAGE_NO_EXECUTE never invokes
+            // DllMain, resolves imports or executes the inspected game image.
+            HANDLE file = CreateFileA(argv[2], GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            smoke::require(file != INVALID_HANDLE_VALUE,
+                           "Could not read the supplied client image");
+            HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY | SEC_IMAGE_NO_EXECUTE,
+                                                0, 0, nullptr);
+            CloseHandle(file);
+            smoke::require(mapping != nullptr, "Could not map the client for static inspection");
+            void* image = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+            CloseHandle(mapping);
+            smoke::require(image != nullptr, "Could not view the client image");
+            const auto base = reinterpret_cast<std::uintptr_t>(image);
+            const auto setup = std::stoull(argv[3], nullptr, 16);
+            const auto result = camera_view::resolve(static_cast<HMODULE>(image), base + setup);
+            if (result.basis)
+                std::printf(
+                    "Camera layout verified: origin=%llx angles=%llx forward=%llx right=%llx up=%llx basis=%llx\n",
+                    result.origin - base, result.angles - base, result.forward - base,
+                    result.right - base, result.up - base,
+                    reinterpret_cast<std::uintptr_t>(result.basis) - base);
+            UnmapViewOfFile(image);
+            smoke::require(result.basis != nullptr, "Camera cache layout rejected");
+            return 0;
+        }
         smoke::run();
         return 0;
     } catch (const std::exception& error) {

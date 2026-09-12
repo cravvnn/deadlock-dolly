@@ -19,6 +19,7 @@ docs/CONSOLE_RESEARCH.md
 docs/GAME_UPDATES.md
 docs/HISTORY_VALIDATION.md
 docs/NATIVE_CAMERA.md
+docs/CAMERA_VISIBILITY.md
 docs/NATIVE_EFFECTS.md
 docs/STAGE1_TESTING.md
 docs/STAGE2_TESTING.md
@@ -88,6 +89,7 @@ native/src/dolly_renderer_diagnostics_win.cpp
 native/src/dolly_visualization.cpp
 native/src/dolly_visualization_runtime_win.cpp
 native/src/native_effects_win.hpp
+native/src/native_camera_view.hpp
 native/src/native_relief_win.hpp
 native/tests/bridge_smoke.cpp
 native/tests/compat_locator_tests.cpp

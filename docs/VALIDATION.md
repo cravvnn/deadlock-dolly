@@ -137,6 +137,12 @@ preroll to preserve its first requested frame, rather than an initial skip.
 
 ## Renderer research and observations
 
+September 12 camera consistency correction: native callback tests now cover
+the main/auxiliary/cached camera state together, including inactive and fault
+paths. A read-only mapping of the installed client passed the production
+layout resolver. See [Native camera visibility](CAMERA_VISIBILITY.md) for exact
+evidence and live-test limits. The following text records the earlier finding.
+
 Static comparison with HLAE found that Dolly overrides after Deadlock stores
 derived main-camera caches. A verified particle-system query reads those cached
 position/angle values. This can disagree with the rendered Dolly view, but the

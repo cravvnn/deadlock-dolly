@@ -29,6 +29,10 @@ The original game DLLs are not included in a Dolly release.
 
 ## What changes
 
+The native camera now synchronizes the related visibility camera state with
+its authored pose. See [Native camera visibility](CAMERA_VISIBILITY.md) for the
+verified layout checks, remaining limits and distant-camera test.
+
 | Control | Native playback behavior |
 | --- | --- |
 | Position and rotation | Evaluated and applied during each main-view callback |
