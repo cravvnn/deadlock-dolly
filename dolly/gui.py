@@ -425,7 +425,7 @@ class DollyApp:
         options = ttk.Frame(card, style="Card.TFrame")
         options.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
         ttk.Label(options, text="Video FPS", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
-        self.video_fps_combo = ttk.Combobox(options, textvariable=self.video_fps, values=("30", "60", "120"), state="readonly", width=5)
+        self.video_fps_combo = ttk.Combobox(options, textvariable=self.video_fps, values=("30", "60", "120", "300", "600"), state="readonly", width=5)
         self.video_fps_combo.pack(side="left", padx=(0, 18))
         ttk.Label(options, text="Bitrate", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
         self.video_bitrate_combo = ttk.Combobox(options, textvariable=self.video_bitrate, values=tuple(BITRATE_PRESETS), state="readonly", width=10)

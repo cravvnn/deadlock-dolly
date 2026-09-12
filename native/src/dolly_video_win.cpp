@@ -881,7 +881,8 @@ bool start(const Options& options) noexcept {
     try {
         const wchar_t* path = options.path;
         if (!path || !*path || std::wcslen(path) > 1023 ||
-            (options.fps != 30 && options.fps != 60 && options.fps != 120) ||
+            (options.fps != 30 && options.fps != 60 && options.fps != 120 && options.fps != 300 &&
+             options.fps != 600) ||
             options.bitrate < 1000000 || options.bitrate > 100000000)
             return false;
         // Refuse relative paths and URLs. The picker passes an absolute local

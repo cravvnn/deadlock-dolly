@@ -57,10 +57,17 @@ enum class EditorAction : std::uint32_t {
     SetPlaybackRate,
     ReShade,
     StartVideo,
-    StopVideo
+    StopVideo,
+    SetVideoFps,
+    SetVideoBitrate,
+    SetVideoEncoder,
+    SetVideoFixedStep,
+    SetVideoSpeed
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoSpeed) == 38,
+              "Stable video action IDs");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
@@ -78,7 +85,13 @@ struct EditorConfig {
     double playback_speed;
     std::uint32_t playback_rate;
     EditorBinding reshade_binding;
-    unsigned char padding[16];
+    // Export (recording) settings, published by the desktop Export tab so the
+    // in-game Export page can display and change them. These reuse the previous
+    // 16 reserved bytes, so the editor ABI and struct size are unchanged.
+    std::uint16_t video_fps, video_bitrate_mbps;
+    std::uint8_t video_encoder, video_flags; // flags bit 0: fixed-step export
+    float video_speed;
+    unsigned char padding[6];
 };
 struct EditorEvent {
     std::uint32_t sequence, action;
@@ -139,6 +152,9 @@ struct EditorSnapshot {
     bool playing = false, busy = false;
     double playback_speed = 1;
     std::uint32_t playback_rate = 60;
+    std::uint32_t video_fps = 60, video_bitrate_mbps = 20, video_codec = 0;
+    bool video_fixed_step = false;
+    double video_speed = 1;
     double horizontal_fov = 0;
     std::uint32_t view_width = 0, view_height = 0;
     CameraPose pose{};

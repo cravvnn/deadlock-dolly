@@ -627,6 +627,34 @@ void draw_path_guides(const EditorSnapshot& state,
     }
     draw->PopClipRect();
 }
+// Export encoder labels match the desktop Export tab's codec list; the numeric
+// IDs are the same dolly::video::Codec values sent over the editor wire.
+const char* video_codec_label(std::uint32_t id) noexcept {
+    switch (id) {
+    case 1:
+        return "NVIDIA H.264 (NVENC)";
+    case 2:
+        return "NVIDIA HEVC (NVENC)";
+    case 3:
+        return "H.264 (Media Foundation)";
+    case 4:
+        return "Software H.264 (x264)";
+    case 5:
+        return "Software HEVC (x265)";
+    case 6:
+        return "Intel H.264 (Quick Sync)";
+    case 7:
+        return "Intel HEVC (Quick Sync)";
+    case 8:
+        return "AMD H.264 (AMF)";
+    case 9:
+        return "AMD HEVC (AMF)";
+    case 10:
+        return "Lossless FFV1 (.mkv)";
+    default:
+        return "Auto (hardware when available)";
+    }
+}
 void draw_panel(const EditorSnapshot& state) {
     auto& io = ImGui::GetIO();
     const float margin =
@@ -634,11 +662,13 @@ void draw_panel(const EditorSnapshot& state) {
     const ImVec2 maximum(std::max(1.0f, io.DisplaySize.x - 2 * margin),
                          std::max(1.0f, io.DisplaySize.y - 2 * margin));
     ImGui::SetNextWindowPos(ImVec2(margin, margin), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(std::min(470.0f * panel_scale, maximum.x),
-                                    std::min(700.0f * panel_scale, maximum.y)),
+    // Open large enough for the fullest page (Export) so nothing needs a manual
+    // resize; the window stays resizable and is clamped to the game window.
+    ImGui::SetNextWindowSize(ImVec2(std::min(560.0f * panel_scale, maximum.x),
+                                    std::min(860.0f * panel_scale, maximum.y)),
                              ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(340.0f * panel_scale, maximum.x),
-                                               std::min(340.0f * panel_scale, maximum.y)),
+    ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(380.0f * panel_scale, maximum.x),
+                                               std::min(360.0f * panel_scale, maximum.y)),
                                         maximum);
     bool close = false;
     if (ImGui::Begin("DEADLOCK DOLLY", nullptr,
@@ -683,182 +713,273 @@ void draw_panel(const EditorSnapshot& state) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
         if (ImGui::BeginChild("##editor-content", ImVec2(0, -footer_height),
                               ImGuiChildFlags_None)) {
-            ImGui::BeginDisabled(!state.ready || state.busy);
-            if (begin_panel_card("##cameras-card")) {
-                char count[32]{};
-                std::snprintf(count, sizeof(count), "%u saved", state.camera_count);
-                section_title("Cameras", count);
-                action_button(state.camera_count ? "Capture camera here" : "Start path here",
-                              EditorAction::Capture, ImGui::GetContentRegionAvail().x, 0, true);
-                ImGui::BeginDisabled(!state.camera_count);
-                char selected[64]{};
-                if (state.camera_count)
-                    std::snprintf(selected, sizeof(selected), "View %u of %u",
-                                  state.selected_camera + 1, state.camera_count);
-                else
-                    std::snprintf(selected, sizeof(selected), "No camera views yet");
-                const float replace_width =
-                    ImGui::CalcTextSize("Replace").x + ImGui::GetStyle().FramePadding.x * 2;
-                ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x -
-                                                           replace_width -
-                                                           ImGui::GetStyle().ItemSpacing.x));
-                if (ImGui::BeginCombo("##selected-camera", selected)) {
-                    const std::uint32_t count = std::min<std::uint32_t>(state.camera_count, 10000);
-                    for (std::uint32_t i = 0; i < count; ++i) {
-                        char name[48]{};
-                        std::snprintf(name, sizeof(name), "View %u", i + 1);
-                        if (ImGui::Selectable(name, i == state.selected_camera))
-                            editor_enqueue(EditorAction::SelectView, double(i));
-                        if (i == state.selected_camera)
-                            ImGui::SetItemDefaultFocus();
+            ImGui::BeginTabBar("##dolly-pages", ImGuiTabBarFlags_None);
+            if (ImGui::BeginTabItem("Editor")) {
+                ImGui::BeginDisabled(!state.ready || state.busy);
+                if (begin_panel_card("##cameras-card")) {
+                    char count[32]{};
+                    std::snprintf(count, sizeof(count), "%u saved", state.camera_count);
+                    section_title("Cameras", count);
+                    action_button(state.camera_count ? "Capture camera here" : "Start path here",
+                                  EditorAction::Capture, ImGui::GetContentRegionAvail().x, 0, true);
+                    ImGui::BeginDisabled(!state.camera_count);
+                    char selected[64]{};
+                    if (state.camera_count)
+                        std::snprintf(selected, sizeof(selected), "View %u of %u",
+                                      state.selected_camera + 1, state.camera_count);
+                    else
+                        std::snprintf(selected, sizeof(selected), "No camera views yet");
+                    const float replace_width =
+                        ImGui::CalcTextSize("Replace").x + ImGui::GetStyle().FramePadding.x * 2;
+                    ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x -
+                                                               replace_width -
+                                                               ImGui::GetStyle().ItemSpacing.x));
+                    if (ImGui::BeginCombo("##selected-camera", selected)) {
+                        const std::uint32_t count =
+                            std::min<std::uint32_t>(state.camera_count, 10000);
+                        for (std::uint32_t i = 0; i < count; ++i) {
+                            char name[48]{};
+                            std::snprintf(name, sizeof(name), "View %u", i + 1);
+                            if (ImGui::Selectable(name, i == state.selected_camera))
+                                editor_enqueue(EditorAction::SelectView, double(i));
+                            if (i == state.selected_camera)
+                                ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
                     }
-                    ImGui::EndCombo();
-                }
-                ImGui::SameLine();
-                action_button("Replace", EditorAction::Replace, replace_width);
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Replace the selected view with the current camera.");
-                const float half =
-                    (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                action_button("Previous view", EditorAction::PreviousView, half);
-                ImGui::SameLine();
-                action_button("Next view", EditorAction::NextView, half);
-                ImGui::EndDisabled();
-                ImGui::Spacing();
-                ImGui::Checkbox("Show path guides", &show_path_guides);
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Camera positions and spline while editing a paused replay. The selected camera is gold. Guides show through walls and hide during playback.");
-                const auto guides = visualization_snapshot();
-                if (show_path_guides && state.camera_count && !guides) {
-                    const auto viewer_state = visualization_runtime_state();
-                    if (viewer_state == VisualizationRuntimeState::Invalid ||
-                        viewer_state == VisualizationRuntimeState::Unavailable)
-                        ImGui::TextWrapped(
-                            "Path guides unavailable. Export diagnostics from the desktop editor.");
-                }
-                if (show_path_guides && guides && guides->camera_count() > guides->cameras().size())
-                    ImGui::TextDisabled("%u of %u camera markers; selected included",
-                                        unsigned(guides->cameras().size()),
-                                        unsigned(guides->camera_count()));
-            }
-            end_panel_card();
-            if (begin_panel_card("##replay-card")) {
-                char timing[64]{};
-                if (state.duration > 0)
-                    std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
-                                  state.duration);
-                section_title("Replay", timing[0] ? timing : nullptr);
-                if (state.duration > 0) {
-                    ImGui::ProgressBar(std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
-                                       ImVec2(-1, 4 * panel_scale), "");
+                    ImGui::SameLine();
+                    action_button("Replace", EditorAction::Replace, replace_width);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Replace the selected view with the current camera.");
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    action_button("Previous view", EditorAction::PreviousView, half);
+                    ImGui::SameLine();
+                    action_button("Next view", EditorAction::NextView, half);
+                    ImGui::EndDisabled();
                     ImGui::Spacing();
-                }
-                const float half =
-                    (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                ImGui::BeginDisabled(state.camera_count < 2);
-                action_button("Play shot", EditorAction::PlayPath, half);
-                ImGui::EndDisabled();
-                ImGui::SameLine();
-                action_button(state.paused ? "Play replay" : "Pause replay",
-                              EditorAction::PlayPause, half);
-                action_button("Back 1 second", EditorAction::SeekBack, half);
-                ImGui::SameLine();
-                action_button("Forward 1 second", EditorAction::SeekForward, half);
-                ImGui::Spacing();
-                ImGui::BeginDisabled(state.playing);
-                ImGui::TextUnformatted("Playback speed");
-                ImGui::SetNextItemWidth(-1);
-                char playback_speed[32]{};
-                std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
-                              state.playback_speed);
-                if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
-                    for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
-                        char label[32]{};
-                        std::snprintf(label, sizeof(label), "%.3g x", value);
-                        if (ImGui::Selectable(label, value == state.playback_speed))
-                            editor_enqueue(EditorAction::SetPlaybackSpeed, value);
+                    ImGui::Checkbox("Show path guides", &show_path_guides);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Camera positions and spline while editing a paused replay. The selected camera is gold. Guides show through walls and hide during playback.");
+                    const auto guides = visualization_snapshot();
+                    if (show_path_guides && state.camera_count && !guides) {
+                        const auto viewer_state = visualization_runtime_state();
+                        if (viewer_state == VisualizationRuntimeState::Invalid ||
+                            viewer_state == VisualizationRuntimeState::Unavailable)
+                            ImGui::TextWrapped(
+                                "Path guides unavailable. Export diagnostics from the desktop editor.");
                     }
-                    ImGui::EndCombo();
+                    if (show_path_guides && guides &&
+                        guides->camera_count() > guides->cameras().size())
+                        ImGui::TextDisabled("%u of %u camera markers; selected included",
+                                            unsigned(guides->cameras().size()),
+                                            unsigned(guides->camera_count()));
                 }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Playback speed for the next Play shot. Shared with the desktop controls.");
-                ImGui::TextUnformatted("Updates / s");
-                ImGui::SetNextItemWidth(-1);
-                char playback_rate[32]{};
-                std::snprintf(playback_rate, sizeof(playback_rate), "%u", state.playback_rate);
-                if (ImGui::BeginCombo("##playback-rate", playback_rate)) {
-                    for (unsigned value : {30u, 60u, 120u}) {
-                        char label[32]{};
-                        std::snprintf(label, sizeof(label), "%u", value);
-                        if (ImGui::Selectable(label, value == state.playback_rate))
-                            editor_enqueue(EditorAction::SetPlaybackRate, double(value));
+                end_panel_card();
+                if (begin_panel_card("##replay-card")) {
+                    char timing[64]{};
+                    if (state.duration > 0)
+                        std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
+                                      state.duration);
+                    section_title("Replay", timing[0] ? timing : nullptr);
+                    if (state.duration > 0) {
+                        ImGui::ProgressBar(
+                            std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
+                            ImVec2(-1, 4 * panel_scale), "");
+                        ImGui::Spacing();
                     }
-                    ImGui::EndCombo();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
-                ImGui::EndDisabled();
-            }
-            end_panel_card();
-            if (begin_panel_card("##video-card")) {
-                section_title("Video", "MP4");
-                const auto recording = video::status();
-                const bool active = recording.state == video::State::starting ||
-                                    recording.state == video::State::recording;
-                if (active) {
-                    ImGui::Text("%.1f s  |  %llu frames", double(recording.duration_100ns) / 1e7,
-                                static_cast<unsigned long long>(recording.frames_written));
-                    action_button("Finish recording", EditorAction::StopVideo,
-                                  ImGui::GetContentRegionAvail().x);
-                } else {
-                    ImGui::BeginDisabled(recording.state == video::State::finalizing);
-                    action_button(recording.state == video::State::finalizing ? "Finalizing MP4..."
-                                                                              : "Record video",
-                                  EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    ImGui::BeginDisabled(state.camera_count < 2);
+                    action_button("Play shot", EditorAction::PlayPath, half);
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    action_button(state.paused ? "Play replay" : "Pause replay",
+                                  EditorAction::PlayPause, half);
+                    action_button("Back 1 second", EditorAction::SeekBack, half);
+                    ImGui::SameLine();
+                    action_button("Forward 1 second", EditorAction::SeekForward, half);
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    ImGui::TextUnformatted("Playback speed");
+                    ImGui::SetNextItemWidth(-1);
+                    char playback_speed[32]{};
+                    std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
+                                  state.playback_speed);
+                    if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
+                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%.3g x", value);
+                            if (ImGui::Selectable(label, value == state.playback_speed))
+                                editor_enqueue(EditorAction::SetPlaybackSpeed, value);
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Playback speed for the next Play shot. Shared with the desktop controls.");
+                    ImGui::TextUnformatted("Updates / s");
+                    ImGui::SetNextItemWidth(-1);
+                    char playback_rate[32]{};
+                    std::snprintf(playback_rate, sizeof(playback_rate), "%u", state.playback_rate);
+                    if (ImGui::BeginCombo("##playback-rate", playback_rate)) {
+                        for (unsigned value : {30u, 60u, 120u}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%u", value);
+                            if (ImGui::Selectable(label, value == state.playback_rate))
+                                editor_enqueue(EditorAction::SetPlaybackRate, double(value));
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
                     ImGui::EndDisabled();
                 }
-                ImGui::TextWrapped(
-                    "Output folder and FPS: desktop Export tab. Video only; game resolution.");
-                if (recording.frames_dropped)
-                    ImGui::Text("Missed capture slots: %llu",
-                                static_cast<unsigned long long>(recording.frames_dropped));
-                if (reshade_available() && ImGui::Button("ReShade", ImVec2(-1, 0)))
-                    editor_enqueue(EditorAction::ReShade);
+                end_panel_card();
+                if (begin_panel_card("##flight-card")) {
+                    // Send one change at the end of a drag, not a settings write per frame.
+                    static float speed_draft = 400.0f;
+                    static bool speed_editing = false;
+                    if (!speed_editing)
+                        speed_draft = std::clamp(static_cast<float>(state.speed), 1.0f, 10000.0f);
+                    char speed_label[48]{};
+                    std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
+                    section_title("Free camera", speed_label);
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                                        ImVec2(12 * panel_scale, 3 * panel_scale));
+                    ImGui::SliderFloat("##flight-speed", &speed_draft, 1.0f, 10000.0f, "",
+                                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::PopStyleVar();
+                    const bool speed_committed = ImGui::IsItemDeactivatedAfterEdit();
+                    speed_editing = ImGui::IsItemActive();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Movement speed in world units per second. Ctrl+click to enter a value.");
+                    if (speed_committed)
+                        editor_enqueue(EditorAction::SetSpeed, double(speed_draft));
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    action_button("Fly camera", EditorAction::Flight, half);
+                    ImGui::SameLine();
+                    action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
+                }
+                end_panel_card();
+                ImGui::EndDisabled();
+                ImGui::EndTabItem();
             }
-            end_panel_card();
-            if (begin_panel_card("##flight-card")) {
-                // Send one change at the end of a drag, not a settings write per frame.
-                static float speed_draft = 400.0f;
-                static bool speed_editing = false;
-                if (!speed_editing)
-                    speed_draft = std::clamp(static_cast<float>(state.speed), 1.0f, 10000.0f);
-                char speed_label[48]{};
-                std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
-                section_title("Free camera", speed_label);
-                ImGui::SetNextItemWidth(-1);
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                                    ImVec2(12 * panel_scale, 3 * panel_scale));
-                ImGui::SliderFloat("##flight-speed", &speed_draft, 1.0f, 10000.0f, "",
-                                   ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
-                ImGui::PopStyleVar();
-                const bool speed_committed = ImGui::IsItemDeactivatedAfterEdit();
-                speed_editing = ImGui::IsItemActive();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Movement speed in world units per second. Ctrl+click to enter a value.");
-                if (speed_committed)
-                    editor_enqueue(EditorAction::SetSpeed, double(speed_draft));
-                const float half =
-                    (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                action_button("Fly camera", EditorAction::Flight, half);
-                ImGui::SameLine();
-                action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
+            if (ImGui::BeginTabItem("Export")) {
+                if (begin_panel_card("##video-card")) {
+                    section_title("Recording", "MP4");
+                    const auto recording = video::status();
+                    const bool active = recording.state == video::State::starting ||
+                                        recording.state == video::State::recording;
+                    ImGui::BeginDisabled(!state.ready || state.busy);
+                    if (active) {
+                        ImGui::Text("%.1f s  |  %llu frames",
+                                    double(recording.duration_100ns) / 1e7,
+                                    static_cast<unsigned long long>(recording.frames_written));
+                        action_button("Finish recording", EditorAction::StopVideo,
+                                      ImGui::GetContentRegionAvail().x);
+                    } else {
+                        ImGui::BeginDisabled(recording.state == video::State::finalizing);
+                        action_button(recording.state == video::State::finalizing
+                                          ? "Finalizing MP4..."
+                                          : "Record video",
+                                      EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
+                        ImGui::EndDisabled();
+                    }
+                    ImGui::EndDisabled();
+                    if (recording.frames_dropped)
+                        ImGui::Text("Missed capture slots: %llu",
+                                    static_cast<unsigned long long>(recording.frames_dropped));
+                    ImGui::TextDisabled("Output folder and FFmpeg runtime: desktop Export tab.");
+                }
+                end_panel_card();
+                if (begin_panel_card("##export-settings")) {
+                    char bitrate[64]{};
+                    std::snprintf(bitrate, sizeof(bitrate), "%u Mbps", state.video_bitrate_mbps);
+                    section_title("Export settings", bitrate);
+                    ImGui::TextUnformatted("Video FPS");
+                    ImGui::SetNextItemWidth(-1);
+                    char fps_label[16]{};
+                    std::snprintf(fps_label, sizeof(fps_label), "%u", state.video_fps);
+                    if (ImGui::BeginCombo("##export-fps", fps_label)) {
+                        for (unsigned value : {30u, 60u, 120u, 300u, 600u}) {
+                            char label[16]{};
+                            std::snprintf(label, sizeof(label), "%u", value);
+                            if (ImGui::Selectable(label, value == state.video_fps))
+                                editor_enqueue(EditorAction::SetVideoFps, double(value));
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "30-120 record in real time; 300 and 600 need Fixed-step export.");
+                    ImGui::TextUnformatted("Bitrate");
+                    ImGui::SetNextItemWidth(-1);
+                    char bitrate_label[24]{};
+                    std::snprintf(bitrate_label, sizeof(bitrate_label), "%u Mbps",
+                                  state.video_bitrate_mbps);
+                    if (ImGui::BeginCombo("##export-bitrate", bitrate_label)) {
+                        for (unsigned value : {10u, 20u, 40u}) {
+                            char label[24]{};
+                            std::snprintf(label, sizeof(label), "%u Mbps", value);
+                            if (ImGui::Selectable(label, value == state.video_bitrate_mbps))
+                                editor_enqueue(EditorAction::SetVideoBitrate, double(value));
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::TextUnformatted("Encoder");
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::BeginCombo("##export-encoder",
+                                          video_codec_label(state.video_codec))) {
+                        for (std::uint32_t id = 0; id <= 10; ++id) {
+                            if (ImGui::Selectable(video_codec_label(id), id == state.video_codec))
+                                editor_enqueue(EditorAction::SetVideoEncoder, double(id));
+                        }
+                        ImGui::EndCombo();
+                    }
+                    bool fixed_step = state.video_fixed_step;
+                    if (ImGui::Checkbox("Fixed-step export (frame-accurate)", &fixed_step))
+                        editor_enqueue(EditorAction::SetVideoFixedStep, fixed_step ? 1.0 : 0.0);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Render exactly one frame per output frame. Required for 300/600 FPS and removes real-time encoder hitching.");
+                    ImGui::TextUnformatted("Export speed");
+                    ImGui::SetNextItemWidth(-1);
+                    char export_speed[32]{};
+                    std::snprintf(export_speed, sizeof(export_speed), "%.3g x", state.video_speed);
+                    if (ImGui::BeginCombo("##export-speed", export_speed)) {
+                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%.3g x", value);
+                            if (ImGui::Selectable(label, value == state.video_speed))
+                                editor_enqueue(EditorAction::SetVideoSpeed, value);
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Slow-motion playback rate for fixed-step export. Shared with the desktop Export tab.");
+                }
+                end_panel_card();
+                if (begin_panel_card("##reshade-card")) {
+                    section_title("Effects", "ReShade");
+                    if (reshade_available()) {
+                        if (ImGui::Button("ReShade menu", ImVec2(-1, 0)))
+                            editor_enqueue(EditorAction::ReShade);
+                    } else {
+                        ImGui::TextWrapped(
+                            "Select the ReShade runtime in the desktop Export tab to enable it.");
+                    }
+                }
+                end_panel_card();
+                ImGui::EndTabItem();
             }
-            end_panel_card();
-            ImGui::EndDisabled();
+            ImGui::EndTabBar();
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();

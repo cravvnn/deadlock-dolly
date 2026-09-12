@@ -12,8 +12,13 @@ import math
 
 from .native_bridge import NativeBridgeError
 from .settings import save_settings
+from .video_export import (BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES, CODEC_LABEL_TO_KEY,
+                           DEFAULT_CODEC_KEY)
 
 LOG = logging.getLogger(__name__)
+VIDEO_FPS = (30, 60, 120, 300, 600)
+VIDEO_BITRATE_MBPS = (10, 20, 40)
+CODEC_MAX = 10
 
 
 def _bridge(app):
@@ -45,6 +50,51 @@ def _playback_values(app):
     except (ValueError, TypeError):
         pass
     return speed, rate
+
+
+def _codec_label(codec_id):
+    for _key, label, _encoder, codec, _needs in CODEC_CHOICES:
+        if codec == codec_id:
+            return label
+    return CODEC_CHOICES[0][1]
+
+
+def _video_values(app):
+    # The in-game Export page mirrors the desktop Export tab. Keep the last
+    # valid values while the desktop fields are mid-edit, exactly like playback.
+    previous = getattr(app, "_native_editor_config_cache", None) or {}
+    fps = previous.get("video_fps", 60)
+    bitrate = previous.get("video_bitrate_mbps", 20)
+    codec = previous.get("video_encoder", 0)
+    fixed = bool(previous.get("video_fixed_step", False))
+    speed = previous.get("video_speed", 1.0)
+    try:
+        candidate = int(_value(app, "video_fps", 60))
+        if candidate in VIDEO_FPS:
+            fps = candidate
+    except (ValueError, TypeError):
+        pass
+    try:
+        candidate = BITRATE_PRESETS.get(_value(app, "video_bitrate", "20 Mbps"))
+        if candidate in (10_000_000, 20_000_000, 40_000_000):
+            bitrate = candidate // 1_000_000
+    except (ValueError, TypeError, AttributeError):
+        pass
+    try:
+        key = CODEC_LABEL_TO_KEY.get(_value(app, "video_codec", ""), DEFAULT_CODEC_KEY)
+        candidate = CODEC_BY_KEY[key][2]
+        if 0 <= candidate <= CODEC_MAX:
+            codec = candidate
+    except (ValueError, TypeError, KeyError, IndexError):
+        pass
+    fixed = bool(_value(app, "video_fixed_step", fixed))
+    try:
+        candidate = float(_value(app, "video_export_speed", 1.0))
+        if math.isfinite(candidate) and .05 <= candidate <= 4:
+            speed = candidate
+    except (ValueError, TypeError):
+        pass
+    return fps, bitrate, codec, fixed, speed
 
 
 def _configure_visualization(app, bridge, active, selected):
@@ -100,6 +150,7 @@ def configure(app):
     selected = selected if selected is not None and 0 <= selected < count else 0
     playhead = float(_value(app, "shot_time", 0) or 0)
     playback_speed, playback_rate = _playback_values(app)
+    video_fps, video_bitrate, video_encoder, video_fixed_step, video_speed = _video_values(app)
     values = dict(enabled=active, bindings=settings.action_bindings,
                   reshade_binding=settings.reshade_binding,
                   speed=settings.movement_speed, sensitivity=settings.mouse_sensitivity,
@@ -108,7 +159,10 @@ def configure(app):
                   duration=float(app.project.duration), playhead=max(0.0, playhead),
                   replay_tick=int(status.get("tick") or 0),
                   playing=bool(status.get("playing")), busy=bool(app.busy),
-                  playback_speed=playback_speed, playback_rate=playback_rate)
+                  playback_speed=playback_speed, playback_rate=playback_rate,
+                  video_fps=video_fps, video_bitrate_mbps=video_bitrate,
+                  video_encoder=video_encoder, video_fixed_step=video_fixed_step,
+                  video_speed=video_speed)
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
     # Explicit owner changes are handled only by command transitions below.
     if getattr(app, "_native_editor_config_cache", None) != values or getattr(app, "_native_editor_bridge", None) is not bridge:
@@ -231,6 +285,40 @@ def dispatch(app, event, bridge):
             if value not in (30, 60, 120):
                 raise ValueError("Choose a playback update rate of 30, 60, or 120.")
             app.rate.set(str(int(value)))
+        configure(app)
+    elif action in ("set_video_fps", "set_video_bitrate", "set_video_encoder"):
+        value = event["value"]
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
+            raise ValueError("Export option must be a finite number")
+        if value != int(value):
+            raise ValueError("Export option must be a whole number")
+        value = int(value)
+        if action == "set_video_fps":
+            if value not in VIDEO_FPS:
+                raise ValueError("Video FPS must be 30, 60, 120, 300, or 600.")
+            app.video_fps.set(str(value))
+        elif action == "set_video_bitrate":
+            if value not in VIDEO_BITRATE_MBPS:
+                raise ValueError("Video bitrate must be 10, 20, or 40 Mbps.")
+            label = next((name for name, bps in BITRATE_PRESETS.items()
+                          if bps == value * 1_000_000), None)
+            if label is None:
+                raise ValueError("Video bitrate must be 10, 20, or 40 Mbps.")
+            app.video_bitrate.set(label)
+        else:
+            if not 0 <= value <= CODEC_MAX:
+                raise ValueError("Unknown video encoder.")
+            app.video_codec.set(_codec_label(value))
+        configure(app)
+    elif action == "set_video_fixed_step":
+        app.video_fixed_step.set(bool(event["value"]))
+        configure(app)
+    elif action == "set_video_speed":
+        value = event["value"]
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or not .05 <= value <= 4):
+            raise ValueError("Export speed must be between 0.05 and 4.")
+        app.video_export_speed.set(f"{value:g}")
         configure(app)
     else:
         raise ValueError("The native editor requested an unsupported UI action")

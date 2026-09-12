@@ -13,13 +13,18 @@ STATUS_OFFSET = 2 * 1024 * 1024 + 2048
 EDITOR_ABI = 2
 CONFIG_MAGIC = b"DLYEDIT1"
 STATUS_MAGIC = b"DLYEDS01"
-CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI2H16s")
+CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI2H2H2Bf6s")
+VIDEO_FPS = (30, 60, 120, 300, 600)
+VIDEO_BITRATE_MBPS = (10, 20, 40)
+VIDEO_CODEC_MAX = 10
 HEADER = struct.Struct("<8s8Id7d128sdiIQ")
 EVENT = struct.Struct("<IId7diI")
 EVENT_COUNT = 16
 STATUS_BYTES = HEADER.size + EVENT.size * EVENT_COUNT
 OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused", "reshade")
-EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate", "reshade", "start_video", "stop_video")
+EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate",
+                 "reshade", "start_video", "stop_video", "set_video_fps", "set_video_bitrate",
+                 "set_video_encoder", "set_video_fixed_step", "set_video_speed")
 
 
 def _text(value, capacity):
@@ -65,6 +70,17 @@ def pack_config(sequence, owner_sequence, ack_event, values):
     playback_rate = _uint(values.get("playback_rate", 60), "playback update rate")
     if playback_rate not in (30, 60, 120):
         raise ValueError("Native editor playback update rate must be 30, 60, or 120")
+    video_fps = _uint(values.get("video_fps", 60), "video fps")
+    if video_fps not in VIDEO_FPS:
+        raise ValueError("Native editor video FPS must be 30, 60, 120, 300, or 600")
+    video_bitrate = _uint(values.get("video_bitrate_mbps", 20), "video bitrate")
+    if video_bitrate not in VIDEO_BITRATE_MBPS:
+        raise ValueError("Native editor video bitrate must be 10, 20, or 40 Mbps")
+    video_encoder = _uint(values.get("video_encoder", 0), "video encoder")
+    if video_encoder > VIDEO_CODEC_MAX:
+        raise ValueError("Unknown native editor video encoder")
+    video_flags = 1 if values.get("video_fixed_step") else 0
+    video_speed = _finite(values.get("video_speed", 1.0), .05, 4, "video export speed")
     return CONFIG.pack(
         CONFIG_MAGIC, _uint(sequence, "sequence"), EDITOR_ABI, int(enabled), OWNERS.index(owner),
         _uint(owner_sequence, "owner sequence"), selected, count, _uint(ack_event, "event acknowledgement"),
@@ -77,7 +93,8 @@ def pack_config(sequence, owner_sequence, ack_event, values):
         int(bool(values.get("playing", False))) | int(bool(values.get("busy", False))) << 1,
         _finite(values.get("playback_speed", 1.0), .05, 4, "playback speed"),
         playback_rate, 0 if reshade is None else reshade.vk,
-        0 if reshade is None else reshade.modifiers, b"\0" * 16)
+        0 if reshade is None else reshade.modifiers,
+        video_fps, video_bitrate, video_encoder, video_flags, video_speed, b"\0" * 6)
 
 
 def unpack_status(data, ack_event=0):

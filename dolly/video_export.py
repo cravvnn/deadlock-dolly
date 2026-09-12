@@ -110,8 +110,8 @@ class VideoOptions:
     speed: float = 1.0
 
     def validated(self) -> VideoOptions:
-        if type(self.fps) is not int or self.fps not in (30, 60, 120):
-            raise ValueError("Choose a video frame rate of 30, 60 or 120 FPS.")
+        if type(self.fps) is not int or self.fps not in (30, 60, 120, 300, 600):
+            raise ValueError("Choose a video frame rate of 30, 60, 120, 300 or 600 FPS.")
         if type(self.bitrate) is not int or self.bitrate not in BITRATE_PRESETS.values():
             raise ValueError("Choose a video bitrate of 10, 20, or 40 Mbps.")
         if self.codec not in CODEC_BY_KEY:

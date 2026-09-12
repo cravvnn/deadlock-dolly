@@ -104,7 +104,7 @@ class MediaTransportTests(unittest.TestCase):
         for path in ("relative.mp4", "C:relative.mp4", "\\root-only.mp4", "C:\\bad\0.mp4", "C:\\" + "x" * 1024):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 wire.pack_command(2, "start_video", path=path)
-        for fps in (True, 0, 24, 240):
+        for fps in (True, 0, 24, 200):
             with self.subTest(fps=fps), self.assertRaises(ValueError):
                 wire.pack_command(2, "start_video", path="C:\\ok.mp4", fps=fps)
 

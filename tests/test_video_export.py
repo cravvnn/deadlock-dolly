@@ -59,6 +59,11 @@ class VideoExportTests(unittest.TestCase):
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
+    def test_high_frame_rates_are_accepted(self):
+        for fps in (300, 600):
+            with self.subTest(fps=fps):
+                VideoOptions(self.path, fps, 20_000_000).validated()
+
     def test_120_fps_is_sent_to_native_without_changing_playback(self):
         self.export.start(VideoOptions(self.path, 120, 40_000_000))
         self.bridge.start_video.assert_called_once_with(
@@ -80,7 +85,7 @@ class VideoExportTests(unittest.TestCase):
             VideoOptions(self.path).validated()
 
     def test_invalid_options_are_rejected_before_native_start(self):
-        for options in (VideoOptions(self.path, True), VideoOptions(self.path, 240),
+        for options in (VideoOptions(self.path, True), VideoOptions(self.path, 200),
                         VideoOptions(self.path, 60, 0), VideoOptions(self.path.with_suffix(".avi")),
                         VideoOptions(self.path.parent / "missing" / "shot.mp4")):
             with self.subTest(options=options), self.assertRaises(ValueError):

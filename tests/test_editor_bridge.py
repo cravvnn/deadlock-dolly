@@ -65,7 +65,8 @@ class EditorBridgeTests(unittest.TestCase):
         config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
         self.assertEqual(struct.unpack_from("<dI", config, 416), (.1, 120))
         self.assertEqual(struct.unpack_from("<HH", config, 428), (0x7a, 0))
-        self.assertEqual(config[432:], b"\0"*16)
+        self.assertEqual(struct.unpack_from("<HHBBf", config, 432), (60, 20, 0, 0, 1.0))
+        self.assertEqual(config[442:], b"\0"*6)
         before = bytes(config)
         for setting in ({"playback_speed": 0}, {"playback_speed": float("nan")},
                         {"playback_rate": 90}, {"playback_rate": 60.0}, {"playback_rate": True}):
@@ -97,6 +98,21 @@ class EditorBridgeTests(unittest.TestCase):
         self.publish([(1, 32, 0), (2, 33, 0)])
         self.assertEqual([e["action"] for e in self.bridge.editor_status()["events"]],
                          ["start_video", "stop_video"])
+
+    def test_video_export_config_round_trips(self):
+        self.bridge.configure_editor(video_fps=600, video_bitrate_mbps=40, video_encoder=2,
+                                     video_fixed_step=True, video_speed=.1)
+        config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
+        self.assertEqual(struct.unpack_from("<HHBB", config, 432), (600, 40, 2, 1))
+        self.assertAlmostEqual(struct.unpack_from("<f", config, 438)[0], .1, places=5)
+
+    def test_video_export_action_ids_follow_media_actions(self):
+        self.publish([(1, 34, 300), (2, 35, 40), (3, 36, 2), (4, 37, 1), (5, 38, .1)])
+        events = self.bridge.editor_status()["events"]
+        self.assertEqual([(e["action"], e["value"]) for e in events],
+                         [("set_video_fps", 300), ("set_video_bitrate", 40),
+                          ("set_video_encoder", 2), ("set_video_fixed_step", 1),
+                          ("set_video_speed", .1)])
 
     def test_old_editor_abi_is_rejected(self):
         self.publish()

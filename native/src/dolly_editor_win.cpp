@@ -458,6 +458,17 @@ EditorSnapshot editor_snapshot() noexcept {
             result.playback_speed = c->playback_speed;
         if (c->playback_rate == 30 || c->playback_rate == 60 || c->playback_rate == 120)
             result.playback_rate = c->playback_rate;
+        if (c->video_fps == 30 || c->video_fps == 60 || c->video_fps == 120 ||
+            c->video_fps == 300 || c->video_fps == 600)
+            result.video_fps = c->video_fps;
+        if (c->video_bitrate_mbps == 10 || c->video_bitrate_mbps == 20 ||
+            c->video_bitrate_mbps == 40)
+            result.video_bitrate_mbps = c->video_bitrate_mbps;
+        if (c->video_encoder <= 10)
+            result.video_codec = c->video_encoder;
+        result.video_fixed_step = (c->video_flags & 1) != 0;
+        if (std::isfinite(c->video_speed) && c->video_speed >= .05f && c->video_speed <= 4.0f)
+            result.video_speed = c->video_speed;
     }
     // Focus and ownership are separate facts. A desktop error dialog must not
     // erase which UI owns input, or recovery can steal the game's mouse/console.
@@ -782,15 +793,20 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             std::memcpy(&c, src, sizeof(c));
             MemoryBarrier();
             LONG after = InterlockedCompareExchange(seq, 0, 0);
-            bool okay = before == after && !(after & 1) &&
-                        std::memcmp(c.magic, "DLYEDIT1", 8) == 0 && c.abi == kEditorAbi &&
-                        c.enabled <= 1 && (c.owner <= 4 || c.owner == 6) && c.flags <= 1 &&
-                        std::isfinite(c.speed) && c.speed >= 1 && c.speed <= 10000 &&
-                        std::isfinite(c.sensitivity) && c.sensitivity >= .001 &&
-                        c.sensitivity <= 10 && std::isfinite(c.duration) && c.duration >= 0 &&
-                        std::isfinite(c.playhead) && c.playhead >= 0 && c.camera_count <= 4096 &&
-                        c.playback_flags <= 3 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
-                        std::memchr(c.message, 0, sizeof(c.message));
+            bool okay =
+                before == after && !(after & 1) && std::memcmp(c.magic, "DLYEDIT1", 8) == 0 &&
+                c.abi == kEditorAbi && c.enabled <= 1 && (c.owner <= 4 || c.owner == 6) &&
+                c.flags <= 1 && std::isfinite(c.speed) && c.speed >= 1 && c.speed <= 10000 &&
+                std::isfinite(c.sensitivity) && c.sensitivity >= .001 && c.sensitivity <= 10 &&
+                std::isfinite(c.duration) && c.duration >= 0 && std::isfinite(c.playhead) &&
+                c.playhead >= 0 && c.camera_count <= 4096 && c.playback_flags <= 3 &&
+                (c.video_fps == 0 || c.video_fps == 30 || c.video_fps == 60 || c.video_fps == 120 ||
+                 c.video_fps == 300 || c.video_fps == 600) &&
+                (c.video_bitrate_mbps == 0 || c.video_bitrate_mbps == 10 ||
+                 c.video_bitrate_mbps == 20 || c.video_bitrate_mbps == 40) &&
+                c.video_encoder <= 10 && c.video_flags <= 1 && c.video_speed >= 0 &&
+                c.video_speed <= 4 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
+                std::memchr(c.message, 0, sizeof(c.message));
             for (auto& b : c.bindings)
                 okay = okay && b.vk < 256 && b.modifiers < 8 && b.vk != VK_F7;
             const auto& rb = c.reshade_binding;

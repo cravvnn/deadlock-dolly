@@ -40,8 +40,8 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
         raise ValueError("Invalid media command sequence")
     if command not in COMMANDS:
         raise ValueError("Unknown media command")
-    if type(fps) is not int or fps not in (30, 60, 120):
-        raise ValueError("Choose 30, 60 or 120 video FPS")
+    if type(fps) is not int or fps not in (30, 60, 120, 300, 600):
+        raise ValueError("Choose 30, 60, 120, 300 or 600 video FPS")
     if type(bitrate) is not int or not 1000000 <= bitrate <= 80000000:
         raise ValueError("Video bitrate must be between 1 and 80 Mbps")
     if type(encoder) is not int or encoder not in range(len(ENCODERS)):
@@ -80,7 +80,7 @@ def unpack_status(data):
      reshade_state, reshade_open, written, dropped, duration, video_error,
      reshade_error, video_message, reshade_message, command_message) = fields
     if (magic != b"DLYMDS01" or abi != ABI or seq & 1 or video_state >= len(VIDEO_STATES)
-            or reshade_open not in (0, 1) or fps not in (0, 30, 60, 120)
+            or reshade_open not in (0, 1) or fps not in (0, 30, 60, 120, 300, 600)
             or width > 16384 or height > 16384):
         raise ValueError("Media status does not match this Dolly build")
     return {"available": True, "ack": ack, "command_error": command_error,
