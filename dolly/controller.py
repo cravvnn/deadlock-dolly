@@ -217,6 +217,10 @@ class Controller:
         self._unlocker_pid = None
         self._startup_evidence = {}
         self._replay_requested = False
+        self._replay_recovery_active = False
+        self._replay_recovery = {}
+        self._recording_replay = None
+        self._recording_pending = False
         self._stop_event = threading.Event()
         self._thread = None
         self._state_lock = threading.RLock()
@@ -399,6 +403,7 @@ class Controller:
             options = {"native": True} if native else {}
             if launch_options:
                 options["launch_options"] = launch_options
+            self._recording_replay = None
             self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol, **options)
             self._native_active = False
             self._native_manual = False
@@ -686,6 +691,7 @@ class Controller:
     def load_replay(self):
         with self._op_lock:
             self._require_unlocker()
+            self._recording_replay = None
             self.stop()
             path = launcher._validate_demo(self._demo)
             if path is None:
@@ -707,6 +713,148 @@ class Controller:
             except Exception as exc:
                 self._message("Replay load request failed: " + str(exc), startup_stage="failed")
                 raise
+
+    def cancel_replay_recovery(self):
+        """Signal the existing worker; never launch, reconnect or queue a retry."""
+        if not self._replay_recovery_active:
+            return False
+        self._stop_event.set()
+        return True
+
+    def mark_recording_pending(self, pending):
+        was_pending = self._recording_pending
+        self._recording_pending = bool(pending)
+        if was_pending and not pending:
+            self._recording_replay = None
+
+    def _recorder_active(self):
+        if self._recording_pending:
+            return True
+        bridge = self._native_bridge()
+        read = getattr(bridge, "video_status", None)
+        if not callable(read):
+            return False
+        status = read()
+        if not isinstance(status, dict):
+            raise RuntimeError("Recorder state is unavailable; replay reload was not attempted.")
+        return status.get("state") in ("starting", "recording", "finalizing")
+
+    def _recover_replay_for_shot(self):
+        """One in-process reset, only on a user's playback/recording request.
+
+        Confirm an inactive replay before the single playdemo command. Old ticks
+        from the same file cannot satisfy readiness. A failed attempt invalidates
+        probing and never launches a process or retries the load command.
+        """
+        self._require_unlocker()
+        self._require_probe()
+        self._require_demo()
+        path = launcher._validate_demo(self._demo)
+        if path is None:
+            raise RuntimeError("No replay was selected for this launch.")
+        if self._recorder_active():
+            raise RuntimeError("Finish recording before reloading the replay.")
+        if self._playback_restore or self._restore or self._game_ui_restore or self._demo_speed_changed:
+            raise RuntimeError("Use Stop / restore to restore pending settings before replay recovery.")
+        if not self._console.supports("disconnect"):
+            raise RuntimeError("This game does not expose replay disconnect; recovery was not attempted.")
+        previous_probe = deepcopy(self._probe_result)
+        session = self._session
+        self._recording_replay = None
+        self._replay_recovery = {"pid": session.pid, "replay": str(path), "stage": "disconnecting"}
+        self._replay_recovery_active = True
+        self._probe_result = {}
+        try:
+            self._check_position_cancelled()
+            self._message("Preparing replay for the shot…", startup_stage="recovering_replay")
+            self._request("disconnect", timeout=10)
+            def inactive():
+                info = parse_demo_info(self._request("demo_info", allow_error=True))
+                return info if not info["playing"] else None
+            stopped = self._startup_wait(inactive, "waiting for the previous replay to stop",
+                                         self._stop_event, timeout=15)
+            self._replay_recovery.update(stage="loading", inactive=stopped)
+            self._check_position_cancelled()
+            if self._session is not session or not self._alive():
+                raise RuntimeError("The game session ended during replay preparation.")
+            command = 'playdemo "' + path.as_posix() + '"'
+            self._console.send(command)  # Queue once; never resend on timeout.
+            self._replay_requested = True
+            self._last_output["playdemo"] = "Sent: " + command
+            def begun():
+                output = self._request("demo_goto", allow_error=True)
+                try:
+                    current = parse_demo_tick(output)
+                except ValueError:
+                    output = self._request("demo_info", allow_error=True)
+                    current = parse_demo_info(output)
+                if not current["playing"]:
+                    return None
+                info = self._resolve_demo(output)
+                return info if info["tick"] >= 2 else None
+            ready = self._startup_wait(begun, "waiting for the fresh replay's initial update",
+                                       self._stop_event, timeout=45)
+            self._check_position_cancelled()
+            before = self._native_bridge().status()
+            self._require_native_demo(before, allow_idle=True)
+            self._request("demo_pause")
+            paused = self._wait_paused_native_view(self._native_bridge(), before["frame_count"])
+            self._check_position_cancelled()
+            checked = self._require_demo()
+            if self._session is not session or checked["tick"] != paused["tick"]:
+                raise RuntimeError("Replay changed while confirming the recovered paused view.")
+            self._probe_result = dict(previous_probe, demo=checked, native_camera=paused)
+            self._replay_recovery.update(stage="ready", initial_update=ready, paused_tick=checked["tick"])
+            self._message("Replay prepared. Starting the shot…", startup_stage="replay_ready")
+            return checked
+        except Exception as exc:
+            self._probe_result = {}
+            self._replay_recovery.update(stage="failed", error=str(exc))
+            message = "Replay preparation stopped: " + str(exc) + " Dolly will not restart the game or retry automatically."
+            self._message(message, startup_stage="failed", playing=False)
+            raise RuntimeError(message) from exc
+        finally:
+            self._replay_recovery_active = False
+
+    def prepare_native_recording(self, project=None, *, frozen=False):
+        """Recover before opening a video file; reserve one paused shot start."""
+        with self._op_lock:
+            self._recording_replay = None
+            if self._recorder_active():
+                raise RuntimeError("Finish the current recording before preparing another.")
+            self._require_probe()
+            self._require_demo()
+            bridge = self._native_bridge()
+            if bridge is None:
+                raise RuntimeError("Recording preparation requires the native camera.")
+            if frozen:
+                return  # Record the current frozen scene without seeking or reloading it.
+            pose = self._native_pose(bridge.status(), "applied_pose" if self._native_active else "original_pose")
+            self.stop()
+            self._stop_event.clear()
+            if project is not None:
+                project = Project.from_dict(project.to_dict())
+                compile_effects(project)
+                pose = project.evaluate(0)
+            self._recover_replay_for_shot()
+            if project is not None:
+                self._seek(project, 0)
+            self.enter_native_flight(pose=pose)
+            info = self._require_demo()
+            self._recording_replay = (self._session, str(self._demo), info["tick"])
+            self._message("Replay prepared for recording. Play the shot once, then finish recording.")
+
+    def _prepare_native_shot_replay(self):
+        if self._recorder_active():
+            prepared, self._recording_replay = self._recording_replay, None
+            info = self._require_demo()
+            native = self._native_bridge().status()
+            if (prepared is None or (prepared[0] is not self._session or prepared[1:] != (str(self._demo), info["tick"]))
+                    or not native.get("paused") or native.get("tick") != info["tick"]):
+                raise RuntimeError("This recording has no unused prepared shot. Finish recording and start a new recording before playing again.")
+            return
+        self._recording_replay = None
+        self._recover_replay_for_shot()
 
     def probe(self):
         with self._op_lock:
@@ -831,6 +979,8 @@ class Controller:
         while True:
             self._require_connection()
             self._check_paused_cancelled()
+            if self._replay_recovery_active:
+                self._check_position_cancelled()
             current = bridge.status()
             self._require_native_demo(current, allow_idle=True)
             frame = int(current.get("frame_count", 0))
@@ -1960,6 +2110,7 @@ class Controller:
 
     def _seek_tick(self, target, *, allow_start_boundary=False):
         """Verify a paused tick; optionally recognize the replay's packet-1 floor."""
+        self._recording_replay = None
         target = int(target)
         self._check_position_cancelled()
         # Current engine help: demo_goto <tick> [relative] [pause].
@@ -2106,6 +2257,8 @@ class Controller:
                              any(track.name == "citadel_hud_visible" for track in project.tracks)):
                 raise ValueError("Remove the citadel_hud_visible track/fixed value or turn off Hide HUD during playback.")
             start = self._shot_time(project, time)
+            if self._native_bridge() is not None and not frozen:
+                self._prepare_native_shot_replay()
             self._snapshot(project)
             self._playback_details = {"project": project.to_dict(), "start_time": start,
                                       "speed": speed, "rate": rate, "frozen": bool(frozen),
@@ -2116,6 +2269,7 @@ class Controller:
                                       "clock_max_lead_ticks": 0 if frozen else 1}
             native = self._native_bridge()
             self._playback_details["camera_backend"] = "native" if native is not None else "console"
+            self._playback_details["replay_recovery"] = deepcopy(self._replay_recovery) if native is not None and not frozen else None
             setter = getattr(native, "set_seek_relief", None)
             if setter is not None:
                 setter(self._seek_relief)
@@ -2811,6 +2965,8 @@ class Controller:
             self._message("Could not restore export timing: " + str(exc))
 
     def disconnect(self):
+        self._recording_replay = None
+        self._recording_pending = False
         bridge = self._native_bridge()
         close_media = getattr(bridge, "_close_media", None)
         if callable(close_media):
@@ -2832,6 +2988,7 @@ class Controller:
                   "motion_clock": motion_clock_info(),
                   "launch_attempt": self._launch_attempt,
                   "startup_evidence": self._startup_evidence,
+                  "replay_recovery": deepcopy(self._replay_recovery),
                   "game_exit_code": self._session.process.poll() if self._session else None,
                   "lens_control": self.lens_cvar, "standard_aspect": self.standard_aspect,
                   "aspect_capture": dict(self._aspect_capture), "probe": self._probe_result,

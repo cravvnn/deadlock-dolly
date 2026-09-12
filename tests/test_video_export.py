@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+from dolly.path import Project
 from dolly.gui import DollyApp
 from dolly.bindings import DEFAULT_BINDING
 from dolly.editor_actions import EditorBinding
@@ -273,6 +274,8 @@ class VideoGuiTests(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
         self.app = DollyApp.__new__(DollyApp)
         self.app.busy = False
+        self.app.project = Project()
+        self.app.frozen = Var(False)
         self.app.playing = True
         self.app.video_path = Var(str(Path(self.folder.name) / "shot.mp4"))
         self.app.video_fps = Var("60")

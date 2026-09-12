@@ -147,6 +147,8 @@ class NativeControllerTests(unittest.TestCase):
         self.effect_tracks = self.project.tracks
         self.project.tracks = []
         self.stack = ExitStack()
+        # Replay lifecycle is exercised separately with real load/status transitions.
+        self.recovery = self.stack.enter_context(patch.object(self.controller, "_recover_replay_for_shot"))
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch("dolly.controller.time.perf_counter", lambda: self.clock.now))
         self.stack.enter_context(patch("dolly.controller.threading.Event", lambda: SimpleNamespace(wait=self.clock.advance)))
@@ -228,6 +230,7 @@ class NativeControllerTests(unittest.TestCase):
         for _ in range(3):
             self.prepare();self.run_native()
             self.assertTrue(self.controller._native_active)
+        self.assertEqual(self.recovery.call_count, 3)
         self.assertEqual(self.bridge.events.count("native.release"), 2)
         self.controller.stop()
         self.assertEqual(self.bridge.events.count("native.release"), 3)

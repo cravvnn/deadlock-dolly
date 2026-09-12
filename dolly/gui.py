@@ -458,7 +458,7 @@ class DollyApp:
         self.video_cancel_button = ttk.Button(actions, text="Discard recording", style="Quiet.TButton", command=lambda: self._stop_video_recording(cancel=True), state="disabled")
         self.video_cancel_button.pack(side="left")
         ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(tab, text="Start recording, return to Deadlock, then press F5 to play the shot. Use Finish recording in either interface to save. Encoders using FFmpeg need the ffmpeg.exe path above; the bundled build fills it automatically.",
+        ttk.Label(tab, text="Start recording prepares the replay first. Return to Deadlock and press F5 to play the shot once. Finish recording to save; start a new recording for another take. Encoders using FFmpeg need the ffmpeg.exe path above; the bundled build fills it automatically.",
                   style="Muted.TLabel", wraplength=900).grid(row=1, column=0, sticky="w", padx=4, pady=(10, 14))
         shade = ttk.Frame(tab, style="Card.TFrame", padding=18)
         shade.grid(row=2, column=0, sticky="ew")
@@ -516,7 +516,9 @@ class DollyApp:
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return
-        self._submit("Starting video recording", lambda: self.video_export.start(options), self._video_operation_done)
+        project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
+        frozen = self.frozen.get()
+        self._submit("Preparing replay and recording", lambda: self.video_export.start(options, project=project, frozen=frozen), self._video_operation_done)
 
     def _stop_video_recording(self, cancel=False):
         if self.busy:
@@ -1547,6 +1549,10 @@ class DollyApp:
             self._submit("Stopping paused camera controls", self.controller.stop_paused_flight)
 
     def _session_operation(self, label, function):
+        if self.busy and function in (self.controller.stop, self.controller.pause):
+            if self.controller.cancel_replay_recovery():
+                self.status_text.set("Cancelling replay preparation…")
+                return True
         if self.busy:
             self.status_text.set("Please wait for the current operation to finish.")
             return False
@@ -1846,8 +1852,9 @@ class DollyApp:
                 "connected": "Connected — initialize in hideout",
                 "unlocker_ready": "Unlocker ready — load replay",
                 "loading_replay": "Replay requested — wait for loading",
+                "recovering_replay": "Preparing replay",
                 "replay_ready": "Replay ready",
-                "failed": "Startup needs attention",
+                "failed": "Session needs attention",
                 "game_closed": "Game closed",
             }
             session_label = stage_labels.get(stage, "Game connected" if connected else "Game not connected")

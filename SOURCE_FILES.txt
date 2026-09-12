@@ -159,6 +159,7 @@ tests/test_native_atomics.py
 tests/test_native_bridge.py
 tests/test_native_capture_timing.py
 tests/test_native_controller.py
+tests/test_replay_recovery.py
 tests/test_native_effects.py
 tests/test_native_flight_controller.py
 tests/test_native_packaging.py

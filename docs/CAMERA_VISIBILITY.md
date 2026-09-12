@@ -1,5 +1,31 @@
 # Native camera visibility
 
+## Native shot replay preparation
+
+Native Play shot now resets the selected replay inside the same owned game
+process before each non-frozen shot. The engine must report no active replay
+before Dolly sends one playdemo command, verifies the selected replay's initial
+update, and confirms fresh paused native views. Saved camera and DOF tracks are
+unchanged. Frozen preview keeps its current replay scene.
+
+This is a workaround for the Bebop particle assertion after replay rewind,
+not a demonstrated correction to the engine's particle lifecycle. The supplied
+shot passed after each reset; reuse without another reset reproduced the
+assertion. Preparation adds a replay-loading and seeking delay.
+
+Recovery never launches a process. A game crash, timeout, identity mismatch or
+cancellation ends the attempt, invalidates camera readiness and reports the
+failure. It does not retry or schedule another launch. Stop / restore or Pause
+can cancel an active recovery. The user must explicitly restore/reload a live
+session or start a new game after a failure.
+
+Recording preparation occurs before native capture and fixed-step timing start.
+One prepared shot can play during that recording without reloading; finish the
+recording and start a new recording for another take. A changed replay tick or
+an explicit seek invalidates the prepared take. Dolly refuses a mid-recording
+reload. Original startup, module compatibility and configuration recovery gates
+remain in place.
+
 ## Follow-up: distant vendor slowdown
 
 The owner confirmed that the camera correction below fixes the missing world

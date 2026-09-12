@@ -24,6 +24,10 @@ class SparseConsole(seek_fixture.ForwardOvershootConsole):
 class SparseSeekTests(unittest.TestCase):
     def setUp(self):
         seek_fixture.SeekOvershootTests.setUp(self)
+        # This fixture exercises packet boundaries; recovery lifecycle has its own suite.
+        recovery = patch.object(self.controller, "_recover_replay_for_shot")
+        recovery.start()
+        self.addCleanup(recovery.stop)
         self.console = SparseConsole()
         self.controller._console = self.console
         folder = tempfile.TemporaryDirectory()

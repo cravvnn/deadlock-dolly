@@ -235,6 +235,11 @@ class VideoExport:
                 return last
         with self._lock:
             self._last = current
+            pending = self._start_pending
+        if not pending and current.get("state") in TERMINAL_STATES:
+            mark = getattr(self.controller, "mark_recording_pending", None)
+            if callable(mark):
+                mark(False)
         return dict(current)
 
     def _set_export_timing(self, fps, speed):
@@ -250,7 +255,7 @@ class VideoExport:
             except (RuntimeError, ValueError, OSError):
                 pass
 
-    def start(self, options: VideoOptions) -> dict:
+    def start(self, options: VideoOptions, project=None, *, frozen=False) -> dict:
         options = options.validated()
         if self.status().get("state") in ACTIVE_STATES:
             raise RuntimeError("Finish the current recording before starting another.")
@@ -259,6 +264,9 @@ class VideoExport:
         bridge = self.controller._native_bridge()
         if bridge is None:
             raise RuntimeError("The native recorder is not connected.")
+        prepare = getattr(self.controller, "prepare_native_recording", None)
+        if callable(prepare):
+            prepare(project, frozen=frozen)
         if options.fixed_step:
             self._set_export_timing(options.fps, options.speed)
         initial_ack = bridge.video_status().get("ack")
@@ -269,6 +277,9 @@ class VideoExport:
             self._start_pending = True
             self._start_ack = initial_ack
         encoder, codec_id = resolve_backend(options)
+        mark = getattr(self.controller, "mark_recording_pending", None)
+        if callable(mark):
+            mark(True)
         try:
             bridge.start_video(str(options.path), fps=options.fps, bitrate=options.bitrate,
                                encoder=encoder, codec=codec_id, quality=options.quality,
