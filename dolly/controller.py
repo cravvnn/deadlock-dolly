@@ -2916,14 +2916,14 @@ class Controller:
 
         ``host_framerate`` makes each rendered frame advance a fixed slice of
         engine time (independent of wall-clock), ``r_wait_on_present`` keeps the
-        renderer from coalescing frames, and ``demo_timescale`` selects the
-        export's slow-motion (the same 0.05x-4x range as normal playback).
-        :meth:`play` then uses this speed for the whole export. The previous
-        values are restored by :meth:`clear_export_timing`.
+        renderer from coalescing frames. The engine ignores ``demo_timescale``
+        for this fixed step, so use fps / speed to advance speed / fps replay
+        seconds per output frame. :meth:`play` preserves the selected speed.
+        Previous values are restored by :meth:`clear_export_timing`.
         """
         fps = int(fps)
-        if fps not in (30, 60, 120):
-            raise ValueError("Fixed-step export requires 30, 60 or 120 FPS.")
+        if fps not in (30, 60, 120, 300, 600):
+            raise ValueError("Fixed-step export requires 30, 60, 120, 300 or 600 FPS.")
         try:
             speed = float(speed)
         except (TypeError, ValueError) as exc:
@@ -2934,15 +2934,20 @@ class Controller:
             return
         if self._console is None or not self._console.is_connected or not self._alive():
             raise RuntimeError("Connect to the game before fixed-step export.")
-        snapshot = {}
-        for name in ("host_framerate", "r_wait_on_present"):
-            try:
-                snapshot[name] = float(read_cvar_value(name, self._request(name)))
-            except (RuntimeError, ValueError, TypeError, OSError):
-                snapshot[name] = None
-        self._request(
-            f"host_framerate {fps}; r_wait_on_present 1; demo_timescale {numeric(speed)}")
+        snapshot = {name: float(read_cvar_value(name, self._request(name)))
+                    for name in ("host_framerate", "r_wait_on_present")}
+        engine_fps = fps / speed
         self._export_timing = {"fps": fps, "speed": speed, "restore": snapshot}
+        try:
+            self._request(
+                f"host_framerate {numeric(engine_fps)}; r_wait_on_present 1; demo_timescale {numeric(speed)}")
+            actual = read_cvar_value("host_framerate", self._request("host_framerate"))
+            synchronized = read_cvar_value("r_wait_on_present", self._request("r_wait_on_present"))
+            if not math.isclose(actual, engine_fps, rel_tol=1e-6) or synchronized != 1:
+                raise RuntimeError("The game did not accept fixed-step export timing. Choose a lower video FPS or a higher export speed.")
+        except Exception:
+            self.clear_export_timing()
+            raise
         self._message(
             f"Fixed-step export at {fps} FPS, {numeric(speed)}x; each rendered frame is captured.")
 

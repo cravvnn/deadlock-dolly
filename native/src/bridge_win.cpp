@@ -19,6 +19,7 @@
 #include "dolly_path.hpp"
 #include "dolly_effects.hpp"
 #include "dolly_protocol.hpp"
+#include "dolly_replay_clock.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_overlay.hpp"
 #include "dolly_renderer_diagnostics.hpp"
@@ -311,6 +312,12 @@ static bool read_demo(DemoState& result) noexcept {
         interval > .2f)
         return false;
     result.time = current;
+    if (gCompat.render_fraction) {
+        float fraction = 0;
+        if (!read_value(globals + gCompat.render_fraction, fraction) ||
+            !replay_view_time(result.tick, fraction, interval, result.time))
+            return false;
+    }
     result.interval = interval;
     return true;
 }

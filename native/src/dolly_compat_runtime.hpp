@@ -23,6 +23,7 @@ struct CompatResolution {
     std::uintptr_t view_table = 0;
     std::uintptr_t globals = 0;
     std::uintptr_t engine_client = 0;
+    std::uintptr_t render_fraction = 0; // Enabled only by an exact clock-field review.
     const char* note = "";
 };
 
@@ -227,6 +228,7 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
         result.view_table = profile.primary_vtable;
         result.globals = profile.globals;
         result.engine_client = profile.engine_client;
+        result.render_fraction = profile.render_fraction;
         result.note = "exact reviewed hash";
         return result;
     }

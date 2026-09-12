@@ -29,7 +29,9 @@ simulation pauses and steps one frame at a time; each step completes its
 readback and waits for encoder capacity before the next step runs. Expect the
 game to render slower than real time during a fixed-step recording. Use
 **Export speed** to scale replay time per output frame (for example 0.5× for
-smooth slow motion at a high FPS).
+smooth slow motion at a high FPS). The engine time step is `Export speed / Video FPS`;
+Dolly verifies it before recording starts and restores the previous settings
+afterward. A clamped or unavailable timing setting prevents capture from starting.
 
 Dolly's panel and path guides are excluded from the file. ReShade color effects
 are included, while its menu, splash and FPS display are excluded. Deadlock's

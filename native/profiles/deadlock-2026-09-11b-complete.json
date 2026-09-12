@@ -66,11 +66,17 @@
       "fallback_rva": "0x2f08fc0",
       "current_time_offset": "0x30",
       "frame_delta_offset": "0x34",
-      "tick_counter_offset": "0x38",
+      "tick_counter_offset": "0x44",
       "interval_offset": "0x54",
-      "field_confidence": "current_time/deadline usage and frame_delta/integration identified from client consumers; engine writes and per-render continuity require independent verification",
+      "field_confidence": "Current-time 0x30 is simulation-corrected; 0x34 frame delta, 0x38 render fraction, 0x44 client tick, 0x54 interval observed together in exact-build main-view callbacks. Camera time uses the engine replay tick, not the client tick.",
       "deadline_read_example_rva": "0x1ab0cec",
-      "deadline_comparison_rva": "0x1ab0cf3"
+      "deadline_comparison_rva": "0x1ab0cf3",
+      "replay_clock_review": {
+        "client_sha256": "6b574bb0cc044fdf7f76d0abce78e2a10ab17507b92ade14fc2313e5495b7a61",
+        "render_fraction_offset": "0x38",
+        "time_source": "(engine replay tick + client render fraction) * interval_per_tick",
+        "validation": "Observed on the exact build in ordinary playback and 60 FPS fixed-step: the tick/fraction clock follows engine frame progression through packet boundaries; client curtime can correct backward. No game timing writes."
+      }
     },
     "matrix_followup": {
       "first_matrix_builder_rva": "0xb0f170",

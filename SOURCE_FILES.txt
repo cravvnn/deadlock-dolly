@@ -311,3 +311,7 @@ third_party/reshade_shaders/Textures/pd80_example-lut.png
 third_party/reshade_shaders/Textures/pd80_gaussnoise.png
 third_party/reshade_shaders/Textures/pd80_neutral-lut.png
 third_party/reshade_shaders/Textures/pd80_permtexture.png
+native/include/dolly_replay_clock.hpp
+native/tests/replay_clock_tests.cpp
+tests/test_profile_clock.py
+tests/test_export_timing.py

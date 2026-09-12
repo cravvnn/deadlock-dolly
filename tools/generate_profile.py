@@ -398,6 +398,17 @@ def build_profile(client: Image, engine: Image, tier0: Image, previous: dict, la
     }
 
 
+def reviewed_render_fraction(client: dict) -> int:
+    """Do not inherit a clock-field review when a new client hash is profiled."""
+    review = client.get("globals", {}).get("replay_clock_review") or {}
+    if not review or review.get("client_sha256") != client.get("client_sha256"):
+        return 0
+    offset = int(review["render_fraction_offset"], 16)
+    if offset != 0x38:
+        raise ValueError("Replay render fraction needs an explicit native layout review")
+    return offset
+
+
 def emit_header(entries: list[tuple[dict, dict | None]], destination: Path) -> None:
     """Emit the native profile table.
 
@@ -423,6 +434,7 @@ def emit_header(entries: list[tuple[dict, dict | None]], destination: Path) -> N
         "    std::uintptr_t primary_vtable;",
         "    std::uintptr_t globals;",
         "    std::uintptr_t engine_client;",
+        "    std::uintptr_t render_fraction;",
         "    const unsigned char* signature;",
         "    const unsigned char* signature_mask;",
         "    std::size_t signature_size;",
@@ -450,11 +462,11 @@ def emit_header(entries: list[tuple[dict, dict | None]], destination: Path) -> N
         setup = resolved["setup_rva"] if resolved else int(client["main_view_setup_rva"], 16)
         signature, mask, size = signatures.get(index, ("nullptr", "nullptr", 0))
         rows.append(
-            "    { \"%s\", %d, %s, %s, %s, %s, %s, %s, %s, %d }," % (
+            "    { \"%s\", %d, %s, %s, %s, %s, %s, %s, %s, %s, %d }," % (
                 client["client_sha256"], client["size_of_image"], hex(setup), hex(caller),
                 client["primary_vtable_rva"], client["globals"]["pointer_rva"],
                 client["aspect_scaling"]["aspect_source_interface_pointer_rva"],
-                signature, mask, size,
+                hex(reviewed_render_fraction(client)), signature, mask, size,
             )
         )
     lines.append("")

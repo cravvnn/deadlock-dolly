@@ -15,6 +15,7 @@ struct CompatClientProfile {
     std::uintptr_t primary_vtable;
     std::uintptr_t globals;
     std::uintptr_t engine_client;
+    std::uintptr_t render_fraction;
     const unsigned char* signature;
     const unsigned char* signature_mask;
     std::size_t signature_size;
@@ -28,10 +29,10 @@ inline const unsigned char kSignature2Mask[] = {
 };
 
 inline const CompatClientProfile kCompatClientProfiles[] = {
-    { "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b", 63733760, 0x16bcfb0, 0x16b6744, 0x2349178, 0x2f09170, 0x37f6740, nullptr, nullptr, 0 },
-    { "168d35bc3ba52419770978b489b2feffe941fd9e6108b4cd97d4a116e2d931cc", 63733760, 0x16bd550, 0x16b6ce4, 0x2349418, 0x2f091f0, 0x37f67c0, nullptr, nullptr, 0 },
-    { "6b574bb0cc044fdf7f76d0abce78e2a10ab17507b92ade14fc2313e5495b7a61", 63733760, 0x16bd550, 0x16b6ce4, 0x2349418, 0x2f091f0, 0x37f67c0, kSignature2, kSignature2Mask, 288 },
-    { "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b", 63733760, 0x16bcfb0, 0x16b6744, 0x2349178, 0x2f09170, 0x37f6740, nullptr, nullptr, 0 },
+    { "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b", 63733760, 0x16bcfb0, 0x16b6744, 0x2349178, 0x2f09170, 0x37f6740, 0x0, nullptr, nullptr, 0 },
+    { "168d35bc3ba52419770978b489b2feffe941fd9e6108b4cd97d4a116e2d931cc", 63733760, 0x16bd550, 0x16b6ce4, 0x2349418, 0x2f091f0, 0x37f67c0, 0x0, nullptr, nullptr, 0 },
+    { "6b574bb0cc044fdf7f76d0abce78e2a10ab17507b92ade14fc2313e5495b7a61", 63733760, 0x16bd550, 0x16b6ce4, 0x2349418, 0x2f091f0, 0x37f67c0, 0x38, kSignature2, kSignature2Mask, 288 },
+    { "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b", 63733760, 0x16bcfb0, 0x16b6744, 0x2349178, 0x2f09170, 0x37f6740, 0x0, nullptr, nullptr, 0 },
 };
 inline constexpr std::size_t kCompatClientProfileCount = sizeof(kCompatClientProfiles) / sizeof(kCompatClientProfiles[0]);
 }  // namespace dolly_compat

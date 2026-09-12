@@ -26,6 +26,26 @@ an explicit seek invalidates the prepared take. Dolly refuses a mid-recording
 reload. Original startup, module compatibility and configuration recovery gates
 remain in place.
 
+## Replay clock correction
+
+On the reviewed September 11b client, native shots now use the local replay tick
+plus its render fraction. Client simulation time can correct backward during
+packet processing; following that value made the camera briefly hold and then
+catch up, including in fixed-step recordings. Camera and DOF evaluation now share
+the continuous replay render clock. Paused/frozen behavior and jump checks remain.
+
+The fraction field is enabled only for an exact client hash with an explicit
+clock review. Signature fallback and older profiles retain their previous clock;
+carrying a profile forward cannot authorize this field for a new client hash.
+Diagnostics retain the existing `engine_time` field name, but it reports replay
+render time on the reviewed build.
+
+This removes the measured clock discontinuities, not rendering cost. A demanding
+view can still reduce preview frame rate. Fixed-step recording should be assessed
+from saved frames and timestamps, separately from its slower on-screen rendering.
+The built-in MP4 writer now ends its last fixed-step frame at the next output-frame
+boundary; slow rendering no longer stretches that frame to the recording wall time.
+
 ## Follow-up: distant vendor slowdown
 
 The owner confirmed that the camera correction below fixes the missing world

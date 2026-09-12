@@ -822,8 +822,9 @@ void encode(std::shared_ptr<Session> s) noexcept {
         if (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load()) && previous.p) {
             const auto first = s->first_qpc.load(std::memory_order_acquire);
             const auto last = s->stop_qpc.load(std::memory_order_acquire);
-            auto end = last > first ? clock_units(last - first, s->frequency, 10000000) : 0;
-            end = std::max(end, previous_pts + 1);
+            const auto elapsed =
+                last > first ? clock_units(last - first, s->frequency, 10000000) : 0;
+            const auto end = final_sample_end(previous_pts, s->fixed_step ? s->fps : 0, elapsed);
             HRESULT hr = write_sample(*s, writer.p, stream, previous.p, previous_pts, end);
             if (SUCCEEDED(hr))
                 hr = writer->Finalize();

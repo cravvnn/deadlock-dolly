@@ -24,6 +24,20 @@ int main() {
     require(!cadence.sample(51000000, pts, missed));
     require(clock_units(3600ULL * 3579545, 3579545, 10000000) == 36000000000ULL);
     require(clock_units(1, 0, 10000000) == 0);
+    // A slow export must not append wall-clock time to its final frame.
+    require(final_sample_end(37166666, 60, 43996730) == 37333333);
+    require(final_sample_end(37166666, 60, 10000000) == 37333333);
+    require(final_sample_end(0, 60, 90000000) == 166666);
+    for (const auto fps : {30u, 60u, 120u, 300u, 600u}) {
+        for (const auto frame : {0ull, 1ull, 2ull, 59ull, 223ull, 2160000ull}) {
+            const auto start = clock_units(frame, fps, 10000000);
+            const auto expected = clock_units(frame + 1, fps, 10000000);
+            require(final_sample_end(start, fps, 900000000000ull) == expected);
+        }
+    }
+    // Real-time recordings continue to preserve elapsed time through stop.
+    require(final_sample_end(200000, 0, 350000) == 350000);
+    require(final_sample_end(200000, 0, 150000) == 200001);
     Cadence ntsc_clock;
     ntsc_clock.frequency = 3579545;
     ntsc_clock.fps = 30;

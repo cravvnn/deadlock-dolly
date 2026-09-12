@@ -11,6 +11,18 @@ inline std::uint64_t clock_units(std::uint64_t ticks, std::uint64_t frequency,
         return 0;
     return ticks / frequency * units + ticks % frequency * units / frequency;
 }
+// Fixed-step samples end at the next rational frame boundary. Using the
+// stop wall clock here stretches the final frame when rendering is slow.
+inline std::uint64_t final_sample_end(std::uint64_t previous_pts, std::uint32_t fixed_fps,
+                                      std::uint64_t elapsed_pts) noexcept {
+    if (!fixed_fps)
+        return std::max(elapsed_pts, previous_pts + 1);
+    const auto frame = clock_units(previous_pts, 10000000, fixed_fps);
+    auto end = clock_units(frame + 1, fixed_fps, 10000000);
+    if (end <= previous_pts)
+        end = clock_units(frame + 2, fixed_fps, 10000000);
+    return end;
+}
 struct Cadence {
     std::uint64_t frequency = 1, start = 0, last_slot = 0;
     std::uint32_t fps = 30;
