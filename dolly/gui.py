@@ -2731,7 +2731,8 @@ class DollyApp:
                     return
             end = candidate.duration if candidate.duration > 0 else 5.0
             # Verified generic DOF defaults; four zeros disables this override.
-            ranges = (-100.0, 0.0, 180.0, 2000.0)
+            from .editor_dof import DEFAULT_RANGES
+            ranges = DEFAULT_RANGES
             track = CvarTrack(name, [TrackKey(0.0, ranges), TrackKey(end, ranges)], "smooth")
             candidate.tracks = [existing for existing in candidate.tracks if existing.name != name] + [track]
             candidate.setup_values.update({"r_depth_of_field": 1.0, "r_dof_override": 1.0})

@@ -357,6 +357,13 @@ void style_panel() {
     style.Colors[ImGuiCol_TabDimmedSelected] = panel_color(0x203a39);
     style.Colors[ImGuiCol_TabDimmedSelectedOverline] = panel_color(0x3f6f68);
 }
+bool compact_checkbox(const char* label, bool* value, float scale) {
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * scale, 2 * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2 * scale);
+    const bool changed = ImGui::Checkbox(label, value);
+    ImGui::PopStyleVar(2);
+    return changed;
+}
 ImFont* installed_font(const char* filename, float size) {
     char windows[MAX_PATH]{}, path[MAX_PATH]{};
     const UINT length = GetWindowsDirectoryA(windows, MAX_PATH);
@@ -772,7 +779,7 @@ void draw_panel(const EditorSnapshot& state) {
                     action_button("Next view", EditorAction::NextView, half);
                     ImGui::EndDisabled();
                     ImGui::Spacing();
-                    ImGui::Checkbox("Show path guides", &show_path_guides);
+                    compact_checkbox("Show path guides", &show_path_guides, panel_scale);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Camera positions and spline while editing a paused replay. The selected camera is gold. Guides show through walls and hide during playback.");
@@ -795,54 +802,59 @@ void draw_panel(const EditorSnapshot& state) {
                     section_title("Depth of field", "Native engine");
                     ImGui::BeginDisabled(!state.dof_available || !state.paused || state.playing ||
                                          !state.camera_count);
-                    bool enabled = state.dof[0] != 0, override_enabled = state.dof[1] != 0;
-                    if (ImGui::Checkbox("Enable DOF", &enabled))
+                    bool enabled = state.dof[0] != 0 && state.dof[1] != 0 &&
+                                   std::any_of(state.dof.begin() + 2, state.dof.begin() + 6,
+                                               [](double value) { return value != 0; });
+                    if (compact_checkbox("Enable DOF", &enabled, panel_scale))
                         editor_enqueue(EditorAction::SetDofEnabled, enabled ? 1 : 0);
-                    ImGui::SameLine();
-                    if (ImGui::Checkbox("Override", &override_enabled))
-                        editor_enqueue(EditorAction::SetDofOverride, override_enabled ? 1 : 0);
                     static std::array<double, 11> dof_draft{};
                     static std::array<bool, 11> dof_editing{};
                     auto field = [&](unsigned index, const char* label, float step) {
                         if (!dof_editing[index])
                             dof_draft[index] = state.dof[index];
                         ImGui::PushID(int(index));
-                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * .52f);
-                        ImGui::DragScalar(label, ImGuiDataType_Double, &dof_draft[index], step,
+                        ImGui::TextDisabled("%s", label);
+                        ImGui::SetNextItemWidth(-1);
+                        ImGui::DragScalar("##value", ImGuiDataType_Double, &dof_draft[index], step,
                                           nullptr, nullptr, "%.2f");
                         const bool committed = ImGui::IsItemDeactivatedAfterEdit();
                         dof_editing[index] = ImGui::IsItemActive();
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
-                                "Drag to adjust; Ctrl+click to type. Applies when released.");
+                                "Drag to adjust. Alt: 100x finer; Shift: 10x faster. Ctrl+click to type an exact value. Applies when released.");
                         if (committed)
                             editor_enqueue(
                                 EditorAction(unsigned(EditorAction::SetDofEnabled) + index),
                                 dof_draft[index]);
                         ImGui::PopID();
                     };
-                    if (ImGui::TreeNode("Focus ranges")) {
-                        field(2, "Near blurry", 5);
-                        field(3, "Near crisp", 5);
-                        field(4, "Far crisp", 5);
-                        field(5, "Far blurry", 5);
-                        ImGui::TextWrapped("Four zeros uses the individual ranges below.");
-                        ImGui::TreePop();
+                    ImGui::BeginDisabled(!enabled);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                                        ImVec2(6 * panel_scale, 3 * panel_scale));
+                    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                        ImVec2(10 * panel_scale, 4 * panel_scale));
+                    ImGui::TextDisabled("Focus ranges");
+                    if (ImGui::BeginTable("##focus-ranges", 2, ImGuiTableFlags_SizingStretchSame)) {
+                        ImGui::TableNextColumn();
+                        field(2, "Near blurry", 1);
+                        ImGui::TableNextColumn();
+                        field(4, "Far crisp", 1);
+                        ImGui::TableNextColumn();
+                        field(3, "Near crisp", 1);
+                        ImGui::TableNextColumn();
+                        field(5, "Far blurry", 1);
+                        ImGui::TableNextColumn();
+                        field(10, "Ground tilt", .01f);
+                        ImGui::EndTable();
                     }
-                    field(10, "Ground tilt", .01f);
-                    if (ImGui::TreeNode("Individual ranges")) {
-                        field(6, "Near blurry", 5);
-                        field(7, "Near crisp", 5);
-                        field(8, "Far crisp", 5);
-                        field(9, "Far blurry", 5);
-                        ImGui::TreePop();
-                    }
+                    ImGui::PopStyleVar(2);
+                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
                     if (!state.camera_count)
                         ImGui::TextWrapped("Capture a camera to author DOF settings.");
                     else
                         ImGui::TextWrapped(
-                            "Shot settings: edits key animated controls at the playhead; otherwise they set a fixed value. Unauthored controls show defaults.");
+                            "Alt: fine adjust | Ctrl+click: type.\nChanges save to Effects at the playhead.");
                 }
                 end_panel_card();
                 if (begin_panel_card("##replay-card")) {

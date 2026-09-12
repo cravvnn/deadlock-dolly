@@ -3,7 +3,7 @@ from copy import deepcopy
 from dataclasses import replace
 import math
 
-from .path import Keyframe, TrackKey, validate_cvar_value
+from .path import CvarTrack, Keyframe, TrackKey, validate_cvar_value
 from .native_effects import EFFECTS
 
 # Appended action IDs 41..51; vector components remain one authored track.
@@ -18,6 +18,41 @@ CONTROLS = (
     ("r_dof_override_tilt_to_ground", None, .5),
 )
 ACTIONS = tuple(f"set_dof_{index}" for index in range(len(CONTROLS)))
+RANGE_NAME = "r_dof_override_ranges"
+DEFAULT_RANGES = (-100.0, 0.0, 180.0, 2000.0)
+
+
+def _put_value(project, name, time, value):
+    track = next((track for track in project.tracks if track.name == name), None)
+    if track and track.keys:
+        track.keys = [key for key in track.keys if key.time != time]
+        track.keys.append(TrackKey(time, value))
+        track.keys.sort(key=lambda key: key.time)
+    else:
+        project.setup_values[name] = value
+
+
+def _enable_ranges(project, time, enabled):
+    # An animated switch overrides setup_values, so edit its key too when present.
+    for name in ("r_depth_of_field", "r_dof_override"):
+        _put_value(project, name, time, float(enabled))
+    if not enabled:
+        return  # Turning off never destroys an authored focus pull.
+    values = _cvars_at(project, time).get(RANGE_NAME, (0, 0, 0, 0))
+    track = next((track for track in project.tracks if track.name == RANGE_NAME), None)
+    if not track or not track.keys:
+        # Match the desktop preset, retaining prior fixed edits or restore metadata.
+        ranges = tuple(values) if any(values) else DEFAULT_RANGES
+        end = max(project.duration, time)
+        end = end if end > 0 else 5.0
+        if track is None:
+            track = CvarTrack(RANGE_NAME, interpolation="smooth")
+            project.tracks.append(track)
+        track.keys = [TrackKey(0.0, ranges), TrackKey(end, ranges)]
+    elif not any(values):
+        # Four zeros explicitly disables range override. Seed this playhead only;
+        # preserve the rest of an existing animated track and its restore value.
+        _put_value(project, RANGE_NAME, time, DEFAULT_RANGES)
 
 
 def values_at(project, time):
@@ -43,7 +78,10 @@ def edited_project(project, time, control, value):
             or (discrete and value != int(value))):
         raise ValueError("DOF value is outside the native control's range")
     candidate = deepcopy(project)
-    track = next((track for track in candidate.tracks if track.name == name), None)
+    if control == 0:
+        _enable_ranges(candidate, time, bool(value))
+        candidate.validate()
+        return candidate
     if component is not None:
         previous = _cvars_at(candidate, time).get(name, (0, 0, 0, 0))
         vector = list(previous)
@@ -52,11 +90,6 @@ def edited_project(project, time, control, value):
     value = validate_cvar_value(name, value)
     if control < 2 and value not in (0, 1):
         raise ValueError("DOF switches require zero or one")
-    if track and track.keys:
-        track.keys = [key for key in track.keys if key.time != time]
-        track.keys.append(TrackKey(time, value))
-        track.keys.sort(key=lambda key: key.time)
-    else:
-        candidate.setup_values[name] = value
+    _put_value(candidate, name, time, value)
     candidate.validate()
     return candidate

@@ -240,7 +240,7 @@ def dispatch(app, event, bridge):
             app._commit_camera(keys, key.time)
             app.status_text.set(f"Camera {int(index) + 1} framing set to {aspect:.4f}.")
     elif action.startswith("set_dof_"):
-        from .editor_dof import ACTIONS, edited_project
+        from .editor_dof import ACTIONS, RANGE_NAME, edited_project
         if action not in ACTIONS:
             raise ValueError("Unsupported native DOF control")
         if app.controller.status().get("playing") or getattr(app, "playing", False):
@@ -250,7 +250,9 @@ def dispatch(app, event, bridge):
         def complete(_result):
             app.project = candidate
             app._mark_dirty()
-            app._refresh_tracks()
+            selected = next((index for index, track in enumerate(candidate.tracks)
+                             if track.name == RANGE_NAME), None)
+            app._refresh_tracks(selected)
             app._refresh_fixed()
             configure(app)
         app._submit("Applying native DOF", lambda: app.controller.preview_native_effects(candidate, at), complete)

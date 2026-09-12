@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <vector>
 #include <string>
+#include <fstream>
 
 namespace {
 bool available = false;
@@ -512,8 +513,9 @@ bool editor_window_message(HWND, UINT, WPARAM, LPARAM, LRESULT&) noexcept {
     return false;
 }
 }
-int main() {
+int main(int argc, char** argv) {
     try {
+        const bool screenshot = argc == 3 && std::strcmp(argv[1], "--screenshot") == 0;
         dolly::reshade_set_enabled(false);
         require(!dolly::reshade_overlay_pending() && !dolly::reshade_overlay_open() &&
                     !dolly::reshade_available(),
@@ -528,7 +530,7 @@ int main() {
         require(RegisterClassW(&wc) != 0, "Could not register synthetic window");
         HWND window =
             CreateWindowExW(0, wc.lpszClassName, L"Dolly graphics smoke", WS_OVERLAPPEDWINDOW, 32,
-                            32, 800, 600, nullptr, nullptr, instance, nullptr);
+                            32, 800, screenshot ? 1100 : 600, nullptr, nullptr, instance, nullptr);
         require(window != nullptr, "Could not create synthetic window");
         ShowWindow(window, SW_SHOWNOACTIVATE);
         UpdateWindow(window);
@@ -536,7 +538,7 @@ int main() {
         DXGI_SWAP_CHAIN_DESC desc{};
         desc.BufferCount = 1;
         desc.BufferDesc.Width = 800;
-        desc.BufferDesc.Height = 600;
+        desc.BufferDesc.Height = screenshot ? 1100 : 600;
         desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         desc.OutputWindow = window;
@@ -592,6 +594,10 @@ int main() {
         SyntheticViewer viewer;
         snapshot.owner = dolly::EditorOwner::Panel;
         snapshot.camera_count = 2;
+        if (screenshot) {
+            snapshot.dof_available = true;
+            snapshot.dof = {1, 1, -100, 0, 180, 1490, -100, 0, 180, 2000, .5};
+        }
         snapshot.duration = 3;
         std::snprintf(snapshot.shot_name, sizeof(snapshot.shot_name), "Synthetic editor smoke");
         ID3D11Texture2D* backbuffer = nullptr;
@@ -645,6 +651,21 @@ int main() {
         const auto* sample =
             static_cast<const unsigned char*>(pixels.pData) + 80 * pixels.RowPitch + 40 * 4;
         const bool drawn = sample[2] < 180;
+        if (screenshot) {
+            // Optional no-game visual review of the real rendered panel.
+            std::ofstream output(argv[2], std::ios::binary);
+            output << "P6\n" << texture.Width << " " << texture.Height << "\n255\n";
+            for (unsigned y = 0; y < texture.Height; ++y) {
+                const auto row = static_cast<const char*>(pixels.pData) + y * pixels.RowPitch;
+                for (unsigned x = 0; x < texture.Width; ++x)
+                    output.write(row + x * 4, 3);
+            }
+            output.close();
+            require(bool(output), "Could not save the panel screenshot");
+            context->Unmap(staging, 0);
+            staging->Release();
+            return 0;
+        }
         context->Unmap(staging, 0);
         staging->Release();
         require(drawn, "Present ran but the in-game panel did not change the backbuffer");

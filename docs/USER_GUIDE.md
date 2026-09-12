@@ -138,14 +138,15 @@ scrolling changes the live framing that the next capture will save. The wheel
 scrolls menus normally while a panel or ReShade has input focus.
 
 The in-game Editor's **Depth of field** card sits between Cameras and Replay.
-After capturing a camera, use **Enable DOF**, **Override**, **Focus ranges**,
-**Individual ranges**, and **Ground tilt** to author the existing native DOF
-controls. Drag a number and release to apply it, or Ctrl+click to type. An
-animated control receives a key at the desktop playhead; otherwise the edit
-sets a fixed shot value. These changes also appear in desktop Effects.
-Preview applies at the held camera and replay tick. Controls that have not
-been authored display defaults until edited. Four zero Focus ranges use the
-Individual ranges. Stop / restore retains the existing restoration behavior.
+After capturing a camera, **Enable DOF** turns on both native switches and
+initializes **Focus ranges** like the desktop **+ Range DOF** button. Existing
+range edits are preserved when switching off and back on. The four controls
+are grouped into Near and Far columns; **Ground tilt** remains below them.
+Drag and release to apply, hold Alt for fine adjustment or Shift to move faster,
+or Ctrl+click to type an exact value. Numeric bounds are unchanged.
+Range edits add/replace a key at the desktop playhead, and the range track and
+its key list stay selected in desktop Effects. Preview holds the current camera
+and replay tick. Stop / restore retains the existing restoration behavior.
 
 Capture also works while replay time advances and leaves the replay paused.
 The in-game keybind saves the pose and tick sampled with its input event;

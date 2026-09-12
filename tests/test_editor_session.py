@@ -52,13 +52,16 @@ class EditorSessionTests(unittest.TestCase):
         self.app._mark_dirty = Mock()
         self.app._refresh_tracks = Mock()
         self.app._refresh_fixed = Mock()
-        session.dispatch(self.app, {"action": "set_dof_1", "value": 1}, self.bridge)
+        session.dispatch(self.app, {"action": "set_dof_0", "value": 1}, self.bridge)
         self.assertNotIn("r_dof_override", self.app.project.setup_values)
         work = self.app._submit.call_args.args
         result = work[1]()
         self.controller.preview_native_effects.assert_called_once()
         work[2](result)
         self.assertEqual(self.app.project.setup_values["r_dof_override"], 1)
+        self.assertEqual(self.app.project.tracks[0].name, "r_dof_override_ranges")
+        self.assertEqual(len(self.app.project.tracks[0].keys), 2)
+        self.app._refresh_tracks.assert_called_once_with(0)
         self.app._mark_dirty.assert_called_once()
 
     def test_clear_ragdolls_dispatches_on_worker(self):
