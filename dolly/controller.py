@@ -2053,6 +2053,12 @@ class Controller:
             speed, rate = float(speed), float(rate)
             if not math.isfinite(speed) or not .05 <= speed <= 4:
                 raise ValueError("Playback speed must be between 0.05 and 4.")
+            # A fixed-step export fixes the playback speed for the whole export so
+            # the recorded video's slow-motion is exactly the selected value,
+            # independent of the free-play speed control.
+            export = getattr(self, "_export_timing", None)
+            if export and export.get("speed"):
+                speed = float(export["speed"])
             if rate not in (30, 60, 120):
                 raise ValueError("Choose a command rate of 30, 60, or 120.")
             if hide_hud and ("citadel_hud_visible" in project.setup_values or
@@ -2703,17 +2709,25 @@ class Controller:
         if restoration_error:
             self._message(restoration_error, playing=False)
 
-    def set_export_timing(self, fps):
+    def set_export_timing(self, fps, speed=1.0):
         """Enter deterministic fixed-step engine timing for an export.
 
         ``host_framerate`` makes each rendered frame advance a fixed slice of
-        engine time (independent of wall-clock), and ``r_wait_on_present`` keeps
-        the renderer from coalescing frames. The previous values are restored by
-        :meth:`clear_export_timing`.
+        engine time (independent of wall-clock), ``r_wait_on_present`` keeps the
+        renderer from coalescing frames, and ``demo_timescale`` selects the
+        export's slow-motion (the same 0.05x-4x range as normal playback).
+        :meth:`play` then uses this speed for the whole export. The previous
+        values are restored by :meth:`clear_export_timing`.
         """
         fps = int(fps)
         if fps not in (30, 60, 120):
             raise ValueError("Fixed-step export requires 30, 60 or 120 FPS.")
+        try:
+            speed = float(speed)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Export speed must be a number between 0.05 and 4.") from exc
+        if not math.isfinite(speed) or not .05 <= speed <= 4:
+            raise ValueError("Export speed must be between 0.05 and 4.")
         if getattr(self, "_export_timing", None) is not None:
             return
         if self._console is None or not self._console.is_connected or not self._alive():
@@ -2724,9 +2738,11 @@ class Controller:
                 snapshot[name] = float(read_cvar_value(name, self._request(name)))
             except (RuntimeError, ValueError, TypeError, OSError):
                 snapshot[name] = None
-        self._request(f"host_framerate {fps}; r_wait_on_present 1")
-        self._export_timing = {"fps": fps, "restore": snapshot}
-        self._message(f"Fixed-step export timing active at {fps} FPS; each rendered frame is captured.")
+        self._request(
+            f"host_framerate {fps}; r_wait_on_present 1; demo_timescale {numeric(speed)}")
+        self._export_timing = {"fps": fps, "speed": speed, "restore": snapshot}
+        self._message(
+            f"Fixed-step export at {fps} FPS, {numeric(speed)}x; each rendered frame is captured.")
 
     def clear_export_timing(self):
         state = getattr(self, "_export_timing", None)
@@ -2739,7 +2755,8 @@ class Controller:
         host = restore.get("host_framerate")
         wait = restore.get("r_wait_on_present")
         commands = ["host_framerate " + (numeric(host) if host else "0"),
-                    "r_wait_on_present " + (numeric(wait) if wait is not None else "0")]
+                    "r_wait_on_present " + (numeric(wait) if wait is not None else "0"),
+                    "demo_timescale 1"]
         try:
             self._request("; ".join(commands))
         except (RuntimeError, ValueError, OSError) as exc:

@@ -120,10 +120,19 @@ class VideoExportTests(unittest.TestCase):
 
     def test_fixed_step_sets_and_clears_controller_timing(self):
         self.export.start(VideoOptions(self.path, 60, 20_000_000, fixed_step=True))
-        self.controller.set_export_timing.assert_called_once_with(60)
+        self.controller.set_export_timing.assert_called_once_with(60, 1.0)
         self.assertTrue(self.bridge.start_video.call_args.kwargs["fixed_step"])
         self.export.stop()
         self.controller.clear_export_timing.assert_called_once()
+
+    def test_fixed_step_passes_the_export_speed(self):
+        self.export.start(VideoOptions(self.path, 60, 20_000_000, fixed_step=True, speed=0.1))
+        self.controller.set_export_timing.assert_called_once_with(60, 0.1)
+
+    def test_export_speed_range_is_validated(self):
+        for speed in (0.0, 0.04, 4.01, "fast", True):
+            with self.subTest(speed=speed), self.assertRaises(ValueError):
+                VideoOptions(self.path, codec="builtin", speed=speed).validated()
 
     def test_fixed_step_timing_failure_does_not_start_recording(self):
         self.controller.set_export_timing.side_effect = RuntimeError("not connected")
@@ -266,6 +275,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_codec = Var("")
         self.app.ffmpeg_path = Var("")
         self.app.video_fixed_step = Var(False)
+        self.app.video_export_speed = Var("1")
         self.app.status_text = Var("")
         self.app.video_export = Mock()
         self.app._submit = Mock(return_value=True)

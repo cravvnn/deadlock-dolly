@@ -106,6 +106,8 @@ class VideoOptions:
     preset: int = 0
     ffmpeg_path: "Path | None" = None
     fixed_step: bool = False
+    # Replay slow-motion for fixed-step export (same range as playback speed).
+    speed: float = 1.0
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120):
@@ -132,13 +134,18 @@ class VideoOptions:
             raise ValueError("That output file already exists. Choose a new filename.")
         if type(self.fixed_step) is not bool:
             raise ValueError("Fixed-step export must be on or off.")
+        if isinstance(self.speed, bool) or not isinstance(self.speed, (int, float)):
+            raise ValueError("Export speed must be a number between 0.05 and 4.")
+        speed = float(self.speed)
+        if not 0.05 <= speed <= 4:
+            raise ValueError("Export speed must be between 0.05 and 4.")
         ffmpeg = resolve_ffmpeg(self.ffmpeg_path)
         if needs_ffmpeg and not ffmpeg:
             raise ValueError("Select an ffmpeg.exe for the chosen encoder.")
         # The native writer also creates the file exclusively. This early
         # check gives a useful error; it is not the overwrite safety boundary.
         return VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
-                            ffmpeg, self.fixed_step)
+                            ffmpeg, self.fixed_step, speed)
 
 
 def recording_ready(status: dict) -> bool:
@@ -230,10 +237,10 @@ class VideoExport:
             self._last = current
         return dict(current)
 
-    def _set_export_timing(self, fps):
+    def _set_export_timing(self, fps, speed):
         setter = getattr(self.controller, "set_export_timing", None)
         if callable(setter):
-            setter(fps)
+            setter(fps, speed)
 
     def _clear_export_timing(self):
         clear = getattr(self.controller, "clear_export_timing", None)
@@ -253,7 +260,7 @@ class VideoExport:
         if bridge is None:
             raise RuntimeError("The native recorder is not connected.")
         if options.fixed_step:
-            self._set_export_timing(options.fps)
+            self._set_export_timing(options.fps, options.speed)
         initial_ack = bridge.video_status().get("ack")
         with self._lock:
             self._bridge = bridge

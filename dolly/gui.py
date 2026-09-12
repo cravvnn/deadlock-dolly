@@ -155,6 +155,7 @@ class DollyApp:
         self.video_bitrate = tk.StringVar(value="20 Mbps")
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
         self.video_fixed_step = tk.BooleanVar(value=False)
+        self.video_export_speed = tk.StringVar(value="1")
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
@@ -436,7 +437,12 @@ class DollyApp:
         self.video_codec_combo.pack(side="left", padx=(0, 18))
         self.video_fixed_checkbox = ttk.Checkbutton(options, text="Fixed-step export (frame-accurate)",
                                                     variable=self.video_fixed_step)
-        self.video_fixed_checkbox.pack(side="left")
+        self.video_fixed_checkbox.pack(side="left", padx=(0, 18))
+        ttk.Label(options, text="Export speed", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
+        self.video_speed_combo = ttk.Combobox(options, textvariable=self.video_export_speed,
+                                              values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"),
+                                              width=5)
+        self.video_speed_combo.pack(side="left")
         ttk.Label(card, text="FFmpeg", style="CardMuted.TLabel").grid(row=4, column=0, sticky="w", padx=(0, 12), pady=(12, 0))
         self.ffmpeg_path_entry = ttk.Entry(card, textvariable=self.ffmpeg_path)
         self.ffmpeg_path_entry.grid(row=4, column=1, sticky="ew", pady=(12, 0))
@@ -504,7 +510,8 @@ class DollyApp:
             options = VideoOptions(Path(self.video_path.get().strip()), int(self.video_fps.get()),
                                    BITRATE_PRESETS[self.video_bitrate.get()], codec=codec_key,
                                    ffmpeg_path=self.ffmpeg_path.get().strip() or None,
-                                   fixed_step=bool(self.video_fixed_step.get())).validated()
+                                   fixed_step=bool(self.video_fixed_step.get()),
+                                   speed=float(self.video_export_speed.get())).validated()
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return
@@ -547,7 +554,8 @@ class DollyApp:
             if widget is not None:
                 widget.configure(state="disabled" if active or self.busy else "normal")
         for widget in (self.video_fps_combo, self.video_bitrate_combo,
-                       getattr(self, "video_codec_combo", None)):
+                       getattr(self, "video_codec_combo", None),
+                       getattr(self, "video_speed_combo", None)):
             if widget is not None:
                 widget.configure(state="disabled" if active or self.busy else "readonly")
         self.reshade_configure_button.configure(state="normal" if ready and not active and not self.busy and not self.playing else "disabled")
