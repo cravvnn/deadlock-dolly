@@ -63,7 +63,19 @@ enum class EditorAction : std::uint32_t {
     SetVideoEncoder,
     SetVideoFixedStep,
     SetVideoSpeed,
-    DestroyRagdolls
+    DestroyRagdolls,
+    SetFraming,
+    SetDofEnabled,
+    SetDofOverride,
+    SetDofRangeNearBlurry,
+    SetDofRangeNearCrisp,
+    SetDofRangeFarCrisp,
+    SetDofRangeFarBlurry,
+    SetDofNearBlurry,
+    SetDofNearCrisp,
+    SetDofFarCrisp,
+    SetDofFarBlurry,
+    SetDofTilt
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
@@ -127,7 +139,21 @@ struct EditorInputDiagnostics {
     std::uint32_t last_cursor_error;
     unsigned char padding[36];
 };
+constexpr std::size_t kEditorDofOffset = 2 * 1024 * 1024 + 3712;
+struct EditorDofConfig {
+    char magic[8];
+    std::uint32_t sequence, abi, enabled, reserved;
+    double values[11];
+};
 #pragma pack(pop)
+static_assert(sizeof(EditorDofConfig) == 112, "Python optional DOF config layout");
+static_assert(kEditorInputDiagnosticsOffset + sizeof(EditorInputDiagnostics) == kEditorDofOffset,
+              "DOF config follows diagnostics");
+static_assert(kEditorDofOffset + sizeof(EditorDofConfig) <= 2 * 1024 * 1024 + 4096,
+              "DOF config fits the mapping");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetFraming) == 40 &&
+                  static_cast<std::uint32_t>(EditorAction::SetDofTilt) == 51,
+              "Stable edit actions");
 static_assert(sizeof(EditorConfig) == 448, "Python editor configuration layout");
 static_assert(offsetof(EditorConfig, playback_speed) == 416, "Python playback speed offset");
 static_assert(offsetof(EditorConfig, playback_rate) == 424, "Python playback rate offset");
@@ -161,10 +187,13 @@ struct EditorSnapshot {
     double horizontal_fov = 0;
     std::uint32_t view_width = 0, view_height = 0;
     CameraPose pose{};
+    bool dof_available = false;
+    std::array<double, 11> dof{};
     char shot_name[96]{}, message[128]{};
 };
 EditorSnapshot editor_snapshot() noexcept;
-bool editor_enqueue(EditorAction action, double value = 0) noexcept;
+bool editor_enqueue(EditorAction action, double value = 0,
+                    const CameraPose* pose_override = nullptr) noexcept;
 bool editor_panel_visible() noexcept;
 void editor_set_owner(EditorOwner owner) noexcept;
 void editor_overlay_available(bool available) noexcept;

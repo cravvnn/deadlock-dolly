@@ -459,9 +459,11 @@ class NativeBridge(MediaTransport):
                     ". Let the replay finish loading, then retry Paused camera. Export diagnostics if it persists.")
             self._sleep(min(0.02, remaining))
 
-    def start_flight(self, demo_name, pose=None, timeout=8, *, cancelled=None):
+    def start_flight(self, demo_name, pose=None, timeout=8, *, cancelled=None, owner="flight"):
         """Enter native manual flight, optionally seeded from a displayed view."""
         timeout = _number(timeout, "Native acknowledgment timeout")
+        if owner not in ("flight", "panel"):
+            raise ValueError("Native flight owner must be flight or panel")
         if cancelled is not None and not callable(cancelled):
             raise ValueError("Native flight cancellation must be callable")
         if not isinstance(demo_name, str) or not demo_name or any(c in demo_name for c in "\0\r\n"):
@@ -492,7 +494,7 @@ class NativeBridge(MediaTransport):
                 self._wait_editor_input(timeout, cancelled)
                 if cancelled is not None and cancelled():
                     raise NativeBridgeError("Opening the paused camera was cancelled.")
-                self.configure_editor(owner="flight")
+                self.configure_editor(owner=owner)
                 command = self._publish(4, payload)
                 result = self._wait(command, {"armed"}, timeout)
             except Exception:
@@ -522,6 +524,21 @@ class NativeBridge(MediaTransport):
             self._store(offset + 8, even)
             self._editor_sequence, self._editor_owner_sequence = even, owner_sequence
             self._editor_values = changed
+
+    def configure_editor_dof(self, values, *, enabled):
+        """Optional shot-settings block; does not mutate camera/effect runtime."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            previous = getattr(self, "_editor_dof_sequence", 0)
+            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
+            data = wire.pack_dof(odd, enabled, values)
+            offset = wire.DOF_OFFSET
+            self._store(offset + 8, odd)
+            self._mapping[offset:offset + 8] = data[:8]
+            self._mapping[offset + 12:offset + len(data)] = data[12:]
+            self._store(offset + 8, even)
+            self._editor_dof_sequence = even
 
     def editor_status(self):
         from . import editor_wire as wire

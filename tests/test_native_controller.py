@@ -104,6 +104,36 @@ class Bridge:
 
 
 class NativeControllerTests(unittest.TestCase):
+    def test_dof_preview_preserves_live_camera_tick_and_authored_path(self):
+        self.bridge.state = "armed"
+        self.console.paused = True
+        self.console.tick = 377
+        self.bridge.editor_status = Mock(return_value={"ready": True, "input_mode": "panel"})
+        original = self.project.to_dict()
+        before = self.bridge.status()["applied_pose"]
+        self.bridge.start_flight = Mock(side_effect=lambda *_a, **_kw: self.bridge.status())
+        self.project.setup_values["r_dof_override"] = 1
+        self.console.values["r_dof_override"] = 0
+        result = self.controller.preview_native_effects(self.project, .5)
+        self.assertEqual([result[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")], before)
+        self.assertEqual(self.console.tick, 377)
+        self.assertEqual(self.project.to_dict()["keyframes"], original["keyframes"])
+        self.assertEqual(self.console.values["r_dof_override"], 1)
+        self.bridge.start_flight.assert_called_once_with(self.console.demo_name, owner="panel")
+        self.assertFalse(any("demo_gototick" in event or "spec_goto" in event or
+                             "demo_timescale " in event or "demo_resume" in event
+                             for event in self.bridge.events))
+
+    def test_dof_preview_rejects_unpaused_or_nonpanel_edits_before_publication(self):
+        self.bridge.state = "armed"
+        self.bridge.editor_status = Mock(return_value={"ready": True, "input_mode": "flight"})
+        for paused, mode in ((False, "panel"), (True, "flight")):
+            self.console.paused = paused
+            self.bridge.editor_status.return_value["input_mode"] = mode
+            with self.assertRaisesRegex(RuntimeError, "paused replay"):
+                self.controller.preview_native_effects(self.project, 0)
+        self.assertNotIn("native.prepare", self.bridge.events)
+
     def setUp(self):
         controller_fixture.ControllerTests.setUp(self)
         self.clock = Clock()

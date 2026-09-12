@@ -77,9 +77,17 @@ Depth, hero-only and world-only export are not available in this build. See
    The status changes from loading to ready after a game frame initializes it.
 4. Press **F11** in Deadlock to open ReShade's own menu. Rebind this action on
    **Keybinds** if needed. **F7** continues to open the game console.
-5. Add the shader and texture search paths for your downloaded shader pack in
-   ReShade's settings, then select or create a preset. Shaders and presets are
-   separate downloads and are not bundled with Dolly.
+5. Dolly registers its bundled crosire/prod80 shader and texture library and
+   copies editable presets into its private `ReShade\presets` folder. A new
+   configuration selects **Deadlock-Dolly**, a neutral color-control preset.
+   Open ReShade's menu to adjust its sliders or enable the other bundled effects.
+   Existing shader paths, selected presets and edited preset files are preserved.
+   You can add other downloaded shader packs through ReShade's settings.
+
+The optional **Deadlock-AO** preset requires separately installed iMMERSE shaders
+and a working depth source. Those shaders and the ReShade runtime are not bundled.
+It is not selected automatically; Dolly's current ReShade integration still
+needs the depth hookup described below before depth-based AO can work.
 
 The selected runtime is remembered for later Dolly editing sessions.
 **Disable** turns it off for the current session. **Forget runtime** clears the saved runtime path
@@ -112,7 +120,8 @@ original camera hook, interpolation and replay clock are unchanged.
 ReShade runs through its manual runtime API inside Dolly's existing Present
 callback. Capture occurs at its post-effects, pre-interface callback. Optional
 loading runs outside the camera worker. The public API headers are pinned in
-`native/vendor/reshade/UPSTREAM.json`; runtime DLLs and shader packs are not
+`native/vendor/reshade/UPSTREAM.json`. The shader library in
+`third_party/reshade_shaders` includes its CC0/MIT notices; runtime DLLs are not
 redistributed.
 
 References: [ReShade runtime API](https://crosire.github.io/reshade-docs/structreshade_1_1api_1_1effect__runtime.html),

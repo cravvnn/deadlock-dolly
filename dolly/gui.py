@@ -620,12 +620,13 @@ class DollyApp:
                 bridge = self.controller._native_bridge()
                 if bridge is None or not recording_ready(self.controller.status()):
                     raise RuntimeError("Launch a DirectX 11 replay through Dolly before enabling ReShade.")
-                config.parent.mkdir(parents=True, exist_ok=True)
+                from dolly.reshade_setup import prepare_config
+                prepare_config(config)
                 bridge.configure_reshade(str(path), str(config))
                 save_settings(settings)
             def complete(_result):
                 self.app_settings = settings
-                self.reshade_status_text.set("ReShade requested. Use its menu shortcut to choose effects and presets.")
+                self.reshade_status_text.set("ReShade requested. Dolly's shader library and editable presets are ready in its menu.")
             self._submit("Enabling ReShade", configure, complete)
         if automatic:
             try:

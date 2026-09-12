@@ -312,6 +312,24 @@ class VideoGuiTests(unittest.TestCase):
 
 
 class ReShadeGuiTests(unittest.TestCase):
+    def test_library_is_prepared_before_loading_the_selected_runtime(self):
+        self.app.controller = Mock()
+        self.app.controller.status.return_value = READY
+        self.app._submit = Mock()
+        self.app.reshade_status_text = Var("")
+        self.app._log = Mock()
+        order = []
+        self.app.controller._native_bridge.return_value.configure_reshade.side_effect = lambda *_: order.append("load")
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Path(folder) / "ReShade64.dll"
+            runtime.write_bytes(b"selected user runtime")
+            self.app.app_settings = AppSettings(reshade_runtime_path=str(runtime))
+            self.app._configure_reshade(automatic=True)
+            with patch("dolly.reshade_setup.prepare_config", side_effect=lambda *_: order.append("library")), \
+                 patch("dolly.gui.save_settings"):
+                self.app._submit.call_args.args[1]()
+        self.assertEqual(order, ["library", "load"])
+
     def setUp(self):
         self.app = DollyApp.__new__(DollyApp)
         self.app.busy = False

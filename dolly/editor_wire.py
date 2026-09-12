@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import struct
+from .editor_dof import ACTIONS as DOF_ACTIONS
 
 CONFIG_OFFSET = 576
 STATUS_OFFSET = 2 * 1024 * 1024 + 2048
@@ -24,7 +25,21 @@ STATUS_BYTES = HEADER.size + EVENT.size * EVENT_COUNT
 OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused", "reshade")
 EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate",
                  "reshade", "start_video", "stop_video", "set_video_fps", "set_video_bitrate",
-                 "set_video_encoder", "set_video_fixed_step", "set_video_speed", "destroy_ragdolls")
+                 "set_video_encoder", "set_video_fixed_step", "set_video_speed", "destroy_ragdolls",
+                 "set_framing") + DOF_ACTIONS
+
+DOF_OFFSET = 2 * 1024 * 1024 + 3712
+DOF_CONFIG = struct.Struct("<8s4I11d")
+
+
+def pack_dof(sequence, enabled, values):
+    if len(values) != 11 or not isinstance(enabled, bool):
+        raise ValueError("Invalid native DOF settings")
+    checked = [_finite(value, -3.4028234663852886e38, 3.4028234663852886e38, "DOF value")
+               for value in values]
+    if any(value not in (0, 1) for value in checked[:2]):
+        raise ValueError("Invalid native DOF switch")
+    return DOF_CONFIG.pack(b"DLYDOF01", _uint(sequence, "sequence"), 1, int(enabled), 0, *checked)
 
 
 def _text(value, capacity):

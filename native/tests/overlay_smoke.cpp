@@ -485,7 +485,7 @@ namespace dolly {
 EditorSnapshot editor_snapshot() noexcept {
     return snapshot;
 }
-bool editor_enqueue(EditorAction, double) noexcept {
+bool editor_enqueue(EditorAction, double, const CameraPose*) noexcept {
     return true;
 }
 bool editor_panel_visible() noexcept {

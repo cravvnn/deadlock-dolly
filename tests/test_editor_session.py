@@ -20,6 +20,47 @@ class Value:
 
 
 class EditorSessionTests(unittest.TestCase):
+    def test_wheel_framing_updates_only_the_selected_camera_lens(self):
+        from copy import deepcopy
+        keys = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
+        self.app.project.keyframes = keys
+        self.app._commit_camera = Mock()
+        event = {"action": "set_framing", "value": 1, "pose": [90, 91, 92, 0, 0, 0, 1.25]}
+        self.assertTrue(session.dispatch(self.app, event, self.bridge))
+        changed, selected_time = self.app._commit_camera.call_args.args
+        expected = deepcopy(keys)
+        expected[1].aspect_ratio = 1.25
+        self.assertEqual(changed, expected)
+        self.assertEqual(selected_time, 2)
+        self.assertNotEqual(keys[1].aspect_ratio, 1.25)
+        self.app._submit.assert_not_called()
+
+    def test_wheel_before_capture_keeps_live_framing_without_creating_a_key(self):
+        self.assertTrue(session.dispatch(self.app, {"action": "set_framing", "value": -1,
+                        "pose": [0, 0, 0, 0, 0, 0, 1.2]}, self.bridge))
+        self.assertFalse(self.app.project.keyframes)
+        self.assertIn("Capture", self.app.status_text.set.call_args.args[0])
+
+    def test_invalid_wheel_edit_cannot_mutate_project(self):
+        for index, aspect in ((0, 1), (-2, 1), (.5, 1), (-1, 0), (-1, 4.1), (-1, float("nan"))):
+            with self.subTest(index=index, aspect=aspect), self.assertRaises(ValueError):
+                session.dispatch(self.app, {"action": "set_framing", "value": index,
+                                 "pose": [0, 0, 0, 0, 0, 0, aspect]}, self.bridge)
+
+    def test_dof_preview_finishes_before_the_project_is_committed(self):
+        self.app.project.keyframes = [Keyframe(0, 0, 0, 0, 0, 0, 0)]
+        self.app._mark_dirty = Mock()
+        self.app._refresh_tracks = Mock()
+        self.app._refresh_fixed = Mock()
+        session.dispatch(self.app, {"action": "set_dof_1", "value": 1}, self.bridge)
+        self.assertNotIn("r_dof_override", self.app.project.setup_values)
+        work = self.app._submit.call_args.args
+        result = work[1]()
+        self.controller.preview_native_effects.assert_called_once()
+        work[2](result)
+        self.assertEqual(self.app.project.setup_values["r_dof_override"], 1)
+        self.app._mark_dirty.assert_called_once()
+
     def test_clear_ragdolls_dispatches_on_worker(self):
         self.assertTrue(session.dispatch(self.app, {"action": "destroy_ragdolls", "value": 0}, self.bridge))
         self.controller.destroy_ragdolls.assert_not_called()

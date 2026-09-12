@@ -7,7 +7,8 @@ a = Analysis(
     pathex=[str(root)],
     binaries=[],
     datas=[(str(root / "assets" / "dolly.ico"), "assets"),
-           (str(root / "assets" / "dolly.png"), "assets")],
+           (str(root / "assets" / "dolly.png"), "assets"),
+           (str(root / "assets" / "reshade"), "assets/reshade")],
     hiddenimports=[], hookspath=[], hooksconfig={}, runtime_hooks=[], excludes=[],
     noarchive=False,
 )

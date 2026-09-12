@@ -130,6 +130,23 @@ camera in the panel, or use PageUp/PageDown, to apply its position, rotation,
 aspect and supported DOF at the **current replay moment**. This does not seek
 to that key's arrival time. F10 continues flight from the displayed view.
 
+While flying a paused camera, scroll up to zoom in and down to zoom out.
+This changes `r_aspectratio`, the **Framing Curve** on the desktop Cameras tab,
+between 0.5 and 4. It immediately updates the selected camera's framing without
+changing its position or arrival time. Before the first camera is captured,
+scrolling changes the live framing that the next capture will save. The wheel
+scrolls menus normally while a panel or ReShade has input focus.
+
+The in-game Editor's **Depth of field** card sits between Cameras and Replay.
+After capturing a camera, use **Enable DOF**, **Override**, **Focus ranges**,
+**Individual ranges**, and **Ground tilt** to author the existing native DOF
+controls. Drag a number and release to apply it, or Ctrl+click to type. An
+animated control receives a key at the desktop playhead; otherwise the edit
+sets a fixed shot value. These changes also appear in desktop Effects.
+Preview applies at the held camera and replay tick. Controls that have not
+been authored display defaults until edited. Four zero Focus ranges use the
+Individual ranges. Stop / restore retains the existing restoration behavior.
+
 Capture also works while replay time advances and leaves the replay paused.
 The in-game keybind saves the pose and tick sampled with its input event;
 desktop Capture waits for a paused rendered view and saves that frame's tick.

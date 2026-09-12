@@ -799,6 +799,90 @@ void editor_input_checks() {
     dolly::gAcknowledged = dolly::gLastEvent;
 }
 
+void editor_framing_checks() {
+    const auto saved = std::atomic_load(&dolly::gConfig);
+    const auto view = editor_snapshot();
+    auto config = std::make_shared<EditorConfig>(*saved);
+    config->camera_count = 2;
+    config->selected_camera = 1;
+    config->playback_flags = 0;
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(config));
+    dolly::gAcknowledged = dolly::gLastEvent;
+    CameraPose pose{1, 2, 3, 4, 5, 6, 16.0 / 9};
+    editor_update_view(true, true, true, pose);
+    // Optional desktop DOF publication is a separate bounded mapping block.
+    std::vector<unsigned char> dof_memory(2 * 1024 * 1024 + 4096);
+    EditorDofConfig dof{};
+    std::memcpy(dof.magic, "DLYDOF01", 8);
+    dof.sequence = 2;
+    dof.abi = 1;
+    dof.enabled = 1;
+    dof.values[0] = 1;
+    dof.values[4] = 180;
+    std::memcpy(dof_memory.data() + kEditorDofOffset, &dof, sizeof(dof));
+    editor_worker_tick(dof_memory.data(), true);
+    require(editor_snapshot().dof_available && editor_snapshot().dof[4] == 180,
+            "Desktop DOF settings did not reach the editor snapshot");
+    editor_set_owner(EditorOwner::Panel);
+    require(editor_enqueue(EditorAction::SetDofRangeFarCrisp, 350),
+            "Valid native DOF edit could not enter the event queue");
+    require(!editor_enqueue(EditorAction::SetDofOverride, .5) &&
+                !editor_enqueue(EditorAction::SetDofTilt, 1e39),
+            "Invalid native DOF value entered the event queue");
+    editor_set_owner(EditorOwner::Flight);
+    require(!editor_enqueue(EditorAction::SetDofOverride, 1), "DOF edit bypassed panel ownership");
+    dof.sequence = 4;
+    dof.values[4] = std::numeric_limits<double>::quiet_NaN();
+    std::memcpy(dof_memory.data() + kEditorDofOffset, &dof, sizeof(dof));
+    editor_worker_tick(dof_memory.data(), true);
+    require(editor_snapshot().dof[4] == 180, "Invalid publication replaced the valid DOF snapshot");
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
+    close_to(pose[6], 1.6, "Wheel up did not zoom into the aspect framing curve");
+    auto event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+    require(event.action == 40 && event.value == 1 && event.pose[0] == 1,
+            "Wheel event did not retain the selected camera and exact pose");
+    close_to(event.pose[6], pose[6], "Wheel event contains the previous frame's aspect");
+    dolly::apply_framing_wheel(pose, *config, -WHEEL_DELTA);
+    close_to(pose[6], 16.0 / 9, "Wheel down did not reverse wheel up");
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA / 2);
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA / 2);
+    close_to(pose[6], 1.6, "Partial wheel detents were lost");
+    dolly::apply_framing_wheel(pose, *config, 12000);
+    close_to(pose[6], .5, "Wheel exceeded the minimum framing curve bound");
+    dolly::apply_framing_wheel(pose, *config, -12000);
+    close_to(pose[6], 4, "Wheel exceeded the maximum framing curve bound");
+    const auto serial = dolly::gLastEvent;
+    dolly::apply_framing_wheel(pose, *config, -WHEEL_DELTA);
+    require(dolly::gLastEvent == serial, "Clamped wheel queued a redundant edit");
+    for (unsigned i = 0; i < kEditorEventCount; ++i)
+        editor_enqueue(EditorAction::Capture);
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
+    close_to(pose[6], 4, "Full event queue left visible framing ahead of the saved curve");
+    dolly::gAcknowledged = dolly::gLastEvent;
+    editor_update_view(true, false, true, pose);
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
+    close_to(pose[6], 4, "Wheel changed framing during replay playback");
+    editor_update_view(true, true, true, pose);
+    config->playback_flags = 1;
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
+    close_to(pose[6], 4, "Wheel changed framing during shot playback");
+    config->playback_flags = 0;
+    config->camera_count = 0;
+    config->selected_camera = 0;
+    dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
+    event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+    require(event.value == -1, "Uncaptured wheel zoom selected a nonexistent key");
+    dolly::gFramingWheel = 120;
+    editor_reset_motion();
+    require(dolly::gFramingWheel == 0, "Wheel input leaked through an owner transition");
+    dolly::gFramingWheel = 120;
+    editor_integrate_flight(pose, 1);
+    require(dolly::gFramingWheel == 0, "Wheel suspension backlog was not discarded");
+    std::atomic_store(&dolly::gConfig, saved);
+    editor_update_view(view.ready, view.paused, view.manual_active, view.pose);
+    dolly::gAcknowledged = dolly::gLastEvent;
+}
+
 void run() {
     atomic_exports();
     replay_identity();
@@ -1113,6 +1197,7 @@ void run() {
     effect_checks(f);
     editor_cursor_startup_checks();
     editor_input_checks();
+    editor_framing_checks();
 
     std::cout
         << "Actual native callback smoke tests passed (synthetic Windows memory; no game runtime claim)\n";

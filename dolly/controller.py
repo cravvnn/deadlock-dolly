@@ -1472,6 +1472,42 @@ class Controller:
             self._message("Saved camera applied at the current paused replay moment.", time=shot_time)
             return result
 
+    def preview_native_effects(self, project, shot_time):
+        """Apply edited effects at the held camera without seeking the replay."""
+        with self._op_lock:
+            self._validate_project(project)
+            bridge = self._native_bridge()
+            if bridge is None or self.status().get("playing"):
+                raise RuntimeError("Pause native camera playback before editing DOF.")
+            self._require_probe()
+            self._require_demo()
+            current = bridge.status()
+            self._require_native_demo(current)
+            editor = bridge.editor_status()
+            if not current.get("paused") or not editor.get("ready") or editor.get("input_mode") != "panel":
+                raise RuntimeError("Open the in-game Editor on a paused replay before editing DOF.")
+            shot_time = self._shot_time(project, shot_time)
+            pose = self._native_pose(current)
+            preview = deepcopy(project)
+            # A private constant camera replaces only the runtime preview. The
+            # user's saved camera positions/times remain in their project.
+            preview.keyframes = [Keyframe(time=shot_time, **pose)]
+            self._snapshot(project)
+            try:
+                bridge.prepare(preview, shot_time, 1.0, True, self._demo.name)
+                result = bridge.start_flight(self._demo.name, owner="panel")
+                self._require_native_demo(result)
+                if not result.get("paused") or int(result["tick"]) != int(current["tick"]):
+                    raise RuntimeError("The replay moved while applying DOF. Pause it and retry.")
+            except Exception:
+                self._release_native_camera()
+                raise
+            self._native_active = self._native_manual = True
+            frame = dict(pose, time=shot_time, cvars=project.evaluate(shot_time)["cvars"])
+            self._set_paused_pose(frame, int(result["tick"]))
+            self._message("Native DOF updated at the current camera.", time=shot_time, paused_flight=True)
+            return deepcopy(frame)
+
     def _supports_native_flight(self):
         bridge = self._native_bridge()
         return bridge is not None and callable(getattr(bridge, "start_flight", None))

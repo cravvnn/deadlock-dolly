@@ -8,6 +8,29 @@ from dolly.editor_actions import default_action_bindings, EditorBinding
 
 
 class EditorBridgeTests(unittest.TestCase):
+    def test_dof_publication_is_separate_atomic_and_validated_before_write(self):
+        values = (1, 1, -100, 0, 180, 2000, -100, 0, 180, 2000, .5)
+        before = bytes(self.memory[:w.DOF_OFFSET])
+        self.bridge.configure_editor_dof(values, enabled=True)
+        self.assertEqual(bytes(self.memory[:w.DOF_OFFSET]), before)
+        self.assertEqual(w.DOF_CONFIG.unpack_from(self.memory, w.DOF_OFFSET),
+                         (b"DLYDOF01", 2, 1, 1, 0, *values))
+        before = bytes(self.memory)
+        with self.assertRaises(ValueError):
+            self.bridge.configure_editor_dof((.5, *values[1:]), enabled=True)
+        self.assertEqual(bytes(self.memory), before)
+        self.bridge.configure_editor_dof(values, enabled=False)
+        self.assertEqual(w.DOF_CONFIG.unpack_from(self.memory, w.DOF_OFFSET)[1:4], (4, 1, 0))
+
+    def test_dof_preview_can_reenter_flight_without_closing_the_panel(self):
+        with patch.object(self.bridge, "_wait_editor_input"), \
+             patch.object(self.bridge, "_wait", return_value={"state": "armed"}):
+            self.bridge.start_flight("example.dem", owner="panel")
+        self.assertTrue(self.bridge._manual)
+        self.assertEqual(self.bridge._editor_values["owner"], "panel")
+        with self.assertRaises(ValueError):
+            self.bridge.start_flight("example.dem", owner="game_ui")
+
     def setUp(self):
         self.memory = bytearray(nb.MAPPING_BYTES)
         self.time = 0

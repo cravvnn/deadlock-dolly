@@ -28,6 +28,12 @@ effect track or fixed shot variable.
 
 ## Range DOF
 
+The in-game **Editor → Depth of field** card exposes the same range and tilt
+controls between Cameras and Replay. Capture a camera first. Edits preview at
+the held camera without seeking; animated channels receive a key at the
+playhead, and other channels become fixed shot values. Unauthored controls
+display defaults, rather than readback of arbitrary external console changes.
+
 On the desktop Effects tab, click **+ Range DOF**. The preset enables
 `r_depth_of_field` and `r_dof_override`, and adds a range track. Edit each
 key as four numbers separated by spaces, for example:

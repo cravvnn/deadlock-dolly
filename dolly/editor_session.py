@@ -7,6 +7,7 @@ waits for a Python UI callback while rendering a view.
 from __future__ import annotations
 
 from dataclasses import replace
+import copy
 import logging
 import math
 
@@ -170,6 +171,14 @@ def configure(app):
         app._native_editor_config_cache = values
         app._native_editor_bridge = bridge
     _configure_visualization(app, bridge, active, selected)
+    publish_dof = getattr(bridge, "configure_editor_dof", None)
+    if callable(publish_dof):
+        from .editor_dof import values_at
+        dof = (active, values_at(app.project, max(0.0, playhead)))
+        if (getattr(app, "_native_dof_bridge", None) is not bridge
+                or getattr(app, "_native_dof_cache", None) != dof):
+            publish_dof(dof[1], enabled=active)
+            app._native_dof_bridge, app._native_dof_cache = bridge, dof
 
 
 def _select(app, index):
@@ -215,6 +224,36 @@ def dispatch(app, event, bridge):
     if action in ("capture", "replace"):
         operation = "replace" if action == "replace" else ("append" if app.project.keyframes else "start")
         app._capture_view(operation, native_snapshot=event)
+    elif action == "set_framing":
+        index, aspect = event["value"], event["pose"][6]
+        if (not math.isfinite(index) or index != int(index) or index < -1
+                or not math.isfinite(aspect) or not .5 <= aspect <= 4):
+            raise ValueError("Invalid in-game framing edit")
+        if index == -1:
+            app.status_text.set(f"Live framing {aspect:.4f}. Capture a camera to save it.")
+        else:
+            if index >= len(app.project.keyframes):
+                raise ValueError("That camera is no longer present in this shot.")
+            keys = copy.deepcopy(app.project.keyframes)
+            key = keys[int(index)]
+            key.aspect_ratio = aspect
+            app._commit_camera(keys, key.time)
+            app.status_text.set(f"Camera {int(index) + 1} framing set to {aspect:.4f}.")
+    elif action.startswith("set_dof_"):
+        from .editor_dof import ACTIONS, edited_project
+        if action not in ACTIONS:
+            raise ValueError("Unsupported native DOF control")
+        if app.controller.status().get("playing") or getattr(app, "playing", False):
+            raise ValueError("Pause shot playback before editing DOF.")
+        at = float(_value(app, "shot_time", 0) or 0)
+        candidate = edited_project(app.project, at, ACTIONS.index(action), event["value"])
+        def complete(_result):
+            app.project = candidate
+            app._mark_dirty()
+            app._refresh_tracks()
+            app._refresh_fixed()
+            configure(app)
+        app._submit("Applying native DOF", lambda: app.controller.preview_native_effects(candidate, at), complete)
     elif action == "play_pause":
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":

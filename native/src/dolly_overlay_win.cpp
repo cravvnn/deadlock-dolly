@@ -791,6 +791,60 @@ void draw_panel(const EditorSnapshot& state) {
                                             unsigned(guides->camera_count()));
                 }
                 end_panel_card();
+                if (begin_panel_card("##dof-card")) {
+                    section_title("Depth of field", "Native engine");
+                    ImGui::BeginDisabled(!state.dof_available || !state.paused || state.playing ||
+                                         !state.camera_count);
+                    bool enabled = state.dof[0] != 0, override_enabled = state.dof[1] != 0;
+                    if (ImGui::Checkbox("Enable DOF", &enabled))
+                        editor_enqueue(EditorAction::SetDofEnabled, enabled ? 1 : 0);
+                    ImGui::SameLine();
+                    if (ImGui::Checkbox("Override", &override_enabled))
+                        editor_enqueue(EditorAction::SetDofOverride, override_enabled ? 1 : 0);
+                    static std::array<double, 11> dof_draft{};
+                    static std::array<bool, 11> dof_editing{};
+                    auto field = [&](unsigned index, const char* label, float step) {
+                        if (!dof_editing[index])
+                            dof_draft[index] = state.dof[index];
+                        ImGui::PushID(int(index));
+                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * .52f);
+                        ImGui::DragScalar(label, ImGuiDataType_Double, &dof_draft[index], step,
+                                          nullptr, nullptr, "%.2f");
+                        const bool committed = ImGui::IsItemDeactivatedAfterEdit();
+                        dof_editing[index] = ImGui::IsItemActive();
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip(
+                                "Drag to adjust; Ctrl+click to type. Applies when released.");
+                        if (committed)
+                            editor_enqueue(
+                                EditorAction(unsigned(EditorAction::SetDofEnabled) + index),
+                                dof_draft[index]);
+                        ImGui::PopID();
+                    };
+                    if (ImGui::TreeNode("Focus ranges")) {
+                        field(2, "Near blurry", 5);
+                        field(3, "Near crisp", 5);
+                        field(4, "Far crisp", 5);
+                        field(5, "Far blurry", 5);
+                        ImGui::TextWrapped("Four zeros uses the individual ranges below.");
+                        ImGui::TreePop();
+                    }
+                    field(10, "Ground tilt", .01f);
+                    if (ImGui::TreeNode("Individual ranges")) {
+                        field(6, "Near blurry", 5);
+                        field(7, "Near crisp", 5);
+                        field(8, "Far crisp", 5);
+                        field(9, "Far blurry", 5);
+                        ImGui::TreePop();
+                    }
+                    ImGui::EndDisabled();
+                    if (!state.camera_count)
+                        ImGui::TextWrapped("Capture a camera to author DOF settings.");
+                    else
+                        ImGui::TextWrapped(
+                            "Shot settings: edits key animated controls at the playhead; otherwise they set a fixed value. Unauthored controls show defaults.");
+                }
+                end_panel_card();
                 if (begin_panel_card("##replay-card")) {
                     char timing[64]{};
                     if (state.duration > 0)
@@ -861,6 +915,8 @@ void draw_panel(const EditorSnapshot& state) {
                     char speed_label[48]{};
                     std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
                     section_title("Free camera", speed_label);
+                    ImGui::TextWrapped(
+                        "Mouse wheel zooms while flying and updates the selected camera's Framing Curve.");
                     ImGui::SetNextItemWidth(-1);
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                                         ImVec2(12 * panel_scale, 3 * panel_scale));
@@ -885,7 +941,8 @@ void draw_panel(const EditorSnapshot& state) {
                                   ImGui::GetContentRegionAvail().x);
                     ImGui::EndDisabled();
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Clear accumulated ragdolls after repeated shot playback.");
+                        ImGui::SetTooltip(
+                            "Clear accumulated ragdolls after repeated shot playback.");
                 }
                 end_panel_card();
                 ImGui::EndDisabled();

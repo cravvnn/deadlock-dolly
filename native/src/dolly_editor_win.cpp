@@ -23,8 +23,9 @@ std::atomic<EditorOwner> gReShadePriorOwner{EditorOwner::Unfocused};
 // Deferred F7/F8/F9 transitions run only after the actual ReShade menu closes.
 std::atomic<unsigned> gReShadeDeferred{0};
 std::shared_ptr<const EditorConfig> gConfig;
+std::shared_ptr<const EditorDofConfig> gDofConfig;
 std::atomic<double> gSpeed{400};
-std::atomic<long> gMouseX{0}, gMouseY{0};
+std::atomic<long> gMouseX{0}, gMouseY{0}, gFramingWheel{0};
 std::atomic<bool> gKeys[256]{}, gBlocked[256]{}, gFocusBlocked[256]{};
 std::atomic<bool> gNoLegacyMouse{false}, gTextInput{false};
 std::atomic<std::uint64_t> gRawMousePackets{0}, gRelativeMousePackets{0}, gAcceptedMotionPackets{0};
@@ -73,6 +74,7 @@ bool owns_input() noexcept {
     return (owner == EditorOwner::Flight || owner == EditorOwner::Panel) && (gViewFlags.load() & 1);
 }
 void reset_keys(bool lost_input = false) noexcept {
+    gFramingWheel = 0;
     for (unsigned i = 0; i < 256; ++i) {
         const bool held = (GetAsyncKeyState(int(i)) & 0x8000) != 0;
         if (lost_input) {
@@ -320,6 +322,18 @@ void key_event(unsigned vk, bool down) noexcept {
     if (down && !was_down && !gBlocked[vk].load())
         dispatch_key_press(vk);
 }
+void framing_wheel(long units) noexcept {
+    auto c = std::atomic_load(&gConfig);
+    if (!owns_input() || gOwner.load() != EditorOwner::Flight || (gViewFlags.load() & 6) != 6 ||
+        !c || c->playback_flags)
+        return;
+    // Bound backlog even when the game stops producing views. Partial wheel
+    // detents are retained, including high-resolution mouse/trackpad input.
+    auto previous = gFramingWheel.load();
+    while (!gFramingWheel.compare_exchange_weak(
+        previous, std::clamp<long>(previous + units, -12000, 12000))) {
+    }
+}
 void process_raw(RAWINPUT* raw, bool suppress) noexcept {
     if (!raw)
         return;
@@ -364,6 +378,8 @@ void process_raw(RAWINPUT* raw, bool suppress) noexcept {
                         m.usButtonFlags &= ~ups[i];
                 }
             }
+            if (gNoLegacyMouse.load() && (m.usButtonFlags & RI_MOUSE_WHEEL))
+                framing_wheel(static_cast<SHORT>(m.usButtonData));
             if (gOwner.load() == EditorOwner::Panel && gNoLegacyMouse.load()) {
                 float wheel = float(static_cast<SHORT>(m.usButtonData)) / WHEEL_DELTA;
                 if (m.usButtonFlags & RI_MOUSE_WHEEL)
@@ -478,6 +494,11 @@ EditorSnapshot editor_snapshot() noexcept {
     result.overlay_available = gOverlay.load();
     result.input_available = gInput.load();
     result.dropped_events = gDropped.load();
+    auto dof = std::atomic_load(&gDofConfig);
+    if (dof && dof->enabled && gConnected.load()) {
+        result.dof_available = true;
+        std::copy(std::begin(dof->values), std::end(dof->values), result.dof.begin());
+    }
     // Atomic field seqlock gives an internally coherent capture pose and tick.
     // Bounded retries never wait for the render callback.
     for (int attempt = 0; attempt < 4; ++attempt) {
@@ -501,16 +522,33 @@ EditorSnapshot editor_snapshot() noexcept {
     result.ready = false;
     return result;
 }
-bool editor_enqueue(EditorAction action, double value) noexcept {
+bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_override) noexcept {
     // Menu requests may originate from a render-thread button. They only queue
     // adapter work here; the worker changes input/cursor ownership afterwards.
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
-    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::DestroyRagdolls))
+    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::SetDofTilt))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
+        return false;
+    if (action >= EditorAction::SetDofEnabled && action <= EditorAction::SetDofTilt &&
+        (!state.dof_available || !state.ready || !state.paused || state.playing || state.busy ||
+         !state.camera_count || state.owner != EditorOwner::Panel ||
+         std::abs(value) > 3.4028234663852886e38 ||
+         (action <= EditorAction::SetDofOverride && value != 0 && value != 1)))
+        return false;
+    if (action == EditorAction::SetFraming) {
+        if (!pose_override || !state.ready || !state.paused || !state.manual_active ||
+            state.playing || state.busy || value != std::floor(value) || value < -1 ||
+            (value >= 0 && value >= state.camera_count) || (*pose_override)[6] < .5 ||
+            (*pose_override)[6] > 4)
+            return false;
+        for (double component : *pose_override)
+            if (!std::isfinite(component))
+                return false;
+    } else if (pose_override)
         return false;
     if (action == EditorAction::SetSpeed) {
         if (value < 1 || value > 10000)
@@ -542,7 +580,7 @@ bool editor_enqueue(EditorAction action, double value) noexcept {
     event.action = std::uint32_t(action);
     event.value = value;
     for (unsigned i = 0; i < 7; ++i)
-        event.pose[i] = state.pose[i];
+        event.pose[i] = pose_override ? (*pose_override)[i] : state.pose[i];
     event.tick = state.tick;
     event.paused = state.paused;
     gEventLock.clear(std::memory_order_release);
@@ -643,10 +681,24 @@ void editor_update_view(bool ready, bool paused, bool manual, const CameraPose& 
     gViewHeight = height;
     gViewSequence.fetch_add(1, std::memory_order_release);
 }
+void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long wheel) noexcept {
+    if (!wheel || config.playback_flags || (gViewFlags.load() & 6) != 6)
+        return;
+    CameraPose zoomed = pose;
+    zoomed[6] = std::clamp(pose[6] * std::pow(.9, double(wheel) / WHEEL_DELTA), .5, 4.0);
+    // Publish the exact resulting pose, not the previous rendered view.
+    // A full event queue must never leave the curve behind a visible edit.
+    if (zoomed[6] != pose[6] &&
+        editor_enqueue(EditorAction::SetFraming,
+                       config.camera_count ? double(config.selected_camera) : -1.0, &zoomed))
+        pose[6] = zoomed[6];
+}
 void editor_integrate_flight(CameraPose& pose, double dt) noexcept {
-    if (!owns_input() || gOwner.load() != EditorOwner::Flight || !(gViewFlags.load() & 2)) {
+    if (!owns_input() || gOwner.load() != EditorOwner::Flight || !(gViewFlags.load() & 2) ||
+        !std::isfinite(dt) || dt < 0 || dt > .1) {
         gMouseX = 0;
         gMouseY = 0;
+        gFramingWheel = 0;
         return;
     }
     auto c = std::atomic_load(&gConfig);
@@ -675,6 +727,8 @@ void editor_integrate_flight(CameraPose& pose, double dt) noexcept {
     if (binding_down(c->bindings[19], true))
         speed *= .2;
     integrate_flight(pose, in, dt, speed, c->sensitivity, (c->flags & 1) != 0);
+    const auto wheel = gFramingWheel.exchange(0);
+    apply_framing_wheel(pose, *c, wheel);
 }
 bool editor_window_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
                            LRESULT& result) noexcept {
@@ -700,6 +754,8 @@ bool editor_window_message(HWND window, UINT message, WPARAM wparam, LPARAM lpar
     if (message == WM_MOUSEMOVE)
         ++gLegacyMouseMoves;
     bool before = owns_input();
+    if (message == WM_MOUSEWHEEL && !gNoLegacyMouse.load())
+        framing_wheel(static_cast<SHORT>(HIWORD(wparam)));
     if (message == WM_INPUT && before) {
         RAWINPUT raw{};
         UINT bytes = sizeof(raw);
@@ -785,6 +841,28 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     static std::uint32_t accepted = ~0u, owner_sequence = ~0u;
     static double configured_speed = -1;
     if (memory && connected) {
+        auto source = memory + kEditorDofOffset;
+        auto sequence = reinterpret_cast<volatile LONG*>(source + 8);
+        const auto first = InterlockedCompareExchange(sequence, 0, 0);
+        const auto previous = std::atomic_load(&gDofConfig);
+        if (!(first & 1) && (!previous || previous->sequence != std::uint32_t(first))) {
+            EditorDofConfig dof{};
+            std::memcpy(&dof, source, sizeof(dof));
+            MemoryBarrier();
+            bool valid = first == InterlockedCompareExchange(sequence, 0, 0) &&
+                         std::memcmp(dof.magic, "DLYDOF01", 8) == 0 && dof.abi == 1 &&
+                         dof.enabled <= 1 && dof.reserved == 0;
+            for (double value : dof.values)
+                valid = valid && std::isfinite(value) && std::abs(value) <= 3.4028234663852886e38;
+            for (unsigned i = 0; i < 2; ++i)
+                valid = valid && (dof.values[i] == 0 || dof.values[i] == 1);
+            if (valid) {
+                try {
+                    std::atomic_store(&gDofConfig, std::make_shared<const EditorDofConfig>(dof));
+                } catch (...) {
+                }
+            }
+        }
         auto src = memory + kEditorConfigOffset;
         auto seq = reinterpret_cast<volatile LONG*>(src + 8);
         LONG before = InterlockedCompareExchange(seq, 0, 0);
@@ -855,6 +933,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
         cursor_mode(current_focus ? gOwner.load() : EditorOwner::Unfocused);
     }
     if (!connected) {
+        std::atomic_store(&gDofConfig, std::shared_ptr<const EditorDofConfig>{});
         gOwner = EditorOwner::Disabled;
         reset_keys(true);
         cursor_mode(EditorOwner::Disabled);
