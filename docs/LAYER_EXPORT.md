@@ -24,6 +24,27 @@ lossy H.264 is not a suitable master for numerical depth or a precise matte.
 
 ## Renderer evidence needed
 
+### Native depth backend foundation
+
+The native `dolly_depth` and `dolly_depth_readback` libraries now implement
+calibrated D24/D32 conversion, a float `Z`-channel OpenEXR writer, and a bounded
+three-slot GPU readback queue. Depth and candidate per-view buffers are copied
+at the same command boundary. Calibration is validated from buffer contents,
+including the viewport, projection inverse and camera basis; it does not rely
+on a fixed shader slot. Missing or conflicting calibrations reject the frame.
+
+The queue preserves sample IDs while the scene projection changes between
+queued frames, handles padded mapped rows, and rejects deferred-context reads
+and unannounced resolution changes. Synthetic DX11 tests pass on WARP and a
+local hardware device. The OpenEXR reference reader preserves all test float
+bits, including infinity and values beyond the half-float range.
+
+These libraries are not yet connected to the in-game recorder. Live scene
+selection, command-list tracking, paired color/depth submission, output-worker
+integration, normalized video preview and UI controls remain to be completed.
+Their tests establish the readback/writer behavior, not a working live layer
+export or a hero/world classifier.
+
 ### Captured-frame investigation (September 12, 2026)
 
 Two supplied DX11 captures were replayed locally with RenderDoc 1.46. Both
