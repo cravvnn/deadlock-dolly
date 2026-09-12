@@ -44,6 +44,11 @@ struct Options {
     std::uint32_t preset = 0;
     Encoder encoder = Encoder::media_foundation;
     Codec codec = Codec::auto_select;
+    // Fixed-step export: capture exactly one frame per rendered Present and
+    // timestamp it at the requested rate, instead of sampling wall-clock slots.
+    // The host is expected to run the engine at a fixed frame rate (set by the
+    // caller) so each captured frame is a distinct simulation step.
+    bool fixed_step = false;
 };
 struct Status {
     State state = State::idle;

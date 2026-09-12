@@ -154,6 +154,7 @@ class DollyApp:
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
+        self.video_fixed_step = tk.BooleanVar(value=False)
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
@@ -432,7 +433,10 @@ class DollyApp:
         self.video_codec_combo = ttk.Combobox(options, textvariable=self.video_codec,
                                               values=tuple(label for _key, label, *_ in CODEC_CHOICES),
                                               state="readonly", width=30)
-        self.video_codec_combo.pack(side="left")
+        self.video_codec_combo.pack(side="left", padx=(0, 18))
+        self.video_fixed_checkbox = ttk.Checkbutton(options, text="Fixed-step export (frame-accurate)",
+                                                    variable=self.video_fixed_step)
+        self.video_fixed_checkbox.pack(side="left")
         ttk.Label(card, text="FFmpeg", style="CardMuted.TLabel").grid(row=4, column=0, sticky="w", padx=(0, 12), pady=(12, 0))
         self.ffmpeg_path_entry = ttk.Entry(card, textvariable=self.ffmpeg_path)
         self.ffmpeg_path_entry.grid(row=4, column=1, sticky="ew", pady=(12, 0))
@@ -499,7 +503,8 @@ class DollyApp:
             codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
             options = VideoOptions(Path(self.video_path.get().strip()), int(self.video_fps.get()),
                                    BITRATE_PRESETS[self.video_bitrate.get()], codec=codec_key,
-                                   ffmpeg_path=self.ffmpeg_path.get().strip() or None).validated()
+                                   ffmpeg_path=self.ffmpeg_path.get().strip() or None,
+                                   fixed_step=bool(self.video_fixed_step.get())).validated()
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return

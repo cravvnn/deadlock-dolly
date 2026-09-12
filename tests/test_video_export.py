@@ -54,7 +54,7 @@ class VideoExportTests(unittest.TestCase):
         self.assertEqual(result["state"], "recording")
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
-            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="")
+            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False)
         self.assertFalse(self.path.exists())  # Only native creates the actual file.
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
@@ -63,7 +63,7 @@ class VideoExportTests(unittest.TestCase):
         self.export.start(VideoOptions(self.path, 120, 40_000_000))
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=120, bitrate=40_000_000,
-            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="")
+            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False)
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
@@ -97,7 +97,7 @@ class VideoExportTests(unittest.TestCase):
                                            quality=21, ffmpeg_path=exe))
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
-            encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe))
+            encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe), fixed_step=False)
 
     def test_lossless_requires_matroska_and_maps_to_ffv1(self):
         with self.assertRaisesRegex(ValueError, ".mkv"):
@@ -117,6 +117,19 @@ class VideoExportTests(unittest.TestCase):
             self.export.start(VideoOptions(self.path, 60, 20_000_000, ffmpeg_path=exe))
         self.assertEqual(self.bridge.start_video.call_args.kwargs["encoder"], 1)
         self.assertEqual(self.bridge.start_video.call_args.kwargs["codec"], 1)
+
+    def test_fixed_step_sets_and_clears_controller_timing(self):
+        self.export.start(VideoOptions(self.path, 60, 20_000_000, fixed_step=True))
+        self.controller.set_export_timing.assert_called_once_with(60)
+        self.assertTrue(self.bridge.start_video.call_args.kwargs["fixed_step"])
+        self.export.stop()
+        self.controller.clear_export_timing.assert_called_once()
+
+    def test_fixed_step_timing_failure_does_not_start_recording(self):
+        self.controller.set_export_timing.side_effect = RuntimeError("not connected")
+        with self.assertRaisesRegex(RuntimeError, "not connected"):
+            self.export.start(VideoOptions(self.path, 60, 20_000_000, fixed_step=True))
+        self.bridge.start_video.assert_not_called()
 
     def test_not_ready_console_or_disconnected_cannot_record(self):
         for key, value in (("connected", False), ("game_running", False),
@@ -252,6 +265,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_bitrate = Var("20 Mbps")
         self.app.video_codec = Var("")
         self.app.ffmpeg_path = Var("")
+        self.app.video_fixed_step = Var(False)
         self.app.status_text = Var("")
         self.app.video_export = Mock()
         self.app._submit = Mock(return_value=True)

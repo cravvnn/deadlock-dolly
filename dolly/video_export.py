@@ -105,6 +105,7 @@ class VideoOptions:
     quality: int = 0
     preset: int = 0
     ffmpeg_path: "Path | None" = None
+    fixed_step: bool = False
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120):
@@ -129,12 +130,15 @@ class VideoOptions:
             raise ValueError("Choose an existing output folder.")
         if path.exists() or path.is_symlink():
             raise ValueError("That output file already exists. Choose a new filename.")
+        if type(self.fixed_step) is not bool:
+            raise ValueError("Fixed-step export must be on or off.")
         ffmpeg = resolve_ffmpeg(self.ffmpeg_path)
         if needs_ffmpeg and not ffmpeg:
             raise ValueError("Select an ffmpeg.exe for the chosen encoder.")
         # The native writer also creates the file exclusively. This early
         # check gives a useful error; it is not the overwrite safety boundary.
-        return VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset, ffmpeg)
+        return VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
+                            ffmpeg, self.fixed_step)
 
 
 def recording_ready(status: dict) -> bool:
@@ -226,6 +230,19 @@ class VideoExport:
             self._last = current
         return dict(current)
 
+    def _set_export_timing(self, fps):
+        setter = getattr(self.controller, "set_export_timing", None)
+        if callable(setter):
+            setter(fps)
+
+    def _clear_export_timing(self):
+        clear = getattr(self.controller, "clear_export_timing", None)
+        if callable(clear):
+            try:
+                clear()
+            except (RuntimeError, ValueError, OSError):
+                pass
+
     def start(self, options: VideoOptions) -> dict:
         options = options.validated()
         if self.status().get("state") in ACTIVE_STATES:
@@ -235,6 +252,8 @@ class VideoExport:
         bridge = self.controller._native_bridge()
         if bridge is None:
             raise RuntimeError("The native recorder is not connected.")
+        if options.fixed_step:
+            self._set_export_timing(options.fps)
         initial_ack = bridge.video_status().get("ack")
         with self._lock:
             self._bridge = bridge
@@ -247,8 +266,10 @@ class VideoExport:
             bridge.start_video(str(options.path), fps=options.fps, bitrate=options.bitrate,
                                encoder=encoder, codec=codec_id, quality=options.quality,
                                preset=options.preset,
-                               ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "")
+                               ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "",
+                               fixed_step=options.fixed_step)
         except Exception as exc:
+            self._clear_export_timing()
             with self._lock:
                 self._last = {"state": "starting", "error": str(exc),
                               "message": "Start not confirmed. Finish or discard before recording again."}
@@ -259,20 +280,23 @@ class VideoExport:
 
     def stop(self, *, cancel: bool = False, timeout: float = 30.0) -> dict:
         """Request shutdown and wait on the operation worker, never on Tk."""
-        with self._lock:
-            bridge = self._bridge
-        if bridge is None or self.status().get("state") not in ACTIVE_STATES:
-            return self.status()
-        bridge.stop_video(cancel=cancel)
-        with self._lock:
-            self._start_pending = False
-        deadline = time.monotonic() + timeout
-        while True:
-            current = self.status()
-            if current.get("state") not in ACTIVE_STATES:
-                if current.get("state") == "failed":
-                    raise RuntimeError(str(current.get("error") or "MP4 finalization failed."))
-                return current
-            if time.monotonic() >= deadline:
-                raise RuntimeError("The video recorder is still finishing. Wait for its status before starting another recording or closing the game.")
-            time.sleep(0.05)
+        try:
+            with self._lock:
+                bridge = self._bridge
+            if bridge is None or self.status().get("state") not in ACTIVE_STATES:
+                return self.status()
+            bridge.stop_video(cancel=cancel)
+            with self._lock:
+                self._start_pending = False
+            deadline = time.monotonic() + timeout
+            while True:
+                current = self.status()
+                if current.get("state") not in ACTIVE_STATES:
+                    if current.get("state") == "failed":
+                        raise RuntimeError(str(current.get("error") or "MP4 finalization failed."))
+                    return current
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("The video recorder is still finishing. Wait for its status before starting another recording or closing the game.")
+                time.sleep(0.05)
+        finally:
+            self._clear_export_timing()

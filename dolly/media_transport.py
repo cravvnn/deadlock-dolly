@@ -98,10 +98,11 @@ class MediaTransport:
             raise NativeBridgeError("Native media did not acknowledge the request. Reconnect with the complete matching Dolly build.")
 
     def start_video(self, path, *, fps=60, bitrate=20000000, encoder=0, codec=0,
-                    quality=0, preset=0, ffmpeg_path=""):
+                    quality=0, preset=0, ffmpeg_path="", fixed_step=False):
         return self._media_command("start_video", path=str(path), fps=fps, bitrate=bitrate,
                                    encoder=encoder, codec=codec, quality=quality,
-                                   preset=preset, ffmpeg_path=str(ffmpeg_path) if ffmpeg_path else "")
+                                   preset=preset, ffmpeg_path=str(ffmpeg_path) if ffmpeg_path else "",
+                                   fixed_step=bool(fixed_step))
 
     def stop_video(self, cancel=False):
         if type(cancel) is not bool:

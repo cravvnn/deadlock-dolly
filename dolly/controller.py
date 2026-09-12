@@ -2703,6 +2703,48 @@ class Controller:
         if restoration_error:
             self._message(restoration_error, playing=False)
 
+    def set_export_timing(self, fps):
+        """Enter deterministic fixed-step engine timing for an export.
+
+        ``host_framerate`` makes each rendered frame advance a fixed slice of
+        engine time (independent of wall-clock), and ``r_wait_on_present`` keeps
+        the renderer from coalescing frames. The previous values are restored by
+        :meth:`clear_export_timing`.
+        """
+        fps = int(fps)
+        if fps not in (30, 60, 120):
+            raise ValueError("Fixed-step export requires 30, 60 or 120 FPS.")
+        if getattr(self, "_export_timing", None) is not None:
+            return
+        if self._console is None or not self._console.is_connected or not self._alive():
+            raise RuntimeError("Connect to the game before fixed-step export.")
+        snapshot = {}
+        for name in ("host_framerate", "r_wait_on_present"):
+            try:
+                snapshot[name] = float(read_cvar_value(name, self._request(name)))
+            except (RuntimeError, ValueError, TypeError, OSError):
+                snapshot[name] = None
+        self._request(f"host_framerate {fps}; r_wait_on_present 1")
+        self._export_timing = {"fps": fps, "restore": snapshot}
+        self._message(f"Fixed-step export timing active at {fps} FPS; each rendered frame is captured.")
+
+    def clear_export_timing(self):
+        state = getattr(self, "_export_timing", None)
+        self._export_timing = None
+        if state is None:
+            return
+        if self._console is None or not self._console.is_connected or not self._alive():
+            return
+        restore = state.get("restore") or {}
+        host = restore.get("host_framerate")
+        wait = restore.get("r_wait_on_present")
+        commands = ["host_framerate " + (numeric(host) if host else "0"),
+                    "r_wait_on_present " + (numeric(wait) if wait is not None else "0")]
+        try:
+            self._request("; ".join(commands))
+        except (RuntimeError, ValueError, OSError) as exc:
+            self._message("Could not restore export timing: " + str(exc))
+
     def disconnect(self):
         bridge = self._native_bridge()
         close_media = getattr(bridge, "_close_media", None)

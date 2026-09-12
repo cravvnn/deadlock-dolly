@@ -91,6 +91,13 @@ class MediaTransportTests(unittest.TestCase):
         struct.pack_into("<I", self.bridge._media_mapping, wire.STATUS_OFFSET + 28, 120)
         self.assertEqual(self.bridge.media_status()["fps"], 120)
 
+    def test_fixed_step_flag_is_encoded_in_the_reserved_field(self):
+        flagged = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                        fixed_step=True))
+        plain = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4"))
+        self.assertEqual(flagged[6], 1)
+        self.assertEqual(plain[6], 0)
+
     def test_protocol_layout_and_invalid_paths(self):
         self.assertEqual(wire.COMMAND.size, 6192)
         self.assertEqual(wire.STATUS.size, 2384)

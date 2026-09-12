@@ -35,7 +35,7 @@ def _path(value: str, required: bool = False) -> bytes:
 
 
 def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=20000000,
-                 encoder=0, codec=0, quality=0, preset=0, ffmpeg_path=""):
+                 encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False):
     if type(sequence) is not int or not 0 < sequence <= 0xfffffffe or sequence & 1:
         raise ValueError("Invalid media command sequence")
     if command not in COMMANDS:
@@ -52,10 +52,13 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
         raise ValueError("Video quality must be between 0 and 63")
     if type(preset) is not int or not 0 <= preset <= 15:
         raise ValueError("Video preset must be between 0 and 15")
+    if type(fixed_step) is not bool:
+        raise ValueError("Fixed-step recording must be a boolean")
     needs_ffmpeg = command == "start_video" and encoder == 1
     if codec == len(CODECS) - 1 and path and not str(path).lower().endswith(".mkv"):
         raise ValueError("Lossless video requires a .mkv destination")
-    return COMMAND.pack(b"DLYMED01", sequence, ABI, COMMANDS[command], fps, bitrate, 0,
+    return COMMAND.pack(b"DLYMED01", sequence, ABI, COMMANDS[command], fps, bitrate,
+                        1 if fixed_step else 0,
                         encoder, codec, quality, preset,
                         _path(path, command in ("start_video", "configure_reshade")),
                         _path(config_path, command == "configure_reshade"),

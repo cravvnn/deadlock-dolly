@@ -96,6 +96,7 @@ struct Session {
     Encoder encoder = Encoder::media_foundation;
     Codec codec = Codec::auto_select;
     std::uint32_t quality = 0, preset = 0;
+    bool fixed_step = false;
     std::wstring ffmpeg;
     // Published once by the render callback before configured=true.
     std::uint32_t width = 0, height = 0;
@@ -917,6 +918,7 @@ bool start(const Options& options) noexcept {
         next->codec = options.codec;
         next->quality = options.quality;
         next->preset = options.preset;
+        next->fixed_step = options.fixed_step;
         if (options.ffmpeg)
             next->ffmpeg = options.ffmpeg;
         LARGE_INTEGER frequency{};
@@ -1089,9 +1091,17 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
         return;
     const auto now = now_qpc();
     std::uint64_t pts = 0, missed = 0;
-    if (!gpu.cadence.sample(now, pts, missed))
-        return;
-    s.first_qpc.store(gpu.cadence.start, std::memory_order_release);
+    if (s.fixed_step) {
+        // One captured frame per Present. The frame index, not wall-clock
+        // time, defines the timestamp, so the export is deterministic.
+        pts = std::uint64_t(gpu.submitted) * 10000000ull / std::max<std::uint32_t>(1, s.fps);
+        std::uint64_t zero = 0;
+        s.first_qpc.compare_exchange_strong(zero, now, std::memory_order_release);
+    } else {
+        if (!gpu.cadence.sample(now, pts, missed))
+            return;
+        s.first_qpc.store(gpu.cadence.start, std::memory_order_release);
+    }
     s.dropped.fetch_add(missed, std::memory_order_relaxed);
     if (gpu.submitted - gpu.drained >= kSlots) {
         s.dropped.fetch_add(1, std::memory_order_relaxed);
