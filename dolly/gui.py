@@ -31,7 +31,10 @@ from dolly.navigation_input import CameraInput
 from dolly.path import CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value, format_cvar_value
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.smoothing import smoothing_window
-from dolly.video_export import ACTIVE_STATES, BITRATE_PRESETS, VideoExport, VideoOptions, default_video_path, format_video_status, recording_ready
+from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
+                                CODEC_LABEL_TO_KEY, DEFAULT_CODEC_KEY, VideoExport, VideoOptions,
+                                bundled_ffmpeg_path, default_video_path, format_video_status,
+                                recording_ready)
 
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -150,6 +153,9 @@ class DollyApp:
         self.video_path = tk.StringVar(value=str(default_video_path(self.project.name)))
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
+        self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
+        _bundled_ffmpeg = bundled_ffmpeg_path()
+        self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
         self.reshade_runtime_path = tk.StringVar(value=getattr(self.app_settings, "reshade_runtime_path", ""))
         self.reshade_status_text = tk.StringVar(value="Choose the ReShade runtime to enable its in-game menu.")
@@ -421,17 +427,27 @@ class DollyApp:
         self.video_fps_combo.pack(side="left", padx=(0, 18))
         ttk.Label(options, text="Bitrate", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
         self.video_bitrate_combo = ttk.Combobox(options, textvariable=self.video_bitrate, values=tuple(BITRATE_PRESETS), state="readonly", width=10)
-        self.video_bitrate_combo.pack(side="left")
+        self.video_bitrate_combo.pack(side="left", padx=(0, 18))
+        ttk.Label(options, text="Encoder", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
+        self.video_codec_combo = ttk.Combobox(options, textvariable=self.video_codec,
+                                              values=tuple(label for _key, label, *_ in CODEC_CHOICES),
+                                              state="readonly", width=30)
+        self.video_codec_combo.pack(side="left")
+        ttk.Label(card, text="FFmpeg", style="CardMuted.TLabel").grid(row=4, column=0, sticky="w", padx=(0, 12), pady=(12, 0))
+        self.ffmpeg_path_entry = ttk.Entry(card, textvariable=self.ffmpeg_path)
+        self.ffmpeg_path_entry.grid(row=4, column=1, sticky="ew", pady=(12, 0))
+        self.ffmpeg_browse_button = ttk.Button(card, text="Browse…", command=self._browse_ffmpeg)
+        self.ffmpeg_browse_button.grid(row=4, column=2, padx=(10, 0), pady=(12, 0))
         actions = ttk.Frame(card, style="Card.TFrame")
-        actions.grid(row=4, column=0, columnspan=3, sticky="w", pady=(14, 0))
+        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(14, 0))
         self.video_start_button = ttk.Button(actions, text="Start recording", style="Primary.TButton", command=self._start_video_recording)
         self.video_start_button.pack(side="left", padx=(0, 8))
         self.video_stop_button = ttk.Button(actions, text="Finish recording", command=self._stop_video_recording, state="disabled")
         self.video_stop_button.pack(side="left", padx=(0, 8))
         self.video_cancel_button = ttk.Button(actions, text="Discard recording", style="Quiet.TButton", command=lambda: self._stop_video_recording(cancel=True), state="disabled")
         self.video_cancel_button.pack(side="left")
-        ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(tab, text="Start recording, return to Deadlock, then press F5 to play the shot. Use Finish recording in either interface to save. Actual capture FPS depends on rendering and encoder speed.",
+        ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ttk.Label(tab, text="Start recording, return to Deadlock, then press F5 to play the shot. Use Finish recording in either interface to save. Encoders using FFmpeg need the ffmpeg.exe path above; the bundled build fills it automatically.",
                   style="Muted.TLabel", wraplength=900).grid(row=1, column=0, sticky="w", padx=4, pady=(10, 14))
         shade = ttk.Frame(tab, style="Card.TFrame", padding=18)
         shade.grid(row=2, column=0, sticky="ew")
@@ -464,13 +480,26 @@ class DollyApp:
         if path:
             self.video_path.set(path)
 
+    def _browse_ffmpeg(self):
+        if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
+            return
+        current = Path(self.ffmpeg_path.get()) if self.ffmpeg_path.get() else None
+        path = filedialog.askopenfilename(
+            parent=self.root, title="Select ffmpeg.exe",
+            initialdir=str(current.parent) if current and current.parent.is_dir() else None,
+            filetypes=(("FFmpeg", "ffmpeg.exe"), ("Executable", "*.exe"), ("All files", "*.*")))
+        if path:
+            self.ffmpeg_path.set(path)
+
     def _start_video_recording(self):
         if self.busy:
             self.status_text.set("Finish the current operation before starting a recording.")
             return
         try:
+            codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
             options = VideoOptions(Path(self.video_path.get().strip()), int(self.video_fps.get()),
-                                   BITRATE_PRESETS[self.video_bitrate.get()]).validated()
+                                   BITRATE_PRESETS[self.video_bitrate.get()], codec=codec_key,
+                                   ffmpeg_path=self.ffmpeg_path.get().strip() or None).validated()
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return
@@ -508,10 +537,14 @@ class DollyApp:
         can_stop = state in ("starting", "recording") and not self.busy
         self.video_stop_button.configure(state="normal" if can_stop else "disabled")
         self.video_cancel_button.configure(state="normal" if can_stop else "disabled")
-        for widget in (self.video_path_entry, self.video_browse_button):
-            widget.configure(state="disabled" if active or self.busy else "normal")
-        for widget in (self.video_fps_combo, self.video_bitrate_combo):
-            widget.configure(state="disabled" if active or self.busy else "readonly")
+        for widget in (self.video_path_entry, self.video_browse_button,
+                       getattr(self, "ffmpeg_path_entry", None), getattr(self, "ffmpeg_browse_button", None)):
+            if widget is not None:
+                widget.configure(state="disabled" if active or self.busy else "normal")
+        for widget in (self.video_fps_combo, self.video_bitrate_combo,
+                       getattr(self, "video_codec_combo", None)):
+            if widget is not None:
+                widget.configure(state="disabled" if active or self.busy else "readonly")
         self.reshade_configure_button.configure(state="normal" if ready and not active and not self.busy and not self.playing else "disabled")
         self.reshade_forget_button.configure(state="normal" if not active and not self.busy and not self.playing else "disabled")
         self._refresh_reshade(controller_status, active)

@@ -192,6 +192,7 @@ third_party/notices/tcl-license.terms
 third_party/notices/tk-license.terms
 tools/build_native.py
 tools/build_windows.py
+tools/fetch_ffmpeg.py
 tools/release_files.py
 .clang-format
 tools/format_cpp.py

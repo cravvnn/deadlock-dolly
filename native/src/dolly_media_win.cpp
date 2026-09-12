@@ -69,12 +69,17 @@ void consume() noexcept {
     command_error = 0;
     command_message[0] = 0;
     if (std::memcmp(command.magic, "DLYMED01", 8) || command.abi != kMediaAbi || command.reserved ||
-        !terminated(command.path) || !terminated(command.config_path)) {
+        !terminated(command.path) || !terminated(command.config_path) ||
+        !terminated(command.ffmpeg_path) ||
+        command.encoder > static_cast<std::uint32_t>(video::Encoder::ffmpeg) ||
+        command.codec > static_cast<std::uint32_t>(video::Codec::lossless) ||
+        command.quality > 63) {
         reject(L"Media protocol differs from this Dolly build.");
         return;
     }
     const auto path = reinterpret_cast<const wchar_t*>(command.path);
     const auto config = reinterpret_cast<const wchar_t*>(command.config_path);
+    const auto ffmpeg = reinterpret_cast<const wchar_t*>(command.ffmpeg_path);
     switch (command.command) {
     case 1: {
         const auto editor = editor_snapshot();
@@ -82,7 +87,16 @@ void consume() noexcept {
             reject(L"Open a local replay and connect the native editor before recording.");
             break;
         }
-        if (!video::start(path, command.fps, command.bitrate)) {
+        video::Options options;
+        options.path = path;
+        options.ffmpeg = ffmpeg;
+        options.fps = command.fps;
+        options.bitrate = command.bitrate;
+        options.quality = command.quality;
+        options.preset = command.preset;
+        options.encoder = static_cast<video::Encoder>(command.encoder);
+        options.codec = static_cast<video::Codec>(command.codec);
+        if (!video::start(options)) {
             const auto state = video::status();
             reject(state.error[0] ? state.error
                                   : L"A recording is already active or its settings are invalid.");

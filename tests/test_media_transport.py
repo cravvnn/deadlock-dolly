@@ -55,8 +55,8 @@ class MediaTransportTests(unittest.TestCase):
         self.assertEqual(len(self.mappings[name]), wire.MAPPING_BYTES)
         self.assertEqual(len(self.bridge._mapping), MAPPING_BYTES)
         command = wire.COMMAND.unpack_from(self.mappings[name])
-        self.assertEqual(command[0:6], (b"DLYMED01", 2, 1, 1, 30, 20000000))
-        self.assertEqual(command[7].decode("utf-16-le").rstrip("\0"), path)
+        self.assertEqual(command[0:6], (b"DLYMED01", 2, wire.ABI, 1, 30, 20000000))
+        self.assertEqual(command[11].decode("utf-16-le").rstrip("\0"), path)
 
     def test_rejected_command_is_not_reported_as_recording(self):
         self.command_error = 1
@@ -92,7 +92,7 @@ class MediaTransportTests(unittest.TestCase):
         self.assertEqual(self.bridge.media_status()["fps"], 120)
 
     def test_protocol_layout_and_invalid_paths(self):
-        self.assertEqual(wire.COMMAND.size, 4128)
+        self.assertEqual(wire.COMMAND.size, 6192)
         self.assertEqual(wire.STATUS.size, 2384)
         for path in ("relative.mp4", "C:relative.mp4", "\\root-only.mp4", "C:\\bad\0.mp4", "C:\\" + "x" * 1024):
             with self.subTest(path=path), self.assertRaises(ValueError):

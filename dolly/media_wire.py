@@ -4,14 +4,20 @@ from __future__ import annotations
 import ntpath
 import struct
 
-ABI = 1
+ABI = 2
 MAPPING_BYTES = 12288
 STATUS_OFFSET = 8192
-COMMAND = struct.Struct("<8s6I2048s2048s")
+COMMAND = struct.Struct("<8s6I4I2048s2048s2048s")
 STATUS = struct.Struct("<8s10I3Q2I768s768s768s")
 VIDEO_STATES = ("idle", "starting", "recording", "finalizing", "completed", "cancelled", "failed")
 COMMANDS = {"start_video": 1, "stop_video": 2, "cancel_video": 3,
             "configure_reshade": 4, "disable_reshade": 5, "toggle_reshade": 6}
+# Encoder values match native dolly::video::Encoder.
+ENCODERS = ("media_foundation", "ffmpeg")
+# Codec values match native dolly::video::Codec. libx264/libx265 require a GPL
+# FFmpeg build; the LGPL build documents which entries are actually present.
+CODECS = ("auto", "h264_nvenc", "hevc_nvenc", "h264_mf", "libx264", "libx265",
+          "h264_qsv", "hevc_qsv", "h264_amf", "hevc_amf", "lossless")
 
 
 def _path(value: str, required: bool = False) -> bytes:
@@ -28,7 +34,8 @@ def _path(value: str, required: bool = False) -> bytes:
     return encoded + b"\0\0"
 
 
-def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=20000000):
+def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=20000000,
+                 encoder=0, codec=0, quality=0, preset=0, ffmpeg_path=""):
     if type(sequence) is not int or not 0 < sequence <= 0xfffffffe or sequence & 1:
         raise ValueError("Invalid media command sequence")
     if command not in COMMANDS:
@@ -37,9 +44,22 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
         raise ValueError("Choose 30, 60 or 120 video FPS")
     if type(bitrate) is not int or not 1000000 <= bitrate <= 80000000:
         raise ValueError("Video bitrate must be between 1 and 80 Mbps")
+    if type(encoder) is not int or encoder not in range(len(ENCODERS)):
+        raise ValueError("Unknown video encoder")
+    if type(codec) is not int or codec not in range(len(CODECS)):
+        raise ValueError("Unknown video codec")
+    if type(quality) is not int or not 0 <= quality <= 63:
+        raise ValueError("Video quality must be between 0 and 63")
+    if type(preset) is not int or not 0 <= preset <= 15:
+        raise ValueError("Video preset must be between 0 and 15")
+    needs_ffmpeg = command == "start_video" and encoder == 1
+    if codec == len(CODECS) - 1 and path and not str(path).lower().endswith(".mkv"):
+        raise ValueError("Lossless video requires a .mkv destination")
     return COMMAND.pack(b"DLYMED01", sequence, ABI, COMMANDS[command], fps, bitrate, 0,
+                        encoder, codec, quality, preset,
                         _path(path, command in ("start_video", "configure_reshade")),
-                        _path(config_path, command == "configure_reshade"))
+                        _path(config_path, command == "configure_reshade"),
+                        _path(ffmpeg_path, needs_ffmpeg))
 
 
 def _text(data):

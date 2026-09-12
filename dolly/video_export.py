@@ -18,6 +18,66 @@ ACTIVE_STATES = frozenset(("starting", "recording", "finalizing"))
 TERMINAL_STATES = frozenset(("idle", "completed", "cancelled", "failed"))
 BITRATE_PRESETS = {"10 Mbps": 10_000_000, "20 Mbps": 20_000_000, "40 Mbps": 40_000_000}
 
+# key -> (label, native encoder, native codec, requires ffmpeg). The numeric
+# encoder/codec values match dolly::video::Encoder/Codec in dolly_video.hpp.
+# "auto" prefers hardware FFmpeg (NVENC) when an ffmpeg path is available and
+# otherwise uses the built-in Media Foundation encoder.
+CODEC_CHOICES = (
+    ("auto", "Auto (hardware when available)", 0, 0, False),
+    ("h264_nvenc", "NVIDIA H.264 (NVENC)", 1, 1, True),
+    ("hevc_nvenc", "NVIDIA HEVC (NVENC)", 1, 2, True),
+    ("h264_qsv", "Intel H.264 (Quick Sync)", 1, 6, True),
+    ("hevc_qsv", "Intel HEVC (Quick Sync)", 1, 7, True),
+    ("h264_amf", "AMD H.264 (AMF)", 1, 8, True),
+    ("hevc_amf", "AMD HEVC (AMF)", 1, 9, True),
+    ("h264_mf", "H.264 via ffmpeg Media Foundation", 1, 3, True),
+    ("libx264", "Software H.264 (x264, GPL build)", 1, 4, True),
+    ("libx265", "Software HEVC (x265, GPL build)", 1, 5, True),
+    ("lossless", "Lossless FFV1 (.mkv)", 1, 10, True),
+    ("builtin", "Built-in Windows Media Foundation", 0, 0, False),
+)
+CODEC_BY_KEY = {key: (label, enc, codec, needs) for key, label, enc, codec, needs in CODEC_CHOICES}
+CODEC_LABEL_TO_KEY = {label: key for key, label, *_ in CODEC_CHOICES}
+DEFAULT_CODEC_KEY = "auto"
+LOSSLESS_CODEC_ID = 10
+QUALITY_RANGE = (0, 51)
+PRESET_RANGE = (0, 7)
+
+
+def resolve_ffmpeg(configured: "Path | None") -> "Path | None":
+    """Return a usable ffmpeg.exe path or None; never raises."""
+    if not configured:
+        return None
+    try:
+        candidate = Path(configured).expanduser()
+    except (TypeError, ValueError):
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def bundled_ffmpeg_path() -> "Path | None":
+    """Locate the pinned FFmpeg shipped with a packaged Dolly, if present."""
+    try:
+        from .runtime import resource_root
+        root = resource_root()
+    except (ImportError, OSError, ValueError):
+        return None
+    for candidate in (root / "third_party" / "ffmpeg" / "bin" / "ffmpeg.exe",
+                      root / "_internal" / "third_party" / "ffmpeg" / "bin" / "ffmpeg.exe"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def resolve_backend(options: "VideoOptions") -> tuple[int, int]:
+    """Choose the native (encoder, codec) pair for validated options."""
+    _label, encoder, codec_id, needs_ffmpeg = CODEC_BY_KEY[options.codec]
+    if options.codec == "auto":
+        return (1, 1) if (needs_ffmpeg or options.ffmpeg_path) else (0, 0)
+    if needs_ffmpeg and not options.ffmpeg_path:
+        return 0, 0
+    return encoder, codec_id
+
 
 def default_video_path(shot_name: str, directory: Path | None = None, *, now: datetime | None = None) -> Path:
     """Choose an unused filename without creating directories or files."""
@@ -41,25 +101,40 @@ class VideoOptions:
     path: Path
     fps: int = 60
     bitrate: int = 20_000_000
+    codec: str = DEFAULT_CODEC_KEY
+    quality: int = 0
+    preset: int = 0
+    ffmpeg_path: "Path | None" = None
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120):
             raise ValueError("Choose a video frame rate of 30, 60 or 120 FPS.")
         if type(self.bitrate) is not int or self.bitrate not in BITRATE_PRESETS.values():
             raise ValueError("Choose a video bitrate of 10, 20, or 40 Mbps.")
+        if self.codec not in CODEC_BY_KEY:
+            raise ValueError("Choose a supported video codec.")
+        _label, _encoder, codec_id, needs_ffmpeg = CODEC_BY_KEY[self.codec]
+        if type(self.quality) is not int or not QUALITY_RANGE[0] <= self.quality <= QUALITY_RANGE[1]:
+            raise ValueError("Choose a video quality between 0 and 51.")
+        if type(self.preset) is not int or not PRESET_RANGE[0] <= self.preset <= PRESET_RANGE[1]:
+            raise ValueError("Choose a supported encoder preset.")
         raw = str(self.path)
         if not raw.strip() or any(ord(char) < 32 for char in raw):
-            raise ValueError("Choose an MP4 output file without control characters.")
+            raise ValueError("Choose an output file without control characters.")
         path = Path(self.path).expanduser().absolute()
-        if path.suffix.lower() != ".mp4":
-            raise ValueError("The output filename must end in .mp4.")
+        suffix = ".mkv" if codec_id == LOSSLESS_CODEC_ID else ".mp4"
+        if path.suffix.lower() != suffix:
+            raise ValueError(f"The output filename must end in {suffix}.")
         if not path.parent.is_dir():
             raise ValueError("Choose an existing output folder.")
         if path.exists() or path.is_symlink():
             raise ValueError("That output file already exists. Choose a new filename.")
+        ffmpeg = resolve_ffmpeg(self.ffmpeg_path)
+        if needs_ffmpeg and not ffmpeg:
+            raise ValueError("Select an ffmpeg.exe for the chosen encoder.")
         # The native writer also creates the file exclusively. This early
         # check gives a useful error; it is not the overwrite safety boundary.
-        return VideoOptions(path, self.fps, self.bitrate)
+        return VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset, ffmpeg)
 
 
 def recording_ready(status: dict) -> bool:
@@ -167,8 +242,12 @@ class VideoExport:
             self.output_path = options.path
             self._start_pending = True
             self._start_ack = initial_ack
+        encoder, codec_id = resolve_backend(options)
         try:
-            bridge.start_video(str(options.path), fps=options.fps, bitrate=options.bitrate)
+            bridge.start_video(str(options.path), fps=options.fps, bitrate=options.bitrate,
+                               encoder=encoder, codec=codec_id, quality=options.quality,
+                               preset=options.preset,
+                               ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "")
         except Exception as exc:
             with self._lock:
                 self._last = {"state": "starting", "error": str(exc),

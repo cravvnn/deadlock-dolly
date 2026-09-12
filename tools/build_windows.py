@@ -22,6 +22,7 @@ from dolly import __version__
 from dolly.launcher import UNLOCKER_SHA256
 from release_files import source_zip, sha256
 from build_native import build_native, copy_native_runtime, reject_game_binaries
+from fetch_ffmpeg import download as download_ffmpeg, stage as stage_ffmpeg
 
 
 def write_version(path: Path) -> None:
@@ -132,6 +133,9 @@ def main() -> int:
     bundle = build / "frozen" / "DeadlockDolly"
     third_party = bundle / "_internal" / "third_party"
     shutil.copytree(ROOT / "third_party", third_party, dirs_exist_ok=True)
+    print("Staging bundled FFmpeg (LGPL)...", flush=True)
+    ffmpeg_archive = download_ffmpeg(ROOT / "build" / "ffmpeg-cache")
+    stage_ffmpeg(ffmpeg_archive, third_party / "ffmpeg")
     dll = third_party / "cvar_unlocker" / "bin" / "win64" / "server.dll"
     if sha256(dll) != UNLOCKER_SHA256:
         raise RuntimeError("The official unlocker changed during packaging")
