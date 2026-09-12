@@ -63,6 +63,15 @@ if(WIN32)
         vendor/minhook/src/hde/hde64.c)
     target_include_directories(minhook PUBLIC vendor/minhook/include)
 
+    add_library(dolly_depth_scene STATIC src/dolly_depth_scene_win.cpp src/dolly_depth_hooks_win.cpp)
+    target_link_libraries(dolly_depth_scene PUBLIC dolly_depth_readback minhook dxguid)
+    if(BUILD_TESTING)
+        add_executable(depth_scene_smoke tests/depth_scene_smoke.cpp)
+        target_link_libraries(depth_scene_smoke PRIVATE dolly_depth_scene d3dcompiler)
+        add_test(NAME native_depth_scene_smoke COMMAND depth_scene_smoke)
+        set_tests_properties(native_depth_scene_smoke PROPERTIES TIMEOUT 30)
+    endif()
+
     # Pinned, unmodified Dear ImGui core and official backends. No game assets,
     # online dependency fetches or third-party installer are needed to build.
     add_library(dolly_overlay STATIC

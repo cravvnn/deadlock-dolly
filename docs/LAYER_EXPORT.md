@@ -39,8 +39,21 @@ and unannounced resolution changes. Synthetic DX11 tests pass on WARP and a
 local hardware device. The OpenEXR reference reader preserves all test float
 bits, including infinity and values beyond the half-float range.
 
-These libraries are not yet connected to the in-game recorder. Live scene
-selection, command-list tracking, paired color/depth submission, output-worker
+The separate `dolly_depth_scene` library observes actual DX11 draw calls and
+retains GPU copies of their camera constants. Its selector requires the reviewed
+scene texture debug name, a full-size viewport and reversed depth writes.
+Immediate and deferred draws are tracked, with command-list metadata owned by
+the command list itself. Late depth clears, incompatible viewport writes,
+duplicate scene targets and command lists from an untracked session reject the
+frame. Tests exercise the hooks and resulting pixel/projection readback on both
+WARP and a local hardware device, including repeated command-list execution.
+
+The selector's texture name and per-view layout are supported by the two supplied
+captures; they still need live verification in the gated replay session. The
+tracker does not classify heroes or intercept arbitrary resource-copy mutations.
+
+These libraries are not yet connected to the in-game recorder. Paired
+color/depth submission, output-worker
 integration, normalized video preview and UI controls remain to be completed.
 Their tests establish the readback/writer behavior, not a working live layer
 export or a hero/world classifier.

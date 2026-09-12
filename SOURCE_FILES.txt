@@ -215,10 +215,14 @@ native/include/dolly_video.hpp
 native/include/dolly_video_math.hpp
 native/include/dolly_depth.hpp
 native/include/dolly_depth_readback.hpp
+native/include/dolly_depth_scene.hpp
 native/src/dolly_depth.cpp
 native/src/dolly_depth_readback_win.cpp
+native/src/dolly_depth_scene_win.cpp
+native/src/dolly_depth_hooks_win.cpp
 native/tests/depth_tests.cpp
 native/tests/depth_readback_smoke.cpp
+native/tests/depth_scene_smoke.cpp
 native/include/dolly_reshade.hpp
 native/src/dolly_media_win.cpp
 native/src/dolly_video_win.cpp
