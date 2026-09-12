@@ -349,6 +349,13 @@ void style_panel() {
     style.Colors[ImGuiCol_NavCursor] = panel_color(0x64d6c3);
     style.Colors[ImGuiCol_TextSelectedBg] = panel_color(0x274e4b);
     style.Colors[ImGuiCol_PlotHistogram] = panel_color(0x64d6c3);
+    style.Colors[ImGuiCol_Tab] = panel_color(0x1b232d);
+    style.Colors[ImGuiCol_TabHovered] = panel_color(0x2b3a47);
+    style.Colors[ImGuiCol_TabSelected] = panel_color(0x274e4b);
+    style.Colors[ImGuiCol_TabSelectedOverline] = panel_color(0x64d6c3);
+    style.Colors[ImGuiCol_TabDimmed] = panel_color(0x161d25);
+    style.Colors[ImGuiCol_TabDimmedSelected] = panel_color(0x203a39);
+    style.Colors[ImGuiCol_TabDimmedSelectedOverline] = panel_color(0x3f6f68);
 }
 ImFont* installed_font(const char* filename, float size) {
     char windows[MAX_PATH]{}, path[MAX_PATH]{};
@@ -665,8 +672,7 @@ void draw_panel(const EditorSnapshot& state) {
     // Open large enough for the fullest page (Export) so nothing needs a manual
     // resize; the window stays resizable and is clamped to the game window. The
     // width stays clear of the guide overlay's right-hand region.
-    ImGui::SetNextWindowSize(ImVec2(std::min(500.0f * panel_scale, maximum.x),
-                                    std::min(860.0f * panel_scale, maximum.y)),
+    ImGui::SetNextWindowSize(ImVec2(std::min(500.0f * panel_scale, maximum.x), maximum.y),
                              ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(380.0f * panel_scale, maximum.x),
                                                std::min(360.0f * panel_scale, maximum.y)),

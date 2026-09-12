@@ -305,6 +305,7 @@ HRESULT consume_frame(MediaApi& api, Session& s, IMFSinkWriter* writer, DWORD st
     HRESULT hr = make_sample(api, s, frame, next);
     const auto pts = frame.pts;
     s.consumed.store(read + 1, std::memory_order_release);
+    s.wake.notify_all();
     if (SUCCEEDED(hr) && previous.p)
         hr = write_sample(s, writer, stream, previous.p, previous_pts, pts);
     if (FAILED(hr))
@@ -599,6 +600,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 const HRESULT hr = write_all(child.input, frame.pixels.data(),
                                              std::size_t(s->width) * s->height * 4);
                 s->consumed.store(read + 1, std::memory_order_release);
+                s->wake.notify_all();
                 if (FAILED(hr)) {
                     fail(*s, hr,
                          L"FFmpeg stopped accepting frames. Check the encoder and output path.");
@@ -628,6 +630,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             const HRESULT hr =
                 write_all(child.input, frame.pixels.data(), std::size_t(s->width) * s->height * 4);
             s->consumed.store(read + 1, std::memory_order_release);
+            s->wake.notify_all();
             if (FAILED(hr)) {
                 fail(*s, hr, L"FFmpeg stopped accepting frames while finishing.");
                 break;
@@ -1055,14 +1058,34 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
         return;
 
     // Map only already-submitted copies, never the copy issued this Present.
-    // DO_NOT_WAIT makes a busy GPU a skipped opportunity, not a render stall.
+    // In real time DO_NOT_WAIT makes a busy GPU a skipped opportunity, not a
+    // render stall. In fixed-step export the producer instead applies
+    // backpressure: a blocking readback plus a wait for CPU queue room keeps the
+    // simulation from outrunning capture, so every authored frame is encoded.
+    const bool fixed_backpressure = s.fixed_step;
     for (unsigned copies = 0; copies < 1 && gpu.drained != gpu.submitted; ++copies) {
         const auto write = s.produced.load(std::memory_order_relaxed);
-        if (write - s.consumed.load(std::memory_order_acquire) >= kSlots)
-            break;
+        if (write - s.consumed.load(std::memory_order_acquire) >= kSlots) {
+            if (!fixed_backpressure)
+                break;
+            std::unique_lock<std::mutex> lock(s.wait_mutex);
+            s.wake.wait_for(lock, std::chrono::milliseconds(2), [&s] {
+                return s.stopping.load(std::memory_order_acquire) ||
+                       s.produced.load(std::memory_order_relaxed) -
+                               s.consumed.load(std::memory_order_acquire) <
+                           kSlots;
+            });
+            if (s.stopping.load(std::memory_order_acquire))
+                return;
+            if (s.produced.load(std::memory_order_relaxed) -
+                    s.consumed.load(std::memory_order_acquire) >=
+                kSlots)
+                break;
+        }
         auto& slot = gpu.slots[gpu.drained % kSlots];
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        hr = context->Map(slot.staging.p, 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+        hr = context->Map(slot.staging.p, 0, D3D11_MAP_READ,
+                          fixed_backpressure ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
         if (hr == DXGI_ERROR_WAS_STILL_DRAWING)
             break;
         if (FAILED(hr)) {
