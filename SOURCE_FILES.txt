@@ -318,3 +318,5 @@ native/include/dolly_replay_clock.hpp
 native/tests/replay_clock_tests.cpp
 tests/test_profile_clock.py
 tests/test_export_timing.py
+native/include/dolly_depth_live.hpp
+native/tests/depth_live_tests.cpp
