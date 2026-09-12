@@ -663,8 +663,9 @@ void draw_panel(const EditorSnapshot& state) {
                          std::max(1.0f, io.DisplaySize.y - 2 * margin));
     ImGui::SetNextWindowPos(ImVec2(margin, margin), ImGuiCond_FirstUseEver);
     // Open large enough for the fullest page (Export) so nothing needs a manual
-    // resize; the window stays resizable and is clamped to the game window.
-    ImGui::SetNextWindowSize(ImVec2(std::min(560.0f * panel_scale, maximum.x),
+    // resize; the window stays resizable and is clamped to the game window. The
+    // width stays clear of the guide overlay's right-hand region.
+    ImGui::SetNextWindowSize(ImVec2(std::min(500.0f * panel_scale, maximum.x),
                                     std::min(860.0f * panel_scale, maximum.y)),
                              ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(380.0f * panel_scale, maximum.x),
