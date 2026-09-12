@@ -42,6 +42,17 @@ class NativePackagingTests(unittest.TestCase):
                 native_pins = set(re.findall(expression, source.read_text()))
                 self.assertEqual(pins, native_pins)
 
+    def test_clean_source_export_includes_every_reviewed_profile(self):
+        from release_files import source_files
+        root = TOOLS.parent
+        manifest_path = root / "native/profiles/manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        expected = {manifest_path}
+        expected.update(manifest_path.parent / name for name in manifest["profiles"])
+        exported = set(source_files(root))
+        self.assertFalse(expected - exported,
+                         f"Reviewed profiles missing from source export: {expected - exported}")
+
     def test_compatibility_manifest_matches_launcher_pins(self):
         from dolly import compatibility
         from dolly.launcher import NATIVE_GAME_SHA256

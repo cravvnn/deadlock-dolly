@@ -77,6 +77,7 @@ native/profiles/deadlock-2026-09-09-complete.json
 native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json
 native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
 native/profiles/deadlock-2026-09-11-complete.json
+native/profiles/deadlock-2026-09-11b-complete.json
 native/profiles/manifest.json
 native/src/bridge_win.cpp
 native/src/dolly_compat_generated.hpp
