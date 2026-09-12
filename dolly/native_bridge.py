@@ -150,6 +150,8 @@ class NativeBridge(MediaTransport):
         self._sequence = 0
         self._heartbeat = 0
         self._flags = 0
+        self._frozen = False
+        self._relief = True
         self._start = 0.0
         self._speed = 1.0
         self._demo = b""
@@ -363,7 +365,8 @@ class NativeBridge(MediaTransport):
             self._prepared = False
             self._manual = False
             self._start, self._speed, self._demo = start, speed, demo
-            self._flags = (1 if frozen else 0) | 2
+            self._frozen = bool(frozen)
+            self._flags = self._compose_flags()
             command = self._publish(1, payload)
             try:
                 result = self._wait(command, {"armed"}, timeout)
@@ -372,6 +375,21 @@ class NativeBridge(MediaTransport):
                 raise
             self._prepared = True
             return result
+
+    def _compose_flags(self):
+        return (1 if self._frozen else 0) | 2 | (0 if self._relief else 4)
+
+    def set_seek_relief(self, enabled):
+        """Enable or disable the native render relief applied while seeking.
+
+        Republishes the current control flags without advancing the command so
+        the change applies immediately, including during the game's own seeks.
+        """
+        with self._operations, self._lock:
+            self._check_open()
+            self._relief = bool(enabled)
+            self._flags = self._compose_flags()
+            self._publish(self._mode, increment=False)
 
     def play(self, timeout=3):
         timeout = _number(timeout, "Native acknowledgment timeout")
@@ -466,7 +484,9 @@ class NativeBridge(MediaTransport):
                 raise NativeBridgeError("Native flight requires its launched game process")
             self._prepared = False
             self._manual = False
-            self._demo, self._flags, self._start, self._speed = demo, 3, 0.0, 1.0
+            self._demo, self._start, self._speed = demo, 0.0, 1.0
+            self._frozen = True
+            self._flags = self._compose_flags()
             self.configure_editor(enabled=True, owner="panel")
             try:
                 self._wait_editor_input(timeout, cancelled)

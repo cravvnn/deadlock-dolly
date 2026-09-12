@@ -180,6 +180,7 @@ class Controller:
         self._session = None
         self._native_active = False
         self._native_manual = False
+        self._seek_relief = True
         self._game_ui_visible = False
         self._game_ui_restore = {}
         self._console_open = None
@@ -2075,6 +2076,9 @@ class Controller:
                                       "clock_max_lead_ticks": 0 if frozen else 1}
             native = self._native_bridge()
             self._playback_details["camera_backend"] = "native" if native is not None else "console"
+            setter = getattr(native, "set_seek_relief", None)
+            if setter is not None:
+                setter(self._seek_relief)
             if native is not None:
                 self._playback_details["smoothing"] = {"mode": "off", "requested_mode": smoothing,
                     "kind": "native_view_time", "window_seconds": 0, "nominal_delay_seconds": 0}
@@ -2185,6 +2189,13 @@ class Controller:
 
     def _native_bridge(self):
         return getattr(self._session, "native", None) if self._session is not None else None
+
+    def set_seek_relief(self, enabled):
+        """Enable or disable the native render relief applied while seeking."""
+        self._seek_relief = bool(enabled)
+        setter = getattr(self._native_bridge(), "set_seek_relief", None)
+        if setter is not None:
+            setter(self._seek_relief)
 
     def _require_native_demo(self, status, *, allow_idle=False):
         if self._demo is None or not same_replay_name(self._demo, status.get("demo_name")):

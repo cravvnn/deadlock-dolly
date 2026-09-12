@@ -23,6 +23,9 @@ enum class State : std::uint32_t {
 };
 constexpr std::uint32_t kFrozen = 1;
 constexpr std::uint32_t kAspect = 2;
+// Optional per-command opt-out of the seek render relief. Absent means the
+// relief is allowed, so older editors keep the safer default.
+constexpr std::uint32_t kNoSeekRelief = 4;
 #pragma pack(push, 1)
 struct ControlHeader {
     char magic[8];

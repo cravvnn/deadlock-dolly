@@ -54,6 +54,7 @@ HANDLE gMapping = nullptr, gEditor = nullptr;
 unsigned char* gMemory = nullptr;
 std::atomic<bool> gHookInstalled{false};
 std::atomic<bool> gDemoSeeking{false};
+std::atomic<bool> gReliefAllowed{true};
 std::atomic<double> gHeartbeatTime{0};
 std::atomic<unsigned> gWorkerError{0};
 std::atomic_flag gStatusLock = ATOMIC_FLAG_INIT;
@@ -809,8 +810,10 @@ static DWORD WINAPI worker(void*) {
             // Apply the reversible render relief while the replay is seeking
             // (the main cause of the vertex-buffer overflow and lingering
             // effects) or the engine's buffer queue is already near capacity.
-            seek_relief_tick(gDemoSeeking.load(std::memory_order_relaxed) ||
-                             overlay_renderer_pressure());
+            // The editor can opt out per command with kNoSeekRelief.
+            seek_relief_tick(
+                gReliefAllowed.load(std::memory_order_relaxed) &&
+                (gDemoSeeking.load(std::memory_order_relaxed) || overlay_renderer_pressure()));
             ControlHeader control{};
             if (read_control(control, payload, accepted)) {
                 // CreateProcess can reach the proxy before the launcher receives the PID.
@@ -819,7 +822,7 @@ static DWORD WINAPI worker(void*) {
                     continue;
                 }
                 if (control.editor_pid != editor_pid || control.game_pid != GetCurrentProcessId() ||
-                    control.mode > 4 || control.flags & ~(kFrozen | kAspect) ||
+                    control.mode > 4 || control.flags & ~(kFrozen | kAspect | kNoSeekRelief) ||
                     !std::isfinite(control.start_phase) || control.start_phase < 0 ||
                     !std::isfinite(control.speed) || control.speed < .05 || control.speed > 4 ||
                     !std::memchr(control.demo_name, 0, sizeof(control.demo_name))) {
@@ -827,6 +830,7 @@ static DWORD WINAPI worker(void*) {
                     Sleep(10);
                     continue;
                 }
+                gReliefAllowed.store(!(control.flags & kNoSeekRelief), std::memory_order_relaxed);
                 auto candidate = shot;
                 bool next_manual = control.mode == std::uint32_t(Mode::Manual) ||
                                    (manual && control.mode == std::uint32_t(Mode::HoldCurrent));

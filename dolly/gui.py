@@ -146,6 +146,7 @@ class DollyApp:
         self.smoothing = tk.StringVar(value="Balanced")
         self.frozen = tk.BooleanVar(value=False)
         self.hide_hud = tk.BooleanVar(value=True)
+        self.seek_relief = tk.BooleanVar(value=True)
         self.capture_mode = tk.StringVar(value="Replay timing")
         self.segment_seconds = tk.StringVar(value="3")
         self.show_coordinates = tk.BooleanVar(value=False)
@@ -1135,6 +1136,8 @@ class DollyApp:
                                        state="disabled" if self.capture_mode.get() == "Replay timing" else "normal")
         self.segment_entry.pack(side="left")
         ttk.Label(timing, text="s", style="Muted.TLabel").pack(side="left", padx=(4, 12))
+        ttk.Checkbutton(timing, text="Renderer relief", variable=self.seek_relief,
+                        command=self._set_seek_relief).pack(side="left")
         ttk.Label(timing, textvariable=self.path_summary, style="Muted.TLabel").pack(side="right")
         ttk.Button(timing, text="Keybinds…", style="Quiet.TButton",
                    command=self._show_keybinds).pack(side="right", padx=(0, 14))
@@ -1615,6 +1618,8 @@ class DollyApp:
         intro = ttk.Frame(tab)
         intro.grid(row=0, column=0, sticky="ew", pady=(2, 10))
         ttk.Label(intro, text="CAMERA VARIABLES", style="Section.TLabel").pack(side="left")
+        ttk.Checkbutton(intro, text="Renderer relief during seeks", variable=self.seek_relief,
+                        command=self._set_seek_relief).pack(side="left", padx=(18, 0))
         ttk.Button(intro, text="Fixed values…", command=self._show_fixed_values).pack(side="right", padx=(8, 0))
         ttk.Button(intro, text="+ Citadel DOF", command=self._dof_preset).pack(side="right", padx=(8, 0))
         ttk.Button(intro, text="+ Range DOF", command=self._range_dof_preset).pack(side="right")
@@ -2533,6 +2538,10 @@ class DollyApp:
             self._close_paused_camera(stop=False)
             self._submit("Seeking replay", lambda: self.controller.seek(project, time))
         self._guard("Seek replay", operation)
+
+    def _set_seek_relief(self):
+        """Toggle the native render relief that prevents seek-time overload."""
+        self.controller.set_seek_relief(self.seek_relief.get())
 
     def _play(self):
         def operation():
