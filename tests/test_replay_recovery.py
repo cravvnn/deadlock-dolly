@@ -154,6 +154,34 @@ class ReplayRecoveryTests(unittest.TestCase):
                 self.controller._prepare_native_shot_replay()
         self.assertNotIn('disconnect', self.console.requests)
 
+    def test_prepared_shot_waits_for_the_live_recorder(self):
+        self.bridge.video_status = Mock(side_effect=[
+            {'state': 'starting'}, {'state': 'starting'}, {'state': 'recording'}])
+        self.controller._recording_replay = (self.controller._session, str(self.controller._demo), 100)
+        self.controller._prepare_native_shot_replay()
+        self.assertEqual(self.bridge.video_status.call_count, 3)
+        self.assertIsNone(self.controller._recording_replay)
+        self.assertNotIn('disconnect', self.console.requests)
+        self.assertEqual(self.console.sent, [])
+
+    def test_prepared_shot_rejects_ended_or_failed_recorder(self):
+        for status, message in (({'state': 'completed'}, 'no longer starting'),
+                                ({'state': 'failed', 'error': 'encoder lost'}, 'encoder lost')):
+            with self.subTest(status=status):
+                self.controller.mark_recording_pending(True)
+                self.bridge.video_status = Mock(return_value=status)
+                self.controller._recording_replay = (self.controller._session, str(self.controller._demo), 100)
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.controller._prepare_native_shot_replay()
+                self.assertIsNone(self.controller._recording_replay)
+                self.assertNotIn('disconnect', self.console.requests)
+                self.controller.mark_recording_pending(False)
+
+    def test_prepared_shot_times_out_without_a_live_recorder(self):
+        self.bridge.video_status.return_value = {'state': 'starting'}
+        with self.assertRaisesRegex(RuntimeError, 'did not start in time'):
+            self.controller._wait_for_recorder_ready(timeout=.1)
+
     def test_old_idle_recorder_poll_does_not_erase_fresh_preparation(self):
         prepared = (self.controller._session, str(self.controller._demo), 100)
         self.controller._recording_replay = prepared

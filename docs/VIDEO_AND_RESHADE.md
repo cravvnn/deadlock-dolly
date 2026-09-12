@@ -40,6 +40,11 @@ clean shot. Recording starts when the game is focused; return within ten seconds
 if starting from the desktop. Manual recording includes any seeking or setup
 performed after recording starts.
 
+Pressing **Play shot** before the recorder reports *recording* waits briefly for
+the counter instead of starting the shot early. If the recorder never starts, or
+it finishes or fails first, Dolly stops and asks you to finish or discard the
+recording and start a new one.
+
 Existing files are never overwritten. **Discard** removes the incomplete file
 created by that recording. Encoder failures report an error and remove an
 unfinished output. Keep Deadlock open while an MP4 is finalizing. Windows N

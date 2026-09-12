@@ -844,6 +844,35 @@ class Controller:
             self._recording_replay = (self._session, str(self._demo), info["tick"])
             self._message("Replay prepared for recording. Play the shot once, then finish recording.")
 
+    def _wait_for_recorder_ready(self, timeout=10.0):
+        """Bounded wait so the prepared take is not played before capture is live.
+
+        The native recorder can still be ``starting`` when the user presses Play.
+        Starting the shot first would lose its opening frames, so wait for the
+        confirmed recording state instead of consuming the prepared take early.
+        """
+        bridge = self._native_bridge()
+        read = getattr(bridge, "video_status", None)
+        if not callable(read):
+            raise RuntimeError("Recorder status is unavailable; the shot was not started.")
+        deadline = time.perf_counter() + max(0.0, float(timeout))
+        while True:
+            status = read()
+            if not isinstance(status, dict):
+                raise RuntimeError("Recorder status is unavailable; the shot was not started.")
+            state = str(status.get("state", "idle"))
+            if state == "recording":
+                return status
+            if state == "failed":
+                raise RuntimeError(str(status.get("error") or "The recorder failed before the shot began."))
+            if state != "starting":
+                raise RuntimeError("The recording is no longer starting. Finish or discard it and start a new recording.")
+            if self._stop_event.is_set():
+                raise RuntimeError("Recording preparation was cancelled before the shot began.")
+            if time.perf_counter() >= deadline:
+                raise RuntimeError("The recorder did not start in time. Wait for the recording counter before playing the shot.")
+            self._stop_event.wait(.05)
+
     def _prepare_native_shot_replay(self):
         if self._recorder_active():
             prepared, self._recording_replay = self._recording_replay, None
@@ -852,6 +881,7 @@ class Controller:
             if (prepared is None or (prepared[0] is not self._session or prepared[1:] != (str(self._demo), info["tick"]))
                     or not native.get("paused") or native.get("tick") != info["tick"]):
                 raise RuntimeError("This recording has no unused prepared shot. Finish recording and start a new recording before playing again.")
+            self._wait_for_recorder_ready()
             return
         self._recording_replay = None
         self._recover_replay_for_shot()
