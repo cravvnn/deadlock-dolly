@@ -1068,14 +1068,26 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
         if (write - s.consumed.load(std::memory_order_acquire) >= kSlots) {
             if (!fixed_backpressure)
                 break;
-            std::unique_lock<std::mutex> lock(s.wait_mutex);
-            s.wake.wait_for(lock, std::chrono::milliseconds(2), [&s] {
-                return s.stopping.load(std::memory_order_acquire) ||
-                       s.produced.load(std::memory_order_relaxed) -
-                               s.consumed.load(std::memory_order_acquire) <
-                           kSlots;
-            });
-            if (s.stopping.load(std::memory_order_acquire))
+            // Hold the simulation until the encoder frees queue space. The wait
+            // is bounded so a wedged encoder, stop, or teardown can never pin
+            // the render thread; after the budget we degrade to the real-time
+            // drop path instead of hanging the game.
+            const auto deadline = GetTickCount64() + 5000;
+            bool healthy = true;
+            while (s.produced.load(std::memory_order_relaxed) -
+                       s.consumed.load(std::memory_order_acquire) >=
+                   kSlots) {
+                if (s.stopping.load(std::memory_order_acquire) ||
+                    !s.ready.load(std::memory_order_acquire) ||
+                    FAILED(s.error.load(std::memory_order_relaxed)) ||
+                    GetTickCount64() >= deadline) {
+                    healthy = false;
+                    break;
+                }
+                std::unique_lock<std::mutex> lock(s.wait_mutex);
+                s.wake.wait_for(lock, std::chrono::milliseconds(2));
+            }
+            if (!healthy)
                 return;
             if (s.produced.load(std::memory_order_relaxed) -
                     s.consumed.load(std::memory_order_acquire) >=

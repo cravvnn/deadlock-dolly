@@ -3,8 +3,10 @@
 ## Record an MP4
 
 1. Open a replay through Dolly using DirectX 11 and Native camera mode.
-2. On the desktop **Export** tab, choose a new `.mp4` filename, 30, 60 or 120 FPS,
-   and a bitrate. 20 Mbps is the default.
+2. On the desktop **Export** tab, choose a new `.mp4` filename and the export
+   settings: video FPS (30, 60, 120, 300 or 600), bitrate, encoder, and optional
+   fixed-step and export speed. 60 FPS, 20 Mbps and automatic encoder are the
+   defaults.
 3. Return to Deadlock, open **F8**, and click **Record video**. Wait for the
    recording counter, then play the shot with **Play shot** or **F5**.
 4. Open **F8** and click **Finish recording**. The MP4 is ready after
@@ -14,11 +16,20 @@ Capture uses the current game resolution, up to 3840 × 2160. Both dimensions
 must be even. SDR RGBA/BGRA backbuffers are supported; HDR is not. Change the
 game resolution before recording. Resizing during recording finishes the file.
 
-This is real-time, video-only H.264 recording. Playback speed controls how fast
-the replay moves; export FPS controls how often frames are captured. Output
-timestamps preserve elapsed time if frames are missed. The counter reports
-missed capture slots; selecting 60 FPS cannot make a slower game render 60
-different frames. Reduce resolution, shader cost or export FPS if necessary.
+By default this is real-time, video-only H.264 recording. Playback speed
+controls how fast the replay moves; export FPS controls how often frames are
+captured. Output timestamps preserve elapsed time if frames are missed. The
+counter reports missed capture slots; selecting 60 FPS cannot make a slower
+game render 60 different frames. Reduce resolution, shader cost or export FPS
+if necessary.
+
+**Fixed-step** export instead paces the replay to the chosen video FPS, so the
+output contains exactly the authored frames with no missing slots. The game's
+simulation pauses and steps one frame at a time; each step completes its
+readback and waits for encoder capacity before the next step runs. Expect the
+game to render slower than real time during a fixed-step recording. Use
+**Export speed** to scale replay time per output frame (for example 0.5× for
+smooth slow motion at a high FPS).
 
 Dolly's panel and path guides are excluded from the file. ReShade color effects
 are included, while its menu, splash and FPS display are excluded. Deadlock's
@@ -33,21 +44,22 @@ unfinished output. Keep Deadlock open while an MP4 is finalizing. Windows N
 editions need Microsoft's Media Feature Pack to record; camera editing remains
 available without it.
 
-Fixed-step offline rendering, audio, separate layers and arbitrary output
-resizing are not included in this version.
+Audio, separate layers and arbitrary output resizing are not included in this
+version. Fixed-step video export is available; see below.
 
-## 120 FPS
+## High frame rates and fixed-step
 
-Choose 120 in Export → Video FPS before starting a recording. The in-game
-Record video button uses that selection. Playback speed and camera update rate
-are separate settings; changing video FPS does not change either.
+Choose the frame rate in Export → Video FPS before starting a recording. The
+in-game Record video button uses that selection. Playback speed and camera
+update rate are separate settings; changing video FPS does not change either.
 
-This remains real-time capture. 120 distinct frames per second requires the
-game and encoder to sustain that throughput. Dolly reports missed capture
-slots and preserves elapsed time; it does not synthesize missing frames or
-slow the demo to wait for encoding. Encoder support depends on the selected
-resolution and Windows codec. Lower the resolution or choose 60 if the encoder
-rejects the configuration.
+At 300 or 600 FPS, real-time capture depends on the game and encoder sustaining
+that throughput; without fixed-step, Dolly reports missed slots and preserves
+elapsed time rather than synthesizing frames. Fixed-step export removes that
+dependence: the simulation advances one step at a time and waits for readback
+and the encoder, so every output frame is present. Encoder support still
+depends on resolution and the selected codec; lower the resolution or choose a
+lower FPS if the encoder rejects the configuration.
 
 Depth, hero-only and world-only export are not available in this build. See
 [LAYER_EXPORT.md](LAYER_EXPORT.md) for renderer requirements.
@@ -90,10 +102,12 @@ supported. Dolly's existing native camera DOF controls continue to work.
 ## Implementation and validation
 
 The recorder uses three reusable GPU staging slots and a bounded CPU queue.
-Readback checks GPU readiness without waiting. Encoding and disk writes run on
-a separate Media Foundation worker; overload drops capture opportunities rather
-than blocking camera rendering. The original camera hook, interpolation and
-replay clock are unchanged.
+Readback, encoding and disk writes run on separate workers. In real-time mode a
+busy GPU or full queue skips a capture opportunity instead of blocking camera
+rendering. In fixed-step mode the producer applies backpressure: it waits for
+the previous readback and for encoder queue room before the next simulation
+step, with a bounded fallback to the drop path if the encoder stalls. The
+original camera hook, interpolation and replay clock are unchanged.
 
 ReShade runs through its manual runtime API inside Dolly's existing Present
 callback. Capture occurs at its post-effects, pre-interface callback. Optional
