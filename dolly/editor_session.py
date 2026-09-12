@@ -219,6 +219,8 @@ def dispatch(app, event, bridge):
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":
         app._play()
+    elif action == "destroy_ragdolls":
+        _native_operation(app, "Clearing ragdolls", app.controller.destroy_ragdolls, bridge)
     elif action == "start_video":
         app._start_video_recording()
     elif action == "stop_video":

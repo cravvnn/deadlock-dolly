@@ -1376,11 +1376,7 @@ class Controller:
         restoration_error = self._restore_playback_settings()
         if restoration_error:
             raise RuntimeError(restoration_error)
-        command = "demo_pause"
-        if self._demo_speed_changed:
-            command += "; demo_timescale 1"
-        self._request(command)
-        self._demo_speed_changed = False
+        self._request("demo_pause")
         return int(self._require_demo()["tick"])
 
     def _check_paused_cancelled(self):
@@ -1500,8 +1496,7 @@ class Controller:
                 self.toggle_console(enabled=False)
             self._hide_game_ui()
             self._game_ui_visible = False
-            self._request("demo_pause; demo_timescale 1" if self._demo_speed_changed else "demo_pause")
-            self._demo_speed_changed = False
+            self._request("demo_pause")
             self._check_paused_cancelled()
             bridge = self._native_bridge()
             # With no supplied pose, the callback seeds from the currently
@@ -1642,6 +1637,16 @@ class Controller:
             LOG.warning("Replay UI restoration remains pending: %s", exc)
             return "Replay UI settings could not be restored; reconnect and use Stop / restore. " + str(exc)
         return None
+
+    def destroy_ragdolls(self):
+        """Clear accumulated ragdolls in the owned local replay."""
+        with self._op_lock:
+            if self.status().get("playing") or getattr(self, "_export_timing", None):
+                raise RuntimeError("Stop shot playback or recording before clearing ragdolls.")
+            self._require_probe()
+            self._require_demo()
+            self._request("cl_destroy_ragdolls")
+            self._message("Ragdoll cleanup command sent.")
 
     def toggle_replay(self):
         """Pause/resume replay time without restarting an authored native path."""
@@ -2453,13 +2458,11 @@ class Controller:
         # HUD and background throttling are restored on every exit path.
         try:
             self._require_demo(require_tick=False)
-            commands = "demo_pause"
-            if self._demo_speed_changed:
-                commands += "; demo_timescale 1"
-            self._request(commands)
-            self._demo_speed_changed = False
+            # Preserve the active speed, including console hotkey changes.
+            # Only explicit Stop / restore returns a Dolly-owned speed to 1x.
+            self._request("demo_pause")
         except Exception as exc:
-            LOG.info("Could not pause/reset replay during playback cleanup: %s", exc)
+            LOG.info("Could not pause replay during playback cleanup: %s", exc)
         restoration_error = self._restore_playback_settings()
         with self._state_lock:
             self._state["playing"] = False
@@ -2676,8 +2679,7 @@ class Controller:
         restoration_error = self._restore_playback_settings()
         if self._console and self._console.is_connected and self._alive():
             self._require_demo(require_tick=False)
-            self._request("demo_pause; demo_timescale 1" if self._demo_speed_changed else "demo_pause")
-            self._demo_speed_changed = False
+            self._request("demo_pause")
         self._message(restoration_error or "Paused. HUD restored; the current camera and lens values are held.", playing=False)
 
     def stop(self):
@@ -2707,7 +2709,7 @@ class Controller:
                 if self._demo_speed_changed:
                     # demo_timescale is a command, not a readable cvar. Stop
                     # explicitly returns speed to 1x rather than guessing a
-                    # prior speed. Playback cleanup and Pause also reset it.
+                    # prior speed. Playback cleanup and Pause preserve it.
                     commands.append("demo_timescale 1")
                 self._request("; ".join(commands))
                 self._restore.clear()

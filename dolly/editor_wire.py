@@ -24,7 +24,7 @@ STATUS_BYTES = HEADER.size + EVENT.size * EVENT_COUNT
 OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused", "reshade")
 EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate",
                  "reshade", "start_video", "stop_video", "set_video_fps", "set_video_bitrate",
-                 "set_video_encoder", "set_video_fixed_step", "set_video_speed")
+                 "set_video_encoder", "set_video_fixed_step", "set_video_speed", "destroy_ragdolls")
 
 
 def _text(value, capacity):

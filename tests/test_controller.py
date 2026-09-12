@@ -822,6 +822,29 @@ class ControllerTests(unittest.TestCase):
             self.controller.play(project, **options)
         return project
 
+    def test_shot_cleanup_and_pause_preserve_slow_motion_hotkey_until_stop(self):
+        self._start_playback_without_worker(speed=.5)
+        # Simulate the user's console hotkey overriding the speed mid-shot.
+        self.console.request("demo_timescale 0.1")
+        self.controller._finish_playback()
+        self.controller.pause()
+        self.assertEqual(self.console.values["demo_timescale"], .1)
+        self.assertTrue(self.console.paused)
+        self.assertTrue(self.controller._demo_speed_changed)
+        self.controller.stop()
+        self.assertEqual(self.console.values["demo_timescale"], 1)
+
+    def test_clear_ragdolls_validates_replay_without_changing_camera_or_speed(self):
+        self.controller.destroy_ragdolls()
+        self.assertIn("cl_destroy_ragdolls", self.console.requests)
+        self.assertFalse(self.console.camera_writes)
+        self.assertEqual(self.console.values["demo_timescale"], .5)
+        self.console.requests.clear()
+        self.console.demo_name = "different.dem"
+        with self.assertRaises(RuntimeError):
+            self.controller.destroy_ragdolls()
+        self.assertNotIn("cl_destroy_ragdolls", self.console.requests)
+
     def _run_with_clock(self, project, *, limit=4, speed=1, frozen=False):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=limit)
@@ -869,7 +892,7 @@ class ControllerTests(unittest.TestCase):
         self.console.goto_outputs.extend([200, 200])
         self._run_with_clock(project, speed=0.5)
         self.assertTrue(self.console.paused)
-        self.assertEqual(self.console.values["demo_timescale"], 1)
+        self.assertEqual(self.console.values["demo_timescale"], .5)
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 0)
         self.assertEqual(self.console.values["engine_no_focus_sleep"], 20)
@@ -902,12 +925,12 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 0)
         self.assertEqual(self.console.values["engine_no_focus_sleep"], 20)
-        self.assertEqual(self.console.values["demo_timescale"], 1)
+        self.assertEqual(self.console.values["demo_timescale"], 2)
         self.assertTrue(self.console.paused)
         self.assertFalse(self.controller.status()["playing"])
         self.assertIn("Simulated console failure", self.controller.status()["message"])
 
-    def test_partial_start_batch_failure_restores_hud_background_and_speed(self):
+    def test_partial_start_batch_failure_restores_hud_background_and_preserves_speed(self):
         self.console.fail_commands.add("demo_resume")
         with patch("dolly.controller.threading.Thread") as worker:
             with self.assertRaisesRegex(RuntimeError, "Simulated console failure"):
@@ -919,7 +942,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 0)
         self.assertEqual(self.console.values["engine_no_focus_sleep"], 20)
-        self.assertEqual(self.console.values["demo_timescale"], 1)
+        self.assertEqual(self.console.values["demo_timescale"], 2)
         self.assertFalse(self.controller.status()["playing"])
         self.assertEqual(self.controller._playback_restore, {})
 

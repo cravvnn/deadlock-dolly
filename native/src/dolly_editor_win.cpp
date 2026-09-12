@@ -507,7 +507,7 @@ bool editor_enqueue(EditorAction action, double value) noexcept {
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
-    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoSpeed))
+    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::DestroyRagdolls))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)

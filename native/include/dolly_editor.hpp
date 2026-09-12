@@ -62,12 +62,15 @@ enum class EditorAction : std::uint32_t {
     SetVideoBitrate,
     SetVideoEncoder,
     SetVideoFixedStep,
-    SetVideoSpeed
+    SetVideoSpeed,
+    DestroyRagdolls
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoSpeed) == 38,
               "Stable video action IDs");
+static_assert(static_cast<std::uint32_t>(EditorAction::DestroyRagdolls) == 39,
+              "Stable replay cleanup action ID");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;

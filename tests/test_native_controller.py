@@ -171,7 +171,7 @@ class NativeControllerTests(unittest.TestCase):
         self.assertEqual(self.bridge.state, "stopped")
         self.assertTrue(self.console.paused)
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
-        self.assertEqual(self.console.values["demo_timescale"], 1)
+        self.assertEqual(self.console.values["demo_timescale"], .1)
         self.assertIn("Native shot finished", self.controller.status()["message"])
         self.assertEqual(self.controller._playback_samples[-1]["time"], 1)
 

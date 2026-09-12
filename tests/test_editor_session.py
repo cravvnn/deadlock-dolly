@@ -20,6 +20,12 @@ class Value:
 
 
 class EditorSessionTests(unittest.TestCase):
+    def test_clear_ragdolls_dispatches_on_worker(self):
+        self.assertTrue(session.dispatch(self.app, {"action": "destroy_ragdolls", "value": 0}, self.bridge))
+        self.controller.destroy_ragdolls.assert_not_called()
+        self.app._submit.call_args.args[1]()
+        self.controller.destroy_ragdolls.assert_called_once_with()
+
     def setUp(self):
         self.bridge = Mock()
         self.bridge.editor_status.return_value = {"events": []}

@@ -1060,6 +1060,11 @@ void run() {
     require(editor_snapshot().playback_rate == 120,
             "In-game update rate differs from the desktop setting");
     const auto before_settings = dolly::gLastEvent;
+    require(editor_enqueue(EditorAction::DestroyRagdolls),
+            "Ragdoll cleanup could not enter the editor event queue");
+    require(dolly::gEvents[before_settings % kEditorEventCount].action == 39,
+            "Ragdoll cleanup action ID differs from Python");
+    const auto before_playback_settings = dolly::gLastEvent;
     require(!editor_enqueue(EditorAction::SetPlaybackSpeed, 0) &&
                 !editor_enqueue(EditorAction::SetPlaybackSpeed, 4.1),
             "Invalid playback speed entered the event queue");
@@ -1068,10 +1073,10 @@ void run() {
     require(editor_enqueue(EditorAction::SetPlaybackSpeed, .25) &&
                 editor_enqueue(EditorAction::SetPlaybackRate, 60),
             "Playback controls could not queue valid choices");
-    require(dolly::gLastEvent == before_settings + 2,
+    require(dolly::gLastEvent == before_playback_settings + 2,
             "Playback control validation changed event numbering");
-    const auto& speed_event = dolly::gEvents[before_settings % kEditorEventCount];
-    const auto& rate_event = dolly::gEvents[(before_settings + 1) % kEditorEventCount];
+    const auto& speed_event = dolly::gEvents[before_playback_settings % kEditorEventCount];
+    const auto& rate_event = dolly::gEvents[(before_playback_settings + 1) % kEditorEventCount];
     require(speed_event.action == 29 && speed_event.value == .25 && rate_event.action == 30 &&
                 rate_event.value == 60,
             "Playback action IDs or values differ from Python");

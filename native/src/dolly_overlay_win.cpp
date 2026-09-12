@@ -879,6 +879,13 @@ void draw_panel(const EditorSnapshot& state) {
                     action_button("Fly camera", EditorAction::Flight, half);
                     ImGui::SameLine();
                     action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    action_button("Clear ragdolls", EditorAction::DestroyRagdolls,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Clear accumulated ragdolls after repeated shot playback.");
                 }
                 end_panel_card();
                 ImGui::EndDisabled();
@@ -891,6 +898,11 @@ void draw_panel(const EditorSnapshot& state) {
                     const bool active = recording.state == video::State::starting ||
                                         recording.state == video::State::recording;
                     ImGui::BeginDisabled(!state.ready || state.busy);
+                    ImGui::BeginDisabled(active || recording.state == video::State::finalizing ||
+                                         state.camera_count < 2 || state.playing);
+                    action_button("Play shot", EditorAction::PlayPath,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
                     if (active) {
                         ImGui::Text("%.1f s  |  %llu frames",
                                     double(recording.duration_100ns) / 1e7,
