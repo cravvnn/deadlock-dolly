@@ -458,8 +458,10 @@ renderer, so it does not establish that the build is ready for public release.
 
 ## How the unlocker is loaded and recovered
 
-Dolly bundles the **unmodified official cvar unlocker v0.5.2 DLL** and checks its
-pinned SHA-256 before launching. It never replaces the real game `server.dll`.
+Dolly bundles a locally built cvar unlocker based on v0.5.2 that fixes its own
+command cleanup on game exit, and checks its pinned SHA-256 before launching.
+Its patches and provenance are in `third_party/cvar_unlocker/`. It never
+replaces the real game `server.dll`.
 
 For the upstream SearchPaths loading method, Dolly makes a temporary edit to
 the existing `game/citadel/gameinfo.gi`. It first writes an exact original backup
