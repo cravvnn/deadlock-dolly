@@ -52,11 +52,35 @@ The selector's texture name and per-view layout are supported by the two supplie
 captures; they still need live verification in the gated replay session. The
 tracker does not classify heroes or intercept arbitrary resource-copy mutations.
 
-These libraries are not yet connected to the in-game recorder. Paired
-color/depth submission, output-worker
-integration, normalized video preview and UI controls remain to be completed.
-Their tests establish the readback/writer behavior, not a working live layer
-export or a hero/world classifier.
+The video recorder now accepts an optional calibrated scene sample alongside
+each color capture. It submits both GPU copies together and publishes one CPU
+packet only when both readbacks are ready. The existing FFmpeg and Windows
+Media Foundation workers write the paired EXR before releasing that packet.
+EXR filenames use the zero-based encoded color-frame index; embedded metadata
+retains the source sample, replay time, projection and capture timestamp.
+Capture timestamps may differ from the encoded video's timing, especially in
+real-time FFmpeg recording, so file order defines the color/depth pairing.
+
+The encoder worker exclusively creates `<video path>.depth`, publishes each
+finished EXR by rename, and writes a final manifest only when its frame count
+matches the encoded color count. Existing directories/files are refused.
+Cancellation and failures discard only outputs created by that recording;
+unrelated files are preserved. Resource reset can finish a matching prefix,
+with pending GPU pairs counted as dropped. Paired fixed-step export fails on
+backpressure timeout instead of continuing with an unreported missing sample.
+
+Native tests create actual paired recordings through both encoders and check
+cancellation, missing depth, output collisions and resource reset. Independent
+FFmpeg/OpenEXR decoding checks frame counts and every fixture pixel against its
+depth sample, including real-time skipped capture opportunities. The manual
+`depth_video_smoke` executable takes an absolute FFmpeg executable path and an
+existing output-parent directory; it leaves a unique test folder for inspection.
+
+The game Present path and UI do not enable depth recording yet. Renderer-gated
+scene-tracker lifecycle, exact replay-time publication, normalized video preview
+and user controls remain to be completed. These tests establish recorder
+pairing with supplied GPU fixtures, not live game depth export or a hero/world
+classifier.
 
 ### Captured-frame investigation (September 12, 2026)
 

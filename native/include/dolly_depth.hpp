@@ -37,6 +37,7 @@ struct Frame {
     std::uint64_t sample = 0;
     double replay_time = 0;
     Projection projection;
+    std::uint64_t capture_pts_100ns = 0;
 };
 // Standard single-part scanline OpenEXR, one 32-bit FLOAT Z channel, without
 // lossy conversion or compression. Call only on an output worker. The stream

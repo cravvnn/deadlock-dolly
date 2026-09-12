@@ -247,6 +247,7 @@ bool write_exr(std::ostream& output, const Frame& frame, const float* pixels, st
     attribute(header, "dollySample", "string", std::to_string(frame.sample));
     attribute(header, "dollyDepthUnits", "string", "positive camera-axis game units");
     double_attribute(header, "dollyReplayTime", frame.replay_time);
+    attribute(header, "dollyCapturePTS100ns", "string", std::to_string(frame.capture_pts_100ns));
     constexpr const char* names[] = {"dollyInverseZA", "dollyInverseZB", "dollyInverseZC",
                                      "dollyInverseZD"};
     for (unsigned i = 0; i < 4; ++i)

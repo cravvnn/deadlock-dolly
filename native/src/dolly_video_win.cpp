@@ -21,6 +21,9 @@
 #include <vector>
 #include "dolly_video.hpp"
 #include "dolly_video_math.hpp"
+#include "dolly_depth_scene.hpp"
+#include "dolly_depth_sequence.hpp"
+#include <cmath>
 
 namespace dolly::video {
 namespace {
@@ -89,6 +92,7 @@ struct MediaApi {
 struct CpuFrame {
     std::vector<std::uint8_t> pixels;
     std::uint64_t pts = 0;
+    depth::RawFrame depth;
 };
 struct Session {
     std::wstring path;
@@ -97,6 +101,8 @@ struct Session {
     Codec codec = Codec::auto_select;
     std::uint32_t quality = 0, preset = 0;
     bool fixed_step = false;
+    bool depth_enabled = false;
+    depth::Sequence depth_output; // Touched only by the encoder thread.
     std::wstring ffmpeg;
     // Published once by the render callback before configured=true.
     std::uint32_t width = 0, height = 0;
@@ -121,6 +127,8 @@ struct Session {
 struct GpuSlot {
     Com<ID3D11Texture2D> staging;
     std::uint64_t pts = 0;
+    depth::RawFrame depth;
+    bool depth_ready = false;
 };
 struct RenderResources {
     // These objects are touched only under the caller's Present/Resize lock.
@@ -132,9 +140,14 @@ struct RenderResources {
     D3D11_TEXTURE2D_DESC description{};
     std::uint64_t submitted = 0, drained = 0;
     Cadence cadence;
+    depth::Readback depth_queue;
     void clear() noexcept {
-        for (auto& slot : slots)
+        for (auto& slot : slots) {
             slot.staging.reset();
+            slot.depth = {};
+            slot.depth_ready = false;
+        }
+        depth_queue.reset();
         resolved.reset();
         if (owner)
             owner->gpu_pending.store(0, std::memory_order_release);
@@ -303,6 +316,10 @@ HRESULT consume_frame(MediaApi& api, Session& s, IMFSinkWriter* writer, DWORD st
     auto& frame = s.cpu[read % kSlots];
     Com<IMFSample> next;
     HRESULT hr = make_sample(api, s, frame, next);
+    if (SUCCEEDED(hr) && s.depth_enabled && !s.depth_output.write(frame.depth, frame.pts)) {
+        hr = s.depth_output.error();
+        fail(s, hr, L"Depth frame could not be written; paired recording stopped.");
+    }
     const auto pts = frame.pts;
     s.consumed.store(read + 1, std::memory_order_release);
     s.wake.notify_all();
@@ -580,10 +597,16 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                           error.empty() ? std::wstring(L"FFmpeg is unavailable.") : error);
             } else {
                 created = true;
+                if (s->depth_enabled && !s->depth_output.begin(s->path.c_str()))
+                    fail(
+                        *s, s->depth_output.error(),
+                        L"Could not create a new depth output folder. Existing folders are never overwritten.");
                 for (auto& frame : s->cpu)
                     frame.pixels.resize(std::size_t(s->width) * s->height * 4);
-                s->state.store(State::recording, std::memory_order_release);
-                s->ready.store(true, std::memory_order_release);
+                if (SUCCEEDED(s->error.load())) {
+                    s->state.store(State::recording, std::memory_order_release);
+                    s->ready.store(true, std::memory_order_release);
+                }
             }
         }
         std::uint64_t stop_deadline = 0;
@@ -597,8 +620,13 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             const auto read = s->consumed.load(std::memory_order_relaxed);
             if (read != s->produced.load(std::memory_order_acquire)) {
                 const auto& frame = s->cpu[read % kSlots];
-                const HRESULT hr = write_all(child.input, frame.pixels.data(),
-                                             std::size_t(s->width) * s->height * 4);
+                HRESULT hr = write_all(child.input, frame.pixels.data(),
+                                       std::size_t(s->width) * s->height * 4);
+                if (SUCCEEDED(hr) && s->depth_enabled &&
+                    !s->depth_output.write(frame.depth, frame.pts)) {
+                    hr = s->depth_output.error();
+                    fail(*s, hr, L"Depth frame could not be written; paired recording stopped.");
+                }
                 s->consumed.store(read + 1, std::memory_order_release);
                 s->wake.notify_all();
                 if (FAILED(hr)) {
@@ -627,8 +655,13 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
             const auto read = s->consumed.load(std::memory_order_relaxed);
             const auto& frame = s->cpu[read % kSlots];
-            const HRESULT hr =
+            HRESULT hr =
                 write_all(child.input, frame.pixels.data(), std::size_t(s->width) * s->height * 4);
+            if (SUCCEEDED(hr) && s->depth_enabled &&
+                !s->depth_output.write(frame.depth, frame.pts)) {
+                hr = s->depth_output.error();
+                fail(*s, hr, L"Depth frame could not be written; paired recording stopped.");
+            }
             s->consumed.store(read + 1, std::memory_order_release);
             s->wake.notify_all();
             if (FAILED(hr)) {
@@ -677,6 +710,15 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         s->dropped.fetch_add(s->produced.load() - s->consumed.load(), std::memory_order_relaxed);
     if (!child.log.empty())
         DeleteFileW(child.log.c_str());
+    if (s->depth_enabled) {
+        if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
+            fail(*s, s->depth_output.error(),
+                 L"Depth sequence could not be finalized with the encoded color frame count.");
+            finalized = false;
+        }
+        if (!finalized || s->cancel.load())
+            s->depth_output.discard();
+    }
     if (created && (!finalized || s->cancel.load()))
         DeleteFileW(s->path.c_str());
     s->state.store(FAILED(s->error.load())          ? State::failed
@@ -725,10 +767,16 @@ void encode(std::shared_ptr<Session> s) noexcept {
                     *s, hr,
                     L"MP4 encoder could not start. Check the output path, Windows Media Feature Pack and H.264 encoder support.");
             } else {
+                if (s->depth_enabled && !s->depth_output.begin(s->path.c_str()))
+                    fail(
+                        *s, s->depth_output.error(),
+                        L"Could not create a new depth output folder. Existing folders are never overwritten.");
                 for (auto& frame : s->cpu)
                     frame.pixels.resize(std::size_t(s->width) * s->height * 4);
-                s->state.store(State::recording, std::memory_order_release);
-                s->ready.store(true, std::memory_order_release);
+                if (SUCCEEDED(s->error.load())) {
+                    s->state.store(State::recording, std::memory_order_release);
+                    s->ready.store(true, std::memory_order_release);
+                }
             }
         }
         std::uint64_t stop_deadline = 0;
@@ -804,6 +852,15 @@ void encode(std::shared_ptr<Session> s) noexcept {
     if (com_started)
         CoUninitialize();
     api.unload();
+    if (s->depth_enabled) {
+        if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
+            fail(*s, s->depth_output.error(),
+                 L"Depth sequence could not be finalized with the encoded color frame count.");
+            finalized = false;
+        }
+        if (!finalized || s->cancel.load())
+            s->depth_output.discard();
+    }
     // Delete only an output atomically created by this recording, never an
     // existing destination rejected by MF_OPENMODE_FAIL_IF_EXIST.
     if (created && (!finalized || s->cancel.load()))
@@ -825,7 +882,8 @@ bool initialize_resources(Session& s, IDXGISwapChain* swapchain, ID3D11Device* d
     // Three GPU textures, three CPU frames, one optional resolve texture and
     // two NV12 samples: a fixed bound independent of recording length.
     if ((!rgba && !bgra) || !desc.Width || !desc.Height || (desc.Width & 1) || (desc.Height & 1) ||
-        desc.Width > 3840 || desc.Height > 2160 || bytes * 8 > kMemoryLimit ||
+        desc.Width > 3840 || desc.Height > 2160 ||
+        (s.depth_enabled ? bytes * 16 > kMemoryLimit * 2 : bytes * 8 > kMemoryLimit) ||
         desc.ArraySize != 1 || desc.MipLevels != 1) {
         fail(s, E_INVALIDARG,
              L"Recording requires an even-sized SDR BGRA/RGBA backbuffer, up to 3840 x 2160.");
@@ -923,6 +981,7 @@ bool start(const Options& options) noexcept {
         next->quality = options.quality;
         next->preset = options.preset;
         next->fixed_step = options.fixed_step;
+        next->depth_enabled = options.depth;
         if (options.ffmpeg)
             next->ffmpeg = options.ffmpeg;
         LARGE_INTEGER frequency{};
@@ -1000,8 +1059,8 @@ Status status() noexcept {
     cached.state.store(result.state, std::memory_order_release);
     return result;
 }
-void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
-             ID3D11DeviceContext* context) noexcept {
+void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
+             const depth::SceneFrame* scene, double replay_time) noexcept {
     if (!swapchain || !device || !context)
         return;
     std::shared_ptr<Session> session;
@@ -1092,8 +1151,13 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
                 // the recording instead.
                 if (!s.stopping.load(std::memory_order_acquire) &&
                     s.ready.load(std::memory_order_acquire) &&
-                    !FAILED(s.error.load(std::memory_order_relaxed)))
-                    s.dropped.fetch_add(1, std::memory_order_relaxed);
+                    !FAILED(s.error.load(std::memory_order_relaxed))) {
+                    if (s.depth_enabled)
+                        fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                             L"Paired depth export writer exceeded the capture wait budget.");
+                    else
+                        s.dropped.fetch_add(1, std::memory_order_relaxed);
+                }
                 return;
             }
             if (s.produced.load(std::memory_order_relaxed) -
@@ -1102,6 +1166,25 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
                 break;
         }
         auto& slot = gpu.slots[gpu.drained % kSlots];
+        if (s.depth_enabled && !slot.depth_ready) {
+            auto result = gpu.depth_queue.poll(context, slot.depth);
+            if (fixed_backpressure && result == depth::ReadbackResult::pending) {
+                const auto deadline = GetTickCount64() + 3000;
+                while (result == depth::ReadbackResult::pending && !s.stopping.load() &&
+                       !s.cancel.load() && SUCCEEDED(s.error.load()) &&
+                       GetTickCount64() < deadline) {
+                    Sleep(1);
+                    result = gpu.depth_queue.poll(context, slot.depth);
+                }
+            }
+            if (result == depth::ReadbackResult::pending)
+                break;
+            if (result != depth::ReadbackResult::ready || slot.depth.frame.sample != gpu.drained) {
+                fail(s, E_FAIL, L"Depth readback or frame pairing failed; recording stopped.");
+                return;
+            }
+            slot.depth_ready = true;
+        }
         D3D11_MAPPED_SUBRESOURCE mapped{};
         hr = context->Map(slot.staging.p, 0, D3D11_MAP_READ,
                           fixed_backpressure ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
@@ -1125,6 +1208,10 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
                         row_bytes);
         context->Unmap(slot.staging.p, 0);
         frame.pts = slot.pts;
+        if (s.depth_enabled) {
+            frame.depth = std::move(slot.depth);
+            slot.depth_ready = false;
+        }
         s.produced.store(write + 1, std::memory_order_release);
         ++gpu.drained;
         s.gpu_pending.store(gpu.submitted - gpu.drained, std::memory_order_release);
@@ -1147,10 +1234,32 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
     }
     s.dropped.fetch_add(missed, std::memory_order_relaxed);
     if (gpu.submitted - gpu.drained >= kSlots) {
+        if (s.depth_enabled && s.fixed_step) {
+            fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                 L"Paired depth export could not keep up within the capture wait budget.");
+            return;
+        }
         s.dropped.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     auto& slot = gpu.slots[gpu.submitted % kSlots];
+    if (s.depth_enabled) {
+        depth::ProjectionBuffer calibration[14]{};
+        const auto count = scene ? scene->calibration(calibration, 14) : 0;
+        if (!scene || scene->result != depth::SceneResult::ready || !count ||
+            !std::isfinite(replay_time) || replay_time < 0) {
+            fail(
+                s, E_FAIL,
+                L"A verified scene depth and replay time were not available for this color frame.");
+            return;
+        }
+        const depth::Frame metadata{s.width, s.height, gpu.submitted, replay_time, {}};
+        if (gpu.depth_queue.enqueue(device, context, scene->texture(), metadata, calibration,
+                                    count) != depth::ReadbackResult::ready) {
+            fail(s, E_FAIL, L"Could not queue depth with the current color frame.");
+            return;
+        }
+    }
     if (gpu.resolved.p) {
         context->ResolveSubresource(gpu.resolved.p, 0, backbuffer.p, 0, desc.Format);
         context->CopyResource(slot.staging.p, gpu.resolved.p);

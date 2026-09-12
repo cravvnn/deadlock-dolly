@@ -4,6 +4,9 @@
 struct IDXGISwapChain;
 struct ID3D11Device;
 struct ID3D11DeviceContext;
+namespace dolly::depth {
+struct SceneFrame;
+}
 
 namespace dolly::video {
 enum class State : std::uint32_t {
@@ -49,6 +52,9 @@ struct Options {
     // The host is expected to run the engine at a fixed frame rate (set by the
     // caller) so each captured frame is a distinct simulation step.
     bool fixed_step = false;
+    // Paired numerical depth master in <path>.depth. Off by default. The
+    // caller must supply a verified scene sample and exact replay time.
+    bool depth = false;
 };
 struct Status {
     State state = State::idle;
@@ -68,10 +74,11 @@ void stop(bool cancel = false) noexcept;
 Status status() noexcept;
 
 // Call once for the game swapchain before Dolly's UI/guide rendering, under
-// the same serialization as ResizeBuffers/reset_resources. Never waits for
-// GPU readiness, the encoder, a file, or another thread's mutex.
-void capture(IDXGISwapChain* swapchain, ID3D11Device* device,
-             ID3D11DeviceContext* context) noexcept;
+// the same serialization as ResizeBuffers/reset_resources. Real-time capture
+// does not wait for GPU/encoder readiness; fixed-step uses bounded backpressure.
+// The render callback never writes an output file.
+void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
+             const depth::SceneFrame* scene = nullptr, double replay_time = -1) noexcept;
 // Call at a serialized render/resize boundary before releasing the device.
 // Stops an active recording and releases only recorder-owned GPU resources.
 void reset_resources() noexcept;
