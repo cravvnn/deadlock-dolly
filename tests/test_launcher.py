@@ -456,7 +456,11 @@ class LauncherTests(unittest.TestCase):
         dll = launcher._verified_unlocker()
         meta = json.loads((launcher.UNLOCKER_ROOT / "THIRD_PARTY.json").read_text())
         self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), meta["bundled_file_sha256"])
+        self.assertEqual(meta["bundled_file_sha256"], launcher.UNLOCKER_SHA256)
         self.assertEqual(meta["license"], "MIT")
+        self.assertTrue(str(meta["version"]).endswith("-dolly-shutdown-fix"))
+        for patch in meta["patches"]:
+            self.assertTrue((launcher.UNLOCKER_ROOT / patch).is_file(), patch)
 
     def _native_fixture(self):
         pins = {}

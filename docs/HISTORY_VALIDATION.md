@@ -2,6 +2,13 @@
 
 This file preserves validation from earlier deliveries; see VALIDATION.md for the current release.
 
+> Note: the sections below are dated history. Since 2026-09-12 the bundled
+> cvar unlocker is a locally built, patched build that removes its two owned
+> commands on Disconnect and fixes SDK interface-storage clearing. Its exact
+> hash, patches and provenance are in
+> `third_party/cvar_unlocker/THIRD_PARTY.json` and `MODIFICATIONS.md`. Earlier
+> statements describing the unmodified official DLL are historical.
+
 # Validation — 0.3.6 alpha
 
 Date: 8 September 2026.

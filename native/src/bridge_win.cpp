@@ -43,7 +43,7 @@ using namespace dolly;
 constexpr char kEngineHash[] = "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb";
 constexpr char kUpdatedEngineHash[] =
     "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d";
-constexpr char kUnlockerHash[] = "e86f270b1dedc81fd54a230f0080eee568a4f2bd39e1f41080dcf71d833267ba";
+constexpr char kUnlockerHash[] = "74047120e79245d479e61142a878f3311c8384a1f5f33e3f1cb8f3e87749e42a";
 constexpr std::uintptr_t kDemoGlobal = 0x61b618, kDemoTable = 0x535730, kEngineTable = 0x540128;
 // Identical across every reviewed client build; the exact-hash path re-checks it.
 constexpr unsigned char kSetupPrologue[] = {

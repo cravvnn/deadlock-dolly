@@ -188,8 +188,11 @@ tests/test_stage1_gui.py
 tests/test_visualization_transport.py
 tests/test_visualization_wire.py
 third_party/cvar_unlocker/LICENSE.md
+third_party/cvar_unlocker/MODIFICATIONS.md
 third_party/cvar_unlocker/THIRD_PARTY.json
 third_party/cvar_unlocker/bin/win64/server.dll
+third_party/cvar_unlocker/sdk-disconnect.patch
+third_party/cvar_unlocker/unlocker-shutdown.patch
 third_party/notices/CS2RemoteConsole-MIT.txt
 third_party/notices/RUNTIME_NOTICES.md
 third_party/notices/VConsoleLib-python-MIT.txt
