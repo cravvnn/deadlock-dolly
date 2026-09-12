@@ -94,14 +94,15 @@ if(WIN32)
         target_link_libraries(overlay_smoke PRIVATE dolly_overlay minhook)
         add_test(NAME native_dx11_overlay_smoke COMMAND overlay_smoke)
         set_tests_properties(native_dx11_overlay_smoke PROPERTIES TIMEOUT 45)
-# CI runners lack the GPU/Media Foundation hardware to encode MP4s.
-# Skip this test in CI, but keep it registered for local development.
-if(DEFINED ENV{CI} AND $ENV{CI} STREQUAL "true")
-    message(STATUS "CI environment detected: Skipping native_video_encoder_smoke test registration.")
-else()
-    add_test(NAME native_video_encoder_smoke COMMAND video_smoke)
-    set_tests_properties(native_video_encoder_smoke PROPERTIES TIMEOUT 45)
-	endif()
+        # CI runners lack the GPU/Media Foundation hardware to encode MP4s.
+        # Skip this test in CI, but keep it registered for local development.
+        # Quote the expansion: an undefined $ENV{CI} must stay a valid argument.
+        if("$ENV{CI}" STREQUAL "true")
+            message(STATUS "CI environment detected: Skipping native_video_encoder_smoke test registration.")
+        else()
+            add_test(NAME native_video_encoder_smoke COMMAND video_smoke)
+            set_tests_properties(native_video_encoder_smoke PROPERTIES TIMEOUT 45)
+        endif()
 endif()
     if(MSVC)
         target_compile_options(DollyNative PRIVATE /W4 /EHsc /permissive-)
