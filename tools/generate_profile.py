@@ -411,7 +411,10 @@ def emit_header(entries: list[tuple[dict, dict | None]], destination: Path) -> N
         "#include <cstddef>",
         "#include <cstdint>",
         "",
-        "namespace dolly::compat_profiles {",
+        "// Deliberately not nested under `dolly`: this header is included from inside",
+        "// bridge_win.cpp's anonymous namespace, where any `dolly` namespace would",
+        "// shadow the real one and make `dolly::...` ambiguous.",
+        "namespace dolly_compat {",
         "struct CompatClientProfile {",
         "    const char* sha256;",
         "    std::uint32_t image_size;",
@@ -460,7 +463,7 @@ def emit_header(entries: list[tuple[dict, dict | None]], destination: Path) -> N
     lines.append("};")
     lines.append("inline constexpr std::size_t kCompatClientProfileCount = "
                  "sizeof(kCompatClientProfiles) / sizeof(kCompatClientProfiles[0]);")
-    lines.append("}  // namespace dolly::compat_profiles")
+    lines.append("}  // namespace dolly_compat")
     lines.append("")
     destination.write_text("\n".join(lines), encoding="utf-8")
 

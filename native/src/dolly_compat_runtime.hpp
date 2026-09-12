@@ -216,8 +216,8 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
     std::size_t text_size = 0;
     if (!compat_detail::section_range(client, ".text", text, text_size))
         return result;
-    for (std::size_t i = 0; i < dolly::compat_profiles::kCompatClientProfileCount; ++i) {
-        const auto& profile = dolly::compat_profiles::kCompatClientProfiles[i];
+    for (std::size_t i = 0; i < dolly_compat::kCompatClientProfileCount; ++i) {
+        const auto& profile = dolly_compat::kCompatClientProfiles[i];
         if (!module_matches(client, profile.sha256, profile.image_size))
             continue;
         result.resolved = true;
@@ -232,8 +232,8 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
     }
     if (!allow_signature)
         return result;
-    for (std::size_t i = 0; i < dolly::compat_profiles::kCompatClientProfileCount; ++i) {
-        const auto& profile = dolly::compat_profiles::kCompatClientProfiles[i];
+    for (std::size_t i = 0; i < dolly_compat::kCompatClientProfileCount; ++i) {
+        const auto& profile = dolly_compat::kCompatClientProfiles[i];
         if (!profile.signature || !profile.signature_size)
             continue;
         std::size_t offset = 0;
