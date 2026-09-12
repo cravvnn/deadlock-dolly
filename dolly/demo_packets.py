@@ -50,6 +50,15 @@ def _identity(info):
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _core(info):
+    # Replacement, append and truncation all change the inode or the size. The
+    # nanosecond timestamps are deliberately excluded: Windows updates a
+    # freshly written file's times asynchronously, so a new stat() can report a
+    # later value than an already-open handle and would otherwise invalidate a
+    # perfectly valid scan under load (the long-standing CI flakiness).
+    return (info.st_dev, info.st_ino, info.st_size)
+
+
 def _varint(stream):
     value = 0
     for index in range(5):
@@ -202,7 +211,7 @@ def packet_index(path, *, check_cancelled: Callable[[], None] | None = None) -> 
                 except _InvalidIndex:
                     result = None
             if (identity != _identity(os.fstat(stream.fileno())) or
-                    identity != _identity(selected.stat())):
+                    _core(before) != _core(selected.stat())):
                 return None
             if not present:
                 with _CACHE_LOCK:
