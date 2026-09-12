@@ -16,6 +16,7 @@
 #include <cwchar>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 #include "dolly_video.hpp"
