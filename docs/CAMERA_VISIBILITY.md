@@ -1,5 +1,33 @@
 # Native camera visibility
 
+## Follow-up: distant vendor slowdown
+
+The owner confirmed that the camera correction below fixes the missing world
+geometry. A separate report shows lingering bright effects and a drop from
+about 170 to 12–16 main views per second after briefly advancing the replay
+at a distant vendor. Pending renderer buffers rose from dozens to thousands;
+this alone does not establish a leak or identify the expensive draw calls.
+
+Native startup was bypassing the initial replay-update guard and pausing at
+tick 0. Both backends now wait for observed replay advancement before pausing
+and opening editing. A rendered native view alone is not proof that the initial
+entity update has finished. Cancellation or timeout leaves the editor unarmed.
+
+The corrected startup was tested in an owned development replay: editing began
+at tick 6, and distant travel followed by advancing to tick 205 stayed around
+173–175 FPS. Baseline runs also sometimes stayed fast, so this is **not a
+confirmed fix for the intermittent vendor slowdown**. No camera hook timing,
+particle rendering, culling toggle, or renderer-pressure threshold was changed.
+Editor polling now retains one camera-history sample per second alongside
+graphics observations, including manual flight without shot playback. A busy
+camera snapshot does not block editor controls.
+
+Retest the same travel/rotation and short replay advance with a freshly launched
+session. If it recurs, export diagnostics while the view is still affected;
+the added continuous camera history helps isolate the transition.
+
+## Camera correction
+
 The September 12 camera correction keeps the main view, auxiliary camera
 origins/angles, and cached camera direction vectors on the same authored pose.
 It applies to manual flight, held previews and shot playback. Release, replay

@@ -67,6 +67,33 @@ class EditorBridgeTests(unittest.TestCase):
         self.assertEqual(packed[1] % 2, 0)
         self.assertEqual(packed[13:15], (5, 0))
 
+    def test_manual_editor_poll_keeps_camera_history_without_shot_status_requests(self):
+        self.publish()
+        data = nb.STATUS.pack(
+            nb.STATUS_MAGIC, 2, nb.ABI, 2, 200, 0, 0,
+            42, 10., 28., 0., 205, 1,
+            *range(7), *range(10, 17), 75., 70., 45,
+            b"Ready", b"example.dem", 16.8, 8.3, 0, 0, 0, 0.)
+        self.memory[nb.CONTROL_BYTES:nb.CONTROL_BYTES + len(data)] = data
+        with patch.object(self.bridge, "status", wraps=self.bridge.status) as read:
+            self.bridge.editor_status()
+            self.time = .5
+            self.bridge.editor_status()
+            self.assertEqual(read.call_count, 1)
+            self.time = 1
+            self.bridge.editor_status()
+            self.assertEqual(len(self.bridge._view_samples), 2)
+            self.assertEqual(self.bridge._view_samples[-1]["tick"], 205)
+            self.assertEqual(self.bridge._view_samples[-1]["applied_pose"], list(range(10, 17)))
+            # A torn camera snapshot still allows editor controls to recover.
+            struct.pack_into("<I", self.memory, nb.CONTROL_BYTES + 8, 3)
+            self.time = 2
+            self.assertTrue(self.bridge.editor_status()["ready"])
+            self.assertEqual(len(self.bridge._view_samples), 2)
+            self.time = 2.5
+            self.bridge.editor_status()
+            self.assertEqual(read.call_count, 3)
+
     def test_config_refresh_does_not_reopen_console_or_reset_owner(self):
         self.bridge.configure_editor(owner="flight")
         owner_sequence = self.bridge._editor_owner_sequence

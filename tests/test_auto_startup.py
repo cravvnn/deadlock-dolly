@@ -60,6 +60,46 @@ class AutoStartupTests(unittest.TestCase):
         launch.assert_not_called()
         self.assertEqual(self.console.sent, [])
 
+    def test_native_rendered_tick_zero_does_not_allow_early_pause(self):
+        self.console.goto_outputs.extend([0, 0, 1, 2])
+        request = self.console.request
+        pause_ticks = []
+
+        def observe_pause(command, *args, **kwargs):
+            if command == "demo_pause":
+                pause_ticks.append(self.console.tick)
+            return request(command, *args, **kwargs)
+
+        self.console.request = observe_pause
+        result = self.start()
+        self.assertEqual(result["startup_stage"], "editing_ready")
+        self.assertEqual(pause_ticks[0], 2)
+        self.assertTrue(all(tick >= 2 for tick in pause_ticks))
+        self.assertGreater(self.bridge.frames, 0)
+
+    def test_cancel_initial_native_update_never_pauses_or_arms_camera(self):
+        event = threading.Event()
+        self.console.goto_outputs.extend([0, 0])
+        request = self.console.request
+        observations = 0
+
+        def cancel_while_loading(command, *args, **kwargs):
+            nonlocal observations
+            result = request(command, *args, **kwargs)
+            if command == "demo_goto":
+                observations += 1
+                if observations == 2:
+                    event.set()
+            return result
+
+        self.console.request = cancel_while_loading
+        with self.assertRaisesRegex(RuntimeError, "cancelled"):
+            self.start(cancel_event=event)
+        self.assertNotIn("demo_pause", self.console.events)
+        self.assertNotIn("native.flight", self.console.events)
+        self.assertFalse(any(command.startswith("demo_gototick ")
+                             for command in self.console.events))
+
     def test_one_click_accepts_dotted_recording_without_reported_dem_suffix(self):
         self.demo = self.demo.with_name("practice.session.01.dem")
         self.demo.write_bytes(b"fixture")

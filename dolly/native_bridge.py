@@ -169,6 +169,7 @@ class NativeBridge(MediaTransport):
         self._input_error = ""
         self._view_samples = deque(maxlen=120)
         self._view_sample_at = -math.inf
+        self._editor_view_poll_at = -math.inf
         self._mode = 0
         self._atomic32 = self._atomic64 = None
         self._read32 = None
@@ -545,6 +546,16 @@ class NativeBridge(MediaTransport):
         with self._lock:
             self._check_open()
             self._sample_graphics()
+            # Manual flight polls this channel, not status(). Keep its camera
+            # history alongside graphics samples even when no shot is playing.
+            # A busy/invalid camera snapshot must not block editor recovery.
+            now = self._clock()
+            if now - self._editor_view_poll_at >= 1:
+                self._editor_view_poll_at = now
+                try:
+                    self.status()
+                except (NativeBridgeError, OSError, ValueError):
+                    pass
             for _ in range(4):
                 first = self._load_sequence(wire.STATUS_OFFSET + 8)
                 if first & 1:

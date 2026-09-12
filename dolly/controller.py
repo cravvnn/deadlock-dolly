@@ -597,15 +597,14 @@ class Controller:
                     return info
 
                 self._startup_wait(selected_replay, "waiting for the selected replay", cancel_event)
-                if bridge is None:
-                    # Console playback starts paused on tick 0 until the first
-                    # full packet is reconstructed. Pause and seek only after
-                    # real playback has advanced, so the paused-camera refresh
-                    # never jumps the replay during its initial full update.
-                    self._message("Replay detected. Waiting for it to begin playing before pausing…",
-                                  startup_stage="loading_replay")
-                    self._startup_wait(self._replay_begun, "waiting for the replay to begin playing",
-                                       cancel_event, timeout=45)
+                # Both backends can render views at tick 0 while the first full
+                # entity update is still being reconstructed. A native view is
+                # camera readiness, not replay simulation readiness. Let that
+                # initial update advance before handing users a paused editor.
+                self._message("Replay detected. Waiting for it to begin playing before pausing…",
+                              startup_stage="loading_replay")
+                self._startup_wait(self._replay_begun, "waiting for the replay to begin playing",
+                                   cancel_event, timeout=45)
                 self._request("demo_pause")
                 self._message("Replay loaded and paused. Checking camera controls…", startup_stage="checking_camera")
                 self.probe()
