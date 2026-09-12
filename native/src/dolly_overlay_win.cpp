@@ -681,12 +681,19 @@ void draw_panel(const EditorSnapshot& state) {
     if (ImGui::Begin("DEADLOCK DOLLY", nullptr,
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
-        // Keep the panel reachable when the game changes resolution while it is open.
-        const auto position = ImGui::GetWindowPos();
-        const auto size = ImGui::GetWindowSize();
-        ImGui::SetWindowPos(ImVec2(
-            std::clamp(position.x, margin, std::max(margin, io.DisplaySize.x - size.x - margin)),
-            std::clamp(position.y, margin, std::max(margin, io.DisplaySize.y - size.y - margin))));
+        // Keep the panel reachable when the game changes resolution while it is
+        // open, but never fight an active drag or resize: clamping mid-interaction
+        // makes the panel stick to one axis and only settle once the mouse is
+        // released. Clamp on the frame after the button comes up.
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            const auto position = ImGui::GetWindowPos();
+            const auto size = ImGui::GetWindowSize();
+            ImGui::SetWindowPos(
+                ImVec2(std::clamp(position.x, margin,
+                                  std::max(margin, io.DisplaySize.x - size.x - margin)),
+                       std::clamp(position.y, margin,
+                                  std::max(margin, io.DisplaySize.y - size.y - margin))));
+        }
         const float close_width =
             ImGui::CalcTextSize("Close").x + ImGui::GetStyle().FramePadding.x * 2;
         const float right = ImGui::GetWindowContentRegionMax().x;

@@ -88,6 +88,7 @@ native/src/dolly_renderer_diagnostics_win.cpp
 native/src/dolly_visualization.cpp
 native/src/dolly_visualization_runtime_win.cpp
 native/src/native_effects_win.hpp
+native/src/native_relief_win.hpp
 native/tests/bridge_smoke.cpp
 native/tests/compat_locator_tests.cpp
 native/tests/effect_tests.cpp

@@ -53,6 +53,7 @@ std::uintptr_t gClient = 0, gEngine = 0;
 HANDLE gMapping = nullptr, gEditor = nullptr;
 unsigned char* gMemory = nullptr;
 std::atomic<bool> gHookInstalled{false};
+std::atomic<bool> gDemoSeeking{false};
 std::atomic<double> gHeartbeatTime{0};
 std::atomic<unsigned> gWorkerError{0};
 std::atomic_flag gStatusLock = ATOMIC_FLAG_INIT;
@@ -241,6 +242,7 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
 }
 #include "dolly_compat_runtime.hpp"
 #include "native_effects_win.hpp"
+#include "native_relief_win.hpp"
 CompatResolution gCompat;
 
 struct DemoState {
@@ -347,7 +349,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     } exit{entered};
     ++gHookCalls;
     std::uintptr_t table = 0;
-    if (caller != gClient + gCompat.caller || !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
+    if (caller != gClient + gCompat.caller ||
+        !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
         table != gClient + gCompat.view_table)
         return;
     auto view = reinterpret_cast<std::uintptr_t>(self) + 0x10;
@@ -392,6 +395,9 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     status.original_fov = status.applied_fov = original_fov;
     DemoState demo{};
     bool demo_ok = read_demo(demo);
+    // Published for the worker's seek relief: the setup hook is the only place
+    // that reads the game's demo state safely, once per main view.
+    gDemoSeeking.store(demo.seeking, std::memory_order_relaxed);
     status.tick = demo.tick;
     status.paused = demo.paused;
     status.engine_time = demo.time;
@@ -766,6 +772,7 @@ static DWORD WINAPI worker(void*) {
         for (;;) {
             if (WaitForSingleObject(gEditor, 0) != WAIT_TIMEOUT) {
                 gWorkerError = 30;
+                seek_relief_tick(false);
                 editor_worker_tick(gMemory, false);
                 visualization_worker_tick(nullptr, false);
                 media_worker_tick(nullptr, false);
@@ -799,6 +806,11 @@ static DWORD WINAPI worker(void*) {
                 }
             }
             renderer_diagnostics_tick(gMemory);
+            // Apply the reversible render relief while the replay is seeking
+            // (the main cause of the vertex-buffer overflow and lingering
+            // effects) or the engine's buffer queue is already near capacity.
+            seek_relief_tick(gDemoSeeking.load(std::memory_order_relaxed) ||
+                             overlay_renderer_pressure());
             ControlHeader control{};
             if (read_control(control, payload, accepted)) {
                 // CreateProcess can reach the proxy before the launcher receives the PID.
@@ -871,6 +883,7 @@ static DWORD WINAPI worker(void*) {
             Sleep(5);
         }
     } catch (...) {
+        seek_relief_tick(false);
         visualization_worker_tick(nullptr, false);
         media_worker_tick(nullptr, false);
         gWorkerError = 99;
