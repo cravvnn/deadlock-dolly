@@ -127,6 +127,16 @@ void sample_queue(RendererDiagnostics& result) noexcept {
                "Queue metadata changed while sampled; this observation is incomplete.");
         return;
     }
+    // Safety valve: the engine's queue capacity is 32767 and overflowing it is
+    // fatal. Ask Dolly's overlay to stop optional rendering well before that so
+    // the engine can drain. Hysteresis prevents flapping near the threshold.
+    constexpr std::uint32_t kPressureHigh = 20000, kPressureLow = 8000;
+    static bool pressure = false;
+    if (!pressure && result.pending_count >= kPressureHigh)
+        pressure = true;
+    else if (pressure && result.pending_count <= kPressureLow)
+        pressure = false;
+    overlay_set_renderer_pressure(pressure);
     if (frame_at(system, kRetirementContext, result.retirement_frame))
         result.flags |= 4;
     if (frame_at(system, kExecutionContext, result.execution_frame))
@@ -156,7 +166,9 @@ void sample_queue(RendererDiagnostics& result) noexcept {
     result.flags |= 2;
     finish(
         RendererProbeState::Supported,
-        "Read-only queue observation. Head/tail frame stamps are samples, not queue-wide minimum/maximum values.");
+        pressure
+            ? "Renderer vertex-buffer queue is near capacity; Dolly paused its in-game drawing so the engine can recover. Stop replay skipping if the game remains slow."
+            : "Read-only queue observation. Head/tail frame stamps are samples, not queue-wide minimum/maximum values.");
 }
 } // namespace
 void renderer_diagnostics_probe(std::uintptr_t module, const char* sha256) noexcept {
@@ -178,7 +190,9 @@ void renderer_diagnostics_tick(unsigned char* memory) noexcept {
     auto now = GetTickCount64();
     if (now < next_sample)
         return;
-    next_sample = now + 1000;
+    // Twice a second so the renderer-pressure safety valve can react before
+    // the engine's 16-bit vertex-buffer queue overflows.
+    next_sample = now + 500;
     RendererDiagnostics result{};
     std::memcpy(result.magic, "DLYGFX01", 8);
     result.abi = kRendererDiagnosticsAbi;

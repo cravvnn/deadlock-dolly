@@ -28,6 +28,9 @@ using ResizeFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, 
 PresentFn original_present = nullptr;
 ResizeFn original_resize = nullptr;
 std::atomic<bool> installed{false}, enabled{false}, resizing{false};
+// Set by the renderer probe when the engine's vertex-buffer retirement queue
+// nears its 16-bit capacity. Stops Dolly's optional draw submissions.
+std::atomic<bool> renderer_pressure{false};
 std::atomic<std::uint64_t> diagnostic_present{0}, diagnostic_panel{0}, diagnostic_init_attempts{0},
     diagnostic_init_successes{0}, diagnostic_releases{0}, diagnostic_resizes{0};
 std::atomic<std::uint64_t> diagnostic_draw{0}, diagnostic_guides{0}, diagnostic_overlay_last_us{0},
@@ -903,6 +906,25 @@ void render_overlay(IDXGISwapChain* chain) {
         }
         return;
     }
+    if (renderer_pressure.load(std::memory_order_acquire)) {
+        // The engine's DirectX 11 vertex-buffer retirement queue is near its
+        // 16-bit capacity. Stop all optional Dolly rendering (effects, capture
+        // and the editor) so the engine can retire queued buffers and avoid the
+        // fatal "EnsureCapacity allocation count overflow". The editor itself
+        // stays alive and resumes automatically once pressure clears.
+        if (!media_suspended && chain == swapchain && immediate) {
+            video::reset_resources();
+            reshade_set_enabled(false);
+            if (context1 && overlay_state) {
+                DeviceStateScope graphics_scope;
+                reshade_release_device();
+            } else {
+                reshade_release_device();
+            }
+            media_suspended = true;
+        }
+        return;
+    }
     media_suspended = false;
     if (!swapchain) {
         if (!try_initialize_device(chain))
@@ -1231,6 +1253,12 @@ OverlayDiagnostics overlay_diagnostics() noexcept {
 }
 const char* overlay_last_error() noexcept {
     return last_error.load(std::memory_order_acquire);
+}
+void overlay_set_renderer_pressure(bool high) noexcept {
+    renderer_pressure.store(high, std::memory_order_release);
+}
+bool overlay_renderer_pressure() noexcept {
+    return renderer_pressure.load(std::memory_order_acquire);
 }
 void shutdown_overlay() noexcept {
     enabled = false;

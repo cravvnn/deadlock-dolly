@@ -560,6 +560,11 @@ class NativeBridge(MediaTransport):
         except (NativeBridgeError, OSError, ValueError, struct.error) as exc:
             self._graphics_error = str(exc)
 
+    def latest_graphics(self):
+        """Most recent cached renderer observation, without forcing a new read."""
+        with self._lock:
+            return deepcopy(self._graphics_samples[-1]) if self._graphics_samples else None
+
     def graphics_diagnostics(self):
         with self._lock:
             self._sample_graphics(force=True)

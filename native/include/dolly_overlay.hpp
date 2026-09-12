@@ -23,6 +23,16 @@ bool install_overlay_hooks() noexcept;
 void shutdown_overlay() noexcept;
 const char* overlay_last_error() noexcept;
 
+// Renderer pressure guard. The read-only renderer probe sets this when the
+// game's DirectX 11 vertex-buffer retirement queue approaches its 16-bit
+// capacity (an engine-side limit that otherwise fatals with
+// "EnsureCapacity allocation count overflow"). While set, the overlay releases
+// its optional effect device objects and stops submitting draw data so the
+// engine has the best chance to drain the queue. It clears automatically once
+// the queue falls well below the threshold. Camera control is unaffected.
+void overlay_set_renderer_pressure(bool high) noexcept;
+bool overlay_renderer_pressure() noexcept;
+
 // Raw-input games may suppress legacy window mouse/key messages. Input hooks
 // enqueue these events; only the render/window callback accesses ImGui.
 // Mouse indices: left 0, right 1, middle 2, side 1 3, side 2 4.

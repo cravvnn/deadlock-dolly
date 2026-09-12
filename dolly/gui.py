@@ -1891,6 +1891,7 @@ class DollyApp:
                 if getattr(self, "_last_video_poll_error", None) != message:
                     self._last_video_poll_error = message
                     self._log(message)
+        self._refresh_renderer_pressure()
         try:
             editor_session.poll(self)
             self.capture_hotkey_checkbox.configure(state="disabled" if self.native_editor_active else "normal")
@@ -1904,6 +1905,34 @@ class DollyApp:
             self._log("Editor connection unavailable: " + str(exc))
         self._check_capture_listener()
         self.root.after(100, self._poll)
+
+    def _refresh_renderer_pressure(self):
+        """Warn before the engine's DX11 buffer queue hits its fatal capacity.
+
+        The native overlay reacts on its own by pausing in-game drawing; this
+        only surfaces a human-readable message so a silent crash becomes a
+        recoverable warning.
+        """
+        controller = getattr(self, "controller", None)
+        getter = getattr(controller, "_native_bridge", None)
+        if not callable(getter):
+            return
+        bridge = getter()
+        latest = getattr(bridge, "latest_graphics", None)
+        if bridge is None or not callable(latest):
+            return
+        try:
+            sample = latest() or {}
+        except (RuntimeError, ValueError, TypeError, OSError):
+            return
+        pending = sample.get("pending_count")
+        if not isinstance(pending, int) or pending < 20000:
+            return
+        capacity = sample.get("capacity")
+        capacity = capacity if isinstance(capacity, int) and capacity > 0 else 32767
+        self.status_text.set(
+            f"Renderer buffer queue near capacity ({pending:,}/{capacity:,}). "
+            "Dolly paused its in-game drawing; stop replay skipping or playback to recover.")
 
     def _set_driver_indicator(self, backend, running):
         """Show the camera driver actually in use, live once a session runs."""
