@@ -79,5 +79,17 @@ int main() {
     }
     rgb_to_nv12(solid.data(), 8, nv12.data(), 2, 2, true);
     require(nv12[0] == 173 && nv12[4] == 42 && nv12[5] == 26);
+    // Sidecar shot range: only frames captured with a replay-time phase count.
+    ShotRange shot;
+    require(!shot.open());
+    shot.observe(5, -1.0);
+    require(!shot.open());
+    shot.observe(3, 0.0);
+    require(shot.open() && shot.first == 3 && shot.last == 3);
+    require(shot.first_time == 0.0 && shot.last_time == 0.0);
+    shot.observe(9, 0.1);
+    require(shot.first == 3 && shot.last == 9 && shot.last_time == 0.1);
+    shot.observe(11, -1.0);
+    require(shot.last == 9 && shot.last_time == 0.1);
     std::puts("Video cadence, timestamps, color conversion and row orientation passed.");
 }

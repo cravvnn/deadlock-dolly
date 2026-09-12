@@ -72,6 +72,9 @@ bool start(const Options& options) noexcept;
 bool start(const wchar_t* path, std::uint32_t fps, std::uint32_t bitrate) noexcept;
 void stop(bool cancel = false) noexcept;
 Status status() noexcept;
+// Whether the active recording requested the paired depth master. Used by the
+// overlay to decide when live scene observation is armed.
+bool wants_depth() noexcept;
 
 // Call once for the game swapchain before Dolly's UI/guide rendering, under
 // the same serialization as ResizeBuffers/reset_resources. Real-time capture

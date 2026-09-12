@@ -5,6 +5,8 @@
 #include "dolly_visualization.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_video.hpp"
+#include "dolly_depth_live.hpp"
+#include "dolly_depth_scene.hpp"
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
 #include "MinHook.h"
@@ -14,6 +16,7 @@
 #include <atomic>
 #include <cstdio>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
@@ -65,6 +68,11 @@ ImFont* title_font = nullptr;
 float panel_scale = 1.0f;
 std::atomic<HWND> game_window{nullptr};
 bool win32_ready = false, dx11_ready = false, last_panel = false;
+// Live depth stays default-off until the opt-in controls land. The state
+// object only records ownership; a null tracker keeps any installed hooks
+// inert.
+depth::LiveDepth depth_live;
+std::shared_ptr<depth::SceneTracker> depth_tracker;
 bool media_suspended = false;
 bool show_path_guides = true;
 VisualizationGeometry guide_geometry;
@@ -235,7 +243,13 @@ void feed_pending_input() {
             }
         }
 }
+void reset_depth_lifecycle() noexcept {
+    depth_tracker.reset();
+    depth::set_scene_tracker(nullptr);
+    depth_live.clear_device();
+}
 void release_device() noexcept {
+    reset_depth_lifecycle();
     video::reset_resources();
     reshade_release_device();
     if (device || imgui)
@@ -1111,6 +1125,7 @@ void render_overlay(IDXGISwapChain* chain) {
         // Playback may disable manual editor input. Only a lost session retires
         // media here; control ownership and camera readiness are transient.
         if (!media_suspended && chain == swapchain && immediate) {
+            reset_depth_lifecycle();
             video::reset_resources();
             reshade_set_enabled(false);
             if (context1 && overlay_state) {
@@ -1129,6 +1144,7 @@ void render_overlay(IDXGISwapChain* chain) {
         // fatal "EnsureCapacity allocation count overflow". The editor itself
         // stays alive and resumes automatically once pressure clears.
         if (!media_suspended && chain == swapchain && immediate) {
+            reset_depth_lifecycle();
             video::reset_resources();
             reshade_set_enabled(false);
             if (context1 && overlay_state) {
@@ -1162,11 +1178,30 @@ void render_overlay(IDXGISwapChain* chain) {
     const auto clean_frame = [](IDXGISwapChain* capture_chain, ID3D11Device* capture_device,
                                 ID3D11DeviceContext* capture_context, void*) {
         const auto editor = editor_snapshot();
-        const auto recording = video::status().state;
+        const auto snapshot = video::status();
         // Focus gates the first frame only. Desktop controls and a transient
         // missing editor pose must not finish an already running MP4.
-        if (media_session_active() && (recording == video::State::recording || editor.focused))
-            video::capture(capture_chain, capture_device, capture_context);
+        if (media_session_active() && (snapshot.state == video::State::recording || editor.focused)) {
+            if (snapshot.state == video::State::recording && snapshot.width && snapshot.height) {
+                depth_live.publish(reinterpret_cast<std::uintptr_t>(capture_device),
+                                   reinterpret_cast<std::uintptr_t>(capture_context),
+                                   snapshot.width, snapshot.height);
+                depth_live.request(video::wants_depth());
+                if (depth_live.needs_tracker()) {
+                    auto tracker = std::make_shared<depth::SceneTracker>(
+                        capture_device, depth_live.width(), depth_live.height());
+                    depth_tracker = tracker;
+                    depth::set_scene_tracker(tracker);
+                    depth_live.note_tracker(tracker != nullptr);
+                } else if (depth_live.needs_drop()) {
+                    depth_tracker.reset();
+                    depth::set_scene_tracker(nullptr);
+                    depth_live.note_tracker(false);
+                }
+            }
+            video::capture(capture_chain, capture_device, capture_context, nullptr,
+                           editor.playing ? editor.phase : -1.0);
+        }
     };
     bool effects_handled = false;
     if (reshade_enabled() || reshade_overlay_pending()) {
@@ -1288,6 +1323,7 @@ HRESULT STDMETHODCALLTYPE resize_hook(IDXGISwapChain* chain, UINT count, UINT wi
             diagnostic_resizes.fetch_add(1, std::memory_order_relaxed);
             game_resize = true;
             resizing = true;
+            reset_depth_lifecycle();
             video::reset_resources();
             reshade_release_device();
             release_target();

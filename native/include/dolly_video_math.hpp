@@ -49,6 +49,27 @@ struct Cadence {
     }
 };
 
+// Encoded-shot range for the sidecar metadata: the first and last output
+// frame captured while a replay-time phase was supplied, plus the matching
+// replay times. Frames without a phase (pre-roll, tails, manual recording)
+// never extend the range.
+struct ShotRange {
+    std::uint64_t first = 0, last = 0;
+    double first_time = -1, last_time = -1;
+    bool open() const noexcept { return first_time >= 0; }
+    void observe(std::uint64_t frame, double replay_time) noexcept {
+        if (!(replay_time >= 0))
+            return;
+        if (!open()) {
+            first = last = frame;
+            first_time = last_time = replay_time;
+            return;
+        }
+        last = frame;
+        last_time = replay_time;
+    }
+};
+
 // Full-range SDR RGB to limited-range BT.709 NV12. Both rows and chroma
 // samples stay top-down. RGB bytes are read explicitly; alpha is ignored.
 // Width and height must be positive/even and both buffers suitably sized.

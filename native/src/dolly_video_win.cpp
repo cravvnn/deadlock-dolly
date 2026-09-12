@@ -13,6 +13,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <cstdio>
 #include <cwchar>
 #include <memory>
 #include <mutex>
@@ -102,6 +103,7 @@ struct Session {
     std::uint32_t quality = 0, preset = 0;
     bool fixed_step = false;
     bool depth_enabled = false;
+    ShotRange shot;
     depth::Sequence depth_output; // Touched only by the encoder thread.
     std::wstring ffmpeg;
     // Published once by the render callback before configured=true.
@@ -172,6 +174,7 @@ struct CachedStatus {
     std::atomic<std::uint32_t> width{0}, height{0}, fps{0}, error_code{0};
     std::atomic<std::uint64_t> written{0}, dropped{0}, duration{0};
     std::atomic<const wchar_t*> error{L""};
+    std::atomic<bool> depth{false};
 } cached;
 RenderResources gpu;
 
@@ -207,6 +210,34 @@ void fail(Session& s, HRESULT hr, const wchar_t* message) noexcept {
 }
 bool active(State state) noexcept {
     return state == State::starting || state == State::recording || state == State::finalizing;
+}
+// Sidecar metadata is additive; a failed write never invalidates the video.
+bool write_shot_sidecar(const Session& s) noexcept {
+    std::string leaf;
+    const auto slash = s.path.find_last_of(L"\\/");
+    const auto* base = slash == std::wstring::npos ? s.path.c_str() : s.path.c_str() + slash + 1;
+    const int size = WideCharToMultiByte(CP_UTF8, 0, base, -1, nullptr, 0, nullptr, nullptr);
+    if (size > 1) {
+        leaf.resize(std::size_t(size - 1));
+        WideCharToMultiByte(CP_UTF8, 0, base, -1, leaf.data(), size, nullptr, nullptr);
+    }
+    std::FILE* file = nullptr;
+    if (_wfopen_s(&file, (s.path + L".shot.json").c_str(), L"wb") != 0 || !file)
+        return false;
+    const auto frames = static_cast<unsigned long long>(s.written.load(std::memory_order_acquire));
+    const auto duration = double(s.duration.load(std::memory_order_acquire)) / 10000000.0;
+    const auto first = static_cast<unsigned long long>(s.shot.first);
+    const auto last = static_cast<unsigned long long>(s.shot.last);
+    std::fprintf(file,
+                 "{\n  \"format\": \"deadlock-dolly-shot\",\n  \"version\": 1,\n"
+                 "  \"video_file\": \"%s\",\n  \"fps\": %u,\n  \"fixed_step\": %s,\n"
+                 "  \"frames_written\": %llu,\n  \"duration_seconds\": %.7f,\n"
+                 "  \"first_frame\": %llu,\n  \"last_frame\": %llu,\n"
+                 "  \"first_replay_time\": %.9f,\n  \"last_replay_time\": %.9f\n}\n",
+                 leaf.c_str(), s.fps, s.fixed_step ? "true" : "false", frames, duration, first,
+                 last, s.shot.first_time, s.shot.last_time);
+    std::fclose(file);
+    return true;
 }
 
 HRESULT media_type(IMFMediaType* type, const GUID& subtype, const Session& s) {
@@ -721,6 +752,8 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     }
     if (created && (!finalized || s->cancel.load()))
         DeleteFileW(s->path.c_str());
+    if (finalized && !s->cancel.load() && SUCCEEDED(s->error.load()) && s->shot.open())
+        write_shot_sidecar(*s);
     s->state.store(FAILED(s->error.load())          ? State::failed
                    : (s->cancel.load() || !created) ? State::cancelled
                                                     : State::completed,
@@ -866,6 +899,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
     // existing destination rejected by MF_OPENMODE_FAIL_IF_EXIST.
     if (created && (!finalized || s->cancel.load()))
         DeleteFileW(s->path.c_str());
+    if (finalized && !s->cancel.load() && SUCCEEDED(s->error.load()) && s->shot.open())
+        write_shot_sidecar(*s);
     s->state.store(FAILED(s->error.load())          ? State::failed
                    : (s->cancel.load() || !created) ? State::cancelled
                                                     : State::completed,
@@ -990,6 +1025,7 @@ bool start(const Options& options) noexcept {
             return false;
         next->frequency = std::uint64_t(frequency.QuadPart);
         *encoder_thread = std::thread(encode, next);
+        cached.depth.store(options.depth, std::memory_order_release);
         current = std::move(next);
         return true;
     } catch (...) {
@@ -1059,6 +1095,15 @@ Status status() noexcept {
     cached.error.store(message);
     cached.state.store(result.state, std::memory_order_release);
     return result;
+}
+bool wants_depth() noexcept {
+    std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
+    if (lock.owns_lock()) {
+        const bool wanted = current && current->depth_enabled;
+        cached.depth.store(wanted, std::memory_order_release);
+        return wanted;
+    }
+    return cached.depth.load(std::memory_order_acquire);
 }
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
              const depth::SceneFrame* scene, double replay_time) noexcept {
@@ -1267,6 +1312,8 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     } else {
         context->CopyResource(slot.staging.p, backbuffer.p);
     }
+    if (std::isfinite(replay_time) && replay_time >= 0)
+        s.shot.observe(gpu.submitted, replay_time);
     slot.pts = pts;
     ++gpu.submitted;
     s.gpu_pending.store(gpu.submitted - gpu.drained, std::memory_order_release);
