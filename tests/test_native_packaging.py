@@ -176,11 +176,20 @@ class NativePackagingTests(unittest.TestCase):
 
     def test_windows_build_runs_cmake_then_ctest_and_hashes_result(self):
         native, dll, metadata = self.runtime_fixture()
+        contents = dll.read_bytes()
+
+        def compile_and_link(*args, **kwargs):
+            # build_native removes the previous DLL to force a relink; the real
+            # compiler/linker recreates it, so the mock must do the same.
+            dll.parent.mkdir(parents=True, exist_ok=True)
+            dll.write_bytes(contents)
+            return subprocess.CompletedProcess(args[0], 0)
+
         with patch.object(sys, "platform", "win32"), \
                 patch.object(build_native.platform, "machine", return_value="AMD64"), \
                 patch.object(build_native.struct, "calcsize", return_value=8), \
                 patch.object(build_native, "verify_native_dll", return_value={"machine": "x64"}), \
-                patch("subprocess.run") as run:
+                patch("subprocess.run", side_effect=compile_and_link) as run:
             info = build_native.build_native(self.root)
         self.assertEqual([call.args[0][0] for call in run.call_args_list], ["cmake", "cmake", "ctest"])
         configure = run.call_args_list[0].args[0]
