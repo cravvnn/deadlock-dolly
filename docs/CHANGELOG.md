@@ -1,5 +1,18 @@
 # Changes
 
+## 0.5.4 alpha — Recorded-shot metadata and stability
+
+- Write `<video>.shot.json` next to a recording that contains a native shot:
+  exact first/last encoded frame, replay time, fps, fixed-step flag and frame
+  counts. Purely additive metadata; the video is untouched.
+- Wait for the recorder to report recording before a prepared native shot
+  starts, and stop cleanly on timeout, cancellation or a terminal state.
+- Bundle a locally built cvar unlocker that removes its two owned commands on
+  Disconnect and fixes SDK interface-storage clearing; the normal-quit access
+  violation is removed. MIT notice, patches and provenance are included.
+- Add the tested live-depth ownership contract (default-off) ahead of the
+  opt-in depth export.
+
 ## 0.5.3 alpha — Compatibility scanner and game-update profiles
 
 - Add `native/profiles/manifest.json` as the single source of truth for

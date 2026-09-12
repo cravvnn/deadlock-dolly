@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.3 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.5.4 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 

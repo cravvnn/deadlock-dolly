@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.3 alpha.** The portable Windows build opens through
+**Current source: 0.5.4 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -158,6 +158,12 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.4:** adds recorded-shot sidecar metadata (`<video>.shot.json`) with the
+exact first/last shot frame and replay time, waits for a live recorder before
+playing a prepared shot, and bundles a patched cvar unlocker whose Disconnect
+cleanup removes the normal-quit access violation. Internal live-depth work is
+default-off.
 
 **0.5.3:** adds the bundled compatibility manifest and per-launch build scanner,
 a native AOB fallback for game updates whose camera code is byte-identical
