@@ -24,12 +24,41 @@ lossy H.264 is not a suitable master for numerical depth or a precise matte.
 
 ## Renderer evidence needed
 
+### Captured-frame investigation (September 12, 2026)
+
+Two supplied DX11 captures were replayed locally with RenderDoc 1.46. Both
+contain a 2560 x 1440, single-sample D24S8 scene depth target separate from the
+depth target bound at Present. The latter is cleared during late UI passes;
+reading only the currently bound depth target at Present would return the
+wrong image. The scene target's depth follows the visible world and actor
+silhouettes in the inspected frame.
+
+The reflected `PerViewConstantBuffer_t` contains
+`g_vInvProjLowerRight2x2 = (0, -1, 1/7, 0)` and viewport depth range `[0, 1]`
+in both captures. With coefficients `(a, b, c, d)` and normalized device
+depth `z`, positive camera-axis distance is `-(a*z+b)/(c*z+d)`, approximately
+`7/z` for these captures. These are captured projection values, not defaults
+to hard-code for every camera, game build or viewport.
+
+A local single-frame float OpenEXR proof was generated from the scene's D24
+samples. Decoding the EXR reproduced the input float buffer byte-for-byte.
+Its distances are game world units along the camera axis, not metres or
+radial distance. The normalized image is a viewing preview only.
+
+This advances resource identification and depth conversion; it does not
+implement live Dolly depth recording. Next, capture the verified scene depth
+and projection with the same rendered color sample, then test resize,
+resolution scaling, cancellation and resource reuse. Resource IDs in a
+RenderDoc file are not runtime identifiers. Stencil values observed on actors
+are not yet a verified hero-only mask, and removing their visible pixels
+cannot reconstruct the world behind them.
+
 The previous client, engine, tier0, DX11 renderer and material-system modules
-are available for investigation. The next useful inputs are:
+are available for investigation. Further useful inputs are:
 
 - `game/bin/win64/scenesystem.dll` from the same Deadlock build, for scene-object
   classification and render submission analysis.
-- A single-frame RenderDoc capture (`.rdc`) of a DX11 local replay, with a hero
+- Further single-frame RenderDoc captures (`.rdc`) of DX11 local replays, with a hero
   visible against nearby and distant world geometry. Include the game build,
   resolution, antialiasing and upscaling settings. A video or ordinary Dolly
   diagnostic ZIP does not contain the GPU textures and draw commands.
