@@ -34,8 +34,21 @@ const GUID kCommandType = {
 std::atomic<std::uint64_t> next_epoch{0};
 std::atomic<std::uint64_t> gDrawCalls{0}, gMatchedDraws{0};
 std::atomic<bool> gHooksInstalled{false};
+std::atomic<std::uint32_t> gLastResult{1}; // SceneResult::missing
 std::mutex gDiagnosticMutex;
 char gLastRejected[160]{};
+const char* scene_result_name(SceneResult result) noexcept {
+    switch (result) {
+    case SceneResult::ready: return "ready";
+    case SceneResult::missing: return "missing";
+    case SceneResult::cleared: return "cleared";
+    case SceneResult::ambiguous: return "ambiguous";
+    case SceneResult::incompatible_view: return "incompatible";
+    case SceneResult::untracked_commands: return "untracked";
+    case SceneResult::failed: return "failed";
+    }
+    return "unknown";
+}
 bool scene_name_matches(const char* name, std::uint32_t width, std::uint32_t height) noexcept {
     // Reviewed family from both game captures:
     // scratchrendertarget_<id>_<width>x<height>_<a>_<b>.vtex
@@ -192,12 +205,19 @@ struct SceneTracker::Impl {
         return &entry;
     }
     void apply(const Event& event) {
-        if (frame.result == SceneResult::ambiguous ||
-            frame.result == SceneResult::untracked_commands ||
-            frame.result == SceneResult::incompatible_view)
+        // Two different supported scene targets in one frame stay ambiguous.
+        if (frame.result == SceneResult::ambiguous)
             return;
         if (event.incompatible_view) {
-            frame = {SceneResult::incompatible_view, {}};
+            // Only an unsupported alteration of the chosen scene target can
+            // invalidate the sample. A later full supported scene draw rewrites
+            // that target and clears the state again, so depth prepasses or
+            // secondary passes cannot poison the whole frame. Unsupported draws
+            // on other family targets never touch the chosen scene.
+            if (frame.resources && frame.resources->depth.p == event.source->depth.p) {
+                frame.resources.reset();
+                frame.result = SceneResult::incompatible_view;
+            }
             return;
         }
         if (event.clear) {
@@ -399,19 +419,28 @@ void SceneTracker::execute(ID3D11DeviceContext* context, ID3D11CommandList* list
     }
 }
 SceneFrame SceneTracker::consume(ID3D11DeviceContext* immediate) noexcept {
-    if (!impl->owns(immediate) || immediate->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE)
+    if (!impl->owns(immediate) || immediate->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE) {
+        gLastResult.store(static_cast<std::uint32_t>(SceneResult::failed),
+                          std::memory_order_relaxed);
         return {SceneResult::failed, {}};
+    }
     try {
         std::lock_guard<std::mutex> lock(impl->mutex);
         SceneFrame result = std::move(impl->frame);
         impl->frame = {};
         impl->first_source.reset();
         impl->contexts.erase(immediate);
-        if (impl->failed)
+        if (impl->failed) {
+            gLastResult.store(static_cast<std::uint32_t>(SceneResult::failed),
+                              std::memory_order_relaxed);
             return {SceneResult::failed, {}};
+        }
+        gLastResult.store(static_cast<std::uint32_t>(result.result), std::memory_order_relaxed);
         return result;
     } catch (...) {
         impl->failed = true;
+        gLastResult.store(static_cast<std::uint32_t>(SceneResult::failed),
+                          std::memory_order_relaxed);
         return {SceneResult::failed, {}};
     }
 }
@@ -423,7 +452,9 @@ const char* scene_diagnostic() noexcept {
         if (lock.owns_lock())
             std::snprintf(rejected, sizeof(rejected), "%s", gLastRejected);
     }
-    std::snprintf(text, sizeof(text), "scene draws=%llu matched=%llu hooks=%u last=%s",
+    std::snprintf(text, sizeof(text), "scene result=%s draws=%llu matched=%llu hooks=%u last=%s",
+                  scene_result_name(static_cast<SceneResult>(
+                      gLastResult.load(std::memory_order_relaxed))),
                   static_cast<unsigned long long>(gDrawCalls.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(gMatchedDraws.load(std::memory_order_relaxed)),
                   gHooksInstalled.load(std::memory_order_relaxed) ? 1u : 0u,

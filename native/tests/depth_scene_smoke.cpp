@@ -253,6 +253,21 @@ void check(D3D_DRIVER_TYPE driver) {
     t.context.p->Draw(3, 0);
     require(t.tracker->consume(t.context.p).result == SceneResult::incompatible_view,
             "Forward-Z depth overwrite silently accepted");
+    // A later full supported scene draw rewrites the target, so an earlier
+    // unsupported pass on the same source must not poison the frame forever.
+    t.bind(t.context.p, scene.view.p);
+    t.context.p->Draw(3, 0);
+    require(t.tracker->consume(t.context.p).result == SceneResult::ready,
+            "A full scene pass did not recover from an incompatible draw");
+    // An unsupported draw on a different family target never invalidates the
+    // chosen scene; only supported draws from a second target are ambiguous.
+    t.bind(t.context.p, scene.view.p);
+    t.context.p->Draw(3, 0);
+    t.bind(t.context.p, other.view.p);
+    t.context.p->RSSetViewports(1, &subview);
+    t.context.p->Draw(3, 0);
+    require(t.tracker->consume(t.context.p).result == SceneResult::ready,
+            "An unsupported draw on another family target poisoned the scene");
     t.bind(t.context.p, scene.view.p);
     t.context.p->Draw(3, 0);
     t.bind(t.context.p, other.view.p);
