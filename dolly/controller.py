@@ -2317,6 +2317,9 @@ class Controller:
             export = getattr(self, "_export_timing", None)
             if export and export.get("speed"):
                 speed = float(export["speed"])
+            # Calibrate the paused camera under normal engine pacing; the
+            # fixed-step timing is re-applied just before the path dispatches.
+            self.suspend_export_timing()
             if rate not in (30, 60, 120):
                 raise ValueError("Choose a command rate of 30, 60, or 120.")
             if hide_hud and ("citadel_hud_visible" in project.setup_values or
@@ -2405,6 +2408,9 @@ class Controller:
                     checked_demo.get("tick") != positioned_demo["tick"]):
                     raise RuntimeError("The replay moved during the camera position check. Keep it paused until Dolly starts the shot, then retry.")
                 self._check_position_cancelled()
+                # The paused view is verified; pace the engine for the export
+                # before the authored path takes over.
+                self.resume_export_timing()
                 command = self._position_commands(frame)
                 if native is not None:
                     # The whole shot is published once. HOLD must be acknowledged
@@ -3042,6 +3048,41 @@ class Controller:
             self._request("; ".join(commands))
         except (RuntimeError, ValueError, OSError) as exc:
             self._message("Could not restore export timing: " + str(exc))
+
+    def suspend_export_timing(self):
+        """Restore normal engine pacing for a paused-camera calibration.
+
+        Fixed-step export timing (``host_framerate`` + ``r_wait_on_present``)
+        can make a paused camera apply only part of a position command, which
+        the position check must reject. Keep the configured export timing and
+        re-apply it with :meth:`resume_export_timing` before the shot
+        dispatches.
+        """
+        state = getattr(self, "_export_timing", None)
+        if state is None or state.get("suspended"):
+            return
+        if self._console is None or not self._console.is_connected or not self._alive():
+            return
+        restore = state.get("restore") or {}
+        host = restore.get("host_framerate")
+        wait = restore.get("r_wait_on_present")
+        commands = ["host_framerate " + (numeric(host) if host else "0"),
+                    "r_wait_on_present " + (numeric(wait) if wait is not None else "0")]
+        if self._demo_speed_changed:
+            commands.append("demo_timescale 1")
+        self._request("; ".join(commands))
+        state["suspended"] = True
+
+    def resume_export_timing(self):
+        state = getattr(self, "_export_timing", None)
+        if state is None or not state.get("suspended"):
+            return
+        if self._console is None or not self._console.is_connected or not self._alive():
+            return
+        engine_fps = state["fps"] / state["speed"]
+        self._request(f"host_framerate {numeric(engine_fps)}; r_wait_on_present 1; "
+                      f"demo_timescale {numeric(state['speed'])}")
+        state["suspended"] = False
 
     def disconnect(self):
         self._recording_replay = None

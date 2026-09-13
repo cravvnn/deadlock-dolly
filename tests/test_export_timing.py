@@ -54,6 +54,26 @@ class ExportTimingTests(unittest.TestCase):
         self.assertEqual(self.values, {"host_framerate": 0, "r_wait_on_present": 0})
         self.assertIsNone(self.controller._export_timing)
 
+    def test_suspend_and_resume_keep_the_configured_export_timing(self):
+        self.controller.set_export_timing(60, .5)
+        self.controller.suspend_export_timing()
+        self.assertEqual(self.values, {"host_framerate": 0, "r_wait_on_present": 0})
+        self.assertTrue(self.controller._export_timing["suspended"])
+        writes = len(self.writes)
+        self.controller.suspend_export_timing()
+        self.assertEqual(len(self.writes), writes)
+        self.controller.resume_export_timing()
+        self.assertEqual(self.values, {"host_framerate": 120, "r_wait_on_present": 1})
+        self.assertFalse(self.controller._export_timing["suspended"])
+        self.controller.clear_export_timing()
+        self.assertIsNone(self.controller._export_timing)
+
+    def test_resume_without_suspend_does_not_write(self):
+        self.controller.set_export_timing(60, .5)
+        writes = list(self.writes)
+        self.controller.resume_export_timing()
+        self.assertEqual(self.writes, writes)
+
     def test_unreadable_original_prevents_any_timing_write(self):
         self.values["r_wait_on_present"] = "unavailable"
         with self.assertRaises((ValueError, RuntimeError)):

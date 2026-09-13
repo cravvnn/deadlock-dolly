@@ -215,11 +215,22 @@ void apply_deferred_stop(Session& s) noexcept {
     s.stop_qpc.compare_exchange_strong(unset, timestamp);
     request_stop(s, request == 2);
 }
-void fail(Session& s, HRESULT hr, const wchar_t* message) noexcept {
+// The published error text must stay valid after the caller's frame returns:
+// several failure paths format into a local buffer, and the Python side reads
+// the message later on its poll cadence.
+void publish_error(Session& s, HRESULT hr, const wchar_t* message, std::size_t length) noexcept {
     HRESULT empty = S_OK;
-    if (s.error.compare_exchange_strong(empty, FAILED(hr) ? hr : E_FAIL))
-        s.error_text.store(message, std::memory_order_release);
+    if (s.error.compare_exchange_strong(empty, FAILED(hr) ? hr : E_FAIL)) {
+        const auto count = std::min<std::size_t>(message ? length : 0, 255);
+        if (count)
+            std::wmemcpy(s.error_buffer, message, count);
+        s.error_buffer[count] = 0;
+        s.error_text.store(s.error_buffer, std::memory_order_release);
+    }
     request_stop(s, false);
+}
+void fail(Session& s, HRESULT hr, const wchar_t* message) noexcept {
+    publish_error(s, hr, message, message ? wcsnlen(message, 255) : 0);
 }
 bool active(State state) noexcept {
     return state == State::starting || state == State::recording || state == State::finalizing;
@@ -381,14 +392,7 @@ HRESULT consume_frame(MediaApi& api, Session& s, IMFSinkWriter* writer, DWORD st
 // The capture path above is unchanged: this backend only replaces the sink
 // that consumes owned CPU frames, so a slow encoder can never stall rendering.
 void fail_text(Session& s, HRESULT hr, const std::wstring& message) noexcept {
-    HRESULT empty = S_OK;
-    if (s.error.compare_exchange_strong(empty, FAILED(hr) ? hr : E_FAIL)) {
-        const auto count = std::min<std::size_t>(message.size(), 255);
-        std::wmemcpy(s.error_buffer, message.c_str(), count);
-        s.error_buffer[count] = 0;
-        s.error_text.store(s.error_buffer, std::memory_order_release);
-    }
-    request_stop(s, false);
+    publish_error(s, hr, message.c_str(), message.size());
 }
 std::wstring capture_diagnostic(const Session& s) {
     wchar_t text[384]{};
