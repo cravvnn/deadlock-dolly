@@ -259,6 +259,22 @@ void check(D3D_DRIVER_TYPE driver) {
     t.context.p->Draw(3, 0);
     require(t.tracker->consume(t.context.p).result == SceneResult::ready,
             "A full scene pass did not recover from an incompatible draw");
+    // A supported draw we cannot calibrate (no per-view constants) must fail
+    // this frame closed, not poison the tracker for the rest of the session.
+    t.bind(t.context.p, scene.view.p);
+    t.calibration(13);
+    t.context.p->Draw(3, 0);
+    {
+        const std::array<ID3D11Buffer*, 14> empty{};
+        t.context.p->VSSetConstantBuffers(0, 14, empty.data());
+    }
+    t.context.p->Draw(3, 0);
+    require(t.tracker->consume(t.context.p).result == SceneResult::incompatible_view,
+            "Uncalibratable scene draw failed the whole tracker");
+    t.bind(t.context.p, scene.view.p);
+    t.calibration(7);
+    t.context.p->Draw(3, 0);
+    t.read(t.tracker->consume(t.context.p), 14);
     // An unsupported draw on a different family target never invalidates the
     // chosen scene; only supported draws from a second target are ambiguous.
     t.bind(t.context.p, scene.view.p);
@@ -274,6 +290,20 @@ void check(D3D_DRIVER_TYPE driver) {
     t.context.p->Draw(3, 0);
     require(t.tracker->consume(t.context.p).result == SceneResult::ambiguous,
             "Duplicate scene identities silently selected");
+    // Exceeding the per-frame observation budget must keep the newest state
+    // instead of failing the tracker forever.
+    for (int i = 0; i < 40; ++i) {
+        t.bind(t.context.p, scene.view.p);
+        t.context.p->Draw(3, 0);
+        t.bind(t.context.p, other.view.p);
+        t.context.p->Draw(3, 0);
+    }
+    require(t.tracker->consume(t.context.p).result == SceneResult::ambiguous,
+            "Observation budget overflow poisoned the tracker");
+    t.bind(t.context.p, scene.view.p);
+    t.calibration(15);
+    t.context.p->Draw(3, 0);
+    t.read(t.tracker->consume(t.context.p), 30);
     t.calibration(11);
     t.bind(t.deferred.p, scene.view.p);
     t.deferred.p->ClearDepthStencilView(scene.view.p, D3D11_CLEAR_DEPTH, 0, 0);

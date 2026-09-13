@@ -37,6 +37,13 @@ std::atomic<bool> gHooksInstalled{false};
 std::atomic<std::uint32_t> gLastResult{1}; // SceneResult::missing
 std::mutex gDiagnosticMutex;
 char gLastRejected[160]{};
+std::mutex gFailureMutex;
+char gLastFailure[160]{};
+void note_failure(const char* reason) noexcept {
+    std::unique_lock<std::mutex> lock(gFailureMutex, std::try_to_lock);
+    if (lock.owns_lock())
+        std::snprintf(gLastFailure, sizeof(gLastFailure), "%s", reason);
+}
 const char* scene_result_name(SceneResult result) noexcept {
     switch (result) {
     case SceneResult::ready: return "ready";
@@ -151,8 +158,10 @@ struct SceneTracker::Impl {
         device.p = value;
         if (value)
             value->AddRef();
-        if (!value || !w || !h || w > 16384 || h > 16384)
+        if (!value || !w || !h || w > 16384 || h > 16384) {
+            note_failure("invalid device or size");
             failed = true;
+        }
     }
     bool owns(ID3D11DeviceContext* context) const noexcept {
         if (!context || failed)
@@ -196,6 +205,7 @@ struct SceneTracker::Impl {
         if (found != contexts.end())
             return &found->second;
         if (contexts.size() >= kMaxContexts) {
+            note_failure("context budget");
             failed = true;
             return nullptr;
         }
@@ -323,28 +333,44 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
         auto* record = impl->record(context);
         if (!record)
             return;
+        // Reuse the previous event when the same scene target is drawn again
+        // without an intervening clear or unsupported overwrite.
+        const bool reused = supported && !record->events.empty() &&
+                            !record->events.back().clear &&
+                            !record->events.back().incompatible_view &&
+                            record->events.back().source->depth.p == texture.p;
         std::shared_ptr<SceneResources> snapshot;
-        if (supported && !record->events.empty() && !record->events.back().clear &&
-            !record->events.back().incompatible_view &&
-            record->events.back().source->depth.p == texture.p) {
+        if (reused) {
             snapshot = record->events.back().source;
         } else {
+            // A matching family draw can exceed the per-frame observation
+            // budget while a second target alternates. Dropping the oldest
+            // observation keeps the newest state instead of poisoning the
+            // tracker for the rest of the process.
             if (record->events.size() >= kMaxEvents) {
-                impl->failed = true;
-                return;
+                note_failure("event budget");
+                record->events.erase(record->events.begin());
             }
             snapshot = std::make_shared<SceneResources>();
             snapshot->depth.p = texture.p;
             texture.p->AddRef();
-            record->events.push_back({false, snapshot, !supported});
         }
-        if (supported && !impl->snapshot(context, *snapshot)) {
-            impl->failed = true;
-            return;
+        // Calibration is copied before the event is trusted: a draw we cannot
+        // calibrate fails the frame closed, not the tracker forever, and a
+        // later supported draw of this target can rewrite the sample.
+        const bool usable = supported && impl->snapshot(context, *snapshot);
+        if (supported && !usable)
+            note_failure("calibration snapshot");
+        if (!reused)
+            record->events.push_back({false, snapshot, !usable});
+        else if (!usable) {
+            record->events.back().incompatible_view = true;
+            record->events.back().source = snapshot;
         }
         if (context->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
             impl->apply(record->events.back());
     } catch (...) {
+        note_failure("draw exception");
         impl->failed = true;
     }
 }
@@ -361,8 +387,8 @@ void SceneTracker::clear(ID3D11DeviceContext* context, ID3D11DepthStencilView* d
         if (!record)
             return;
         if (record->events.size() >= kMaxEvents) {
-            impl->failed = true;
-            return;
+            note_failure("event budget");
+            record->events.erase(record->events.begin());
         }
         auto snapshot = std::make_shared<SceneResources>();
         snapshot->depth.p = source.p;
@@ -371,6 +397,7 @@ void SceneTracker::clear(ID3D11DeviceContext* context, ID3D11DepthStencilView* d
         if (context->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
             impl->apply(record->events.back());
     } catch (...) {
+        note_failure("clear exception");
         impl->failed = true;
     }
 }
@@ -389,9 +416,12 @@ void SceneTracker::finish(ID3D11DeviceContext* context, ID3D11CommandList* list)
         auto* holder = new CommandHolder(std::move(data));
         const auto result = list->SetPrivateDataInterface(kCommandData, holder);
         holder->Release();
-        if (FAILED(result))
+        if (FAILED(result)) {
+            note_failure("command list tagging");
             impl->failed = true;
+        }
     } catch (...) {
+        note_failure("finish exception");
         impl->failed = true;
     }
 }
@@ -415,6 +445,7 @@ void SceneTracker::execute(ID3D11DeviceContext* context, ID3D11CommandList* list
         for (const auto& event : commands.p->data().events)
             impl->apply(event);
     } catch (...) {
+        note_failure("execute exception");
         impl->failed = true;
     }
 }
@@ -438,6 +469,7 @@ SceneFrame SceneTracker::consume(ID3D11DeviceContext* immediate) noexcept {
         gLastResult.store(static_cast<std::uint32_t>(result.result), std::memory_order_relaxed);
         return result;
     } catch (...) {
+        note_failure("consume exception");
         impl->failed = true;
         gLastResult.store(static_cast<std::uint32_t>(SceneResult::failed),
                           std::memory_order_relaxed);
@@ -446,15 +478,23 @@ SceneFrame SceneTracker::consume(ID3D11DeviceContext* immediate) noexcept {
 }
 const char* scene_diagnostic() noexcept {
     static thread_local char text[352]{};
-    char rejected[160]{};
+    char rejected[128]{};
     {
         std::unique_lock<std::mutex> lock(gDiagnosticMutex, std::try_to_lock);
         if (lock.owns_lock())
             std::snprintf(rejected, sizeof(rejected), "%s", gLastRejected);
     }
-    std::snprintf(text, sizeof(text), "scene result=%s draws=%llu matched=%llu hooks=%u last=%s",
+    char failure[128]{};
+    {
+        std::unique_lock<std::mutex> lock(gFailureMutex, std::try_to_lock);
+        if (lock.owns_lock())
+            std::snprintf(failure, sizeof(failure), "%s", gLastFailure);
+    }
+    std::snprintf(text, sizeof(text),
+                  "scene result=%s why=%s draws=%llu matched=%llu hooks=%u last=%s",
                   scene_result_name(static_cast<SceneResult>(
                       gLastResult.load(std::memory_order_relaxed))),
+                  failure[0] ? failure : "none",
                   static_cast<unsigned long long>(gDrawCalls.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(gMatchedDraws.load(std::memory_order_relaxed)),
                   gHooksInstalled.load(std::memory_order_relaxed) ? 1u : 0u,
