@@ -108,6 +108,9 @@ class VideoOptions:
     fixed_step: bool = False
     # Replay slow-motion for fixed-step export (same range as playback speed).
     speed: float = 1.0
+    # Paired numerical depth master in <path>.depth as an EXR sequence. Off by
+    # default; requires the reviewed scene tracker to verify every frame.
+    depth: bool = False
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120, 300, 600):
@@ -134,6 +137,8 @@ class VideoOptions:
             raise ValueError("That output file already exists. Choose a new filename.")
         if type(self.fixed_step) is not bool:
             raise ValueError("Fixed-step export must be on or off.")
+        if type(self.depth) is not bool:
+            raise ValueError("Depth export must be on or off.")
         if isinstance(self.speed, bool) or not isinstance(self.speed, (int, float)):
             raise ValueError("Export speed must be a number between 0.05 and 4.")
         speed = float(self.speed)
@@ -145,7 +150,7 @@ class VideoOptions:
         # The native writer also creates the file exclusively. This early
         # check gives a useful error; it is not the overwrite safety boundary.
         return VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
-                            ffmpeg, self.fixed_step, speed)
+                            ffmpeg, self.fixed_step, speed, self.depth)
 
 
 def recording_ready(status: dict) -> bool:
@@ -285,7 +290,7 @@ class VideoExport:
                                encoder=encoder, codec=codec_id, quality=options.quality,
                                preset=options.preset,
                                ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "",
-                               fixed_step=options.fixed_step)
+                               fixed_step=options.fixed_step, depth=options.depth)
         except Exception as exc:
             self._clear_export_timing()
             with self._lock:

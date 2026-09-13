@@ -22,6 +22,10 @@ int main() {
     require(live.hooks() && !live.needs_hooks());
     live.note_tracker(true);
     require(live.active() && !live.needs_tracker() && !live.needs_drop());
+    // The render callback republishes the same device every Present; that must
+    // not churn the tracker generation.
+    live.publish(0x10, 0x20, 2560, 1440);
+    require(live.generation() == first && live.active() && !live.needs_tracker());
     // A resize is a new generation: the old tracker cannot stay active.
     live.publish(0x10, 0x20, 1920, 1080);
     require(live.generation() != first && !live.active() && live.needs_tracker());

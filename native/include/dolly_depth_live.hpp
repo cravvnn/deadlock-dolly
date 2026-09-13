@@ -19,6 +19,12 @@ public:
             clear_device();
             return;
         }
+        // The render callback republishes the same device every Present. Only
+        // a real change is a new generation; otherwise the tracker would be
+        // destroyed and recreated on every frame.
+        if (published_ && device_ == device && immediate_ == immediate && width_ == width &&
+            height_ == height)
+            return;
         device_ = device;
         immediate_ = immediate;
         width_ = width;

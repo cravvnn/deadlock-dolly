@@ -1187,6 +1187,9 @@ void render_overlay(IDXGISwapChain* chain) {
                                    reinterpret_cast<std::uintptr_t>(capture_context),
                                    snapshot.width, snapshot.height);
                 depth_live.request(video::wants_depth());
+                if (depth_live.needs_hooks() &&
+                    depth::install_scene_hooks(capture_device, capture_context))
+                    depth_live.note_hooks(true);
                 if (depth_live.needs_tracker()) {
                     auto tracker = std::make_shared<depth::SceneTracker>(
                         capture_device, depth_live.width(), depth_live.height());
@@ -1199,7 +1202,16 @@ void render_overlay(IDXGISwapChain* chain) {
                     depth_live.note_tracker(false);
                 }
             }
-            video::capture(capture_chain, capture_device, capture_context, nullptr,
+            // Consume the verified scene sample for this exact Present before
+            // recording. The recorder owns color/depth pairing and fails closed
+            // when a requested depth frame is missing or ambiguous.
+            depth::SceneFrame scene{};
+            const depth::SceneFrame* sample = nullptr;
+            if (depth_live.active() && depth_tracker) {
+                scene = depth_tracker->consume(capture_context);
+                sample = &scene;
+            }
+            video::capture(capture_chain, capture_device, capture_context, sample,
                            editor.playing ? editor.phase : -1.0);
         }
     };

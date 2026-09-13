@@ -1,8 +1,9 @@
 # Layer export
 
-0.5.3 records the normal scene at 30/60/120 FPS. Separated passes are not
-implemented yet. The existing recorder copies the final color backbuffer;
-it does not receive a verified main-view depth texture or hero draw IDs.
+0.5.4 records the normal scene at 30/60/120/300/600 FPS and can write a paired
+float depth master (default off). Separated hero/world/effects passes are not
+implemented yet. The color recorder still copies the final color backbuffer;
+there is no verified hero draw ID feed.
 
 ## Required render passes
 
@@ -76,10 +77,14 @@ depth sample, including real-time skipped capture opportunities. The manual
 `depth_video_smoke` executable takes an absolute FFmpeg executable path and an
 existing output-parent directory; it leaves a unique test folder for inspection.
 
-The game Present path and UI do not enable depth recording yet. Renderer-gated
-scene-tracker lifecycle, exact replay-time publication, normalized video preview
-and user controls remain to be completed. These tests establish recorder
-pairing with supplied GPU fixtures, not live game depth export or a hero/world
+The renderer now installs the scene hooks when a recording requests a depth
+master, owns exactly one tracker per device generation (resize/device loss
+drops it), consumes the verified scene sample at the recording Present and
+passes it with the exact replay time into the paired writer. The desktop
+Export tab gained a default-off **Depth master (EXR)** option. Live validation
+in the gated replay session, a normalized video preview and the hero/world
+passes remain to be completed. These tests establish recorder pairing with
+supplied GPU fixtures, not a live game depth export or a hero/world
 classifier.
 
 ### Captured-frame investigation (September 12, 2026)

@@ -98,6 +98,19 @@ class MediaTransportTests(unittest.TestCase):
         self.assertEqual(flagged[6], 1)
         self.assertEqual(plain[6], 0)
 
+    def test_depth_flag_uses_reserved_bit_one(self):
+        depth = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                      depth=True))
+        both = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                     fixed_step=True, depth=True))
+        plain = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4"))
+        self.assertEqual(depth[6], 2)
+        self.assertEqual(both[6], 3)
+        self.assertEqual(plain[6], 0)
+        for value in (1, "yes", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                wire.pack_command(2, "start_video", path="C:\\ok.mp4", depth=value)
+
     def test_protocol_layout_and_invalid_paths(self):
         self.assertEqual(wire.COMMAND.size, 6192)
         self.assertEqual(wire.STATUS.size, 2384)

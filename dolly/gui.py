@@ -156,6 +156,7 @@ class DollyApp:
         self.video_bitrate = tk.StringVar(value="20 Mbps")
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
         self.video_fixed_step = tk.BooleanVar(value=False)
+        self.video_depth = tk.BooleanVar(value=False)
         self.video_export_speed = tk.StringVar(value="1")
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
@@ -440,6 +441,9 @@ class DollyApp:
         self.video_fixed_checkbox = ttk.Checkbutton(options, text="Fixed-step export (frame-accurate)",
                                                     variable=self.video_fixed_step)
         self.video_fixed_checkbox.pack(side="left", padx=(0, 18))
+        self.video_depth_checkbox = ttk.Checkbutton(options, text="Depth master (EXR)",
+                                                    variable=self.video_depth)
+        self.video_depth_checkbox.pack(side="left", padx=(0, 18))
         ttk.Label(options, text="Export speed", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
         self.video_speed_combo = ttk.Combobox(options, textvariable=self.video_export_speed,
                                               values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"),
@@ -513,7 +517,8 @@ class DollyApp:
                                    BITRATE_PRESETS[self.video_bitrate.get()], codec=codec_key,
                                    ffmpeg_path=self.ffmpeg_path.get().strip() or None,
                                    fixed_step=bool(self.video_fixed_step.get()),
-                                   speed=float(self.video_export_speed.get())).validated()
+                                   speed=float(self.video_export_speed.get()),
+                                   depth=bool(self.video_depth.get())).validated()
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return

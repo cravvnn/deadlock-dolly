@@ -34,6 +34,14 @@ smooth slow motion at a high FPS). The engine time step is `Export speed / Video
 Dolly verifies it before recording starts and restores the previous settings
 afterward. A clamped or unavailable timing setting prevents capture from starting.
 
+**Depth master (EXR)** is a default-off option on the Export tab. When enabled,
+the recorder requires a verified main-view scene depth and the exact replay time
+for every color frame; each accepted frame writes a float OpenEXR into the
+`<video filename>.depth` folder with a manifest when the counts match.
+Unsupported or ambiguous depth stops the recording with an error instead of
+writing an unpaired frame. The depth values are camera-axis world units, not
+metres, and this is a numerical master rather than a depth preview video.
+
 Dolly's panel and path guides are excluded from the file. ReShade color effects
 are included, while its menu, splash and FPS display are excluded. Deadlock's
 own HUD remains part of the scene: enable **Hide HUD during playback** for a

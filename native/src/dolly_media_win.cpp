@@ -69,7 +69,7 @@ void consume() noexcept {
     command_error = 0;
     command_message[0] = 0;
     if (std::memcmp(command.magic, "DLYMED01", 8) || command.abi != kMediaAbi ||
-        (command.reserved & ~1u) != 0 || !terminated(command.path) ||
+        (command.reserved & ~3u) != 0 || !terminated(command.path) ||
         !terminated(command.config_path) || !terminated(command.ffmpeg_path) ||
         command.encoder > static_cast<std::uint32_t>(video::Encoder::ffmpeg) ||
         command.codec > static_cast<std::uint32_t>(video::Codec::lossless) ||
@@ -97,6 +97,7 @@ void consume() noexcept {
         options.encoder = static_cast<video::Encoder>(command.encoder);
         options.codec = static_cast<video::Codec>(command.codec);
         options.fixed_step = (command.reserved & 1u) != 0;
+        options.depth = (command.reserved & 2u) != 0;
         if (!video::start(options)) {
             const auto state = video::status();
             reject(state.error[0] ? state.error

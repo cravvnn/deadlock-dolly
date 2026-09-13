@@ -55,7 +55,8 @@ class VideoExportTests(unittest.TestCase):
         self.assertEqual(result["state"], "recording")
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
-            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False)
+            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
+            depth=False)
         self.assertFalse(self.path.exists())  # Only native creates the actual file.
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
@@ -69,7 +70,8 @@ class VideoExportTests(unittest.TestCase):
         self.export.start(VideoOptions(self.path, 120, 40_000_000))
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=120, bitrate=40_000_000,
-            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False)
+            encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
+            depth=False)
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
@@ -103,7 +105,15 @@ class VideoExportTests(unittest.TestCase):
                                            quality=21, ffmpeg_path=exe))
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
-            encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe), fixed_step=False)
+            encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe), fixed_step=False,
+            depth=False)
+
+    def test_depth_master_is_off_by_default_and_passes_to_native(self):
+        self.assertFalse(VideoOptions(self.path).validated().depth)
+        self.export.start(VideoOptions(self.path, 60, 20_000_000, depth=True))
+        self.assertTrue(self.bridge.start_video.call_args.kwargs["depth"])
+        with self.assertRaisesRegex(ValueError, "Depth export"):
+            VideoOptions(self.path, depth=1).validated()
 
     def test_lossless_requires_matroska_and_maps_to_ffv1(self):
         with self.assertRaisesRegex(ValueError, ".mkv"):
@@ -283,6 +293,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_codec = Var("")
         self.app.ffmpeg_path = Var("")
         self.app.video_fixed_step = Var(False)
+        self.app.video_depth = Var(False)
         self.app.video_export_speed = Var("1")
         self.app.status_text = Var("")
         self.app.video_status_text = Var("")
