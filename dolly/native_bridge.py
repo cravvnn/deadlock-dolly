@@ -433,8 +433,11 @@ class NativeBridge(MediaTransport):
             command = self._publish(3)
             return self._wait(command, {"armed"}, timeout)
 
-    def _wait_editor_input(self, timeout, cancelled=None):
+    def _wait_editor_input(self, timeout, cancelled=None, *, require_paused=True):
         """Wait for the actual game window's input/renderer, not foreground focus."""
+        required = ("enabled", "ready", "overlay_available", "input_available")
+        if require_paused:
+            required += ("paused",)
         deadline = self._clock() + timeout
         editor = {}
         while True:
@@ -449,22 +452,31 @@ class NativeBridge(MediaTransport):
                 if "being updated" not in str(exc):
                     raise
             else:
-                if all(editor.get(key) for key in ("enabled", "ready", "overlay_available", "input_available", "paused")):
+                if all(editor.get(key) for key in required):
                     return editor
             remaining = deadline - self._clock()
             if remaining <= 0:
                 missing = [label for key, label in (("overlay_available", "DX11 panel"),
                            ("input_available", "game input"), ("ready", "replay view"),
-                           ("paused", "paused replay")) if not editor.get(key)]
+                           ("paused", "paused replay"))
+                           if key in required and not editor.get(key)]
                 raise NativeBridgeError("Timed out waiting for " + ", ".join(missing or ["editor initialization"]) +
                     ". Let the replay finish loading, then retry Paused camera. Export diagnostics if it persists.")
             self._sleep(min(0.02, remaining))
 
-    def start_flight(self, demo_name, pose=None, timeout=8, *, cancelled=None, owner="flight"):
-        """Enter native manual flight, optionally seeded from a displayed view."""
+    def start_flight(self, demo_name, pose=None, timeout=8, *, cancelled=None, owner="flight",
+                     playback=False):
+        """Enter native manual flight, optionally seeded from a displayed view.
+
+        ``playback`` selects the replay state to wait for: ``False`` requires
+        the paused camera flow, ``True`` arms against a replay that keeps
+        playing, and ``None`` follows the replay's current state.
+        """
         timeout = _number(timeout, "Native acknowledgment timeout")
         if owner not in ("flight", "panel"):
             raise ValueError("Native flight owner must be flight or panel")
+        if playback is not None and not isinstance(playback, bool):
+            raise ValueError("Native flight playback mode must be a boolean or None")
         if cancelled is not None and not callable(cancelled):
             raise ValueError("Native flight cancellation must be callable")
         if not isinstance(demo_name, str) or not demo_name or any(c in demo_name for c in "\0\r\n"):
@@ -488,11 +500,11 @@ class NativeBridge(MediaTransport):
             self._prepared = False
             self._manual = False
             self._demo, self._start, self._speed = demo, 0.0, 1.0
-            self._frozen = True
+            self._frozen = playback is not True
             self._flags = self._compose_flags()
             self.configure_editor(enabled=True, owner="panel")
             try:
-                self._wait_editor_input(timeout, cancelled)
+                self._wait_editor_input(timeout, cancelled, require_paused=playback is False)
                 if cancelled is not None and cancelled():
                     raise NativeBridgeError("Opening the paused camera was cancelled.")
                 self.configure_editor(owner=owner)

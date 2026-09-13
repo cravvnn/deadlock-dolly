@@ -1090,27 +1090,36 @@ class Controller:
             if (snapshot["paused"] and int(current["tick"]) != tick) or int(current["tick"]) < tick:
                 raise RuntimeError("The replay moved after this camera capture. Capture the current view again.")
             frame = Keyframe(time=shot_time, **pose)
-            # P temporarily changes Manual into HoldCurrent. A capture pauses
-            # the replay too, so re-arm native movement without changing its
-            # visible seed or taking focus from the open editor panel.
-            if self._native_manual and not self.status().get("paused_flight"):
-                owner = "panel"
-                if callable(getattr(bridge, "editor_status", None)):
-                    editor = bridge.editor_status()
-                    owner = editor.get("owner", editor.get("input_mode", "panel"))
-                    if owner not in ("panel", "flight", "console", "game_ui"):
-                        owner = "panel"
-                armed = bridge.start_flight(self._demo.name)
-                bridge.configure_editor(owner=owner)
-                self._require_native_demo(armed)
-                if not armed.get("paused") or int(armed["tick"]) != int(current["tick"]):
-                    self._release_native_camera()
-                    raise RuntimeError("The replay moved while returning to paused camera movement. Capture again.")
-                paused_pose = self._native_pose(armed)
-                paused_pose.update(time=float(armed.get("phase", 0)), cvars={})
-                self._set_paused_pose(paused_pose, int(armed["tick"]))
-                with self._state_lock:
-                    self._state["paused_flight"] = True
+            if self._native_manual:
+                if not self.status().get("paused_flight"):
+                    # A hold/Stop path released manual movement; a capture
+                    # pauses the replay too, so re-arm native movement without
+                    # changing its visible seed or taking focus from the open
+                    # editor panel.
+                    owner = "panel"
+                    if callable(getattr(bridge, "editor_status", None)):
+                        editor = bridge.editor_status()
+                        owner = editor.get("owner", editor.get("input_mode", "panel"))
+                        if owner not in ("panel", "flight", "console", "game_ui"):
+                            owner = "panel"
+                    armed = bridge.start_flight(self._demo.name)
+                    bridge.configure_editor(owner=owner)
+                    self._require_native_demo(armed)
+                    if not armed.get("paused") or int(armed["tick"]) != int(current["tick"]):
+                        self._release_native_camera()
+                        raise RuntimeError("The replay moved while returning to paused camera movement. Capture again.")
+                    paused_pose = self._native_pose(armed)
+                    paused_pose.update(time=float(armed.get("phase", 0)), cvars={})
+                    self._set_paused_pose(paused_pose, int(armed["tick"]))
+                    with self._state_lock:
+                        self._state["paused_flight"] = True
+                else:
+                    # A capture from playback free-cam pauses the replay at a
+                    # later tick; keep the held tick/pose current for the next
+                    # movement or capture without touching the captured key.
+                    paused_pose = self._native_pose(current)
+                    paused_pose.update(time=float(current.get("phase", 0)), cvars={})
+                    self._set_paused_pose(paused_pose, int(current["tick"]))
             self._message("Captured the rendered camera view. Replay paused.",
                           tick=int(current["tick"]), captured_tick=tick, replay_paused=True)
             return frame, tick
@@ -1699,10 +1708,15 @@ class Controller:
         return bridge is not None and callable(getattr(bridge, "start_flight", None))
 
     def enter_native_flight(self, pose=None, *, cancelled=None):
-        """Let the in-game view callback own input and manual camera movement."""
+        """Let the in-game view callback own input and manual camera movement.
+
+        The replay keeps its current pause state: a paused replay gives the
+        existing paused camera, and a playing replay arms the same manual
+        override without pausing it (playback free-cam).
+        """
         with self._op_lock, self._paused_preparation(cancelled):
             if not self._supports_native_flight():
-                raise RuntimeError("Native paused movement requires the matching native editor build.")
+                raise RuntimeError("Native free camera requires the matching native editor build.")
             self._halt(native_action="native_hold")
             self._require_probe()
             self._require_demo()
@@ -1718,7 +1732,6 @@ class Controller:
                 self.toggle_console(enabled=False)
             self._hide_game_ui()
             self._game_ui_visible = False
-            self._request("demo_pause")
             self._check_paused_cancelled()
             bridge = self._native_bridge()
             # With no supplied pose, the callback seeds from the currently
@@ -1726,24 +1739,28 @@ class Controller:
             # paused player-eye calibration can move that seed vertically.
             if isinstance(pose, dict):
                 pose = tuple(pose[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"))
-            armed = bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled)
+            armed = bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled,
+                                        playback=None)
             self._native_active = True
             self._native_manual = True
+            playback = not bool(armed.get("paused"))
             current = bridge.status()
             self._require_native_demo(current)
-            # The acknowledgement is sampled by the renderer after it pauses.
-            # Console telemetry may still describe the frame before that pause.
-            if not armed.get("paused") or not current.get("paused") or int(current["tick"]) != int(armed["tick"]):
-                self._release_native_camera()
-                raise RuntimeError("The replay moved while opening the paused camera. Pause it and try again.")
+            if not playback:
+                # The acknowledgement is sampled by the renderer after it pauses.
+                # Console telemetry may still describe the frame before that pause.
+                if not armed.get("paused") or not current.get("paused") or int(current["tick"]) != int(armed["tick"]):
+                    self._release_native_camera()
+                    raise RuntimeError("The replay moved while opening the paused camera. Pause it and try again.")
             frame = self._native_pose(current)
             frame.update(time=float(current.get("phase", 0)), cvars={})
             self._set_paused_pose(frame, int(current["tick"]))
             self._paused_details.update(source="native_render_input", runtime_verified_in_Deadlock=False)
             self._stop_event.clear()
             self._game_ui_visible = False
-            self._message("Paused camera ready. Use the in-game movement controls; F7 opens the console.",
-                          playing=False, paused_flight=True, replay_paused=True)
+            self._message("Free camera ready. Use the in-game movement controls; F7 opens the console." if playback
+                          else "Paused camera ready. Use the in-game movement controls; F7 opens the console.",
+                          playing=False, paused_flight=True, replay_paused=not playback)
             return deepcopy(frame)
 
     def toggle_console(self, enabled=None):
@@ -1871,7 +1888,12 @@ class Controller:
             self._message("Ragdoll cleanup command sent.")
 
     def toggle_replay(self):
-        """Pause/resume replay time without restarting an authored native path."""
+        """Pause/resume replay time without restarting an authored native path.
+
+        While the native free camera is armed, movement stays live in both
+        states; only the replay clock toggles. Movement keeps integrating on
+        each rendered view even though the replay is not paused.
+        """
         with self._op_lock:
             self._require_demo()
             bridge = self._native_bridge()
@@ -1884,13 +1906,20 @@ class Controller:
                 raise RuntimeError("Stop the frozen preview before resuming replay time.")
             if self._native_manual:
                 if paused:
-                    # Hold the last rendered view while replay time advances.
-                    # Movement returns through native flight when paused again.
-                    self._halt(native_action="native_hold")
-                    bridge.configure_editor(owner="panel")
+                    self._request("demo_resume")
+                    self._message("Replay playing. Free camera movement stays active.",
+                                  playing=False, paused_flight=True, replay_paused=False)
                 else:
                     self._request("demo_pause")
-                    return self.enter_native_flight()
+                    # A paused free camera must track the tick it paused on so
+                    # desktop movement and captures stay valid after playback.
+                    current = self._wait_paused_native_view(bridge, current["frame_count"])
+                    frame = self._native_pose(current)
+                    frame.update(time=float(current.get("phase", 0)), cvars={})
+                    self._set_paused_pose(frame, int(current["tick"]))
+                    self._message("Replay paused. Free camera movement stays active.",
+                                  playing=False, paused_flight=True, replay_paused=True)
+                return self.status()
             self._request("demo_resume" if paused else "demo_pause")
             self._message("Replay playing." if paused else "Replay paused.", replay_paused=not paused)
             return self.status()

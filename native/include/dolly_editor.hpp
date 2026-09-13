@@ -203,6 +203,7 @@ void editor_worker_tick(unsigned char* mapping, bool connected) noexcept;
 void editor_update_view(bool replay_ready, bool paused, bool manual, const CameraPose& pose,
                         double phase = 0, std::int32_t tick = 0, double horizontal_fov = 0,
                         std::uint32_t width = 0, std::uint32_t height = 0) noexcept;
+bool flight_movement_active(unsigned view_flags, EditorOwner owner, bool input_owned) noexcept;
 void editor_integrate_flight(CameraPose& pose, double delta_seconds) noexcept;
 void editor_reset_motion() noexcept;
 #ifdef _WIN32

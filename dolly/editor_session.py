@@ -314,7 +314,7 @@ def dispatch(app, event, bridge):
     elif action == "game_ui":
         _native_operation(app, "Switching replay UI", lambda: app.controller.toggle_game_ui(enabled=bool(event["value"])), bridge)
     elif action == "flight":
-        _native_operation(app, "Entering paused camera", app.controller.enter_native_flight, bridge)
+        _native_operation(app, "Entering free camera", app.controller.enter_native_flight, bridge)
     elif action == "panel":
         # Normal F8 is handled locally. From the game's own UI, first return
         # camera ownership before displaying the editor panel.

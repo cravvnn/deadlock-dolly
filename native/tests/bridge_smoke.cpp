@@ -1191,6 +1191,17 @@ void run() {
     for (int i = 0; i < 7; ++i)
         close_to(status.applied_pose[i], selected.applied_pose[i],
                  "Resuming replay moved the held manual view");
+    // Playback free-cam gate: the view's manual bit enables movement in both
+    // replay states, the paused bit alone must not, and losing input or Flight
+    // ownership disables it.
+    require(dolly::flight_movement_active(1u | 4u, EditorOwner::Flight, true) &&
+                dolly::flight_movement_active(1u | 2u | 4u, EditorOwner::Flight, true),
+            "Manual flight gate does not follow the view's manual bit");
+    require(!dolly::flight_movement_active(1u | 2u, EditorOwner::Flight, true) &&
+                !dolly::flight_movement_active(1u | 4u, EditorOwner::Panel, true) &&
+                !dolly::flight_movement_active(1u | 4u, EditorOwner::Flight, false) &&
+                !dolly::flight_movement_active(4u, EditorOwner::Flight, true),
+            "Manual flight gate accepted a view without ready input or ownership");
     paused = true;
     CameraPose seed = {500, 600, 12, -30, 120, 8, 1.5};
     f.manual(Mode::Manual, &seed);

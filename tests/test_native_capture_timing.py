@@ -88,7 +88,7 @@ class NativeCaptureTimingTests(unittest.TestCase):
                 self.controller.capture_at_replay(None, 64)
         self.assertEqual(self.console.camera_writes, [])
 
-    def test_capture_after_p_rearms_manual_movement_and_keeps_the_panel_open(self):
+    def test_capture_after_p_keeps_live_free_camera_without_rearming(self):
         self.controller.begin_paused_camera()
         self.bridge.pose[2] = 733
         self.controller.toggle_replay()
@@ -97,9 +97,10 @@ class NativeCaptureTimingTests(unittest.TestCase):
         key = self.controller.capture_at_replay(None, 64)
         self.assertEqual(key.z, 733)
         self.assertTrue(self.controller.status()["paused_flight"])
-        self.assertEqual(self.console.events.count("native.flight"), before + 1)
-        self.assertEqual(self.bridge.owner, "panel")
+        self.assertEqual(self.console.events.count("native.flight"), before)
+        self.assertEqual(self.bridge.owner, "flight")
         self.assertEqual(self.bridge.pose[2], 733)
+        self.assertTrue(self.console.paused)
         self.assertNotIn("native.release", self.console.events)
 
     def test_flight_entry_uses_acknowledged_render_tick_after_pause(self):

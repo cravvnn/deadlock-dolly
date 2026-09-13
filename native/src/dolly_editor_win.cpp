@@ -705,8 +705,15 @@ void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long whee
                        config.camera_count ? double(config.selected_camera) : -1.0, &edit))
         pose[6] = next;
 }
+bool flight_movement_active(unsigned view_flags, EditorOwner owner, bool input_owned) noexcept {
+    // Manual flight stays armed for both the paused camera and playback
+    // free-cam: the view's manual bit, not the replay pause state, decides
+    // whether held movement reaches the camera. The ready bit still suspends
+    // movement during seeks or a lost view.
+    return input_owned && owner == EditorOwner::Flight && (view_flags & 5) == 5;
+}
 void editor_integrate_flight(CameraPose& pose, double dt) noexcept {
-    if (!owns_input() || gOwner.load() != EditorOwner::Flight || !(gViewFlags.load() & 2) ||
+    if (!flight_movement_active(gViewFlags.load(), gOwner.load(), owns_input()) ||
         !std::isfinite(dt) || dt < 0 || dt > .1) {
         gMouseX = 0;
         gMouseY = 0;

@@ -254,6 +254,34 @@ class EditorBridgeTests(unittest.TestCase):
         self.assertFalse(self.bridge._manual)
         self.assertEqual(self.bridge._editor_values["owner"], "panel")
 
+    def test_playback_flight_arms_without_a_paused_replay(self):
+        playing = {"enabled": True, "ready": True, "paused": False,
+                   "input_available": True, "overlay_available": True, "focused": False}
+        with patch.object(self.bridge, "editor_status", side_effect=[playing]), \
+             patch.object(self.bridge, "_wait", return_value={"state": "armed"}):
+            result = self.bridge.start_flight("test.dem", playback=True)
+        self.assertEqual(result, {"state": "armed"})
+        self.assertTrue(self.bridge._manual)
+        self.assertFalse(self.bridge._frozen)
+        self.assertEqual(nb.CONTROL.unpack_from(self.memory)[4], 4)
+
+    def test_paused_flight_still_requires_a_paused_replay(self):
+        playing = {"enabled": True, "ready": True, "paused": False,
+                   "input_available": True, "overlay_available": True, "focused": False}
+        modes = []
+        original = self.bridge._publish
+        with patch.object(self.bridge, "editor_status", return_value=playing), \
+             patch.object(self.bridge, "_publish",
+                          side_effect=lambda mode, *args: (modes.append(mode), original(mode, *args))[1]):
+            with self.assertRaisesRegex(nb.NativeBridgeError, "paused replay"):
+                self.bridge.start_flight("test.dem", timeout=.05)
+        self.assertEqual(modes, [0])
+        self.assertFalse(self.bridge._manual)
+
+    def test_flight_playback_mode_must_be_a_boolean_or_none(self):
+        with self.assertRaises(ValueError):
+            self.bridge.start_flight("test.dem", playback="yes")
+
     def test_flight_readiness_can_be_cancelled_without_moving_camera(self):
         with patch.object(self.bridge, "_publish", wraps=self.bridge._publish) as publish:
             with self.assertRaisesRegex(nb.NativeBridgeError, "cancelled"):

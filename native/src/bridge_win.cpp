@@ -580,7 +580,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         status.applied_fov = fov;
         finish(State::Armed, 0,
                c.mode == std::uint32_t(Mode::Manual)
-                   ? "Native paused flight updates each rendered main view."
+                   ? "Native free camera updates each rendered main view."
                    : "Native manual camera held for capture or playback handoff.");
         return;
     }
