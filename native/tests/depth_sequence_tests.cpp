@@ -37,6 +37,9 @@ int main() {
                     "First EXR failed");
             require(sequence.exr() && sequence.mov() && sequence.linear_count() == 4,
                     "Depth sequence accessors failed");
+            require(contents(directory / "manifest.json").find("\"complete\": false") !=
+                        std::string::npos,
+                    "Provisional manifest missing");
             raw.frame.sample = 9; // Nonconsecutive input samples still use color-frame file order.
             require(sequence.write(raw, 1234567) && sequence.finish(2),
                     "Sequence finalization failed");
@@ -46,7 +49,8 @@ int main() {
         require(first.size() > 200 && first.find("dollyCapturePTS100ns") != std::string::npos,
                 "EXR capture timestamp missing");
         const auto manifest = contents(directory / "manifest.json");
-        require(manifest.find("\"frames\": 2") != std::string::npos,
+        require(manifest.find("\"frames\": 2") != std::string::npos &&
+                    manifest.find("\"complete\": true") != std::string::npos,
                 "Manifest frame count missing");
         require(manifest.find("depth.mov") != std::string::npos && manifest.find("8192") != std::string::npos,
                 "Depth master mapping missing");

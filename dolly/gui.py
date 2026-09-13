@@ -164,6 +164,10 @@ class DollyApp:
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
         self._pending_auto_play = False
+        # Layered takes capture exactly the authored path, so they finish
+        # themselves when the shot completes instead of waiting for a manual
+        # Finish press (post-shot frames carry no replay time anyway).
+        self._auto_finish_layered = False
         self.reshade_runtime_path = tk.StringVar(value=getattr(self.app_settings, "reshade_runtime_path", ""))
         self.reshade_status_text = tk.StringVar(value="Choose the ReShade runtime to enable its in-game menu.")
         self.game_path.set(self.app_settings.game_path)
@@ -541,6 +545,7 @@ class DollyApp:
         project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
         frozen = self.frozen.get()
         self._pending_auto_play = project is not None
+        self._auto_finish_layered = bool(options.depth) and project is not None
         controller = getattr(self, "controller", None)
         game_pid = getattr(controller, "game_pid", None)
         if callable(game_pid):
@@ -553,6 +558,7 @@ class DollyApp:
         if self.busy:
             self.status_text.set("Finish the current operation before stopping the recording.")
             return
+        self._auto_finish_layered = False
         self._submit("Discarding recording" if cancel else "Finishing video recording",
                      lambda: self.video_export.stop(cancel=cancel), self._video_operation_done)
 
@@ -591,6 +597,14 @@ class DollyApp:
             self._last_video_state = state
         active = state in ACTIVE_STATES
         ready = recording_ready(controller_status)
+        if (active and getattr(self, "_auto_finish_layered", False) and state == "recording"
+                and not self.busy and not self.playing
+                and "Native shot finished" in str(controller_status.get("message") or "")):
+            # A layered take ends with its authored path. Finishing here writes
+            # the manifest, preview and shot sidecar instead of leaving the
+            # recorder open until the game closes.
+            self._auto_finish_layered = False
+            self._stop_video_recording()
         self.video_status_text.set("Launch a replay to record video." if state == "idle" and not ready else format_video_status(status))
         self.video_start_button.configure(state="normal" if ready and not active and not self.busy else "disabled")
         can_stop = state in ("starting", "recording") and not self.busy

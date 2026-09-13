@@ -132,7 +132,8 @@ struct Sequence::Impl {
             failure = HRESULT_FROM_WIN32(code ? code : ERROR_WRITE_FAULT);
         return false;
     }
-    template <class Write> bool file(const std::wstring& base, const std::wstring& name, Write write) {
+    template <class Write>
+    bool file(const std::wstring& base, const std::wstring& name, Write write, bool replace = false) {
         const auto path = base + L"\\" + name;
         const auto temporary = path + L".part";
         const HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
@@ -151,15 +152,41 @@ struct Sequence::Impl {
         }
         if (!CloseHandle(handle))
             good = false;
-        if (good && MoveFileExW(temporary.c_str(), path.c_str(), 0))
+        if (good && MoveFileExW(temporary.c_str(), path.c_str(),
+                                replace ? MOVEFILE_REPLACE_EXISTING : 0))
             return true;
         const auto error = good ? GetLastError() : ERROR_WRITE_FAULT;
         // Only this function's atomically created temporary file is removed.
         DeleteFileW(temporary.c_str());
         return fail(error);
     }
-    template <class Write> bool file(const std::wstring& name, Write write) {
-        return file(directory, name, write);
+    template <class Write> bool file(const std::wstring& name, Write write, bool replace = false) {
+        return file(directory, name, write, replace);
+    }
+    // Version 2 manifest. begin() publishes a provisional copy so an
+    // interrupted take still documents its encoding; finish() replaces it
+    // with the verified frame count and dimensions.
+    bool manifest(bool complete) noexcept {
+        return file(L"manifest.json", [&](std::ostream& out) {            out << "{\n  \"version\": 2,\n  \"frames\": " << (complete ? written : 0)
+                << ",\n  \"width\": " << (complete ? width : 0)
+                << ",\n  \"height\": " << (complete ? height : 0)
+                << ",\n  \"complete\": " << (complete ? "true" : "false");
+            if (write_mov)
+                out << ",\n  \"master\": \"depth.mov\","
+                       "\n  \"master_codec\": \"prores_ks 4444 yuv444p10le (10-bit)\","
+                       "\n  \"encoding\": \"0..8192 positive camera-axis game units map to "
+                       "0..65535; +inf sky maps to 65535\"";
+            else
+                out << ",\n  \"master\": null";
+            if (write_exr)
+                out << ",\n  \"exr\": \"exr/NNNNNNNN.exr single-channel Z FLOAT (+inf sky)\"";
+            else
+                out << ",\n  \"exr\": null";
+            out << ",\n  \"order\": \"zero-based encoded color frame index\","
+                   "\n  \"capture_pts\": \"dollyCapturePTS100ns records capture time; "
+                   "encoded video timing may differ\"\n}\n";
+            return out.good();
+        }, true);
     }
 };
 Sequence::Sequence() : impl(std::make_unique<Impl>()) {}
@@ -187,6 +214,8 @@ bool Sequence::begin(const wchar_t* directory, bool write_exr, bool write_mov) n
             if (!CreateDirectoryW(impl->exr_directory.c_str(), nullptr))
                 return impl->fail(GetLastError());
         }
+        if (!impl->manifest(false))
+            return false;
         return true;
     } catch (...) {
         return impl->fail(ERROR_OUTOFMEMORY);
@@ -234,25 +263,7 @@ bool Sequence::finish(std::uint64_t encoded_color_frames) noexcept {
         if (!s.owned || s.complete || s.failure || !s.written || s.written != encoded_color_frames)
             return s.fail(ERROR_INVALID_DATA);
         s.close_preview();
-        if (!s.file(L"manifest.json", [&](std::ostream& out) {
-                out << "{\n  \"version\": 2,\n  \"frames\": " << s.written
-                    << ",\n  \"width\": " << s.width << ",\n  \"height\": " << s.height;
-                if (s.write_mov)
-                    out << ",\n  \"master\": \"depth.mov\","
-                           "\n  \"master_codec\": \"prores_ks 4444 yuv444p10le (10-bit)\","
-                           "\n  \"encoding\": \"0..8192 positive camera-axis game units map to "
-                           "0..65535; +inf sky maps to 65535\"";
-                else
-                    out << ",\n  \"master\": null";
-                if (s.write_exr)
-                    out << ",\n  \"exr\": \"exr/NNNNNNNN.exr single-channel Z FLOAT (+inf sky)\"";
-                else
-                    out << ",\n  \"exr\": null";
-                out << ",\n  \"order\": \"zero-based encoded color frame index\","
-                       "\n  \"capture_pts\": \"dollyCapturePTS100ns records capture time; "
-                       "encoded video timing may differ\"\n}\n";
-                return out.good();
-            }))
+        if (!s.manifest(true))
             return false;
         s.complete = true;
         return true;
@@ -270,8 +281,9 @@ void Sequence::discard() noexcept {
                 DeleteFileW((s.exr_directory + L"\\" + filename(i)).c_str());
             RemoveDirectoryW(s.exr_directory.c_str());
         }
-        if (s.complete)
-            DeleteFileW((s.directory + L"\\manifest.json").c_str());
+        // The manifest is always written by this sequence (provisional at
+        // begin, verified at finish), so cancellation removes it.
+        DeleteFileW((s.directory + L"\\manifest.json").c_str());
         if (s.write_mov)
             DeleteFileW((s.directory + L"\\depth.mov").c_str());
         s.close_preview();

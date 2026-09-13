@@ -465,6 +465,42 @@ class VideoGuiTests(unittest.TestCase):
         self.app._depth_toggled()
         self.assertFalse(self.app.video_depth_exr.get())
 
+    def _video_widgets(self):
+        for name in ("video_start_button", "video_stop_button", "video_cancel_button",
+                     "video_path_entry", "video_browse_button", "video_fps_combo",
+                     "video_bitrate_combo", "reshade_configure_button", "reshade_forget_button"):
+            setattr(self.app, name, Mock())
+        self.app._refresh_reshade = Mock()
+
+    def test_layered_take_finishes_itself_when_the_shot_completes(self):
+        self._video_widgets()
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app.playing = False
+        self.app._auto_finish_layered = True
+        self.app._refresh_video({**READY, "playing": False,
+                                 "message": "Native shot finished. Replay paused and final camera held."})
+        self.app._submit.assert_called_once()
+        self.assertFalse(self.app._auto_finish_layered)
+
+    def test_layered_take_does_not_finish_before_the_shot_runs(self):
+        self._video_widgets()
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app.playing = False
+        self.app._auto_finish_layered = True
+        self.app._refresh_video({**READY, "playing": False,
+                                 "message": "Replay prepared for recording. Play the shot once, then finish recording."})
+        self.app._submit.assert_not_called()
+        self.assertTrue(self.app._auto_finish_layered)
+
+    def test_color_only_take_waits_for_a_manual_finish(self):
+        self._video_widgets()
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app.playing = False
+        self.app._auto_finish_layered = False
+        self.app._refresh_video({**READY, "playing": False,
+                                 "message": "Native shot finished. Replay paused and final camera held."})
+        self.app._submit.assert_not_called()
+
 
 class ReShadeGuiTests(unittest.TestCase):
     def test_library_is_prepared_before_loading_the_selected_runtime(self):
