@@ -123,6 +123,9 @@ struct Session {
     // shot that never started, instead of a silent empty take.
     std::atomic<std::uint64_t> depth_skips{0}, depth_skip_since{0};
     std::atomic<double> depth_last_replay{-2.0};
+    // Capture-path accounting for zero-frame diagnosis.
+    std::atomic<std::uint64_t> capture_calls{0}, capture_not_ready{0}, capture_preplay{0},
+        capture_dropped{0}, capture_submitted{0}, capture_produced{0};
     // The render callback is the sole producer, the encoder the sole consumer.
     CpuFrame cpu[kSlots];
     std::atomic<std::uint64_t> produced{0}, consumed{0}, gpu_pending{0};
@@ -174,6 +177,7 @@ std::shared_ptr<Session> current;
 std::thread* encoder_thread = nullptr;
 std::atomic<unsigned> deferred_stop{0};
 std::atomic<std::uint64_t> deferred_stop_qpc{0};
+std::atomic<std::uint64_t> gCaptureAttempts{0}, gCaptureNoLock{0};
 struct CachedStatus {
     std::atomic<State> state{State::idle};
     std::atomic<std::uint32_t> width{0}, height{0}, fps{0}, error_code{0};
@@ -381,6 +385,20 @@ void fail_text(Session& s, HRESULT hr, const std::wstring& message) noexcept {
         s.error_text.store(s.error_buffer, std::memory_order_release);
     }
     request_stop(s, false);
+}
+std::wstring capture_diagnostic(const Session& s) {
+    wchar_t text[384]{};
+    std::swprintf(text, 384,
+                  L"capture attempts=%llu no-lock=%llu calls=%llu not-ready=%llu preplay=%llu submitted=%llu dropped=%llu produced=%llu",
+                  static_cast<unsigned long long>(gCaptureAttempts.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(gCaptureNoLock.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(s.capture_calls.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(s.capture_not_ready.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(s.capture_preplay.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(s.capture_submitted.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(s.capture_dropped.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(s.capture_produced.load(std::memory_order_relaxed)));
+    return text;
 }
 const wchar_t* codec_token(Codec codec) noexcept {
     switch (codec) {
@@ -711,7 +729,9 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         child.close_input();
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
-                fail(*s, E_FAIL, L"Recording ended before any game frame was captured.");
+                const auto detail = capture_diagnostic(*s);
+                fail_text(*s, E_FAIL, L"Recording ended before any game frame was captured. (" +
+                                          detail + L")");
             } else {
                 const DWORD wait = WaitForSingleObject(child.process, 120000);
                 DWORD code = 1;
@@ -874,7 +894,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
             if (FAILED(hr))
                 fail(*s, hr, L"The MP4 file could not be finalized. Check available disk space.");
         } else if (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load())) {
-            fail(*s, E_FAIL, L"Recording ended before any game frame was captured.");
+            fail_text(*s, E_FAIL, L"Recording ended before any game frame was captured. (" +
+                                      capture_diagnostic(*s) + L")");
         }
     } catch (...) {
         fail(*s, E_OUTOFMEMORY,
@@ -1120,13 +1141,16 @@ bool wants_depth() noexcept {
 }
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
              const depth::SceneFrame* scene, double replay_time) noexcept {
+    gCaptureAttempts.fetch_add(1, std::memory_order_relaxed);
     if (!swapchain || !device || !context)
         return;
     std::shared_ptr<Session> session;
     {
         std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
-        if (!lock.owns_lock())
+        if (!lock.owns_lock()) {
+            gCaptureNoLock.fetch_add(1, std::memory_order_relaxed);
             return;
+        }
         session = current;
     }
     if (!session || session->done.load(std::memory_order_acquire)) {
@@ -1134,6 +1158,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         return;
     }
     auto& s = *session;
+    s.capture_calls.fetch_add(1, std::memory_order_relaxed);
     apply_deferred_stop(s);
     if (gpu.owner != session) {
         if (s.stopping.load(std::memory_order_acquire))
@@ -1172,13 +1197,16 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         }
         ~ProducerScope() { session.producer_active.fetch_sub(1, std::memory_order_release); }
     } producer(s);
-    if (!s.ready.load(std::memory_order_acquire))
+    if (!s.ready.load(std::memory_order_acquire)) {
+        s.capture_not_ready.fetch_add(1, std::memory_order_relaxed);
         return;
+    }
     if (s.depth_enabled && (!std::isfinite(replay_time) || replay_time < 0)) {
         // A prepared recording starts before its shot plays. Pre-roll frames
         // have no replay time and cannot be paired with depth; skip them
         // instead of failing the take. The first encoded frame is the first
         // authored one once playback supplies a replay time.
+        s.capture_preplay.fetch_add(1, std::memory_order_relaxed);
         const auto skips = s.depth_skips.fetch_add(1, std::memory_order_relaxed) + 1;
         s.depth_last_replay.store(replay_time, std::memory_order_relaxed);
         if (skips == 1)
@@ -1233,8 +1261,10 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                     if (s.depth_enabled)
                         fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
                              L"Paired depth export writer exceeded the capture wait budget.");
-                    else
+                    else {
+                        s.capture_dropped.fetch_add(1, std::memory_order_relaxed);
                         s.dropped.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
                 return;
             }
@@ -1291,6 +1321,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
             slot.depth_ready = false;
         }
         s.produced.store(write + 1, std::memory_order_release);
+        s.capture_produced.fetch_add(1, std::memory_order_relaxed);
         ++gpu.drained;
         s.gpu_pending.store(gpu.submitted - gpu.drained, std::memory_order_release);
         s.wake.notify_one();
@@ -1317,6 +1348,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                  L"Paired depth export could not keep up within the capture wait budget.");
             return;
         }
+        s.capture_dropped.fetch_add(1, std::memory_order_relaxed);
         s.dropped.fetch_add(1, std::memory_order_relaxed);
         return;
     }
@@ -1352,6 +1384,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         s.shot.observe(gpu.submitted, replay_time);
     slot.pts = pts;
     ++gpu.submitted;
+    s.capture_submitted.fetch_add(1, std::memory_order_relaxed);
     s.gpu_pending.store(gpu.submitted - gpu.drained, std::memory_order_release);
 }
 void reset_resources() noexcept {
