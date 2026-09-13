@@ -60,6 +60,11 @@ struct Options {
     // Also write the float EXR precision master (exr/NNNNNNNN.exr). Off by
     // default: the depth.mov is the deliverable, the EXRs are for VFX.
     bool depth_exr = false;
+    // Capture only frames that carry a replay time. Layered recordings use
+    // this so the color and every layer video contain exactly the authored
+    // shot range and stay aligned frame for frame. The depth master already
+    // skips frames without a replay time.
+    bool shot_only = false;
 };
 struct Status {
     State state = State::idle;

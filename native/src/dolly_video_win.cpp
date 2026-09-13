@@ -104,6 +104,7 @@ struct Session {
     bool fixed_step = false;
     bool depth_enabled = false;
     bool depth_exr = false;
+    bool shot_only = false;
     // Depth layer folder and its ProRes master, derived from the color path's
     // parent when depth is enabled: <color parent>\depth\depth.mov.
     std::wstring depth_directory, depth_video_path;
@@ -1128,6 +1129,7 @@ bool start(const Options& options) noexcept {
         next->fixed_step = options.fixed_step;
         next->depth_enabled = options.depth;
         next->depth_exr = options.depth_exr;
+        next->shot_only = options.shot_only;
         if (options.ffmpeg)
             next->ffmpeg = options.ffmpeg;
         if (next->depth_enabled) {
@@ -1288,11 +1290,11 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         s.capture_not_ready.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    if (s.depth_enabled && (!std::isfinite(replay_time) || replay_time < 0)) {
+    if ((s.depth_enabled || s.shot_only) && (!std::isfinite(replay_time) || replay_time < 0)) {
         // A prepared recording starts before its shot plays. Pre-roll frames
-        // have no replay time and cannot be paired with depth; skip them
-        // instead of failing the take. The first encoded frame is the first
-        // authored one once playback supplies a replay time.
+        // have no replay time and cannot be paired with depth or aligned with
+        // the other layer takes; skip them instead of failing the take. The
+        // first encoded frame is the first authored one.
         s.capture_preplay.fetch_add(1, std::memory_order_relaxed);
         const auto skips = s.depth_skips.fetch_add(1, std::memory_order_relaxed) + 1;
         s.depth_last_replay.store(replay_time, std::memory_order_relaxed);
@@ -1302,7 +1304,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         if (since && GetTickCount64() - since > 10000 && !s.written.load(std::memory_order_relaxed)) {
             wchar_t message[256]{};
             std::swprintf(message, 256,
-                          L"Depth recording skipped %llu pre-play frames and the shot never started (last replay time %.3f).",
+                          L"The shot never started; %llu pre-play frames were skipped (last replay time %.3f).",
                           static_cast<unsigned long long>(skips), double(replay_time));
             fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT), message);
         }

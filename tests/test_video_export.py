@@ -56,7 +56,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
             encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-            depth=False, depth_exr=False)
+            depth=False, depth_exr=False, shot_only=False)
         self.assertFalse(self.path.exists())  # Only native creates the actual file.
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
@@ -71,7 +71,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=120, bitrate=40_000_000,
             encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-            depth=False, depth_exr=False)
+            depth=False, depth_exr=False, shot_only=False)
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
@@ -106,7 +106,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
             encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe), fixed_step=False,
-            depth=False, depth_exr=False)
+            depth=False, depth_exr=False, shot_only=False)
 
     def test_depth_master_defaults_off_and_layered_take_creates_its_folder(self):
         self.assertFalse(VideoOptions(self.path).validated().depth)
@@ -119,6 +119,7 @@ class VideoExportTests(unittest.TestCase):
         self.assertEqual(self.bridge.start_video.call_args.args[0],
                          str(folder / self.path.name))
         self.assertTrue(self.bridge.start_video.call_args.kwargs["depth"])
+        self.assertTrue(self.bridge.start_video.call_args.kwargs["shot_only"])
         self.assertFalse(self.bridge.start_video.call_args.kwargs["depth_exr"])
         with self.assertRaisesRegex(ValueError, "Depth export"):
             VideoOptions(self.path, depth=1).validated()

@@ -356,7 +356,8 @@ class VideoExport:
                                preset=options.preset,
                                ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "",
                                fixed_step=options.fixed_step, depth=options.depth,
-                               depth_exr=options.depth_exr)
+                               depth_exr=options.depth_exr,
+                               shot_only=bool(options.depth or options.layers))
         except Exception as exc:
             if folder is not None:
                 try:

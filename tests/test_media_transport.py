@@ -125,6 +125,18 @@ class MediaTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires the depth master"):
             wire.pack_command(2, "start_video", path="C:\\ok.mp4", depth_exr=True)
 
+    def test_shot_only_flag_uses_reserved_bit_three(self):
+        shot = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                     shot_only=True))
+        layered = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                        fixed_step=True, depth=True,
+                                                        depth_exr=True, shot_only=True))
+        self.assertEqual(shot[6], 8)
+        self.assertEqual(layered[6], 15)
+        for value in (1, "yes", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                wire.pack_command(2, "start_video", path="C:\\ok.mp4", shot_only=value)
+
     def test_protocol_layout_and_invalid_paths(self):
         self.assertEqual(wire.COMMAND.size, 6192)
         self.assertEqual(wire.STATUS.size, 2384)
