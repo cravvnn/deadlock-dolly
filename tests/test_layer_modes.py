@@ -30,10 +30,10 @@ class LayerModeTests(unittest.TestCase):
     def test_matte_layer_disables_and_restores_post_processing(self):
         self.controller.begin_matte_layer()
         self.assertEqual(self.commands[-1],
-                         "r_postprocess_enable 0; r_effects_bloom 0; r_post_bloom 0")
+                         "r_effects_bloom 0; r_post_bloom 0; r_post_bloom_strength 0")
         self.controller.end_matte_layer()
         self.assertEqual(self.commands[-1],
-                         "r_postprocess_enable 1; r_effects_bloom 1; r_post_bloom 1")
+                         "r_effects_bloom 1; r_post_bloom 1; r_post_bloom_strength 1")
 
     def test_matte_layer_ignores_missing_cvars(self):
         original = self.request

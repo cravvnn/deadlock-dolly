@@ -3157,9 +3157,10 @@ class Controller:
                 pass
 
     # Screen post-processing that contaminates black/white matte passes.
-    # Bloom and eye adaptation react to the forced white clear, wash the layer
-    # out of the white pass and make the derived alpha opaque.
-    MATTE_CVARS = ("r_postprocess_enable", "r_effects_bloom", "r_post_bloom")
+    # Bloom spills over the layer and the forced white clear; eye-adaptation
+    # then washes the layer out of the white pass and makes the derived alpha
+    # opaque. Tonemapping itself stays on so the white clear stays white.
+    MATTE_CVARS = ("r_effects_bloom", "r_post_bloom", "r_post_bloom_strength")
 
     def begin_matte_layer(self):
         """Disable screen post-processing for clean matte passes.
