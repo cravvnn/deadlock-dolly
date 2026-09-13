@@ -684,8 +684,17 @@ void editor_update_view(bool ready, bool paused, bool manual, const CameraPose& 
 void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long wheel) noexcept {
     if (!wheel || config.playback_flags || (gViewFlags.load() & 6) != 6)
         return;
+    // Anchor to the selected camera's stored framing. Scaling the live pose
+    // instead would inherit whichever camera was viewed last, so repeated
+    // ticks or a camera change could zoom from the wrong base.
+    double base = pose[6];
+    if (auto path = visualization_snapshot()) {
+        const auto selected = config.selected_camera;
+        if (selected < path->cameras().size() && std::isfinite(path->cameras()[selected].pose[6]))
+            base = path->cameras()[selected].pose[6];
+    }
     CameraPose zoomed = pose;
-    zoomed[6] = std::clamp(pose[6] * std::pow(.9, double(wheel) / WHEEL_DELTA), .5, 4.0);
+    zoomed[6] = std::clamp(base * std::pow(.9, double(wheel) / WHEEL_DELTA), .5, 4.0);
     // Publish the exact resulting pose, not the previous rendered view.
     // A full event queue must never leave the curve behind a visible edit.
     if (zoomed[6] != pose[6] &&
