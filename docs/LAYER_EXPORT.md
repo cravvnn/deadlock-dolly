@@ -1,7 +1,11 @@
 # Layer export
 
 0.5.4 records the normal scene at 30/60/120/300/600 FPS and can write a paired
-float depth master (default off). Separated hero/world/effects passes are not
+float depth master (default off) with a normalized grayscale preview video in
+the same folder. Depth is the only numerical/data master. The planned
+hero/world/effects layers are **encoded video** outputs, not raw data:
+alpha-capable or lossless/mezzanine codecs (for example ProRes or FFV1) are
+used where a matte needs precision. Separated hero/world/effects passes are not
 implemented yet. The color recorder still copies the final color backbuffer;
 there is no verified hero draw ID feed.
 
@@ -9,9 +13,9 @@ there is no verified hero draw ID feed.
 
 | Output | Implementation requirement | Intended master |
 | --- | --- | --- |
-| Depth | Capture the main camera's depth before it is cleared or reused; verify projection, reverse Z, resolution scaling and sample count. | Float OpenEXR sequence, with optional grayscale video preview. |
-| Heroes | Identify hero draw objects and their attachments; render foreground color and coverage while retaining world occlusion. | Color with alpha or a separate lossless matte. |
-| World without heroes | Render the same scene time with identified heroes omitted, including the background they previously covered. | Normal color recording. |
+| Depth | Capture the main camera's depth before it is cleared or reused; verify projection, reverse Z, resolution scaling and sample count. | Float OpenEXR sequence plus a normalized grayscale preview video in `<video>.depth`. |
+| Heroes | Identify hero draw objects and their attachments; render foreground color and coverage while retaining world occlusion. | Encoded video with alpha, or a separate matte encoded with an alpha-capable or lossless codec. |
+| World without heroes | Render the same scene time with identified heroes omitted, including the background they previously covered. | Encoded color recording. |
 
 A generic animated-object filter can also remove creeps, other NPCs and moving
 props. It must not be presented as a hero-only filter. Weapons, ragdolls, shadows,
@@ -22,6 +26,9 @@ Multiple passes need one shared scene sample. Replaying a shot several times
 at real-time speed does not establish frame correspondence for particles,
 animation or temporal effects. Depth should bypass ReShade color grading;
 lossy H.264 is not a suitable master for numerical depth or a precise matte.
+World/hero/effect layers are encoded video outputs; when a matte needs
+precision, use an alpha-capable or lossless/mezzanine codec instead of the
+ordinary delivery MP4.
 
 ## Renderer evidence needed
 
@@ -59,6 +66,11 @@ packet only when both readbacks are ready. The existing FFmpeg and Windows
 Media Foundation workers write the paired EXR before releasing that packet.
 EXR filenames use the zero-based encoded color-frame index; embedded metadata
 retains the source sample, replay time, projection and capture timestamp.
+Alongside the EXRs the worker appends one normalized half-resolution 8-bit
+min-depth sample per frame to `preview_<w>x<h>.raw` (8192 camera-axis units map
+to white). After a completed take the desktop encodes that stream into
+`preview.mp4` (or `.mkv` for FFV1) with the chosen encoder and bitrate; the raw
+stream is removed on success and kept only if encoding fails.
 Capture timestamps may differ from the encoded video's timing, especially in
 real-time FFmpeg recording, so file order defines the color/depth pairing.
 

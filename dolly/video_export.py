@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
 import re
+import subprocess
 import threading
 import time
 
@@ -42,6 +44,12 @@ DEFAULT_CODEC_KEY = "auto"
 LOSSLESS_CODEC_ID = 10
 QUALITY_RANGE = (0, 51)
 PRESET_RANGE = (0, 7)
+# Depth preview encoding maps the native codec id to a bundled-ffmpeg encoder.
+# libx264/libx265 are not in the LGPL bundle; libopenh264/hevc_mf stand in.
+PREVIEW_CODECS = {1: "h264_nvenc", 2: "hevc_nvenc", 3: "h264_mf", 4: "libopenh264",
+                  5: "hevc_mf", 6: "h264_qsv", 7: "hevc_qsv", 8: "h264_amf",
+                  9: "hevc_amf", 10: "ffv1"}
+LOG = logging.getLogger(__name__)
 
 
 def resolve_ffmpeg(configured: "Path | None") -> "Path | None":
@@ -195,6 +203,7 @@ class VideoExport:
         self._last = {"state": "idle"}
         self._start_pending = False
         self._start_ack = None
+        self._depth_options: VideoOptions | None = None
         self.output_path: Path | None = None
 
     def status(self) -> dict:
@@ -281,6 +290,7 @@ class VideoExport:
             self.output_path = options.path
             self._start_pending = True
             self._start_ack = initial_ack
+            self._depth_options = options if options.depth else None
         encoder, codec_id = resolve_backend(options)
         mark = getattr(self.controller, "mark_recording_pending", None)
         if callable(mark):
@@ -316,10 +326,74 @@ class VideoExport:
                 current = self.status()
                 if current.get("state") not in ACTIVE_STATES:
                     if current.get("state") == "failed":
+                        self._depth_options = None
                         raise RuntimeError(str(current.get("error") or "MP4 finalization failed."))
+                    if current.get("state") == "completed" and not cancel:
+                        current = self._encode_depth_preview(current)
+                    else:
+                        self._depth_options = None
                     return current
                 if time.monotonic() >= deadline:
                     raise RuntimeError("The video recorder is still finishing. Wait for its status before starting another recording or closing the game.")
                 time.sleep(0.05)
         finally:
             self._clear_export_timing()
+
+    def _encode_depth_preview(self, status: dict) -> dict:
+        """Encode the depth folder's normalized raw stream into a preview video.
+
+        The EXR sequence is the master. The preview is best-effort: a missing
+        encoder or failure only logs, and the raw stream is kept for diagnosis.
+        """
+        with self._lock:
+            options, self._depth_options = self._depth_options, None
+            output = self.output_path
+        if options is None or output is None:
+            return status
+        directory = Path(str(output) + ".depth")
+        raw = None
+        try:
+            for candidate in directory.iterdir():
+                match = re.fullmatch(r"preview_(\d+)x(\d+)\.raw", candidate.name)
+                if match:
+                    raw = (candidate, int(match.group(1)), int(match.group(2)))
+                    break
+        except OSError:
+            return status
+        if raw is None:
+            return status
+        source, width, height = raw
+        ffmpeg = resolve_ffmpeg(options.ffmpeg_path) or bundled_ffmpeg_path()
+        if ffmpeg is None:
+            LOG.warning("Depth preview skipped: ffmpeg is unavailable; the EXR sequence is complete.")
+            return status
+        encoder, codec_id = resolve_backend(options)
+        if encoder == 0:
+            codec_id = 3  # Media Foundation built-in: encode the preview via ffmpeg MF.
+        codec = PREVIEW_CODECS.get(codec_id, "h264_mf")
+        suffix = ".mkv" if codec == "ffv1" else ".mp4"
+        target = directory / ("preview" + suffix)
+        args = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "rawvideo", "-pixel_format", "gray",
+                "-video_size", f"{width}x{height}", "-framerate", str(options.fps),
+                "-i", str(source), "-c:v", codec]
+        if codec != "ffv1":
+            args += ["-pix_fmt", "yuv420p", "-b:v", str(options.bitrate)]
+        args.append(str(target))
+        try:
+            frames = max(1, source.stat().st_size // max(1, width * height))
+            result = subprocess.run(args, capture_output=True, text=True,
+                                    timeout=max(120.0, frames * 0.5))
+        except (OSError, subprocess.SubprocessError) as exc:
+            LOG.warning("Depth preview could not be encoded: %s", exc)
+            return status
+        if result.returncode != 0 or not target.is_file():
+            detail = (result.stderr or "").strip().splitlines()
+            LOG.warning("Depth preview encoder failed: %s", detail[-1] if detail else "unknown error")
+            return status
+        try:
+            source.unlink()
+        except OSError:
+            LOG.warning("Depth preview encoded but its raw stream could not be removed: %s", source)
+        LOG.info("Depth preview saved to %s", target)
+        return {**status, "depth_preview": str(target)}

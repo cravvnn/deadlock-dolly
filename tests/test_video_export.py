@@ -115,6 +115,58 @@ class VideoExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Depth export"):
             VideoOptions(self.path, depth=1).validated()
 
+    def depth_preview_fixture(self, codec="h264_nvenc"):
+        directory = self.path.parent / (self.path.name + ".depth")
+        directory.mkdir(exist_ok=True)
+        (directory / "preview_64x64.raw").write_bytes(b"x" * 4096)
+        exe = self.path.parent / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.export.output_path = self.path
+        self.export._depth_options = VideoOptions(self.path, 60, 20_000_000, codec=codec,
+                                                  ffmpeg_path=exe)
+        return directory
+
+    def test_depth_preview_encodes_the_raw_stream_with_the_chosen_codec(self):
+        directory = self.depth_preview_fixture()
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["args"] = args
+            Path(args[-1]).write_bytes(b"mp4")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with patch("dolly.video_export.subprocess.run", side_effect=fake_run):
+            status = self.export._encode_depth_preview({"state": "completed"})
+        self.assertEqual(status["depth_preview"], str(directory / "preview.mp4"))
+        self.assertIn("h264_nvenc", captured["args"])
+        self.assertIn("-framerate", captured["args"])
+        self.assertIn("60", captured["args"])
+        self.assertFalse((directory / "preview_64x64.raw").exists())
+
+    def test_depth_preview_uses_ffv1_and_mkv_for_lossless(self):
+        directory = self.depth_preview_fixture(codec="lossless")
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["args"] = args
+            Path(args[-1]).write_bytes(b"mkv")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with patch("dolly.video_export.subprocess.run", side_effect=fake_run):
+            status = self.export._encode_depth_preview({"state": "completed"})
+        self.assertTrue(status["depth_preview"].endswith("preview.mkv"))
+        self.assertIn("ffv1", captured["args"])
+        self.assertNotIn("-b:v", captured["args"])
+
+    def test_depth_preview_failure_keeps_the_exr_folder_intact(self):
+        directory = self.depth_preview_fixture()
+        with patch("dolly.video_export.subprocess.run",
+                   return_value=SimpleNamespace(returncode=1, stderr="encoder exploded")):
+            status = self.export._encode_depth_preview({"state": "completed"})
+        self.assertNotIn("depth_preview", status)
+        self.assertTrue((directory / "preview_64x64.raw").exists())
+        self.assertFalse((directory / "preview.mp4").exists())
+
     def test_lossless_requires_matroska_and_maps_to_ffv1(self):
         with self.assertRaisesRegex(ValueError, ".mkv"):
             VideoOptions(self.path, codec="lossless").validated()

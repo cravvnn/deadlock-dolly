@@ -214,10 +214,10 @@ video encoder test does not establish synchronized audio support.
 | Requested layer | Feasible approach and remaining work |
 | --- | --- |
 | Normal scene | First milestone: verified scene target, hidden editor/HUD, optional pre/post-ReShade capture. |
-| Depth | Identify the main-view depth for the same sample; handle reverse Z, projection, MSAA and viewport scale. Keep a float/lossless master. A lossy video is only a depth preview. |
-| World without heroes | Rerender with verified hero objects omitted. Define treatment of weapons, shadows, reflections, ragdolls and attached effects. |
-| Isolated heroes | Identify heroes and produce masks/foreground renders with deliberate world occlusion. A generic animated-object filter also catches unrelated actors. |
-| Effects | Investigate individual groups. Additive glow, transparency, distortion and volumetrics do not form one universally recombinable alpha layer. |
+| Depth | Identify the main-view depth for the same sample; handle reverse Z, projection, MSAA and viewport scale. Keep a float EXR master plus a normalized grayscale preview video; a lossy video alone is never the depth master. |
+| World without heroes | Rerender with verified hero objects omitted. Output is encoded video (use a lossless/mezzanine codec when the take feeds further compositing). Define treatment of weapons, shadows, reflections, ragdolls and attached effects. |
+| Isolated heroes | Identify heroes and produce masks/foreground renders with deliberate world occlusion. Outputs are encoded video with alpha or encoded mattes, not raw buffers. A generic animated-object filter also catches unrelated actors. |
+| Effects | Investigate individual groups. Additive glow, transparency, distortion and volumetrics do not form one universally recombinable alpha layer; outputs stay encoded video. |
 
 HLAE's depth-matte example compares normal depth against a render with the
 SkinnedObject class hidden. That is a useful starting experiment, but it is not
