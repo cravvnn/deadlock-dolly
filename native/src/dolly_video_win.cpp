@@ -194,6 +194,7 @@ struct CachedStatus {
     std::atomic<const wchar_t*> error{L""};
     std::atomic<bool> depth{false};
     std::atomic<bool> white_clear{false};
+    std::atomic<bool> shot_only{false};
 } cached;
 RenderResources gpu;
 // Published by the bridge for every successful Mode::Play path evaluation.
@@ -1247,6 +1248,15 @@ bool wants_white_clear() noexcept {
         return wanted;
     }
     return cached.white_clear.load(std::memory_order_acquire);
+}
+bool wants_shot_only() noexcept {
+    std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
+    if (lock.owns_lock()) {
+        const bool wanted = current && current->shot_only;
+        cached.shot_only.store(wanted, std::memory_order_release);
+        return wanted;
+    }
+    return cached.shot_only.load(std::memory_order_acquire);
 }
 void publish_path_replay_time(bool playing, double phase) noexcept {
     if (playing && std::isfinite(phase)) {

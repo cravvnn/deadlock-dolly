@@ -91,6 +91,10 @@ bool wants_depth() noexcept;
 // Whether the active recording requested the white matte background. The
 // overlay arms the clear override for those frames only.
 bool wants_white_clear() noexcept;
+// Whether the active recording captures only authored shot frames. Layer
+// takes learn the matte scene target during their black passes so a later
+// sparse pass (particles-only effects) can reuse it.
+bool wants_shot_only() noexcept;
 
 // Call once for the game swapchain before Dolly's UI/guide rendering, under
 // the same serialization as ResizeBuffers/reset_resources. Real-time capture

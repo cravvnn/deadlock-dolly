@@ -1230,7 +1230,8 @@ void render_overlay(IDXGISwapChain* chain) {
                                    snapshot.width, snapshot.height);
                 depth_live.request(video::wants_depth());
                 depth::set_white_clear(video::wants_white_clear());
-                const bool matte_hooks = video::wants_white_clear() && !depth_live.hooks();
+                const bool matte_hooks = (video::wants_white_clear() || video::wants_shot_only()) &&
+                                         !depth_live.hooks();
                 if ((depth_live.needs_hooks() || matte_hooks) &&
                     depth::install_scene_hooks(capture_device, capture_context))
                     depth_live.note_hooks(true);

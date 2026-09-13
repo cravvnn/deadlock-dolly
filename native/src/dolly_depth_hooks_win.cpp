@@ -16,10 +16,145 @@ std::mutex install_mutex;
 constexpr std::array<unsigned, 11> slots{12, 13, 20, 21, 38, 39, 40, 50, 53, 58, 114};
 std::array<std::array<void*, 11>, 2> originals{}, targets{};
 bool installed = false;
-// Matte passes force every color clear to white so the black/white pair can be
-// turned into a real alpha channel after the take.
+// Matte passes force the scene's color clear to white so the black/white pair
+// can be turned into a real alpha channel after the take. Clears of the
+// backbuffer or HUD targets would veil the whole frame, so the scene color
+// target is learned from draws that bind the reviewed scene depth family.
+// Several full-resolution targets share that depth family (g-buffer,
+// visibility), and forcing those white breaks culling and reprojection, so
+// candidates keep their format and draw counts and only the busiest HDR scene
+// color (R16G16B16A16 family) is forced white.
 std::atomic<bool> gWhiteClear{false};
+struct WhiteTarget {
+    std::atomic<ID3D11RenderTargetView*> view{nullptr};
+    std::atomic<std::uint64_t> draws{0};
+    std::atomic<unsigned> format{0};
+};
+std::array<WhiteTarget, 4> gSceneTargets{};
+std::atomic<ID3D11RenderTargetView*> gWhiteTarget{nullptr};
+// A target learned during a dense scene pass is reused by later sparse passes
+// (an effects layer renders almost no geometry). The reference keeps the
+// identity valid even if the engine releases its own handle.
+std::atomic<ID3D11RenderTargetView*> gRememberedTarget{nullptr};
+// The scene color target is the HDR (R16G16B16A16) target cleared by the
+// engine. Other full-resolution targets share the scene depth (g-buffer,
+// visibility) and clearing those breaks culling or reprojection.
+bool preferred_target_format(unsigned format) noexcept {
+    return format >= 9 && format <= 14;
+}
+bool fallback_target_format(unsigned format) noexcept {
+    switch (format) {
+    case 1: case 2: case 3: case 4:  // R32G32B32A32 family
+    case 5: case 6: case 7: case 8:  // R32G32B32 family
+    case 26:                         // R11G11B10_FLOAT
+    case 27: case 28: case 29: case 30:
+    case 31: case 32:                // R8G8B8A8 family
+        return true;
+    default:
+        return false;
+    }
+}
+void note_scene_color_target(ID3D11DeviceContext* context) noexcept {
+    try {
+        ID3D11DepthStencilView* dsv = nullptr;
+        context->OMGetRenderTargets(0, nullptr, &dsv);
+        if (!dsv)
+            return;
+        ID3D11Resource* resource = nullptr;
+        dsv->GetResource(&resource);
+        dsv->Release();
+        if (!resource)
+            return;
+        ID3D11Texture2D* texture = nullptr;
+        const bool is_texture = SUCCEEDED(resource->QueryInterface(
+            __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture)));
+        resource->Release();
+        if (!is_texture)
+            return;
+        D3D11_TEXTURE2D_DESC desc{};
+        texture->GetDesc(&desc);
+        char name[160]{};
+        UINT size = sizeof(name) - 1;
+        const bool named = SUCCEEDED(texture->GetPrivateData(WKPDID_D3DDebugObjectName, &size, name));
+        texture->Release();
+        name[159] = 0;
+        if (!named || !scene_target_name(name, desc.Width, desc.Height))
+            return;
+        ID3D11RenderTargetView* view = nullptr;
+        context->OMGetRenderTargets(1, &view, nullptr);
+        if (!view)
+            return;
+        for (auto& slot : gSceneTargets) {
+            if (slot.view.load(std::memory_order_relaxed) == view) {
+                slot.draws.fetch_add(1, std::memory_order_relaxed);
+                view->Release();
+                return;
+            }
+        }
+        unsigned format = 0;
+        ID3D11Resource* target_resource = nullptr;
+        view->GetResource(&target_resource);
+        if (target_resource) {
+            ID3D11Texture2D* target_texture = nullptr;
+            if (SUCCEEDED(target_resource->QueryInterface(
+                    __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&target_texture))) &&
+                target_texture) {
+                D3D11_TEXTURE2D_DESC target_desc{};
+                target_texture->GetDesc(&target_desc);
+                format = unsigned(target_desc.Format);
+                target_texture->Release();
+            }
+            target_resource->Release();
+        }
+        for (auto& slot : gSceneTargets) {
+            ID3D11RenderTargetView* expected = nullptr;
+            if (slot.view.compare_exchange_strong(expected, view, std::memory_order_relaxed)) {
+                slot.draws.store(1, std::memory_order_relaxed);
+                slot.format.store(format, std::memory_order_relaxed);
+                view->Release();
+                return;
+            }
+        }
+        view->Release();
+    } catch (...) {
+    }
+}
+void select_white_target() noexcept {
+    ID3D11RenderTargetView* chosen = nullptr;
+    // The players pass fills the HDR target quickly, but a layer with only
+    // particles can stay sparse, so the preferred target locks early.
+    std::uint64_t best = 3;
+    for (auto& slot : gSceneTargets) {
+        const auto count = slot.draws.load(std::memory_order_relaxed);
+        if (count <= best || !preferred_target_format(slot.format.load(std::memory_order_relaxed)))
+            continue;
+        best = count;
+        chosen = slot.view.load(std::memory_order_relaxed);
+    }
+    if (!chosen) {
+        best = 31;
+        for (auto& slot : gSceneTargets) {
+            const auto count = slot.draws.load(std::memory_order_relaxed);
+            if (count <= best || !fallback_target_format(slot.format.load(std::memory_order_relaxed)))
+                continue;
+            best = count;
+            chosen = slot.view.load(std::memory_order_relaxed);
+        }
+    }
+    if (!chosen)
+        return;
+    // Hold a reference so the identity stays unique even after the engine
+    // releases its own handle, then publish it for this and later passes.
+    chosen->AddRef();
+    gWhiteTarget.store(chosen, std::memory_order_relaxed);
+    ID3D11RenderTargetView* expected = nullptr;
+    gRememberedTarget.compare_exchange_strong(expected, chosen, std::memory_order_relaxed);
+}
 void observe_draw(ID3D11DeviceContext* context) noexcept {
+    if (!gWhiteTarget.load(std::memory_order_relaxed)) {
+        note_scene_color_target(context);
+        select_white_target();
+    }
     if (auto tracker = std::atomic_load(&active))
         tracker->draw(context);
 }
@@ -78,9 +213,11 @@ void STDMETHODCALLTYPE clear_rt(ID3D11DeviceContext* c, ID3D11RenderTargetView* 
                                 const FLOAT color[4]) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11RenderTargetView*, const FLOAT*);
     static const FLOAT white[4] = {1, 1, 1, 1};
-    reinterpret_cast<Fn>(originals[I][7])(c, view,
-                                          gWhiteClear.load(std::memory_order_relaxed) ? white
-                                                                                      : color);
+    const FLOAT* use = color;
+    if (gWhiteClear.load(std::memory_order_relaxed) &&
+        view == gWhiteTarget.load(std::memory_order_relaxed))
+        use = white;
+    reinterpret_cast<Fn>(originals[I][7])(c, view, use);
 }
 template <unsigned I>
 void STDMETHODCALLTYPE clear(ID3D11DeviceContext* c, ID3D11DepthStencilView* dsv, UINT flags,
@@ -118,7 +255,21 @@ template <unsigned I> std::array<void*, 11> detours() {
 }
 }
 void set_white_clear(bool enabled) noexcept {
-    gWhiteClear.store(enabled, std::memory_order_relaxed);
+    if (enabled) {
+        if (!gWhiteClear.exchange(true, std::memory_order_acq_rel)) {
+            // New matte pass: forget this pass's candidates but reuse a target
+            // learned during a denser pass (an effects layer renders almost no
+            // geometry, so it cannot learn the scene color on its own).
+            gWhiteTarget.store(gRememberedTarget.load(std::memory_order_relaxed),
+                               std::memory_order_relaxed);
+            for (auto& slot : gSceneTargets) {
+                slot.view.store(nullptr, std::memory_order_relaxed);
+                slot.draws.store(0, std::memory_order_relaxed);
+            }
+        }
+    } else {
+        gWhiteClear.store(false, std::memory_order_relaxed);
+    }
 }
 void set_scene_tracker(std::shared_ptr<SceneTracker> tracker) noexcept {
     std::atomic_store(&active, std::move(tracker));
