@@ -3124,9 +3124,15 @@ class Controller:
                                + mode + " layer: " + ", ".join(missing))
         targets = [name for name in classes if name not in keep] if keep else [
             name for name in classes if name in hide]
-        # The engine console silently drops an over-long multi-command line,
-        # so every class is set through its own short request.
+        # Start from a clean slate: flags left by a previous layer must never
+        # hide the class this layer keeps. Each class is its own short command
+        # because the engine silently drops over-long multi-command lines.
         failures = []
+        for name in classes:
+            try:
+                self._request("sc_setclassflags " + name + " 0")
+            except (RuntimeError, ValueError, OSError) as exc:
+                failures.append(name + " reset (" + str(exc) + ")")
         for name in targets:
             try:
                 self._request("sc_setclassflags " + name + " 8")

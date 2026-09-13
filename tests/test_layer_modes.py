@@ -26,7 +26,10 @@ class LayerModeTests(unittest.TestCase):
         return ""
 
     def hide_commands(self):
-        return [command for command in self.commands if command.startswith("sc_setclassflags")]
+        return [command for command in self.commands if command.endswith(" 8")]
+
+    def reset_commands(self):
+        return [command for command in self.commands if command.endswith(" 0")]
 
     def test_world_mode_hides_players_effects_and_world_ui(self):
         applied = self.controller.apply_layer_mode("world")
@@ -36,6 +39,7 @@ class LayerModeTests(unittest.TestCase):
                          sorted(["sc_setclassflags SkinnedObject 8",
                                  "sc_setclassflags ParticleSystem 8",
                                  "sc_setclassflags panorama_world_panel 8"]))
+        self.assertEqual(len(self.reset_commands()), len(CLASSES))
 
     def test_players_mode_keeps_only_skinned_objects(self):
         applied = self.controller.apply_layer_mode("players")
@@ -43,6 +47,8 @@ class LayerModeTests(unittest.TestCase):
                          sorted(name for name in CLASSES if name != "SkinnedObject"))
         self.assertEqual(len(self.hide_commands()), len(applied["hidden"]))
         self.assertNotIn("sc_setclassflags SkinnedObject 8", self.commands)
+        # A previous layer's flags are cleared before the new layer is set.
+        self.assertEqual(len(self.reset_commands()), len(CLASSES))
 
     def test_effects_mode_keeps_only_the_particle_system(self):
         applied = self.controller.apply_layer_mode("effects")
@@ -50,6 +56,7 @@ class LayerModeTests(unittest.TestCase):
                          sorted(name for name in CLASSES if name != "ParticleSystem"))
         self.assertEqual(len(self.hide_commands()), len(applied["hidden"]))
         self.assertNotIn("sc_setclassflags ParticleSystem 8", self.commands)
+        self.assertEqual(len(self.reset_commands()), len(CLASSES))
 
     def test_missing_required_class_fails_instead_of_wrong_layer(self):
         self.classes = tuple(name for name in CLASSES if name != "ParticleSystem")
@@ -74,7 +81,7 @@ class LayerModeTests(unittest.TestCase):
 
     def test_reset_restores_every_reported_class(self):
         self.controller.reset_layer_modes()
-        self.assertEqual(sorted(self.hide_commands()),
+        self.assertEqual(sorted(self.reset_commands()),
                          sorted("sc_setclassflags " + name + " 0" for name in CLASSES))
 
 
