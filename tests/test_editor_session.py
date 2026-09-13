@@ -25,15 +25,24 @@ class EditorSessionTests(unittest.TestCase):
         keys = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
         self.app.project.keyframes = keys
         self.app._commit_camera = Mock()
-        event = {"action": "set_framing", "value": 1, "pose": [90, 91, 92, 0, 0, 0, 1.25]}
+        event = {"action": "set_framing", "value": 1, "pose": [90, 91, 92, 0, 0, 0, .9]}
         self.assertTrue(session.dispatch(self.app, event, self.bridge))
         changed, selected_time = self.app._commit_camera.call_args.args
         expected = deepcopy(keys)
-        expected[1].aspect_ratio = 1.25
+        expected[1].aspect_ratio = max(.5, min(4.0, round(keys[1].aspect_ratio * .9, 4)))
         self.assertEqual(changed, expected)
         self.assertEqual(selected_time, 2)
-        self.assertNotEqual(keys[1].aspect_ratio, 1.25)
+        self.assertNotEqual(keys[1].aspect_ratio, expected[1].aspect_ratio)
         self.app._submit.assert_not_called()
+
+    def test_wheel_uses_the_live_selection_over_a_stale_native_index(self):
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
+        self.app._commit_camera = Mock()
+        self.app._selection_index = lambda _tree: 1
+        event = {"action": "set_framing", "value": 0, "pose": [0, 0, 0, 0, 0, 0, .9]}
+        self.assertTrue(session.dispatch(self.app, event, self.bridge))
+        changed, _ = self.app._commit_camera.call_args.args
+        self.assertAlmostEqual(changed[1].aspect_ratio, round(Keyframe(0, 1, 2, 3, 4, 5, 6).aspect_ratio * .9, 4), places=4)
 
     def test_wheel_before_capture_keeps_live_framing_without_creating_a_key(self):
         self.assertTrue(session.dispatch(self.app, {"action": "set_framing", "value": -1,
@@ -42,10 +51,21 @@ class EditorSessionTests(unittest.TestCase):
         self.assertIn("Capture", self.app.status_text.set.call_args.args[0])
 
     def test_invalid_wheel_edit_cannot_mutate_project(self):
-        for index, aspect in ((0, 1), (-2, 1), (.5, 1), (-1, 0), (-1, 4.1), (-1, float("nan"))):
-            with self.subTest(index=index, aspect=aspect), self.assertRaises(ValueError):
+        for index, factor in ((0, 0), (0, -1), (0, float("nan")),
+                              (-2, .9), (.5, .9), (float("nan"), .9)):
+            with self.subTest(index=index, factor=factor), self.assertRaises(ValueError):
                 session.dispatch(self.app, {"action": "set_framing", "value": index,
-                                 "pose": [0, 0, 0, 0, 0, 0, aspect]}, self.bridge)
+                                 "pose": [0, 0, 0, 0, 0, 0, factor]}, self.bridge)
+
+    def test_extreme_wheel_factors_clamp_to_the_curve_bounds(self):
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
+        for factor, expected in ((1e-9, .5), (1e9, 4.0)):
+            with self.subTest(factor=factor):
+                self.app._commit_camera = Mock()
+                session.dispatch(self.app, {"action": "set_framing", "value": 1,
+                                 "pose": [0, 0, 0, 0, 0, 0, factor]}, self.bridge)
+                changed, _ = self.app._commit_camera.call_args.args
+                self.assertEqual(changed[1].aspect_ratio, expected)
 
     def test_dof_preview_finishes_before_the_project_is_committed(self):
         self.app.project.keyframes = [Keyframe(0, 0, 0, 0, 0, 0, 0)]

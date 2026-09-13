@@ -942,7 +942,7 @@ void editor_framing_checks() {
     auto event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
     require(event.action == 40 && event.value == 1 && event.pose[0] == 1,
             "Wheel event did not retain the selected camera and exact pose");
-    close_to(event.pose[6], pose[6], "Wheel event contains the previous frame's aspect");
+    close_to(event.pose[6], .9, "Wheel event did not carry the scale factor");
     dolly::apply_framing_wheel(pose, *config, -WHEEL_DELTA);
     close_to(pose[6], 16.0 / 9, "Wheel down did not reverse wheel up");
     dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA / 2);

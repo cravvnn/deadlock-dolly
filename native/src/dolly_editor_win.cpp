@@ -540,10 +540,12 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
          (action <= EditorAction::SetDofOverride && value != 0 && value != 1)))
         return false;
     if (action == EditorAction::SetFraming) {
+        // The pose override carries the wheel scale factor (Python owns the
+        // target key and its base value), not an absolute aspect ratio.
+        // Extreme factors are valid; the resulting curve value is clamped.
         if (!pose_override || !state.ready || !state.paused || !state.manual_active ||
             state.playing || state.busy || value != std::floor(value) || value < -1 ||
-            (value >= 0 && value >= state.camera_count) || (*pose_override)[6] < .5 ||
-            (*pose_override)[6] > 4)
+            (value >= 0 && value >= state.camera_count) || (*pose_override)[6] <= 0)
             return false;
         for (double component : *pose_override)
             if (!std::isfinite(component))
@@ -684,23 +686,24 @@ void editor_update_view(bool ready, bool paused, bool manual, const CameraPose& 
 void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long wheel) noexcept {
     if (!wheel || config.playback_flags || (gViewFlags.load() & 6) != 6)
         return;
-    // Anchor to the selected camera's stored framing. Scaling the live pose
-    // instead would inherit whichever camera was viewed last, so repeated
-    // ticks or a camera change could zoom from the wrong base.
+    // Anchor to the selected camera's stored framing for immediate on-screen
+    // feedback. The published event carries only the scale factor: Python owns
+    // the final target and base, so a stale selection or live pose cannot
+    // redirect or rebase the edit.
     double base = pose[6];
     if (auto path = visualization_snapshot()) {
         const auto selected = config.selected_camera;
         if (selected < path->cameras().size() && std::isfinite(path->cameras()[selected].pose[6]))
             base = path->cameras()[selected].pose[6];
     }
-    CameraPose zoomed = pose;
-    zoomed[6] = std::clamp(base * std::pow(.9, double(wheel) / WHEEL_DELTA), .5, 4.0);
-    // Publish the exact resulting pose, not the previous rendered view.
-    // A full event queue must never leave the curve behind a visible edit.
-    if (zoomed[6] != pose[6] &&
+    const double factor = std::pow(.9, double(wheel) / WHEEL_DELTA);
+    const double next = std::clamp(base * factor, .5, 4.0);
+    CameraPose edit = pose;
+    edit[6] = factor;
+    if (next != base && factor != 1.0 &&
         editor_enqueue(EditorAction::SetFraming,
-                       config.camera_count ? double(config.selected_camera) : -1.0, &zoomed))
-        pose[6] = zoomed[6];
+                       config.camera_count ? double(config.selected_camera) : -1.0, &edit))
+        pose[6] = next;
 }
 void editor_integrate_flight(CameraPose& pose, double dt) noexcept {
     if (!owns_input() || gOwner.load() != EditorOwner::Flight || !(gViewFlags.load() & 2) ||

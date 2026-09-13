@@ -225,20 +225,29 @@ def dispatch(app, event, bridge):
         operation = "replace" if action == "replace" else ("append" if app.project.keyframes else "start")
         app._capture_view(operation, native_snapshot=event)
     elif action == "set_framing":
-        index, aspect = event["value"], event["pose"][6]
-        if (not math.isfinite(index) or index != int(index) or index < -1
-                or not math.isfinite(aspect) or not .5 <= aspect <= 4):
+        factor = event["pose"][6]
+        native_index = event["value"]
+        if (not math.isfinite(factor) or factor <= 0
+                or not math.isfinite(native_index) or native_index != int(native_index)
+                or native_index < -1):
             raise ValueError("Invalid in-game framing edit")
+        # The native event can lag a selection change. The camera list is the
+        # authority; fall back to the reported index only when none is selected.
+        index = app._selection_index(app.camera_tree)
+        if index is None:
+            index = int(native_index)
         if index == -1:
-            app.status_text.set(f"Live framing {aspect:.4f}. Capture a camera to save it.")
+            app.status_text.set("Live framing updated. Capture a camera to save it.")
         else:
-            if index >= len(app.project.keyframes):
+            if index < 0 or index >= len(app.project.keyframes):
                 raise ValueError("That camera is no longer present in this shot.")
             keys = copy.deepcopy(app.project.keyframes)
             key = keys[int(index)]
-            key.aspect_ratio = aspect
-            app._commit_camera(keys, key.time)
-            app.status_text.set(f"Camera {int(index) + 1} framing set to {aspect:.4f}.")
+            value = max(.5, min(4.0, round(key.aspect_ratio * factor, 4)))
+            if value != key.aspect_ratio:
+                key.aspect_ratio = value
+                app._commit_camera(keys, key.time)
+                app.status_text.set(f"Camera {int(index) + 1} framing set to {value:.4f}.")
     elif action.startswith("set_dof_"):
         from .editor_dof import ACTIONS, RANGE_NAME, edited_project
         if action not in ACTIONS:
