@@ -175,6 +175,8 @@ class DollyApp:
         self._base_capture = None
         self._layer_queue = []
         self._active_layer_take = None
+        self._pending_combine = None
+        self._pipeline_advance = False
         # Set once the active take's shot has actually started playing, so a
         # stale "shot finished" message cannot finish a fresh take early.
         self._take_playing_seen = False
@@ -611,35 +613,54 @@ class DollyApp:
             self._log("Video saved to " + str(self.video_export.output_path))
             directory = self.video_export.output_directory or self.video_export.output_path.parent
             self.video_path.set(str(default_video_path(self.project.name, directory)))
-        if state == "completed" and getattr(self, "_active_layer_take", None) \
-                and self._active_layer_take[1] == "white":
-            # Both matte passes are in; build the RGBA layer master before the
-            # queue advances to the next layer.
-            layer = self._active_layer_take[0]
-            self._active_layer_take = None
-            self._submit("Building layer alpha", lambda: self._combine_layer(layer),
-                         self._video_operation_done)
-            return
-        if state == "completed" and self._layer_queue:
-            # Record the next isolated layer take with the same shot and
-            # fixed-step pacing so every take aligns frame for frame.
-            self._submit("Recording layer take", self._start_next_layer_take,
-                         self._video_operation_done)
-            return
-        if state == "completed" and self._base_capture is not None:
-            self._base_capture = None
-            self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
-        elif state in ("failed", "cancelled") and (self._base_capture is not None or self._layer_queue):
+        if state == "completed":
+            taken = getattr(self, "_active_layer_take", None)
+            if taken is not None:
+                self._active_layer_take = None
+                if taken[1] == "white":
+                    # Both matte passes are in; the alpha combine runs before
+                    # the queue advances to the next layer.
+                    self._pending_combine = taken[0]
+            self._pipeline_advance = True
+        elif state in ("failed", "cancelled"):
+            layered = self._base_capture is not None or self._layer_queue
+            self._pending_combine = None
+            self._pipeline_advance = False
             self._base_capture = None
             self._layer_queue = []
             self._active_layer_take = None
-            self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
+            if layered:
+                self._submit("Restoring scene layers", self.controller.reset_layer_modes,
+                             lambda _: None)
         if self._pending_auto_play:
             if state in ("starting", "recording"):
                 self._pending_auto_play = False
                 self._play()
             elif state in ("failed", "cancelled", "completed", "idle"):
                 self._pending_auto_play = False
+        self._advance_layer_pipeline()
+
+    def _advance_layer_pipeline(self):
+        """Poll-driven layer queue: alpha combine, next take, then restore.
+
+        ``_submit`` refuses while another operation is busy, so the pipeline
+        retries on the next poll instead of dropping the combine.
+        """
+        if not getattr(self, "_pipeline_advance", False) or self.busy:
+            return
+        if getattr(self, "_pending_combine", None) is not None:
+            layer, self._pending_combine = self._pending_combine, None
+            self._submit("Building layer alpha", lambda: self._combine_layer(layer),
+                         self._video_operation_done)
+            return
+        if self._layer_queue:
+            self._submit("Recording layer take", self._start_next_layer_take,
+                         self._video_operation_done)
+            return
+        self._pipeline_advance = False
+        if self._base_capture is not None:
+            self._base_capture = None
+            self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
 
     def _start_next_layer_take(self):
         """Worker step: hide the layer's classes and start its next pass."""
@@ -769,6 +790,7 @@ class DollyApp:
         self.reshade_configure_button.configure(state="normal" if ready and not active and not self.busy and not self.playing else "disabled")
         self.reshade_forget_button.configure(state="normal" if not active and not self.busy and not self.playing else "disabled")
         self._refresh_reshade(controller_status, active)
+        self._advance_layer_pipeline()
 
     def _refresh_reshade(self, controller_status, video_active=False):
         bridge = self.controller._native_bridge()
