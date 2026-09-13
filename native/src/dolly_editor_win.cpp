@@ -933,7 +933,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                  c.video_fps == 300 || c.video_fps == 600) &&
                 (c.video_bitrate_mbps == 0 || c.video_bitrate_mbps == 10 ||
                  c.video_bitrate_mbps == 20 || c.video_bitrate_mbps == 40) &&
-                c.video_encoder <= 10 && c.video_flags <= 1 && c.video_speed >= 0 &&
+                c.video_encoder <= 10 && c.video_flags <= 3 && c.video_speed >= 0 &&
                 c.video_speed <= 4 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
                 std::memchr(c.message, 0, sizeof(c.message));
             for (auto& b : c.bindings)

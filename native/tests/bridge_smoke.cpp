@@ -1348,6 +1348,21 @@ void run() {
     editor_cursor_startup_checks();
     editor_input_checks();
     editor_framing_checks();
+    // The depth master uses video_flags bit 1. The worker must accept the whole
+    // config with that bit set; rejecting it silently kept the old config, so
+    // the playing state and in-game toggles never applied.
+    {
+        auto base = std::atomic_load(&dolly::gConfig);
+        require(base != nullptr, "Synthetic editor config missing");
+        auto config = std::make_shared<EditorConfig>(*base);
+        config->sequence += 2;
+        config->video_flags = 3;
+        std::memcpy(f.mapping.data() + kEditorConfigOffset, config.get(), sizeof(*config));
+        editor_worker_tick(f.mapping.data(), true);
+        auto applied = std::atomic_load(&dolly::gConfig);
+        require(applied && applied->video_flags == 3 && editor_snapshot().video_depth,
+                "Depth video flag was rejected with the whole config");
+    }
 
     std::cout
         << "Actual native callback smoke tests passed (synthetic Windows memory; no game runtime claim)\n";
