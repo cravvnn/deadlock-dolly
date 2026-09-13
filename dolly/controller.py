@@ -3156,6 +3156,51 @@ class Controller:
             except (RuntimeError, ValueError, OSError):
                 pass
 
+    # Screen post-processing that contaminates black/white matte passes.
+    # Bloom and eye adaptation react to the forced white clear, wash the layer
+    # out of the white pass and make the derived alpha opaque.
+    MATTE_CVARS = ("r_postprocess_enable", "r_effects_bloom", "r_post_bloom")
+
+    def begin_matte_layer(self):
+        """Disable screen post-processing for clean matte passes.
+
+        Values are saved and restored by :meth:`end_matte_layer`; a cvar that
+        cannot be read or written is skipped instead of failing the take.
+        """
+        if getattr(self, "_matte_cvar_restore", None) is not None:
+            return
+        saved = {}
+        for name in self.MATTE_CVARS:
+            try:
+                saved[name] = self._request(name)
+            except (RuntimeError, ValueError, OSError):
+                continue
+        commands = [name + " 0" for name in saved]
+        if commands:
+            try:
+                self._request("; ".join(commands))
+            except (RuntimeError, ValueError, OSError):
+                return
+        self._matte_cvar_restore = saved
+
+    def end_matte_layer(self):
+        saved = getattr(self, "_matte_cvar_restore", None)
+        self._matte_cvar_restore = None
+        if not saved:
+            return
+        commands = []
+        for name, output in saved.items():
+            try:
+                value = read_cvar_value(name, output)
+                commands.append(name + " " + format_cvar_value(value))
+            except (ValueError, TypeError):
+                continue
+        if commands:
+            try:
+                self._request("; ".join(commands))
+            except (RuntimeError, ValueError, OSError):
+                pass
+
     def disconnect(self):
         self._recording_replay = None
         self._recording_pending = False

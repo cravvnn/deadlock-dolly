@@ -631,7 +631,7 @@ class DollyApp:
             self._layer_queue = []
             self._active_layer_take = None
             if layered:
-                self._submit("Restoring scene layers", self.controller.reset_layer_modes,
+                self._submit("Restoring scene layers", self._restore_scene_state,
                              lambda _: None)
         if self._pending_auto_play:
             if state in ("starting", "recording"):
@@ -640,6 +640,13 @@ class DollyApp:
             elif state in ("failed", "cancelled", "completed", "idle"):
                 self._pending_auto_play = False
         self._advance_layer_pipeline()
+
+    def _restore_scene_state(self):
+        try:
+            self.controller.end_matte_layer()
+        except (RuntimeError, ValueError, OSError):
+            pass
+        self.controller.reset_layer_modes()
 
     def _advance_layer_pipeline(self):
         """Poll-driven layer queue: alpha combine, next take, then restore.
@@ -667,7 +674,7 @@ class DollyApp:
         self._pipeline_advance = False
         if self._base_capture is not None:
             self._base_capture = None
-            self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
+            self._submit("Restoring scene layers", self._restore_scene_state, lambda _: None)
 
     def _start_next_layer_take(self):
         """Worker step: hide the layer's classes and start its next pass."""
@@ -678,6 +685,9 @@ class DollyApp:
         base = self._base_capture
         folder = base.path.with_suffix("")
         white = pass_name == "white"
+        if not white and layer in ("players", "effects"):
+            # Bloom/eye adaptation would wash the layer out of the white pass.
+            self.controller.begin_matte_layer()
         if white:
             # The black pass created the layer folder; this pass writes the
             # white matte beside it and skips frames like every layer take.
@@ -707,6 +717,10 @@ class DollyApp:
         base = self._base_capture
         if base is None:
             raise RuntimeError("Layer matte combine lost the recording options.")
+        try:
+            self.controller.end_matte_layer()
+        except (RuntimeError, ValueError, OSError):
+            LOG.warning("Matte post-processing could not be restored")
         folder = base.path.with_suffix("")
         layer_dir = folder / layer
         black = layer_dir / (layer + ".mp4")

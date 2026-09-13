@@ -23,7 +23,29 @@ class LayerModeTests(unittest.TestCase):
         self.commands.append(command)
         if command == "sc_showclasses":
             return "\n".join(f"{name}    Hide DebugLevel: 0 1 2 3" for name in self.classes)
+        if command in Controller.MATTE_CVARS:
+            return f"{command} = 1"
         return ""
+
+    def test_matte_layer_disables_and_restores_post_processing(self):
+        self.controller.begin_matte_layer()
+        self.assertEqual(self.commands[-1],
+                         "r_postprocess_enable 0; r_effects_bloom 0; r_post_bloom 0")
+        self.controller.end_matte_layer()
+        self.assertEqual(self.commands[-1],
+                         "r_postprocess_enable 1; r_effects_bloom 1; r_post_bloom 1")
+
+    def test_matte_layer_ignores_missing_cvars(self):
+        original = self.request
+
+        def missing(command):
+            if command in Controller.MATTE_CVARS:
+                raise RuntimeError("unknown command")
+            return original(command)
+
+        self.controller._request = missing
+        self.controller.begin_matte_layer()
+        self.controller.end_matte_layer()
 
     def hide_commands(self):
         return [command for command in self.commands if command.endswith(" 8")]

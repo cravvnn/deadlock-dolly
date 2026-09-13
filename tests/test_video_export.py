@@ -575,6 +575,21 @@ class VideoGuiTests(unittest.TestCase):
         self.assertTrue(self.app._pending_auto_play)
         self.assertTrue(self.app._auto_finish_layered)
 
+    def test_players_matte_pass_disables_post_processing(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
+                            fixed_step=True, speed=1.0, layers=("players",),
+                            ffmpeg_path=exe).validated()
+        (Path(self.folder.name) / "shot").mkdir()
+        self.app._base_capture = base
+        self.app._layer_queue = [("players", "black")]
+        self.app.controller = Mock()
+        self.app.controller.apply_layer_mode.return_value = {"hidden": ["SkinnedObject"]}
+        self.app._snapshot = Mock(return_value=Mock())
+        self.app._start_next_layer_take()
+        self.app.controller.begin_matte_layer.assert_called_once_with()
+
     def test_white_matte_pass_writes_beside_the_black_pass(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")
@@ -620,6 +635,7 @@ class VideoGuiTests(unittest.TestCase):
         (layer_dir / "players_white.mp4").write_bytes(b"white")
         (layer_dir / "shot.json").write_text("{}", encoding="utf-8")
         self.app._base_capture = base
+        self.app.controller = Mock()
 
         def fake_run(args, **kwargs):
             Path(args[-1]).write_bytes(b"master")
@@ -627,6 +643,7 @@ class VideoGuiTests(unittest.TestCase):
 
         with patch("dolly.gui.subprocess.run", side_effect=fake_run) as run:
             status = self.app._combine_layer("players")
+        self.app.controller.end_matte_layer.assert_called_once_with()
         self.assertEqual(status, {"state": "completed", "layer": "players",
                                   "master": str(layer_dir / "players.mov")})
         self.assertIn("alphamerge", run.call_args.args[0][run.call_args.args[0].index("-filter_complex") + 1])
