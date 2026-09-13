@@ -637,6 +637,24 @@ class VideoGuiTests(unittest.TestCase):
         self.assertEqual(json.loads((layer_dir / "shot.json").read_text(encoding="utf-8"))["video_file"],
                          "players.mov")
 
+    def test_layer_pipeline_starts_one_take_at_a_time(self):
+        self.app._base_capture = Mock()
+        self.app._layer_queue = [("players", "black")]
+        self.app._active_layer_take = None
+        self.app._pending_combine = None
+        self.app._pipeline_advance = True
+        self.app._submit = Mock()
+        self.app.video_export.status.return_value = {"state": "completed"}
+        self.app._advance_layer_pipeline()
+        self.app._submit.assert_called_once()
+        self.assertFalse(self.app._pipeline_advance)
+        # A poll while the next take is still recording must not start another.
+        self.app._pipeline_advance = True
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app._advance_layer_pipeline()
+        self.assertEqual(self.app._submit.call_count, 1)
+        self.assertTrue(self.app._pipeline_advance)
+
     def test_completed_layer_take_advances_then_restores_scene_layers(self):
         self.app.video_export.output_path = None
         self.app.video_export.output_directory = None

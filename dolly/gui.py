@@ -650,10 +650,16 @@ class DollyApp:
             return
         if getattr(self, "_pending_combine", None) is not None:
             layer, self._pending_combine = self._pending_combine, None
+            self._pipeline_advance = False
             self._submit("Building layer alpha", lambda: self._combine_layer(layer),
                          self._video_operation_done)
             return
         if self._layer_queue:
+            # Never start a take while the recorder is still active; a poll
+            # between the submit and the worker would otherwise fire again.
+            if self.video_export.status().get("state") in ACTIVE_STATES:
+                return
+            self._pipeline_advance = False
             self._submit("Recording layer take", self._start_next_layer_take,
                          self._video_operation_done)
             return
