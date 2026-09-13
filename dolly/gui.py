@@ -24,6 +24,7 @@ from dolly.bindings import CaptureBinding, DEFAULT_BINDING, KEY_CHOICES
 from dolly.branding import apply_window_icon
 from dolly.controller import Controller
 from dolly.curve import AspectCurve
+from dolly.display import focus_window
 from dolly.hotkey import CaptureHotkey
 from dolly.launcher import discover_game, recover_pending
 from dolly.navigation import CameraMotion
@@ -525,6 +526,12 @@ class DollyApp:
         project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
         frozen = self.frozen.get()
         self._pending_auto_play = project is not None
+        controller = getattr(self, "controller", None)
+        game_pid = getattr(controller, "game_pid", None)
+        if callable(game_pid):
+            # The recorder's first frame is focus-gated. A desktop Start would
+            # otherwise leave focus on Dolly and time out with no game frame.
+            focus_window(game_pid())
         self._submit("Preparing replay and recording", lambda: self.video_export.start(options, project=project, frozen=frozen), self._video_operation_done)
 
     def _stop_video_recording(self, cancel=False):

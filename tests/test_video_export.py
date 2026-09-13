@@ -308,6 +308,14 @@ class VideoGuiTests(unittest.TestCase):
             Keyframe(time=0.0, x=0, y=0, z=0, pitch=0, yaw=0, roll=0),
             Keyframe(time=1.0, x=100, y=0, z=0, pitch=0, yaw=90, roll=0)])
 
+    def test_desktop_start_returns_focus_to_the_owned_game(self):
+        self.app.controller = Mock()
+        self.app.controller.game_pid.return_value = 4321
+        with patch("dolly.gui.focus_window") as focus:
+            self.app._start_video_recording()
+        focus.assert_called_once_with(4321)
+        self.app._submit.assert_called_once()
+
     def test_recording_with_a_shot_auto_plays_after_arming(self):
         self.app.project = self.two_camera_project()
         self.app._play = Mock()
