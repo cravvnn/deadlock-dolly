@@ -160,6 +160,7 @@ class DollyApp:
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
+        self._pending_auto_play = False
         self.reshade_runtime_path = tk.StringVar(value=getattr(self.app_settings, "reshade_runtime_path", ""))
         self.reshade_status_text = tk.StringVar(value="Choose the ReShade runtime to enable its in-game menu.")
         self.game_path.set(self.app_settings.game_path)
@@ -458,7 +459,7 @@ class DollyApp:
         self.video_cancel_button = ttk.Button(actions, text="Discard recording", style="Quiet.TButton", command=lambda: self._stop_video_recording(cancel=True), state="disabled")
         self.video_cancel_button.pack(side="left")
         ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(tab, text="Start recording prepares the replay first. Return to Deadlock and press F5 to play the shot once. Finish recording to save; start a new recording for another take. Encoders using FFmpeg need the ffmpeg.exe path above; the bundled build fills it automatically.",
+        ttk.Label(tab, text="Start recording prepares the replay, starts the recorder and plays the shot once the counter is live. Finish recording to save; start a new recording for another take. Play shot remains available for previews. Encoders using FFmpeg need the ffmpeg.exe path above; the bundled build fills it automatically.",
                   style="Muted.TLabel", wraplength=900).grid(row=1, column=0, sticky="w", padx=4, pady=(10, 14))
         shade = ttk.Frame(tab, style="Card.TFrame", padding=18)
         shade.grid(row=2, column=0, sticky="ew")
@@ -518,6 +519,7 @@ class DollyApp:
             return
         project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
         frozen = self.frozen.get()
+        self._pending_auto_play = project is not None
         self._submit("Preparing replay and recording", lambda: self.video_export.start(options, project=project, frozen=frozen), self._video_operation_done)
 
     def _stop_video_recording(self, cancel=False):
@@ -528,12 +530,22 @@ class DollyApp:
                      lambda: self.video_export.stop(cancel=cancel), self._video_operation_done)
 
     def _video_operation_done(self, status):
+        state = status.get("state", "idle")
         self.video_status_text.set(format_video_status(status))
         self.status_text.set(self.video_status_text.get())
-        self._last_video_state = status.get("state", "idle")
-        if status.get("state") == "completed" and self.video_export.output_path:
+        self._last_video_state = state
+        if state == "completed" and self.video_export.output_path:
             self._log("Video saved to " + str(self.video_export.output_path))
             self.video_path.set(str(default_video_path(self.project.name, self.video_export.output_path.parent)))
+        if self._pending_auto_play:
+            # The recording is armed but the recorder can still be starting.
+            # Play waits for the confirmed recorder state, so chaining here
+            # keeps the crash-safe preparation and removes the extra keypress.
+            if state in ("starting", "recording"):
+                self._pending_auto_play = False
+                self._play()
+            elif state in ("failed", "cancelled", "completed", "idle"):
+                self._pending_auto_play = False
 
     def _refresh_video(self, controller_status):
         status = self.video_export.status()

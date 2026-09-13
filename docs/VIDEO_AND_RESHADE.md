@@ -7,8 +7,9 @@
    settings: video FPS (30, 60, 120, 300 or 600), bitrate, encoder, and optional
    fixed-step and export speed. 60 FPS, 20 Mbps and automatic encoder are the
    defaults.
-3. Return to Deadlock, open **F8**, and click **Record video**. Wait for the
-   recording counter, then play the shot with **Play shot** or **F5**.
+3. Return to Deadlock, open **F8**, and click **Record video**. Dolly prepares
+   the replay, starts the recorder, and plays the shot once the counter is
+   live. **Play shot** remains available for previews without recording.
 4. Open **F8** and click **Finish recording**. The MP4 is ready after
    finalization. Recording continues through camera handoffs and desktop controls.
 
