@@ -32,8 +32,7 @@ class LayerModeTests(unittest.TestCase):
         applied = self.controller.apply_layer_mode("world")
         self.assertEqual(sorted(applied["hidden"]),
                          sorted(["SkinnedObject", "ParticleSystem", "panorama_world_panel"]))
-        issued = [part.strip() for part in self.hide_commands()[-1].split(";")]
-        self.assertEqual(sorted(issued),
+        self.assertEqual(sorted(self.hide_commands()),
                          sorted(["sc_setclassflags SkinnedObject 8",
                                  "sc_setclassflags ParticleSystem 8",
                                  "sc_setclassflags panorama_world_panel 8"]))
@@ -42,18 +41,32 @@ class LayerModeTests(unittest.TestCase):
         applied = self.controller.apply_layer_mode("players")
         self.assertEqual(sorted(applied["hidden"]),
                          sorted(name for name in CLASSES if name != "SkinnedObject"))
-        self.assertNotIn("SkinnedObject 8", self.commands[-1])
+        self.assertEqual(len(self.hide_commands()), len(applied["hidden"]))
+        self.assertNotIn("sc_setclassflags SkinnedObject 8", self.commands)
 
     def test_effects_mode_keeps_only_the_particle_system(self):
         applied = self.controller.apply_layer_mode("effects")
         self.assertEqual(sorted(applied["hidden"]),
                          sorted(name for name in CLASSES if name != "ParticleSystem"))
-        self.assertNotIn("ParticleSystem 8", self.commands[-1])
+        self.assertEqual(len(self.hide_commands()), len(applied["hidden"]))
+        self.assertNotIn("sc_setclassflags ParticleSystem 8", self.commands)
 
     def test_missing_required_class_fails_instead_of_wrong_layer(self):
         self.classes = tuple(name for name in CLASSES if name != "ParticleSystem")
         with self.assertRaisesRegex(RuntimeError, "ParticleSystem"):
             self.controller.apply_layer_mode("effects")
+
+    def test_a_class_that_cannot_be_set_fails_the_mode(self):
+        original = self.request
+
+        def failing(command):
+            if command == "sc_setclassflags SkinnedObject 8":
+                raise RuntimeError("console busy")
+            return original(command)
+
+        self.controller._request = failing
+        with self.assertRaisesRegex(RuntimeError, "SkinnedObject"):
+            self.controller.apply_layer_mode("world")
 
     def test_unknown_mode_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown layer mode"):
@@ -61,8 +74,8 @@ class LayerModeTests(unittest.TestCase):
 
     def test_reset_restores_every_reported_class(self):
         self.controller.reset_layer_modes()
-        self.assertIn("sc_setclassflags Skybox 0", self.commands[-1])
-        self.assertIn("sc_setclassflags SkinnedObject 0", self.commands[-1])
+        self.assertEqual(sorted(self.hide_commands()),
+                         sorted("sc_setclassflags " + name + " 0" for name in CLASSES))
 
 
 class LayerOptionsTests(unittest.TestCase):

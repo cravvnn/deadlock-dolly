@@ -3124,9 +3124,17 @@ class Controller:
                                + mode + " layer: " + ", ".join(missing))
         targets = [name for name in classes if name not in keep] if keep else [
             name for name in classes if name in hide]
-        commands = ["sc_setclassflags " + name + " 8" for name in targets]
-        if commands:
-            self._request("; ".join(commands))
+        # The engine console silently drops an over-long multi-command line,
+        # so every class is set through its own short request.
+        failures = []
+        for name in targets:
+            try:
+                self._request("sc_setclassflags " + name + " 8")
+            except (RuntimeError, ValueError, OSError) as exc:
+                failures.append(name + " (" + str(exc) + ")")
+        if failures:
+            raise RuntimeError("Could not hide scene classes for the " + mode + " layer: "
+                               + ", ".join(failures))
         return {"mode": mode, "hidden": targets, "classes": classes}
 
     def reset_layer_modes(self):
@@ -3136,7 +3144,11 @@ class Controller:
         except (RuntimeError, ValueError, OSError):
             classes = [name for spec in self.LAYER_MODES.values()
                        for name in (*spec.get("keep", ()), *spec.get("hide", ()))]
-        self._request("; ".join("sc_setclassflags " + name + " 0" for name in classes))
+        for name in classes:
+            try:
+                self._request("sc_setclassflags " + name + " 0")
+            except (RuntimeError, ValueError, OSError):
+                pass
 
     def disconnect(self):
         self._recording_replay = None
