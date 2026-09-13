@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from dolly.path import Project
+from dolly.path import Keyframe, Project
 from dolly.gui import DollyApp
 from dolly.bindings import DEFAULT_BINDING
 from dolly.editor_actions import EditorBinding
@@ -285,9 +285,43 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_fixed_step = Var(False)
         self.app.video_export_speed = Var("1")
         self.app.status_text = Var("")
+        self.app.video_status_text = Var("")
+        self.app._pending_auto_play = False
         self.app.video_export = Mock()
         self.app._submit = Mock(return_value=True)
         self.app._error = Mock()
+
+    @staticmethod
+    def two_camera_project():
+        return Project(keyframes=[
+            Keyframe(time=0.0, x=0, y=0, z=0, pitch=0, yaw=0, roll=0),
+            Keyframe(time=1.0, x=100, y=0, z=0, pitch=0, yaw=90, roll=0)])
+
+    def test_recording_with_a_shot_auto_plays_after_arming(self):
+        self.app.project = self.two_camera_project()
+        self.app._play = Mock()
+        self.app._start_video_recording()
+        self.assertTrue(self.app._pending_auto_play)
+        self.app._submit.call_args.args[1]()
+        self.app._video_operation_done({"state": "recording"})
+        self.app._play.assert_called_once()
+        self.assertFalse(self.app._pending_auto_play)
+
+    def test_recording_without_a_shot_does_not_auto_play(self):
+        self.app._play = Mock()
+        self.app._start_video_recording()
+        self.assertFalse(self.app._pending_auto_play)
+        self.app._submit.call_args.args[1]()
+        self.app._video_operation_done({"state": "recording"})
+        self.app._play.assert_not_called()
+
+    def test_failed_recorder_start_clears_auto_play_without_playing(self):
+        self.app.project = self.two_camera_project()
+        self.app._play = Mock()
+        self.app._start_video_recording()
+        self.app._video_operation_done({"state": "failed", "error": "encoder rejected the settings"})
+        self.app._play.assert_not_called()
+        self.assertFalse(self.app._pending_auto_play)
 
     def test_start_while_path_is_playing_is_queued_without_changing_playback(self):
         self.app._start_video_recording()

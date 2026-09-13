@@ -1007,7 +1007,7 @@ class Controller:
             self._message("Captured the current freecam view and aspect ratio; replay paused. Roll keeps Dolly's last applied value, or zero; edit Bank if needed.")
             return frame
 
-    def _wait_paused_native_view(self, bridge, after_frame, *, timeout=None):
+    def _wait_paused_native_view(self, bridge, after_frame, *, timeout=None, expected_tick=None):
         """Wait for fresh, settled render telemetry after a pause command."""
         deadline = time.perf_counter() + (NATIVE_PAUSE_TIMEOUT if timeout is None else timeout)
         previous_tick = None
@@ -1022,7 +1022,8 @@ class Controller:
             frame = int(current.get("frame_count", 0))
             if frame > previous_frame:
                 tick = int(current["tick"])
-                if current.get("paused") and tick >= 0:
+                at_expected = expected_tick is None or tick == int(expected_tick)
+                if current.get("paused") and tick >= 0 and at_expected:
                     if previous_tick == tick:
                         return current
                     previous_tick = tick
@@ -2322,8 +2323,16 @@ class Controller:
             try:
                 self._prepare_playback_settings(hide_hud)
                 if not frozen:
+                    view_before = int(native.status().get("frame_count", 0)) if native is not None else 0
                     positioned_demo = self._seek(project, start)
                     actual_start = self._seek_shot_time(project, start, positioned_demo)
+                    if native is not None and positioned_demo.get("tick") is not None:
+                        # A long demo skip keeps reconstructing after the tick
+                        # reports settled. Wait for a rendered paused view at the
+                        # target tick before writing and checking the camera, so
+                        # the check cannot trigger another full seek.
+                        self._wait_paused_native_view(native, view_before,
+                                                      expected_tick=positioned_demo["tick"])
                     if positioned_demo.get("seek_boundary"):
                         self._playback_details.update(requested_start_time=start,
                             start_time=actual_start,
