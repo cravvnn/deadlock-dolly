@@ -26,7 +26,7 @@ OWNERS = ("disabled", "flight", "panel", "game_ui", "console", "unfocused", "res
 EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "set_playback_rate",
                  "reshade", "start_video", "stop_video", "set_video_fps", "set_video_bitrate",
                  "set_video_encoder", "set_video_fixed_step", "set_video_speed", "destroy_ragdolls",
-                 "set_framing") + DOF_ACTIONS
+                 "set_framing") + DOF_ACTIONS + ("set_video_depth",)
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")
@@ -94,7 +94,10 @@ def pack_config(sequence, owner_sequence, ack_event, values):
     video_encoder = _uint(values.get("video_encoder", 0), "video encoder")
     if video_encoder > VIDEO_CODEC_MAX:
         raise ValueError("Unknown native editor video encoder")
-    video_flags = 1 if values.get("video_fixed_step") else 0
+    if type(values.get("video_depth", False)) is not bool:
+        raise ValueError("Depth master must be a boolean")
+    video_flags = ((1 if values.get("video_fixed_step") else 0)
+                   | (2 if values.get("video_depth") else 0))
     video_speed = _finite(values.get("video_speed", 1.0), .05, 4, "video export speed")
     return CONFIG.pack(
         CONFIG_MAGIC, _uint(sequence, "sequence"), EDITOR_ABI, int(enabled), OWNERS.index(owner),

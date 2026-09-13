@@ -229,29 +229,35 @@ class EditorSessionTests(unittest.TestCase):
         self.app.video_bitrate = Value("40 Mbps")
         self.app.video_codec = Value("NVIDIA HEVC (NVENC)")
         self.app.video_fixed_step = Value(True)
+        self.app.video_depth = Value(True)
         self.app.video_export_speed = Value("0.1")
         session.configure(self.app)
         config = self.bridge.configure_editor.call_args.kwargs
         self.assertEqual((config["video_fps"], config["video_bitrate_mbps"], config["video_encoder"],
                           config["video_fixed_step"], config["video_speed"]), (120, 40, 2, True, .1))
+        self.assertTrue(config["video_depth"])
         for action, value in (("set_video_fps", 300), ("set_video_bitrate", 40),
                               ("set_video_encoder", 1), ("set_video_fixed_step", 0),
+                              ("set_video_depth", 0),
                               ("set_video_speed", .25)):
             self.assertTrue(session.dispatch(self.app, {"action": action, "value": value}, self.bridge))
         self.assertEqual((self.app.video_fps.get(), self.app.video_bitrate.get(),
                           self.app.video_codec.get(), self.app.video_fixed_step.get(),
                           self.app.video_export_speed.get()),
                          ("300", "40 Mbps", "NVIDIA H.264 (NVENC)", False, "0.25"))
+        self.assertFalse(self.app.video_depth.get())
 
     def test_invalid_in_game_video_options_do_not_change_desktop_state(self):
         self.app.video_fps = Value("60")
         self.app.video_bitrate = Value("20 Mbps")
         self.app.video_codec = Value("Auto (hardware when available)")
         self.app.video_fixed_step = Value(False)
+        self.app.video_depth = Value(False)
         self.app.video_export_speed = Value("1")
         for action, invalid in (("set_video_fps", (0, 24, 200, 60.5, True)),
                                 ("set_video_bitrate", (0, 15, 50)),
                                 ("set_video_encoder", (-1, 11)),
+                                ("set_video_depth", (2, -1, .5, "on")),
                                 ("set_video_speed", (0, .01, 4.1, float("nan"), True))):
             for value in invalid:
                 with self.subTest(action=action, value=value), self.assertRaises(ValueError):

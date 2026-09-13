@@ -151,9 +151,9 @@ class EditorBridgeTests(unittest.TestCase):
 
     def test_video_export_config_round_trips(self):
         self.bridge.configure_editor(video_fps=600, video_bitrate_mbps=40, video_encoder=2,
-                                     video_fixed_step=True, video_speed=.1)
+                                     video_fixed_step=True, video_depth=True, video_speed=.1)
         config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
-        self.assertEqual(struct.unpack_from("<HHBB", config, 432), (600, 40, 2, 1))
+        self.assertEqual(struct.unpack_from("<HHBB", config, 432), (600, 40, 2, 3))
         self.assertAlmostEqual(struct.unpack_from("<f", config, 438)[0], .1, places=5)
 
     def test_video_export_action_ids_follow_media_actions(self):
@@ -163,6 +163,11 @@ class EditorBridgeTests(unittest.TestCase):
                          [("set_video_fps", 300), ("set_video_bitrate", 40),
                           ("set_video_encoder", 2), ("set_video_fixed_step", 1),
                           ("set_video_speed", .1)])
+
+    def test_depth_toggle_action_id_follows_dof_actions(self):
+        self.publish([(1, 52, 1)])
+        events = self.bridge.editor_status()["events"]
+        self.assertEqual([(e["action"], e["value"]) for e in events], [("set_video_depth", 1)])
 
     def test_old_editor_abi_is_rejected(self):
         self.publish()

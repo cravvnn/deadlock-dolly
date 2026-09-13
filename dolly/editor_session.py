@@ -68,6 +68,7 @@ def _video_values(app):
     bitrate = previous.get("video_bitrate_mbps", 20)
     codec = previous.get("video_encoder", 0)
     fixed = bool(previous.get("video_fixed_step", False))
+    depth = bool(previous.get("video_depth", False))
     speed = previous.get("video_speed", 1.0)
     try:
         candidate = int(_value(app, "video_fps", 60))
@@ -89,13 +90,14 @@ def _video_values(app):
     except (ValueError, TypeError, KeyError, IndexError):
         pass
     fixed = bool(_value(app, "video_fixed_step", fixed))
+    depth = bool(_value(app, "video_depth", depth))
     try:
         candidate = float(_value(app, "video_export_speed", 1.0))
         if math.isfinite(candidate) and .05 <= candidate <= 4:
             speed = candidate
     except (ValueError, TypeError):
         pass
-    return fps, bitrate, codec, fixed, speed
+    return fps, bitrate, codec, fixed, speed, depth
 
 
 def _configure_visualization(app, bridge, active, selected):
@@ -151,7 +153,7 @@ def configure(app):
     selected = selected if selected is not None and 0 <= selected < count else 0
     playhead = float(_value(app, "shot_time", 0) or 0)
     playback_speed, playback_rate = _playback_values(app)
-    video_fps, video_bitrate, video_encoder, video_fixed_step, video_speed = _video_values(app)
+    video_fps, video_bitrate, video_encoder, video_fixed_step, video_speed, video_depth = _video_values(app)
     values = dict(enabled=active, bindings=settings.action_bindings,
                   reshade_binding=settings.reshade_binding,
                   speed=settings.movement_speed, sensitivity=settings.mouse_sensitivity,
@@ -163,6 +165,7 @@ def configure(app):
                   playback_speed=playback_speed, playback_rate=playback_rate,
                   video_fps=video_fps, video_bitrate_mbps=video_bitrate,
                   video_encoder=video_encoder, video_fixed_step=video_fixed_step,
+                  video_depth=video_depth,
                   video_speed=video_speed)
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
     # Explicit owner changes are handled only by command transitions below.
@@ -383,6 +386,11 @@ def dispatch(app, event, bridge):
         configure(app)
     elif action == "set_video_fixed_step":
         app.video_fixed_step.set(bool(event["value"]))
+        configure(app)
+    elif action == "set_video_depth":
+        if event["value"] not in (0, 1):
+            raise ValueError("Depth master must be on or off.")
+        app.video_depth.set(bool(event["value"]))
         configure(app)
     elif action == "set_video_speed":
         value = event["value"]

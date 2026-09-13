@@ -1057,6 +1057,12 @@ void draw_panel(const EditorSnapshot& state) {
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Render exactly one frame per output frame. Required for 300/600 FPS and removes real-time encoder hitching.");
+                    bool depth_master = state.video_depth;
+                    if (ImGui::Checkbox("Depth master (EXR)", &depth_master))
+                        editor_enqueue(EditorAction::SetVideoDepth, depth_master ? 1.0 : 0.0);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Write a paired float EXR sequence and a grayscale preview video next to the recording. Requires a verified scene depth.");
                     ImGui::TextUnformatted("Export speed");
                     ImGui::SetNextItemWidth(-1);
                     char export_speed[32]{};

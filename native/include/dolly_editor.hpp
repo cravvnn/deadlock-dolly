@@ -75,7 +75,8 @@ enum class EditorAction : std::uint32_t {
     SetDofNearCrisp,
     SetDofFarCrisp,
     SetDofFarBlurry,
-    SetDofTilt
+    SetDofTilt,
+    SetVideoDepth
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
@@ -83,6 +84,8 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoSpeed) == 38,
               "Stable video action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::DestroyRagdolls) == 39,
               "Stable replay cleanup action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoDepth) == 52,
+              "Stable depth master action ID");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
@@ -183,6 +186,7 @@ struct EditorSnapshot {
     std::uint32_t playback_rate = 60;
     std::uint32_t video_fps = 60, video_bitrate_mbps = 20, video_codec = 0;
     bool video_fixed_step = false;
+    bool video_depth = false;
     double video_speed = 1;
     double horizontal_fov = 0;
     std::uint32_t view_width = 0, view_height = 0;
