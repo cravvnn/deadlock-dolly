@@ -6,12 +6,14 @@ from dolly import graphics_diagnostics as gfx
 from dolly import native_bridge as nb
 
 
-def packet(sample=1, *, sequence=2, state=1, flags=127, abi=2):
+def packet(sample=1, *, sequence=2, state=1, flags=127, abi=3,
+           layers=b"draws=42 skin=7 | l=1 v=2 p=3 n=4 m=0 SBD-"):
     return gfx.WIRE.pack(gfx.MAGIC, sequence, abi, state, flags,
                          sample, 1000 * sample, 100, 101, 12, 1, 1, 0, 0,
                          42, 128, 50, 0, 49, 98, 100, 99, 101, 0x4d6000,
                          b"a" * 64, b"Read-only renderer sample",
-                         90, 78, 200, 1500, 300, 5000, 2, 0, 0, 40, 2)
+                         90, 78, 200, 1500, 300, 5000, 2, 0, 0, 40, 2,
+                         layers)
 
 
 class ClosedMemory(bytearray):
@@ -44,7 +46,7 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
 
     def test_optional_wire_has_no_overlap_with_camera_or_editor_status(self):
         from dolly import editor_wire
-        self.assertEqual(gfx.WIRE.size, 512)
+        self.assertEqual(gfx.WIRE.size, 1024)
         self.assertGreaterEqual(gfx.OFFSET, nb.CONTROL_BYTES + nb.STATUS.size)
         self.assertLessEqual(gfx.OFFSET + gfx.WIRE.size, editor_wire.STATUS_OFFSET)
         sample = gfx.unpack(packet())
@@ -53,6 +55,7 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
         self.assertEqual(sample["execution_frame"], 100)
         self.assertEqual(sample["head_buffer_frame"], 99)
         self.assertEqual(sample["tail_buffer_frame"], 101)
+        self.assertIn("draws=42", sample["layers"])
 
     def test_guide_drawing_and_present_timings_are_distinct(self):
         sample = gfx.unpack(packet())
@@ -68,9 +71,11 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
     def test_older_snapshot_has_no_invented_overlay_timings(self):
         old_wire = struct.Struct("<8s4I9Q10I65s7x192s112x")
         current = gfx.WIRE.unpack(packet(abi=1))
-        sample = gfx.unpack(old_wire.pack(*current[:26]))
+        data = old_wire.pack(*current[:26]) + bytes(gfx.WIRE.size - old_wire.size)
+        sample = gfx.unpack(data)
         self.assertEqual(sample["pending_count"], 42)
         self.assertEqual(sample["panel_frames"], 12)
+        self.assertEqual(sample["layers"], "")
         for key in gfx.OVERLAY_FIELDS:
             self.assertIsNone(sample[key])
 
@@ -87,7 +92,7 @@ class GraphicsDiagnosticsTests(unittest.TestCase):
     def test_odd_or_invalid_probe_preserves_last_sample_and_controls(self):
         self.publish()
         self.bridge.graphics_diagnostics()
-        for values in ({"sequence": 3}, {"abi": 3}, {"state": 99}, {"flags": 128}):
+        for values in ({"sequence": 3}, {"abi": 4}, {"state": 99}, {"flags": 128}):
             self.publish(sample=2, **values)
             self.advance(1)
             self.assertEqual(self.bridge.status()["state"], "starting")

@@ -5,7 +5,7 @@ import re
 import struct
 
 OFFSET = 2 * 1024 * 1024 + 1024
-WIRE = struct.Struct("<8s4I9Q10I65s7x192s11Q24x")
+WIRE = struct.Struct("<8s4I9Q10I65s7x192s11Q24x512s")
 MAGIC = b"DLYGFX01"
 OVERLAY_FIELDS = (
     "overlay_draw_frames", "guide_frames", "overlay_last_us", "overlay_max_us",
@@ -25,7 +25,7 @@ def unpack(data: bytes) -> dict | None:
         return None  # Older ABI 3 helpers do not publish this optional block.
     values = WIRE.unpack(data)
     magic, sequence, abi, state, flags = values[:5]
-    if magic != MAGIC or sequence & 1 or abi not in (1, 2) or state >= len(STATES) or flags & ~127:
+    if magic != MAGIC or sequence & 1 or abi not in (1, 2, 3) or state >= len(STATES) or flags & ~127:
         raise ValueError("Unrecognized graphics diagnostic snapshot")
     digest = values[24].split(b"\0", 1)[0].decode("ascii")
     if digest and re.fullmatch(r"[0-9a-f]{64}", digest) is None:
@@ -35,7 +35,9 @@ def unpack(data: bytes) -> dict | None:
     result.update(state=STATES[state], flags=flags, renderer_sha256=digest,
                   header_consistent=bool(flags & 2),
                   message=values[25].split(b"\0", 1)[0].decode("utf-8", errors="replace"))
-    result.update(zip(OVERLAY_FIELDS, values[26:37] if abi == 2 else (None,) * len(OVERLAY_FIELDS)))
+    result.update(zip(OVERLAY_FIELDS, values[26:37] if abi >= 2 else (None,) * len(OVERLAY_FIELDS)))
+    result["layers"] = (values[37].split(b"\0", 1)[0].decode("utf-8", errors="replace")
+                        if abi >= 3 else "")
     for key in RENDERER_FIELDS[:5]:
         if not flags & 1:
             result[key] = None

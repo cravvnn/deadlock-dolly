@@ -7,6 +7,7 @@
 #include "dolly_video.hpp"
 #include "dolly_depth_live.hpp"
 #include "dolly_depth_scene.hpp"
+#include "dolly_render_class.hpp"
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
 #include "MinHook.h"
@@ -246,6 +247,7 @@ void feed_pending_input() {
 void reset_depth_lifecycle() noexcept {
     depth_tracker.reset();
     depth::set_scene_tracker(nullptr);
+    classify::probe(false);
     depth_live.clear_device();
 }
 void release_device() noexcept {
@@ -1233,10 +1235,14 @@ void render_overlay(IDXGISwapChain* chain) {
                         capture_device, depth_live.width(), depth_live.height());
                     depth_tracker = tracker;
                     depth::set_scene_tracker(tracker);
+                    // The depth take is also the draw-classification probe
+                    // window used to design layer filters.
+                    classify::probe(true);
                     depth_live.note_tracker(tracker != nullptr);
                 } else if (depth_live.needs_drop()) {
                     depth_tracker.reset();
                     depth::set_scene_tracker(nullptr);
+                    classify::probe(false);
                     depth_live.note_tracker(false);
                 }
             }

@@ -1,4 +1,5 @@
 #include "dolly_depth_scene.hpp"
+#include "dolly_render_class.hpp"
 #include <d3d11.h>
 #include <MinHook.h>
 #include <array>
@@ -22,12 +23,16 @@ void observe_draw(ID3D11DeviceContext* context) noexcept {
 template <unsigned I>
 void STDMETHODCALLTYPE indexed(ID3D11DeviceContext* c, UINT n, UINT start, INT base) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, INT);
+    if (n)
+        classify::draw(c, 0);
     reinterpret_cast<Fn>(originals[I][0])(c, n, start, base);
     if (n)
         observe_draw(c);
 }
 template <unsigned I> void STDMETHODCALLTYPE draw(ID3D11DeviceContext* c, UINT n, UINT start) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT);
+    if (n)
+        classify::draw(c, 1);
     reinterpret_cast<Fn>(originals[I][1])(c, n, start);
     if (n)
         observe_draw(c);
@@ -36,6 +41,8 @@ template <unsigned I>
 void STDMETHODCALLTYPE indexed_instanced(ID3D11DeviceContext* c, UINT n, UINT instances, UINT start,
                                          INT base, UINT first) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT, INT, UINT);
+    if (n && instances)
+        classify::draw(c, 2);
     reinterpret_cast<Fn>(originals[I][2])(c, n, instances, start, base, first);
     if (n && instances)
         observe_draw(c);
@@ -44,18 +51,22 @@ template <unsigned I>
 void STDMETHODCALLTYPE instanced(ID3D11DeviceContext* c, UINT n, UINT instances, UINT start,
                                  UINT first) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT, UINT);
+    if (n && instances)
+        classify::draw(c, 3);
     reinterpret_cast<Fn>(originals[I][3])(c, n, instances, start, first);
     if (n && instances)
         observe_draw(c);
 }
 template <unsigned I> void STDMETHODCALLTYPE automatic(ID3D11DeviceContext* c) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*);
+    classify::draw(c, 4);
     reinterpret_cast<Fn>(originals[I][4])(c);
     observe_draw(c);
 }
 template <unsigned I, unsigned M>
 void STDMETHODCALLTYPE indirect(ID3D11DeviceContext* c, ID3D11Buffer* args, UINT offset) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11Buffer*, UINT);
+    classify::draw(c, M);
     reinterpret_cast<Fn>(originals[I][M])(c, args, offset);
     observe_draw(c);
 }

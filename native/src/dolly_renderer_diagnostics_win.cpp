@@ -6,6 +6,7 @@
 #include <limits>
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_overlay.hpp"
+#include "dolly_render_class.hpp"
 namespace dolly {
 namespace {
 constexpr std::uintptr_t kSystemPointer = 0x430010, kSystemObject = 0x492410;
@@ -218,6 +219,7 @@ void renderer_diagnostics_tick(unsigned char* memory) noexcept {
     result.present_active_since_ms = overlay.present_active_since_ms;
     result.guide_lines = overlay.guide_lines;
     result.guide_labels = overlay.guide_labels;
+    classify::diagnostic(result.layers, sizeof(result.layers));
     auto status = memory + kControlBytes;
     auto sequence = reinterpret_cast<volatile LONG*>(status + 8);
     LONG before = InterlockedCompareExchange(sequence, 0, 0);

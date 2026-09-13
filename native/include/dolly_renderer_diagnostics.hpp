@@ -5,7 +5,7 @@
 namespace dolly {
 // Optional observational block; camera ABI 3 and all existing offsets stay fixed.
 constexpr std::size_t kRendererDiagnosticsOffset = kControlBytes + 1024;
-constexpr std::uint32_t kRendererDiagnosticsAbi = 2;
+constexpr std::uint32_t kRendererDiagnosticsAbi = 3;
 constexpr char kRendererDiagnosticsHash[] =
     "386bdc4adfc8b8a0db67520b98b391f872a214e07077cc17a02f10bf94e3b2d8";
 constexpr std::uint32_t kRendererDiagnosticsImageSize = 0x4d6000;
@@ -36,9 +36,11 @@ struct RendererDiagnostics {
     std::uint64_t present_last_us, present_max_us, overlay_lock_skips;
     std::uint64_t overlay_active_since_ms, present_active_since_ms, guide_lines, guide_labels;
     unsigned char padding[24];
+    // ABI 3: draw-classification probe text used to design layer filters.
+    char layers[512];
 };
 #pragma pack(pop)
-static_assert(sizeof(RendererDiagnostics) == 512, "Optional graphics diagnostic layout");
+static_assert(sizeof(RendererDiagnostics) == 1024, "Optional graphics diagnostic layout");
 static_assert(offsetof(RendererDiagnostics, pending_count) == 96,
               "Optional graphics counter offset");
 static_assert(offsetof(RendererDiagnostics, renderer_hash) == 136, "Optional graphics hash offset");
