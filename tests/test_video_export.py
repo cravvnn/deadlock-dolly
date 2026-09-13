@@ -476,10 +476,36 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_export.status.return_value = {"state": "recording"}
         self.app.playing = False
         self.app._auto_finish_layered = True
+        self.app._take_playing_seen = True
         self.app._refresh_video({**READY, "playing": False,
                                  "message": "Native shot finished. Replay paused and final camera held."})
         self.app._submit.assert_called_once()
         self.assertFalse(self.app._auto_finish_layered)
+
+    def test_stale_shot_finished_message_cannot_finish_a_fresh_take(self):
+        self._video_widgets()
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app.playing = False
+        self.app._auto_finish_layered = True
+        self.app._take_playing_seen = False
+        self.app._refresh_video({**READY, "playing": False,
+                                 "message": "Native shot finished. Replay paused and final camera held."})
+        self.app._submit.assert_not_called()
+        self.assertTrue(self.app._auto_finish_layered)
+
+    def test_the_new_shot_playing_arms_the_auto_finish(self):
+        self._video_widgets()
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app.playing = True
+        self.app._auto_finish_layered = True
+        self.app._take_playing_seen = False
+        self.app._refresh_video({**READY, "playing": True,
+                                 "message": "Playing native camera path at render time."})
+        self.assertTrue(self.app._take_playing_seen)
+        self.app.playing = False
+        self.app._refresh_video({**READY, "playing": False,
+                                 "message": "Native shot finished. Replay paused and final camera held."})
+        self.app._submit.assert_called_once()
 
     def test_layered_take_does_not_finish_before_the_shot_runs(self):
         self._video_widgets()

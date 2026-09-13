@@ -173,6 +173,9 @@ class DollyApp:
         self._auto_finish_layered = False
         self._base_capture = None
         self._layer_queue = []
+        # Set once the active take's shot has actually started playing, so a
+        # stale "shot finished" message cannot finish a fresh take early.
+        self._take_playing_seen = False
         self.reshade_runtime_path = tk.StringVar(value=getattr(self.app_settings, "reshade_runtime_path", ""))
         self.reshade_status_text = tk.StringVar(value="Choose the ReShade runtime to enable its in-game menu.")
         self.game_path.set(self.app_settings.game_path)
@@ -572,6 +575,7 @@ class DollyApp:
         self._auto_finish_layered = bool(options.depth or options.layers) and project is not None
         self._base_capture = options if options.layers else None
         self._layer_queue = list(options.layers)
+        self._take_playing_seen = False
         controller = getattr(self, "controller", None)
         game_pid = getattr(controller, "game_pid", None)
         if callable(game_pid):
@@ -632,6 +636,7 @@ class DollyApp:
                                False, False, (layer,)).validated()
         self._pending_auto_play = True
         self._auto_finish_layered = True
+        self._take_playing_seen = False
         return self.video_export.start(options, project=self._snapshot())
 
     def _refresh_video(self, controller_status):
@@ -650,9 +655,13 @@ class DollyApp:
             self._last_video_state = state
         active = state in ACTIVE_STATES
         ready = recording_ready(controller_status)
+        controller_message = str(controller_status.get("message") or "")
+        if controller_status.get("playing") or "Playing native camera path" in controller_message:
+            self._take_playing_seen = True
         if (active and getattr(self, "_auto_finish_layered", False) and state == "recording"
+                and getattr(self, "_take_playing_seen", False)
                 and not self.busy and not self.playing
-                and "Native shot finished" in str(controller_status.get("message") or "")):
+                and "Native shot finished" in controller_message):
             # A layered take ends with its authored path. Finishing here writes
             # the manifest, preview and shot sidecar instead of leaving the
             # recorder open until the game closes.
