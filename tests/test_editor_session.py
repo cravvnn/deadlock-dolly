@@ -25,7 +25,7 @@ class EditorSessionTests(unittest.TestCase):
         keys = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
         self.app.project.keyframes = keys
         self.app._commit_camera = Mock()
-        event = {"action": "set_framing", "value": 1, "pose": [90, 91, 92, 0, 0, 0, .9]}
+        event = {"action": "set_framing", "value": 1, "pose": [7, 8, 9, 10, 11, 12, .9]}
         self.assertTrue(session.dispatch(self.app, event, self.bridge))
         changed, selected_time = self.app._commit_camera.call_args.args
         expected = deepcopy(keys)
@@ -35,11 +35,19 @@ class EditorSessionTests(unittest.TestCase):
         self.assertNotEqual(keys[1].aspect_ratio, expected[1].aspect_ratio)
         self.app._submit.assert_not_called()
 
+    def test_wheel_away_from_the_saved_camera_stays_live(self):
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
+        self.app._commit_camera = Mock()
+        event = {"action": "set_framing", "value": 1, "pose": [7, 8, 9, 10, 999, 12, .9]}
+        self.assertTrue(session.dispatch(self.app, event, self.bridge))
+        self.app._commit_camera.assert_not_called()
+        self.assertIn("Live framing", self.app.status_text.set.call_args.args[0])
+
     def test_wheel_uses_the_live_selection_over_a_stale_native_index(self):
         self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
         self.app._commit_camera = Mock()
         self.app._selection_index = lambda _tree: 1
-        event = {"action": "set_framing", "value": 0, "pose": [0, 0, 0, 0, 0, 0, .9]}
+        event = {"action": "set_framing", "value": 0, "pose": [7, 8, 9, 10, 11, 12, .9]}
         self.assertTrue(session.dispatch(self.app, event, self.bridge))
         changed, _ = self.app._commit_camera.call_args.args
         self.assertAlmostEqual(changed[1].aspect_ratio, round(Keyframe(0, 1, 2, 3, 4, 5, 6).aspect_ratio * .9, 4), places=4)
@@ -63,7 +71,7 @@ class EditorSessionTests(unittest.TestCase):
             with self.subTest(factor=factor):
                 self.app._commit_camera = Mock()
                 session.dispatch(self.app, {"action": "set_framing", "value": 1,
-                                 "pose": [0, 0, 0, 0, 0, 0, factor]}, self.bridge)
+                                 "pose": [7, 8, 9, 10, 11, 12, factor]}, self.bridge)
                 changed, _ = self.app._commit_camera.call_args.args
                 self.assertEqual(changed[1].aspect_ratio, expected)
 

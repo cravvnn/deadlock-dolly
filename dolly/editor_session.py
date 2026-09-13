@@ -216,6 +216,21 @@ def _native_operation(app, label, function, bridge):
     return app._submit(label, run)
 
 
+def _pose_matches_key(app, index, pose):
+    """True when the live camera is parked on the indexed saved camera."""
+    try:
+        key = app.project.keyframes[index]
+    except (IndexError, TypeError):
+        return False
+    for axis, name in enumerate(("x", "y", "z", "pitch", "yaw", "roll")):
+        if not math.isfinite(pose[axis]):
+            return False
+        tolerance = 1.0 if axis < 3 else .05
+        if abs(pose[axis] - getattr(key, name)) > tolerance:
+            return False
+    return True
+
+
 def dispatch(app, event, bridge):
     """Dispatch one event on Tk's thread. False means leave it queued."""
     if app.busy:
@@ -236,18 +251,22 @@ def dispatch(app, event, bridge):
         index = app._selection_index(app.camera_tree)
         if index is None:
             index = int(native_index)
-        if index == -1:
+        # Scroll edits the shot being framed. A saved camera is only edited
+        # while the live camera is actually parked on it (the in-game previous/
+        # next view or the camera list). Once the user flies away, the edit is
+        # live-only and the next capture stores it.
+        parked = (isinstance(index, int) and 0 <= index < len(app.project.keyframes)
+                  and _pose_matches_key(app, index, event["pose"]))
+        if not parked:
             app.status_text.set("Live framing updated. Capture a camera to save it.")
         else:
-            if index < 0 or index >= len(app.project.keyframes):
-                raise ValueError("That camera is no longer present in this shot.")
             keys = copy.deepcopy(app.project.keyframes)
-            key = keys[int(index)]
+            key = keys[index]
             value = max(.5, min(4.0, round(key.aspect_ratio * factor, 4)))
             if value != key.aspect_ratio:
                 key.aspect_ratio = value
                 app._commit_camera(keys, key.time)
-                app.status_text.set(f"Camera {int(index) + 1} framing set to {value:.4f}.")
+                app.status_text.set(f"Camera {index + 1} framing set to {value:.4f}.")
     elif action.startswith("set_dof_"):
         from .editor_dof import ACTIONS, RANGE_NAME, edited_project
         if action not in ACTIONS:
