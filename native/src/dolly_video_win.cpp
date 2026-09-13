@@ -1161,6 +1161,13 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     } producer(s);
     if (!s.ready.load(std::memory_order_acquire))
         return;
+    if (s.depth_enabled && (!std::isfinite(replay_time) || replay_time < 0)) {
+        // A prepared recording starts before its shot plays. Pre-roll frames
+        // have no replay time and cannot be paired with depth; skip them
+        // instead of failing the take. The first encoded frame is the first
+        // authored one once playback supplies a replay time.
+        return;
+    }
 
     // Map only already-submitted copies, never the copy issued this Present.
     // In real time DO_NOT_WAIT makes a busy GPU a skipped opportunity, not a
