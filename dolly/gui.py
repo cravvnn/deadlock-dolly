@@ -11,6 +11,7 @@ from datetime import datetime
 import json
 import logging
 import math
+import os
 from pathlib import Path
 import queue
 import subprocess
@@ -719,7 +720,8 @@ class DollyApp:
         args = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
                 "-i", str(black), "-i", str(white),
                 "-filter_complex",
-                "[0:v]format=gbrp[b];[1:v]format=gbrp[w];"
+                "[0:v]scale=in_range=tv:out_range=pc,format=gbrp[b];"
+                "[1:v]scale=in_range=tv:out_range=pc,format=gbrp[w];"
                 "[w][b]blend=all_mode=difference[d];"
                 "[d]format=gray,negate[a];"
                 "[b][a]alphamerge,format=yuva444p10le[out]",
@@ -743,6 +745,8 @@ class DollyApp:
                 LOG.warning("Layer sidecar could not be updated for %s", layer)
         for path in (black, white, layer_dir / (layer + "_white.mp4.shot.json"),
                      layer_dir / (layer + ".mp4.shot.json")):
+            if os.environ.get("DOLLY_KEEP_MATTE") == "1":
+                break
             try:
                 if path.is_file():
                     path.unlink()
