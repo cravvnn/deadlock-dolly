@@ -30,7 +30,7 @@ std::atomic<long> gMouseX{0}, gMouseY{0}, gFramingWheel{0};
 struct FramingWheelState {
     int camera = -2;
     double value = 0;
-    std::uint64_t applied_at = 0;
+    double stored = 0;
 };
 FramingWheelState gFramingWheelState;
 std::atomic<bool> gKeys[256]{}, gBlocked[256]{}, gFocusBlocked[256]{};
@@ -630,7 +630,6 @@ void editor_attach_window(HWND window) noexcept {
     reset_keys(true);
 }
 void editor_reset_motion() noexcept {
-    gFramingWheelState = {};
     reset_keys();
 }
 bool editor_install_input_hooks() noexcept {
@@ -691,20 +690,26 @@ void editor_update_view(bool ready, bool paused, bool manual, const CameraPose& 
     gViewHeight = height;
     gViewSequence.fetch_add(1, std::memory_order_release);
 }
-double framing_wheel_step(double live, double stored, int camera, double factor,
-                          std::uint64_t now) noexcept {
+double framing_wheel_step(double live, double stored, int camera, double factor) noexcept {
     // Continue from the value this wheel already produced while it is still the
     // live pose. Python commits the parked key on its own poll cadence, so
     // re-reading the published curve for every event would recompute the same
-    // target and stall the zoom. Re-anchor after an idle gap or a selection
-    // change so desktop edits and camera switches are never compounded over.
+    // target and stall the zoom. Re-anchor only when the camera changes, the
+    // live pose was moved outside the wheel, or the published curve changed to
+    // a value this wheel did not produce (a desktop edit). A timeout would
+    // snap the view back to the selected camera's stored framing whenever the
+    // wheel rests on a clamp.
     double base = stored;
-    if (gFramingWheelState.camera == camera && std::isfinite(gFramingWheelState.value) &&
-        now - gFramingWheelState.applied_at <= 500 &&
-        std::abs(live - gFramingWheelState.value) <= 1e-6)
-        base = gFramingWheelState.value;
+    if (gFramingWheelState.camera == camera &&
+        std::abs(live - gFramingWheelState.value) <= 1e-6) {
+        // A parked commit lands as the value this wheel just produced; keep
+        // compounding on it instead of rebasing to the outgoing curve value.
+        if (std::abs(stored - gFramingWheelState.stored) <= 1e-6 ||
+            std::abs(stored - gFramingWheelState.value) <= 1e-4)
+            base = gFramingWheelState.value;
+    }
     const double next = std::clamp(base * factor, .5, 4.0);
-    gFramingWheelState = {camera, next, now};
+    gFramingWheelState = {camera, next, stored};
     return next;
 }
 void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long wheel) noexcept {
@@ -723,7 +728,7 @@ void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long whee
     }
     const double base = pose[6];
     const double factor = std::pow(.9, double(wheel) / WHEEL_DELTA);
-    const double next = framing_wheel_step(base, stored, selected, factor, GetTickCount64());
+    const double next = framing_wheel_step(base, stored, selected, factor);
     CameraPose edit = pose;
     edit[6] = factor;
     if (next != base && factor != 1.0 &&

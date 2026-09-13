@@ -968,19 +968,30 @@ void editor_framing_checks() {
     // recompute one target from a stale base and stall the zoom.
     dolly::gFramingWheelState = {};
     double burst = 1.8;
-    burst = dolly::framing_wheel_step(burst, 1.8, 0, .9, 1000);
+    burst = dolly::framing_wheel_step(burst, 1.8, 0, .9);
     close_to(burst, 1.62, "Wheel burst did not start from the published curve");
-    burst = dolly::framing_wheel_step(burst, 1.8, 0, .9, 1050);
+    burst = dolly::framing_wheel_step(burst, 1.8, 0, .9);
     close_to(burst, 1.458, "A stale published curve stalled the wheel burst");
-    burst = dolly::framing_wheel_step(burst, 1.458, 0, .9, 1100);
+    burst = dolly::framing_wheel_step(burst, 1.458, 0, .9);
     close_to(burst, 1.3122, "The wheel burst did not compound across updates");
+    // Resting on a clamp, or pausing, then scrolling back must not rebase to
+    // the selected camera's stored framing. Only a real camera, pose or curve
+    // change re-anchors the burst.
     dolly::gFramingWheelState = {};
-    double idle = dolly::framing_wheel_step(1.2, 1.2, 0, .9, 3000);
-    close_to(idle, 1.08, "Wheel burst did not start from the published curve");
-    close_to(dolly::framing_wheel_step(idle, 1.3, 0, .9, 3700), 1.17,
-             "An idle gap did not re-anchor the wheel to the published curve");
-    close_to(dolly::framing_wheel_step(1.17, 1.25, 1, .9, 3750), 1.125,
+    double rest = dolly::framing_wheel_step(1.25, 1.25, 0, .9);
+    close_to(rest, 1.125, "Wheel burst did not start from the published curve");
+    rest = dolly::framing_wheel_step(rest, 1.25, 0, .9);
+    close_to(rest, 1.0125, "A resting wheel did not keep compounding");
+    rest = dolly::framing_wheel_step(rest, 1.0125, 0, .9);
+    close_to(rest, .91125, "A parked commit did not compound on the wheel value");
+    close_to(dolly::framing_wheel_step(rest, 1.25, 1, .9), 1.125,
              "A camera change did not re-anchor the wheel to the published curve");
+    close_to(dolly::framing_wheel_step(1.125, 1.25, 1, .9), 1.0125,
+             "A same-camera wheel did not keep compounding");
+    close_to(dolly::framing_wheel_step(1.0125, 2.0, 1, .9), 1.8,
+             "A desktop curve edit did not re-anchor the wheel");
+    close_to(dolly::framing_wheel_step(1.6, 1.6, 1, .9), 1.44,
+             "An outside pose change did not re-anchor the wheel");
     dolly::gAcknowledged = dolly::gLastEvent;
     editor_update_view(true, false, true, pose);
     dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
