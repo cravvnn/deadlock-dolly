@@ -63,7 +63,7 @@ class EditorSettingsTests(unittest.TestCase):
         save_settings(settings, self.path)
         self.assertEqual(load_settings(self.path), settings)
         raw = json.loads(self.path.read_text())
-        self.assertEqual(raw["version"], 4)
+        self.assertEqual(raw["version"], 5)
         self.assertNotIn("migration_warnings", raw)
         self.assertNotIn("enabled", raw)
         self.assertEqual(raw["capture_binding"]["key"], "Mouse4")
@@ -137,6 +137,8 @@ class EditorSettingsTests(unittest.TestCase):
         raw = json.loads(self.path.read_text())
         raw["version"] = 2
         raw.pop("full_editor")
+        raw.pop("ffmpeg_path")
+        raw.pop("auto_updates")
         raw.pop("reshade_binding")
         raw.pop("reshade_runtime_path")
         self.path.write_text(json.dumps(raw))

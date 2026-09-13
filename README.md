@@ -70,6 +70,14 @@ See `Start_Here.txt` and the [user guide](docs/USER_GUIDE.md) for the full contr
 The GitHub **Source code** download and source ZIP contain the source and build
 files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
 
+## Application updates
+
+Starting with 0.5.5-alpha, the Windows package checks the published GitHub Latest
+release and updates automatically when idle. Settings, shots and external tool
+paths are preserved. Use Settings / Updates for manual checks or to turn off
+automatic installation. See [Updating Dolly](docs/UPDATING.md) for release
+publishing and interrupted-update recovery.
+
 ## Video and ReShade
 
 Choose an MP4 output path and FPS on **Export**, then use **F8 → Export → Record video**

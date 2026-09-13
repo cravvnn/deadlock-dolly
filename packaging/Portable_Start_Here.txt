@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.4 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.5.5 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -172,3 +172,13 @@ when available. Logs and recovery journals are beside Dolly.exe.
 
 Full guide: https://github.com/cravvnn/deadlock-dolly/blob/main/docs/USER_GUIDE.md
 Component notices are in LICENSE.txt and _internal/third_party.
+
+
+APPLICATION UPDATES
+
+Dolly checks the published GitHub Latest release on startup. Automatic updates
+wait for saved work and a closed game. Settings > Updates has manual checking
+and an automatic-update switch. Shots, settings and external tool paths stay.
+If an interrupted update prevents Dolly from starting, close Deadlock and run
+DollyUpdater.exe beside it. Keep the neighboring .dolly-update-* recovery folder.
+See Updating.md for details.

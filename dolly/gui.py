@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import queue
 import subprocess
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -167,7 +168,7 @@ class DollyApp:
         self.video_layer_effects = tk.BooleanVar(value=False)
         self.video_export_speed = tk.StringVar(value="1")
         _bundled_ffmpeg = bundled_ffmpeg_path()
-        self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
+        self.ffmpeg_path = tk.StringVar(value=self.app_settings.ffmpeg_path or (str(_bundled_ffmpeg) if _bundled_ffmpeg else ""))
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
         self._pending_auto_play = False
         # Layered takes capture exactly the authored path, so they finish
@@ -472,6 +473,38 @@ class DollyApp:
             filetypes=(("FFmpeg", "ffmpeg.exe"), ("Executable", "*.exe"), ("All files", "*.*")))
         if path:
             self.ffmpeg_path.set(path)
+            self._save_ffmpeg_preference()
+
+    def _save_ffmpeg_preference(self):
+        def save():
+            selected = self.ffmpeg_path.get().strip()
+            bundled = bundled_ffmpeg_path()
+            if selected and not Path(selected).is_file():
+                raise ValueError("Choose an existing FFmpeg executable.")
+            custom = "" if bundled and selected and Path(selected).resolve() == bundled.resolve() else selected
+            settings = replace(self.app_settings, ffmpeg_path=custom)
+            save_settings(settings)
+            self.app_settings = settings
+        self._guard("Save FFmpeg preference", save)
+
+    def _use_bundled_ffmpeg(self):
+        if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
+            return
+        bundled = bundled_ffmpeg_path()
+        if bundled:
+            self.ffmpeg_path.set(str(bundled))
+            self._save_ffmpeg_preference()
+
+    def _check_updates(self):
+        if hasattr(self, "update_manager"):
+            self.update_manager.check()
+
+    def _save_update_preference(self):
+        def save():
+            settings = replace(self.app_settings, auto_updates=self.auto_updates.get())
+            save_settings(settings)
+            self.app_settings = settings
+        self._guard("Save update preference", save)
 
     def _depth_toggled(self):
         # A depth master is a paired, render-paced export: capture exactly one
@@ -3160,7 +3193,9 @@ class DollyApp:
 
 def main():
     root = tk.Tk()
-    DollyApp(root)
+    app = DollyApp(root)
+    from .update_ui import UpdateUI
+    app.update_manager = UpdateUI(app, skip_startup="--updated" in sys.argv)
     root.mainloop()
 
 

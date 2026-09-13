@@ -185,6 +185,13 @@ def build_settings(app):
     app.settings_page = page
     body = page.body
     ttk.Label(body, text="Settings", style="Section.TLabel").pack(anchor="w", pady=(0, GAP))
+    updates = card(body, "Updates")
+    app.auto_updates = tk.BooleanVar(value=app.app_settings.auto_updates)
+    app.update_status = tk.StringVar(value="Checks published Latest releases; experimental pre-releases are ignored.")
+    ttk.Checkbutton(updates, text="Download and install updates automatically when idle", variable=app.auto_updates,
+                    command=app._save_update_preference).pack(anchor="w", pady=(0, GAP))
+    app.update_check_button = actions(updates, (("Check for updates", app._check_updates),), 1)[0]
+    ttk.Label(updates, textvariable=app.update_status, wraplength=700, style="CardMuted.TLabel").pack(fill="x")
     game = card(body, "Game & files")
     field(game, "Deadlock executable", app.game_path)
     actions(game, (("Browse game...", app._browse_game),), 1)
@@ -260,4 +267,5 @@ def build_export(app):
     ttk.Label(controls, textvariable=app.video_status_text, style="CardMuted.TLabel", wraplength=760).pack(fill="x")
     runtime = disclosure(body, "FFmpeg runtime")
     app.ffmpeg_path_entry = field(runtime.body, "Executable", app.ffmpeg_path)
-    app.ffmpeg_browse_button = actions(runtime.body, (("Browse FFmpeg...", app._browse_ffmpeg),), 1)[0]
+    app.ffmpeg_browse_button = actions(runtime.body, (("Browse FFmpeg...", app._browse_ffmpeg), ("Save path", app._save_ffmpeg_preference),
+        ("Use bundled FFmpeg", app._use_bundled_ffmpeg)), 3)[0]

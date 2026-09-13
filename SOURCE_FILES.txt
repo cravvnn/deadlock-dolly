@@ -323,3 +323,10 @@ native/tests/depth_live_tests.cpp
 docs/UI_CLEANUP_PROPOSAL.md
 dolly/gui_layout.py
 tests/test_desktop_layout.py
+
+dolly/updater.py
+dolly/update_worker.py
+dolly/update_ui.py
+packaging/update_entrypoint.py
+tests/test_updater.py
+docs/UPDATING.md

@@ -55,6 +55,8 @@ def bundle_self_test(report_path: Path) -> int:
         branding.set_taskbar_identity()
         root = tk.Tk()
         app_ui = gui.DollyApp(root)
+        from .update_ui import UpdateUI
+        app_ui.update_manager = UpdateUI(app_ui, skip_startup=True)
         root.update_idletasks()
         root.update()
         # Exercise the new export controls at the supported minimum size.
@@ -121,6 +123,7 @@ def _run(argv: list[str]) -> int:
     group.add_argument("--recover", action="store_true", help="Restore pending game configuration; close Deadlock first")
     group.add_argument("--self-test", metavar="REPORT_JSON", type=Path, help="Check this bundle without launching a game")
     group.add_argument("--cleanup-session", nargs=2, metavar=("SESSION", "HANDLE"), help=argparse.SUPPRESS)
+    group.add_argument("--updated", action="store_true", help=argparse.SUPPRESS)
     options = parser.parse_args(argv)
     if options.cleanup_session:
         from .session_cleanup import wait_and_cleanup
@@ -133,6 +136,9 @@ def _run(argv: list[str]) -> int:
         restored = recover_pending()
         _message(f"Recovered or cleaned {len(restored)} session(s)." if restored else
                  "No pending recovery or temporary-folder cleanup is needed.")
+        return 0
+    from .update_ui import recover_pending
+    if recover_pending():
         return 0
     from .__main__ import main as gui_main
     return gui_main()

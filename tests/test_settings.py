@@ -33,11 +33,11 @@ class SettingsTests(unittest.TestCase):
         save_settings(settings, self.path)
         self.assertEqual(load_settings(self.path), settings)
         raw = json.loads(self.path.read_text("utf-8"))
-        self.assertEqual(set(raw), {"version", "full_editor", "capture_binding", "game_path", "replay_folder",
+        self.assertEqual(set(raw), {"version", "full_editor", "ffmpeg_path", "auto_updates", "capture_binding", "game_path", "replay_folder",
                                    "demo_path", "launch_options", "movement_speed",
                                    "mouse_sensitivity", "action_bindings", "reshade_binding",
                                    "reshade_runtime_path"})
-        self.assertEqual(raw["version"], 4)
+        self.assertEqual(raw["version"], 5)
         self.assertEqual(raw["capture_binding"], settings.capture_binding.to_dict())
         self.assertNotIn("enabled", raw)
 
@@ -48,6 +48,8 @@ class SettingsTests(unittest.TestCase):
         raw = json.loads(self.path.read_text("utf-8"))
         raw["version"] = 3
         raw.pop("full_editor")
+        raw.pop("ffmpeg_path")
+        raw.pop("auto_updates")
         self.write_raw(json.dumps(raw))
         before = self.path.read_bytes()
         loaded = load_settings(self.path)

@@ -131,6 +131,15 @@ def main() -> int:
                     "--distpath", str(build / "frozen"), "--workpath", str(build / "pyinstaller"),
                     str(ROOT / "packaging" / "dolly.spec")], cwd=ROOT, check=True)
     bundle = build / "frozen" / "DeadlockDolly"
+    print("Building the standalone update/recovery helper...", flush=True)
+    subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
+                    "--name", "DollyUpdater", "--paths", str(ROOT), "--distpath", str(build / "updater"),
+                    "--workpath", str(build / "updater-work"), "--specpath", str(build / "updater-spec"),
+                    str(ROOT / "packaging" / "update_entrypoint.py")], cwd=ROOT, check=True)
+    shutil.copy2(build / "updater" / "DollyUpdater.exe", bundle / "DollyUpdater.exe")
+    subprocess.run([str(bundle / "DollyUpdater.exe"), "--self-test", str(checks / "updater-smoke.json")], check=True, timeout=60)
+    if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
+        raise RuntimeError("Standalone updater smoke test failed")
     third_party = bundle / "_internal" / "third_party"
     shutil.copytree(ROOT / "third_party", third_party, dirs_exist_ok=True)
     print("Staging bundled FFmpeg (LGPL)...", flush=True)
@@ -152,6 +161,7 @@ def main() -> int:
         "](VALIDATION.md)", "](https://github.com/cravvnn/deadlock-dolly/blob/main/docs/VALIDATION.md)")
     (bundle / "Video_and_ReShade.md").write_text(video_guide, encoding="utf-8")
     shutil.copy2(ROOT / "docs" / "LAYER_EXPORT.md", bundle / "LAYER_EXPORT.md")
+    shutil.copy2(ROOT / "docs" / "UPDATING.md", bundle / "Updating.md")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     for extension in ("md", "json"):
@@ -189,6 +199,8 @@ def main() -> int:
             "native_bridge": {"abi": native_info["abi"], "sha256": native_info["sha256"],
                               "pe": native_report, "game_runtime_verified": False}}
     (bundle / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    from dolly.updater import write_manifest
+    write_manifest(bundle, __version__)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     windows_zip = dist / f"Deadlock_Dolly_{__version__}_Windows_x64.zip"
