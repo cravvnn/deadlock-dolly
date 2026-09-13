@@ -92,6 +92,12 @@ bool wants_depth() noexcept;
 // The render callback never writes an output file.
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
              const depth::SceneFrame* scene = nullptr, double replay_time = -1) noexcept;
+// Latest authored-path replay time from the native view callback. Returns false
+// when no native path evaluated a playing frame on the current view. Layer
+// takes use it so every take starts at the same authored frame.
+bool path_replay_time(double& seconds) noexcept;
+// Bridge-side publication of that clock (called from the native view hook).
+void publish_path_replay_time(bool playing, double phase) noexcept;
 // Call at a serialized render/resize boundary before releasing the device.
 // Stops an active recording and releases only recorder-owned GPU resources.
 void reset_resources() noexcept;

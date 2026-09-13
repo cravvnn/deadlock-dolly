@@ -128,6 +128,9 @@ struct Session {
     // shot that never started, instead of a silent empty take.
     std::atomic<std::uint64_t> depth_skips{0}, depth_skip_since{0};
     std::atomic<double> depth_last_replay{-2.0};
+    // Last authored-path time submitted. The path clamps at its end, so
+    // duplicate clamped frames are dropped to keep every take the same length.
+    std::atomic<double> shot_last_replay{-1.0};
     // Capture-path accounting for zero-frame diagnosis.
     std::atomic<std::uint64_t> capture_calls{0}, capture_not_ready{0}, capture_preplay{0},
         capture_dropped{0}, capture_submitted{0}, capture_produced{0};
@@ -191,6 +194,11 @@ struct CachedStatus {
     std::atomic<bool> depth{false};
 } cached;
 RenderResources gpu;
+// Published by the bridge for every successful Mode::Play path evaluation.
+// The recorder pairs frames with the native authored path directly instead of
+// the editor config round trip, which keeps separate layer takes aligned.
+std::atomic<bool> gPathPlaying{false};
+std::atomic<double> gPathPhase{0};
 
 std::uint64_t now_qpc() noexcept {
     LARGE_INTEGER result{};
@@ -1228,6 +1236,23 @@ bool wants_depth() noexcept {
     }
     return cached.depth.load(std::memory_order_acquire);
 }
+void publish_path_replay_time(bool playing, double phase) noexcept {
+    if (playing && std::isfinite(phase)) {
+        gPathPhase.store(phase, std::memory_order_relaxed);
+        gPathPlaying.store(true, std::memory_order_release);
+        return;
+    }
+    gPathPlaying.store(false, std::memory_order_release);
+}
+bool path_replay_time(double& seconds) noexcept {
+    if (!gPathPlaying.load(std::memory_order_acquire))
+        return false;
+    const auto phase = gPathPhase.load(std::memory_order_relaxed);
+    if (!std::isfinite(phase) || phase < 0)
+        return false;
+    seconds = phase;
+    return true;
+}
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
              const depth::SceneFrame* scene, double replay_time) noexcept {
     gCaptureAttempts.fetch_add(1, std::memory_order_relaxed);
@@ -1309,6 +1334,14 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
             fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT), message);
         }
         return;
+    }
+    if (s.depth_enabled || s.shot_only) {
+        // The authored path clamps at its end. Dropping repeated clamped
+        // frames keeps the color, depth and layer takes the same length.
+        const auto previous = s.shot_last_replay.load(std::memory_order_relaxed);
+        if (replay_time <= previous)
+            return;
+        s.shot_last_replay.store(replay_time, std::memory_order_relaxed);
     }
 
     // Map only already-submitted copies, never the copy issued this Present.

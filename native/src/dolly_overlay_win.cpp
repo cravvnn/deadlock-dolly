@@ -1255,8 +1255,13 @@ void render_overlay(IDXGISwapChain* chain) {
                 scene = depth_tracker->consume(capture_context);
                 sample = &scene;
             }
-            video::capture(capture_chain, capture_device, capture_context, sample,
-                           editor.playing ? editor.phase : -1.0);
+            // Prefer the native path clock this view just evaluated: it is the
+            // authored frame time and not gated by the editor config round
+            // trip, so separate layer takes start on the same frame.
+            double replay_time = -1.0;
+            if (!video::path_replay_time(replay_time))
+                replay_time = editor.playing ? editor.phase : -1.0;
+            video::capture(capture_chain, capture_device, capture_context, sample, replay_time);
         }
     };
     bool effects_handled = false;

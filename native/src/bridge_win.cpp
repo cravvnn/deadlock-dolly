@@ -450,6 +450,9 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         finish(State::Probe, 0, "Native view hook ready; load a local replay to test a camera.");
         return;
     }
+    // Each view republishes its own state; only a successful path evaluation
+    // below turns the native path clock back on.
+    video::publish_path_replay_time(false, 0);
     const auto& c = command->wire;
     if (c.command != seen) {
         // Every new command is first acknowledged by a real matching main view.
@@ -669,6 +672,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     for (int i = 0; i < 7; ++i)
         status.applied_pose[i] = applied[i];
     status.applied_fov = fov;
+    if (c.mode == std::uint32_t(Mode::Play))
+        video::publish_path_replay_time(true, phase);
     finish(completed ? State::Completed
                      : (c.mode == std::uint32_t(Mode::Play) ? State::Playing : State::Armed),
            0,
