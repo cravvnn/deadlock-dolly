@@ -32,6 +32,35 @@ const GUID kCommandData = {
 const GUID kCommandType = {
     0x2c1e2256, 0x1747, 0x49e6, {0x87, 0x05, 0x5b, 0x2a, 0x6c, 0x0d, 0xae, 0xa9}};
 std::atomic<std::uint64_t> next_epoch{0};
+std::atomic<std::uint64_t> gDrawCalls{0}, gMatchedDraws{0};
+std::atomic<bool> gHooksInstalled{false};
+std::mutex gDiagnosticMutex;
+char gLastRejected[160]{};
+bool scene_name_matches(const char* name, std::uint32_t width, std::uint32_t height) noexcept {
+    // Reviewed family from both game captures:
+    // scratchrendertarget_<id>_<width>x<height>_<a>_<b>.vtex
+    // The middle ID and trailing pair are not stable runtime identifiers, so
+    // match the family plus the full resolution instead of one captured name.
+    constexpr char prefix[] = "scratchrendertarget_";
+    if (!name)
+        return false;
+    const auto length = std::strlen(name);
+    const auto prefix_length = sizeof(prefix) - 1;
+    if (length <= prefix_length + 5 || std::strncmp(name, prefix, prefix_length) != 0 ||
+        std::strcmp(name + length - 5, ".vtex") != 0)
+        return false;
+    char resolution[48]{};
+    std::snprintf(resolution, sizeof(resolution), "_%ux%u_", width, height);
+    return std::strstr(name, resolution) != nullptr;
+}
+bool reject_name(const char* name) noexcept {
+    if (name) {
+        std::unique_lock<std::mutex> lock(gDiagnosticMutex, std::try_to_lock);
+        if (lock.owns_lock())
+            std::snprintf(gLastRejected, sizeof(gLastRejected), "%s", name);
+    }
+    return false;
+}
 }
 
 struct SceneResources {
@@ -137,16 +166,17 @@ struct SceneTracker::Impl {
             (dsv.Flags & D3D11_DSV_READ_ONLY_DEPTH) != 0 ||
             (dsv.Format != DXGI_FORMAT_D24_UNORM_S8_UINT && dsv.Format != DXGI_FORMAT_D32_FLOAT))
             return false;
-        // This is the scene scratch target identified in both reviewed game
-        // captures, not a RenderDoc resource ID or a largest-texture guess.
-        char expected[128]{}, name[128]{};
-        std::snprintf(expected, sizeof(expected), "scratchrendertarget_1118301577_%ux%u_17_1.vtex",
-                      width, height);
+        // Reviewed scene-target family; the captured numeric ID is only one
+        // instance of it. Count matches for the failure diagnostics.
+        char name[160]{};
         UINT size = sizeof(name) - 1;
         if (FAILED(result.p->GetPrivateData(WKPDID_D3DDebugObjectName, &size, name)) ||
             size >= sizeof(name))
-            return false;
-        return std::strcmp(name, expected) == 0;
+            return reject_name(nullptr);
+        if (!scene_name_matches(name, width, height))
+            return reject_name(name);
+        gMatchedDraws.fetch_add(1, std::memory_order_relaxed);
+        return true;
     }
     Context* record(ID3D11DeviceContext* context) {
         auto found = contexts.find(context);
@@ -242,6 +272,7 @@ SceneTracker::~SceneTracker() = default;
 void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
     if (!impl->owns(context))
         return;
+    gDrawCalls.fetch_add(1, std::memory_order_relaxed);
     try {
         Com<ID3D11DepthStencilView> dsv;
         context->OMGetRenderTargets(0, nullptr, &dsv.p);
@@ -383,5 +414,26 @@ SceneFrame SceneTracker::consume(ID3D11DeviceContext* immediate) noexcept {
         impl->failed = true;
         return {SceneResult::failed, {}};
     }
+}
+const char* scene_diagnostic() noexcept {
+    static thread_local char text[352]{};
+    char rejected[160]{};
+    {
+        std::unique_lock<std::mutex> lock(gDiagnosticMutex, std::try_to_lock);
+        if (lock.owns_lock())
+            std::snprintf(rejected, sizeof(rejected), "%s", gLastRejected);
+    }
+    std::snprintf(text, sizeof(text), "scene draws=%llu matched=%llu hooks=%u last=%s",
+                  static_cast<unsigned long long>(gDrawCalls.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(gMatchedDraws.load(std::memory_order_relaxed)),
+                  gHooksInstalled.load(std::memory_order_relaxed) ? 1u : 0u,
+                  rejected[0] ? rejected : "none");
+    return text;
+}
+void scene_note_hooks(bool installed) noexcept {
+    gHooksInstalled.store(installed, std::memory_order_relaxed);
+}
+bool scene_target_name(const char* name, std::uint32_t width, std::uint32_t height) noexcept {
+    return scene_name_matches(name, width, height);
 }
 }

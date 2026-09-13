@@ -1301,9 +1301,13 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         const auto count = scene ? scene->calibration(calibration, 14) : 0;
         if (!scene || scene->result != depth::SceneResult::ready || !count ||
             !std::isfinite(replay_time) || replay_time < 0) {
-            fail(
-                s, E_FAIL,
-                L"A verified scene depth and replay time were not available for this color frame.");
+            wchar_t detail[352]{};
+            MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail, 351);
+            std::wstring message =
+                L"A verified scene depth and replay time were not available for this color frame. (";
+            message += detail;
+            message += L")";
+            fail_text(s, E_FAIL, message);
             return;
         }
         const depth::Frame metadata{s.width, s.height, gpu.submitted, replay_time, {}};

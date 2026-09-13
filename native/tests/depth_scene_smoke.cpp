@@ -182,6 +182,13 @@ struct Surface {
 };
 void check(D3D_DRIVER_TYPE driver) {
     Test t(driver);
+    require(scene_target_name("scratchrendertarget_1118301577_17x3_17_1.vtex", 17, 3),
+            "Reviewed scene target name no longer matches");
+    require(scene_target_name("scratchrendertarget_222_17x3_3_9.vtex", 17, 3),
+            "A same-family scene target variant was rejected");
+    require(!scene_target_name("scratchrendertarget_222_17x4_3_9.vtex", 17, 3),
+            "Wrong-resolution scene target was accepted");
+    require(!scene_target_name("ui_depth", 17, 3), "Unrelated depth target was accepted");
     const char* scene_name = "scratchrendertarget_1118301577_17x3_17_1.vtex";
     Surface scene(t.device.p, scene_name), ui(t.device.p, "ui_depth"),
         other(t.device.p, scene_name);

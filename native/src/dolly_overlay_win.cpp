@@ -1190,6 +1190,7 @@ void render_overlay(IDXGISwapChain* chain) {
                 if (depth_live.needs_hooks() &&
                     depth::install_scene_hooks(capture_device, capture_context))
                     depth_live.note_hooks(true);
+                depth::scene_note_hooks(depth_live.hooks());
                 if (depth_live.needs_tracker()) {
                     auto tracker = std::make_shared<depth::SceneTracker>(
                         capture_device, depth_live.width(), depth_live.height());

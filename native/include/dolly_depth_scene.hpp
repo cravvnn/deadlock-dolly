@@ -46,4 +46,15 @@ private:
 // game's graphics state. Call install only after the existing native gates.
 bool install_scene_hooks(ID3D11Device* device, ID3D11DeviceContext* immediate) noexcept;
 void set_scene_tracker(std::shared_ptr<SceneTracker> tracker) noexcept;
+
+// Compact, single-line diagnostic for the last observation: draws seen, how
+// many matched the reviewed scene target, hook installation state and the most
+// recent rejected texture name. Diagnostic only; never changes behavior.
+const char* scene_diagnostic() noexcept;
+void scene_note_hooks(bool installed) noexcept;
+
+// Whether a texture debug name belongs to the reviewed full-resolution scene
+// target family: scratchrendertarget_<id>_<w>x<h>_<a>_<b>.vtex. The numeric ID
+// and trailing pair vary per session; the family and resolution identify it.
+bool scene_target_name(const char* name, std::uint32_t width, std::uint32_t height) noexcept;
 }
