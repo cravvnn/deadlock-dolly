@@ -98,24 +98,33 @@ class LayerOptionsTests(unittest.TestCase):
 
     def test_layers_require_fixed_step_and_unique_known_names(self):
         with self.assertRaisesRegex(ValueError, "Fixed-step"):
-            VideoOptions(self.path, layers=("world",)).validated()
+            VideoOptions(self.path, layers=("world",), ffmpeg_path=self.exe).validated()
         with self.assertRaisesRegex(ValueError, "Unknown layer"):
-            VideoOptions(self.path, fixed_step=True, layers=("hud",)).validated()
+            VideoOptions(self.path, fixed_step=True, layers=("hud",),
+                         ffmpeg_path=self.exe).validated()
         with self.assertRaisesRegex(ValueError, "once"):
-            VideoOptions(self.path, fixed_step=True, layers=("world", "world")).validated()
+            VideoOptions(self.path, fixed_step=True, layers=("world", "world"),
+                         ffmpeg_path=self.exe).validated()
         with self.assertRaisesRegex(ValueError, "tuple"):
-            VideoOptions(self.path, fixed_step=True, layers=["world"]).validated()
+            VideoOptions(self.path, fixed_step=True, layers=["world"],
+                         ffmpeg_path=self.exe).validated()
+
+    def test_layers_need_an_ffmpeg_encoder_for_the_alpha_matte(self):
+        with self.assertRaisesRegex(ValueError, "FFmpeg encoder"):
+            VideoOptions(self.path, fixed_step=True, layers=("players",),
+                         codec="builtin").validated()
 
     def test_layers_use_the_take_folder_layout(self):
-        options = VideoOptions(self.path, fixed_step=True, layers=("world", "players")) \
-            .validated()
+        options = VideoOptions(self.path, fixed_step=True, layers=("world", "players"),
+                               ffmpeg_path=self.exe).validated()
         self.assertEqual(options.layers, ("world", "players"))
         self.assertFalse(options.depth)
 
     def test_existing_take_folder_is_rejected_for_layer_only_takes(self):
         self.path.with_suffix("").mkdir()
         with self.assertRaisesRegex(ValueError, "folder"):
-            VideoOptions(self.path, fixed_step=True, layers=("world",)).validated()
+            VideoOptions(self.path, fixed_step=True, layers=("world",),
+                         ffmpeg_path=self.exe).validated()
 
 
 if __name__ == "__main__":

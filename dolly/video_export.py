@@ -130,6 +130,12 @@ class VideoOptions:
     # own video in a subfolder of the take; fixed-step keeps them aligned with
     # the color take frame for frame.
     layers: tuple[str, ...] = ()
+    # Matte pass for a layer take: force the engine's color clear to white so
+    # the black and white passes can be combined into a real alpha channel.
+    white_clear: bool = False
+    # Capture only frames that carry a replay time (set automatically for
+    # depth/layer takes; the white matte pass sets it explicitly).
+    shot_only: bool = False
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120, 300, 600):
@@ -172,6 +178,10 @@ class VideoOptions:
             raise ValueError("Unknown layer export: " + ", ".join(unknown))
         if self.layers and not self.fixed_step:
             raise ValueError("Layer exports need Fixed-step export so every take stays aligned.")
+        if type(self.white_clear) is not bool:
+            raise ValueError("The white matte background must be on or off.")
+        if type(self.shot_only) is not bool:
+            raise ValueError("Shot-only capture must be on or off.")
         if isinstance(self.speed, bool) or not isinstance(self.speed, (int, float)):
             raise ValueError("Export speed must be a number between 0.05 and 4.")
         speed = float(self.speed)
@@ -184,12 +194,17 @@ class VideoOptions:
         # check gives a useful error; it is not the overwrite safety boundary.
         result = VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
                               ffmpeg, self.fixed_step, speed, self.depth, self.depth_exr,
-                              self.layers)
+                              self.layers, self.white_clear, self.shot_only)
         if self.depth:
             encoder, _codec_id = resolve_backend(result)
             if encoder != 1:
                 raise ValueError("The depth master needs an FFmpeg encoder; choose Auto or a "
                                  "hardware encoder, or clear the depth master.")
+        if self.layers:
+            encoder, _codec_id = resolve_backend(result)
+            if encoder != 1 or ffmpeg is None:
+                raise ValueError("Layer exports need an FFmpeg encoder for the alpha matte; "
+                                 "choose Auto or a hardware encoder.")
         if self.depth or self.layers:
             folder = path.with_suffix("")
             if folder.exists() or folder.is_symlink():
@@ -357,7 +372,8 @@ class VideoExport:
                                ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "",
                                fixed_step=options.fixed_step, depth=options.depth,
                                depth_exr=options.depth_exr,
-                               shot_only=bool(options.depth or options.layers))
+                               shot_only=bool(options.depth or options.layers or options.shot_only),
+                               white_clear=options.white_clear)
         except Exception as exc:
             if folder is not None:
                 try:

@@ -36,7 +36,7 @@ def _path(value: str, required: bool = False) -> bytes:
 
 def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=20000000,
                  encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-                 depth=False, depth_exr=False, shot_only=False):
+                 depth=False, depth_exr=False, shot_only=False, white_clear=False):
     if type(sequence) is not int or not 0 < sequence <= 0xfffffffe or sequence & 1:
         raise ValueError("Invalid media command sequence")
     if command not in COMMANDS:
@@ -63,15 +63,17 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
         raise ValueError("The depth EXR sequence requires the depth master")
     if type(shot_only) is not bool:
         raise ValueError("Shot-only recording must be a boolean")
+    if type(white_clear) is not bool:
+        raise ValueError("The white matte background must be a boolean")
     needs_ffmpeg = command == "start_video" and encoder == 1
     if codec == len(CODECS) - 1 and path and not str(path).lower().endswith(".mkv"):
         raise ValueError("Lossless video requires a .mkv destination")
     # Reserved bit 0: fixed-step export. Bit 1: paired depth master (.mov).
     # Bit 2: also write the float EXR sequence. Bit 3: capture only frames
-    # with a replay time so layered takes stay aligned. The native mask
-    # accepts exactly these bits.
+    # with a replay time so layered takes stay aligned. Bit 4: force a white
+    # clear for the matte pass. The native mask accepts exactly these bits.
     reserved = ((1 if fixed_step else 0) | (2 if depth else 0) | (4 if depth_exr else 0)
-                | (8 if shot_only else 0))
+                | (8 if shot_only else 0) | (16 if white_clear else 0))
     return COMMAND.pack(b"DLYMED01", sequence, ABI, COMMANDS[command], fps, bitrate,
                         reserved,
                         encoder, codec, quality, preset,

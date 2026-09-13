@@ -105,6 +105,7 @@ struct Session {
     bool depth_enabled = false;
     bool depth_exr = false;
     bool shot_only = false;
+    bool white_clear = false;
     // Depth layer folder and its ProRes master, derived from the color path's
     // parent when depth is enabled: <color parent>\depth\depth.mov.
     std::wstring depth_directory, depth_video_path;
@@ -192,6 +193,7 @@ struct CachedStatus {
     std::atomic<std::uint64_t> written{0}, dropped{0}, duration{0};
     std::atomic<const wchar_t*> error{L""};
     std::atomic<bool> depth{false};
+    std::atomic<bool> white_clear{false};
 } cached;
 RenderResources gpu;
 // Published by the bridge for every successful Mode::Play path evaluation.
@@ -1138,6 +1140,7 @@ bool start(const Options& options) noexcept {
         next->depth_enabled = options.depth;
         next->depth_exr = options.depth_exr;
         next->shot_only = options.shot_only;
+        next->white_clear = options.white_clear;
         if (options.ffmpeg)
             next->ffmpeg = options.ffmpeg;
         if (next->depth_enabled) {
@@ -1235,6 +1238,15 @@ bool wants_depth() noexcept {
         return wanted;
     }
     return cached.depth.load(std::memory_order_acquire);
+}
+bool wants_white_clear() noexcept {
+    std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
+    if (lock.owns_lock()) {
+        const bool wanted = current && current->white_clear;
+        cached.white_clear.store(wanted, std::memory_order_release);
+        return wanted;
+    }
+    return cached.white_clear.load(std::memory_order_acquire);
 }
 void publish_path_replay_time(bool playing, double phase) noexcept {
     if (playing && std::isfinite(phase)) {

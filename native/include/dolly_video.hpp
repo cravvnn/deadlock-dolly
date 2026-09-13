@@ -65,6 +65,9 @@ struct Options {
     // shot range and stay aligned frame for frame. The depth master already
     // skips frames without a replay time.
     bool shot_only = false;
+    // Matte pass: force every color clear to white so the recorded layer can
+    // be combined with its black pass into an alpha channel.
+    bool white_clear = false;
 };
 struct Status {
     State state = State::idle;
@@ -85,6 +88,9 @@ Status status() noexcept;
 // Whether the active recording requested the paired depth master. Used by the
 // overlay to decide when live scene observation is armed.
 bool wants_depth() noexcept;
+// Whether the active recording requested the white matte background. The
+// overlay arms the clear override for those frames only.
+bool wants_white_clear() noexcept;
 
 // Call once for the game swapchain before Dolly's UI/guide rendering, under
 // the same serialization as ResizeBuffers/reset_resources. Real-time capture

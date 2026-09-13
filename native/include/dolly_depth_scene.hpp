@@ -46,6 +46,10 @@ private:
 // game's graphics state. Call install only after the existing native gates.
 bool install_scene_hooks(ID3D11Device* device, ID3D11DeviceContext* immediate) noexcept;
 void set_scene_tracker(std::shared_ptr<SceneTracker> tracker) noexcept;
+// Matte pass support: while enabled every ClearRenderTargetView is forced to
+// white so the layer take records against a white background. The black/white
+// pair lets the desktop derive a real alpha channel. Cleared for normal frames.
+void set_white_clear(bool enabled) noexcept;
 
 // Compact, single-line diagnostic for the last observation: draws seen, how
 // many matched the reviewed scene target, hook installation state and the most

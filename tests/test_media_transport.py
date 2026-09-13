@@ -137,6 +137,18 @@ class MediaTransportTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 wire.pack_command(2, "start_video", path="C:\\ok.mp4", shot_only=value)
 
+    def test_white_matte_flag_uses_reserved_bit_four(self):
+        matte = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                      white_clear=True))
+        layered = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                        fixed_step=True, shot_only=True,
+                                                        white_clear=True))
+        self.assertEqual(matte[6], 16)
+        self.assertEqual(layered[6], 25)
+        for value in (1, "yes", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                wire.pack_command(2, "start_video", path="C:\\ok.mp4", white_clear=value)
+
     def test_protocol_layout_and_invalid_paths(self):
         self.assertEqual(wire.COMMAND.size, 6192)
         self.assertEqual(wire.STATUS.size, 2384)

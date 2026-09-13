@@ -1,5 +1,6 @@
 """Video lifecycle and output guards without a Windows encoder or display."""
 from datetime import datetime
+import json
 from pathlib import Path
 import queue
 import tempfile
@@ -56,7 +57,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
             encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-            depth=False, depth_exr=False, shot_only=False)
+            depth=False, depth_exr=False, shot_only=False, white_clear=False)
         self.assertFalse(self.path.exists())  # Only native creates the actual file.
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
@@ -71,7 +72,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=120, bitrate=40_000_000,
             encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-            depth=False, depth_exr=False, shot_only=False)
+            depth=False, depth_exr=False, shot_only=False, white_clear=False)
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
@@ -106,7 +107,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
             encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe), fixed_step=False,
-            depth=False, depth_exr=False, shot_only=False)
+            depth=False, depth_exr=False, shot_only=False, white_clear=False)
 
     def test_depth_master_defaults_off_and_layered_take_creates_its_folder(self):
         self.assertFalse(VideoOptions(self.path).validated().depth)
@@ -528,21 +529,36 @@ class VideoGuiTests(unittest.TestCase):
         self.app._submit.assert_not_called()
 
     def test_layer_selection_queues_isolated_takes(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.app.ffmpeg_path.set(str(exe))
         self.app.video_layer_world.set(True)
         self.app._layer_toggled()
         self.app._start_video_recording()
         self.app._submit.call_args.args[1]()
         options = self.app.video_export.start.call_args.args[0]
         self.assertEqual(options.layers, ("world",))
-        self.assertEqual(self.app._layer_queue, ["world"])
+        self.assertEqual(self.app._layer_queue, [("world", "black")])
         self.assertTrue(self.app.video_fixed_step.get())
 
+    def test_players_layer_queues_a_black_and_white_matte_pair(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.app.ffmpeg_path.set(str(exe))
+        self.app.video_layer_players.set(True)
+        self.app._layer_toggled()
+        self.app._start_video_recording()
+        self.assertEqual(self.app._layer_queue, [("players", "black"), ("players", "white")])
+
     def test_next_layer_take_hides_the_layer_and_starts_a_fixed_step_take(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
         base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
-                            fixed_step=True, speed=1.0, layers=("world",)).validated()
+                            fixed_step=True, speed=1.0, layers=("world",),
+                            ffmpeg_path=exe).validated()
         (Path(self.folder.name) / "shot").mkdir()
         self.app._base_capture = base
-        self.app._layer_queue = ["world"]
+        self.app._layer_queue = [("world", "black")]
         self.app.controller = Mock()
         self.app.controller.apply_layer_mode.return_value = {"hidden": ["SkinnedObject"]}
         self.app._snapshot = Mock(return_value=Mock())
@@ -552,17 +568,82 @@ class VideoGuiTests(unittest.TestCase):
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "world.mp4")
         self.assertFalse(options.depth)
         self.assertEqual(options.layers, ("world",))
+        self.assertFalse(options.white_clear)
         self.assertTrue(options.fixed_step)
         self.assertEqual(result, self.app.video_export.start.return_value)
+        self.assertEqual(self.app._active_layer_take, ("world", "black"))
         self.assertTrue(self.app._pending_auto_play)
         self.assertTrue(self.app._auto_finish_layered)
+
+    def test_white_matte_pass_writes_beside_the_black_pass(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
+                            fixed_step=True, speed=1.0, layers=("players",),
+                            ffmpeg_path=exe).validated()
+        (Path(self.folder.name) / "shot" / "players").mkdir(parents=True)
+        self.app._base_capture = base
+        self.app._layer_queue = [("players", "white")]
+        self.app.controller = Mock()
+        self.app.controller.apply_layer_mode.return_value = {"hidden": ["SkinnedObject"]}
+        self.app._snapshot = Mock(return_value=Mock())
+        self.app._start_next_layer_take()
+        options = self.app.video_export.start.call_args.args[0]
+        self.assertEqual(options.path,
+                         Path(self.folder.name) / "shot" / "players" / "players_white.mp4")
+        self.assertTrue(options.white_clear)
+        self.assertTrue(options.shot_only)
+        self.assertEqual(options.layers, ())
+
+    def test_white_pass_completion_builds_the_alpha_master(self):
+        self.app.video_export.output_path = None
+        self.app.video_export.output_directory = None
+        self.app.controller = Mock()
+        self.app._base_capture = Mock()
+        self.app._layer_queue = [("players", "black")]
+        self.app._active_layer_take = ("players", "white")
+        self.app._submit = Mock()
+        self.app._video_operation_done({"state": "completed"})
+        self.app._submit.assert_called_once()
+        self.assertEqual(self.app._submit.call_args.args[1].__name__, "<lambda>")
+        self.assertIsNone(self.app._active_layer_take)
+
+    def test_combine_layer_writes_rgba_mov_and_removes_intermediates(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
+                            fixed_step=True, speed=1.0, layers=("players",),
+                            ffmpeg_path=exe).validated()
+        layer_dir = Path(self.folder.name) / "shot" / "players"
+        layer_dir.mkdir(parents=True)
+        (layer_dir / "players.mp4").write_bytes(b"black")
+        (layer_dir / "players_white.mp4").write_bytes(b"white")
+        (layer_dir / "shot.json").write_text("{}", encoding="utf-8")
+        self.app._base_capture = base
+
+        def fake_run(args, **kwargs):
+            Path(args[-1]).write_bytes(b"master")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with patch("dolly.gui.subprocess.run", side_effect=fake_run) as run:
+            status = self.app._combine_layer("players")
+        self.assertEqual(status, {"state": "completed", "layer": "players",
+                                  "master": str(layer_dir / "players.mov")})
+        self.assertIn("alphamerge", run.call_args.args[0][run.call_args.args[0].index("-filter_complex") + 1])
+        self.assertIn("prores_ks", run.call_args.args[0])
+        self.assertTrue((layer_dir / "players.mov").is_file())
+        self.assertFalse((layer_dir / "players.mp4").exists())
+        self.assertFalse((layer_dir / "players_white.mp4").exists())
+        self.assertEqual(json.loads((layer_dir / "shot.json").read_text(encoding="utf-8"))["video_file"],
+                         "players.mov")
 
     def test_completed_layer_take_advances_then_restores_scene_layers(self):
         self.app.video_export.output_path = None
         self.app.video_export.output_directory = None
         self.app.controller = Mock()
         self.app._base_capture = Mock()
-        self.app._layer_queue = ["players"]
+        self.app._layer_queue = [("players", "black")]
+        self.app._active_layer_take = ("world", "black")
         self.app._submit = Mock()
         self.app._video_operation_done({"state": "completed"})
         self.app._submit.assert_called_once()
@@ -578,11 +659,13 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_export.output_directory = None
         self.app.controller = Mock()
         self.app._base_capture = Mock()
-        self.app._layer_queue = ["effects"]
+        self.app._layer_queue = [("effects", "black")]
+        self.app._active_layer_take = ("effects", "black")
         self.app._submit = Mock()
         self.app._video_operation_done({"state": "failed", "error": "encoder stopped"})
         self.assertEqual(self.app._layer_queue, [])
         self.assertIsNone(self.app._base_capture)
+        self.assertIsNone(self.app._active_layer_take)
         self.app._submit.assert_called_once()
 
 

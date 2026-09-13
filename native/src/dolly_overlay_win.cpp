@@ -247,6 +247,7 @@ void feed_pending_input() {
 void reset_depth_lifecycle() noexcept {
     depth_tracker.reset();
     depth::set_scene_tracker(nullptr);
+    depth::set_white_clear(false);
     classify::probe(false);
     depth_live.clear_device();
 }
@@ -1160,6 +1161,8 @@ void render_overlay(IDXGISwapChain* chain) {
     if (resizing.load(std::memory_order_acquire))
         return;
     const bool media_live = media_session_active();
+    if (!media_live)
+        depth::set_white_clear(false);
     if (!state.enabled && !media_live) {
         // Playback may disable manual editor input. Only a lost session retires
         // media here; control ownership and camera readiness are transient.
@@ -1226,6 +1229,7 @@ void render_overlay(IDXGISwapChain* chain) {
                                    reinterpret_cast<std::uintptr_t>(capture_context),
                                    snapshot.width, snapshot.height);
                 depth_live.request(video::wants_depth());
+                depth::set_white_clear(video::wants_white_clear());
                 if (depth_live.needs_hooks() &&
                     depth::install_scene_hooks(capture_device, capture_context))
                     depth_live.note_hooks(true);

@@ -13,6 +13,7 @@ import logging
 import math
 from pathlib import Path
 import queue
+import subprocess
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -35,7 +36,7 @@ from dolly.smoothing import smoothing_window
 from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
                                 CODEC_LABEL_TO_KEY, DEFAULT_CODEC_KEY, VideoExport, VideoOptions,
                                 bundled_ffmpeg_path, default_video_path, format_video_status,
-                                recording_ready)
+                                recording_ready, resolve_ffmpeg)
 
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -173,6 +174,7 @@ class DollyApp:
         self._auto_finish_layered = False
         self._base_capture = None
         self._layer_queue = []
+        self._active_layer_take = None
         # Set once the active take's shot has actually started playing, so a
         # stale "shot finished" message cannot finish a fresh take early.
         self._take_playing_seen = False
@@ -574,7 +576,15 @@ class DollyApp:
         # isolated take per selected layer after the color take completes.
         self._auto_finish_layered = bool(options.depth or options.layers) and project is not None
         self._base_capture = options if options.layers else None
-        self._layer_queue = list(options.layers)
+        # Players and effects need a real alpha channel: record each twice
+        # (black clear then white clear) and combine them into an RGBA master.
+        queue = []
+        for name in options.layers:
+            queue.append((name, "black"))
+            if name in ("players", "effects"):
+                queue.append((name, "white"))
+        self._layer_queue = queue
+        self._active_layer_take = None
         self._take_playing_seen = False
         controller = getattr(self, "controller", None)
         game_pid = getattr(controller, "game_pid", None)
@@ -601,6 +611,15 @@ class DollyApp:
             self._log("Video saved to " + str(self.video_export.output_path))
             directory = self.video_export.output_directory or self.video_export.output_path.parent
             self.video_path.set(str(default_video_path(self.project.name, directory)))
+        if state == "completed" and getattr(self, "_active_layer_take", None) \
+                and self._active_layer_take[1] == "white":
+            # Both matte passes are in; build the RGBA layer master before the
+            # queue advances to the next layer.
+            layer = self._active_layer_take[0]
+            self._active_layer_take = None
+            self._submit("Building layer alpha", lambda: self._combine_layer(layer),
+                         self._video_operation_done)
+            return
         if state == "completed" and self._layer_queue:
             # Record the next isolated layer take with the same shot and
             # fixed-step pacing so every take aligns frame for frame.
@@ -613,6 +632,7 @@ class DollyApp:
         elif state in ("failed", "cancelled") and (self._base_capture is not None or self._layer_queue):
             self._base_capture = None
             self._layer_queue = []
+            self._active_layer_take = None
             self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
         if self._pending_auto_play:
             if state in ("starting", "recording"):
@@ -622,22 +642,87 @@ class DollyApp:
                 self._pending_auto_play = False
 
     def _start_next_layer_take(self):
-        """Worker step: hide the previous layer, arm the next, start its take."""
-        layer = self._layer_queue.pop(0)
+        """Worker step: hide the layer's classes and start its next pass."""
+        layer, pass_name = self._layer_queue.pop(0)
         applied = self.controller.apply_layer_mode(layer)
-        LOG.info("Layer take %s hidden classes: %s", layer, ", ".join(applied.get("hidden", ())))
+        LOG.info("Layer take %s (%s pass) hidden classes: %s", layer, pass_name,
+                 ", ".join(applied.get("hidden", ())))
         base = self._base_capture
         folder = base.path.with_suffix("")
-        # The layer selection gives the take its own subfolder; the native
-        # recorder captures the filtered color into it.
-        target = folder / (layer + ".mp4")
-        options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
-                               base.preset, base.ffmpeg_path, True, base.speed,
-                               False, False, (layer,)).validated()
+        white = pass_name == "white"
+        if white:
+            # The black pass created the layer folder; this pass writes the
+            # white matte beside it and skips frames like every layer take.
+            target = folder / layer / (layer + "_white.mp4")
+            options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
+                                   base.preset, base.ffmpeg_path, True, base.speed,
+                                   False, False, (), True, True).validated()
+        else:
+            # The layer selection gives the take its own subfolder; the native
+            # recorder captures the filtered color into it.
+            target = folder / (layer + ".mp4")
+            options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
+                                   base.preset, base.ffmpeg_path, True, base.speed,
+                                   False, False, (layer,)).validated()
+        self._active_layer_take = (layer, pass_name)
         self._pending_auto_play = True
         self._auto_finish_layered = True
         self._take_playing_seen = False
         return self.video_export.start(options, project=self._snapshot())
+
+    def _combine_layer(self, layer):
+        """Build the RGBA layer master from its black and white passes.
+
+        alpha = 1 - (white - black); the black pass is the premultiplied color.
+        Works for opaque character pixels and additive particles alike.
+        """
+        base = self._base_capture
+        if base is None:
+            raise RuntimeError("Layer matte combine lost the recording options.")
+        folder = base.path.with_suffix("")
+        layer_dir = folder / layer
+        black = layer_dir / (layer + ".mp4")
+        white = layer_dir / (layer + "_white.mp4")
+        master = layer_dir / (layer + ".mov")
+        if not black.is_file() or not white.is_file():
+            raise RuntimeError("The " + layer + " matte passes are incomplete.")
+        ffmpeg = resolve_ffmpeg(base.ffmpeg_path) or bundled_ffmpeg_path()
+        if ffmpeg is None:
+            raise RuntimeError("Layer alpha needs ffmpeg; the matte passes are kept.")
+        args = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+                "-i", str(black), "-i", str(white),
+                "-filter_complex",
+                "[0:v]format=gbrp[b];[1:v]format=gbrp[w];"
+                "[w][b]blend=all_mode=difference[d];"
+                "[d]format=gray,negate[a];"
+                "[b][a]alphamerge,format=yuva444p10le[out]",
+                "-map", "[out]", "-an",
+                "-c:v", "prores_ks", "-profile:v", "4444",
+                "-pix_fmt", "yuva444p10le", "-vendor", "apl0", str(master)]
+        result = subprocess.run(args, capture_output=True, text=True,
+                                timeout=max(300.0, 1.0))
+        if result.returncode != 0 or not master.is_file():
+            detail = (result.stderr or "").strip().splitlines()
+            raise RuntimeError("The " + layer + " alpha combine failed: "
+                               + (detail[-1] if detail else "unknown error")
+                               + " (matte passes kept)")
+        sidecar = layer_dir / "shot.json"
+        if sidecar.is_file():
+            try:
+                meta = json.loads(sidecar.read_text(encoding="utf-8"))
+                meta["video_file"] = layer + ".mov"
+                sidecar.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+            except (OSError, ValueError):
+                LOG.warning("Layer sidecar could not be updated for %s", layer)
+        for path in (black, white, layer_dir / (layer + "_white.mp4.shot.json"),
+                     layer_dir / (layer + ".mp4.shot.json")):
+            try:
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                LOG.warning("Intermediate matte file could not be removed: %s", path)
+        LOG.info("Layer alpha master saved to %s", master)
+        return {"state": "completed", "layer": layer, "master": str(master)}
 
     def _refresh_video(self, controller_status):
         status = self.video_export.status()

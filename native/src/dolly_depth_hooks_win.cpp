@@ -13,9 +13,12 @@ std::shared_ptr<SceneTracker> active;
 std::mutex install_mutex;
 // Public ID3D11DeviceContext ABI, shared by Context1/2/3/4. Both immediate
 // and deferred implementations are installed; their entry points may differ.
-constexpr std::array<unsigned, 10> slots{12, 13, 20, 21, 38, 39, 40, 53, 58, 114};
-std::array<std::array<void*, 10>, 2> originals{}, targets{};
+constexpr std::array<unsigned, 11> slots{12, 13, 20, 21, 38, 39, 40, 50, 53, 58, 114};
+std::array<std::array<void*, 11>, 2> originals{}, targets{};
 bool installed = false;
+// Matte passes force every color clear to white so the black/white pair can be
+// turned into a real alpha channel after the take.
+std::atomic<bool> gWhiteClear{false};
 void observe_draw(ID3D11DeviceContext* context) noexcept {
     if (auto tracker = std::atomic_load(&active))
         tracker->draw(context);
@@ -71,38 +74,51 @@ void STDMETHODCALLTYPE indirect(ID3D11DeviceContext* c, ID3D11Buffer* args, UINT
     observe_draw(c);
 }
 template <unsigned I>
+void STDMETHODCALLTYPE clear_rt(ID3D11DeviceContext* c, ID3D11RenderTargetView* view,
+                                const FLOAT color[4]) {
+    using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11RenderTargetView*, const FLOAT*);
+    static const FLOAT white[4] = {1, 1, 1, 1};
+    reinterpret_cast<Fn>(originals[I][7])(c, view,
+                                          gWhiteClear.load(std::memory_order_relaxed) ? white
+                                                                                      : color);
+}
+template <unsigned I>
 void STDMETHODCALLTYPE clear(ID3D11DeviceContext* c, ID3D11DepthStencilView* dsv, UINT flags,
                              FLOAT depth, UINT8 stencil) {
     using Fn =
         void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11DepthStencilView*, UINT, FLOAT, UINT8);
-    reinterpret_cast<Fn>(originals[I][7])(c, dsv, flags, depth, stencil);
+    reinterpret_cast<Fn>(originals[I][8])(c, dsv, flags, depth, stencil);
     if (auto tracker = std::atomic_load(&active))
         tracker->clear(c, dsv, flags);
 }
 template <unsigned I>
 void STDMETHODCALLTYPE execute(ID3D11DeviceContext* c, ID3D11CommandList* list, BOOL restore) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11CommandList*, BOOL);
-    reinterpret_cast<Fn>(originals[I][8])(c, list, restore);
+    reinterpret_cast<Fn>(originals[I][9])(c, list, restore);
     if (auto tracker = std::atomic_load(&active))
         tracker->execute(c, list);
 }
 template <unsigned I>
 HRESULT STDMETHODCALLTYPE finish(ID3D11DeviceContext* c, BOOL restore, ID3D11CommandList** list) {
     using Fn = HRESULT(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, BOOL, ID3D11CommandList**);
-    const auto result = reinterpret_cast<Fn>(originals[I][9])(c, restore, list);
+    const auto result = reinterpret_cast<Fn>(originals[I][10])(c, restore, list);
     if (SUCCEEDED(result) && list && *list)
         if (auto tracker = std::atomic_load(&active))
             tracker->finish(c, *list);
     return result;
 }
-template <unsigned I> std::array<void*, 10> detours() {
+template <unsigned I> std::array<void*, 11> detours() {
     return {
         reinterpret_cast<void*>(&indexed<I>),           reinterpret_cast<void*>(&draw<I>),
         reinterpret_cast<void*>(&indexed_instanced<I>), reinterpret_cast<void*>(&instanced<I>),
         reinterpret_cast<void*>(&automatic<I>),         reinterpret_cast<void*>(&indirect<I, 5>),
-        reinterpret_cast<void*>(&indirect<I, 6>),       reinterpret_cast<void*>(&clear<I>),
-        reinterpret_cast<void*>(&execute<I>),           reinterpret_cast<void*>(&finish<I>)};
+        reinterpret_cast<void*>(&indirect<I, 6>),       reinterpret_cast<void*>(&clear_rt<I>),
+        reinterpret_cast<void*>(&clear<I>),             reinterpret_cast<void*>(&execute<I>),
+        reinterpret_cast<void*>(&finish<I>)};
 }
+}
+void set_white_clear(bool enabled) noexcept {
+    gWhiteClear.store(enabled, std::memory_order_relaxed);
 }
 void set_scene_tracker(std::shared_ptr<SceneTracker> tracker) noexcept {
     std::atomic_store(&active, std::move(tracker));
@@ -120,7 +136,7 @@ bool install_scene_hooks(ID3D11Device* device, ID3D11DeviceContext* immediate) n
     ID3D11DeviceContext* deferred = nullptr;
     if (FAILED(device->CreateDeferredContext(0, &deferred)))
         return false;
-    std::array<std::array<void*, 10>, 2> found{};
+    std::array<std::array<void*, 11>, 2> found{};
     auto** a = *reinterpret_cast<void***>(immediate);
     auto** b = *reinterpret_cast<void***>(deferred);
     for (unsigned m = 0; m < slots.size(); ++m) {
@@ -135,9 +151,9 @@ bool install_scene_hooks(ID3D11Device* device, ID3D11DeviceContext* immediate) n
         const auto init = MH_Initialize();
         if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED)
             return false;
-        const std::array<std::array<void*, 10>, 2> callbacks{detours<0>(), detours<1>()};
+        const std::array<std::array<void*, 11>, 2> callbacks{detours<0>(), detours<1>()};
         std::vector<void*> created;
-        created.reserve(20);
+        created.reserve(22);
         const auto rollback = [&created]() {
             for (auto* target : created) {
                 MH_DisableHook(target);
