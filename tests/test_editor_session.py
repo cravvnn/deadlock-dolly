@@ -251,6 +251,32 @@ class EditorSessionTests(unittest.TestCase):
         self.assertFalse(self.app.video_depth.get())
         self.assertFalse(self.app.video_depth_exr.get())
 
+    def test_layer_switches_sync_independently_and_arm_fixed_step(self):
+        from dolly.gui import DollyApp
+        self.app.native_editor_active = True
+        self.app.video_fixed_step = Value(False)
+        for layer in ("world", "players", "effects"):
+            setattr(self.app, "video_layer_" + layer, Value(False))
+        self.app._layer_toggled = lambda: DollyApp._layer_toggled(self.app)
+        for layer in ("world", "players", "effects"):
+            action = "set_video_layer_" + layer
+            session.dispatch(self.app, {"action": action, "value": 1}, self.bridge)
+            self.assertTrue(self.app.video_fixed_step.get())
+            config = self.bridge.configure_editor.call_args.kwargs
+            for other in ("world", "players", "effects"):
+                self.assertEqual(config["video_layer_" + other], other == layer)
+            for invalid in (-1, 2, .5, "on", float("nan")):
+                with self.assertRaises(ValueError):
+                    session.dispatch(self.app, {"action": action, "value": invalid}, self.bridge)
+                self.assertTrue(getattr(self.app, "video_layer_" + layer).get())
+            session.dispatch(self.app, {"action": action, "value": 0}, self.bridge)
+            self.assertFalse(self.bridge.configure_editor.call_args.kwargs["video_layer_" + layer])
+            self.assertTrue(self.app.video_fixed_step.get())
+        self.app.video_layer_players.set(True)
+        session.configure(self.app)
+        self.assertTrue(self.bridge.configure_editor.call_args.kwargs["video_layer_players"])
+        self.app._submit.assert_not_called()
+
     def test_in_game_depth_arms_fixed_step_pairing(self):
         self.app.video_fixed_step = Value(False)
         self.app.video_depth = Value(False)

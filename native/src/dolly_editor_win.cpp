@@ -492,6 +492,9 @@ EditorSnapshot editor_snapshot() noexcept {
         result.video_fixed_step = (c->video_flags & 1) != 0;
         result.video_depth = (c->video_flags & 2) != 0;
         result.video_depth_exr = (c->video_flags & 4) != 0;
+        result.video_layer_world = (c->video_flags & 8) != 0;
+        result.video_layer_players = (c->video_flags & 16) != 0;
+        result.video_layer_effects = (c->video_flags & 32) != 0;
         if (std::isfinite(c->video_speed) && c->video_speed >= .05f && c->video_speed <= 4.0f)
             result.video_speed = c->video_speed;
     }
@@ -537,7 +540,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
-    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoDepthExr))
+    if (!std::isfinite(value) ||
+        std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoLayerEffects))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -702,8 +706,7 @@ double framing_wheel_step(double live, double stored, int camera, double factor)
     // snap the view back to the selected camera's stored framing whenever the
     // wheel rests on a clamp.
     double base = stored;
-    if (gFramingWheelState.camera == camera &&
-        std::abs(live - gFramingWheelState.value) <= 1e-6) {
+    if (gFramingWheelState.camera == camera && std::abs(live - gFramingWheelState.value) <= 1e-6) {
         // A parked commit lands as the value this wheel just produced; keep
         // compounding on it instead of rebasing to the outgoing curve value.
         if (std::abs(stored - gFramingWheelState.stored) <= 1e-6 ||
@@ -934,7 +937,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                  c.video_fps == 300 || c.video_fps == 600) &&
                 (c.video_bitrate_mbps == 0 || c.video_bitrate_mbps == 10 ||
                  c.video_bitrate_mbps == 20 || c.video_bitrate_mbps == 40) &&
-                c.video_encoder <= 10 && c.video_flags <= 7 && c.video_speed >= 0 &&
+                c.video_encoder <= 10 && c.video_flags <= 63 && c.video_speed >= 0 &&
                 c.video_speed <= 4 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
                 std::memchr(c.message, 0, sizeof(c.message));
             for (auto& b : c.bindings)

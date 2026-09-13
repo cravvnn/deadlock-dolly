@@ -18,18 +18,18 @@ installation and current limits. Windows/Deadlock validation is recorded in
    Source users need Python 3.10+ with Tcl/Tk and a built native helper; see
    [BUILDING.md](BUILDING.md). Do not mix ABI 3 with earlier helper/editor files.
 3. Open Steam and sign in. Use **DirectX 11** in Deadlock's graphics settings.
-4. Open **Dolly.exe**. On **Home**, choose `game/bin/win64/deadlock.exe` and a
+4. Open **Dolly.exe**. In **Library → Launch setup**, choose `game/bin/win64/deadlock.exe` and a
    local, decompressed `.dem`. Older `citadel.exe` installations and Steam
    libraries on another drive are accepted; do not rename game files.
-5. Alternatively, open **Replays**, choose/refresh a replay folder and select
+5. Alternatively, open **Library**, refresh the replay list and select
    a file. It lists local `.dem` files; it does not download or decompress demos.
-   Review **Keybinds** before launch if you want a mouse-button capture key.
-6. Click **Play replay**. Dolly connects to the game process it launched,
+   Review **Settings → Controls & keybinds** before launch if you want a mouse-button capture key.
+6. Click **Open replay in Dolly**. Dolly connects to the game process it launched,
    waits for rendered pre-replay scene and unlocker-registration evidence,
    executes `cvar_unhide` once, and requires both completion summaries.
 7. Only after confirmation, Dolly loads the selected demo, checks its identity
    and camera support, pauses it, closes the console explicitly and enables
-   native flight. Startup progress appears on Home. Do not load a demo manually
+   native flight. Startup progress appears in Library. Do not load a demo manually
    while waiting for this sequence.
 8. Frame a view with WASD and mouse look, then capture it. Fly to the next
    camera position and capture again. **F8** opens the in-game Dolly panel.
@@ -38,7 +38,7 @@ installation and current limits. Windows/Deadlock validation is recorded in
 The launched process remains open. Close it before launching another session.
 A timeout or failed unlocker confirmation does not automatically load the demo.
 
-**Home → Troubleshooting…** retains manual Launch hideout, Connect, Initialize
+**Settings → Troubleshooting & recovery → Startup controls…** retains manual Launch hideout, Connect, Initialize
 unlocker, Load replay and Check camera support. Use the manual initialization
 only when the hideout has finished loading. Probe does not rerun the unlocker
 inside a demo. Netconsole remains the default; VConsole is a troubleshooting
@@ -81,7 +81,7 @@ older workflow without the Stage 1 DX11 panel/native flight.
 During **flight**, Dolly owns movement and mouse look. **F8** releases mouse
 look for clicking its panel. The panel provides capture/replace, saved-camera
 selection, replay/path playback and movement-speed controls. Change movement speed and sensitivity from desktop
-**Keybinds**; the in-game speed control updates the same saved setting.
+**Settings → Controls & keybinds**; the in-game speed control updates the same saved setting.
 
 **F7** gives the console input ownership before the open command is dispatched,
 so typing cannot create keys or move the camera. F7 or Escape closes it and
@@ -97,7 +97,7 @@ recovery path instead of repeatedly issuing camera actions.
 
 ## Customize bindings
 
-Open **Keybinds**, select an action and choose a keyboard key, Mouse4, Mouse5
+Open **Settings → Controls & keybinds**, select an action and choose a keyboard key, Mouse4, Mouse5
 or MiddleMouse. You can use **Press a key / mouse button…**, optional modifiers,
 or **Unbound**. Click **Save binding**. Exact duplicate bindings are rejected;
 F7 is always reserved for console access. Movement modifier keys can be assigned
@@ -118,7 +118,7 @@ legacy Console workflow; it is disabled during native editing.
 
 ## Switch and move cameras while paused
 
-After **Play replay**, native flight starts from the rendered camera pose.
+After **Open replay in Dolly**, native flight starts from the rendered camera pose.
 It updates position and mouse/keyboard rotation in the main-view callback
 using elapsed real time. It does not move the game spectator with repeated
 `spec_goto`, and entering flight does not perform the legacy adjacent-tick
@@ -290,19 +290,24 @@ this version so you can distinguish the current window from an old one.
 
 ## Editor layout
 
-**Home** contains one-click startup and progress; **Replays** lists local demo
-files; **Keybinds** configures input and movement. **Cameras** keeps the list,
-framing graph, selected-camera controls and XY path overview together.
-**Effects** contains DOF and numeric camera-variable tracks. Coordinate entry
-and advanced timing are in **More → Coordinates / timing…**.
+**Library** combines replay selection, one-click startup and shot file actions.
+**Export** contains destination, output passes, capture quality and recording.
+**Settings** contains saved paths, controls/keybinds, ReShade and troubleshooting.
 
-Playback controls appear on the camera/effect editing pages. Home stays focused
-on launching and choosing a replay. Tables scroll inside their own panels.
-**Log** opens a separate resizable activity window, closed by default.
+The prominent **Full editor** switch adds **Cameras**, **Effects** and the shot
+timeline. It remembers the layout without changing the shot or session. Cameras
+keeps the list, framing graph, selected-camera controls and XY path overview.
+Effects contains DOF and numeric camera-variable tracks. Coordinate entry and
+advanced timing remain in **More → Coordinates / timing…**. Playback options
+hold preview, seek, update rate and renderer relief; Console smoothing appears
+when using that backend. **Stop / restore** is always available in the footer.
 
-The DX11 in-game panel provides the Stage 1 editing controls. Save/load and
-full desktop graph editing remain in the desktop application. It is one shared
-project, not a second copy that requires import/export to synchronize changes.
+The in-game panel has **Camera**, **Lens** and **Export** tabs. It remains freely
+draggable and resizable. Camera includes Updates / s inside Free camera and a
+standalone Clear ragdolls button below it. Lens contains DOF and the ReShade menu.
+Export includes independent World, Players and Effects switches alongside depth.
+Save/load and full graph editing remain on the desktop; both surfaces share the
+same project. **Log** opens a separate resizable activity window.
 
 **Frozen preview** is off by default. It moves along shot seconds through the
 currently paused scene rather than resuming or seeking to the shot's start.

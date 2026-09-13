@@ -16,14 +16,14 @@ GETTING STARTED
 1. Extract the whole Windows ZIP and open Dolly.exe. Keep _internal beside it.
    Python and the native helper are included.
 2. Open Steam, sign in, and close any running Deadlock game. Use DirectX 11.
-3. On Home, choose Deadlock's executable and a local, extracted .dem replay,
-   or choose a demo from Replays.
-4. Click Play replay. Dolly initializes the unlocker in the hideout before
+3. In Library, choose a local, extracted .dem replay. Launch setup contains
+   the game executable and camera driver; saved paths are in Settings.
+4. Click Open replay in Dolly. Dolly initializes the unlocker in the hideout before
    loading the replay, then pauses it with native camera controls ready.
 5. Move to a view and press Ctrl+Alt+K. Advance the replay and capture the next view.
    F8 opens the in-game panel for capture, saved views and playback.
-6. Edit framing and arrival times on the desktop Cameras tab. Effects contains
-   the depth-of-field preset. Save shots from the desktop File menu.
+6. Enable Full editor for desktop Cameras, Effects and the shot timeline.
+   Save shots from Library or the File menu. F8 has Camera/Lens/Export tabs.
 7. Click Play shot or press F5 to play the replay and camera path together.
    Hide HUD controls HUD visibility during playback; it returns afterward.
 
@@ -46,7 +46,7 @@ Mouse/arrows  Look around
 Shift/Alt     Move faster/slower
 Q/E           Camera roll
 
-Keybinds saves keyboard and Mouse4/Mouse5 assignments, movement speed and mouse
+Settings > Controls & keybinds saves keyboard and Mouse4/Mouse5 assignments, movement speed and mouse
 sensitivity. F7 is reserved for the console. Settings survive updates in
 %APPDATA%/DeadlockDolly/settings.json.
 
@@ -115,8 +115,8 @@ resolution, shader cost or export FPS if the game/encoder cannot keep up.
 Dolly controls and guides are excluded. The game HUD follows playback settings.
 
 ReShade 6.8.0/API 20 with full add-on support is a separate download. Extract ReShade64.dll from the official full
-add-on setup EXE with 7-Zip into a folder outside the game. Select it on Export
-and enable it. F11 opens its own menu; change the shortcut in Keybinds.
+add-on setup EXE with 7-Zip into a folder outside the game. Select it in Settings > ReShade
+and enable it. F11 opens its own menu; change the shortcut in Settings > Controls & keybinds.
 A single-sample SDR swapchain and manual runtime functions are required. Add shader/texture search
 paths and presets through ReShade. Color effects are supported; no game depth
 texture is supplied yet. Native Dolly DOF still works.
@@ -135,7 +135,7 @@ Fixed-step rendering, audio, separate layers and expanded in-game curves
 remain planned.
 
 Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
-A Deadlock update can require a Dolly update. Home > Troubleshooting contains
+A Deadlock update can require a Dolly update. Settings > Troubleshooting & recovery > Startup controls contains
 the Console (legacy) driver and manual startup controls.
 
 Close Deadlock and Dolly before updating. Keep saved shots and logs, including

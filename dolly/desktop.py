@@ -61,17 +61,39 @@ def bundle_self_test(report_path: Path) -> int:
         # This runs on the actual frozen Windows GUI in CI without a game.
         root.geometry(app_ui._window_size(1000, 700))
         app_ui.notebook.select(app_ui.export_tab)
-        root.update_idletasks()
-        for name in ("video_path_entry", "video_start_button", "video_stop_button",
-                     "video_cancel_button", "reshade_path_entry", "reshade_configure_button",
-                     "reshade_disable_button", "reshade_forget_button"):
+        root.update()
+        def visible(name):
             widget = getattr(app_ui, name)
+            root.update_idletasks()
             x = widget.winfo_rootx() - root.winfo_rootx()
             y = widget.winfo_rooty() - root.winfo_rooty()
             if (not widget.winfo_ismapped() or x < 0 or y < 0
                     or x + widget.winfo_width() > root.winfo_width()
                     or y + widget.winfo_height() > root.winfo_height()):
-                raise RuntimeError(f"Export control is clipped at the minimum window size: {name}")
+                raise RuntimeError(f"Layout clips {name} at the minimum window size")
+        for name in ("video_path_entry", "video_start_button", "video_stop_button", "video_cancel_button"):
+            visible(name)
+        # Recording actions stay reachable while advanced runtime settings scroll.
+        app_ui.export_page.canvas.yview_moveto(1)
+        root.update_idletasks()
+        for name in ("video_start_button", "video_stop_button", "video_cancel_button"):
+            visible(name)
+        app_ui.notebook.select(app_ui.settings_tab)
+        root.update()
+        for name in ("reshade_path_entry", "reshade_configure_button", "reshade_disable_button", "reshade_forget_button"):
+            app_ui.settings_page.reveal(getattr(app_ui, name))
+            visible(name)
+        app_ui.notebook.select(app_ui.setup_tab)
+        app_ui.full_editor.set(True)
+        app_ui._apply_editor_mode()
+        app_ui.notebook.select(app_ui.camera_tab)
+        root.update()
+        visible("slider")
+        app_ui.full_editor.set(False)
+        app_ui._apply_editor_mode()
+        assert app_ui.notebook.select() == str(app_ui.setup_tab)
+        assert app_ui.notebook.tab(app_ui.camera_tab, "state") == "hidden"
+        report["checks"]["simple_and_full_editor"] = True
         report["checks"]["export_layout"] = "minimum_window_controls_visible"
         if sys.platform == "win32":
             root.iconbitmap(str(branding.ASSETS / "dolly.ico"))  # No silent PNG fallback in this gate.

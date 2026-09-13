@@ -44,19 +44,23 @@ the EXE; a desktop shortcut can point to it.
 
 Open Steam, close any running Deadlock, and use **DirectX 11**. In Dolly,
 choose the game executable and a local `.dem` replay, or select a file from
-**Replays**. Click **Play replay** to open the game, initialize the unlocker
+**Library**. Click **Open replay in Dolly** to open the game, initialize the unlocker
 in the hideout, load the replay and pause it for editing.
 
 Move to a view and press **Ctrl+Alt+K** to capture it. **Replay timing** is the
 default: advance the replay, frame the next view and capture again.
 **F8** opens the in-game panel, **F7** opens the console, and
 **F9** switches to Deadlock's replay UI for hero selection. Bindings, movement
-speed and mouse sensitivity are saved from **Keybinds**. Capture also works
+speed and mouse sensitivity are saved from **Settings → Controls & keybinds**. Capture also works
 while the replay is playing and leaves it paused.
 
 In the F8 panel, use **Playback speed**, **Updates / s** and **Show path guides**.
 Guides appear in paused flight and hide during playback. Native camera and
 supported effects follow each rendered frame; Updates / s controls monitoring.
+
+Enable the desktop **Full editor** switch for Cameras, Effects and the shot
+timeline. The switch preserves the current shot and remembers the layout.
+In-game, **Camera**, **Lens** and **Export** divide the floating panel.
 
 On the desktop Effects tab, **+ Range DOF** creates a four-value range track.
 Its value order is near blurry, near crisp, far crisp, far blurry. See the
@@ -68,13 +72,13 @@ files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
 
 ## Video and ReShade
 
-Choose an MP4 output path and FPS on **Export**, then use **F8 → Record video**
+Choose an MP4 output path and FPS on **Export**, then use **F8 → Export → Record video**
 and **Finish recording** in the game. Video capture excludes Dolly controls
 and path guides. It records in real time without audio; output resolution
 follows the game. Recording continues through camera handoffs and desktop controls; use Finish recording to save.
 
-Select a compatible ReShade64.dll on **Export** to enable ReShade color effects.
-**F11** opens its own menu; **Keybinds** changes that shortcut. ReShade is an
+Select a compatible ReShade64.dll in **Settings → ReShade** to enable ReShade color effects.
+**F11** opens its own menu; **Settings → Controls & keybinds** changes that shortcut. ReShade is an
 optional separate download. Depth-dependent ReShade shaders are not supported
 yet. See [Video and ReShade](docs/VIDEO_AND_RESHADE.md) for setup and limits.
 
@@ -91,7 +95,7 @@ calibration recoveries still require exact ticks and can fail on sparse recordin
 Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 `tier0.dll`. Every Dolly launch hashes the installed modules against the
 bundled compatibility manifest (`native/profiles/manifest.json`) and reports an
-unrecognized build instead of injecting. **Home → Troubleshooting** has a
+unrecognized build instead of injecting. **Settings → Troubleshooting & recovery → Startup controls** has a
 **Check game build** action, and **Console (legacy)** remains available when
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.

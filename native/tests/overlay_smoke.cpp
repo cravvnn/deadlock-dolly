@@ -9,6 +9,7 @@
 #include "dolly_video.hpp"
 #include "MinHook.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include <d3d11.h>
 #include <dxgi.h>
 #include <atomic>
@@ -482,6 +483,7 @@ void stress_game_buffer_lifetimes(IDXGISwapChain* chain, ID3D11Device* device,
         "DX11 WARP lifetime stress: 384 panel/guide/game-UI frames, 768 game buffers retired.");
 }
 }
+static ImGuiContext* screenshot_context = nullptr;
 namespace dolly {
 EditorSnapshot editor_snapshot() noexcept {
     return snapshot;
@@ -500,6 +502,7 @@ void editor_overlay_available(bool value) noexcept {
 }
 void editor_text_input_active(bool) noexcept {
     if (ImGui::GetCurrentContext()) {
+        screenshot_context = ImGui::GetCurrentContext();
         const auto& io = ImGui::GetIO();
         for (int i = 0; i < 5; ++i)
             observed_mouse_down[i] = io.MouseDown[i];
@@ -515,7 +518,11 @@ bool editor_window_message(HWND, UINT, WPARAM, LPARAM, LRESULT&) noexcept {
 }
 int main(int argc, char** argv) {
     try {
-        const bool screenshot = argc == 3 && std::strcmp(argv[1], "--screenshot") == 0;
+        const bool lens_screenshot = argc == 3 && std::strcmp(argv[1], "--screenshot-lens") == 0;
+        const bool export_screenshot =
+            argc == 3 && std::strcmp(argv[1], "--screenshot-export") == 0;
+        const bool screenshot = lens_screenshot || export_screenshot ||
+                                (argc == 3 && std::strcmp(argv[1], "--screenshot") == 0);
         dolly::reshade_set_enabled(false);
         require(!dolly::reshade_overlay_pending() && !dolly::reshade_overlay_open() &&
                     !dolly::reshade_available(),
@@ -619,6 +626,25 @@ int main(int argc, char** argv) {
             context->OMSetRenderTargets(1, &target, nullptr);
             context->RSSetViewports(1, &original_viewport);
             require(SUCCEEDED(chain->Present(0, 0)), "Synthetic Present failed");
+            if (screenshot && i == 0) {
+                const char* page =
+                    lens_screenshot ? "Lens" : (export_screenshot ? "Export" : "Camera");
+                require(screenshot_context != nullptr, "Overlay ImGui context missing");
+                auto& bars = screenshot_context->TabBars;
+                bool found = false;
+                for (int bar_index = 0; bar_index < bars.GetMapSize(); ++bar_index) {
+                    auto* bar = bars.GetByIndex(bar_index);
+                    if (!bar)
+                        continue;
+                    for (auto& tab : bar->Tabs) {
+                        if (std::strcmp(ImGui::TabBarGetTabName(bar, &tab), page) == 0) {
+                            bar->NextSelectedTabId = tab.ID;
+                            found = true;
+                        }
+                    }
+                }
+                require(found, "Requested editor screenshot tab missing");
+            }
         }
         require(available && attached == window,
                 "Overlay did not attach to the presenting game window");

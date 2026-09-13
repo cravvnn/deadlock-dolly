@@ -844,7 +844,7 @@ class MediaPollIsolationTests(unittest.TestCase):
         for name in ("session_text", "startup_progress", "status_text", "busy_text", "video_status_text", "hotkey_label"):
             setattr(app, name, Var(""))
         for name in ("play_replay_button", "cancel_startup_button", "speed_combo", "rate_combo", "camera_driver_combo",
-                     "smoothing_combo", "aspect_curve", "launch_button", "connect_button", "initialize_button",
+                     "smoothing_combo", "smoothing_row", "full_editor_switch", "aspect_curve", "launch_button", "connect_button", "initialize_button",
                      "load_replay_button", "probe_button", "disconnect_button", "capture_hotkey_checkbox", "root",
                      "_poll_paused_camera", "_log", "_error", "_check_capture_listener", "_capture_binding_label"):
             setattr(app, name, Mock())

@@ -19,7 +19,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import editor_session
+from dolly import editor_session, gui_layout
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, EDITOR_KEY_CHOICES, EditorBinding, default_action_bindings, validate_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING, KEY_CHOICES
@@ -154,6 +154,7 @@ class DollyApp:
         self.segment_seconds = tk.StringVar(value="3")
         self.show_coordinates = tk.BooleanVar(value=False)
         self.app_settings = self._load_app_settings()
+        self.full_editor = tk.BooleanVar(value=self.app_settings.full_editor)
         self.video_path = tk.StringVar(value=str(default_video_path(self.project.name)))
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
@@ -326,26 +327,41 @@ class DollyApp:
         self.driver_indicator_label.pack(side="left", padx=(0, 10))
         ttk.Label(status_row, textvariable=self.session_text, style="Accent.TLabel").pack(side="left")
         ttk.Label(heading, textvariable=self.busy_text, style="Muted.TLabel").grid(row=1, column=1, sticky="e")
-        self.notebook = ttk.Notebook(outer)
-        self.notebook.grid(row=1, column=0, sticky="nsew")
+        workspace = ttk.Frame(outer)
+        workspace.grid(row=1, column=0, sticky="nsew")
+        workspace.columnconfigure(1, weight=1)
+        workspace.rowconfigure(0, weight=1)
+        self.sidebar = ttk.Frame(workspace, padding=(0, 12, 12, 0))
+        self.sidebar.grid(row=0, column=0, sticky="ns")
+        style = ttk.Style(self.root)
+        style.layout("Navigation.TNotebook.Tab", [])
+        self.notebook = ttk.Notebook(workspace, style="Navigation.TNotebook")
+        self.notebook.grid(row=0, column=1, sticky="nsew")
+        self.full_editor_switch = ttk.Checkbutton(heading, text="Full editor", variable=self.full_editor,
+            command=self._toggle_full_editor, style="FullEditor.TCheckbutton")
+        style.configure("FullEditor.TCheckbutton", font=("Segoe UI", 12, "bold"), padding=(16, 10))
+        self.full_editor_switch.grid(row=0, column=2, rowspan=2, padx=(18, 0))
         self.setup_tab = ttk.Frame(self.notebook)
         self.camera_tab = ttk.Frame(self.notebook)
         self.cvar_tab = ttk.Frame(self.notebook)
-        self.replays_tab = ttk.Frame(self.notebook)
-        self.keybinds_tab = ttk.Frame(self.notebook)
+        self.settings_tab = ttk.Frame(self.notebook)
         self.export_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.setup_tab, text="Home")
-        self.notebook.add(self.replays_tab, text="Replays")
-        self.notebook.add(self.keybinds_tab, text="Keybinds")
-        self.notebook.add(self.camera_tab, text="Cameras")
-        self.notebook.add(self.cvar_tab, text="Effects")
-        self.notebook.add(self.export_tab, text="Export")
+        self.replays_tab = self.setup_tab
+        self.navigation = {}
+        for title, tab in (("Library", self.setup_tab), ("Cameras", self.camera_tab),
+                           ("Effects", self.cvar_tab), ("Export", self.export_tab),
+                           ("Settings", self.settings_tab)):
+            self.notebook.add(tab, text=title)
+            button = ttk.Button(self.sidebar, text=title, width=12,
+                                command=lambda page=tab: self.notebook.select(page))
+            button.pack(fill="x", pady=(0, 8))
+            self.navigation[str(tab)] = button
         self._build_setup()
-        self._build_replays()
-        self._build_keybinds()
+        gui_layout.build_settings(self)
         self._build_camera()
         self._build_cvars()
         self._build_export()
+        self._apply_editor_mode()
         self._build_timeline(outer)
         self.notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._tab_changed()
@@ -354,7 +370,8 @@ class DollyApp:
         footer.columnconfigure(0, weight=1)
         self.status_label = ttk.Label(footer, textvariable=self.status_text, style="Muted.TLabel", wraplength=680)
         self.status_label.grid(row=0, column=0, sticky="w", padx=(0, 12))
-        footer.bind("<Configure>", lambda event: self.status_label.configure(wraplength=max(250, event.width - 265)))
+        footer.bind("<Configure>", lambda event: self.status_label.configure(wraplength=max(250, event.width - 390)))
+        ttk.Button(footer, text="Stop / restore", command=lambda: self._session_operation("Stopping", self.controller.stop)).grid(row=0, column=3, padx=(10, 0))
         ttk.Checkbutton(footer, text="Log", variable=self.show_log, command=self._toggle_log).grid(row=0, column=1)
         ttk.Button(footer, text="Export diagnostics", command=self._diagnostics, style="Quiet.TButton").grid(row=0, column=2, padx=(10, 0))
         self.log_dialog = tk.Toplevel(self.root)
@@ -374,145 +391,66 @@ class DollyApp:
         self.log_dialog.withdraw()
 
     def _build_setup(self):
-        tab = self.setup_tab
-        tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(2, weight=1)
-        card = ttk.Frame(tab, style="Card.TFrame", padding=20)
-        card.grid(row=0, column=0, sticky="ew")
-        card.columnconfigure(1, weight=1)
-        ttk.Label(card, text="REPLAY", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        note = ttk.Label(card, text="Open a local replay in the paused camera editor.", style="CardMuted.TLabel", wraplength=800)
-        note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 18))
-        card.bind("<Configure>", lambda e: note.configure(wraplength=max(200, e.width - 40)))
-        for row, label, variable, command in ((2, "Deadlock", self.game_path, self._browse_game), (3, "Replay", self.demo_path, self._browse_demo)):
-            ttk.Label(card, text=label, style="CardMuted.TLabel", width=11).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=(0, 10))
-            ttk.Entry(card, textvariable=variable).grid(row=row, column=1, sticky="ew", pady=(0, 10))
-            ttk.Button(card, text="Browse…", command=command).grid(row=row, column=2, padx=(10, 0), pady=(0, 10))
-        driver = ttk.Frame(card, style="Card.TFrame")
-        driver.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        ttk.Label(driver, text="Camera driver", style="CardMuted.TLabel").pack(side="left", padx=(0, 12))
-        self.home_camera_driver_combo = ttk.Combobox(driver, textvariable=self.camera_driver,
-            values=("Native (experimental)", "Console (legacy)"), state="readonly", width=23)
-        self.home_camera_driver_combo.pack(side="left")
-        ttk.Label(driver, text="Choose before launch. Native follows rendered views.",
-                  style="CardMuted.TLabel").pack(side="left", padx=(12, 0))
-        actions = ttk.Frame(card, style="Card.TFrame")
-        actions.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
-        self.play_replay_button = ttk.Button(actions, text="▶  Play replay", style="Primary.TButton", command=self._start_editing_session)
-        self.play_replay_button.pack(side="left")
-        self.cancel_startup_button = ttk.Button(actions, text="Cancel startup", style="Quiet.TButton", command=self._cancel_startup, state="disabled")
-        self.cancel_startup_button.pack(side="left", padx=(10, 0))
-        ttk.Button(actions, text="Replay library →", style="Quiet.TButton", command=lambda: self.notebook.select(self.replays_tab)).pack(side="right")
-        progress = ttk.Frame(tab, style="Card.TFrame", padding=(20, 14))
-        progress.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        progress.columnconfigure(0, weight=1)
-        self.startup_label = ttk.Label(progress, textvariable=self.startup_progress, style="CardMuted.TLabel", wraplength=800)
-        self.startup_label.grid(row=0, column=0, sticky="w")
-        progress.bind("<Configure>", lambda e: self.startup_label.configure(wraplength=max(200, e.width - 40)))
-        self.startup_bar = ttk.Progressbar(progress, mode="indeterminate")
-        self.startup_bar.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        footer = ttk.Frame(tab, padding=(4, 16))
-        footer.grid(row=3, column=0, sticky="ew")
-        footer.columnconfigure(0, weight=1)
-        ttk.Label(footer, text="DirectX 11  ·  Local replay editing  ·  F7 console", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(footer, text="Launch options…", style="Quiet.TButton", command=self._open_launch_options).grid(row=0, column=1)
-        ttk.Button(footer, text="Troubleshooting…", style="Quiet.TButton", command=self._open_advanced_startup).grid(row=0, column=2, padx=(8, 0))
-        self._build_advanced_startup()
+        gui_layout.build_library(self)
+
+    def _apply_editor_mode(self):
+        enabled = self.full_editor.get()
+        if not enabled and self.notebook.select() in (str(self.camera_tab), str(self.cvar_tab)):
+            self.notebook.select(self.setup_tab)
+        for tab in (self.camera_tab, self.cvar_tab):
+            self.notebook.tab(tab, state="normal" if enabled else "hidden")
+        for tab, button in self.navigation.items():
+            button.pack_forget()
+            if enabled or tab not in (str(self.camera_tab), str(self.cvar_tab)):
+                button.pack(fill="x", pady=(0, 8))
+        self._tab_changed()
+
+    def _toggle_full_editor(self):
+        self._apply_editor_mode()
+        # This preference changes no project data or live session state.
+        if self.busy:
+            self.full_editor.set(self.app_settings.full_editor)
+            self._apply_editor_mode()
+            return
+        def save():
+            settings = replace(self.app_settings, full_editor=self.full_editor.get())
+            save_settings(settings)
+            self.app_settings = settings
+        try:
+            save()
+        except (OSError, ValueError) as error:
+            self._error("Save editor layout", error)
+
+    def _save_layout_paths(self):
+        def save():
+            settings = replace(self.app_settings, game_path=self.game_path.get(),
+                               replay_folder=self.replay_folder.get(), demo_path=self.demo_path.get())
+            save_settings(settings)
+            self.app_settings = settings
+            self.status_text.set("Game and replay paths saved.")
+        self._guard("Save paths", save)
+
+    def _open_output_folder(self):
+        def open_folder():
+            path = Path(self.video_path.get()).expanduser().resolve().parent
+            if not path.is_dir():
+                raise ValueError("Choose an existing output folder first.")
+            os.startfile(str(path))
+        self._guard("Open output folder", open_folder)
 
     def _tab_changed(self, _event=None):
         if not hasattr(self, "timeline_frame"):
             return
         selected = self.notebook.select()
+        for tab, button in self.navigation.items():
+            button.configure(style="Primary.TButton" if selected == tab else "Quiet.TButton")
         if selected in (str(self.camera_tab), str(self.cvar_tab)):
             self.timeline_frame.grid()
         else:
             self.timeline_frame.grid_remove()
 
     def _build_export(self):
-        tab = self.export_tab
-        tab.columnconfigure(0, weight=1)
-        card = ttk.Frame(tab, style="Card.TFrame", padding=18)
-        card.grid(row=0, column=0, sticky="ew")
-        card.columnconfigure(1, weight=1)
-        ttk.Label(card, text="VIDEO", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        note = ttk.Label(card, text="Record the normal scene to MP4 at the current game resolution. Real-time capture · SDR · video only.",
-                         style="CardMuted.TLabel", wraplength=860)
-        note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 14))
-        card.bind("<Configure>", lambda event: note.configure(wraplength=max(220, event.width - 36)))
-        ttk.Label(card, text="Output file", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 12))
-        self.video_path_entry = ttk.Entry(card, textvariable=self.video_path)
-        self.video_path_entry.grid(row=2, column=1, sticky="ew")
-        self.video_browse_button = ttk.Button(card, text="Browse…", command=self._browse_video)
-        self.video_browse_button.grid(row=2, column=2, padx=(10, 0))
-        options = ttk.Frame(card, style="Card.TFrame")
-        options.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(options, text="Video FPS", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
-        self.video_fps_combo = ttk.Combobox(options, textvariable=self.video_fps, values=("30", "60", "120", "300", "600"), state="readonly", width=5)
-        self.video_fps_combo.pack(side="left", padx=(0, 18))
-        ttk.Label(options, text="Bitrate", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
-        self.video_bitrate_combo = ttk.Combobox(options, textvariable=self.video_bitrate, values=tuple(BITRATE_PRESETS), state="readonly", width=10)
-        self.video_bitrate_combo.pack(side="left", padx=(0, 18))
-        ttk.Label(options, text="Encoder", style="CardMuted.TLabel").pack(side="left", padx=(0, 8))
-        self.video_codec_combo = ttk.Combobox(options, textvariable=self.video_codec,
-                                              values=tuple(label for _key, label, *_ in CODEC_CHOICES),
-                                              state="readonly", width=30)
-        self.video_codec_combo.pack(side="left", padx=(0, 18))
-        self.video_fixed_checkbox = ttk.Checkbutton(options, text="Fixed-step export (frame-accurate)",
-                                                    variable=self.video_fixed_step)
-        self.video_fixed_checkbox.pack(side="left", padx=(0, 18))
-        self.video_depth_checkbox = ttk.Checkbutton(options, text="Depth master (.mov)",
-                                                    variable=self.video_depth,
-                                                    command=self._depth_toggled)
-        self.video_depth_checkbox.pack(side="left", padx=(0, 18))
-        self.video_depth_exr_checkbox = ttk.Checkbutton(options, text="EXR sequence (float)",
-                                                        variable=self.video_depth_exr)
-        self.video_depth_exr_checkbox.pack(side="left", padx=(0, 18))
-        for var, label in ((self.video_layer_world, "World layer"),
-                           (self.video_layer_players, "Players layer"),
-                           (self.video_layer_effects, "Effects layer")):
-            ttk.Checkbutton(options, text=label, variable=var,
-                            command=self._layer_toggled).pack(side="left", padx=(0, 12))
-        ttk.Label(options, text="Export speed", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
-        self.video_speed_combo = ttk.Combobox(options, textvariable=self.video_export_speed,
-                                              values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"),
-                                              width=5)
-        self.video_speed_combo.pack(side="left")
-        ttk.Label(card, text="FFmpeg", style="CardMuted.TLabel").grid(row=4, column=0, sticky="w", padx=(0, 12), pady=(12, 0))
-        self.ffmpeg_path_entry = ttk.Entry(card, textvariable=self.ffmpeg_path)
-        self.ffmpeg_path_entry.grid(row=4, column=1, sticky="ew", pady=(12, 0))
-        self.ffmpeg_browse_button = ttk.Button(card, text="Browse…", command=self._browse_ffmpeg)
-        self.ffmpeg_browse_button.grid(row=4, column=2, padx=(10, 0), pady=(12, 0))
-        actions = ttk.Frame(card, style="Card.TFrame")
-        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=(14, 0))
-        self.video_start_button = ttk.Button(actions, text="Start recording", style="Primary.TButton", command=self._start_video_recording)
-        self.video_start_button.pack(side="left", padx=(0, 8))
-        self.video_stop_button = ttk.Button(actions, text="Finish recording", command=self._stop_video_recording, state="disabled")
-        self.video_stop_button.pack(side="left", padx=(0, 8))
-        self.video_cancel_button = ttk.Button(actions, text="Discard recording", style="Quiet.TButton", command=lambda: self._stop_video_recording(cancel=True), state="disabled")
-        self.video_cancel_button.pack(side="left")
-        ttk.Label(card, textvariable=self.video_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Label(tab, text="Start recording prepares the replay, starts the recorder and plays the shot once the counter is live. Finish recording to save; start a new recording for another take. Play shot remains available for previews. Encoders using FFmpeg need the ffmpeg.exe path above; the bundled build fills it automatically.",
-                  style="Muted.TLabel", wraplength=900).grid(row=1, column=0, sticky="w", padx=4, pady=(10, 14))
-        shade = ttk.Frame(tab, style="Card.TFrame", padding=18)
-        shade.grid(row=2, column=0, sticky="ew")
-        shade.columnconfigure(1, weight=1)
-        ttk.Label(shade, text="RESHADE", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(shade, text="Optional effects and presets. Set the menu shortcut in Keybinds.", style="CardMuted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 12))
-        ttk.Label(shade, text="Runtime DLL", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 12))
-        self.reshade_path_entry = ttk.Entry(shade, textvariable=self.reshade_runtime_path)
-        self.reshade_path_entry.grid(row=2, column=1, sticky="ew")
-        self.reshade_browse_button = ttk.Button(shade, text="Browse…", command=self._browse_reshade)
-        self.reshade_browse_button.grid(row=2, column=2, padx=(10, 0))
-        actions = ttk.Frame(shade, style="Card.TFrame")
-        actions.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        self.reshade_configure_button = ttk.Button(actions, text="Enable ReShade", command=self._configure_reshade)
-        self.reshade_configure_button.pack(side="left", padx=(0, 10))
-        self.reshade_disable_button = ttk.Button(actions, text="Disable for this session", style="Quiet.TButton", command=self._disable_reshade, state="disabled")
-        self.reshade_disable_button.pack(side="left", padx=(0, 10))
-        self.reshade_forget_button = ttk.Button(actions, text="Forget runtime", style="Quiet.TButton", command=self._forget_reshade)
-        self.reshade_forget_button.pack(side="left", padx=(0, 10))
-        ttk.Button(actions, text="Keybinds…", style="Quiet.TButton", command=lambda: self.notebook.select(self.keybinds_tab)).pack(side="left")
-        ttk.Label(shade, textvariable=self.reshade_status_text, style="CardMuted.TLabel", wraplength=850).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        gui_layout.build_export(self)
 
     def _browse_video(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
@@ -1025,37 +963,6 @@ class DollyApp:
 
         dialog.withdraw()
 
-    def _build_replays(self):
-        tab = self.replays_tab
-        tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(2, weight=1)
-        folder = ttk.Frame(tab, padding=(0, 8, 0, 12))
-        folder.grid(row=0, column=0, sticky="ew")
-        folder.columnconfigure(1, weight=1)
-        ttk.Label(folder, text="Replay folder", style="Muted.TLabel").grid(row=0, column=0, padx=(0, 12))
-        ttk.Entry(folder, textvariable=self.replay_folder).grid(row=0, column=1, sticky="ew")
-        ttk.Button(folder, text="Browse…", command=self._browse_replay_folder).grid(row=0, column=2, padx=(10, 0))
-        ttk.Button(folder, text="Refresh", command=self._refresh_replays).grid(row=0, column=3, padx=(8, 0))
-        search = ttk.Frame(tab)
-        search.grid(row=1, column=0, sticky="ew", pady=(0, 12))
-        search.columnconfigure(1, weight=1)
-        ttk.Label(search, text="Find replay", style="Muted.TLabel").grid(row=0, column=0, padx=(0, 12))
-        ttk.Entry(search, textvariable=self.replay_search).grid(row=0, column=1, sticky="ew")
-        self.replay_search.trace_add("write", lambda *_args: self._filter_replays())
-        table, self.replay_tree = self._tree(tab, ("name", "size", "modified"), ("Replay", "Size", "Modified"), (470, 100, 190), height=8)
-        table.grid(row=2, column=0, sticky="nsew")
-        self.replay_tree.column("name", anchor="w", minwidth=170)
-        self.replay_tree.column("size", stretch=False)
-        self.replay_tree.column("modified", stretch=False)
-        self.replay_tree.bind("<<TreeviewSelect>>", self._select_replay)
-        self.replay_tree.bind("<Double-1>", lambda _e: self._use_selected_replay())
-        bottom = ttk.Frame(tab, padding=(0, 12))
-        bottom.grid(row=3, column=0, sticky="ew")
-        bottom.columnconfigure(0, weight=1)
-        ttk.Label(bottom, textvariable=self.replay_summary, style="Muted.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(bottom, text="Use selected replay", style="Primary.TButton", command=self._use_selected_replay).grid(row=0, column=1)
-        ttk.Button(bottom, text="Browse another file…", command=self._browse_demo).grid(row=0, column=2, padx=(8, 0))
-
     def _refresh_replays(self):
         folder = self.replay_folder.get().strip()
         if not folder:
@@ -1329,7 +1236,8 @@ class DollyApp:
         self.startup_progress.set("Replay paused and ready. Return to Deadlock to frame your first camera.")
         self.status_text.set("Use your editor shortcut to open the in-game panel. F7 opens the console.")
         editor_session.configure(self)
-        self.notebook.select(self.camera_tab)
+        if not hasattr(self, "full_editor") or self.full_editor.get():
+            self.notebook.select(self.camera_tab)
 
     def _cancel_startup(self):
         if self.startup_cancel is not None:
@@ -1390,8 +1298,6 @@ class DollyApp:
                                        state="disabled" if self.capture_mode.get() == "Replay timing" else "normal")
         self.segment_entry.pack(side="left")
         ttk.Label(timing, text="s", style="Muted.TLabel").pack(side="left", padx=(4, 12))
-        ttk.Checkbutton(timing, text="Renderer relief", variable=self.seek_relief,
-                        command=self._set_seek_relief).pack(side="left")
         ttk.Label(timing, textvariable=self.path_summary, style="Muted.TLabel").pack(side="right")
         ttk.Button(timing, text="Keybinds…", style="Quiet.TButton",
                    command=self._show_keybinds).pack(side="right", padx=(0, 14))
@@ -1876,8 +1782,6 @@ class DollyApp:
         intro = ttk.Frame(tab)
         intro.grid(row=0, column=0, sticky="ew", pady=(2, 10))
         ttk.Label(intro, text="CAMERA VARIABLES", style="Section.TLabel").pack(side="left")
-        ttk.Checkbutton(intro, text="Renderer relief during seeks", variable=self.seek_relief,
-                        command=self._set_seek_relief).pack(side="left", padx=(18, 0))
         ttk.Button(intro, text="Fixed values…", command=self._show_fixed_values).pack(side="right", padx=(8, 0))
         ttk.Button(intro, text="+ Citadel DOF", command=self._dof_preset).pack(side="right", padx=(8, 0))
         ttk.Button(intro, text="+ Range DOF", command=self._range_dof_preset).pack(side="right")
@@ -1964,45 +1868,45 @@ class DollyApp:
         frame.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         frame.columnconfigure(0, weight=1)
         timeline = ttk.Frame(frame)
-        timeline.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        timeline.columnconfigure(0, weight=1)
+        timeline.pack(fill="x", pady=(0, 12))
         self.slider = ttk.Scale(timeline, from_=0, to=10, variable=self.shot_time, command=self._slide)
-        self.slider.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        self.slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
         self.slider.bind("<ButtonPress-1>", lambda _event: setattr(self, "dragging", True))
         self.slider.bind("<ButtonRelease-1>", lambda _event: setattr(self, "dragging", False))
-        ttk.Entry(timeline, textvariable=self.time_text, width=9).grid(row=0, column=1)
-        ttk.Label(timeline, text="s", style="Muted.TLabel").grid(row=0, column=2, padx=(6, 0))
+        ttk.Entry(timeline, textvariable=self.time_text, width=9).pack(side="left")
+        ttk.Label(timeline, text="s").pack(side="left", padx=6)
         controls = ttk.Frame(frame)
-        controls.grid(row=1, column=0, sticky="ew")
-        for text, command, style in (("▶  Play shot", self._play, "Primary.TButton"),
-                                     ("Pause", lambda: self._session_operation("Pausing", self.controller.pause), "TButton"),
-                                     ("Stop / restore", lambda: self._session_operation("Stopping", self.controller.stop), "TButton"),
-                                     ("Preview frame", self._apply_frame, "Quiet.TButton"),
-                                     ("Seek replay", self._seek, "Quiet.TButton")):
-            ttk.Button(controls, text=text, command=command, style=style).pack(side="left", padx=(0, 6))
+        controls.pack(fill="x", pady=(0, 12))
+        for text, command in (("Play shot", self._play),
+                              ("Pause", lambda: self._session_operation("Pausing", self.controller.pause)),
+                              ("Stop / restore", lambda: self._session_operation("Stopping", self.controller.stop))):
+            ttk.Button(controls, text=text, command=command).pack(side="left", padx=(0, 10))
+        ttk.Label(controls, text="Playback speed").pack(side="left", padx=(12, 8))
         self.speed_combo = ttk.Combobox(controls, textvariable=self.speed,
-                                       values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"), width=5)
-        self.speed_combo.pack(side="right")
-        ttk.Label(controls, text="Speed", style="Muted.TLabel").pack(side="right", padx=(9, 6))
-        options = ttk.Frame(frame)
-        options.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        ttk.Checkbutton(options, text="Hide HUD", variable=self.hide_hud).pack(side="left")
-        ttk.Checkbutton(options, text="Frozen preview", variable=self.frozen).pack(side="left", padx=(16, 0))
-        ttk.Label(options, text="Play shot resumes the replay from the first camera.", style="Muted.TLabel").pack(side="left", padx=(18, 0))
-        self.rate_combo = ttk.Combobox(options, textvariable=self.rate,
-                                      values=("30", "60", "120"), state="readonly", width=5)
-        self.rate_combo.pack(side="right")
-        ttk.Label(options, text="Updates / s", style="Muted.TLabel").pack(side="right", padx=(9, 6))
-        smoothing = ttk.Frame(frame)
-        smoothing.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        ttk.Label(smoothing, text="Smoothing", style="Muted.TLabel").pack(side="left", padx=(0, 6))
-        self.smoothing_combo = ttk.Combobox(smoothing, textvariable=self.smoothing,
-                     values=("Off", "Light", "Balanced", "Strong"), state="readonly", width=10)
+            values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"), width=6)
+        self.speed_combo.pack(side="left")
+        self.playback_disclosure = gui_layout.disclosure(frame, "Playback options")
+        options = self.playback_disclosure.body
+        row = ttk.Frame(options)
+        row.pack(fill="x", pady=(0, 12))
+        for title, var in (("Hide HUD", self.hide_hud), ("Frozen preview", self.frozen)):
+            ttk.Checkbutton(row, text=title, variable=var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(row, text="Renderer relief during seeks", variable=self.seek_relief,
+                        command=self._set_seek_relief).pack(side="left")
+        row = ttk.Frame(options)
+        row.pack(fill="x", pady=(0, 12))
+        ttk.Button(row, text="Preview frame", command=self._apply_frame).pack(side="left", padx=(0, 10))
+        ttk.Button(row, text="Seek replay", command=self._seek).pack(side="left", padx=(0, 18))
+        ttk.Label(row, text="Updates / s").pack(side="left", padx=(0, 8))
+        self.rate_combo = ttk.Combobox(row, textvariable=self.rate, values=("30", "60", "120"), state="readonly", width=6)
+        self.rate_combo.pack(side="left")
+        self.smoothing_row = ttk.Frame(options)
+        self.smoothing_row.pack(fill="x", pady=(0, 10))
+        ttk.Label(self.smoothing_row, text="Console smoothing").pack(side="left", padx=(0, 8))
+        self.smoothing_combo = ttk.Combobox(self.smoothing_row, textvariable=self.smoothing,
+            values=("Off", "Light", "Balanced", "Strong"), state="readonly", width=12)
         self.smoothing_combo.pack(side="left")
-        ttk.Label(smoothing, text="Light 80 ms · Balanced 160 ms · Strong 280 ms (real time)",
-                  style="Muted.TLabel").pack(side="left", padx=(12, 0))
-        ttk.Label(frame, text="Native synchronizes camera + supported DOF curves. Updates / s changes monitoring only; smoothing is for Console.",
-                  style="Muted.TLabel").grid(row=4, column=0, sticky="w", pady=(3, 0))
+        ttk.Label(self.smoothing_row, text="Light 80 ms / Balanced 160 ms / Strong 280 ms", style="Muted.TLabel").pack(side="left", padx=12)
 
     def _worker_loop(self):
         while True:
@@ -2114,6 +2018,7 @@ class DollyApp:
             self.session_text.set("Playing camera path" if self.playing else session_label)
             if self.startup_cancel is not None and not self.startup_cancel.is_set():
                 self.startup_progress.set(str(status.get("message") or session_label))
+            self.full_editor_switch.configure(state="disabled" if self.busy else "normal")
             self.play_replay_button.configure(state="normal" if not self.busy and not self.playing else "disabled")
             self.cancel_startup_button.configure(state="normal" if self.startup_cancel is not None and not self.startup_cancel.is_set() else "disabled")
             unlocker_ready = bool(status.get("unlocker_ready"))
@@ -2129,6 +2034,10 @@ class DollyApp:
             native = status.get("camera_backend") == "native" if running else self.camera_driver.get() == "Native (experimental)"
             self._set_driver_indicator(status.get("camera_backend"), running)
             self.smoothing_combo.configure(state="disabled" if native or self.playing else "readonly")
+            if native:
+                self.smoothing_row.pack_forget()
+            else:
+                self.smoothing_row.pack(fill="x", pady=(0, 10))
             self.aspect_curve.set_enabled(available)
             startup_buttons = (
                 (self.launch_button, available),
@@ -2473,7 +2382,9 @@ class DollyApp:
         return "In-game capture · " + self.capture_binding.label
 
     def _show_keybinds(self, action="capture"):
-        self.notebook.select(self.keybinds_tab)
+        self.notebook.select(self.settings_tab)
+        self.controls_disclosure.set_open(True)
+        self.settings_page.reveal(self.controls_disclosure)
         self.bindings_tree.selection_set(action)
         self.bindings_tree.see(action)
         self._select_binding()
@@ -2746,7 +2657,8 @@ class DollyApp:
                 self._mark_dirty()
                 self._refresh_keys(key.time)
                 self._set_time(key.time)
-                self.notebook.select(self.camera_tab)
+                if not hasattr(self, "full_editor") or self.full_editor.get():
+                    self.notebook.select(self.camera_tab)
                 verb = "Replaced" if action == "replace" else "Captured"
                 self.status_text.set(f"{verb} view {candidate.keyframes.index(key) + 1} at {key.time:g} seconds. "
                                      "Fly to the next position and use Add camera here.")
@@ -3154,7 +3066,8 @@ class DollyApp:
             self.dirty = False
             self._refresh_project()
             self._set_time(0)
-            self.notebook.select(self.camera_tab)
+            if self.full_editor.get():
+                self.notebook.select(self.camera_tab)
             if legacy_project:
                 self.status_text.set("Shot imported: camera positions and timing are preserved. Framing starts at normal aspect; old FOV values are kept as inactive metadata.")
             else:

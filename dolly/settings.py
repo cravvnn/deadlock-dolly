@@ -22,7 +22,7 @@ from .editor_actions import (
 )
 from .replays import parse_launch_options
 
-SETTINGS_VERSION = 3
+SETTINGS_VERSION = 4
 DEFAULT_RESHADE_BINDING = EditorBinding("F11")
 MAX_SETTINGS_BYTES = 64 * 1024
 
@@ -39,9 +39,12 @@ class AppSettings:
     action_bindings: dict[str, EditorBinding | None] = field(default_factory=dict)
     reshade_binding: EditorBinding | None = field(default_factory=lambda: DEFAULT_RESHADE_BINDING)
     reshade_runtime_path: str = ""
+    full_editor: bool = False
     migration_warnings: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if type(self.full_editor) is not bool:
+            raise ValueError("full_editor must be a boolean.")
         if not isinstance(self.capture_binding, CaptureBinding):
             raise ValueError("capture_binding must be a CaptureBinding.")
         # Validate here as well as at the JSON boundary before saving anything.
@@ -144,7 +147,7 @@ def _decode_settings(data: bytes) -> AppSettings:
         raise ValueError("Dolly settings are not valid UTF-8 JSON.") from exc
     if not isinstance(raw, dict) or "version" not in raw:
         raise ValueError("Dolly settings must contain a version and preferences.")
-    if type(raw["version"]) is not int or raw["version"] not in (1, 2, SETTINGS_VERSION):
+    if type(raw["version"]) is not int or raw["version"] not in (1, 2, 3, SETTINGS_VERSION):
         raise ValueError(f"Unsupported Dolly settings version: {raw['version']!r}.")
     if raw["version"] == 1:
         if set(raw) != {"version", "capture_binding"}:
@@ -163,8 +166,10 @@ def _decode_settings(data: bytes) -> AppSettings:
                            reshade_binding=reshade_binding, migration_warnings=tuple(warnings))
     fields = {"capture_binding", "game_path", "replay_folder", "demo_path", "launch_options",
               "movement_speed", "mouse_sensitivity", "action_bindings"}
-    if raw["version"] == SETTINGS_VERSION:
+    if raw["version"] >= 3:
         fields |= {"reshade_binding", "reshade_runtime_path"}
+    if raw["version"] >= 4:
+        fields.add("full_editor")
     if set(raw) != fields | {"version"}:
         raise ValueError(f"Version {raw['version']} Dolly settings have missing or unknown preference fields.")
     values = {name: raw[name] for name in fields}
@@ -234,6 +239,7 @@ def save_settings(
         raise ValueError("settings must be an AppSettings instance.")
     payload = {
         "version": SETTINGS_VERSION,
+        "full_editor": settings.full_editor,
         "capture_binding": settings.capture_binding.to_dict(),
         "game_path": settings.game_path,
         "replay_folder": settings.replay_folder,

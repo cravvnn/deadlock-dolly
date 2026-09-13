@@ -1356,11 +1356,13 @@ void run() {
         require(base != nullptr, "Synthetic editor config missing");
         auto config = std::make_shared<EditorConfig>(*base);
         config->sequence += 2;
-        config->video_flags = 3;
+        config->video_flags = 63;
         std::memcpy(f.mapping.data() + kEditorConfigOffset, config.get(), sizeof(*config));
         editor_worker_tick(f.mapping.data(), true);
         auto applied = std::atomic_load(&dolly::gConfig);
-        require(applied && applied->video_flags == 3 && editor_snapshot().video_depth,
+        require(applied && applied->video_flags == 63 && editor_snapshot().video_depth &&
+                    editor_snapshot().video_depth_exr && editor_snapshot().video_layer_world &&
+                    editor_snapshot().video_layer_players && editor_snapshot().video_layer_effects,
                 "Depth video flag was rejected with the whole config");
     }
 

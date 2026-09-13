@@ -33,13 +33,35 @@ class SettingsTests(unittest.TestCase):
         save_settings(settings, self.path)
         self.assertEqual(load_settings(self.path), settings)
         raw = json.loads(self.path.read_text("utf-8"))
-        self.assertEqual(set(raw), {"version", "capture_binding", "game_path", "replay_folder",
+        self.assertEqual(set(raw), {"version", "full_editor", "capture_binding", "game_path", "replay_folder",
                                    "demo_path", "launch_options", "movement_speed",
                                    "mouse_sensitivity", "action_bindings", "reshade_binding",
                                    "reshade_runtime_path"})
-        self.assertEqual(raw["version"], 3)
+        self.assertEqual(raw["version"], 4)
         self.assertEqual(raw["capture_binding"], settings.capture_binding.to_dict())
         self.assertNotIn("enabled", raw)
+
+    def test_v3_migration_preserves_preferences_and_defaults_to_simple_layout(self):
+        settings = AppSettings(game_path="C:/game/citadel.exe", movement_speed=777,
+                               reshade_runtime_path="C:/effects/ReShade64.dll")
+        save_settings(settings, self.path)
+        raw = json.loads(self.path.read_text("utf-8"))
+        raw["version"] = 3
+        raw.pop("full_editor")
+        self.write_raw(json.dumps(raw))
+        before = self.path.read_bytes()
+        loaded = load_settings(self.path)
+        self.assertEqual(loaded, settings)
+        self.assertFalse(loaded.full_editor)
+        self.assertEqual(before, self.path.read_bytes())
+
+    def test_full_editor_preference_round_trips_and_rejects_non_boolean(self):
+        settings = AppSettings(full_editor=True)
+        save_settings(settings, self.path)
+        self.assertEqual(load_settings(self.path), settings)
+        for invalid in (0, 1, "true", None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                AppSettings(full_editor=invalid)
 
     def test_invalid_file_load_preserves_original_and_creates_no_backup(self):
         self.write_raw("{ broken")

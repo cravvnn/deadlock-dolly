@@ -157,6 +157,19 @@ class EditorBridgeTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<HHBB", config, 432), (600, 40, 2, 7))
         self.assertAlmostEqual(struct.unpack_from("<f", config, 438)[0], .1, places=5)
 
+    def test_layer_flags_and_action_ids_preserve_existing_protocol(self):
+        for layer, bit in (("world", 8), ("players", 16), ("effects", 32)):
+            values = {"video_layer_" + name: name == layer for name in ("world", "players", "effects")}
+            self.bridge.configure_editor(**values)
+            config = self.memory[w.CONFIG_OFFSET:w.CONFIG_OFFSET+w.CONFIG.size]
+            self.assertEqual(struct.unpack_from("<B", config, 437)[0], bit)
+            with self.assertRaises(ValueError):
+                self.bridge.configure_editor(**{"video_layer_" + layer: "yes"})
+        self.publish([(1, 54, 1), (2, 55, 0), (3, 56, 1)])
+        self.assertEqual([(e["action"], e["value"]) for e in self.bridge.editor_status()["events"]],
+                         [("set_video_layer_world", 1), ("set_video_layer_players", 0),
+                          ("set_video_layer_effects", 1)])
+
     def test_video_export_action_ids_follow_media_actions(self):
         self.publish([(1, 34, 300), (2, 35, 40), (3, 36, 2), (4, 37, 1), (5, 38, .1)])
         events = self.bridge.editor_status()["events"]

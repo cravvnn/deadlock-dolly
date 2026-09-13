@@ -169,7 +169,9 @@ def configure(app):
                   video_encoder=video_encoder, video_fixed_step=video_fixed_step,
                   video_depth=video_depth,
                   video_depth_exr=video_depth_exr,
-                  video_speed=video_speed)
+                  video_speed=video_speed,
+                  **{"video_layer_" + layer: bool(_value(app, "video_layer_" + layer, False))
+                     for layer in ("world", "players", "effects")})
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
     # Explicit owner changes are handled only by command transitions below.
     if getattr(app, "_native_editor_config_cache", None) != values or getattr(app, "_native_editor_bridge", None) is not bridge:
@@ -405,6 +407,12 @@ def dispatch(app, event, bridge):
         if event["value"] not in (0, 1):
             raise ValueError("Depth EXR sequence must be on or off.")
         app.video_depth_exr.set(bool(event["value"]) and bool(app.video_depth.get()))
+        configure(app)
+    elif action in ("set_video_layer_world", "set_video_layer_players", "set_video_layer_effects"):
+        if event["value"] not in (0, 1):
+            raise ValueError("Video layer must be on or off.")
+        getattr(app, action.removeprefix("set_")).set(bool(event["value"]))
+        app._layer_toggled()
         configure(app)
     elif action == "set_video_speed":
         value = event["value"]

@@ -752,7 +752,7 @@ void draw_panel(const EditorSnapshot& state) {
         if (ImGui::BeginChild("##editor-content", ImVec2(0, -footer_height),
                               ImGuiChildFlags_None)) {
             ImGui::BeginTabBar("##dolly-pages", ImGuiTabBarFlags_None);
-            if (ImGui::BeginTabItem("Editor")) {
+            if (ImGui::BeginTabItem("Camera")) {
                 ImGui::BeginDisabled(!state.ready || state.busy);
                 if (begin_panel_card("##cameras-card")) {
                     char count[32]{};
@@ -815,6 +815,116 @@ void draw_panel(const EditorSnapshot& state) {
                                             unsigned(guides->camera_count()));
                 }
                 end_panel_card();
+                if (begin_panel_card("##replay-card")) {
+                    char timing[64]{};
+                    if (state.duration > 0)
+                        std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
+                                      state.duration);
+                    section_title("Replay", timing[0] ? timing : nullptr);
+                    if (state.duration > 0) {
+                        ImGui::ProgressBar(
+                            std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
+                            ImVec2(-1, 4 * panel_scale), "");
+                        ImGui::Spacing();
+                    }
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    ImGui::BeginDisabled(state.camera_count < 2);
+                    action_button("Play shot", EditorAction::PlayPath, half);
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    action_button(state.paused ? "Play replay" : "Pause replay",
+                                  EditorAction::PlayPause, half);
+                    ImGui::Spacing();
+                    action_button("Back 1 second", EditorAction::SeekBack, half);
+                    ImGui::SameLine();
+                    action_button("Forward 1 second", EditorAction::SeekForward, half);
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    ImGui::TextUnformatted("Playback speed");
+                    ImGui::SetNextItemWidth(-1);
+                    char playback_speed[32]{};
+                    std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
+                                  state.playback_speed);
+                    if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
+                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%.3g x", value);
+                            if (ImGui::Selectable(label, value == state.playback_speed))
+                                editor_enqueue(EditorAction::SetPlaybackSpeed, value);
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Playback speed for the next Play shot. Shared with the desktop controls.");
+                    ImGui::EndDisabled();
+                }
+                end_panel_card();
+                if (begin_panel_card("##flight-card")) {
+                    // Send one change at the end of a drag, not a settings write per frame.
+                    static float speed_draft = 400.0f;
+                    static bool speed_editing = false;
+                    if (!speed_editing)
+                        speed_draft = std::clamp(static_cast<float>(state.speed), 1.0f, 10000.0f);
+                    char speed_label[48]{};
+                    std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
+                    section_title("Free camera", speed_label);
+                    ImGui::TextWrapped(
+                        "Mouse wheel zooms while flying and updates the selected camera's Framing Curve.");
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                                        ImVec2(12 * panel_scale, 3 * panel_scale));
+                    ImGui::SliderFloat("##flight-speed", &speed_draft, 1.0f, 10000.0f, "",
+                                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::PopStyleVar();
+                    const bool speed_committed = ImGui::IsItemDeactivatedAfterEdit();
+                    speed_editing = ImGui::IsItemActive();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Movement speed in world units per second. Ctrl+click to enter a value.");
+                    if (speed_committed)
+                        editor_enqueue(EditorAction::SetSpeed, double(speed_draft));
+                    ImGui::Spacing();
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    action_button("Fly camera", EditorAction::Flight, half);
+                    ImGui::SameLine();
+                    action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    ImGui::TextUnformatted("Updates / s");
+                    ImGui::SetNextItemWidth(-1);
+                    char playback_rate[32]{};
+                    std::snprintf(playback_rate, sizeof(playback_rate), "%u", state.playback_rate);
+                    if (ImGui::BeginCombo("##playback-rate", playback_rate)) {
+                        for (unsigned value : {30u, 60u, 120u}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%u", value);
+                            if (ImGui::Selectable(label, value == state.playback_rate))
+                                editor_enqueue(EditorAction::SetPlaybackRate, double(value));
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
+                    ImGui::EndDisabled();
+                }
+                end_panel_card();
+                ImGui::Spacing();
+                ImGui::BeginDisabled(state.playing);
+                action_button("Clear ragdolls", EditorAction::DestroyRagdolls,
+                              ImGui::GetContentRegionAvail().x);
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Clear accumulated ragdolls after repeated shot playback.");
+                ImGui::Spacing();
+                ImGui::EndDisabled();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Lens")) {
+                ImGui::BeginDisabled(!state.ready || state.busy);
                 if (begin_panel_card("##dof-card")) {
                     section_title("Depth of field", "Native engine");
                     ImGui::BeginDisabled(!state.dof_available || !state.paused || state.playing ||
@@ -874,169 +984,73 @@ void draw_panel(const EditorSnapshot& state) {
                             "Alt: fine adjust | Ctrl+click: type.\nChanges save to Effects at the playhead.");
                 }
                 end_panel_card();
-                if (begin_panel_card("##replay-card")) {
-                    char timing[64]{};
-                    if (state.duration > 0)
-                        std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
-                                      state.duration);
-                    section_title("Replay", timing[0] ? timing : nullptr);
-                    if (state.duration > 0) {
-                        ImGui::ProgressBar(
-                            std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
-                            ImVec2(-1, 4 * panel_scale), "");
-                        ImGui::Spacing();
+                if (begin_panel_card("##reshade-card")) {
+                    section_title("Effects", "ReShade");
+                    if (reshade_available()) {
+                        if (ImGui::Button("ReShade menu", ImVec2(-1, 0)))
+                            editor_enqueue(EditorAction::ReShade);
+                    } else {
+                        ImGui::TextWrapped(
+                            "Select the ReShade runtime in the desktop Settings to enable it.");
                     }
-                    const float half =
-                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                    ImGui::BeginDisabled(state.camera_count < 2);
-                    action_button("Play shot", EditorAction::PlayPath, half);
-                    ImGui::EndDisabled();
-                    ImGui::SameLine();
-                    action_button(state.paused ? "Play replay" : "Pause replay",
-                                  EditorAction::PlayPause, half);
-                    action_button("Back 1 second", EditorAction::SeekBack, half);
-                    ImGui::SameLine();
-                    action_button("Forward 1 second", EditorAction::SeekForward, half);
-                    ImGui::Spacing();
-                    ImGui::BeginDisabled(state.playing);
-                    ImGui::TextUnformatted("Playback speed");
-                    ImGui::SetNextItemWidth(-1);
-                    char playback_speed[32]{};
-                    std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
-                                  state.playback_speed);
-                    if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
-                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
-                            char label[32]{};
-                            std::snprintf(label, sizeof(label), "%.3g x", value);
-                            if (ImGui::Selectable(label, value == state.playback_speed))
-                                editor_enqueue(EditorAction::SetPlaybackSpeed, value);
-                        }
-                        ImGui::EndCombo();
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Playback speed for the next Play shot. Shared with the desktop controls.");
-                    ImGui::TextUnformatted("Updates / s");
-                    ImGui::SetNextItemWidth(-1);
-                    char playback_rate[32]{};
-                    std::snprintf(playback_rate, sizeof(playback_rate), "%u", state.playback_rate);
-                    if (ImGui::BeginCombo("##playback-rate", playback_rate)) {
-                        for (unsigned value : {30u, 60u, 120u}) {
-                            char label[32]{};
-                            std::snprintf(label, sizeof(label), "%u", value);
-                            if (ImGui::Selectable(label, value == state.playback_rate))
-                                editor_enqueue(EditorAction::SetPlaybackRate, double(value));
-                        }
-                        ImGui::EndCombo();
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
-                    ImGui::EndDisabled();
-                }
-                end_panel_card();
-                if (begin_panel_card("##flight-card")) {
-                    // Send one change at the end of a drag, not a settings write per frame.
-                    static float speed_draft = 400.0f;
-                    static bool speed_editing = false;
-                    if (!speed_editing)
-                        speed_draft = std::clamp(static_cast<float>(state.speed), 1.0f, 10000.0f);
-                    char speed_label[48]{};
-                    std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
-                    section_title("Free camera", speed_label);
-                    ImGui::TextWrapped(
-                        "Mouse wheel zooms while flying and updates the selected camera's Framing Curve.");
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                                        ImVec2(12 * panel_scale, 3 * panel_scale));
-                    ImGui::SliderFloat("##flight-speed", &speed_draft, 1.0f, 10000.0f, "",
-                                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::PopStyleVar();
-                    const bool speed_committed = ImGui::IsItemDeactivatedAfterEdit();
-                    speed_editing = ImGui::IsItemActive();
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Movement speed in world units per second. Ctrl+click to enter a value.");
-                    if (speed_committed)
-                        editor_enqueue(EditorAction::SetSpeed, double(speed_draft));
-                    const float half =
-                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                    action_button("Fly camera", EditorAction::Flight, half);
-                    ImGui::SameLine();
-                    action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
-                    ImGui::Spacing();
-                    ImGui::BeginDisabled(state.playing);
-                    action_button("Clear ragdolls", EditorAction::DestroyRagdolls,
-                                  ImGui::GetContentRegionAvail().x);
-                    ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Clear accumulated ragdolls after repeated shot playback.");
                 }
                 end_panel_card();
                 ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Export")) {
-                if (begin_panel_card("##video-card")) {
-                    section_title("Recording", "MP4");
-                    const auto recording = video::status();
-                    const bool active = recording.state == video::State::starting ||
-                                        recording.state == video::State::recording;
-                    ImGui::BeginDisabled(!state.ready || state.busy);
-                    ImGui::BeginDisabled(active || recording.state == video::State::finalizing ||
-                                         state.camera_count < 2 || state.playing);
-                    action_button("Play shot", EditorAction::PlayPath,
-                                  ImGui::GetContentRegionAvail().x);
-                    ImGui::EndDisabled();
-                    if (active) {
-                        ImGui::Text("%.1f s  |  %llu frames",
-                                    double(recording.duration_100ns) / 1e7,
-                                    static_cast<unsigned long long>(recording.frames_written));
-                        action_button("Finish recording", EditorAction::StopVideo,
-                                      ImGui::GetContentRegionAvail().x);
-                    } else {
-                        ImGui::BeginDisabled(recording.state == video::State::finalizing);
-                        action_button(recording.state == video::State::finalizing
-                                          ? "Finalizing MP4..."
-                                          : "Record video",
-                                      EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
-                        ImGui::EndDisabled();
+                // The in-game controls mirror the desktop values through a
+                // Python config round trip (~100 ms). Apply a clicked value
+                // immediately so a control cannot flicker back to the
+                // outgoing value while the acknowledgement travels.
+                struct Pending {
+                    int id = -1;
+                    double value = 0;
+                    std::uint64_t until = 0;
+                };
+                static Pending pending;
+                const auto now_ms = GetTickCount64();
+                const auto shown = [&](int id, double current) {
+                    if (pending.id == id) {
+                        if (now_ms < pending.until)
+                            return pending.value;
+                        pending.id = -1;
                     }
-                    ImGui::EndDisabled();
-                    if (recording.frames_dropped)
-                        ImGui::Text("Missed capture slots: %llu",
-                                    static_cast<unsigned long long>(recording.frames_dropped));
-                    ImGui::TextDisabled("Output folder and FFmpeg runtime: desktop Export tab.");
+                    return current;
+                };
+                const auto commit = [&](int id, double value, EditorAction action) {
+                    pending = {id, value, now_ms + 1000};
+                    editor_enqueue(action, value);
+                };
+                if (begin_panel_card("##export-passes")) {
+                    section_title("Output passes", "Color included");
+                    bool depth_master = shown(5, state.video_depth ? 1.0 : 0.0) != 0.0;
+                    if (ImGui::Checkbox("Depth master (.mov)", &depth_master))
+                        commit(5, depth_master ? 1.0 : 0.0, EditorAction::SetVideoDepth);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Write a matching ProRes depth.mov and preview video in the take's depth folder. Requires a verified scene depth.");
+                    bool depth_exr = shown(7, state.video_depth_exr ? 1.0 : 0.0) != 0.0;
+                    if (ImGui::Checkbox("EXR sequence (float)", &depth_exr))
+                        commit(7, depth_exr ? 1.0 : 0.0, EditorAction::SetVideoDepthExr);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Also write the float EXR precision master under the depth folder's exr/ subfolder.");
+                    bool layer_world = shown(8, state.video_layer_world ? 1.0 : 0.0) != 0.0;
+                    if (ImGui::Checkbox("World layer", &layer_world))
+                        commit(8, layer_world ? 1.0 : 0.0, EditorAction::SetVideoLayerWorld);
+                    bool layer_players = shown(9, state.video_layer_players ? 1.0 : 0.0) != 0.0;
+                    if (ImGui::Checkbox("Players layer", &layer_players))
+                        commit(9, layer_players ? 1.0 : 0.0, EditorAction::SetVideoLayerPlayers);
+                    bool layer_effects = shown(10, state.video_layer_effects ? 1.0 : 0.0) != 0.0;
+                    if (ImGui::Checkbox("Effects layer", &layer_effects))
+                        commit(10, layer_effects ? 1.0 : 0.0, EditorAction::SetVideoLayerEffects);
                 }
                 end_panel_card();
                 if (begin_panel_card("##export-settings")) {
-                    // The in-game controls mirror the desktop values through a
-                    // Python config round trip (~100 ms). Apply a clicked value
-                    // immediately so a control cannot flicker back to the
-                    // outgoing value while the acknowledgement travels.
-                    struct Pending {
-                        int id = -1;
-                        double value = 0;
-                        std::uint64_t until = 0;
-                    };
-                    static Pending pending;
-                    const auto now_ms = GetTickCount64();
-                    const auto shown = [&](int id, double current) {
-                        if (pending.id == id) {
-                            if (now_ms < pending.until)
-                                return pending.value;
-                            pending.id = -1;
-                        }
-                        return current;
-                    };
-                    const auto commit = [&](int id, double value, EditorAction action) {
-                        pending = {id, value, now_ms + 1000};
-                        editor_enqueue(action, value);
-                    };
                     char bitrate[64]{};
                     std::snprintf(bitrate, sizeof(bitrate), "%u Mbps", state.video_bitrate_mbps);
-                    section_title("Export settings", bitrate);
+                    section_title("Capture", bitrate);
                     ImGui::TextUnformatted("Video FPS");
                     ImGui::SetNextItemWidth(-1);
                     const unsigned shown_fps = unsigned(shown(1, state.video_fps));
@@ -1054,48 +1068,43 @@ void draw_panel(const EditorSnapshot& state) {
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "30-120 record in real time; 300 and 600 need Fixed-step export.");
-                    ImGui::TextUnformatted("Bitrate");
-                    ImGui::SetNextItemWidth(-1);
-                    const unsigned shown_bitrate = unsigned(shown(2, state.video_bitrate_mbps));
-                    char bitrate_label[24]{};
-                    std::snprintf(bitrate_label, sizeof(bitrate_label), "%u Mbps", shown_bitrate);
-                    if (ImGui::BeginCombo("##export-bitrate", bitrate_label)) {
-                        for (unsigned value : {10u, 20u, 40u}) {
-                            char label[24]{};
-                            std::snprintf(label, sizeof(label), "%u Mbps", value);
-                            if (ImGui::Selectable(label, value == shown_bitrate))
-                                commit(2, double(value), EditorAction::SetVideoBitrate);
+                    ImGui::Spacing();
+                    if (ImGui::CollapsingHeader("Encoder & quality")) {
+                        ImGui::TextUnformatted("Bitrate");
+                        ImGui::SetNextItemWidth(-1);
+                        const unsigned shown_bitrate = unsigned(shown(2, state.video_bitrate_mbps));
+                        char bitrate_label[24]{};
+                        std::snprintf(bitrate_label, sizeof(bitrate_label), "%u Mbps",
+                                      shown_bitrate);
+                        if (ImGui::BeginCombo("##export-bitrate", bitrate_label)) {
+                            for (unsigned value : {10u, 20u, 40u}) {
+                                char label[24]{};
+                                std::snprintf(label, sizeof(label), "%u Mbps", value);
+                                if (ImGui::Selectable(label, value == shown_bitrate))
+                                    commit(2, double(value), EditorAction::SetVideoBitrate);
+                            }
+                            ImGui::EndCombo();
                         }
-                        ImGui::EndCombo();
-                    }
-                    ImGui::TextUnformatted("Encoder");
-                    ImGui::SetNextItemWidth(-1);
-                    const unsigned shown_codec = unsigned(shown(3, state.video_codec));
-                    if (ImGui::BeginCombo("##export-encoder", video_codec_label(shown_codec))) {
-                        for (std::uint32_t id = 0; id <= 10; ++id) {
-                            if (ImGui::Selectable(video_codec_label(id), id == shown_codec))
-                                commit(3, double(id), EditorAction::SetVideoEncoder);
+                        ImGui::TextUnformatted("Encoder");
+                        ImGui::SetNextItemWidth(-1);
+                        const unsigned shown_codec = unsigned(shown(3, state.video_codec));
+                        if (ImGui::BeginCombo("##export-encoder", video_codec_label(shown_codec))) {
+                            for (std::uint32_t id = 0; id <= 10; ++id) {
+                                if (ImGui::Selectable(video_codec_label(id), id == shown_codec))
+                                    commit(3, double(id), EditorAction::SetVideoEncoder);
+                            }
+                            ImGui::EndCombo();
                         }
-                        ImGui::EndCombo();
                     }
+                    ImGui::Spacing();
                     bool fixed_step = shown(4, state.video_fixed_step ? 1.0 : 0.0) != 0.0;
                     if (ImGui::Checkbox("Fixed-step export (frame-accurate)", &fixed_step))
                         commit(4, fixed_step ? 1.0 : 0.0, EditorAction::SetVideoFixedStep);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Render exactly one frame per output frame. Required for 300/600 FPS and removes real-time encoder hitching.");
-                    bool depth_master = shown(5, state.video_depth ? 1.0 : 0.0) != 0.0;
-                    if (ImGui::Checkbox("Depth master (.mov)", &depth_master))
-                        commit(5, depth_master ? 1.0 : 0.0, EditorAction::SetVideoDepth);
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Write a matching ProRes depth.mov and preview video in the take's depth folder. Requires a verified scene depth.");
-                    bool depth_exr = shown(7, state.video_depth_exr ? 1.0 : 0.0) != 0.0;
-                    if (ImGui::Checkbox("EXR sequence (float)", &depth_exr))
-                        commit(7, depth_exr ? 1.0 : 0.0, EditorAction::SetVideoDepthExr);
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Also write the float EXR precision master under the depth folder's exr/ subfolder.");
+                    ImGui::Spacing();
+                    ImGui::Spacing();
                     ImGui::TextUnformatted("Export speed");
                     ImGui::SetNextItemWidth(-1);
                     const double shown_speed = shown(6, state.video_speed);
@@ -1115,15 +1124,36 @@ void draw_panel(const EditorSnapshot& state) {
                             "Slow-motion playback rate for fixed-step export. Shared with the desktop Export tab.");
                 }
                 end_panel_card();
-                if (begin_panel_card("##reshade-card")) {
-                    section_title("Effects", "ReShade");
-                    if (reshade_available()) {
-                        if (ImGui::Button("ReShade menu", ImVec2(-1, 0)))
-                            editor_enqueue(EditorAction::ReShade);
+                if (begin_panel_card("##video-card")) {
+                    section_title("Recording", "Video");
+                    const auto recording = video::status();
+                    const bool active = recording.state == video::State::starting ||
+                                        recording.state == video::State::recording;
+                    ImGui::BeginDisabled(!state.ready || state.busy);
+                    ImGui::BeginDisabled(active || recording.state == video::State::finalizing ||
+                                         state.camera_count < 2 || state.playing);
+                    action_button("Play shot", EditorAction::PlayPath,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                    if (active) {
+                        ImGui::Text("%.1f s  |  %llu frames",
+                                    double(recording.duration_100ns) / 1e7,
+                                    static_cast<unsigned long long>(recording.frames_written));
+                        action_button("Finish recording", EditorAction::StopVideo,
+                                      ImGui::GetContentRegionAvail().x);
                     } else {
-                        ImGui::TextWrapped(
-                            "Select the ReShade runtime in the desktop Export tab to enable it.");
+                        ImGui::BeginDisabled(recording.state == video::State::finalizing);
+                        action_button(recording.state == video::State::finalizing
+                                          ? "Finalizing video..."
+                                          : "Record video",
+                                      EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
+                        ImGui::EndDisabled();
                     }
+                    ImGui::EndDisabled();
+                    if (recording.frames_dropped)
+                        ImGui::Text("Missed capture slots: %llu",
+                                    static_cast<unsigned long long>(recording.frames_dropped));
+                    ImGui::TextDisabled("Output folder and FFmpeg runtime: desktop Export tab.");
                 }
                 end_panel_card();
                 ImGui::EndTabItem();
@@ -1132,6 +1162,7 @@ void draw_panel(const EditorSnapshot& state) {
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
+        ImGui::Spacing();
         ImGui::Spacing();
         action_button("Stop / restore", EditorAction::Stop, ImGui::GetContentRegionAvail().x);
         if (state.message[0])
@@ -1223,15 +1254,16 @@ void render_overlay(IDXGISwapChain* chain) {
         const auto snapshot = video::status();
         // Focus gates the first frame only. Desktop controls and a transient
         // missing editor pose must not finish an already running MP4.
-        if (media_session_active() && (snapshot.state == video::State::recording || editor.focused)) {
+        if (media_session_active() &&
+            (snapshot.state == video::State::recording || editor.focused)) {
             if (snapshot.state == video::State::recording && snapshot.width && snapshot.height) {
                 depth_live.publish(reinterpret_cast<std::uintptr_t>(capture_device),
                                    reinterpret_cast<std::uintptr_t>(capture_context),
                                    snapshot.width, snapshot.height);
                 depth_live.request(video::wants_depth());
                 depth::set_white_clear(video::wants_white_clear());
-                const bool matte_hooks = (video::wants_white_clear() || video::wants_shot_only()) &&
-                                         !depth_live.hooks();
+                const bool matte_hooks =
+                    (video::wants_white_clear() || video::wants_shot_only()) && !depth_live.hooks();
                 if ((depth_live.needs_hooks() || matte_hooks) &&
                     depth::install_scene_hooks(capture_device, capture_context))
                     depth_live.note_hooks(true);

@@ -92,10 +92,10 @@ Depth, hero-only and world-only export are not available in this build. See
    **ReShade64.dll** into a separate folder, such as `Documents\Dolly-ReShade`.
    The setup program's appended ZIP contains this DLL; running the installer
    against Deadlock is unnecessary.
-3. In Dolly's **Export → ReShade** section, select that DLL and enable it.
+3. In Dolly's **Settings → ReShade** section, select that DLL and enable it.
    The status changes from loading to ready after a game frame initializes it.
 4. Press **F11** in Deadlock to open ReShade's own menu. Rebind this action on
-   **Keybinds** if needed. **F7** continues to open the game console.
+   **Settings → Controls & keybinds** if needed. **F7** continues to open the game console.
 5. Dolly registers its bundled crosire/prod80 shader and texture library and
    copies editable presets into its private `ReShade\presets` folder. A new
    configuration selects **Deadlock-Dolly**, a neutral color-control preset.

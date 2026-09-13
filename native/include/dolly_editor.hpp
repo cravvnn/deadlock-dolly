@@ -77,7 +77,10 @@ enum class EditorAction : std::uint32_t {
     SetDofFarBlurry,
     SetDofTilt,
     SetVideoDepth,
-    SetVideoDepthExr
+    SetVideoDepthExr,
+    SetVideoLayerWorld,
+    SetVideoLayerPlayers,
+    SetVideoLayerEffects
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
@@ -191,6 +194,9 @@ struct EditorSnapshot {
     bool video_fixed_step = false;
     bool video_depth = false;
     bool video_depth_exr = false;
+    bool video_layer_world = false;
+    bool video_layer_players = false;
+    bool video_layer_effects = false;
     double video_speed = 1;
     double horizontal_fov = 0;
     std::uint32_t view_width = 0, view_height = 0;

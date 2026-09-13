@@ -320,3 +320,6 @@ tests/test_profile_clock.py
 tests/test_export_timing.py
 native/include/dolly_depth_live.hpp
 native/tests/depth_live_tests.cpp
+docs/UI_CLEANUP_PROPOSAL.md
+dolly/gui_layout.py
+tests/test_desktop_layout.py
