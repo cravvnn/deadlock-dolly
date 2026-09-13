@@ -46,6 +46,8 @@ int main() {
                 "EXR capture timestamp missing");
         require(contents(directory / "manifest.json").find("\"frames\": 2") != std::string::npos,
                 "Manifest frame count missing");
+        require(contents(directory / "preview_1x1.raw").size() == 2,
+                "Normalized preview stream missing or mis-sized");
         {
             Sequence existing;
             require(!existing.begin(normal.c_str()), "Existing sequence accepted");
@@ -92,6 +94,7 @@ int main() {
         fs::remove(directory / "00000000.exr");
         fs::remove(directory / "00000001.exr");
         fs::remove(directory / "manifest.json");
+        fs::remove(directory / "preview_1x1.raw");
         fs::remove(directory);
         fs::remove(conflict_dir / "00000000.exr");
         fs::remove(conflict_dir);

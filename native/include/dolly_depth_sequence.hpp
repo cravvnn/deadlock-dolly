@@ -4,8 +4,10 @@
 
 namespace dolly::depth {
 // Encoder-thread-only owner of a new <video path>.depth directory. Writes
-// complete FLOAT EXRs in color-frame order. No existing output is overwritten.
-// Destruction discards an unfinished sequence; finish preserves it.
+// complete FLOAT EXRs in color-frame order plus one normalized half-resolution
+// grayscale preview_<w>x<h>.raw stream for the caller to encode. No existing
+// output is overwritten. Destruction discards an unfinished sequence; finish
+// preserves it.
 class Sequence {
 public:
     Sequence();
