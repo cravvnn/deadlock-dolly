@@ -26,6 +26,13 @@ std::shared_ptr<const EditorConfig> gConfig;
 std::shared_ptr<const EditorDofConfig> gDofConfig;
 std::atomic<double> gSpeed{400};
 std::atomic<long> gMouseX{0}, gMouseY{0}, gFramingWheel{0};
+// Live wheel-burst tracking; camera -2 means no burst has been applied yet.
+struct FramingWheelState {
+    int camera = -2;
+    double value = 0;
+    std::uint64_t applied_at = 0;
+};
+FramingWheelState gFramingWheelState;
 std::atomic<bool> gKeys[256]{}, gBlocked[256]{}, gFocusBlocked[256]{};
 std::atomic<bool> gNoLegacyMouse{false}, gTextInput{false};
 std::atomic<std::uint64_t> gRawMousePackets{0}, gRelativeMousePackets{0}, gAcceptedMotionPackets{0};
@@ -623,6 +630,7 @@ void editor_attach_window(HWND window) noexcept {
     reset_keys(true);
 }
 void editor_reset_motion() noexcept {
+    gFramingWheelState = {};
     reset_keys();
 }
 bool editor_install_input_hooks() noexcept {
@@ -683,6 +691,22 @@ void editor_update_view(bool ready, bool paused, bool manual, const CameraPose& 
     gViewHeight = height;
     gViewSequence.fetch_add(1, std::memory_order_release);
 }
+double framing_wheel_step(double live, double stored, int camera, double factor,
+                          std::uint64_t now) noexcept {
+    // Continue from the value this wheel already produced while it is still the
+    // live pose. Python commits the parked key on its own poll cadence, so
+    // re-reading the published curve for every event would recompute the same
+    // target and stall the zoom. Re-anchor after an idle gap or a selection
+    // change so desktop edits and camera switches are never compounded over.
+    double base = stored;
+    if (gFramingWheelState.camera == camera && std::isfinite(gFramingWheelState.value) &&
+        now - gFramingWheelState.applied_at <= 500 &&
+        std::abs(live - gFramingWheelState.value) <= 1e-6)
+        base = gFramingWheelState.value;
+    const double next = std::clamp(base * factor, .5, 4.0);
+    gFramingWheelState = {camera, next, now};
+    return next;
+}
 void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long wheel) noexcept {
     if (!wheel || config.playback_flags || (gViewFlags.load() & 6) != 6)
         return;
@@ -690,14 +714,16 @@ void apply_framing_wheel(CameraPose& pose, const EditorConfig& config, long whee
     // feedback. The published event carries only the scale factor: Python owns
     // the final target and base, so a stale selection or live pose cannot
     // redirect or rebase the edit.
-    double base = pose[6];
+    const int selected = config.camera_count ? int(config.selected_camera) : -1;
+    double stored = pose[6];
     if (auto path = visualization_snapshot()) {
-        const auto selected = config.selected_camera;
-        if (selected < path->cameras().size() && std::isfinite(path->cameras()[selected].pose[6]))
-            base = path->cameras()[selected].pose[6];
+        if (selected >= 0 && selected < int(path->cameras().size()) &&
+            std::isfinite(path->cameras()[selected].pose[6]))
+            stored = path->cameras()[selected].pose[6];
     }
+    const double base = pose[6];
     const double factor = std::pow(.9, double(wheel) / WHEEL_DELTA);
-    const double next = std::clamp(base * factor, .5, 4.0);
+    const double next = framing_wheel_step(base, stored, selected, factor, GetTickCount64());
     CameraPose edit = pose;
     edit[6] = factor;
     if (next != base && factor != 1.0 &&

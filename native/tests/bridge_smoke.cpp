@@ -881,6 +881,10 @@ void editor_input_checks() {
     dolly::key_event(VK_ESCAPE, false);
 
     editor_set_owner(EditorOwner::Flight);
+    // A movement key physically held during this offline test must not
+    // masquerade as a blocked post-transition press.
+    dolly::gBlocked['W'] = false;
+    dolly::gFocusBlocked['W'] = false;
     dolly::key_event('W', true);
     require(dolly::key_down('W'), "Fresh flight movement was not recorded");
     editor_set_owner(EditorOwner::Flight);
@@ -959,6 +963,24 @@ void editor_framing_checks() {
         editor_enqueue(EditorAction::Capture);
     dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
     close_to(pose[6], 4, "Full event queue left visible framing ahead of the saved curve");
+    // A wheel burst must keep compounding from its own live value. The committed
+    // curve republishes on the UI poll, so re-reading it for every event used to
+    // recompute one target from a stale base and stall the zoom.
+    dolly::gFramingWheelState = {};
+    double burst = 1.8;
+    burst = dolly::framing_wheel_step(burst, 1.8, 0, .9, 1000);
+    close_to(burst, 1.62, "Wheel burst did not start from the published curve");
+    burst = dolly::framing_wheel_step(burst, 1.8, 0, .9, 1050);
+    close_to(burst, 1.458, "A stale published curve stalled the wheel burst");
+    burst = dolly::framing_wheel_step(burst, 1.458, 0, .9, 1100);
+    close_to(burst, 1.3122, "The wheel burst did not compound across updates");
+    dolly::gFramingWheelState = {};
+    double idle = dolly::framing_wheel_step(1.2, 1.2, 0, .9, 3000);
+    close_to(idle, 1.08, "Wheel burst did not start from the published curve");
+    close_to(dolly::framing_wheel_step(idle, 1.3, 0, .9, 3700), 1.17,
+             "An idle gap did not re-anchor the wheel to the published curve");
+    close_to(dolly::framing_wheel_step(1.17, 1.25, 1, .9, 3750), 1.125,
+             "A camera change did not re-anchor the wheel to the published curve");
     dolly::gAcknowledged = dolly::gLastEvent;
     editor_update_view(true, false, true, pose);
     dolly::apply_framing_wheel(pose, *config, WHEEL_DELTA);
