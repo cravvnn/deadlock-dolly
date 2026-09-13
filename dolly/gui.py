@@ -567,7 +567,11 @@ class DollyApp:
             if state == "completed":
                 self._video_operation_done(status)
             elif state == "failed":
-                self._log(format_video_status(status))
+                message = format_video_status(status)
+                self._log(message)
+                # A take can fail after playback started, when no worker is
+                # waiting for it. Surface the reason instead of only the log.
+                self._error("Recording", RuntimeError(status.get("error") or message))
             self._last_video_state = state
         active = state in ACTIVE_STATES
         ready = recording_ready(controller_status)
