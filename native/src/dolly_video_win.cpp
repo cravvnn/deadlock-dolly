@@ -118,6 +118,11 @@ struct Session {
     // once before error_text is published; never mutated afterwards.
     wchar_t error_buffer[256]{};
     std::atomic<std::uint64_t> written{0}, dropped{0}, duration{0};
+    // Depth-only diagnostics: pre-play frames are skipped because depth needs
+    // an exact replay time. Zero color frames plus non-zero skips identifies a
+    // shot that never started, instead of a silent empty take.
+    std::atomic<std::uint64_t> depth_skips{0}, depth_skip_since{0};
+    std::atomic<double> depth_last_replay{-2.0};
     // The render callback is the sole producer, the encoder the sole consumer.
     CpuFrame cpu[kSlots];
     std::atomic<std::uint64_t> produced{0}, consumed{0}, gpu_pending{0};
@@ -743,8 +748,12 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         DeleteFileW(child.log.c_str());
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
-            fail(*s, s->depth_output.error(),
-                 L"Depth sequence could not be finalized with the encoded color frame count.");
+            wchar_t message[256]{};
+            std::swprintf(message, 256,
+                          L"Depth sequence could not be finalized with the encoded color frame count (color frames %llu, depth skips %llu).",
+                          static_cast<unsigned long long>(s->written.load()),
+                          static_cast<unsigned long long>(s->depth_skips.load()));
+            fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
         if (!finalized || s->cancel.load())
@@ -888,8 +897,12 @@ void encode(std::shared_ptr<Session> s) noexcept {
     api.unload();
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
-            fail(*s, s->depth_output.error(),
-                 L"Depth sequence could not be finalized with the encoded color frame count.");
+            wchar_t message[256]{};
+            std::swprintf(message, 256,
+                          L"Depth sequence could not be finalized with the encoded color frame count (color frames %llu, depth skips %llu).",
+                          static_cast<unsigned long long>(s->written.load()),
+                          static_cast<unsigned long long>(s->depth_skips.load()));
+            fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
         if (!finalized || s->cancel.load())
@@ -1166,6 +1179,18 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         // have no replay time and cannot be paired with depth; skip them
         // instead of failing the take. The first encoded frame is the first
         // authored one once playback supplies a replay time.
+        const auto skips = s.depth_skips.fetch_add(1, std::memory_order_relaxed) + 1;
+        s.depth_last_replay.store(replay_time, std::memory_order_relaxed);
+        if (skips == 1)
+            s.depth_skip_since.store(GetTickCount64(), std::memory_order_relaxed);
+        const auto since = s.depth_skip_since.load(std::memory_order_relaxed);
+        if (since && GetTickCount64() - since > 10000 && !s.written.load(std::memory_order_relaxed)) {
+            wchar_t message[256]{};
+            std::swprintf(message, 256,
+                          L"Depth recording skipped %llu pre-play frames and the shot never started (last replay time %.3f).",
+                          static_cast<unsigned long long>(skips), double(replay_time));
+            fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT), message);
+        }
         return;
     }
 

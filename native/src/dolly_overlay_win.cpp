@@ -1008,19 +1008,43 @@ void draw_panel(const EditorSnapshot& state) {
                 }
                 end_panel_card();
                 if (begin_panel_card("##export-settings")) {
+                    // The in-game controls mirror the desktop values through a
+                    // Python config round trip (~100 ms). Apply a clicked value
+                    // immediately so a control cannot flicker back to the
+                    // outgoing value while the acknowledgement travels.
+                    struct Pending {
+                        int id = -1;
+                        double value = 0;
+                        std::uint64_t until = 0;
+                    };
+                    static Pending pending;
+                    const auto now_ms = GetTickCount64();
+                    const auto shown = [&](int id, double current) {
+                        if (pending.id == id) {
+                            if (now_ms < pending.until)
+                                return pending.value;
+                            pending.id = -1;
+                        }
+                        return current;
+                    };
+                    const auto commit = [&](int id, double value, EditorAction action) {
+                        pending = {id, value, now_ms + 1000};
+                        editor_enqueue(action, value);
+                    };
                     char bitrate[64]{};
                     std::snprintf(bitrate, sizeof(bitrate), "%u Mbps", state.video_bitrate_mbps);
                     section_title("Export settings", bitrate);
                     ImGui::TextUnformatted("Video FPS");
                     ImGui::SetNextItemWidth(-1);
+                    const unsigned shown_fps = unsigned(shown(1, state.video_fps));
                     char fps_label[16]{};
-                    std::snprintf(fps_label, sizeof(fps_label), "%u", state.video_fps);
+                    std::snprintf(fps_label, sizeof(fps_label), "%u", shown_fps);
                     if (ImGui::BeginCombo("##export-fps", fps_label)) {
                         for (unsigned value : {30u, 60u, 120u, 300u, 600u}) {
                             char label[16]{};
                             std::snprintf(label, sizeof(label), "%u", value);
-                            if (ImGui::Selectable(label, value == state.video_fps))
-                                editor_enqueue(EditorAction::SetVideoFps, double(value));
+                            if (ImGui::Selectable(label, value == shown_fps))
+                                commit(1, double(value), EditorAction::SetVideoFps);
                         }
                         ImGui::EndCombo();
                     }
@@ -1029,50 +1053,51 @@ void draw_panel(const EditorSnapshot& state) {
                             "30-120 record in real time; 300 and 600 need Fixed-step export.");
                     ImGui::TextUnformatted("Bitrate");
                     ImGui::SetNextItemWidth(-1);
+                    const unsigned shown_bitrate = unsigned(shown(2, state.video_bitrate_mbps));
                     char bitrate_label[24]{};
-                    std::snprintf(bitrate_label, sizeof(bitrate_label), "%u Mbps",
-                                  state.video_bitrate_mbps);
+                    std::snprintf(bitrate_label, sizeof(bitrate_label), "%u Mbps", shown_bitrate);
                     if (ImGui::BeginCombo("##export-bitrate", bitrate_label)) {
                         for (unsigned value : {10u, 20u, 40u}) {
                             char label[24]{};
                             std::snprintf(label, sizeof(label), "%u Mbps", value);
-                            if (ImGui::Selectable(label, value == state.video_bitrate_mbps))
-                                editor_enqueue(EditorAction::SetVideoBitrate, double(value));
+                            if (ImGui::Selectable(label, value == shown_bitrate))
+                                commit(2, double(value), EditorAction::SetVideoBitrate);
                         }
                         ImGui::EndCombo();
                     }
                     ImGui::TextUnformatted("Encoder");
                     ImGui::SetNextItemWidth(-1);
-                    if (ImGui::BeginCombo("##export-encoder",
-                                          video_codec_label(state.video_codec))) {
+                    const unsigned shown_codec = unsigned(shown(3, state.video_codec));
+                    if (ImGui::BeginCombo("##export-encoder", video_codec_label(shown_codec))) {
                         for (std::uint32_t id = 0; id <= 10; ++id) {
-                            if (ImGui::Selectable(video_codec_label(id), id == state.video_codec))
-                                editor_enqueue(EditorAction::SetVideoEncoder, double(id));
+                            if (ImGui::Selectable(video_codec_label(id), id == shown_codec))
+                                commit(3, double(id), EditorAction::SetVideoEncoder);
                         }
                         ImGui::EndCombo();
                     }
-                    bool fixed_step = state.video_fixed_step;
+                    bool fixed_step = shown(4, state.video_fixed_step ? 1.0 : 0.0) != 0.0;
                     if (ImGui::Checkbox("Fixed-step export (frame-accurate)", &fixed_step))
-                        editor_enqueue(EditorAction::SetVideoFixedStep, fixed_step ? 1.0 : 0.0);
+                        commit(4, fixed_step ? 1.0 : 0.0, EditorAction::SetVideoFixedStep);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Render exactly one frame per output frame. Required for 300/600 FPS and removes real-time encoder hitching.");
-                    bool depth_master = state.video_depth;
+                    bool depth_master = shown(5, state.video_depth ? 1.0 : 0.0) != 0.0;
                     if (ImGui::Checkbox("Depth master (EXR)", &depth_master))
-                        editor_enqueue(EditorAction::SetVideoDepth, depth_master ? 1.0 : 0.0);
+                        commit(5, depth_master ? 1.0 : 0.0, EditorAction::SetVideoDepth);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Write a paired float EXR sequence and a grayscale preview video next to the recording. Requires a verified scene depth.");
                     ImGui::TextUnformatted("Export speed");
                     ImGui::SetNextItemWidth(-1);
+                    const double shown_speed = shown(6, state.video_speed);
                     char export_speed[32]{};
-                    std::snprintf(export_speed, sizeof(export_speed), "%.3g x", state.video_speed);
+                    std::snprintf(export_speed, sizeof(export_speed), "%.3g x", shown_speed);
                     if (ImGui::BeginCombo("##export-speed", export_speed)) {
                         for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
                             char label[32]{};
                             std::snprintf(label, sizeof(label), "%.3g x", value);
-                            if (ImGui::Selectable(label, value == state.video_speed))
-                                editor_enqueue(EditorAction::SetVideoSpeed, value);
+                            if (ImGui::Selectable(label, value == shown_speed))
+                                commit(6, value, EditorAction::SetVideoSpeed);
                         }
                         ImGui::EndCombo();
                     }
