@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import test_controller as fixtures
 from test_native_controller import Bridge, Clock
+from dolly.console import ConsoleTimeout
 from dolly.video_export import VideoExport, VideoOptions
 
 
@@ -125,6 +126,20 @@ class ReplayRecoveryTests(unittest.TestCase):
             self.recover()
         self.assertEqual(len(self.console.sent), 1)
         self.assertEqual(self.pause_ticks, [])
+
+    def test_transient_console_timeout_during_recovery_is_polled_not_fatal(self):
+        original = self.controller._request
+        raised = []
+        def request(command, **kwargs):
+            if command == 'demo_goto' and self.loading and not raised:
+                raised.append(True)
+                raise ConsoleTimeout('transient replay-load stall')
+            return original(command, **kwargs)
+        self.controller._request = request
+        result = self.recover()
+        self.assertTrue(raised)
+        self.assertGreaterEqual(result['tick'], 2)
+        self.assertEqual(self.controller._replay_recovery['stage'], 'ready')
 
     def test_pending_settings_and_active_recording_prevent_disconnect(self):
         self.controller._restore = {'r_aspectratio': 0}

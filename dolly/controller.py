@@ -22,7 +22,7 @@ import zipfile
 from . import __version__
 from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX,
                    CVAR_COMPONENTS, validate_cvar_value, parse_cvar_value, format_cvar_value)
-from .console import ConsoleClient, ConsoleError, error_text, parse_demo_info, parse_demo_tick
+from .console import ConsoleClient, ConsoleError, ConsoleTimeout, error_text, parse_demo_info, parse_demo_tick
 from .replays import same_replay_name
 from .demo_packets import packet_index
 from .playback import ReplayClock
@@ -769,7 +769,10 @@ class Controller:
             self._message("Preparing replay for the shot…", startup_stage="recovering_replay")
             self._request("disconnect", timeout=10)
             def inactive():
-                info = parse_demo_info(self._request("demo_info", allow_error=True))
+                try:
+                    info = parse_demo_info(self._request("demo_info", allow_error=True))
+                except ConsoleTimeout:
+                    return None
                 return info if not info["playing"] else None
             stopped = self._startup_wait(inactive, "waiting for the previous replay to stop",
                                          self._stop_event, timeout=15)
@@ -782,16 +785,19 @@ class Controller:
             self._replay_requested = True
             self._last_output["playdemo"] = "Sent: " + command
             def begun():
-                output = self._request("demo_goto", allow_error=True)
                 try:
-                    current = parse_demo_tick(output)
-                except ValueError:
-                    output = self._request("demo_info", allow_error=True)
-                    current = parse_demo_info(output)
-                if not current["playing"]:
+                    output = self._request("demo_goto", allow_error=True)
+                    try:
+                        current = parse_demo_tick(output)
+                    except ValueError:
+                        output = self._request("demo_info", allow_error=True)
+                        current = parse_demo_info(output)
+                    if not current["playing"]:
+                        return None
+                    info = self._resolve_demo(output)
+                    return info if info["tick"] >= 2 else None
+                except ConsoleTimeout:
                     return None
-                info = self._resolve_demo(output)
-                return info if info["tick"] >= 2 else None
             ready = self._startup_wait(begun, "waiting for the fresh replay's initial update",
                                        self._stop_event, timeout=45)
             self._check_position_cancelled()
