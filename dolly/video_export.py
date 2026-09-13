@@ -125,6 +125,11 @@ class VideoOptions:
     # Also write the float EXR precision master under the depth layer's exr/.
     # Off by default: the depth.mov is the deliverable, the EXRs are for VFX.
     depth_exr: bool = False
+    # Additional isolated layer takes recorded beside the color take, one per
+    # selected layer ("world", "players", "effects"). Each layer records its
+    # own video in a subfolder of the take; fixed-step keeps them aligned with
+    # the color take frame for frame.
+    layers: tuple[str, ...] = ()
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120, 300, 600):
@@ -145,7 +150,8 @@ class VideoOptions:
         suffix = ".mkv" if codec_id == LOSSLESS_CODEC_ID else ".mp4"
         if path.suffix.lower() != suffix:
             raise ValueError(f"The output filename must end in {suffix}.")
-        if not path.parent.is_dir():
+        if not path.parent.is_dir() and not ((self.depth or self.layers)
+                                             and path.parent.parent.is_dir()):
             raise ValueError("Choose an existing output folder.")
         if path.exists() or path.is_symlink():
             raise ValueError("That output file already exists. Choose a new filename.")
@@ -157,6 +163,15 @@ class VideoOptions:
             raise ValueError("Depth EXR export must be on or off.")
         if self.depth_exr and not self.depth:
             raise ValueError("Choose the depth master before adding its EXR sequence.")
+        if type(self.layers) is not tuple or any(type(name) is not str for name in self.layers):
+            raise ValueError("Layer exports must be a tuple of layer names.")
+        if len(set(self.layers)) != len(self.layers):
+            raise ValueError("Choose each layer export once.")
+        unknown = sorted(set(self.layers) - {"world", "players", "effects"})
+        if unknown:
+            raise ValueError("Unknown layer export: " + ", ".join(unknown))
+        if self.layers and not self.fixed_step:
+            raise ValueError("Layer exports need Fixed-step export so every take stays aligned.")
         if isinstance(self.speed, bool) or not isinstance(self.speed, (int, float)):
             raise ValueError("Export speed must be a number between 0.05 and 4.")
         speed = float(self.speed)
@@ -168,12 +183,14 @@ class VideoOptions:
         # The native writer also creates the file exclusively. This early
         # check gives a useful error; it is not the overwrite safety boundary.
         result = VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
-                              ffmpeg, self.fixed_step, speed, self.depth, self.depth_exr)
+                              ffmpeg, self.fixed_step, speed, self.depth, self.depth_exr,
+                              self.layers)
         if self.depth:
             encoder, _codec_id = resolve_backend(result)
             if encoder != 1:
                 raise ValueError("The depth master needs an FFmpeg encoder; choose Auto or a "
                                  "hardware encoder, or clear the depth master.")
+        if self.depth or self.layers:
             folder = path.with_suffix("")
             if folder.exists() or folder.is_symlink():
                 raise ValueError("A take folder with this name already exists. Choose a new filename.")
@@ -307,7 +324,7 @@ class VideoExport:
         # A take with any side layer records into its own folder: the full
         # color video at the root plus one subfolder per layer. Color-only
         # takes keep the flat layout beside the chosen path.
-        folder = options.path.with_suffix("") if options.depth else None
+        folder = options.path.with_suffix("") if (options.depth or options.layers) else None
         color_path = options.path
         if folder is not None:
             try:
@@ -374,6 +391,7 @@ class VideoExport:
                         self._discard_empty_layer_folder()
                         raise RuntimeError(str(current.get("error") or "MP4 finalization failed."))
                     if current.get("state") == "completed" and not cancel:
+                        self._finish_layered_sidecar()
                         current = self._encode_depth_preview(current)
                     else:
                         self._depth_options = None
@@ -398,6 +416,20 @@ class VideoExport:
         except OSError:
             pass
 
+    def _finish_layered_sidecar(self):
+        """Move the native sidecar next to the color video's take-folder root."""
+        with self._lock:
+            output = self.output_path
+            folder = self._layer_folder
+        if output is None or folder is None:
+            return
+        sidecar = Path(str(output) + ".shot.json")
+        try:
+            if sidecar.is_file() and not (folder / "shot.json").exists():
+                os.replace(sidecar, folder / "shot.json")
+        except OSError as exc:
+            LOG.warning("Shot metadata could not be moved into the take folder: %s", exc)
+
     def _encode_depth_preview(self, status: dict) -> dict:
         """Encode the depth layer's normalized raw stream into a preview video.
 
@@ -411,14 +443,6 @@ class VideoExport:
         if options is None or output is None:
             return status
         directory = Path(str(output)).parent / "depth"
-        # Layered takes keep one root sidecar: move the native writer's
-        # <video>.shot.json next to the color video's folder root.
-        sidecar = Path(str(output) + ".shot.json")
-        try:
-            if sidecar.is_file() and not (directory.parent / "shot.json").exists():
-                os.replace(sidecar, directory.parent / "shot.json")
-        except OSError as exc:
-            LOG.warning("Shot metadata could not be moved into the take folder: %s", exc)
         raw = None
         try:
             for candidate in directory.iterdir():

@@ -159,6 +159,9 @@ class DollyApp:
         self.video_fixed_step = tk.BooleanVar(value=False)
         self.video_depth = tk.BooleanVar(value=False)
         self.video_depth_exr = tk.BooleanVar(value=False)
+        self.video_layer_world = tk.BooleanVar(value=False)
+        self.video_layer_players = tk.BooleanVar(value=False)
+        self.video_layer_effects = tk.BooleanVar(value=False)
         self.video_export_speed = tk.StringVar(value="1")
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
@@ -168,6 +171,8 @@ class DollyApp:
         # themselves when the shot completes instead of waiting for a manual
         # Finish press (post-shot frames carry no replay time anyway).
         self._auto_finish_layered = False
+        self._base_capture = None
+        self._layer_queue = []
         self.reshade_runtime_path = tk.StringVar(value=getattr(self.app_settings, "reshade_runtime_path", ""))
         self.reshade_status_text = tk.StringVar(value="Choose the ReShade runtime to enable its in-game menu.")
         self.game_path.set(self.app_settings.game_path)
@@ -454,6 +459,11 @@ class DollyApp:
         self.video_depth_exr_checkbox = ttk.Checkbutton(options, text="EXR sequence (float)",
                                                         variable=self.video_depth_exr)
         self.video_depth_exr_checkbox.pack(side="left", padx=(0, 18))
+        for var, label in ((self.video_layer_world, "World layer"),
+                           (self.video_layer_players, "Players layer"),
+                           (self.video_layer_effects, "Effects layer")):
+            ttk.Checkbutton(options, text=label, variable=var,
+                            command=self._layer_toggled).pack(side="left", padx=(0, 12))
         ttk.Label(options, text="Export speed", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
         self.video_speed_combo = ttk.Combobox(options, textvariable=self.video_export_speed,
                                               values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"),
@@ -526,26 +536,42 @@ class DollyApp:
         else:
             self.video_depth_exr.set(False)
 
+    def _layer_toggled(self):
+        # Layer takes must align with the color take frame for frame, which
+        # only the fixed-step engine pacing guarantees.
+        if (self.video_layer_world.get() or self.video_layer_players.get()
+                or self.video_layer_effects.get()):
+            self.video_fixed_step.set(True)
+
     def _start_video_recording(self):
         if self.busy:
             self.status_text.set("Finish the current operation before starting a recording.")
             return
         try:
             codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
+            layers = tuple(name for name, var in (("world", self.video_layer_world),
+                                                  ("players", self.video_layer_players),
+                                                  ("effects", self.video_layer_effects))
+                           if var.get())
             options = VideoOptions(Path(self.video_path.get().strip()), int(self.video_fps.get()),
                                    BITRATE_PRESETS[self.video_bitrate.get()], codec=codec_key,
                                    ffmpeg_path=self.ffmpeg_path.get().strip() or None,
                                    fixed_step=bool(self.video_fixed_step.get()),
                                    speed=float(self.video_export_speed.get()),
                                    depth=bool(self.video_depth.get()),
-                                   depth_exr=bool(self.video_depth_exr.get())).validated()
+                                   depth_exr=bool(self.video_depth_exr.get()),
+                                   layers=layers).validated()
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return
         project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
         frozen = self.frozen.get()
         self._pending_auto_play = project is not None
-        self._auto_finish_layered = bool(options.depth) and project is not None
+        # A layered take ends with its authored path; the queue records one
+        # isolated take per selected layer after the color take completes.
+        self._auto_finish_layered = bool(options.depth or options.layers) and project is not None
+        self._base_capture = options if options.layers else None
+        self._layer_queue = list(options.layers)
         controller = getattr(self, "controller", None)
         game_pid = getattr(controller, "game_pid", None)
         if callable(game_pid):
@@ -571,15 +597,42 @@ class DollyApp:
             self._log("Video saved to " + str(self.video_export.output_path))
             directory = self.video_export.output_directory or self.video_export.output_path.parent
             self.video_path.set(str(default_video_path(self.project.name, directory)))
+        if state == "completed" and self._layer_queue:
+            # Record the next isolated layer take with the same shot and
+            # fixed-step pacing so every take aligns frame for frame.
+            self._submit("Recording layer take", self._start_next_layer_take,
+                         self._video_operation_done)
+            return
+        if state == "completed" and self._base_capture is not None:
+            self._base_capture = None
+            self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
+        elif state in ("failed", "cancelled") and (self._base_capture is not None or self._layer_queue):
+            self._base_capture = None
+            self._layer_queue = []
+            self._submit("Restoring scene layers", self.controller.reset_layer_modes, lambda _: None)
         if self._pending_auto_play:
-            # The recording is armed but the recorder can still be starting.
-            # Play waits for the confirmed recorder state, so chaining here
-            # keeps the crash-safe preparation and removes the extra keypress.
             if state in ("starting", "recording"):
                 self._pending_auto_play = False
                 self._play()
             elif state in ("failed", "cancelled", "completed", "idle"):
                 self._pending_auto_play = False
+
+    def _start_next_layer_take(self):
+        """Worker step: hide the previous layer, arm the next, start its take."""
+        layer = self._layer_queue.pop(0)
+        applied = self.controller.apply_layer_mode(layer)
+        LOG.info("Layer take %s hidden classes: %s", layer, ", ".join(applied.get("hidden", ())))
+        base = self._base_capture
+        folder = base.path.with_suffix("")
+        # The layer selection gives the take its own subfolder; the native
+        # recorder captures the filtered color into it.
+        target = folder / (layer + ".mp4")
+        options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
+                               base.preset, base.ffmpeg_path, True, base.speed,
+                               False, False, (layer,)).validated()
+        self._pending_auto_play = True
+        self._auto_finish_layered = True
+        return self.video_export.start(options, project=self._snapshot())
 
     def _refresh_video(self, controller_status):
         status = self.video_export.status()

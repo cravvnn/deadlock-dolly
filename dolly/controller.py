@@ -3084,6 +3084,60 @@ class Controller:
                       f"demo_timescale {numeric(state['speed'])}")
         state["suspended"] = False
 
+    # Scene-system classes used to isolate recording layers. Flags byte 8
+    # hides a class for the current frames; 0 restores it. The live registry
+    # is read with sc_showclasses so a game update is detected instead of
+    # silently producing a wrong layer.
+    LAYER_MODES = {
+        "world": {"hide": ("SkinnedObject", "ParticleSystem", "panorama_world_panel")},
+        "players": {"keep": ("SkinnedObject",)},
+        "effects": {"keep": ("ParticleSystem",)},
+    }
+
+    def scene_classes(self):
+        output = self._request("sc_showclasses")
+        classes = []
+        for line in str(output).splitlines():
+            name = line.strip().split()[0] if line.strip() else ""
+            if name:
+                classes.append(name)
+        if not classes:
+            raise RuntimeError("The game did not list its scene classes; layer export is unavailable.")
+        return classes
+
+    def apply_layer_mode(self, mode):
+        """Hide every scene class the selected layer does not contain.
+
+        Confirmed live against Deadlock: hiding SkinnedObject removes players,
+        ParticleSystem removes effects, panorama_world_panel removes world UI.
+        """
+        if mode not in self.LAYER_MODES:
+            raise ValueError("Unknown layer mode: " + str(mode))
+        classes = self.scene_classes()
+        spec = self.LAYER_MODES[mode]
+        keep = set(spec.get("keep", ()))
+        hide = set(spec.get("hide", ()))
+        required = keep | hide
+        missing = sorted(required - set(classes))
+        if missing:
+            raise RuntimeError("The game no longer reports the scene classes needed for the "
+                               + mode + " layer: " + ", ".join(missing))
+        targets = [name for name in classes if name not in keep] if keep else [
+            name for name in classes if name in hide]
+        commands = ["sc_setclassflags " + name + " 8" for name in targets]
+        if commands:
+            self._request("; ".join(commands))
+        return {"mode": mode, "hidden": targets, "classes": classes}
+
+    def reset_layer_modes(self):
+        """Restore every scene class the layer export can hide."""
+        try:
+            classes = self.scene_classes()
+        except (RuntimeError, ValueError, OSError):
+            classes = [name for spec in self.LAYER_MODES.values()
+                       for name in (*spec.get("keep", ()), *spec.get("hide", ()))]
+        self._request("; ".join("sc_setclassflags " + name + " 0" for name in classes))
+
     def disconnect(self):
         self._recording_replay = None
         self._recording_pending = False

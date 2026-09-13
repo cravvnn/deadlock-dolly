@@ -1,0 +1,102 @@
+"""Layer isolation commands and take scheduling without a live game."""
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from dolly.controller import Controller
+from dolly.video_export import VideoOptions
+
+
+CLASSES = ("EnvMap", "BarnLight", "DirectionalLight", "panorama_world_panel",
+           "LightProbeVolume", "SkinnedObject", "Default", "MeshBuilderObject",
+           "ParticleSystem", "InstancedMesh", "AggregateDesc", "Skybox")
+
+
+class LayerModeTests(unittest.TestCase):
+    def setUp(self):
+        self.controller = Controller()
+        self.commands = []
+        self.classes = CLASSES
+        self.controller._request = self.request
+
+    def request(self, command):
+        self.commands.append(command)
+        if command == "sc_showclasses":
+            return "\n".join(f"{name}    Hide DebugLevel: 0 1 2 3" for name in self.classes)
+        return ""
+
+    def hide_commands(self):
+        return [command for command in self.commands if command.startswith("sc_setclassflags")]
+
+    def test_world_mode_hides_players_effects_and_world_ui(self):
+        applied = self.controller.apply_layer_mode("world")
+        self.assertEqual(sorted(applied["hidden"]),
+                         sorted(["SkinnedObject", "ParticleSystem", "panorama_world_panel"]))
+        issued = [part.strip() for part in self.hide_commands()[-1].split(";")]
+        self.assertEqual(sorted(issued),
+                         sorted(["sc_setclassflags SkinnedObject 8",
+                                 "sc_setclassflags ParticleSystem 8",
+                                 "sc_setclassflags panorama_world_panel 8"]))
+
+    def test_players_mode_keeps_only_skinned_objects(self):
+        applied = self.controller.apply_layer_mode("players")
+        self.assertEqual(sorted(applied["hidden"]),
+                         sorted(name for name in CLASSES if name != "SkinnedObject"))
+        self.assertNotIn("SkinnedObject 8", self.commands[-1])
+
+    def test_effects_mode_keeps_only_the_particle_system(self):
+        applied = self.controller.apply_layer_mode("effects")
+        self.assertEqual(sorted(applied["hidden"]),
+                         sorted(name for name in CLASSES if name != "ParticleSystem"))
+        self.assertNotIn("ParticleSystem 8", self.commands[-1])
+
+    def test_missing_required_class_fails_instead_of_wrong_layer(self):
+        self.classes = tuple(name for name in CLASSES if name != "ParticleSystem")
+        with self.assertRaisesRegex(RuntimeError, "ParticleSystem"):
+            self.controller.apply_layer_mode("effects")
+
+    def test_unknown_mode_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Unknown layer mode"):
+            self.controller.apply_layer_mode("hud")
+
+    def test_reset_restores_every_reported_class(self):
+        self.controller.reset_layer_modes()
+        self.assertIn("sc_setclassflags Skybox 0", self.commands[-1])
+        self.assertIn("sc_setclassflags SkinnedObject 0", self.commands[-1])
+
+
+class LayerOptionsTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.path = Path(self.folder.name) / "shot.mp4"
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.exe = exe
+
+    def test_layers_require_fixed_step_and_unique_known_names(self):
+        with self.assertRaisesRegex(ValueError, "Fixed-step"):
+            VideoOptions(self.path, layers=("world",)).validated()
+        with self.assertRaisesRegex(ValueError, "Unknown layer"):
+            VideoOptions(self.path, fixed_step=True, layers=("hud",)).validated()
+        with self.assertRaisesRegex(ValueError, "once"):
+            VideoOptions(self.path, fixed_step=True, layers=("world", "world")).validated()
+        with self.assertRaisesRegex(ValueError, "tuple"):
+            VideoOptions(self.path, fixed_step=True, layers=["world"]).validated()
+
+    def test_layers_use_the_take_folder_layout(self):
+        options = VideoOptions(self.path, fixed_step=True, layers=("world", "players")) \
+            .validated()
+        self.assertEqual(options.layers, ("world", "players"))
+        self.assertFalse(options.depth)
+
+    def test_existing_take_folder_is_rejected_for_layer_only_takes(self):
+        self.path.with_suffix("").mkdir()
+        with self.assertRaisesRegex(ValueError, "folder"):
+            VideoOptions(self.path, fixed_step=True, layers=("world",)).validated()
+
+
+if __name__ == "__main__":
+    unittest.main()

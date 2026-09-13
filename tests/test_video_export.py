@@ -194,13 +194,9 @@ class VideoExportTests(unittest.TestCase):
         color = folder / self.path.name
         sidecar = Path(str(color) + ".shot.json")
         sidecar.write_text("{}", encoding="utf-8")
-        exe = self.path.parent / "ffmpeg.exe"
-        exe.write_bytes(b"MZ")
         self.export.output_path = color
-        self.export._depth_options = VideoOptions(self.path, 60, 20_000_000,
-                                                  codec="h264_nvenc", ffmpeg_path=exe,
-                                                  depth=True)
-        self.export._encode_depth_preview({"state": "completed"})
+        self.export._layer_folder = folder
+        self.export._finish_layered_sidecar()
         self.assertFalse(sidecar.exists())
         self.assertEqual((folder / "shot.json").read_text(encoding="utf-8"), "{}")
 
@@ -384,6 +380,9 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_fixed_step = Var(False)
         self.app.video_depth = Var(False)
         self.app.video_depth_exr = Var(False)
+        self.app.video_layer_world = Var(False)
+        self.app.video_layer_players = Var(False)
+        self.app.video_layer_effects = Var(False)
         self.app.video_export_speed = Var("1")
         self.app.status_text = Var("")
         self.app.video_status_text = Var("")
@@ -500,6 +499,64 @@ class VideoGuiTests(unittest.TestCase):
         self.app._refresh_video({**READY, "playing": False,
                                  "message": "Native shot finished. Replay paused and final camera held."})
         self.app._submit.assert_not_called()
+
+    def test_layer_selection_queues_isolated_takes(self):
+        self.app.video_layer_world.set(True)
+        self.app._layer_toggled()
+        self.app._start_video_recording()
+        self.app._submit.call_args.args[1]()
+        options = self.app.video_export.start.call_args.args[0]
+        self.assertEqual(options.layers, ("world",))
+        self.assertEqual(self.app._layer_queue, ["world"])
+        self.assertTrue(self.app.video_fixed_step.get())
+
+    def test_next_layer_take_hides_the_layer_and_starts_a_fixed_step_take(self):
+        base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
+                            fixed_step=True, speed=1.0, layers=("world",)).validated()
+        (Path(self.folder.name) / "shot").mkdir()
+        self.app._base_capture = base
+        self.app._layer_queue = ["world"]
+        self.app.controller = Mock()
+        self.app.controller.apply_layer_mode.return_value = {"hidden": ["SkinnedObject"]}
+        self.app._snapshot = Mock(return_value=Mock())
+        result = self.app._start_next_layer_take()
+        self.app.controller.apply_layer_mode.assert_called_once_with("world")
+        options = self.app.video_export.start.call_args.args[0]
+        self.assertEqual(options.path, Path(self.folder.name) / "shot" / "world.mp4")
+        self.assertFalse(options.depth)
+        self.assertEqual(options.layers, ("world",))
+        self.assertTrue(options.fixed_step)
+        self.assertEqual(result, self.app.video_export.start.return_value)
+        self.assertTrue(self.app._pending_auto_play)
+        self.assertTrue(self.app._auto_finish_layered)
+
+    def test_completed_layer_take_advances_then_restores_scene_layers(self):
+        self.app.video_export.output_path = None
+        self.app.video_export.output_directory = None
+        self.app.controller = Mock()
+        self.app._base_capture = Mock()
+        self.app._layer_queue = ["players"]
+        self.app._submit = Mock()
+        self.app._video_operation_done({"state": "completed"})
+        self.app._submit.assert_called_once()
+        self.assertEqual(self.app._submit.call_args.args[1].__name__, "_start_next_layer_take")
+        self.app._layer_queue = []
+        self.app._submit.reset_mock()
+        self.app._video_operation_done({"state": "completed"})
+        self.app._submit.assert_called_once()
+        self.assertIsNone(self.app._base_capture)
+
+    def test_failed_layer_take_clears_the_queue_and_restores_layers(self):
+        self.app.video_export.output_path = None
+        self.app.video_export.output_directory = None
+        self.app.controller = Mock()
+        self.app._base_capture = Mock()
+        self.app._layer_queue = ["effects"]
+        self.app._submit = Mock()
+        self.app._video_operation_done({"state": "failed", "error": "encoder stopped"})
+        self.assertEqual(self.app._layer_queue, [])
+        self.assertIsNone(self.app._base_capture)
+        self.app._submit.assert_called_once()
 
 
 class ReShadeGuiTests(unittest.TestCase):
