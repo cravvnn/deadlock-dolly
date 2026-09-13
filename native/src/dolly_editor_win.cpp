@@ -491,6 +491,7 @@ EditorSnapshot editor_snapshot() noexcept {
             result.video_codec = c->video_encoder;
         result.video_fixed_step = (c->video_flags & 1) != 0;
         result.video_depth = (c->video_flags & 2) != 0;
+        result.video_depth_exr = (c->video_flags & 4) != 0;
         if (std::isfinite(c->video_speed) && c->video_speed >= .05f && c->video_speed <= 4.0f)
             result.video_speed = c->video_speed;
     }
@@ -536,7 +537,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
-    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoDepth))
+    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoDepthExr))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -933,7 +934,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                  c.video_fps == 300 || c.video_fps == 600) &&
                 (c.video_bitrate_mbps == 0 || c.video_bitrate_mbps == 10 ||
                  c.video_bitrate_mbps == 20 || c.video_bitrate_mbps == 40) &&
-                c.video_encoder <= 10 && c.video_flags <= 3 && c.video_speed >= 0 &&
+                c.video_encoder <= 10 && c.video_flags <= 7 && c.video_speed >= 0 &&
                 c.video_speed <= 4 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
                 std::memchr(c.message, 0, sizeof(c.message));
             for (auto& b : c.bindings)

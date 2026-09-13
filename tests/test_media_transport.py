@@ -111,6 +111,20 @@ class MediaTransportTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 wire.pack_command(2, "start_video", path="C:\\ok.mp4", depth=value)
 
+    def test_depth_exr_flag_uses_reserved_bit_two_and_requires_depth(self):
+        exr = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                    depth=True, depth_exr=True))
+        all_flags = wire.COMMAND.unpack(wire.pack_command(2, "start_video", path="C:\\ok.mp4",
+                                                          fixed_step=True, depth=True,
+                                                          depth_exr=True))
+        self.assertEqual(exr[6], 6)
+        self.assertEqual(all_flags[6], 7)
+        for value in (1, "yes", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                wire.pack_command(2, "start_video", path="C:\\ok.mp4", depth_exr=value)
+        with self.assertRaisesRegex(ValueError, "requires the depth master"):
+            wire.pack_command(2, "start_video", path="C:\\ok.mp4", depth_exr=True)
+
     def test_protocol_layout_and_invalid_paths(self):
         self.assertEqual(wire.COMMAND.size, 6192)
         self.assertEqual(wire.STATUS.size, 2384)

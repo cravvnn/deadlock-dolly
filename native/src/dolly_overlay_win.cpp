@@ -1082,11 +1082,17 @@ void draw_panel(const EditorSnapshot& state) {
                         ImGui::SetTooltip(
                             "Render exactly one frame per output frame. Required for 300/600 FPS and removes real-time encoder hitching.");
                     bool depth_master = shown(5, state.video_depth ? 1.0 : 0.0) != 0.0;
-                    if (ImGui::Checkbox("Depth master (EXR)", &depth_master))
+                    if (ImGui::Checkbox("Depth master (.mov)", &depth_master))
                         commit(5, depth_master ? 1.0 : 0.0, EditorAction::SetVideoDepth);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
-                            "Write a paired float EXR sequence and a grayscale preview video next to the recording. Requires a verified scene depth.");
+                            "Write a matching ProRes depth.mov and preview video in the take's depth folder. Requires a verified scene depth.");
+                    bool depth_exr = shown(7, state.video_depth_exr ? 1.0 : 0.0) != 0.0;
+                    if (ImGui::Checkbox("EXR sequence (float)", &depth_exr))
+                        commit(7, depth_exr ? 1.0 : 0.0, EditorAction::SetVideoDepthExr);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Also write the float EXR precision master under the depth folder's exr/ subfolder.");
                     ImGui::TextUnformatted("Export speed");
                     ImGui::SetNextItemWidth(-1);
                     const double shown_speed = shown(6, state.video_speed);

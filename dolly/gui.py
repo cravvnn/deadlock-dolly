@@ -158,6 +158,7 @@ class DollyApp:
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
         self.video_fixed_step = tk.BooleanVar(value=False)
         self.video_depth = tk.BooleanVar(value=False)
+        self.video_depth_exr = tk.BooleanVar(value=False)
         self.video_export_speed = tk.StringVar(value="1")
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=str(_bundled_ffmpeg) if _bundled_ffmpeg else "")
@@ -442,9 +443,13 @@ class DollyApp:
         self.video_fixed_checkbox = ttk.Checkbutton(options, text="Fixed-step export (frame-accurate)",
                                                     variable=self.video_fixed_step)
         self.video_fixed_checkbox.pack(side="left", padx=(0, 18))
-        self.video_depth_checkbox = ttk.Checkbutton(options, text="Depth master (EXR)",
-                                                    variable=self.video_depth)
+        self.video_depth_checkbox = ttk.Checkbutton(options, text="Depth master (.mov)",
+                                                    variable=self.video_depth,
+                                                    command=self._depth_toggled)
         self.video_depth_checkbox.pack(side="left", padx=(0, 18))
+        self.video_depth_exr_checkbox = ttk.Checkbutton(options, text="EXR sequence (float)",
+                                                        variable=self.video_depth_exr)
+        self.video_depth_exr_checkbox.pack(side="left", padx=(0, 18))
         ttk.Label(options, text="Export speed", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
         self.video_speed_combo = ttk.Combobox(options, textvariable=self.video_export_speed,
                                               values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"),
@@ -508,6 +513,15 @@ class DollyApp:
         if path:
             self.ffmpeg_path.set(path)
 
+    def _depth_toggled(self):
+        # A depth master is a paired, render-paced export: capture exactly one
+        # frame per Present so color and depth cannot diverge. Fixed-step is
+        # the default for it and can still be turned off for a real-time take.
+        if self.video_depth.get():
+            self.video_fixed_step.set(True)
+        else:
+            self.video_depth_exr.set(False)
+
     def _start_video_recording(self):
         if self.busy:
             self.status_text.set("Finish the current operation before starting a recording.")
@@ -519,7 +533,8 @@ class DollyApp:
                                    ffmpeg_path=self.ffmpeg_path.get().strip() or None,
                                    fixed_step=bool(self.video_fixed_step.get()),
                                    speed=float(self.video_export_speed.get()),
-                                   depth=bool(self.video_depth.get())).validated()
+                                   depth=bool(self.video_depth.get()),
+                                   depth_exr=bool(self.video_depth_exr.get())).validated()
         except (ValueError, KeyError, OSError) as exc:
             self._error("Record video", exc)
             return
@@ -548,7 +563,8 @@ class DollyApp:
         self._last_video_state = state
         if state == "completed" and self.video_export.output_path:
             self._log("Video saved to " + str(self.video_export.output_path))
-            self.video_path.set(str(default_video_path(self.project.name, self.video_export.output_path.parent)))
+            directory = self.video_export.output_directory or self.video_export.output_path.parent
+            self.video_path.set(str(default_video_path(self.project.name, directory)))
         if self._pending_auto_play:
             # The recording is armed but the recorder can still be starting.
             # Play waits for the confirmed recorder state, so chaining here

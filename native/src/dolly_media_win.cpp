@@ -14,12 +14,23 @@
 namespace dolly {
 namespace {
 std::atomic<ULONGLONG> session_seen{0};
+// A missing controller heartbeat must never silently end an active take: the
+// desktop can be busy for seconds while the game is still recording. Only an
+// explicit disconnect (or a long heartbeat gap) detaches the media session.
+constexpr ULONGLONG kRecordingDisconnectGraceMs = 30000;
+std::atomic<ULONGLONG> disconnected_since{0};
+std::atomic<bool> session_detached{true};
 HANDLE mapping = nullptr;
 unsigned char* memory = nullptr;
 std::wstring mapping_name;
 ULONGLONG next_open = 0, next_status = 0;
 std::uint32_t accepted = 0, publication = 0, command_error = 0;
 wchar_t command_message[384]{};
+bool video_active() noexcept {
+    const auto state = video::status().state;
+    return state == video::State::starting || state == video::State::recording ||
+           state == video::State::finalizing;
+}
 
 std::uint32_t sequence(std::size_t offset) noexcept {
     return static_cast<std::uint32_t>(
@@ -39,6 +50,7 @@ void reject(const wchar_t* message) noexcept {
     command_message[383] = 0;
 }
 void close_mapping() noexcept {
+    session_detached.store(true, std::memory_order_release);
     if (memory)
         UnmapViewOfFile(memory);
     if (mapping)
@@ -69,7 +81,7 @@ void consume() noexcept {
     command_error = 0;
     command_message[0] = 0;
     if (std::memcmp(command.magic, "DLYMED01", 8) || command.abi != kMediaAbi ||
-        (command.reserved & ~3u) != 0 || !terminated(command.path) ||
+        (command.reserved & ~7u) != 0 || !terminated(command.path) ||
         !terminated(command.config_path) || !terminated(command.ffmpeg_path) ||
         command.encoder > static_cast<std::uint32_t>(video::Encoder::ffmpeg) ||
         command.codec > static_cast<std::uint32_t>(video::Codec::lossless) ||
@@ -98,6 +110,7 @@ void consume() noexcept {
         options.codec = static_cast<video::Codec>(command.codec);
         options.fixed_step = (command.reserved & 1u) != 0;
         options.depth = (command.reserved & 2u) != 0;
+        options.depth_exr = (command.reserved & 4u) != 0;
         if (!video::start(options)) {
             const auto state = video::status();
             reject(state.error[0] ? state.error
@@ -168,19 +181,44 @@ void publish() noexcept {
 }
 
 bool media_session_active() noexcept {
+    // Capture is gated by the recording itself, not by the controller
+    // heartbeat: a heartbeat gap while recording must not stop the take. Only
+    // an explicit disconnect (or an expired grace) detaches the session.
+    if (session_detached.load(std::memory_order_acquire))
+        return false;
+    if (video_active())
+        return true;
     const auto seen = session_seen.load(std::memory_order_acquire);
     return seen && GetTickCount64() - seen < 2000;
 }
 
 void media_worker_tick(const wchar_t* session_name, bool connected) noexcept {
     try {
-        if (!connected || !session_name || !*session_name || wcsnlen(session_name, 256) == 256) {
+        const bool named = session_name && *session_name && wcsnlen(session_name, 256) != 256;
+        if (!named) {
+            disconnected_since.store(0, std::memory_order_release);
             session_seen.store(0, std::memory_order_release);
             video::stop(false);
             reshade_set_enabled(false);
             close_mapping();
             return;
         }
+        if (!connected) {
+            const auto now = GetTickCount64();
+            std::uint64_t unset = 0;
+            disconnected_since.compare_exchange_strong(unset, now ? now : 1);
+            const auto since = disconnected_since.load(std::memory_order_acquire);
+            if (video_active() && since && now - since < kRecordingDisconnectGraceMs)
+                return;
+            disconnected_since.store(0, std::memory_order_release);
+            session_seen.store(0, std::memory_order_release);
+            video::stop(false);
+            reshade_set_enabled(false);
+            close_mapping();
+            return;
+        }
+        disconnected_since.store(0, std::memory_order_release);
+        session_detached.store(false, std::memory_order_release);
         const auto now = GetTickCount64();
         session_seen.store(now, std::memory_order_release);
         if (!memory) {

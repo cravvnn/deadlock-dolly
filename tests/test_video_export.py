@@ -56,7 +56,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
             encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-            depth=False)
+            depth=False, depth_exr=False)
         self.assertFalse(self.path.exists())  # Only native creates the actual file.
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
@@ -71,7 +71,7 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=120, bitrate=40_000_000,
             encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-            depth=False)
+            depth=False, depth_exr=False)
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
@@ -106,24 +106,45 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_called_once_with(
             str(self.path), fps=30, bitrate=10_000_000,
             encoder=1, codec=1, quality=21, preset=0, ffmpeg_path=str(exe), fixed_step=False,
-            depth=False)
+            depth=False, depth_exr=False)
 
-    def test_depth_master_is_off_by_default_and_passes_to_native(self):
+    def test_depth_master_defaults_off_and_layered_take_creates_its_folder(self):
         self.assertFalse(VideoOptions(self.path).validated().depth)
-        self.export.start(VideoOptions(self.path, 60, 20_000_000, depth=True))
+        exe = self.path.parent / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.export.start(VideoOptions(self.path, 60, 20_000_000, depth=True,
+                                       ffmpeg_path=exe))
+        folder = self.path.with_suffix("")
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(self.bridge.start_video.call_args.args[0],
+                         str(folder / self.path.name))
         self.assertTrue(self.bridge.start_video.call_args.kwargs["depth"])
+        self.assertFalse(self.bridge.start_video.call_args.kwargs["depth_exr"])
         with self.assertRaisesRegex(ValueError, "Depth export"):
             VideoOptions(self.path, depth=1).validated()
 
+    def test_depth_master_requires_ffmpeg_and_a_new_folder(self):
+        with self.assertRaisesRegex(ValueError, "FFmpeg encoder"):
+            VideoOptions(self.path, 60, 20_000_000, depth=True, codec="builtin").validated()
+        exe = self.path.parent / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.path.with_suffix("").mkdir()
+        with self.assertRaisesRegex(ValueError, "folder"):
+            VideoOptions(self.path, 60, 20_000_000, depth=True, ffmpeg_path=exe).validated()
+
+    def test_depth_exr_requires_the_depth_master(self):
+        with self.assertRaisesRegex(ValueError, "depth master"):
+            VideoOptions(self.path, depth_exr=True).validated()
+
     def depth_preview_fixture(self, codec="h264_nvenc"):
-        directory = self.path.parent / (self.path.name + ".depth")
+        directory = self.path.parent / "depth"
         directory.mkdir(exist_ok=True)
         (directory / "preview_64x64.raw").write_bytes(b"x" * 4096)
         exe = self.path.parent / "ffmpeg.exe"
         exe.write_bytes(b"MZ")
         self.export.output_path = self.path
         self.export._depth_options = VideoOptions(self.path, 60, 20_000_000, codec=codec,
-                                                  ffmpeg_path=exe)
+                                                  ffmpeg_path=exe, depth=True)
         return directory
 
     def test_depth_preview_encodes_the_raw_stream_with_the_chosen_codec(self):
@@ -166,6 +187,22 @@ class VideoExportTests(unittest.TestCase):
         self.assertNotIn("depth_preview", status)
         self.assertTrue((directory / "preview_64x64.raw").exists())
         self.assertFalse((directory / "preview.mp4").exists())
+
+    def test_layered_finish_moves_the_sidecar_into_the_take_folder(self):
+        folder = self.path.with_suffix("")
+        folder.mkdir()
+        color = folder / self.path.name
+        sidecar = Path(str(color) + ".shot.json")
+        sidecar.write_text("{}", encoding="utf-8")
+        exe = self.path.parent / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.export.output_path = color
+        self.export._depth_options = VideoOptions(self.path, 60, 20_000_000,
+                                                  codec="h264_nvenc", ffmpeg_path=exe,
+                                                  depth=True)
+        self.export._encode_depth_preview({"state": "completed"})
+        self.assertFalse(sidecar.exists())
+        self.assertEqual((folder / "shot.json").read_text(encoding="utf-8"), "{}")
 
     def test_lossless_requires_matroska_and_maps_to_ffv1(self):
         with self.assertRaisesRegex(ValueError, ".mkv"):
@@ -346,6 +383,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app.ffmpeg_path = Var("")
         self.app.video_fixed_step = Var(False)
         self.app.video_depth = Var(False)
+        self.app.video_depth_exr = Var(False)
         self.app.video_export_speed = Var("1")
         self.app.status_text = Var("")
         self.app.video_status_text = Var("")
@@ -417,6 +455,15 @@ class VideoGuiTests(unittest.TestCase):
         self.app._start_video_recording()
         self.app._submit.assert_not_called()
         self.app._error.assert_called_once()
+
+    def test_depth_toggle_defaults_to_fixed_step_and_clears_orphan_exr(self):
+        self.app.video_depth.set(True)
+        self.app.video_depth_exr.set(True)
+        self.app._depth_toggled()
+        self.assertTrue(self.app.video_fixed_step.get())
+        self.app.video_depth.set(False)
+        self.app._depth_toggled()
+        self.assertFalse(self.app.video_depth_exr.get())
 
 
 class ReShadeGuiTests(unittest.TestCase):

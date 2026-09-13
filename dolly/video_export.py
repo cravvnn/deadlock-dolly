@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -116,9 +117,14 @@ class VideoOptions:
     fixed_step: bool = False
     # Replay slow-motion for fixed-step export (same range as playback speed).
     speed: float = 1.0
-    # Paired numerical depth master in <path>.depth as an EXR sequence. Off by
-    # default; requires the reviewed scene tracker to verify every frame.
+    # Paired depth master. When on, the take records into its own folder: the
+    # color video plus one subfolder per layer, with the depth layer holding
+    # depth.mov, manifest.json and preview.mp4. Off by default; requires a
+    # frame-paired game capture with a verified scene sample per frame.
     depth: bool = False
+    # Also write the float EXR precision master under the depth layer's exr/.
+    # Off by default: the depth.mov is the deliverable, the EXRs are for VFX.
+    depth_exr: bool = False
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120, 300, 600):
@@ -147,6 +153,10 @@ class VideoOptions:
             raise ValueError("Fixed-step export must be on or off.")
         if type(self.depth) is not bool:
             raise ValueError("Depth export must be on or off.")
+        if type(self.depth_exr) is not bool:
+            raise ValueError("Depth EXR export must be on or off.")
+        if self.depth_exr and not self.depth:
+            raise ValueError("Choose the depth master before adding its EXR sequence.")
         if isinstance(self.speed, bool) or not isinstance(self.speed, (int, float)):
             raise ValueError("Export speed must be a number between 0.05 and 4.")
         speed = float(self.speed)
@@ -157,8 +167,17 @@ class VideoOptions:
             raise ValueError("Select an ffmpeg.exe for the chosen encoder.")
         # The native writer also creates the file exclusively. This early
         # check gives a useful error; it is not the overwrite safety boundary.
-        return VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
-                            ffmpeg, self.fixed_step, speed, self.depth)
+        result = VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
+                              ffmpeg, self.fixed_step, speed, self.depth, self.depth_exr)
+        if self.depth:
+            encoder, _codec_id = resolve_backend(result)
+            if encoder != 1:
+                raise ValueError("The depth master needs an FFmpeg encoder; choose Auto or a "
+                                 "hardware encoder, or clear the depth master.")
+            folder = path.with_suffix("")
+            if folder.exists() or folder.is_symlink():
+                raise ValueError("A take folder with this name already exists. Choose a new filename.")
+        return result
 
 
 def recording_ready(status: dict) -> bool:
@@ -205,6 +224,10 @@ class VideoExport:
         self._start_ack = None
         self._depth_options: VideoOptions | None = None
         self.output_path: Path | None = None
+        # The folder that receives new takes (the take folder's parent when a
+        # layered take created one) and the current layered folder, if any.
+        self.output_directory: Path | None = None
+        self._layer_folder: Path | None = None
 
     def status(self) -> dict:
         with self._lock:
@@ -281,13 +304,28 @@ class VideoExport:
         prepare = getattr(self.controller, "prepare_native_recording", None)
         if callable(prepare):
             prepare(project, frozen=frozen)
+        # A take with any side layer records into its own folder: the full
+        # color video at the root plus one subfolder per layer. Color-only
+        # takes keep the flat layout beside the chosen path.
+        folder = options.path.with_suffix("") if options.depth else None
+        color_path = options.path
+        if folder is not None:
+            try:
+                folder.mkdir()
+            except FileExistsError as exc:
+                raise RuntimeError("A take folder with this name already exists. Choose a new filename.") from exc
+            except OSError as exc:
+                raise RuntimeError("The recording folder could not be created: " + str(exc)) from exc
+            color_path = folder / options.path.name
         if options.fixed_step:
             self._set_export_timing(options.fps, options.speed)
         initial_ack = bridge.video_status().get("ack")
         with self._lock:
             self._bridge = bridge
             self._last = {"state": "starting"}
-            self.output_path = options.path
+            self.output_path = color_path
+            self.output_directory = folder.parent if folder is not None else color_path.parent
+            self._layer_folder = folder
             self._start_pending = True
             self._start_ack = initial_ack
             self._depth_options = options if options.depth else None
@@ -296,12 +334,18 @@ class VideoExport:
         if callable(mark):
             mark(True)
         try:
-            bridge.start_video(str(options.path), fps=options.fps, bitrate=options.bitrate,
+            bridge.start_video(str(color_path), fps=options.fps, bitrate=options.bitrate,
                                encoder=encoder, codec=codec_id, quality=options.quality,
                                preset=options.preset,
                                ffmpeg_path=str(options.ffmpeg_path) if encoder == 1 and options.ffmpeg_path else "",
-                               fixed_step=options.fixed_step, depth=options.depth)
+                               fixed_step=options.fixed_step, depth=options.depth,
+                               depth_exr=options.depth_exr)
         except Exception as exc:
+            if folder is not None:
+                try:
+                    folder.rmdir()
+                except OSError:
+                    pass
             self._clear_export_timing()
             with self._lock:
                 self._last = {"state": "starting", "error": str(exc),
@@ -327,11 +371,14 @@ class VideoExport:
                 if current.get("state") not in ACTIVE_STATES:
                     if current.get("state") == "failed":
                         self._depth_options = None
+                        self._discard_empty_layer_folder()
                         raise RuntimeError(str(current.get("error") or "MP4 finalization failed."))
                     if current.get("state") == "completed" and not cancel:
                         current = self._encode_depth_preview(current)
                     else:
                         self._depth_options = None
+                        if cancel:
+                            self._discard_empty_layer_folder()
                     return current
                 if time.monotonic() >= deadline:
                     raise RuntimeError("The video recorder is still finishing. Wait for its status before starting another recording or closing the game.")
@@ -339,18 +386,39 @@ class VideoExport:
         finally:
             self._clear_export_timing()
 
-    def _encode_depth_preview(self, status: dict) -> dict:
-        """Encode the depth folder's normalized raw stream into a preview video.
+    def _discard_empty_layer_folder(self):
+        """Remove only a take folder this session created and left empty."""
+        with self._lock:
+            folder = self._layer_folder
+        if folder is None:
+            return
+        try:
+            if folder.is_dir() and not any(folder.iterdir()):
+                folder.rmdir()
+        except OSError:
+            pass
 
-        The EXR sequence is the master. The preview is best-effort: a missing
-        encoder or failure only logs, and the raw stream is kept for diagnosis.
+    def _encode_depth_preview(self, status: dict) -> dict:
+        """Encode the depth layer's normalized raw stream into a preview video.
+
+        The depth.mov is the master and the optional EXR sequence is the float
+        precision master. The preview is best-effort: a missing encoder or
+        failure only logs, and the raw stream is kept for diagnosis.
         """
         with self._lock:
             options, self._depth_options = self._depth_options, None
             output = self.output_path
         if options is None or output is None:
             return status
-        directory = Path(str(output) + ".depth")
+        directory = Path(str(output)).parent / "depth"
+        # Layered takes keep one root sidecar: move the native writer's
+        # <video>.shot.json next to the color video's folder root.
+        sidecar = Path(str(output) + ".shot.json")
+        try:
+            if sidecar.is_file() and not (directory.parent / "shot.json").exists():
+                os.replace(sidecar, directory.parent / "shot.json")
+        except OSError as exc:
+            LOG.warning("Shot metadata could not be moved into the take folder: %s", exc)
         raw = None
         try:
             for candidate in directory.iterdir():
@@ -365,7 +433,7 @@ class VideoExport:
         source, width, height = raw
         ffmpeg = resolve_ffmpeg(options.ffmpeg_path) or bundled_ffmpeg_path()
         if ffmpeg is None:
-            LOG.warning("Depth preview skipped: ffmpeg is unavailable; the EXR sequence is complete.")
+            LOG.warning("Depth preview skipped: ffmpeg is unavailable; depth.mov and any EXR sequence are complete.")
             return status
         encoder, codec_id = resolve_backend(options)
         if encoder == 0:

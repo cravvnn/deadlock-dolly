@@ -103,6 +103,10 @@ struct Session {
     std::uint32_t quality = 0, preset = 0;
     bool fixed_step = false;
     bool depth_enabled = false;
+    bool depth_exr = false;
+    // Depth layer folder and its ProRes master, derived from the color path's
+    // parent when depth is enabled: <color parent>\depth\depth.mov.
+    std::wstring depth_directory, depth_video_path;
     ShotRange shot;
     depth::Sequence depth_output; // Touched only by the encoder thread.
     std::wstring ffmpeg;
@@ -513,6 +517,20 @@ std::wstring build_ffmpeg_command(const Session& s) {
     cmd += quote_arg(s.path);
     return cmd;
 }
+// The paired depth master is a 10-bit ProRes 4444 .mov fed with linear
+// gray16 samples. The 0..kDepthUnitMax mapping is documented in the layer's
+// manifest.json; the float EXR sequence stays an optional precision master.
+std::wstring build_depth_command(const Session& s) {
+    std::wstring cmd = quote_arg(s.ffmpeg);
+    cmd += L" -hide_banner -loglevel error -nostdin -n";
+    cmd += L" -f rawvideo -pixel_format gray16le";
+    cmd += L" -video_size " + std::to_wstring(s.width) + L"x" + std::to_wstring(s.height);
+    cmd += L" -framerate " + std::to_wstring(s.fps);
+    cmd += L" -i pipe:0 -an -c:v prores_ks -profile:v 4444 -pix_fmt yuv444p10le";
+    cmd += L" ";
+    cmd += quote_arg(s.depth_video_path);
+    return cmd;
+}
 HRESULT write_all(HANDLE pipe, const void* data, std::size_t bytes) noexcept {
     const auto* cursor = static_cast<const unsigned char*>(data);
     while (bytes) {
@@ -571,9 +589,9 @@ struct Child {
         }
     }
 };
-bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
-    const bool existed = GetFileAttributesW(s.path.c_str()) != INVALID_FILE_ATTRIBUTES;
-    if (existed) {
+bool spawn_encoder(Session& s, Child& child, const std::wstring& command, const std::wstring& output,
+                   const wchar_t* label, std::wstring& error) {
+    if (GetFileAttributesW(output.c_str()) != INVALID_FILE_ATTRIBUTES) {
         error = L"The output file already exists. Choose a new filename.";
         return false;
     }
@@ -591,7 +609,7 @@ bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
     wchar_t temp[MAX_PATH]{};
     GetTempPathW(MAX_PATH, temp);
     child.log = std::wstring(temp) + L"DollyFFmpeg-" + std::to_wstring(GetCurrentProcessId()) +
-                L"-" + std::to_wstring(GetTickCount64()) + L".log";
+                L"-" + label + L"-" + std::to_wstring(GetTickCount64()) + L".log";
     HANDLE log = CreateFileW(child.log.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                              &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
     if (!nul || nul == INVALID_HANDLE_VALUE || !log || log == INVALID_HANDLE_VALUE) {
@@ -611,7 +629,6 @@ bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
     si.hStdOutput = nul;
     si.hStdError = log;
     PROCESS_INFORMATION pi{};
-    auto command = build_ffmpeg_command(s);
     std::vector<wchar_t> mutable_command(command.begin(), command.end());
     mutable_command.push_back(0);
     const BOOL started = CreateProcessW(s.ffmpeg.c_str(), mutable_command.data(), nullptr, nullptr,
@@ -629,10 +646,17 @@ bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
     child.input = write_end;
     return true;
 }
+bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
+    return spawn_encoder(s, child, build_ffmpeg_command(s), s.path, L"color", error);
+}
+bool spawn_depth_ffmpeg(Session& s, Child& child, std::wstring& error) {
+    return spawn_encoder(s, child, build_depth_command(s), s.depth_video_path, L"depth", error);
+}
 void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     bool created = false, finalized = false, wrote_any = false;
     std::uint64_t frames = 0;
-    Child child;
+    Child child, depth_child;
+    std::vector<std::uint16_t> depth_gray;
     try {
         const auto deadline = GetTickCount64() + 10000;
         while (!s->configured.load(std::memory_order_acquire) &&
@@ -651,18 +675,48 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                           error.empty() ? std::wstring(L"FFmpeg is unavailable.") : error);
             } else {
                 created = true;
-                if (s->depth_enabled && !s->depth_output.begin(s->path.c_str()))
-                    fail(
-                        *s, s->depth_output.error(),
-                        L"Could not create a new depth output folder. Existing folders are never overwritten.");
-                for (auto& frame : s->cpu)
-                    frame.pixels.resize(std::size_t(s->width) * s->height * 4);
-                if (SUCCEEDED(s->error.load())) {
-                    s->state.store(State::recording, std::memory_order_release);
-                    s->ready.store(true, std::memory_order_release);
+                if (s->depth_enabled && !spawn_depth_ffmpeg(*s, depth_child, error)) {
+                    fail_text(*s, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),
+                              error.empty() ? std::wstring(L"The depth encoder could not start.")
+                                            : error);
+                } else {
+                    if (s->depth_enabled &&
+                        !s->depth_output.begin(s->depth_directory.c_str(), s->depth_exr, true))
+                        fail(
+                            *s, s->depth_output.error(),
+                            L"Could not create a new depth layer folder. Existing folders are never overwritten.");
+                    for (auto& frame : s->cpu)
+                        frame.pixels.resize(std::size_t(s->width) * s->height * 4);
+                    if (SUCCEEDED(s->error.load())) {
+                        s->state.store(State::recording, std::memory_order_release);
+                        s->ready.store(true, std::memory_order_release);
+                    }
                 }
             }
         }
+        // One paired write: color frame to the main encoder, linear depth to
+        // the ProRes depth.mov and the optional EXR/preview sequence. Pairing
+        // is by frame index so a slow depth writer fails the take instead of
+        // silently diverging the two masters.
+        const auto write_frame = [&](const CpuFrame& frame) -> HRESULT {
+            HRESULT hr = write_all(child.input, frame.pixels.data(), frame.pixels.size());
+            if (FAILED(hr))
+                return hr;
+            if (!s->depth_enabled)
+                return S_OK;
+            if (!s->depth_output.write(frame.depth, frame.pts))
+                return s->depth_output.error();
+            if (depth_child.process && depth_child.input) {
+                const auto* linear = s->depth_output.linear_data();
+                const auto count = s->depth_output.linear_count();
+                depth_gray.resize(count);
+                for (std::size_t i = 0; i < count; ++i)
+                    depth_gray[i] = depth_gray16(linear[i], kDepthUnitMax);
+                return write_all(depth_child.input, depth_gray.data(),
+                                 depth_gray.size() * sizeof(std::uint16_t));
+            }
+            return S_OK;
+        };
         std::uint64_t stop_deadline = 0;
         while (child.process && SUCCEEDED(s->error.load()) && !s->cancel.load()) {
             apply_deferred_stop(*s);
@@ -674,18 +728,14 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             const auto read = s->consumed.load(std::memory_order_relaxed);
             if (read != s->produced.load(std::memory_order_acquire)) {
                 const auto& frame = s->cpu[read % kSlots];
-                HRESULT hr = write_all(child.input, frame.pixels.data(),
-                                       std::size_t(s->width) * s->height * 4);
-                if (SUCCEEDED(hr) && s->depth_enabled &&
-                    !s->depth_output.write(frame.depth, frame.pts)) {
-                    hr = s->depth_output.error();
-                    fail(*s, hr, L"Depth frame could not be written; paired recording stopped.");
-                }
+                const HRESULT hr = write_frame(frame);
                 s->consumed.store(read + 1, std::memory_order_release);
                 s->wake.notify_all();
                 if (FAILED(hr)) {
                     fail(*s, hr,
-                         L"FFmpeg stopped accepting frames. Check the encoder and output path.");
+                         s->depth_enabled
+                             ? L"Paired depth output could not be written; recording stopped."
+                             : L"FFmpeg stopped accepting frames. Check the encoder and output path.");
                     break;
                 }
                 wrote_any = true;
@@ -709,17 +759,13 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
             const auto read = s->consumed.load(std::memory_order_relaxed);
             const auto& frame = s->cpu[read % kSlots];
-            HRESULT hr =
-                write_all(child.input, frame.pixels.data(), std::size_t(s->width) * s->height * 4);
-            if (SUCCEEDED(hr) && s->depth_enabled &&
-                !s->depth_output.write(frame.depth, frame.pts)) {
-                hr = s->depth_output.error();
-                fail(*s, hr, L"Depth frame could not be written; paired recording stopped.");
-            }
+            const HRESULT hr = write_frame(frame);
             s->consumed.store(read + 1, std::memory_order_release);
             s->wake.notify_all();
             if (FAILED(hr)) {
-                fail(*s, hr, L"FFmpeg stopped accepting frames while finishing.");
+                fail(*s, hr, s->depth_enabled
+                                ? L"Paired depth output could not be written while finishing."
+                                : L"FFmpeg stopped accepting frames while finishing.");
                 break;
             }
             wrote_any = true;
@@ -727,6 +773,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             s->written.fetch_add(1, std::memory_order_relaxed);
         }
         child.close_input();
+        depth_child.close_input();
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
                 const auto detail = capture_diagnostic(*s);
@@ -749,6 +796,21 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 }
             }
         }
+        if (finalized && depth_child.process && !s->cancel.load() &&
+            SUCCEEDED(s->error.load())) {
+            const DWORD wait = WaitForSingleObject(depth_child.process, 120000);
+            DWORD code = 1;
+            GetExitCodeProcess(depth_child.process, &code);
+            if (wait != WAIT_OBJECT_0 || code != 0) {
+                const auto tail = read_log_tail(depth_child.log);
+                fail_text(*s, E_FAIL,
+                          tail.empty()
+                              ? std::wstring(
+                                    L"The depth master could not be encoded. This FFmpeg build must support ProRes 4444.")
+                              : tail);
+                finalized = false;
+            }
+        }
     } catch (...) {
         fail(*s, E_OUTOFMEMORY,
              L"Video recording ran out of memory or the encoder could not continue.");
@@ -760,12 +822,20 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         TerminateProcess(child.process, 1);
         WaitForSingleObject(child.process, 5000);
     }
+    if (depth_child.process && (s->cancel.load() || FAILED(s->error.load()))) {
+        TerminateProcess(depth_child.process, 1);
+        WaitForSingleObject(depth_child.process, 5000);
+    }
     child.close_input();
     child.close_process();
+    depth_child.close_input();
+    depth_child.close_process();
     if (s->cancel.load() || FAILED(s->error.load()))
         s->dropped.fetch_add(s->produced.load() - s->consumed.load(), std::memory_order_relaxed);
     if (!child.log.empty())
         DeleteFileW(child.log.c_str());
+    if (!depth_child.log.empty())
+        DeleteFileW(depth_child.log.c_str());
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
@@ -829,10 +899,11 @@ void encode(std::shared_ptr<Session> s) noexcept {
                     *s, hr,
                     L"MP4 encoder could not start. Check the output path, Windows Media Feature Pack and H.264 encoder support.");
             } else {
-                if (s->depth_enabled && !s->depth_output.begin(s->path.c_str()))
+                if (s->depth_enabled &&
+                    !s->depth_output.begin(s->depth_directory.c_str(), s->depth_exr, false))
                     fail(
                         *s, s->depth_output.error(),
-                        L"Could not create a new depth output folder. Existing folders are never overwritten.");
+                        L"Could not create a new depth layer folder. Existing folders are never overwritten.");
                 for (auto& frame : s->cpu)
                     frame.pixels.resize(std::size_t(s->width) * s->height * 4);
                 if (SUCCEEDED(s->error.load())) {
@@ -1052,8 +1123,20 @@ bool start(const Options& options) noexcept {
         next->preset = options.preset;
         next->fixed_step = options.fixed_step;
         next->depth_enabled = options.depth;
+        next->depth_exr = options.depth_exr;
         if (options.ffmpeg)
             next->ffmpeg = options.ffmpeg;
+        if (next->depth_enabled) {
+            // The depth master is a ProRes .mov from the external encoder; the
+            // built-in Media Foundation sink cannot write it.
+            if (next->encoder != Encoder::ffmpeg)
+                return false;
+            const auto slash = next->path.find_last_of(L"\\/");
+            if (slash == std::wstring::npos || slash + 1 >= next->path.size())
+                return false;
+            next->depth_directory = next->path.substr(0, slash + 1) + L"depth";
+            next->depth_video_path = next->depth_directory + L"\\depth.mov";
+        }
         LARGE_INTEGER frequency{};
         if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0)
             return false;

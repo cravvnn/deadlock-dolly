@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdlib>
 #include <cstdio>
+#include <limits>
 
 void require(bool value) {
     if (!value) {
@@ -91,5 +92,15 @@ int main() {
     require(shot.first == 3 && shot.last == 9 && shot.last_time == 0.1);
     shot.observe(11, -1.0);
     require(shot.last == 9 && shot.last_time == 0.1);
-    std::puts("Video cadence, timestamps, color conversion and row orientation passed.");
+    // Paired depth master mapping: 0..kDepthUnitMax spans the full 16-bit
+    // range linearly; sky and invalid values clamp to white.
+    require(depth_gray16(0.0f, kDepthUnitMax) == 0);
+    require(depth_gray16(float(kDepthUnitMax), kDepthUnitMax) == 65535);
+    require(depth_gray16(float(kDepthUnitMax / 2), kDepthUnitMax) == 32768);
+    require(depth_gray16(float(kDepthUnitMax * 4), kDepthUnitMax) == 65535);
+    require(depth_gray16(-1.0f, kDepthUnitMax) == 65535);
+    require(depth_gray16(std::numeric_limits<float>::infinity(), kDepthUnitMax) == 65535);
+    require(depth_gray16(std::numeric_limits<float>::quiet_NaN(), kDepthUnitMax) == 65535);
+    require(depth_gray16(0.25f, 1.0) == 16384);
+    std::puts("Video cadence, timestamps, color conversion, depth mapping and row orientation passed.");
 }

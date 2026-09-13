@@ -1,9 +1,21 @@
 #pragma once
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
 namespace dolly::video {
+// Canonical normalization for the paired depth master and its preview: depths
+// at or beyond this positive camera-axis distance are the far plane (sky).
+constexpr double kDepthUnitMax = 8192.0;
+// Linear camera-axis depth to the depth.mov input (gray16le). 0..max maps to
+// 0..65535; non-finite values (sky) and at-or-beyond-far map to 65535.
+inline std::uint16_t depth_gray16(float value, double max_units) noexcept {
+    if (!std::isfinite(value) || value < 0)
+        return 65535;
+    const double clamped = std::clamp(double(value) / max_units, 0.0, 1.0);
+    return static_cast<std::uint16_t>(std::lround(clamped * 65535.0));
+}
 // Integer quotient/remainder avoids accumulating rounded frame periods.
 inline std::uint64_t clock_units(std::uint64_t ticks, std::uint64_t frequency,
                                  std::uint64_t units) noexcept {

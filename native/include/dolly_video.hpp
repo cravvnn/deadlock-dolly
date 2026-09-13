@@ -52,9 +52,14 @@ struct Options {
     // The host is expected to run the engine at a fixed frame rate (set by the
     // caller) so each captured frame is a distinct simulation step.
     bool fixed_step = false;
-    // Paired numerical depth master in <path>.depth. Off by default. The
-    // caller must supply a verified scene sample and exact replay time.
+    // Paired numerical depth master. Off by default. The caller must supply a
+    // verified scene sample and exact replay time. The master is a ProRes 4444
+    // depth.mov inside the recording's depth layer folder; depth_exr adds the
+    // float EXR sequence beside it under exr/.
     bool depth = false;
+    // Also write the float EXR precision master (exr/NNNNNNNN.exr). Off by
+    // default: the depth.mov is the deliverable, the EXRs are for VFX.
+    bool depth_exr = false;
 };
 struct Status {
     State state = State::idle;

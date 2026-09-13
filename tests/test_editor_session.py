@@ -230,14 +230,17 @@ class EditorSessionTests(unittest.TestCase):
         self.app.video_codec = Value("NVIDIA HEVC (NVENC)")
         self.app.video_fixed_step = Value(True)
         self.app.video_depth = Value(True)
+        self.app.video_depth_exr = Value(True)
         self.app.video_export_speed = Value("0.1")
         session.configure(self.app)
         config = self.bridge.configure_editor.call_args.kwargs
         self.assertEqual((config["video_fps"], config["video_bitrate_mbps"], config["video_encoder"],
                           config["video_fixed_step"], config["video_speed"]), (120, 40, 2, True, .1))
         self.assertTrue(config["video_depth"])
+        self.assertTrue(config["video_depth_exr"])
         for action, value in (("set_video_fps", 300), ("set_video_bitrate", 40),
                               ("set_video_encoder", 1), ("set_video_fixed_step", 0),
+                              ("set_video_depth_exr", 0),
                               ("set_video_depth", 0),
                               ("set_video_speed", .25)):
             self.assertTrue(session.dispatch(self.app, {"action": action, "value": value}, self.bridge))
@@ -246,6 +249,19 @@ class EditorSessionTests(unittest.TestCase):
                           self.app.video_export_speed.get()),
                          ("300", "40 Mbps", "NVIDIA H.264 (NVENC)", False, "0.25"))
         self.assertFalse(self.app.video_depth.get())
+        self.assertFalse(self.app.video_depth_exr.get())
+
+    def test_in_game_depth_arms_fixed_step_pairing(self):
+        self.app.video_fixed_step = Value(False)
+        self.app.video_depth = Value(False)
+        self.app.video_depth_exr = Value(False)
+        self.assertTrue(session.dispatch(self.app, {"action": "set_video_depth", "value": 1}, self.bridge))
+        self.assertTrue(self.app.video_depth.get())
+        self.assertTrue(self.app.video_fixed_step.get())
+        self.assertTrue(session.dispatch(self.app, {"action": "set_video_depth_exr", "value": 1}, self.bridge))
+        self.assertTrue(self.app.video_depth_exr.get())
+        self.assertTrue(session.dispatch(self.app, {"action": "set_video_depth", "value": 0}, self.bridge))
+        self.assertFalse(self.app.video_depth_exr.get())
 
     def test_invalid_in_game_video_options_do_not_change_desktop_state(self):
         self.app.video_fps = Value("60")
@@ -258,6 +274,7 @@ class EditorSessionTests(unittest.TestCase):
                                 ("set_video_bitrate", (0, 15, 50)),
                                 ("set_video_encoder", (-1, 11)),
                                 ("set_video_depth", (2, -1, .5, "on")),
+                                ("set_video_depth_exr", (2, -1, .5, "on")),
                                 ("set_video_speed", (0, .01, 4.1, float("nan"), True))):
             for value in invalid:
                 with self.subTest(action=action, value=value), self.assertRaises(ValueError):

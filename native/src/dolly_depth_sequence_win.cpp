@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include "dolly_depth_sequence.hpp"
+#include "dolly_video_math.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -13,12 +14,11 @@
 
 namespace dolly::depth {
 namespace {
-// Preview normalization: depths at or beyond this positive camera-axis
-// distance map to white. HLAE's defaults start at 1024 and its docs suggest
-// 4096-8192 for exterior scenes; 8192 keeps most geometry visible while the
-// EXR sequence remains the numerical master. Half-resolution 8-bit min-depth
-// samples are appended to one raw stream and encoded by Dolly afterwards.
-constexpr double kDepthPreviewMax = 8192.0;
+// The preview normalizes at the shared depth-master scale (kDepthUnitMax in
+// dolly_video_math.hpp). The EXR sequence remains the numerical master when
+// requested; half-resolution 8-bit min-depth samples are appended to one raw
+// stream and encoded by Dolly afterwards.
+constexpr double kDepthPreviewMax = video::kDepthUnitMax;
 // Write directly to a CREATE_NEW handle, retaining exclusive creation through
 // the entire write. A standard ofstream would reopen/truncate a reserved path.
 class FileBuffer final : public std::streambuf {
@@ -69,9 +69,10 @@ std::wstring filename(std::uint64_t index) {
 }
 struct Sequence::Impl {
     std::wstring directory;
+    std::wstring exr_directory;
     std::uint64_t written = 0, last_sample = 0, last_pts = 0;
     std::uint32_t width = 0, height = 0;
-    bool owned = false, complete = false;
+    bool owned = false, complete = false, write_exr = false, write_mov = false;
     long failure = 0;
     std::vector<float> linear;
     HANDLE preview = INVALID_HANDLE_VALUE;
@@ -131,8 +132,8 @@ struct Sequence::Impl {
             failure = HRESULT_FROM_WIN32(code ? code : ERROR_WRITE_FAULT);
         return false;
     }
-    template <class Write> bool file(const std::wstring& name, Write write) {
-        const auto path = directory + L"\\" + name;
+    template <class Write> bool file(const std::wstring& base, const std::wstring& name, Write write) {
+        const auto path = base + L"\\" + name;
         const auto temporary = path + L".part";
         const HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                                           FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -157,25 +158,35 @@ struct Sequence::Impl {
         DeleteFileW(temporary.c_str());
         return fail(error);
     }
+    template <class Write> bool file(const std::wstring& name, Write write) {
+        return file(directory, name, write);
+    }
 };
 Sequence::Sequence() : impl(std::make_unique<Impl>()) {}
 Sequence::~Sequence() {
     if (!impl->complete)
         discard();
 }
-bool Sequence::begin(const wchar_t* video_path) noexcept {
+bool Sequence::begin(const wchar_t* directory, bool write_exr, bool write_mov) noexcept {
     try {
-        if (!video_path || !*video_path || !impl->directory.empty())
+        if (!directory || !*directory || !impl->directory.empty())
             return impl->fail(ERROR_INVALID_PARAMETER);
-        const std::wstring path(video_path);
+        const std::wstring path(directory);
         if (path.size() > 1023 ||
             !((path.size() > 3 && path[1] == L':' && (path[2] == L'/' || path[2] == L'\\')) ||
               (path.size() > 3 && path[0] == L'\\' && path[1] == L'\\')))
             return impl->fail(ERROR_INVALID_PARAMETER);
-        impl->directory = path + L".depth";
+        impl->directory = path;
         if (!CreateDirectoryW(impl->directory.c_str(), nullptr))
             return impl->fail(GetLastError());
         impl->owned = true;
+        impl->write_exr = write_exr;
+        impl->write_mov = write_mov;
+        if (write_exr) {
+            impl->exr_directory = impl->directory + L"\\exr";
+            if (!CreateDirectoryW(impl->exr_directory.c_str(), nullptr))
+                return impl->fail(GetLastError());
+        }
         return true;
     } catch (...) {
         return impl->fail(ERROR_OUTOFMEMORY);
@@ -199,12 +210,14 @@ bool Sequence::write(const RawFrame& raw, std::uint64_t pts) noexcept {
             return s.fail(ERROR_INVALID_DATA);
         if (!s.write_preview(raw))
             return false;
-        auto metadata = frame;
-        metadata.capture_pts_100ns = pts;
-        if (!s.file(filename(s.written), [&](std::ostream& out) {
-                return write_exr(out, metadata, s.linear.data(), s.linear.size());
-            }))
-            return false;
+        if (s.write_exr) {
+            auto metadata = frame;
+            metadata.capture_pts_100ns = pts;
+            if (!s.file(s.exr_directory, filename(s.written), [&](std::ostream& out) {
+                    return write_exr(out, metadata, s.linear.data(), s.linear.size());
+                }))
+                return false;
+        }
         s.width = frame.width;
         s.height = frame.height;
         s.last_sample = frame.sample;
@@ -222,12 +235,22 @@ bool Sequence::finish(std::uint64_t encoded_color_frames) noexcept {
             return s.fail(ERROR_INVALID_DATA);
         s.close_preview();
         if (!s.file(L"manifest.json", [&](std::ostream& out) {
-                out << "{\n  \"version\": 1,\n  \"frames\": " << s.written
-                    << ",\n  \"width\": " << s.width << ",\n  \"height\": " << s.height
-                    << ",\n  \"channel\": \"Z\",\n  \"type\": \"FLOAT\","
-                       "\n  \"units\": \"positive camera-axis game units\","
-                       "\n  \"order\": \"zero-based encoded color frame index\","
-                       "\n  \"capture_pts\": \"dollyCapturePTS100ns records capture time; encoded video timing may differ\"\n}\n";
+                out << "{\n  \"version\": 2,\n  \"frames\": " << s.written
+                    << ",\n  \"width\": " << s.width << ",\n  \"height\": " << s.height;
+                if (s.write_mov)
+                    out << ",\n  \"master\": \"depth.mov\","
+                           "\n  \"master_codec\": \"prores_ks 4444 yuv444p10le (10-bit)\","
+                           "\n  \"encoding\": \"0..8192 positive camera-axis game units map to "
+                           "0..65535; +inf sky maps to 65535\"";
+                else
+                    out << ",\n  \"master\": null";
+                if (s.write_exr)
+                    out << ",\n  \"exr\": \"exr/NNNNNNNN.exr single-channel Z FLOAT (+inf sky)\"";
+                else
+                    out << ",\n  \"exr\": null";
+                out << ",\n  \"order\": \"zero-based encoded color frame index\","
+                       "\n  \"capture_pts\": \"dollyCapturePTS100ns records capture time; "
+                       "encoded video timing may differ\"\n}\n";
                 return out.good();
             }))
             return false;
@@ -242,10 +265,15 @@ void Sequence::discard() noexcept {
     if (!s.owned)
         return;
     try {
-        for (std::uint64_t i = 0; i < s.written; ++i)
-            DeleteFileW((s.directory + L"\\" + filename(i)).c_str());
+        if (s.write_exr) {
+            for (std::uint64_t i = 0; i < s.written; ++i)
+                DeleteFileW((s.exr_directory + L"\\" + filename(i)).c_str());
+            RemoveDirectoryW(s.exr_directory.c_str());
+        }
         if (s.complete)
             DeleteFileW((s.directory + L"\\manifest.json").c_str());
+        if (s.write_mov)
+            DeleteFileW((s.directory + L"\\depth.mov").c_str());
         s.close_preview();
         if (!s.preview_name.empty()) {
             DeleteFileW((s.directory + L"\\" + s.preview_name).c_str());
@@ -262,5 +290,17 @@ long Sequence::error() const noexcept {
 }
 std::uint64_t Sequence::count() const noexcept {
     return impl->written;
+}
+const float* Sequence::linear_data() const noexcept {
+    return impl->linear.data();
+}
+std::size_t Sequence::linear_count() const noexcept {
+    return impl->linear.size();
+}
+bool Sequence::exr() const noexcept {
+    return impl->write_exr;
+}
+bool Sequence::mov() const noexcept {
+    return impl->write_mov;
 }
 }

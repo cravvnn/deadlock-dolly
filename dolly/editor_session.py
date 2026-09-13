@@ -69,6 +69,7 @@ def _video_values(app):
     codec = previous.get("video_encoder", 0)
     fixed = bool(previous.get("video_fixed_step", False))
     depth = bool(previous.get("video_depth", False))
+    depth_exr = bool(previous.get("video_depth_exr", False))
     speed = previous.get("video_speed", 1.0)
     try:
         candidate = int(_value(app, "video_fps", 60))
@@ -91,13 +92,14 @@ def _video_values(app):
         pass
     fixed = bool(_value(app, "video_fixed_step", fixed))
     depth = bool(_value(app, "video_depth", depth))
+    depth_exr = bool(_value(app, "video_depth_exr", depth_exr)) and depth
     try:
         candidate = float(_value(app, "video_export_speed", 1.0))
         if math.isfinite(candidate) and .05 <= candidate <= 4:
             speed = candidate
     except (ValueError, TypeError):
         pass
-    return fps, bitrate, codec, fixed, speed, depth
+    return fps, bitrate, codec, fixed, speed, depth, depth_exr
 
 
 def _configure_visualization(app, bridge, active, selected):
@@ -153,7 +155,7 @@ def configure(app):
     selected = selected if selected is not None and 0 <= selected < count else 0
     playhead = float(_value(app, "shot_time", 0) or 0)
     playback_speed, playback_rate = _playback_values(app)
-    video_fps, video_bitrate, video_encoder, video_fixed_step, video_speed, video_depth = _video_values(app)
+    video_fps, video_bitrate, video_encoder, video_fixed_step, video_speed, video_depth, video_depth_exr = _video_values(app)
     values = dict(enabled=active, bindings=settings.action_bindings,
                   reshade_binding=settings.reshade_binding,
                   speed=settings.movement_speed, sensitivity=settings.mouse_sensitivity,
@@ -166,6 +168,7 @@ def configure(app):
                   video_fps=video_fps, video_bitrate_mbps=video_bitrate,
                   video_encoder=video_encoder, video_fixed_step=video_fixed_step,
                   video_depth=video_depth,
+                  video_depth_exr=video_depth_exr,
                   video_speed=video_speed)
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
     # Explicit owner changes are handled only by command transitions below.
@@ -391,6 +394,17 @@ def dispatch(app, event, bridge):
         if event["value"] not in (0, 1):
             raise ValueError("Depth master must be on or off.")
         app.video_depth.set(bool(event["value"]))
+        # A depth master is a paired, render-paced export. Default to the same
+        # fixed-step pairing as the desktop Export tab.
+        if app.video_depth.get():
+            app.video_fixed_step.set(True)
+        else:
+            app.video_depth_exr.set(False)
+        configure(app)
+    elif action == "set_video_depth_exr":
+        if event["value"] not in (0, 1):
+            raise ValueError("Depth EXR sequence must be on or off.")
+        app.video_depth_exr.set(bool(event["value"]) and bool(app.video_depth.get()))
         configure(app)
     elif action == "set_video_speed":
         value = event["value"]

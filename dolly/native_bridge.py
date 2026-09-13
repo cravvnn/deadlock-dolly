@@ -216,15 +216,25 @@ class NativeBridge(MediaTransport):
         return self._read32(ctypes.byref(slot), 0, 0) & 0xFFFFFFFF
 
     def _beat(self):
-        with self._lock:
-            if self._closed:
-                return
-            self._heartbeat = (self._heartbeat + 1) & 0xFFFFFFFFFFFFFFFF
-            self._store(32, self._heartbeat, 64)
+        # The heartbeat slot is independent of every command snapshot, so it
+        # must not queue behind the controller lock: a long lock hold once
+        # starved the beat until the native worker ended an active take.
+        if self._closed or self._heartbeat_stop.is_set():
+            return
+        self._heartbeat = (self._heartbeat + 1) & 0xFFFFFFFFFFFFFFFF
+        self._store(32, self._heartbeat, 64)
 
     def _heartbeat_loop(self):
+        last = time.monotonic()
         while not self._heartbeat_stop.wait(0.1):
             self._beat()
+            now = time.monotonic()
+            if now - last > 0.5:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Native heartbeat paused for %.2f s; an active recording kept running.",
+                    now - last)
+            last = now
 
     def _publish(self, mode, payload=b"", *, increment=True):
         with self._lock:
