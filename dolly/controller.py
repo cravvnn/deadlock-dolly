@@ -3217,6 +3217,32 @@ class Controller:
         self._reset_camera_position()
         self._message("Disconnected.", connected=False, playing=False)
 
+    def _crash_dumps(self, limit: int = 3) -> list:
+        """Newest Deadlock breakpad minidumps, newest first. Never raises."""
+        roots = []
+        game_path = str((self._launch_attempt or {}).get("game_path") or "").strip()
+        if game_path:
+            base = Path(game_path)
+            # The launcher starts the game with its `game` folder as the
+            # working directory, which is where breakpad writes the dump.
+            roots.append(base if base.name.lower() == "game" else base / "game")
+        roots.append(ROOT)
+        if self._session:
+            roots.append(self._session.session_dir)
+        found = {}
+        for root in roots:
+            try:
+                for path in root.glob("deadlock_*.mdmp"):
+                    if path.is_file():
+                        found[path.resolve()] = path
+            except OSError:
+                continue
+        try:
+            return sorted(found.values(), key=lambda item: item.stat().st_mtime,
+                          reverse=True)[:limit]
+        except OSError:
+            return []
+
     def export_diagnostics(self, destination):
         destination = Path(destination)
         if destination.suffix.lower() != ".zip":
@@ -3257,6 +3283,17 @@ class Controller:
                 history = self._console.recent_output()
             except Exception as exc:
                 report["console_history_error"] = str(exc)
+        # Game crashes leave breakpad minidumps in the game's working folder.
+        # Include the newest ones so a support ZIP does not need a second trip
+        # to the game install. Oversized full-memory dumps are skipped.
+        dumps = []
+        for path in self._crash_dumps():
+            try:
+                if path.stat().st_size <= 256 * 1024 * 1024:
+                    dumps.append(path)
+            except OSError:
+                continue
+        report["crash_dumps"] = [{"name": path.name, "bytes": path.stat().st_size} for path in dumps]
         with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("diagnostics.json", json.dumps(report, indent=2, ensure_ascii=False))
             if history is not None:
@@ -3279,6 +3316,11 @@ class Controller:
                     file = folder / name
                     if file.is_file():
                         archive.writestr("previous_sessions/" + folder.name + "/" + name, _tail_file(file, 512_000))
+            for path in dumps:
+                try:
+                    archive.write(path, "crashes/" + path.name)
+                except OSError:
+                    continue
         self._message("Diagnostics exported to " + str(destination))
         return destination
 

@@ -1141,6 +1141,20 @@ class ControllerTests(unittest.TestCase):
                 for name in ("session.json", "launch.log", "game_stdout.log"):
                     self.assertIn("session/" + name, archive.namelist())
 
+    def test_diagnostics_include_newest_game_crash_dump(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            game = root / "Deadlock" / "game"
+            game.mkdir(parents=True)
+            crash = game / "deadlock_20260913_191058_0_accessviolation.mdmp"
+            crash.write_bytes(b"MDMP fixture")
+            self.controller._launch_attempt = {"game_path": str(root / "Deadlock")}
+            destination = self.controller.export_diagnostics(root / "report.zip")
+            with zipfile.ZipFile(destination) as archive:
+                self.assertIn("crashes/" + crash.name, archive.namelist())
+                report = json.loads(archive.read("diagnostics.json"))
+            self.assertEqual(report["crash_dumps"], [{"name": crash.name, "bytes": 12}])
+
     def test_diagnostics_keep_previous_launch_and_raw_console_after_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

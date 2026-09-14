@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.4 alpha.** The portable Windows build opens through
+**Current source: 0.5.7 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -33,8 +33,11 @@ Close that session before launching Deadlock normally.
 - In-game playback speed and monitoring rate shared with desktop controls.
 - Replay playback with HUD handling, settings restoration and diagnostics.
 - Console fallback with Off, Light, Balanced and Strong smoothing choices.
-- Real-time H.264 MP4 video recording at the game resolution, with 30/60/120 FPS capture.
-- Optional ReShade color effects and its in-game menu on a configurable F11 key.
+- Video recording at the game resolution: real-time or fixed-step, 30 to 600 FPS, hardware or software H.264/HEVC encoders, or lossless FFV1.
+- Paired depth master as a 10-bit ProRes `.mov`, with an optional float EXR sequence and a normalized preview video.
+- Isolated world, players and effects layer takes; players and effects get a real alpha channel from black and white matte passes.
+- Optional ReShade color effects, its in-game menu on a configurable F11 key, and the verified scene depth published to ReShade for depth-based effects.
+- Startup update check with manual checks in Settings.
 
 ## Using the Windows app
 
@@ -81,15 +84,26 @@ publishing and interrupted-update recovery.
 
 ## Video and ReShade
 
-Choose an MP4 output path and FPS on **Export**, then use **F8 → Export → Record video**
+Choose an output path, FPS and encoder on **Export**, then use **F8 → Export → Record video**
 and **Finish recording** in the game. Video capture excludes Dolly controls
-and path guides. It records in real time without audio; output resolution
-follows the game. Recording continues through camera handoffs and desktop controls; use Finish recording to save.
+and path guides. Real-time capture follows the game; fixed-step export advances
+the simulation one frame at a time so the output stays deterministic. There is
+no audio, and output resolution follows the game. Recording continues through
+camera handoffs and desktop controls; use Finish recording to save.
+
+The **Depth master** option writes a paired depth `.mov` (and optional EXR
+sequence) beside the color video. **World**, **Players** and **Effects** record
+isolated layer takes; players and effects also get an alpha master built from
+black and white matte passes. Depth and layer takes need a verified scene
+sample for every frame and stop with an error instead of writing unpaired
+data. See [Layer export](docs/LAYER_EXPORT.md) for details.
 
 Select a compatible ReShade64.dll in **Settings → ReShade** to enable ReShade color effects.
 **F11** opens its own menu; **Settings → Controls & keybinds** changes that shortcut. ReShade is an
-optional separate download. Depth-dependent ReShade shaders are not supported
-yet. See [Video and ReShade](docs/VIDEO_AND_RESHADE.md) for setup and limits.
+optional separate download. Dolly bundles the crosire/prod80 shader library and
+publishes its verified scene depth to ReShade, so depth-based effects such as
+MXAO can use it. See [Video and ReShade](docs/VIDEO_AND_RESHADE.md) for setup
+and limits.
 
 ## Recorded demos
 
@@ -109,13 +123,14 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.3 is an alpha. It keeps the camera hook and interpolation from the working
-0.4.7 baseline, plus the recorded-demo handling from 0.4.8. It adds the
-compatibility scanner and an AOB fallback for byte-identical game updates.
-Earlier renderer slowdowns do not have a confirmed general fix. The new video
-and ReShade paths need testing in Deadlock; build checks are in
-[VALIDATION.md](docs/VALIDATION.md). Fixed-step rendering, audio, separate
-render layers and expanded in-game curve editing remain planned.
+0.5.7 is an alpha. Camera capture, interpolation and native playback keep the
+0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
+the compatibility scanner and AOB fallback, real-time and fixed-step recording,
+the paired depth master and layer takes, the ReShade runtime with a bundled
+shader library and depth publication, and the startup update check. Earlier
+renderer slowdowns do not have a confirmed general fix; build and release
+checks live in [VALIDATION.md](docs/VALIDATION.md). Audio, expanded in-game
+curve editing and arbitrary output resizing remain planned.
 
 ## Session files
 
@@ -171,6 +186,16 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.7:** matches the desktop and in-game panels to the wireframe layout and
+keeps Windows builds manual.
+
+**0.5.6:** embeds the startup update check in Dolly.exe and moves the desktop
+to the launcher-first layout with the Camera, Lens and Export panels.
+
+**0.5.5:** adds verified public-release updates that preserve tool paths, the
+paired depth master, isolated layer takes with black and white matte alpha,
+scroll-wheel framing fixes and a recording-failure dialog.
 
 **0.5.4:** adds recorded-shot sidecar metadata (`<video>.shot.json`) with the
 exact first/last shot frame and replay time, waits for a live recorder before

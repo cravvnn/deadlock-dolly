@@ -1,5 +1,27 @@
 # Changes
 
+## 0.5.7 alpha — Wireframe-matched controls and manual builds
+
+- Match the desktop and in-game panels to the wireframe layout.
+- Keep Windows builds manual and fix updater handling for short install paths.
+
+## 0.5.6 alpha — Embedded updates and launcher-first desktop
+
+- Show the startup update check from Dolly.exe itself.
+- Move the desktop to the launcher-first layout with Camera, Lens and Export
+  panels.
+
+## 0.5.5 alpha — Depth master, layer takes and verified updates
+
+- Record an optional paired depth master beside the color video: a 10-bit
+  ProRes `.mov`, an optional float EXR sequence and a normalized preview video.
+- Record isolated world, players and effects layer takes. Players and effects
+  use black and white matte passes combined into an RGBA alpha master.
+- Add verified public-release updates that preserve settings, shots and
+  external tool paths.
+- Fix scroll-wheel framing anchoring and show a dialog when a background take
+  fails.
+
 ## 0.5.4 alpha — Recorded-shot metadata and stability
 
 - Write `<video>.shot.json` next to a recording that contains a native shot:
