@@ -1,7 +1,11 @@
 # Changes
 
-## Unreleased
+## 0.5.9 alpha — Export flow wording and launcher notes
 
+- Clarify the layered export flow in the Export panel: the color video records
+  first, ticked passes are extra takes that follow automatically, and the
+  status line announces that handoff. Refresh the user guide's export section
+  and its availability notes.
 - Clarify launch-safety wording: Dolly refuses to launch or connect unless it
   started the game process itself and always passes `-dev -insecure -console`.
   The `-insecure` launch-option advice protects the temporary plugin-mount
@@ -22,9 +26,6 @@
   calibration when a supported scene pass has no per-view constants instead of
   failing the take, and report the rejection reason, last event and scene
   target count for the frame being captured rather than a stale reason.
-- Clarify the layered export flow in the Export panel: the color video records
-  first, ticked passes are extra takes that follow automatically, and the
-  status line announces that handoff.
 - Include the newest Deadlock breakpad minidumps in exported diagnostics.
 
 ## 0.5.7 alpha — Wireframe-matched controls and manual builds

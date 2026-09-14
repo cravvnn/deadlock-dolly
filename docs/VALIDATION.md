@@ -1,3 +1,24 @@
+# Validation — 0.5.9 alpha
+
+## Export-flow wording
+
+- The Export panel states that the color video records first and ticked passes
+  are extra takes that follow automatically; the status line announces the
+  handoff when the color take completes.
+- The user guide and start-here files carry the same wording and the launcher
+  safety note about sessions Dolly did not start.
+
+## Checks
+
+- Full Python suite: 1107 tests run, no failures, 17 optional skips.
+- Native MSVC Release: all 15 enabled CTest tests passed (native code is
+  unchanged from the published 0.5.8).
+- Frozen Windows build: PyInstaller build, packaged GUI smoke and a relocated
+  full-bundle startup check passed; the 0.5.9 Windows and source ZIPs match
+  their SHA256SUMS entries.
+- No game-runtime behavior changed in this build; it is a wording, guide and
+  packaging update on top of the published 0.5.8 depth fixes.
+
 # Validation — 0.5.8 alpha
 
 ## Export fixes and ReShade depth

@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.8 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.5.9 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
