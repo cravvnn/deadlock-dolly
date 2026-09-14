@@ -194,7 +194,9 @@ separate terms in [assets/README.md](assets/README.md).
 **0.5.9:** states the export take order in the UI — the color video records
 first and ticked passes follow automatically — and announces that handoff in
 the status line, so Finish recording no longer looks like it starts a surprise
-take. Includes the current user guide and start-here wording.
+take. The **In-game capture** switch now also sits on the Library page, so it
+is reachable without the Full editor. Includes the current user guide and
+start-here wording.
 
 **0.5.8:** fixes layered export take paths nesting inside the previous take,
 replaces stale bundled ReShade search paths instead of listing each effect

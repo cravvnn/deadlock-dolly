@@ -86,6 +86,13 @@ def bundle_self_test(report_path: Path) -> int:
             app_ui.settings_page.reveal(getattr(app_ui, name))
             visible(name)
         app_ui.notebook.select(app_ui.setup_tab)
+        app_ui.full_editor.set(False)
+        app_ui._apply_editor_mode()
+        root.update()
+        # The in-game capture switch must be reachable before Full editor.
+        app_ui.library_page.reveal(app_ui.library_capture_toggle)
+        visible("library_capture_toggle")
+        report["checks"]["library_capture_switch"] = True
         app_ui.full_editor.set(True)
         app_ui._apply_editor_mode()
         app_ui.notebook.select(app_ui.camera_tab)

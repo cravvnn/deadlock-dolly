@@ -177,8 +177,17 @@ def build_library(app):
     actions(launch.body, (("Browse game...", app._browse_game),), 1)
     app.home_camera_driver_combo = field(launch.body, "Camera driver", app.camera_driver,
                                         values=("Native (experimental)", "Console (legacy)"))
-    app.play_replay_button = ttk.Button(right, text="Open replay in Dolly", style="Card.Primary.TButton", command=app._start_editing_session)
-    app.play_replay_button.grid(row=3, column=0, sticky="nw", pady=(0, 10))
+    launch_row = ttk.Frame(right, style="Card.TFrame")
+    launch_row.grid(row=3, column=0, sticky="ew", pady=(0, 6))
+    app.play_replay_button = ttk.Button(launch_row, text="Open replay in Dolly", style="Card.Primary.TButton", command=app._start_editing_session)
+    app.play_replay_button.pack(side="left")
+    app.library_capture_toggle = ttk.Checkbutton(
+        launch_row, textvariable=app.hotkey_label, variable=app.hotkey_enabled,
+        command=app._toggle_capture_hotkey)
+    app.library_capture_toggle.pack(side="left", padx=(14, 0))
+    app.capture_hotkey_checkboxes.append(app.library_capture_toggle)
+    ttk.Label(right, text="In-game camera capture follows this switch; set the shortcut in Keybinds.",
+              style="CardMuted.TLabel", wraplength=320).grid(row=4, column=0, sticky="w", pady=(0, 10))
     progress = card(body, "Session")
     app.startup_label = ttk.Label(progress, textvariable=app.startup_progress, style="CardMuted.TLabel", wraplength=780)
     app.startup_label.pack(fill="x", pady=(0, GAP))

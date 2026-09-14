@@ -21,7 +21,8 @@ GETTING STARTED
 4. Click Open replay in Dolly. Dolly initializes the unlocker in the hideout before
    loading the replay, then pauses it with native camera controls ready.
 5. Move to a view and press Ctrl+Alt+K. Advance the replay and capture the next view.
-   F8 opens the in-game panel for capture, saved views and playback.
+   The In-game capture switch is on Library beside Open replay in Dolly; set the
+   shortcut in Settings > Controls & keybinds. F8 opens the in-game panel.
 6. Enable Full editor for desktop Cameras, Effects and the shot timeline.
    Save shots from Library or the File menu. F8 has Camera/Lens/Export tabs.
 7. Click Play shot or press F5 to play the replay and camera path together.

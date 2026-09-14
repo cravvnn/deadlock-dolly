@@ -27,7 +27,9 @@ GETTING STARTED
 3. Click Play replay. Dolly initializes the unlocker in the hideout before
    loading the replay, then pauses it with native camera controls ready.
 4. Move to the first view and press Ctrl+Alt+K. Advance the replay, frame the
-   next view and capture again. F8 opens capture, saved views and playback.
+   next view and capture again. The In-game capture switch is on Home beside
+   Play replay; set its shortcut in Settings > Controls & keybinds. F8 opens
+   capture, saved views and playback.
 5. On the desktop Cameras tab, edit framing, camera bank and arrival times.
    Replay timing is selected by default and uses the replay tick at capture.
    Timed shot is optional for placing multiple views at one paused moment.

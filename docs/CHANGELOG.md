@@ -6,6 +6,9 @@
   first, ticked passes are extra takes that follow automatically, and the
   status line announces that handoff. Refresh the user guide's export section
   and its availability notes.
+- Put the **In-game capture** switch on the Library page beside **Open replay
+  in Dolly** as well as the Cameras toolbar, so it no longer requires the Full
+  editor switch.
 - Clarify launch-safety wording: Dolly refuses to launch or connect unless it
   started the game process itself and always passes `-dev -insecure -console`.
   The `-insecure` launch-option advice protects the temporary plugin-mount

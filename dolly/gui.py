@@ -207,6 +207,7 @@ class DollyApp:
         self.hotkey_enabled = tk.BooleanVar(value=False)
         self.hotkey_label = tk.StringVar(value=self._capture_binding_label())
         self.capture_hotkey = None
+        self.capture_hotkey_checkboxes = []
         self.capture_generation = 0
         self.binding_dialog = None
         self.paused_dialog = None
@@ -1347,6 +1348,7 @@ class DollyApp:
         self.capture_hotkey_checkbox = ttk.Checkbutton(capture, textvariable=self.hotkey_label, variable=self.hotkey_enabled,
                         command=self._toggle_capture_hotkey)
         self.capture_hotkey_checkbox.pack(side="right")
+        self.capture_hotkey_checkboxes.append(self.capture_hotkey_checkbox)
         timing = ttk.Frame(tab)
         timing.grid(row=1, column=0, sticky="ew", pady=(0, 11))
         ttk.Label(timing, text="Capture timing", style="Muted.TLabel").pack(side="left", padx=(0, 7))
@@ -2136,7 +2138,9 @@ class DollyApp:
         self._refresh_renderer_pressure()
         try:
             editor_session.poll(self)
-            self.capture_hotkey_checkbox.configure(state="disabled" if self.native_editor_active else "normal")
+            capture_state = "disabled" if self.native_editor_active else "normal"
+            for checkbox in getattr(self, "capture_hotkey_checkboxes", ()):
+                checkbox.configure(state=capture_state)
             if self.native_editor_active:
                 binding = self.app_settings.action_bindings.get("capture")
                 self.hotkey_enabled.set(binding is not None)

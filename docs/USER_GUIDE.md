@@ -117,6 +117,11 @@ mode is active. It suspends editor shortcuts for console typing and ordinary
 game interaction. The external capture/keyboard listener remains only for the
 legacy Console workflow; it is disabled during native editing.
 
+The **In-game capture** switch is on the **Library** page beside
+**Open replay in Dolly**, so it can be turned on without enabling the Full
+editor; the same switch is also on the Cameras toolbar. Set its shortcut in
+**Settings → Controls & keybinds**.
+
 ## Switch and move cameras while paused
 
 After **Open replay in Dolly**, native flight starts from the rendered camera pose.

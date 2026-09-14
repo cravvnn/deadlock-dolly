@@ -5,6 +5,9 @@
 - The Export panel states that the color video records first and ticked passes
   are extra takes that follow automatically; the status line announces the
   handoff when the color take completes.
+- The **In-game capture** switch is now on the Library page beside
+  **Open replay in Dolly** as well as the Cameras toolbar, so it is reachable
+  without the Full editor switch.
 - The user guide and start-here files carry the same wording and the launcher
   safety note about sessions Dolly did not start.
 
