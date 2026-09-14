@@ -53,8 +53,13 @@ scene texture debug name, a full-size viewport and reversed depth writes.
 Immediate and deferred draws are tracked, with command-list metadata owned by
 the command list itself. Late depth clears, incompatible viewport writes,
 duplicate scene targets and command lists from an untracked session reject the
-frame. Tests exercise the hooks and resulting pixel/projection readback on both
-WARP and a local hardware device, including repeated command-list execution.
+frame. A supported scene draw without per-view constants keeps the frame's
+verified calibration, because that projection still describes the camera for the
+frame; only a genuinely incompatible alteration rejects it. The rejection
+diagnostic names the current frame's reason and the number of scene targets
+observed. Tests exercise the hooks and resulting pixel/projection readback on
+both WARP and a local hardware device, including repeated command-list
+execution.
 
 The selector's texture name and per-view layout are supported by the two supplied
 captures; they still need live verification in the gated replay session. The

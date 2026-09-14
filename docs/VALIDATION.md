@@ -14,10 +14,15 @@
   starting value that can be tuned in ReShade's menu.
 - The native scene observer compacts per-target observations instead of
   dropping the oldest events when its per-frame budget fills, keeps a usable
-  observation when one calibration buffer fails, and reports the failure
-  reason for the frame being consumed. The supplied diagnostics recorded
-  `scene result=incompatible why=event budget` after millions of observed
-  draws; that loss path is removed.
+  observation when one calibration buffer fails, and reports the rejection
+  reason, last event and scene-target count for the frame being consumed. The
+  supplied diagnostics recorded `scene result=incompatible why=event budget`
+  after millions of observed draws; that loss path is removed.
+- A supported scene pass with no per-view constants no longer fails the frame:
+  the frame's verified projection still describes that camera, so the sample
+  is kept. The supplied report that depth failed in every scene drove this
+  and the observation-budget fix; a genuinely incompatible overwrite still
+  fails the take closed.
 - Exported diagnostics include the newest Deadlock breakpad minidumps from the
   game folder (up to three; oversized dumps are skipped).
 

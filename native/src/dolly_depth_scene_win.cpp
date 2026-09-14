@@ -35,6 +35,18 @@ std::atomic<std::uint64_t> next_epoch{0};
 std::atomic<std::uint64_t> gDrawCalls{0}, gMatchedDraws{0};
 std::atomic<bool> gHooksInstalled{false};
 std::atomic<std::uint32_t> gLastResult{1}; // SceneResult::missing
+enum class EventKind : std::uint32_t { none = 0, ready, clear, incompatible, uncalibrated };
+std::atomic<std::uint32_t> gLastEvent{0}, gConsumedEvent{0}, gConsumedTargets{0};
+const char* event_kind_name(std::uint32_t value) noexcept {
+    switch (static_cast<EventKind>(value)) {
+    case EventKind::ready: return "ready";
+    case EventKind::clear: return "clear";
+    case EventKind::incompatible: return "incompatible";
+    case EventKind::uncalibrated: return "uncalibrated";
+    case EventKind::none: return "none";
+    }
+    return "none";
+}
 std::mutex gDiagnosticMutex;
 char gLastRejected[160]{}, gConsumedRejected[160]{};
 std::mutex gFailureMutex;
@@ -105,14 +117,16 @@ struct Event {
     bool clear = false;
     std::shared_ptr<SceneResources> source;
     bool incompatible_view = false;
+    bool uncalibrated = false;
 };
 // Keep the observation list as a compact state history instead of an append
 // log. Alternating scene targets otherwise overflow the per-frame budget and
 // force the oldest transitions out, which can misreport a frame. A new state
 // for one target supersedes the older states it overwrites:
-//   ready      rewrites the target, so it replaces every earlier event for it;
+//   ready        rewrites the target, so it replaces every earlier event;
 //   incompatible keeps an earlier ready (ready -> incompatible matters);
-//   clear      keeps an earlier ready/incompatible and only drops older clears.
+//   uncalibrated keeps an earlier ready (the frame's projection still maps);
+//   clear        keeps an earlier ready/incompatible and only drops older clears.
 void append_event(std::vector<Event>& events, Event event) {
     if (event.source) {
         const auto* target = event.source->depth.p;
@@ -124,6 +138,8 @@ void append_event(std::vector<Event>& events, Event event) {
                                             return existing.clear;
                                         if (event.incompatible_view)
                                             return existing.incompatible_view;
+                                        if (event.uncalibrated)
+                                            return existing.uncalibrated;
                                         return true;
                                     }),
                      events.end());
@@ -182,6 +198,18 @@ struct SceneTracker::Impl {
     std::unordered_map<ID3D11DeviceContext*, Context> contexts;
     SceneFrame frame;
     Com<ID3D11Texture2D> first_source;
+    // Distinct full-resolution scene targets observed this frame, for the
+    // diagnostic only. Bounded, so unusual frames cannot grow it.
+    std::array<const void*, 16> seen_targets{};
+    std::size_t seen_count = 0;
+
+    void note_target(const void* target) noexcept {
+        for (std::size_t i = 0; i < seen_count; ++i)
+            if (seen_targets[i] == target)
+                return;
+        if (seen_count < seen_targets.size())
+            seen_targets[seen_count++] = target;
+    }
 
     Impl(ID3D11Device* value, std::uint32_t w, std::uint32_t h) : width(w), height(h) {
         device.p = value;
@@ -244,6 +272,13 @@ struct SceneTracker::Impl {
         return &entry;
     }
     void apply(const Event& event) {
+        gLastEvent.store(static_cast<std::uint32_t>(event.incompatible_view
+                                                        ? EventKind::incompatible
+                                                    : event.uncalibrated
+                                                        ? EventKind::uncalibrated
+                                                    : event.clear ? EventKind::clear
+                                                                  : EventKind::ready),
+                         std::memory_order_relaxed);
         // Two different supported scene targets in one frame stay ambiguous.
         if (frame.result == SceneResult::ambiguous)
             return;
@@ -256,6 +291,16 @@ struct SceneTracker::Impl {
             if (frame.resources && frame.resources->depth.p == event.source->depth.p) {
                 frame.resources.reset();
                 frame.result = SceneResult::incompatible_view;
+            }
+            return;
+        }
+        if (event.uncalibrated) {
+            // A supported scene write with no per-view constants. It used this
+            // frame's camera, so the frame's verified projection still maps the
+            // target; keep the sample. Without one the frame stays unverified.
+            if (!frame.resources || frame.resources->depth.p != event.source->depth.p) {
+                frame.resources.reset();
+                frame.result = SceneResult::missing;
             }
             return;
         }
@@ -287,7 +332,9 @@ struct SceneTracker::Impl {
         } else {
             context->VSGetConstantBuffers(0, kBindings, bindings.data());
         }
-        target.count = 0;
+        // Build into a local count and commit only on success, so a failed
+        // snapshot leaves an existing verified calibration untouched.
+        std::size_t count = 0;
         for (std::size_t slot = 0; slot < kBindings; ++slot) {
             Com<ID3D11Buffer> bound;
             bound.p = bindings[slot];
@@ -303,26 +350,29 @@ struct SceneTracker::Impl {
                 bytes = std::min<std::uint64_t>(bytes, std::uint64_t(counts[slot]) * 16);
             if (bytes < 464)
                 continue;
-            const auto index = target.count;
-            if (!target.buffers[index].p || target.sizes[index] != bytes) {
-                target.buffers[index].reset();
+            if (!target.buffers[count].p || target.sizes[count] != bytes) {
+                target.buffers[count].reset();
                 D3D11_BUFFER_DESC copy{};
                 copy.ByteWidth = static_cast<UINT>(bytes);
                 copy.Usage = D3D11_USAGE_DEFAULT;
-                if (FAILED(device.p->CreateBuffer(&copy, nullptr, &target.buffers[index].p))) {
+                if (FAILED(device.p->CreateBuffer(&copy, nullptr, &target.buffers[count].p))) {
                     // One failed copy must not discard a usable observation.
                     // The readback parser rejects inconsistent calibration.
                     note_failure("calibration buffer");
                     continue;
                 }
-                target.sizes[index] = static_cast<UINT>(bytes);
+                target.sizes[count] = static_cast<UINT>(bytes);
             }
             D3D11_BOX range{static_cast<UINT>(offset),         0, 0,
                             static_cast<UINT>(offset + bytes), 1, 1};
-            context->CopySubresourceRegion(target.buffers[index].p, 0, 0, 0, 0, bound.p, 0, &range);
-            ++target.count;
+            context->CopySubresourceRegion(target.buffers[count].p, 0, 0, 0, 0, bound.p, 0,
+                                           &range);
+            ++count;
         }
-        return target.count > 0;
+        if (!count)
+            return false;
+        target.count = count;
+        return true;
     }
 };
 
@@ -355,12 +405,17 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
         UINT count = 1;
         D3D11_VIEWPORT viewport{};
         context->RSGetViewports(&count, &viewport);
-        const bool supported = count == 1 && viewport.TopLeftX == 0 && viewport.TopLeftY == 0 &&
-                               viewport.Width == impl->width && viewport.Height == impl->height &&
-                               viewport.MinDepth == 0 && viewport.MaxDepth == 1 &&
-                               (desc.DepthFunc == D3D11_COMPARISON_GREATER_EQUAL ||
-                                desc.DepthFunc == D3D11_COMPARISON_GREATER);
+        const bool full_viewport = count == 1 && viewport.TopLeftX == 0 &&
+                                   viewport.TopLeftY == 0 && viewport.Width == impl->width &&
+                                   viewport.Height == impl->height && viewport.MinDepth == 0 &&
+                                   viewport.MaxDepth == 1;
+        const bool reversed_test = desc.DepthFunc == D3D11_COMPARISON_GREATER_EQUAL ||
+                                   desc.DepthFunc == D3D11_COMPARISON_GREATER;
+        const bool supported = full_viewport && reversed_test;
         std::lock_guard<std::mutex> lock(impl->mutex);
+        impl->note_target(texture.p);
+        if (!supported && (!impl->first_source.p || impl->first_source.p == texture.p))
+            note_failure(full_viewport ? "depth function" : "viewport");
         auto* record = impl->record(context);
         if (!record)
             return;
@@ -378,16 +433,18 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
             snapshot->depth.p = texture.p;
             texture.p->AddRef();
         }
-        // Calibration is copied before the event is trusted: a draw we cannot
-        // calibrate fails the frame closed, not the tracker forever, and a
-        // later supported draw of this target can rewrite the sample.
+        // Calibration is copied before the event is trusted. A supported draw
+        // without per-view constants keeps the frame's verified projection; an
+        // unsupported alteration still fails the frame closed.
         const bool usable = supported && impl->snapshot(context, *snapshot);
-        if (supported && !usable)
+        const bool uncalibrated = supported && !usable;
+        if (uncalibrated)
             note_failure("calibration snapshot");
         if (!reused)
-            append_event(record->events, {false, snapshot, !usable});
-        else if (!usable) {
-            record->events.back().incompatible_view = true;
+            append_event(record->events, {false, snapshot, !supported, uncalibrated});
+        else if (!supported || uncalibrated) {
+            record->events.back().incompatible_view = !supported;
+            record->events.back().uncalibrated = uncalibrated;
             record->events.back().source = snapshot;
         }
         if (context->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
@@ -406,13 +463,14 @@ void SceneTracker::clear(ID3D11DeviceContext* context, ID3D11DepthStencilView* d
         if (!impl->source(depth, source))
             return;
         std::lock_guard<std::mutex> lock(impl->mutex);
+        impl->note_target(source.p);
         auto* record = impl->record(context);
         if (!record)
             return;
         auto snapshot = std::make_shared<SceneResources>();
         snapshot->depth.p = source.p;
         source.p->AddRef();
-        append_event(record->events, {true, snapshot, false});
+        append_event(record->events, {true, snapshot, false, false});
         if (context->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
             impl->apply(record->events.back());
     } catch (...) {
@@ -480,6 +538,11 @@ SceneFrame SceneTracker::consume(ID3D11DeviceContext* immediate) noexcept {
         impl->frame = {};
         impl->first_source.reset();
         impl->contexts.erase(immediate);
+        gConsumedEvent.store(gLastEvent.load(std::memory_order_relaxed),
+                             std::memory_order_relaxed);
+        gConsumedTargets.store(static_cast<std::uint32_t>(impl->seen_count),
+                               std::memory_order_relaxed);
+        impl->seen_count = 0;
         // A frame boundary ends its failure history. Keeping an older frame's
         // reason would explain the next frame with stale evidence.
         {
@@ -526,10 +589,13 @@ const char* scene_diagnostic() noexcept {
             std::snprintf(failure, sizeof(failure), "%s", gConsumedFailure);
     }
     std::snprintf(text, sizeof(text),
-                  "scene result=%s why=%s draws=%llu matched=%llu hooks=%u last=%s",
+                  "scene result=%s why=%s event=%s targets=%u draws=%llu matched=%llu hooks=%u "
+                  "last=%s",
                   scene_result_name(static_cast<SceneResult>(
                       gLastResult.load(std::memory_order_relaxed))),
                   failure[0] ? failure : "none",
+                  event_kind_name(gConsumedEvent.load(std::memory_order_relaxed)),
+                  static_cast<unsigned>(gConsumedTargets.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(gDrawCalls.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(gMatchedDraws.load(std::memory_order_relaxed)),
                   gHooksInstalled.load(std::memory_order_relaxed) ? 1u : 0u,

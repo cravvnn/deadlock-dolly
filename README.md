@@ -16,8 +16,12 @@ kernel driver.
 
 **KEEP `-insecure` IN DEADLOCK'S LAUNCH OPTIONS WHILE USING DOLLY.**
 
-Dolly also adds `-dev -insecure -console` when starting an editing session.
-Close that session before launching Deadlock normally.
+Dolly refuses to launch or connect unless it started the game process itself,
+and it always adds `-dev -insecure -console` to that process. The launch-option
+setting is a safety belt for the brief window before Dolly restores
+`gameinfo.gi`: if Deadlock is started outside Dolly while a session is open,
+exit that game before continuing. Close the editing session before launching
+Deadlock normally.
 
 ## Features
 
@@ -191,7 +195,8 @@ separate terms in [assets/README.md](assets/README.md).
 replaces stale bundled ReShade search paths instead of listing each effect
 several times, publishes the verified scene depth to ReShade for depth-based
 effects, and stops depth takes failing on the scene tracker's observation
-budget. Diagnostics now include the newest game crash dumps.
+budget or on a later scene pass without per-view constants. Diagnostics now
+include the newest game crash dumps and name the depth rejection reason.
 
 **0.5.7:** matches the desktop and in-game panels to the wireframe layout and
 keeps Windows builds manual.

@@ -259,8 +259,9 @@ void check(D3D_DRIVER_TYPE driver) {
     t.context.p->Draw(3, 0);
     require(t.tracker->consume(t.context.p).result == SceneResult::ready,
             "A full scene pass did not recover from an incompatible draw");
-    // A supported draw we cannot calibrate (no per-view constants) must fail
-    // this frame closed, not poison the tracker for the rest of the session.
+    // A supported draw we cannot calibrate (no per-view constants) used the
+    // frame's camera, so it keeps the frame's verified calibration instead of
+    // failing the whole frame.
     t.bind(t.context.p, scene.view.p);
     t.calibration(13);
     t.context.p->Draw(3, 0);
@@ -269,8 +270,7 @@ void check(D3D_DRIVER_TYPE driver) {
         t.context.p->VSSetConstantBuffers(0, 14, empty.data());
     }
     t.context.p->Draw(3, 0);
-    require(t.tracker->consume(t.context.p).result == SceneResult::incompatible_view,
-            "Uncalibratable scene draw failed the whole tracker");
+    t.read(t.tracker->consume(t.context.p), 26);
     t.bind(t.context.p, scene.view.p);
     t.calibration(7);
     t.context.p->Draw(3, 0);
@@ -317,6 +317,9 @@ void check(D3D_DRIVER_TYPE driver) {
     t.read(t.tracker->consume(t.context.p), 30);
     require(std::strstr(scene_diagnostic(), "why=event budget") == nullptr,
             "Compacted observation history still overflowed");
+    require(std::strstr(scene_diagnostic(), "event=") != nullptr &&
+                std::strstr(scene_diagnostic(), "targets=") != nullptr,
+            "Scene diagnostic lacks event/target details");
     t.bind(t.context.p, scene.view.p);
     t.calibration(15);
     t.context.p->Draw(3, 0);

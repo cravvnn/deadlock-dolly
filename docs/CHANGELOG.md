@@ -1,5 +1,12 @@
 # Changes
 
+## Unreleased
+
+- Clarify launch-safety wording: Dolly refuses to launch or connect unless it
+  started the game process itself and always passes `-dev -insecure -console`.
+  The `-insecure` launch-option advice protects the temporary plugin-mount
+  window, not a supported way to attach to a manually launched game.
+
 ## 0.5.8 alpha — Export fixes, ReShade depth and crash dumps
 
 - Keep each new export take beside the take tree instead of nesting it inside
@@ -11,9 +18,10 @@
   runtime is active, so depth-based effects such as MXAO can work. The bundled
   presets set the reversed-projection definitions.
 - Compact the native scene observation history per target instead of dropping
-  the oldest events when the per-frame budget fills, tolerate a failed
-  calibration buffer, and report the failure reason for the frame being
-  captured rather than a stale one.
+  the oldest events when the per-frame budget fills, keep the frame's verified
+  calibration when a supported scene pass has no per-view constants instead of
+  failing the take, and report the rejection reason, last event and scene
+  target count for the frame being captured rather than a stale reason.
 - Include the newest Deadlock breakpad minidumps in exported diagnostics.
 
 ## 0.5.7 alpha — Wireframe-matched controls and manual builds
