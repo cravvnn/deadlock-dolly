@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.9 alpha.** The portable Windows build opens through
+**Current source: 0.5.10 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -127,14 +127,15 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.9 is an alpha. Camera capture, interpolation and native playback keep the
+0.5.10 is an alpha. Camera capture, interpolation and native playback keep the
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
 the compatibility scanner and AOB fallback, real-time and fixed-step recording,
 the paired depth master and layer takes, the ReShade runtime with a bundled
-shader library and depth publication, and the startup update check. Earlier
-renderer slowdowns do not have a confirmed general fix; build and release
-checks live in [VALIDATION.md](docs/VALIDATION.md). Audio, expanded in-game
-curve editing and arbitrary output resizing remain planned.
+shader library and depth publication, the Citadel glow / health-bar / DOF
+controls, and the startup update check. Earlier renderer slowdowns do not have
+a confirmed general fix; build and release checks live in
+[VALIDATION.md](docs/VALIDATION.md). Audio, expanded in-game curve editing and
+arbitrary output resizing remain planned.
 
 ## Session files
 
@@ -191,24 +192,25 @@ separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
 
+**0.5.10:** adds in-game Camera-tab buttons for Citadel glow, health bars and
+the near-player opacity fix, and a **Citadel Depth of Field** card in both UIs
+with an Enable DOF switch plus log-scale sensor-size and focus-distance
+sliders. The native DOF card is renamed to **Native Depth of Field** so the
+two systems cannot be confused.
+
 **0.5.9:** states the export take order in the UI — the color video records
 first and ticked passes follow automatically — and announces that handoff in
 the status line, so Finish recording no longer looks like it starts a surprise
 take. The **In-game capture** switch now also sits on the Library page, so it
-is reachable without the Full editor. Adds in-game Camera-tab buttons for
-Citadel glow, health bars and the near-player opacity fix, and a **Citadel
-Depth of Field** card in both UIs with an Enable DOF switch plus log-scale
-sensor-size and focus-distance sliders. Includes the current user guide and
+is reachable without the Full editor. Includes the current user guide and
 start-here wording.
 
 **0.5.8:** fixes layered export take paths nesting inside the previous take,
 replaces stale bundled ReShade search paths instead of listing each effect
 several times, publishes the verified scene depth to ReShade for depth-based
 effects, and stops depth takes failing on the scene tracker's observation
-budget or on a later scene pass without per-view constants. The Export panel
-now states that the color video records first and ticked passes follow it, and
-diagnostics include the newest game crash dumps and name the depth rejection
-reason.
+budget or on a later scene pass without per-view constants. Diagnostics now
+include the newest game crash dumps and name the depth rejection reason.
 
 **0.5.7:** matches the desktop and in-game panels to the wireframe layout and
 keeps Windows builds manual.

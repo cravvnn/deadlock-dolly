@@ -1,14 +1,7 @@
 # Changes
 
-## 0.5.9 alpha — Export flow wording, Citadel controls and launcher notes
+## 0.5.10 alpha — Citadel controls
 
-- Clarify the layered export flow in the Export panel: the color video records
-  first, ticked passes are extra takes that follow automatically, and the
-  status line announces that handoff. Refresh the user guide's export section
-  and its availability notes.
-- Put the **In-game capture** switch on the Library page beside **Open replay
-  in Dolly** as well as the Cameras toolbar, so it no longer requires the Full
-  editor switch.
 - Add in-game Camera-tab buttons under Clear ragdolls: **Toggle Citadel glow**
   (boss/player/trooper glow switches plus health-bar glow), **Healthbar
   Toggle** (health bars and the new unit-status mode) and **Near player
@@ -22,6 +15,16 @@
 - Mirror the Citadel DOF card on the desktop Camera tab. Sliders author the
   shot at the playhead and apply it through the existing paused preview, so
   values save to Effects and play back through the native effect binder.
+
+## 0.5.9 alpha — Export flow wording and launcher notes
+
+- Clarify the layered export flow in the Export panel: the color video records
+  first, ticked passes are extra takes that follow automatically, and the
+  status line announces that handoff. Refresh the user guide's export section
+  and its availability notes.
+- Put the **In-game capture** switch on the Library page beside **Open replay
+  in Dolly** as well as the Cameras toolbar, so it no longer requires the Full
+  editor switch.
 - Clarify launch-safety wording: Dolly refuses to launch or connect unless it
   started the game process itself and always passes `-dev -insecure -console`.
   The `-insecure` launch-option advice protects the temporary plugin-mount
