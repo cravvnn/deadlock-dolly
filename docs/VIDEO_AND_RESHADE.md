@@ -63,8 +63,9 @@ unfinished output. Keep Deadlock open while an MP4 is finalizing. Windows N
 editions need Microsoft's Media Feature Pack to record; camera editing remains
 available without it.
 
-Audio, separate layers and arbitrary output resizing are not included in this
-version. Fixed-step video export is available; see below.
+Audio and arbitrary output resizing are not included. Fixed-step video export,
+paired depth masters and isolated layer takes are available; see
+[LAYER_EXPORT.md](LAYER_EXPORT.md).
 
 ## High frame rates and fixed-step
 
@@ -80,8 +81,10 @@ and the encoder, so every output frame is present. Encoder support still
 depends on resolution and the selected codec; lower the resolution or choose a
 lower FPS if the encoder rejects the configuration.
 
-Depth, hero-only and world-only export are not available in this build. See
-[LAYER_EXPORT.md](LAYER_EXPORT.md) for renderer requirements.
+The paired depth master and layer takes need a verified scene sample for every
+captured frame. They fail closed (stop the take with an error) instead of
+recording unpaired data; see [LAYER_EXPORT.md](LAYER_EXPORT.md) for renderer
+requirements.
 
 ## Set up ReShade
 
@@ -103,10 +106,11 @@ Depth, hero-only and world-only export are not available in this build. See
    Existing shader paths, selected presets and edited preset files are preserved.
    You can add other downloaded shader packs through ReShade's settings.
 
-The optional **Deadlock-AO** preset requires separately installed iMMERSE shaders
-and a working depth source. Those shaders and the ReShade runtime are not bundled.
-It is not selected automatically; Dolly's current ReShade integration still
-needs the depth hookup described below before depth-based AO can work.
+The optional **Deadlock-AO** preset requires separately installed iMMERSE shaders.
+Those shaders and the ReShade runtime are not bundled. It is not selected
+automatically. Enable ReShade while the replay editor has focus and Dolly
+publishes the verified scene depth to ReShade's `DEPTH` semantic, so MXAO and
+other depth-dependent effects can use it.
 
 The selected runtime is remembered for later Dolly editing sessions.
 **Disable** turns it off for the current session. **Forget runtime** clears the saved runtime path
@@ -122,9 +126,14 @@ until the editing game's process exits.
 
 This integration requires a single-sample SDR swapchain. MSAA or HDR
 swapchains are refused with an error instead of recording an incorrect effects
-image. Color effects are supported. **A game depth texture is not
-supplied yet**, so depth-dependent shaders such as MXAO or ReShade DOF are not
-supported. Dolly's existing native camera DOF controls continue to work.
+image. Color effects are supported. Dolly copies the verified scene depth into
+a sampleable texture and binds it as ReShade's `DEPTH` texture each frame, so
+depth-dependent shaders such as MXAO or ReShade DOF can work without ReShade's
+disabled automatic graphics hooks. The depth is the same reverse-projection
+scene target used by the depth export; the bundled presets set
+`RESHADE_DEPTH_INPUT_IS_REVERSED=1` and a far plane of 1000 (tune the far plane
+in ReShade's UI if a depth effect's falloff looks wrong). Dolly's existing
+native camera DOF controls continue to work.
 
 ## Implementation and validation
 

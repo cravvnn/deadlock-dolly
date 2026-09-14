@@ -623,6 +623,27 @@ class VideoGuiTests(unittest.TestCase):
         self.assertEqual(self.app._submit.call_args.args[1].__name__, "<lambda>")
         self.assertIsNone(self.app._active_layer_take)
 
+    def test_layered_completion_suggests_a_path_beside_the_take_folder(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
+                            fixed_step=True, speed=1.0, layers=("players",),
+                            ffmpeg_path=exe).validated()
+        (Path(self.folder.name) / "shot" / "players").mkdir(parents=True)
+        self.app._base_capture = base
+        self.app._layer_queue = []
+        self.app._pending_combine = None
+        self.app._active_layer_take = None
+        self.app.video_export.output_path = Path(self.folder.name) / "shot" / "players" / "players_white.mp4"
+        self.app.video_export.output_directory = Path(self.folder.name) / "shot" / "players"
+        self.app.video_export.status.return_value = {"state": "completed"}
+        self.app._submit = Mock()
+        self.app._log = Mock()
+        self.app._video_operation_done({"state": "completed", "master": str(Path(self.folder.name) / "shot" / "players" / "players.mov")})
+        suggested = Path(self.app.video_path.get())
+        self.assertEqual(suggested.parent, Path(self.folder.name))
+        self.assertNotIn("shot", suggested.parts)
+
     def test_combine_layer_writes_rgba_mov_and_removes_intermediates(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")

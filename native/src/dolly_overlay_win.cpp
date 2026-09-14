@@ -1258,11 +1258,29 @@ void render_overlay(IDXGISwapChain* chain) {
         // missing editor pose must not finish an already running MP4.
         if (media_session_active() &&
             (snapshot.state == video::State::recording || editor.focused)) {
-            if (snapshot.state == video::State::recording && snapshot.width && snapshot.height) {
+            // The recorder reports the size only once a take exists. ReShade
+            // also needs depth while merely editing, so fall back to the
+            // current backbuffer dimensions.
+            UINT depth_width = snapshot.width, depth_height = snapshot.height;
+            if ((!depth_width || !depth_height) && capture_chain) {
+                ID3D11Texture2D* buffer = nullptr;
+                if (SUCCEEDED(capture_chain->GetBuffer(
+                        0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&buffer)))) {
+                    D3D11_TEXTURE2D_DESC desc{};
+                    buffer->GetDesc(&desc);
+                    depth_width = desc.Width;
+                    depth_height = desc.Height;
+                    buffer->Release();
+                }
+            }
+            if (depth_width && depth_height) {
                 depth_live.publish(reinterpret_cast<std::uintptr_t>(capture_device),
                                    reinterpret_cast<std::uintptr_t>(capture_context),
-                                   snapshot.width, snapshot.height);
-                depth_live.request(video::wants_depth());
+                                   depth_width, depth_height);
+                // Depth observation also feeds ReShade's DEPTH semantic while
+                // its runtime is active, so depth-dependent effects work
+                // without ReShade's disabled automatic graphics hooks.
+                depth_live.request(video::wants_depth() || reshade_available());
                 depth::set_white_clear(video::wants_white_clear());
                 const bool matte_hooks =
                     (video::wants_white_clear() || video::wants_shot_only()) && !depth_live.hooks();
@@ -1275,16 +1293,17 @@ void render_overlay(IDXGISwapChain* chain) {
                         capture_device, depth_live.width(), depth_live.height());
                     depth_tracker = tracker;
                     depth::set_scene_tracker(tracker);
-                    // The depth take is also the draw-classification probe
-                    // window used to design layer filters.
-                    classify::probe(true);
                     depth_live.note_tracker(tracker != nullptr);
                 } else if (depth_live.needs_drop()) {
                     depth_tracker.reset();
                     depth::set_scene_tracker(nullptr);
-                    classify::probe(false);
+                    reshade_set_scene_depth(nullptr);
                     depth_live.note_tracker(false);
                 }
+                // The depth take is also the draw-classification probe window
+                // used to design layer filters. ReShade-only depth does not
+                // need that probe.
+                classify::probe(depth_live.active() && video::wants_depth());
             }
             // Consume the verified scene sample for this exact Present before
             // recording. The recorder owns color/depth pairing and fails closed
@@ -1294,6 +1313,8 @@ void render_overlay(IDXGISwapChain* chain) {
             if (depth_live.active() && depth_tracker) {
                 scene = depth_tracker->consume(capture_context);
                 sample = &scene;
+                if (scene.result == depth::SceneResult::ready)
+                    reshade_set_scene_depth(scene.texture());
             }
             // Prefer the native path clock this view just evaluated: it is the
             // authored frame time and not gated by the editor config round

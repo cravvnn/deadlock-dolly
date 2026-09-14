@@ -300,6 +300,23 @@ void check(D3D_DRIVER_TYPE driver) {
     }
     require(t.tracker->consume(t.context.p).result == SceneResult::ambiguous,
             "Observation budget overflow poisoned the tracker");
+    // Hundreds of calibration transitions on one target must compact instead of
+    // overflowing the per-frame history. The newest state and a clean
+    // diagnostic prove that no observation was silently dropped.
+    for (int i = 0; i < 300; ++i) {
+        t.bind(t.context.p, scene.view.p);
+        t.calibration(9);
+        t.context.p->Draw(3, 0);
+        const std::array<ID3D11Buffer*, 14> empty{};
+        t.context.p->VSSetConstantBuffers(0, 14, empty.data());
+        t.context.p->Draw(3, 0);
+    }
+    t.bind(t.context.p, scene.view.p);
+    t.calibration(15);
+    t.context.p->Draw(3, 0);
+    t.read(t.tracker->consume(t.context.p), 30);
+    require(std::strstr(scene_diagnostic(), "why=event budget") == nullptr,
+            "Compacted observation history still overflowed");
     t.bind(t.context.p, scene.view.p);
     t.calibration(15);
     t.context.p->Draw(3, 0);

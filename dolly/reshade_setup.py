@@ -49,17 +49,52 @@ def bundled_preset() -> Path | None:
     return None
 
 
+def _normalize_path(value: str) -> str:
+    text = value.strip().strip('"').strip()
+    return ntpath.normcase(ntpath.normpath(text))
+
+
+def _bundled_family(value: str):
+    """Name a bundled library folder (Shaders/Textures), or None."""
+    text = value.strip().strip('"')
+    parts = [part for part in ntpath.normpath(text).split("\\") if part and part != "."]
+    if len(parts) >= 2 and parts[-2].lower() == "reshade_shaders":
+        name = parts[-1].lower()
+        if name in ("shaders", "textures"):
+            return name
+    return None
+
+
 def merge_path_list(existing: str, additions: list[Path]) -> str:
-    """Comma-join paths, preserving existing text and dropping duplicates."""
+    """Comma-join paths, dropping duplicates and stale bundled folders.
+
+    Duplicate spellings already in the list are collapsed, and a library path
+    from an older Dolly extraction is replaced by the current one instead of
+    accumulating on every update. That keeps ReShade from listing each bundled
+    effect several times.
+    """
     tokens = existing.split(",") if existing else []
-    normalize = lambda value: ntpath.normcase(ntpath.normpath(value.strip()))
-    present = {normalize(token) for token in tokens if token.strip()}
-    for path in additions:
-        text = str(path)
-        if text and normalize(text) not in present:
-            tokens.append(text)
-            present.add(normalize(text))
-    return ",".join(tokens)
+    additions_text = [str(path) for path in additions if str(path)]
+    families = {_bundled_family(text) for text in additions_text}
+    families.discard(None)
+    result: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        text = token.strip()
+        normalized = _normalize_path(text)
+        if not normalized or normalized in seen:
+            continue
+        family = _bundled_family(text)
+        if family is not None and family in families:
+            continue  # Stale copy of Dolly's own library; the current path wins.
+        seen.add(normalized)
+        result.append(text)
+    for text in additions_text:
+        normalized = _normalize_path(text)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(text)
+    return ",".join(result)
 
 
 def _install_presets(config: Path, preset: Path | None) -> tuple[Path | None, list[Path]]:

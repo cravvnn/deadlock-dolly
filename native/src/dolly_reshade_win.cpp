@@ -63,6 +63,39 @@ void* frame_user = nullptr;
 ID3D11Device* frame_device = nullptr;
 ID3D11DeviceContext* frame_context = nullptr;
 
+template <class T> struct Com {
+    T* p = nullptr;
+    ~Com() { reset(); }
+    Com() = default;
+    Com(const Com&) = delete;
+    Com& operator=(const Com&) = delete;
+    Com(Com&& other) noexcept : p(other.p) { other.p = nullptr; }
+    Com& operator=(Com&& other) noexcept {
+        if (this != &other) {
+            reset(other.p);
+            other.p = nullptr;
+        }
+        return *this;
+    }
+    void reset(T* value = nullptr) noexcept {
+        if (p)
+            p->Release();
+        p = value;
+    }
+    T** put() {
+        reset();
+        return &p;
+    }
+};
+
+// Verified scene depth published by the overlay. Render-thread only; the
+// copies exist because the game's depth target may not allow an SRV directly.
+ID3D11Texture2D* depth_source = nullptr, *depth_built_from = nullptr;
+Com<ID3D11Texture2D> depth_copies[2];
+Com<ID3D11ShaderResourceView> depth_views[2];
+unsigned depth_ping = 0;
+bool depth_bound = false;
+
 constexpr unsigned kInputCapacity = 512;
 std::array<ReShadeInputEvent, kInputCapacity> input_events{};
 std::atomic<unsigned> input_write{0}, input_read{0};
@@ -437,6 +470,120 @@ bool reshade_pop_input(ReShadeInputEvent& event) noexcept {
     return true;
 }
 
+void release_depth_resources(Runtime* target) noexcept {
+    // Clear the runtime binding while the views are still alive, then release
+    // them. depth_bound alone is not enough: a pending source change clears it
+    // before the old binding has been replaced.
+    if (target && (depth_views[0].p || depth_views[1].p)) {
+        try {
+            target->update_texture_bindings("DEPTH", reshade::api::resource_view{0},
+                                            reshade::api::resource_view{0});
+        } catch (...) {
+        }
+    }
+    depth_bound = false;
+    depth_ping = 0;
+    depth_built_from = nullptr;
+    depth_copies[0].reset();
+    depth_copies[1].reset();
+    depth_views[0].reset();
+    depth_views[1].reset();
+}
+
+bool build_depth_resources(ID3D11Device* device, Com<ID3D11Texture2D>* copies,
+                           Com<ID3D11ShaderResourceView>* views) noexcept {
+    D3D11_TEXTURE2D_DESC source{};
+    depth_source->GetDesc(&source);
+    DXGI_FORMAT view_format = DXGI_FORMAT_UNKNOWN;
+    DXGI_FORMAT copy_format = DXGI_FORMAT_UNKNOWN;
+    if (source.Format == DXGI_FORMAT_D32_FLOAT) {
+        view_format = DXGI_FORMAT_R32_FLOAT;
+        copy_format = DXGI_FORMAT_R32_TYPELESS;
+    } else if (source.Format == DXGI_FORMAT_D24_UNORM_S8_UINT) {
+        view_format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+        copy_format = DXGI_FORMAT_R24G8_TYPELESS;
+    } else {
+        return false;
+    }
+    // The game's depth target may be created without D3D11_BIND_SHADER_RESOURCE,
+    // so publish a same-layout copy that can be sampled. The depth readback
+    // calibration decides what the samples mean.
+    D3D11_TEXTURE2D_DESC copy = source;
+    copy.Format = copy_format;
+    copy.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    copy.Usage = D3D11_USAGE_DEFAULT;
+    copy.CPUAccessFlags = 0;
+    copy.MiscFlags = 0;
+    D3D11_SHADER_RESOURCE_VIEW_DESC view{};
+    view.Format = view_format;
+    view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    view.Texture2D.MipLevels = 1;
+    for (auto& texture : {&copies[0], &copies[1]}) {
+        if (FAILED(device->CreateTexture2D(&copy, nullptr, texture->put())))
+            return false;
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        if (FAILED(device->CreateShaderResourceView(copies[i].p, &view, views[i].put())))
+            return false;
+    }
+    return true;
+}
+
+void publish_depth(ID3D11Device* device, ID3D11DeviceContext* context, Runtime* target) noexcept {
+    if (!target || !device || !context)
+        return;
+    try {
+        if (!depth_source) {
+            release_depth_resources(target);
+            return;
+        }
+        if (depth_built_from != depth_source) {
+            // Build replacements first. On failure the previous binding and its
+            // resources stay untouched instead of leaving a dangling handle.
+            Com<ID3D11Texture2D> copies[2];
+            Com<ID3D11ShaderResourceView> views[2];
+            if (!build_depth_resources(device, copies, views))
+                return;
+            target->update_texture_bindings(
+                "DEPTH",
+                reshade::api::resource_view{reinterpret_cast<std::uint64_t>(views[0].p)},
+                reshade::api::resource_view{0});
+            depth_bound = true;
+            for (unsigned i = 0; i < 2; ++i) {
+                depth_copies[i] = std::move(copies[i]);
+                depth_views[i] = std::move(views[i]);
+            }
+            depth_built_from = depth_source;
+            depth_ping = 1;
+            return;
+        }
+        const unsigned index = depth_ping;
+        context->CopyResource(depth_copies[index].p, depth_source);
+        depth_ping ^= 1;
+        target->update_texture_bindings(
+            "DEPTH",
+            reshade::api::resource_view{reinterpret_cast<std::uint64_t>(depth_views[index].p)},
+            reshade::api::resource_view{0});
+        depth_bound = true;
+    } catch (...) {
+        // Depth is best-effort; it must never take the runtime down.
+    }
+}
+
+void reshade_set_scene_depth(ID3D11Texture2D* texture) noexcept {
+    if (texture == depth_source)
+        return;
+    if (texture)
+        texture->AddRef();
+    if (depth_source)
+        depth_source->Release();
+    depth_source = texture;
+    // Resources and the runtime binding are swapped on the next publish, so a
+    // view ReShade may still hold is never released before it is replaced.
+    depth_ping = 0;
+    depth_bound = false;
+}
+
 bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceContext* context,
                     ReShadeCleanFrame clean_frame, void* user_data) noexcept {
     const auto api = std::atomic_load(&backend);
@@ -512,6 +659,7 @@ bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceCon
         frame_context = context;
         clean_delivered = false;
         updating = true;
+        publish_depth(device, context, runtime);
         handled = true;
         api->present(runtime);
         ++frames;
@@ -545,6 +693,11 @@ void reshade_release_device() noexcept {
     requested.store(0, std::memory_order_release);
     clear_frame();
     release_input();
+    release_depth_resources(runtime);
+    if (depth_source) {
+        depth_source->Release();
+        depth_source = nullptr;
+    }
     Runtime* previous = runtime;
     runtime = nullptr;
     runtime_chain = nullptr;

@@ -9,8 +9,9 @@ from dolly import reshade_setup
 
 class PrepareConfigTests(unittest.TestCase):
     def _paths(self, temp: Path):
-        shaders = temp / "bundle" / "Shaders"
-        textures = temp / "bundle" / "Textures"
+        base = temp / "bundle" / "third_party" / "reshade_shaders"
+        shaders = base / "Shaders"
+        textures = base / "Textures"
         preset = temp / "bundle" / "presets" / reshade_setup.PRESET_NAME
         shaders.mkdir(parents=True)
         textures.mkdir(parents=True)
@@ -143,6 +144,41 @@ class PrepareConfigTests(unittest.TestCase):
     def test_merge_path_list_dedupes(self):
         result = reshade_setup.merge_path_list("a,b", [Path("b"), Path("c")])
         self.assertEqual(result, "a,b,c")
+
+    def test_merge_path_list_collapses_existing_duplicates(self):
+        result = reshade_setup.merge_path_list("C:\\Shaders,c:\\shaders ,C:\\Shaders", [])
+        self.assertEqual(result, "C:\\Shaders")
+
+    def test_merge_path_list_replaces_a_stale_bundled_library(self):
+        old = "C:\\OldDolly\\_internal\\third_party\\reshade_shaders\\Shaders"
+        current = Path("C:/NewDolly/_internal/third_party/reshade_shaders/Shaders")
+        result = reshade_setup.merge_path_list(old, [current])
+        self.assertEqual(result, str(current))
+
+    def test_merge_path_list_keeps_unrelated_reshade_named_folders(self):
+        other = "C:\\Mine\\reshade_shaders\\Custom"
+        result = reshade_setup.merge_path_list(other, [Path("C:/Dolly/third_party/reshade_shaders/Shaders")])
+        self.assertEqual(result, other + "," + str(Path("C:/Dolly/third_party/reshade_shaders/Shaders")))
+
+    def test_prepare_config_replaces_three_stale_library_paths(self):
+        with tempfile.TemporaryDirectory() as folder:
+            temp = Path(folder)
+            shaders, textures, preset = self._paths(temp)
+            stale = "C:\\Old\\third_party\\reshade_shaders\\{}"
+            config = temp / "ReShade.ini"
+            config.write_text(
+                "[GENERAL]\n"
+                f"EffectSearchPaths={stale.format('Shaders')},{stale.format('Shaders').replace('C:', 'D:')}\n"
+                f"TextureSearchPaths={stale.format('Textures')}\n",
+                encoding="utf-8",
+            )
+            with patch.object(reshade_setup, "bundled_shader_paths", return_value=(shaders, textures)), \
+                 patch.object(reshade_setup, "bundled_preset", return_value=preset):
+                reshade_setup.prepare_config(config)
+            text = config.read_text(encoding="utf-8")
+            self.assertNotIn("Old", text)
+            self.assertEqual(text.count(str(shaders)), 1)
+            self.assertEqual(text.count(str(textures)), 1)
 
 
 if __name__ == "__main__":

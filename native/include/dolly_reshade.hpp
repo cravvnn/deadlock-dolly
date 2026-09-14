@@ -5,6 +5,7 @@
 struct IDXGISwapChain;
 struct ID3D11Device;
 struct ID3D11DeviceContext;
+struct ID3D11Texture2D;
 
 namespace dolly {
 // This adapter owns a manually-created ReShade runtime. It does not install a
@@ -55,6 +56,12 @@ using ReShadeCleanFrame = void (*)(IDXGISwapChain*, ID3D11Device*, ID3D11DeviceC
 // If false, the caller may capture the ordinary backbuffer directly.
 bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceContext* context,
                     ReShadeCleanFrame clean_frame = nullptr, void* user_data = nullptr) noexcept;
+
+// Render lock must be held. Publishes the verified game scene depth captured
+// for this Present so depth-semantic effects sample it instead of ReShade's
+// absent automatic depth source. Passing nullptr clears the binding. The
+// texture is reference-counted until it is replaced or the device is released.
+void reshade_set_scene_depth(ID3D11Texture2D* texture) noexcept;
 
 // Render lock must be held, all calls to reshade_render stopped. Call before
 // ResizeBuffers, device removal, or overlay device teardown. This releases all

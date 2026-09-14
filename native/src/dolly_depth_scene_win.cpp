@@ -26,7 +26,7 @@ template <class T> struct Com {
         p = value;
     }
 };
-constexpr std::size_t kBindings = 14, kMaxEvents = 64, kMaxContexts = 64;
+constexpr std::size_t kBindings = 14, kMaxEvents = 256, kMaxContexts = 64;
 const GUID kCommandData = {
     0x421d0f73, 0xbd87, 0x4eda, {0xa1, 0x79, 0x55, 0x0c, 0x94, 0x4c, 0x1b, 0x4e}};
 const GUID kCommandType = {
@@ -36,9 +36,9 @@ std::atomic<std::uint64_t> gDrawCalls{0}, gMatchedDraws{0};
 std::atomic<bool> gHooksInstalled{false};
 std::atomic<std::uint32_t> gLastResult{1}; // SceneResult::missing
 std::mutex gDiagnosticMutex;
-char gLastRejected[160]{};
+char gLastRejected[160]{}, gConsumedRejected[160]{};
 std::mutex gFailureMutex;
-char gLastFailure[160]{};
+char gLastFailure[160]{}, gConsumedFailure[160]{};
 void note_failure(const char* reason) noexcept {
     std::unique_lock<std::mutex> lock(gFailureMutex, std::try_to_lock);
     if (lock.owns_lock())
@@ -106,6 +106,35 @@ struct Event {
     std::shared_ptr<SceneResources> source;
     bool incompatible_view = false;
 };
+// Keep the observation list as a compact state history instead of an append
+// log. Alternating scene targets otherwise overflow the per-frame budget and
+// force the oldest transitions out, which can misreport a frame. A new state
+// for one target supersedes the older states it overwrites:
+//   ready      rewrites the target, so it replaces every earlier event for it;
+//   incompatible keeps an earlier ready (ready -> incompatible matters);
+//   clear      keeps an earlier ready/incompatible and only drops older clears.
+void append_event(std::vector<Event>& events, Event event) {
+    if (event.source) {
+        const auto* target = event.source->depth.p;
+        events.erase(std::remove_if(events.begin(), events.end(),
+                                    [&](const Event& existing) {
+                                        if (!existing.source || existing.source->depth.p != target)
+                                            return false;
+                                        if (event.clear)
+                                            return existing.clear;
+                                        if (event.incompatible_view)
+                                            return existing.incompatible_view;
+                                        return true;
+                                    }),
+                     events.end());
+    }
+    if (events.size() >= kMaxEvents) {
+        // Distinct-target alternation is bounded, so this stays a last resort.
+        note_failure("event budget");
+        events.erase(events.begin());
+    }
+    events.push_back(std::move(event));
+}
 struct CommandData {
     std::uint64_t epoch = 0;
     std::vector<Event> events;
@@ -258,7 +287,6 @@ struct SceneTracker::Impl {
         } else {
             context->VSGetConstantBuffers(0, kBindings, bindings.data());
         }
-        bool good = true;
         target.count = 0;
         for (std::size_t slot = 0; slot < kBindings; ++slot) {
             Com<ID3D11Buffer> bound;
@@ -275,14 +303,16 @@ struct SceneTracker::Impl {
                 bytes = std::min<std::uint64_t>(bytes, std::uint64_t(counts[slot]) * 16);
             if (bytes < 464)
                 continue;
-            const auto index = target.count++;
+            const auto index = target.count;
             if (!target.buffers[index].p || target.sizes[index] != bytes) {
                 target.buffers[index].reset();
                 D3D11_BUFFER_DESC copy{};
                 copy.ByteWidth = static_cast<UINT>(bytes);
                 copy.Usage = D3D11_USAGE_DEFAULT;
                 if (FAILED(device.p->CreateBuffer(&copy, nullptr, &target.buffers[index].p))) {
-                    good = false;
+                    // One failed copy must not discard a usable observation.
+                    // The readback parser rejects inconsistent calibration.
+                    note_failure("calibration buffer");
                     continue;
                 }
                 target.sizes[index] = static_cast<UINT>(bytes);
@@ -290,8 +320,9 @@ struct SceneTracker::Impl {
             D3D11_BOX range{static_cast<UINT>(offset),         0, 0,
                             static_cast<UINT>(offset + bytes), 1, 1};
             context->CopySubresourceRegion(target.buffers[index].p, 0, 0, 0, 0, bound.p, 0, &range);
+            ++target.count;
         }
-        return good && target.count > 0;
+        return target.count > 0;
     }
 };
 
@@ -343,14 +374,6 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
         if (reused) {
             snapshot = record->events.back().source;
         } else {
-            // A matching family draw can exceed the per-frame observation
-            // budget while a second target alternates. Dropping the oldest
-            // observation keeps the newest state instead of poisoning the
-            // tracker for the rest of the process.
-            if (record->events.size() >= kMaxEvents) {
-                note_failure("event budget");
-                record->events.erase(record->events.begin());
-            }
             snapshot = std::make_shared<SceneResources>();
             snapshot->depth.p = texture.p;
             texture.p->AddRef();
@@ -362,7 +385,7 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
         if (supported && !usable)
             note_failure("calibration snapshot");
         if (!reused)
-            record->events.push_back({false, snapshot, !usable});
+            append_event(record->events, {false, snapshot, !usable});
         else if (!usable) {
             record->events.back().incompatible_view = true;
             record->events.back().source = snapshot;
@@ -386,14 +409,10 @@ void SceneTracker::clear(ID3D11DeviceContext* context, ID3D11DepthStencilView* d
         auto* record = impl->record(context);
         if (!record)
             return;
-        if (record->events.size() >= kMaxEvents) {
-            note_failure("event budget");
-            record->events.erase(record->events.begin());
-        }
         auto snapshot = std::make_shared<SceneResources>();
         snapshot->depth.p = source.p;
         source.p->AddRef();
-        record->events.push_back({true, snapshot});
+        append_event(record->events, {true, snapshot, false});
         if (context->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
             impl->apply(record->events.back());
     } catch (...) {
@@ -461,6 +480,22 @@ SceneFrame SceneTracker::consume(ID3D11DeviceContext* immediate) noexcept {
         impl->frame = {};
         impl->first_source.reset();
         impl->contexts.erase(immediate);
+        // A frame boundary ends its failure history. Keeping an older frame's
+        // reason would explain the next frame with stale evidence.
+        {
+            std::unique_lock<std::mutex> failure(gFailureMutex, std::try_to_lock);
+            if (failure.owns_lock()) {
+                std::snprintf(gConsumedFailure, sizeof(gConsumedFailure), "%s", gLastFailure);
+                gLastFailure[0] = '\0';
+            }
+        }
+        {
+            std::unique_lock<std::mutex> rejected(gDiagnosticMutex, std::try_to_lock);
+            if (rejected.owns_lock()) {
+                std::snprintf(gConsumedRejected, sizeof(gConsumedRejected), "%s", gLastRejected);
+                gLastRejected[0] = '\0';
+            }
+        }
         if (impl->failed) {
             gLastResult.store(static_cast<std::uint32_t>(SceneResult::failed),
                               std::memory_order_relaxed);
@@ -482,13 +517,13 @@ const char* scene_diagnostic() noexcept {
     {
         std::unique_lock<std::mutex> lock(gDiagnosticMutex, std::try_to_lock);
         if (lock.owns_lock())
-            std::snprintf(rejected, sizeof(rejected), "%s", gLastRejected);
+            std::snprintf(rejected, sizeof(rejected), "%s", gConsumedRejected);
     }
     char failure[128]{};
     {
         std::unique_lock<std::mutex> lock(gFailureMutex, std::try_to_lock);
         if (lock.owns_lock())
-            std::snprintf(failure, sizeof(failure), "%s", gLastFailure);
+            std::snprintf(failure, sizeof(failure), "%s", gConsumedFailure);
     }
     std::snprintf(text, sizeof(text),
                   "scene result=%s why=%s draws=%llu matched=%llu hooks=%u last=%s",

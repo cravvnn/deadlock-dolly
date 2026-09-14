@@ -580,14 +580,33 @@ class DollyApp:
         self._submit("Discarding recording" if cancel else "Finishing video recording",
                      lambda: self.video_export.stop(cancel=cancel), self._video_operation_done)
 
+    def _next_take_directory(self):
+        """The folder that receives new takes, never the inside of a take."""
+        base = getattr(self, "_base_capture", None)
+        if base is not None:
+            # A layered run's side takes and alpha combines live inside the
+            # base take folder. Suggest the next take beside that folder
+            # instead of nesting every later take one level deeper.
+            return base.path.parent
+        output = self.video_export.output_path
+        if output is None:
+            return Path(self.video_path.get()).parent
+        return self.video_export.output_directory or output.parent
+
     def _video_operation_done(self, status):
         state = status.get("state", "idle")
         self.video_status_text.set(format_video_status(status))
         self.status_text.set(self.video_status_text.get())
         self._last_video_state = state
         if state == "completed" and self.video_export.output_path:
-            self._log("Video saved to " + str(self.video_export.output_path))
-            directory = self.video_export.output_directory or self.video_export.output_path.parent
+            master = status.get("master")
+            if master:
+                self._log("Layer alpha saved to " + str(master))
+            elif getattr(self, "_active_layer_take", None) is None:
+                self._log("Video saved to " + str(self.video_export.output_path))
+            directory = self._next_take_directory()
+            if not directory.is_dir():
+                directory = Path(self.video_path.get()).parent
             self.video_path.set(str(default_video_path(self.project.name, directory)))
         if state == "completed":
             taken = getattr(self, "_active_layer_take", None)
