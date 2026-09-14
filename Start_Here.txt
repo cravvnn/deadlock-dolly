@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.4 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.5.8 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -148,8 +148,9 @@ ReShade 6.8.0/API 20 with full add-on support is a separate download. Extract Re
 add-on setup EXE with 7-Zip into a folder outside the game. Select it on Export
 and enable it. F11 opens its own menu; change the shortcut in Keybinds.
 A single-sample SDR swapchain and manual runtime functions are required. Add shader/texture search
-paths and presets through ReShade. Color effects are supported; no game depth
-texture is supplied yet. Native Dolly DOF still works.
+paths and presets through ReShade. Color effects are supported, and Dolly
+publishes the verified scene depth to ReShade so depth-based effects such as
+MXAO can use it. Native Dolly DOF still works.
 
 ReShade config: %APPDATA%\DeadlockDolly\ReShade\ReShade.ini
 The runtime path is remembered. Disable affects this session; Forget clears
@@ -162,11 +163,13 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.5.3 is an alpha. The camera hook and interpolation remain unchanged from
-0.4.7. Recorded-demo handling from 0.4.8 is retained. Earlier renderer slowdowns
-do not have a confirmed general fix. MP4 and ReShade need in-game testing.
-Fixed-step rendering, audio, separate layers and expanded in-game curves
-remain planned.
+0.5.8 is an alpha. The camera hook and interpolation remain unchanged from
+0.4.7, and recorded-demo handling from 0.4.8 is retained. The 0.5.x line adds
+the compatibility scanner, real-time and fixed-step recording, the paired depth
+master, isolated layer takes, ReShade with a bundled shader library and depth
+publication, and the startup update check. Earlier renderer slowdowns do not
+have a confirmed general fix. Audio, expanded in-game curves and arbitrary
+output resizing remain planned.
 Technical details and validation results are in docs/VALIDATION.md.
 
 
@@ -174,7 +177,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.5.3 uses
+logs, including any recovery backup. Use the complete new package; 0.5.8 uses
 camera ABI 3 and editor ABI 2 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

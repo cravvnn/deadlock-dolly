@@ -1,3 +1,46 @@
+# Validation — 0.5.8 alpha
+
+## Export fixes and ReShade depth
+
+- The layered export pipeline no longer proposes a new take inside the take
+  that just finished; suggestions stay beside the take tree, and the alpha
+  combine logs its master path.
+- ReShade config merging collapses duplicate entries and replaces the bundled
+  shader/texture folder recorded by an older extraction. Enabling ReShade on
+  this build cleans a list that showed each bundled effect several times.
+- The verified scene depth is copied into a sampleable texture and bound to
+  ReShade's `DEPTH` semantic each frame while the runtime is active. The
+  bundled presets set `RESHADE_DEPTH_INPUT_IS_REVERSED=1`; the far plane is a
+  starting value that can be tuned in ReShade's menu.
+- The native scene observer compacts per-target observations instead of
+  dropping the oldest events when its per-frame budget fills, keeps a usable
+  observation when one calibration buffer fails, and reports the failure
+  reason for the frame being consumed. The supplied diagnostics recorded
+  `scene result=incompatible why=event budget` after millions of observed
+  draws; that loss path is removed.
+- Exported diagnostics include the newest Deadlock breakpad minidumps from the
+  game folder (up to three; oversized dumps are skipped).
+
+## Checks
+
+- Full Python suite: 1106 tests run, no failures, 16 optional skips.
+- Native MSVC Release: all 15 enabled CTest tests passed, including the scene
+  observer regression that drives several hundred calibration transitions past
+  the old per-frame budget.
+- Frozen Windows build: PyInstaller build, packaged GUI smoke and a relocated
+  full-bundle startup check passed. The 0.5.8 Windows and source ZIPs match
+  their SHA256SUMS entries.
+- The supplied September 13 minidump faults inside the game's `tier0.dll`
+  allocator (corrupt pool pointer), not in Dolly's DLLs or the patched
+  unlocker. Dolly's load wait only sends a read-only `demo_goto` position
+  query. The game's intermittent load/quit access violation remains
+  unresolved; diagnostics now carry the newest dump for correlation.
+
+Live Deadlock checks are still needed for the layered take paths, the ReShade
+effect list after cleanup, depth-based ReShade effects and the composited layer
+masters. Earlier renderer slowdowns and the engine's own load/quit access
+violation have no confirmed fix.
+
 # Validation — 0.5.4 alpha
 
 ## 120 FPS update

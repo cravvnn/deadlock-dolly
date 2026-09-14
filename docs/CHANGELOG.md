@@ -1,5 +1,21 @@
 # Changes
 
+## 0.5.8 alpha — Export fixes, ReShade depth and crash dumps
+
+- Keep each new export take beside the take tree instead of nesting it inside
+  the previous take folder, and log the alpha master path when a layer combine
+  finishes.
+- Collapse duplicate and stale bundled ReShade search paths so the effect list
+  stops showing each bundled shader several times.
+- Publish the verified scene depth to ReShade's `DEPTH` semantic while its
+  runtime is active, so depth-based effects such as MXAO can work. The bundled
+  presets set the reversed-projection definitions.
+- Compact the native scene observation history per target instead of dropping
+  the oldest events when the per-frame budget fills, tolerate a failed
+  calibration buffer, and report the failure reason for the frame being
+  captured rather than a stale one.
+- Include the newest Deadlock breakpad minidumps in exported diagnostics.
+
 ## 0.5.7 alpha — Wireframe-matched controls and manual builds
 
 - Match the desktop and in-game panels to the wireframe layout.
