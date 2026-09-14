@@ -51,8 +51,8 @@ class LauncherTests(unittest.TestCase):
              patch.object(worker, "check_processes") as check, patch.object(worker, "launch_worker") as launch, \
              patch.object(boot, "open_editor") as editor:
             boot.main([], target=self.target)
-            check.assert_called_once_with(self.target, exclude_pid=(123, 100))
-            launch.assert_called_once_with(self.target, work, recover=True, parent_pid=100)
+            check.assert_called_once_with(self.target.resolve(), exclude_pid=(123, 100))
+            launch.assert_called_once_with(self.target.resolve(), work, recover=True, parent_pid=100)
             editor.assert_not_called()
 
     def test_install_health_check_bypasses_pending_recovery_and_network(self):
@@ -60,7 +60,7 @@ class LauncherTests(unittest.TestCase):
         with patch.object(worker, "pending_work") as recovery, \
              patch.object(boot, "load_settings") as settings, patch.object(worker, "launch_program", return_value=0) as launch:
             self.assertEqual(boot.main(args, target=self.target), 0)
-            self.assertEqual(launch.call_args.args[0], [str(self.target / "_internal/DollyApp.exe"), *args])
+            self.assertEqual(launch.call_args.args[0], [str(self.target.resolve() / "_internal/DollyApp.exe"), *args])
             self.assertTrue(launch.call_args.kwargs["wait"])
             recovery.assert_not_called(); settings.assert_not_called()
 

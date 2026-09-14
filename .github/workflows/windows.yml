@@ -1,9 +1,9 @@
 name: Build Windows app
 
 on:
+  # Releases are built and tested locally. Keep hosted builds explicitly opt-in;
+  # publishing a version tag must not spend GitHub Actions minutes.
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: read

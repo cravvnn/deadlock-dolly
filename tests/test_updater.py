@@ -252,7 +252,7 @@ class UpdateUITests(unittest.TestCase):
             with patch.object(update_ui, "application_root", return_value=target), \
                  patch.object(update_ui, "check_processes"), patch.object(w.subprocess, "Popen") as launch:
                 m.restart()
-            self.assertEqual(Path(launch.call_args.args[0][0]), work / "DollyUpdater.exe")
+            self.assertEqual(Path(launch.call_args.args[0][0]), work.resolve() / "DollyUpdater.exe")
             self.assertEqual(json.loads((work / "plan.json").read_text())["target"], str(target.resolve()))
             m.app._on_close.assert_called_once()
             self.assertTrue(m.restarting)
