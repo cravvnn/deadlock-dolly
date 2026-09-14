@@ -13,7 +13,7 @@ class ScrollPage(ttk.Frame):
     """One vertical scroll region; wheel events stay within this page."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.canvas = tk.Canvas(self, background="#10151c", highlightthickness=0)
+        self.canvas = tk.Canvas(self, background="#11171c", highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -53,7 +53,10 @@ class ScrollPage(ttk.Frame):
 
 
 def surface_style(parent):
-    background = ttk.Style(parent).lookup(parent.cget("style") or "TFrame", "background")
+    name = parent.cget("style") or "TFrame"
+    if "Card." in name:
+        return "Card.TFrame"
+    background = ttk.Style(parent).lookup(name, "background")
     return "Card.TFrame" if background == ttk.Style(parent).lookup("Card.TFrame", "background") else "TFrame"
 
 
@@ -90,8 +93,10 @@ def field(parent, label, variable, *, values=None):
     frame = ttk.Frame(parent, style=surface_style(parent))
     frame.pack(fill="x", pady=(0, GAP))
     ttk.Label(frame, text=label, style="CardMuted.TLabel" if surface_style(parent) == "Card.TFrame" else "Muted.TLabel").pack(anchor="w", pady=(0, 6))
-    widget = (ttk.Combobox(frame, textvariable=variable, values=values, state="readonly")
-              if values is not None else ttk.Entry(frame, textvariable=variable))
+    widget = (ttk.Combobox(frame, textvariable=variable, values=values, state="readonly",
+                            style="Card.TCombobox" if surface_style(parent) == "Card.TFrame" else "TCombobox")
+              if values is not None else ttk.Entry(frame, textvariable=variable,
+                                                style="Card.TEntry" if surface_style(parent) == "Card.TFrame" else "TEntry"))
     widget.pack(fill="x")
     return widget
 
@@ -103,7 +108,10 @@ def actions(parent, specs, columns=3):
     buttons = []
     for i, spec in enumerate(specs):
         label, command, *style = spec
-        b = ttk.Button(frame, text=label, command=command, style=style[0] if style else "TButton")
+        button_style = style[0] if style else "TButton"
+        if surface_style(parent) == "Card.TFrame":
+            button_style = "Card." + button_style
+        b = ttk.Button(frame, text=label, command=command, style=button_style)
         b.grid(row=i // columns, column=i % columns, sticky="w", padx=(0, 10 if i % columns < columns-1 else 0), pady=(0, 10))
         frame.columnconfigure(i % columns, weight=0)
         buttons.append(b)
@@ -169,7 +177,7 @@ def build_library(app):
     actions(launch.body, (("Browse game...", app._browse_game),), 1)
     app.home_camera_driver_combo = field(launch.body, "Camera driver", app.camera_driver,
                                         values=("Native (experimental)", "Console (legacy)"))
-    app.play_replay_button = ttk.Button(right, text="Open replay in Dolly", style="Primary.TButton", command=app._start_editing_session)
+    app.play_replay_button = ttk.Button(right, text="Open replay in Dolly", style="Card.Primary.TButton", command=app._start_editing_session)
     app.play_replay_button.grid(row=3, column=0, sticky="nw", pady=(0, 10))
     progress = card(body, "Session")
     app.startup_label = ttk.Label(progress, textvariable=app.startup_progress, style="CardMuted.TLabel", wraplength=780)

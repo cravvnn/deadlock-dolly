@@ -326,50 +326,50 @@ void style_panel() {
     style.ItemSpacing = ImVec2(10, 8);
     style.ItemInnerSpacing = ImVec2(8, 6);
     style.WindowRounding = 12;
-    style.ChildRounding = 8;
+    style.ChildRounding = 6;
     style.FrameRounding = 5;
     style.PopupRounding = 6;
     style.GrabRounding = 5;
     style.ScrollbarRounding = 6;
     style.WindowBorderSize = 1;
-    style.ChildBorderSize = 0;
-    style.FrameBorderSize = 0;
+    style.ChildBorderSize = 1;
+    style.FrameBorderSize = 1;
     style.ScrollbarSize = 10;
     style.GrabMinSize = 14;
     style.DisabledAlpha = .45f;
-    style.Colors[ImGuiCol_WindowBg] = panel_color(0x10151c, .985f);
-    style.Colors[ImGuiCol_ChildBg] = panel_color(0x191f28);
-    style.Colors[ImGuiCol_PopupBg] = panel_color(0x191f28);
-    style.Colors[ImGuiCol_Border] = panel_color(0x303c49);
-    style.Colors[ImGuiCol_Text] = panel_color(0xe8edf3);
-    style.Colors[ImGuiCol_TextDisabled] = panel_color(0x8f9eae);
-    style.Colors[ImGuiCol_Button] = panel_color(0x28323f);
-    style.Colors[ImGuiCol_ButtonHovered] = panel_color(0x374757);
-    style.Colors[ImGuiCol_ButtonActive] = panel_color(0x435768);
-    style.Colors[ImGuiCol_FrameBg] = panel_color(0x0e131a);
+    style.Colors[ImGuiCol_WindowBg] = panel_color(0x192229, .985f);
+    style.Colors[ImGuiCol_ChildBg] = panel_color(0x11171c);
+    style.Colors[ImGuiCol_PopupBg] = panel_color(0x192229);
+    style.Colors[ImGuiCol_Border] = panel_color(0x35434c);
+    style.Colors[ImGuiCol_Text] = panel_color(0xe1e8eb);
+    style.Colors[ImGuiCol_TextDisabled] = panel_color(0xa6b7c0);
+    style.Colors[ImGuiCol_Button] = panel_color(0x192229);
+    style.Colors[ImGuiCol_ButtonHovered] = panel_color(0x203039);
+    style.Colors[ImGuiCol_ButtonActive] = panel_color(0x233c3b);
+    style.Colors[ImGuiCol_FrameBg] = panel_color(0x192229);
     style.Colors[ImGuiCol_FrameBgHovered] = panel_color(0x25313e);
     style.Colors[ImGuiCol_FrameBgActive] = panel_color(0x2f4150);
-    style.Colors[ImGuiCol_SliderGrab] = panel_color(0x64d6c3);
-    style.Colors[ImGuiCol_SliderGrabActive] = panel_color(0x8ee7d9);
-    style.Colors[ImGuiCol_CheckMark] = panel_color(0x64d6c3);
+    style.Colors[ImGuiCol_SliderGrab] = panel_color(0x95dbcb);
+    style.Colors[ImGuiCol_SliderGrabActive] = panel_color(0xafe8dc);
+    style.Colors[ImGuiCol_CheckMark] = panel_color(0x95dbcb);
     style.Colors[ImGuiCol_Header] = panel_color(0x274e4b);
     style.Colors[ImGuiCol_HeaderHovered] = style.Colors[ImGuiCol_ButtonHovered];
     style.Colors[ImGuiCol_HeaderActive] = style.Colors[ImGuiCol_ButtonActive];
-    style.Colors[ImGuiCol_Separator] = panel_color(0x303c49);
-    style.Colors[ImGuiCol_ScrollbarBg] = panel_color(0x10151c, 0);
+    style.Colors[ImGuiCol_Separator] = panel_color(0x35434c);
+    style.Colors[ImGuiCol_ScrollbarBg] = panel_color(0x11171c, 0);
     style.Colors[ImGuiCol_ScrollbarGrab] = panel_color(0x354150);
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = panel_color(0x526577);
-    style.Colors[ImGuiCol_ScrollbarGrabActive] = panel_color(0x64d6c3);
-    style.Colors[ImGuiCol_ResizeGrip] = panel_color(0x64d6c3, .15f);
-    style.Colors[ImGuiCol_ResizeGripHovered] = panel_color(0x64d6c3, .45f);
-    style.Colors[ImGuiCol_ResizeGripActive] = panel_color(0x64d6c3, .75f);
-    style.Colors[ImGuiCol_NavCursor] = panel_color(0x64d6c3);
+    style.Colors[ImGuiCol_ScrollbarGrabActive] = panel_color(0x95dbcb);
+    style.Colors[ImGuiCol_ResizeGrip] = panel_color(0x95dbcb, .15f);
+    style.Colors[ImGuiCol_ResizeGripHovered] = panel_color(0x95dbcb, .45f);
+    style.Colors[ImGuiCol_ResizeGripActive] = panel_color(0x95dbcb, .75f);
+    style.Colors[ImGuiCol_NavCursor] = panel_color(0x95dbcb);
     style.Colors[ImGuiCol_TextSelectedBg] = panel_color(0x274e4b);
-    style.Colors[ImGuiCol_PlotHistogram] = panel_color(0x64d6c3);
+    style.Colors[ImGuiCol_PlotHistogram] = panel_color(0x95dbcb);
     style.Colors[ImGuiCol_Tab] = panel_color(0x1b232d);
     style.Colors[ImGuiCol_TabHovered] = panel_color(0x2b3a47);
     style.Colors[ImGuiCol_TabSelected] = panel_color(0x274e4b);
-    style.Colors[ImGuiCol_TabSelectedOverline] = panel_color(0x64d6c3);
+    style.Colors[ImGuiCol_TabSelectedOverline] = panel_color(0x95dbcb);
     style.Colors[ImGuiCol_TabDimmed] = panel_color(0x161d25);
     style.Colors[ImGuiCol_TabDimmedSelected] = panel_color(0x203a39);
     style.Colors[ImGuiCol_TabDimmedSelectedOverline] = panel_color(0x3f6f68);
@@ -546,9 +546,10 @@ bool initialize_device(IDXGISwapChain* chain) {
 void action_button(const char* label, EditorAction action, float width = 0, double value = 0,
                    bool primary = false) {
     if (primary) {
-        ImGui::PushStyleColor(ImGuiCol_Button, panel_color(0x64d6c3));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, panel_color(0x8ee7d9));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, panel_color(0x44baa7));
+        ImGui::PushStyleColor(ImGuiCol_Button, panel_color(0x95dbcb));
+        ImGui::PushStyleColor(ImGuiCol_Border, panel_color(0x95dbcb));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, panel_color(0xafe8dc));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, panel_color(0x77beaf));
         ImGui::PushStyleColor(ImGuiCol_Text, panel_color(0x092620));
         ImGui::PushFont(heading_font);
     }
@@ -556,7 +557,7 @@ void action_button(const char* label, EditorAction action, float width = 0, doub
         editor_enqueue(action, value);
     if (primary) {
         ImGui::PopFont();
-        ImGui::PopStyleColor(4);
+        ImGui::PopStyleColor(5);
     }
 }
 void section_title(const char* title, const char* detail = nullptr) {
@@ -575,9 +576,10 @@ void section_title(const char* title, const char* detail = nullptr) {
 }
 bool begin_panel_card(const char* name) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14 * panel_scale, 12 * panel_scale));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, panel_color(0x191f28));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, panel_color(0x11171c));
     return ImGui::BeginChild(name, ImVec2(0, 0),
-                             ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
+                             ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY |
+                                 ImGuiChildFlags_AlwaysUseWindowPadding,
                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 }
 void end_panel_card() {
@@ -599,7 +601,7 @@ void replay_badge(const EditorSnapshot& state) {
                                               5 * panel_scale);
     ImGui::GetWindowDrawList()->AddCircleFilled(
         ImVec2(start.x + 11 * panel_scale, start.y + size.y / 2), 3 * panel_scale,
-        ImGui::GetColorU32(panel_color(0x64d6c3)));
+        ImGui::GetColorU32(panel_color(0x95dbcb)));
     ImGui::GetWindowDrawList()->AddText(
         ImVec2(start.x + 20 * panel_scale, start.y + 5 * panel_scale),
         ImGui::GetColorU32(panel_color(0x9be5d9)), text);

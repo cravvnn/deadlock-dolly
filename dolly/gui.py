@@ -43,11 +43,11 @@ from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CO
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
 FIELD_LABELS = ("Shot seconds", "X", "Y", "Height · Z", "Pitch °", "Yaw °", "Bank °", "Aspect ratio")
-BG = "#10151c"
-PANEL = "#182229"
-TEXT = "#e8edf3"
-MUTED = "#8f9eae"
-ACCENT = "#64d6c3"
+BG = "#11171c"
+PANEL = "#192229"
+TEXT = "#e1e8eb"
+MUTED = "#a6b7c0"
+ACCENT = "#95dbcb"
 LOG = logging.getLogger("dolly")
 ASPECT_PRESETS = {"16:9": 16 / 9, "16:10": 16 / 10, "21:9": 21 / 9, "4:3": 4 / 3}
 
@@ -448,7 +448,7 @@ class DollyApp:
             return
         selected = self.notebook.select()
         for tab, button in self.navigation.items():
-            button.configure(style="Nav.Primary.TButton" if selected == tab else "Quiet.TButton")
+            button.configure(style="Selected.Nav.TButton" if selected == tab else "Nav.TButton")
         if selected in (str(self.camera_tab), str(self.cvar_tab)):
             self.timeline_frame.grid()
         else:

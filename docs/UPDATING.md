@@ -63,8 +63,8 @@ recovery needs only Dolly.exe.
    FFmpeg, and matching native/Python components. Both GUI and updater smoke
    checks must pass.
 3. Create a release from the intended commit on main, using a tag such as
-   `v0.5.6-alpha`. Attach the generated
-   `Deadlock_Dolly_0.5.6-alpha_Windows_x64.zip`, source ZIP and SHA256SUMS.txt.
+   `v0.5.7-alpha`. Attach the generated
+   `Deadlock_Dolly_0.5.7-alpha_Windows_x64.zip`, source ZIP and SHA256SUMS.txt.
 4. Leave GitHub's pre-release box unchecked and mark the release Latest.
    "alpha" can remain in the title and version. GitHub must expose the uploaded
    Windows asset's SHA-256 digest before the updater accepts it.

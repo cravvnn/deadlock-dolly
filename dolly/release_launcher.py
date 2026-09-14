@@ -75,18 +75,18 @@ class StartupWindow:
         self.root = tk.Tk()
         self.root.title("Deadlock Dolly")
         self.root.resizable(False, False)
-        self.root.configure(background="#10151c")
+        self.root.configure(background="#11171c")
 
         icon = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])) / "assets/dolly.ico"
         if icon.is_file():
             self.root.iconbitmap(str(icon))
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        style.configure("Startup.TFrame", background="#10151c")
-        style.configure("Startup.TLabel", background="#10151c", foreground="#e6eef4", font=("Segoe UI", 10))
+        style.configure("Startup.TFrame", background="#11171c")
+        style.configure("Startup.TLabel", background="#11171c", foreground="#e1e8eb", font=("Segoe UI", 10))
         style.configure("Title.Startup.TLabel", font=("Segoe UI", 16, "bold"))
-        style.configure("Startup.Horizontal.TProgressbar", background="#68d4c3", troughcolor="#23323b", bordercolor="#23323b", lightcolor="#68d4c3", darkcolor="#68d4c3", borderwidth=0)
-        style.configure("Startup.TButton", padding=(12, 7), background="#23323b", foreground="#e6eef4", font=("Segoe UI", 10), borderwidth=0)
+        style.configure("Startup.Horizontal.TProgressbar", background="#95dbcb", troughcolor="#23323b", bordercolor="#23323b", lightcolor="#95dbcb", darkcolor="#95dbcb", borderwidth=0)
+        style.configure("Startup.TButton", padding=(12, 7), background="#23323b", foreground="#e1e8eb", font=("Segoe UI", 10), borderwidth=0)
         body = ttk.Frame(self.root, style="Startup.TFrame", padding=24)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="DEADLOCK DOLLY", style="Title.Startup.TLabel").pack(anchor="w")
