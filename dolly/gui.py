@@ -44,7 +44,7 @@ from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CO
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
 FIELD_LABELS = ("Shot seconds", "X", "Y", "Height · Z", "Pitch °", "Yaw °", "Bank °", "Aspect ratio")
 BG = "#10151c"
-PANEL = "#191f28"
+PANEL = "#182229"
 TEXT = "#e8edf3"
 MUTED = "#8f9eae"
 ACCENT = "#64d6c3"
@@ -294,6 +294,10 @@ class DollyApp:
         self.root.bind_class("TCombobox", "<<ComboboxSelected>>",
                              _clear_committed_combobox_selection, add="+")
 
+        from dolly import gui_theme
+        gui_theme.apply(self.root, BG, PANEL, TEXT, MUTED, ACCENT)
+        gui_theme.install_wheel_guard(self.root)
+
     def _build_menu(self):
         menu = tk.Menu(self.root)
         file_menu = tk.Menu(menu, tearoff=False)
@@ -444,7 +448,7 @@ class DollyApp:
             return
         selected = self.notebook.select()
         for tab, button in self.navigation.items():
-            button.configure(style="Primary.TButton" if selected == tab else "Quiet.TButton")
+            button.configure(style="Nav.Primary.TButton" if selected == tab else "Quiet.TButton")
         if selected in (str(self.camera_tab), str(self.cvar_tab)):
             self.timeline_frame.grid()
         else:

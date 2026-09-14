@@ -327,6 +327,9 @@ tests/test_desktop_layout.py
 dolly/updater.py
 dolly/update_worker.py
 dolly/update_ui.py
-packaging/update_entrypoint.py
+packaging/bootstrap_entrypoint.py
 tests/test_updater.py
 docs/UPDATING.md
+dolly/release_launcher.py
+dolly/gui_theme.py
+tests/test_release_launcher.py

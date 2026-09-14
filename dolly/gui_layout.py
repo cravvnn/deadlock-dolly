@@ -13,7 +13,7 @@ class ScrollPage(ttk.Frame):
     """One vertical scroll region; wheel events stay within this page."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.canvas = tk.Canvas(self, background="#10171d", highlightthickness=0)
+        self.canvas = tk.Canvas(self, background="#10151c", highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -31,12 +31,16 @@ class ScrollPage(ttk.Frame):
     def _wheel(self, event):
         target = event.widget
         while target is not None and target is not self:
-            if isinstance(target, (ttk.Treeview, ttk.Combobox, tk.Text)):
+            if isinstance(target, (ttk.Treeview, tk.Text)):
                 return
             target = getattr(target, "master", None)
         if target is self and self.canvas.yview() != (0.0, 1.0):
-            self.canvas.yview_scroll(-int(event.delta / 120), "units")
+            self.scroll_page_wheel(event)
             return "break"
+
+    def scroll_page_wheel(self, event):
+        amount = -int(event.delta / 120) if event.delta else (-1 if getattr(event, "num", 0) == 4 else 1)
+        self.canvas.yview_scroll(amount, "units")
 
     def _destroyed(self, event):
         if event.widget is self:
@@ -48,14 +52,20 @@ class ScrollPage(ttk.Frame):
         self.canvas.yview_moveto(max(0, y - GAP) / max(1, self.body.winfo_height()))
 
 
+def surface_style(parent):
+    background = ttk.Style(parent).lookup(parent.cget("style") or "TFrame", "background")
+    return "Card.TFrame" if background == ttk.Style(parent).lookup("Card.TFrame", "background") else "TFrame"
+
+
 class Disclosure(ttk.Frame):
     def __init__(self, parent, title):
-        super().__init__(parent)
+        frame_style = surface_style(parent)
+        super().__init__(parent, style=frame_style)
         self.title = title
         self.opened = False
-        self.toggle = ttk.Button(self, text=">  " + title, command=self.flip, style="Quiet.TButton")
+        self.toggle = ttk.Button(self, text=">  " + title, command=self.flip, style="Disclosure.Card.TButton" if frame_style == "Card.TFrame" else "Disclosure.TButton")
         self.toggle.pack(anchor="w")
-        self.body = ttk.Frame(self, padding=(0, GAP, 0, 0))
+        self.body = ttk.Frame(self, style=frame_style, padding=(0, 8, 0, 0))
 
     def flip(self):
         self.set_open(not self.opened)
@@ -70,16 +80,16 @@ class Disclosure(ttk.Frame):
 
 
 def card(parent, title):
-    frame = ttk.Frame(parent, style="Card.TFrame", padding=18)
+    frame = ttk.Frame(parent, style="Rounded.Card.TFrame", padding=14)
     frame.pack(fill="x", pady=(0, GAP))
     ttk.Label(frame, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, GAP))
     return frame
 
 
 def field(parent, label, variable, *, values=None):
-    frame = ttk.Frame(parent, style="Card.TFrame")
+    frame = ttk.Frame(parent, style=surface_style(parent))
     frame.pack(fill="x", pady=(0, GAP))
-    ttk.Label(frame, text=label, style="CardMuted.TLabel").pack(anchor="w", pady=(0, 6))
+    ttk.Label(frame, text=label, style="CardMuted.TLabel" if surface_style(parent) == "Card.TFrame" else "Muted.TLabel").pack(anchor="w", pady=(0, 6))
     widget = (ttk.Combobox(frame, textvariable=variable, values=values, state="readonly")
               if values is not None else ttk.Entry(frame, textvariable=variable))
     widget.pack(fill="x")
@@ -88,14 +98,14 @@ def field(parent, label, variable, *, values=None):
 
 def actions(parent, specs, columns=3):
     """Bounded wrapping rows, never an unbounded horizontal pack of buttons."""
-    frame = ttk.Frame(parent, style="Card.TFrame")
+    frame = ttk.Frame(parent, style=surface_style(parent))
     frame.pack(fill="x")
     buttons = []
     for i, spec in enumerate(specs):
         label, command, *style = spec
         b = ttk.Button(frame, text=label, command=command, style=style[0] if style else "TButton")
-        b.grid(row=i // columns, column=i % columns, sticky="ew", padx=(0, 10), pady=(0, 10))
-        frame.columnconfigure(i % columns, weight=1)
+        b.grid(row=i // columns, column=i % columns, sticky="w", padx=(0, 10 if i % columns < columns-1 else 0), pady=(0, 10))
+        frame.columnconfigure(i % columns, weight=0)
         buttons.append(b)
     return buttons
 
@@ -116,8 +126,8 @@ def build_library(app):
     pair.pack(fill="both", expand=True, pady=(0, GAP))
     for col in (0, 1):
         pair.columnconfigure(col, weight=1, uniform="library")
-    left = ttk.Frame(pair, style="Card.TFrame", padding=18)
-    right = ttk.Frame(pair, style="Card.TFrame", padding=18)
+    left = ttk.Frame(pair, style="Rounded.Card.TFrame", padding=14)
+    right = ttk.Frame(pair, style="Rounded.Card.TFrame", padding=14)
     left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
     right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
     for frame, title in ((left, "Replay library"), (right, "Selected replay")):
@@ -160,7 +170,7 @@ def build_library(app):
     app.home_camera_driver_combo = field(launch.body, "Camera driver", app.camera_driver,
                                         values=("Native (experimental)", "Console (legacy)"))
     app.play_replay_button = ttk.Button(right, text="Open replay in Dolly", style="Primary.TButton", command=app._start_editing_session)
-    app.play_replay_button.grid(row=3, column=0, sticky="new", pady=(0, 10))
+    app.play_replay_button.grid(row=3, column=0, sticky="nw", pady=(0, 10))
     progress = card(body, "Session")
     app.startup_label = ttk.Label(progress, textvariable=app.startup_progress, style="CardMuted.TLabel", wraplength=780)
     app.startup_label.pack(fill="x", pady=(0, GAP))
@@ -188,7 +198,7 @@ def build_settings(app):
     updates = card(body, "Updates")
     app.auto_updates = tk.BooleanVar(value=app.app_settings.auto_updates)
     app.update_status = tk.StringVar(value="Checks published Latest releases; experimental pre-releases are ignored.")
-    ttk.Checkbutton(updates, text="Download and install updates automatically when idle", variable=app.auto_updates,
+    ttk.Checkbutton(updates, style="Card.TCheckbutton", text="Download and install updates automatically when idle", variable=app.auto_updates,
                     command=app._save_update_preference).pack(anchor="w", pady=(0, GAP))
     app.update_check_button = actions(updates, (("Check for updates", app._check_updates),), 1)[0]
     ttk.Label(updates, textvariable=app.update_status, wraplength=700, style="CardMuted.TLabel").pack(fill="x")
@@ -224,6 +234,7 @@ def build_export(app):
     page = ScrollPage(app.export_tab)
     page.pack(fill="both", expand=True)
     app.export_page = page
+    recording_holder.configure(padding=(16, GAP, 16 + page.scrollbar.winfo_reqwidth(), 0))
     body = page.body
     ttk.Label(body, text="Export", style="Section.TLabel").pack(anchor="w", pady=(0, GAP))
     destination = card(body, "Destination")
@@ -240,19 +251,22 @@ def build_export(app):
     right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
     passes = card(left, "Output passes")
     ttk.Label(passes, text="Color video is always included", style="CardMuted.TLabel").pack(anchor="w", pady=(0, GAP))
-    app.video_depth_checkbox = ttk.Checkbutton(passes, text="Depth master (.mov)", variable=app.video_depth, command=app._depth_toggled)
+    app.video_depth_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="Depth master (.mov)", variable=app.video_depth, command=app._depth_toggled)
     app.video_depth_checkbox.pack(anchor="w", pady=(0, GAP))
-    app.video_depth_exr_checkbox = ttk.Checkbutton(passes, text="EXR sequence (float)", variable=app.video_depth_exr)
+    app.video_depth_exr_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="EXR sequence (float)", variable=app.video_depth_exr)
     app.video_depth_exr_checkbox.pack(anchor="w", pady=(0, GAP))
     app.video_layer_checkboxes = []
     for title, var in (("World layer", app.video_layer_world), ("Players layer (alpha)", app.video_layer_players), ("Effects layer (alpha)", app.video_layer_effects)):
-        cb = ttk.Checkbutton(passes, text=title, variable=var, command=app._layer_toggled)
+        cb = ttk.Checkbutton(passes, style="Card.TCheckbutton", text=title, variable=var, command=app._layer_toggled)
         cb.pack(anchor="w", pady=(0, GAP))
         app.video_layer_checkboxes.append(cb)
     capture = card(right, "Capture")
+    passes.pack_configure(fill="both", expand=True)
+    capture.pack_configure(fill="both", expand=True)
+    app.export_passes_card, app.export_capture_card = passes, capture
     app.video_fps_combo = field(capture, "Video FPS", app.video_fps, values=("30", "60", "120", "300", "600"))
     app.video_speed_combo = field(capture, "Export speed", app.video_export_speed, values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"))
-    app.video_fixed_checkbox = ttk.Checkbutton(capture, text="Fixed-step export (frame-accurate)", variable=app.video_fixed_step)
+    app.video_fixed_checkbox = ttk.Checkbutton(capture, style="Card.TCheckbutton", text="Fixed-step export (frame-accurate)", variable=app.video_fixed_step)
     app.video_fixed_checkbox.pack(anchor="w", pady=(0, GAP))
     quality = disclosure(capture, "Encoder & quality")
     app.video_codec_combo = field(quality.body, "Encoder", app.video_codec, values=tuple(c[1] for c in CODEC_CHOICES))

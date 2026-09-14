@@ -72,8 +72,9 @@ files. Windows EXE build instructions are in [BUILDING.md](docs/BUILDING.md).
 
 ## Application updates
 
-Starting with 0.5.5-alpha, the Windows package checks the published GitHub Latest
-release and updates automatically when idle. Settings, shots and external tool
+Starting with 0.5.6-alpha, opening Dolly.exe shows a startup update check against
+the published GitHub Latest release and updates automatically when safe. The
+updater is built into Dolly.exe; the editor runtime stays under _internal. Settings, shots and external tool
 paths are preserved. Use Settings / Updates for manual checks or to turn off
 automatic installation. See [Updating Dolly](docs/UPDATING.md) for release
 publishing and interrupted-update recovery.

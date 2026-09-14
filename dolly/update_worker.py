@@ -1,4 +1,4 @@
-"""Separate update process: backed-up file replacement and recoverable rollback."""
+"""Embedded update process: backed-up file replacement and recoverable rollback."""
 from __future__ import annotations
 import argparse
 from contextlib import contextmanager
@@ -181,6 +181,8 @@ def notify(text):
 
 def check_processes(target, exclude_pid=0):
     """Conservative last-moment guard, independent of desktop telemetry."""
+    excluded = {exclude_pid} if isinstance(exclude_pid, int) else set(exclude_pid)
+    target = Path(target).resolve()
     from ctypes import wintypes as wt
     class Entry(ctypes.Structure):
         _fields_ = [("size", wt.DWORD), ("usage", wt.DWORD), ("pid", wt.DWORD),
@@ -206,7 +208,7 @@ def check_processes(target, exclude_pid=0):
         while more:
             if entry.name.lower() == "deadlock.exe":
                 raise RuntimeError("Close Deadlock before installing the update")
-            if entry.name.lower() == "dolly.exe" and entry.pid != exclude_pid:
+            if entry.name.lower() in ("dolly.exe", "dollyapp.exe") and entry.pid not in excluded:
                 handle = api.OpenProcess(0x1000, False, entry.pid)
                 if not handle:
                     raise RuntimeError("Cannot verify another Dolly process; close it before updating")
@@ -214,13 +216,56 @@ def check_processes(target, exclude_pid=0):
                     buffer = ctypes.create_unicode_buffer(32768); length = wt.DWORD(len(buffer))
                     if not api.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(length)):
                         raise OSError("Cannot identify another Dolly process")
-                    if Path(buffer.value).resolve() == target / "Dolly.exe":
+                    if Path(buffer.value).resolve() in (target / "Dolly.exe", target / "_internal/DollyApp.exe"):
                         raise RuntimeError("Another instance of this Dolly installation is still open")
                 finally:
                     api.CloseHandle(handle)
             more = api.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         api.CloseHandle(snapshot)
+
+
+def launch_program(command, cwd, *, wait=False):
+    from .runtime import external_program_environment
+    with external_program_environment() as environment:
+        environment = dict(os.environ) if environment is None else environment
+        environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        process = subprocess.Popen(command, cwd=cwd, env=environment,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return process.wait() if wait else process
+
+
+def launch_worker(target, work, *, recover=False, parent_pid=None):
+    target, work = Path(target).resolve(), Path(work).resolve()
+    if work.parent != target.parent or not work.name.startswith(".dolly-update-"):
+        raise ValueError("Unexpected update workspace")
+    # A private copy can replace Dolly.exe after both onefile processes close.
+    helper = work / "DollyUpdater.exe"
+    if not recover:
+        shutil.copyfile(target / "Dolly.exe", helper)
+        atomic_json(work / "plan.json", {"work": str(work), "target": str(target)})
+    elif not helper.is_file():
+        shutil.copyfile(target / "Dolly.exe", helper)
+    command = [str(helper), "--plan", str(work / "plan.json"), "--parent",
+               str(os.getpid() if parent_pid is None else parent_pid)]
+    if recover:
+        command.append("--recover")
+    return launch_program(command, work)
+
+
+def pending_work(target):
+    target = Path(target).resolve()
+    marker = target / PENDING
+    if not marker.exists():
+        return None
+    plan = json.loads(marker.read_text(encoding="utf-8"))
+    work = Path(plan["work"]).resolve()
+    if Path(plan["target"]).resolve() != target or work.parent != target.parent or not work.name.startswith(".dolly-update-"):
+        raise ValueError("Invalid pending update recovery location")
+    saved = json.loads((work / "plan.json").read_text(encoding="utf-8"))
+    if saved != plan:
+        raise ValueError("Pending update plan disagrees with recovery journal")
+    return work
 
 
 def self_test(report):
@@ -230,7 +275,7 @@ def self_test(report):
         with tempfile.TemporaryDirectory(prefix="Dolly updater test ") as directory:
             root = Path(directory); target = root / "installed"; work = root / ".dolly-update-test"
             for folder, version in ((target, "1.0.0"), (work / "payload", "1.0.1")):
-                for name in ("Dolly.exe", "DollyUpdater.exe", "_internal/native/bin/win64/DollyNative.dll",
+                for name in ("Dolly.exe", "_internal/DollyApp.exe", "_internal/native/bin/win64/DollyNative.dll",
                              "_internal/third_party/ffmpeg/bin/ffmpeg.exe"):
                     path = folder / name; path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(version)
@@ -306,7 +351,7 @@ def main(argv=None):
     else:
         atomic_json(work / "result.json", {"passed": True, "recovered": args.recover})
     if not args.no_relaunch:
-        subprocess.Popen([str(target / "Dolly.exe"), "--updated"], cwd=target)
+        launch_program([str(target / "Dolly.exe"), "--updated"], target)
     return 0
 
 

@@ -20,7 +20,11 @@ def is_frozen() -> bool:
 def application_root(source_root: Path | None = None) -> Path:
     """Persistent portable data stays beside Dolly.exe, never inside _internal."""
     if is_frozen():
-        return Path(sys.executable).resolve().parent
+        executable = Path(sys.executable).resolve()
+        folder = executable.parent
+        if executable.name.lower() == "dollyapp.exe" and folder.name.lower() == "_internal":
+            return folder.parent
+        return folder
     return Path(source_root) if source_root is not None else Path(__file__).resolve().parents[1]
 
 

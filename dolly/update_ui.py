@@ -1,11 +1,8 @@
 """Nonblocking desktop update checks; Tk is only touched on the UI thread."""
 from __future__ import annotations
-import json
 import os
 from pathlib import Path
 import queue
-import shutil
-import subprocess
 import threading
 import time
 from tkinter import ttk
@@ -13,7 +10,7 @@ from . import __version__
 from .runtime import application_root, is_frozen
 from . import updater
 from .video_export import ACTIVE_STATES
-from .update_worker import atomic_json, check_processes, PENDING
+from .update_worker import check_processes, pending_work, launch_worker
 
 
 class UpdateUI:
@@ -82,14 +79,8 @@ class UpdateUI:
             return
         work, version = self.ready
         target = application_root().resolve()
-        plan = {"work": str(work.resolve()), "target": str(target)}
         try:
-            # Run a copy of the current updater, outside the files it replaces.
-            helper = work / "DollyUpdater.exe"
-            shutil.copyfile(target / "DollyUpdater.exe", helper)
-            atomic_json(work / "plan.json", plan)
-            subprocess.Popen([str(helper), "--plan", str(work / "plan.json"), "--parent", str(os.getpid())],
-                             cwd=work, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            launch_worker(target, work)
         except OSError as error:
             self.app.update_status.set("Could not start updater: " + str(error))
             return
@@ -129,14 +120,8 @@ def recover_pending():
     if not is_frozen():
         return False
     target = application_root().resolve()
-    marker = target / PENDING
-    if not marker.exists():
+    work = pending_work(target)
+    if work is None:
         return False
-    plan = json.loads(marker.read_text(encoding="utf-8"))
-    work = Path(plan["work"]).resolve()
-    if Path(plan["target"]).resolve() != target or work.parent != target.parent or not work.name.startswith(".dolly-update-"):
-        raise ValueError("Invalid pending update recovery location")
-    helper = work / "DollyUpdater.exe"
-    subprocess.Popen([str(helper), "--plan", str(work / "plan.json"), "--parent", str(os.getpid()), "--recover"],
-                     cwd=work, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    launch_worker(target, work, recover=True)
     return True

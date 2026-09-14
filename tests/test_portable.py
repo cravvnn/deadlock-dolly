@@ -46,6 +46,11 @@ class PortableRuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.resource_root(), self.bundle)
             self.assertNotEqual(runtime.application_root() / "logs", self.bundle / "logs")
 
+    def test_internal_editor_keeps_settings_logs_and_install_root_beside_public_exe(self):
+        with self.frozen(), patch.object(sys, "executable", str(self.bundle / "DollyApp.exe")):
+            self.assertEqual(runtime.application_root(), self.app.resolve())
+            self.assertEqual(runtime.resource_root(), self.bundle)
+
     def test_source_game_launch_leaves_environment_and_native_api_untouched(self):
         with patch.object(sys, "frozen", False, create=True), \
                 patch.object(ctypes, "WinDLL", create=True) as api:

@@ -14,13 +14,13 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 exe = EXE(
-    pyz, a.scripts, [], exclude_binaries=True, name="Dolly",
+    pyz, a.scripts, [], exclude_binaries=True, name="DollyApp",
     debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
     console=False, disable_windowed_traceback=False,
     icon=str(root / "assets" / "dolly.ico"),
     version=str(root / "build" / "windows-version.txt"),
-    contents_directory="_internal",
+    contents_directory=".",
 )
-bundle = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="DeadlockDolly")
+bundle = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="DollyAppRuntime")
 # The official game DLL is copied byte-for-byte AFTER freezing by the build
 # script. PyInstaller must not analyze/rewrite it as a Python dependency.

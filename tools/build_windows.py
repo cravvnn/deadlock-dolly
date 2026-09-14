@@ -131,15 +131,23 @@ def main() -> int:
                     "--distpath", str(build / "frozen"), "--workpath", str(build / "pyinstaller"),
                     str(ROOT / "packaging" / "dolly.spec")], cwd=ROOT, check=True)
     bundle = build / "frozen" / "DeadlockDolly"
-    print("Building the standalone update/recovery helper...", flush=True)
+    # Collect a flat editor runtime beneath the public self-contained launcher.
+    if bundle.exists():
+        if not bundle.resolve().is_relative_to(ROOT.resolve()) or bundle.is_symlink() or bundle.is_junction():
+            raise RuntimeError("Unexpected bundle cleanup path")
+        shutil.rmtree(bundle)
+    shutil.copytree(build / "frozen/DollyAppRuntime", bundle / "_internal")
+    print("Building Dolly.exe with embedded startup/update recovery...", flush=True)
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
-                    "--name", "DollyUpdater", "--paths", str(ROOT), "--distpath", str(build / "updater"),
-                    "--workpath", str(build / "updater-work"), "--specpath", str(build / "updater-spec"),
-                    str(ROOT / "packaging" / "update_entrypoint.py")], cwd=ROOT, check=True)
-    shutil.copy2(build / "updater" / "DollyUpdater.exe", bundle / "DollyUpdater.exe")
-    subprocess.run([str(bundle / "DollyUpdater.exe"), "--self-test", str(checks / "updater-smoke.json")], check=True, timeout=60)
+                    "--name", "Dolly", "--paths", str(ROOT), "--distpath", str(build / "bootstrap"),
+                    "--workpath", str(build / "bootstrap-work"), "--specpath", str(build / "bootstrap-spec"),
+                    "--icon", str(ROOT / "assets/dolly.ico"), "--version-file", str(build / "windows-version.txt"),
+                    "--add-data", str(ROOT / "assets/dolly.ico") + ";assets",
+                    str(ROOT / "packaging/bootstrap_entrypoint.py")], cwd=ROOT, check=True)
+    shutil.copy2(build / "bootstrap/Dolly.exe", bundle / "Dolly.exe")
+    subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test", str(checks / "updater-smoke.json")], check=True, timeout=60)
     if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
-        raise RuntimeError("Standalone updater smoke test failed")
+        raise RuntimeError("Embedded updater smoke test failed")
     third_party = bundle / "_internal" / "third_party"
     shutil.copytree(ROOT / "third_party", third_party, dirs_exist_ok=True)
     print("Staging bundled FFmpeg (LGPL)...", flush=True)

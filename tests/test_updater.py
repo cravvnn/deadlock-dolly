@@ -247,10 +247,10 @@ class UpdateUITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "install"; target.mkdir()
             work = Path(directory) / ".dolly-update-verified"; work.mkdir()
-            (target / "DollyUpdater.exe").write_bytes(b"helper")
+            (target / "Dolly.exe").write_bytes(b"helper")
             m = self.manager(); m.ready = (work, "1.0.1")
             with patch.object(update_ui, "application_root", return_value=target), \
-                 patch.object(update_ui, "check_processes"), patch.object(update_ui.subprocess, "Popen") as launch:
+                 patch.object(update_ui, "check_processes"), patch.object(w.subprocess, "Popen") as launch:
                 m.restart()
             self.assertEqual(Path(launch.call_args.args[0][0]), work / "DollyUpdater.exe")
             self.assertEqual(json.loads((work / "plan.json").read_text())["target"], str(target.resolve()))

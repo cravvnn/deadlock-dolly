@@ -55,7 +55,7 @@ def read_manifest(root):
     if path.stat().st_size > 8 * 1024 * 1024:
         raise ValueError("Update manifest is too large")
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema") != 1 or not isinstance(data.get("files"), dict):
+    if data.get("schema") not in (1, 2) or not isinstance(data.get("files"), dict):
         raise ValueError("Unsupported update manifest")
     version_key(data["version"])
     folded = set()
@@ -63,7 +63,8 @@ def read_manifest(root):
         if not owned_name(name) or name.lower() in folded or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError("Invalid update manifest file")
         folded.add(name.lower())
-    if not {"Dolly.exe", "DollyUpdater.exe", "_internal/native/bin/win64/DollyNative.dll",
+    entry = "_internal/DollyApp.exe" if data["schema"] == 2 else "DollyUpdater.exe"
+    if not {"Dolly.exe", entry, "_internal/native/bin/win64/DollyNative.dll",
             "_internal/third_party/ffmpeg/bin/ffmpeg.exe"} <= data["files"].keys():
         raise ValueError("Update is missing required application files")
     return data
@@ -71,7 +72,7 @@ def read_manifest(root):
 
 def write_manifest(root, version):
     root = Path(root)
-    data = {"schema": 1, "version": version, "files": {p.relative_to(root).as_posix(): digest_file(p)
+    data = {"schema": 2 if (root / "_internal/DollyApp.exe").is_file() else 1, "version": version, "files": {p.relative_to(root).as_posix(): digest_file(p)
             for p in sorted(root.rglob("*")) if p.is_file() and owned_name(p.relative_to(root).as_posix())}}
     (root / MANIFEST).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     read_manifest(root)

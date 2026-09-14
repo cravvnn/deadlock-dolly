@@ -1,12 +1,17 @@
 # Published release updates
 
-Dolly 0.5.5-alpha is the first updater-enabled Windows build. Earlier ZIPs need
-one manual download. Source checkouts still use the local build workflow.
+Dolly 0.5.6-alpha introduces the single-entry-point Windows updater. Earlier public
+ZIPs and the unpublished 0.5.5 preview need one manual download of this package.
+Future releases use the same startup updater. Source checkouts still use the
+local build workflow.
 
 ## For users
 
-Packaged Dolly checks GitHub's public Latest release when it opens. A newer
-Windows package downloads in the background, is verified against GitHub's SHA-256
+Open `Dolly.exe`. Its startup window shows **Checking for updates...** before
+opening the editor. **Open Dolly** skips a slow check. Only this executable is
+shown at the top of the folder; its editor runtime stays under `_internal`.
+
+Dolly checks GitHub's public Latest release. A newer Windows package downloads, is verified against GitHub's SHA-256
 digest and its file manifest, then installs when the desktop has no unsaved shot,
 operation, recording, open dialog or active Deadlock session. Dolly closes,
 checks the replacement application and reopens at the same path. Shortcuts keep
@@ -37,23 +42,29 @@ failure. Staging and backups are kept in a `.dolly-update-*` folder beside Dolly
 Those folders contain update diagnostics and may be removed after confirming the
 new build works; do not remove them while an update or recovery is pending.
 
-After an interrupted update, opening Dolly attempts recovery. If Dolly itself
-cannot start (for example, power failed during replacement), close Deadlock and
-double-click `DollyUpdater.exe` beside it. This self-contained helper restores
-the journaled application files and reopens Dolly. It does not restore, replace,
-or downgrade the user's preferences or shot files. Recovery also needs the
-`.dolly-update-*` folder and its verified backups to remain available.
+After an interrupted update, close Deadlock and open `Dolly.exe` again. This
+self-contained launcher can recover even if the editor runtime in `_internal`
+is incomplete. It starts a private copy of its embedded update worker, waits for
+the old processes to close, restores journaled application files, then reopens
+Dolly. No separate updater executable is installed beside Dolly.exe.
+
+Recovery does not restore, replace or downgrade your preferences or shot files.
+Keep the neighboring `.dolly-update-*` folder and verified backups until recovery
+finishes. If the public Dolly.exe itself is damaged and cannot start, the private
+`DollyUpdater.exe` in that recovery folder can be run with `--plan plan.json
+--recover`; otherwise extract a fresh release into a separate folder. Ordinary
+recovery needs only Dolly.exe.
 
 ## For the publisher
 
 1. Use a new increasing version in `dolly/__init__.py` for every public build.
 2. Build locally with `tools/build_windows.py`; do not build on GitHub Actions.
-   The build includes DollyUpdater.exe, an application file manifest, bundled
+   The build includes Dolly.exe with embedded update/recovery, a file manifest, bundled
    FFmpeg, and matching native/Python components. Both GUI and updater smoke
    checks must pass.
 3. Create a release from the intended commit on main, using a tag such as
-   `v0.5.5-alpha`. Attach the generated
-   `Deadlock_Dolly_0.5.5-alpha_Windows_x64.zip`, source ZIP and SHA256SUMS.txt.
+   `v0.5.6-alpha`. Attach the generated
+   `Deadlock_Dolly_0.5.6-alpha_Windows_x64.zip`, source ZIP and SHA256SUMS.txt.
 4. Leave GitHub's pre-release box unchecked and mark the release Latest.
    "alpha" can remain in the title and version. GitHub must expose the uploaded
    Windows asset's SHA-256 digest before the updater accepts it.

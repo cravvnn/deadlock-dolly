@@ -23,6 +23,8 @@ class DesktopLayoutTests(unittest.TestCase):
     def close_app(self):
         self.app.closed = True
         self.app.jobs.put(None)
+        for timer in self.root.tk.splitlist(self.root.tk.call("after", "info")):
+            self.root.tk.call("after", "cancel", timer)
         self.root.destroy()
 
     def test_layout_switch_preserves_shot_and_export_settings(self):
@@ -66,3 +68,40 @@ class DesktopLayoutTests(unittest.TestCase):
             self.app._toggle_full_editor()
         save.assert_not_called()
         self.assertFalse(self.app.full_editor.get())
+
+    def test_mouse_wheel_scrolls_page_without_changing_closed_option(self):
+        self.root.deiconify(); self.root.geometry("1000x700")
+        self.app.notebook.select(self.app.export_tab); self.root.update()
+        combo = self.app.video_fps_combo
+        value = combo.get(); page = self.app.export_page.canvas
+        page.yview_moveto(0); self.root.update()
+        before = page.yview()
+        combo.event_generate("<MouseWheel>", delta=-120); self.root.update()
+        self.assertEqual(combo.get(), value)
+        self.assertGreater(page.yview()[0], before[0])
+        # Explicit dropdown selection remains available.
+        combo.current(2); combo.event_generate("<<ComboboxSelected>>")
+        self.assertEqual(self.app.video_fps.get(), "120")
+
+    def test_export_cards_align_when_encoder_options_expand(self):
+        from dolly.gui_layout import Disclosure
+        self.root.deiconify(); self.root.geometry("1180x800")
+        self.app.notebook.select(self.app.export_tab); self.root.update()
+        left, right = self.app.export_passes_card, self.app.export_capture_card
+        for expanded in (False, True):
+            for child in right.winfo_children():
+                if isinstance(child, Disclosure): child.set_open(expanded)
+            self.root.update()
+            self.assertEqual(left.winfo_rooty(), right.winfo_rooty())
+            self.assertEqual(left.winfo_height(), right.winfo_height())
+
+    def test_launch_setup_inherits_card_surface_through_nested_fields(self):
+        from dolly.gui_layout import Disclosure
+        from tkinter import ttk
+        combo = self.app.home_camera_driver_combo
+        frame = combo.master
+        while not isinstance(frame, Disclosure):
+            self.assertEqual(ttk.Style(frame).lookup(frame.cget("style"), "background"),
+                             ttk.Style(frame).lookup("Card.TFrame", "background"))
+            frame = frame.master
+        self.assertEqual(str(frame.toggle.cget("style")), "Disclosure.Card.TButton")
