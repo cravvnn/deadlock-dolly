@@ -24,6 +24,9 @@ extern "C" BOOL WINAPI K32EnumProcessModules(HANDLE process, HMODULE* modules, D
 namespace dolly {
 namespace {
 constexpr std::uint32_t kReShadeApi = 20;
+// Consecutive missing clean frames before the online-traffic gate is reported.
+// ReShade clears this itself on the next delivered frame.
+constexpr std::uint64_t kCleanFrameGrace = 30;
 using Runtime = reshade::api::effect_runtime;
 using CreateRuntime = bool (*)(reshade::api::device_api, void*, void*, void*, const char*,
                                Runtime**);
@@ -662,14 +665,26 @@ bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceCon
         publish_depth(device, context, runtime);
         handled = true;
         api->present(runtime);
-        ++frames;
+        const auto rendered = ++frames;
         if (!clean_delivered) {
             ++missing_clean;
-            failed.store(true, std::memory_order_release);
-            active.store(false, std::memory_order_release);
-            available.store(false, std::memory_order_release);
-            message(
-                "ReShade stopped: its clean-frame callback is unavailable. Select the full add-on runtime and restart.");
+            if (rendered == 1) {
+                // A runtime that never delivers the callback is unusable.
+                failed.store(true, std::memory_order_release);
+                active.store(false, std::memory_order_release);
+                available.store(false, std::memory_order_release);
+                message(
+                    "ReShade stopped: its clean-frame callback is unavailable. Select the full add-on runtime and restart.");
+            } else if (missing_clean.load(std::memory_order_relaxed) == kCleanFrameGrace) {
+                // ReShade gates add-on events while it detects high non-local
+                // network traffic (its online depth protection). Color effects
+                // and Dolly's own DEPTH binding keep working; capture needs
+                // the events, so explain the pause instead of failing.
+                message(
+                    "ReShade paused its add-on events (online network traffic). Color effects and Dolly's depth still work; recording needs the events to settle.");
+            }
+        } else if (missing_clean.exchange(0, std::memory_order_relaxed) != 0) {
+            message("ReShade add-on events resumed.");
         }
         clear_frame();
         return true;

@@ -15,6 +15,12 @@
 - Mirror the Citadel DOF card on the desktop Camera tab. Sliders author the
   shot at the playhead and apply it through the existing paused preview, so
   values save to Effects and play back through the native effect binder.
+- Keep ReShade depth effects working while the game is online. ReShade pauses
+  its add-on events and depth detection after it sees network traffic; Dolly
+  now publishes its own verified scene depth from its Present path instead of
+  the gated event, so MXAO and similar shaders keep working without renaming
+  the game executable. While events are paused, capture waits and the ReShade
+  status explains why instead of stopping the runtime.
 
 ## 0.5.9 alpha — Export flow wording and launcher notes
 

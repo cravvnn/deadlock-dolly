@@ -13,6 +13,16 @@
 - The desktop Camera tab mirrors the Citadel card; its sliders author at the
   playhead and apply through the existing paused-camera preview.
 
+## ReShade depth in online sessions
+
+- Scene depth observation, the tracker lifecycle and the `DEPTH` semantic
+  binding moved out of ReShade's add-on event callback into Dolly's Present
+  path, so they run even after ReShade pauses those events for network
+  traffic. The verified sample is passed to the capture callback directly.
+- A missing clean frame now only stops the runtime on the first Present; later
+  gaps report the online-traffic pause in the ReShade status and keep color
+  effects and Dolly's depth alive instead of disabling the runtime.
+
 ## Checks
 
 - Full Python suite: 1116 tests run, no failures, 16 optional skips.

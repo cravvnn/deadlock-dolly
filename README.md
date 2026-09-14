@@ -196,7 +196,9 @@ separate terms in [assets/README.md](assets/README.md).
 the near-player opacity fix, and a **Citadel Depth of Field** card in both UIs
 with an Enable DOF switch plus log-scale sensor-size and focus-distance
 sliders. The native DOF card is renamed to **Native Depth of Field** so the
-two systems cannot be confused.
+two systems cannot be confused. ReShade depth effects now keep working in
+online sessions: Dolly publishes its own verified scene depth from its Present
+path, which ReShade's network-traffic pause does not cover.
 
 **0.5.9:** states the export take order in the UI — the color video records
 first and ticked passes follow automatically — and announces that handoff in

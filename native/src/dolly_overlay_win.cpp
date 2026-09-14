@@ -1334,10 +1334,14 @@ void render_overlay(IDXGISwapChain* chain) {
     }
     if (!target && !create_target(chain))
         return;
-    // Both optional effects and capture share this one real game Present.
-    // Capture runs after effects but before either editor's UI or path guides.
-    const auto clean_frame = [](IDXGISwapChain* capture_chain, ID3D11Device* capture_device,
-                                ID3D11DeviceContext* capture_context, void*) {
+    // Scene depth is consumed once per Present here, outside ReShade's add-on
+    // event callbacks: ReShade gates those events while it detects high
+    // non-local network traffic (its online depth protection), but Dolly
+    // publishes its own verified scene depth through the runtime API, which is
+    // not gated. Recording capture still uses the post-effects callback below.
+    depth::SceneFrame scene_frame{};
+    const depth::SceneFrame* scene_sample = nullptr;
+    {
         const auto editor = editor_snapshot();
         const auto snapshot = video::status();
         // Focus gates the first frame only. Desktop controls and a transient
@@ -1348,10 +1352,10 @@ void render_overlay(IDXGISwapChain* chain) {
             // also needs depth while merely editing, so fall back to the
             // current backbuffer dimensions.
             UINT depth_width = snapshot.width, depth_height = snapshot.height;
-            if ((!depth_width || !depth_height) && capture_chain) {
+            if ((!depth_width || !depth_height) && chain) {
                 ID3D11Texture2D* buffer = nullptr;
-                if (SUCCEEDED(capture_chain->GetBuffer(
-                        0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&buffer)))) {
+                if (SUCCEEDED(chain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                               reinterpret_cast<void**>(&buffer)))) {
                     D3D11_TEXTURE2D_DESC desc{};
                     buffer->GetDesc(&desc);
                     depth_width = desc.Width;
@@ -1360,8 +1364,8 @@ void render_overlay(IDXGISwapChain* chain) {
                 }
             }
             if (depth_width && depth_height) {
-                depth_live.publish(reinterpret_cast<std::uintptr_t>(capture_device),
-                                   reinterpret_cast<std::uintptr_t>(capture_context),
+                depth_live.publish(reinterpret_cast<std::uintptr_t>(device),
+                                   reinterpret_cast<std::uintptr_t>(immediate),
                                    depth_width, depth_height);
                 // Depth observation also feeds ReShade's DEPTH semantic while
                 // its runtime is active, so depth-dependent effects work
@@ -1371,12 +1375,12 @@ void render_overlay(IDXGISwapChain* chain) {
                 const bool matte_hooks =
                     (video::wants_white_clear() || video::wants_shot_only()) && !depth_live.hooks();
                 if ((depth_live.needs_hooks() || matte_hooks) &&
-                    depth::install_scene_hooks(capture_device, capture_context))
+                    depth::install_scene_hooks(device, immediate))
                     depth_live.note_hooks(true);
                 depth::scene_note_hooks(depth_live.hooks());
                 if (depth_live.needs_tracker()) {
                     auto tracker = std::make_shared<depth::SceneTracker>(
-                        capture_device, depth_live.width(), depth_live.height());
+                        device, depth_live.width(), depth_live.height());
                     depth_tracker = tracker;
                     depth::set_scene_tracker(tracker);
                     depth_live.note_tracker(tracker != nullptr);
@@ -1394,36 +1398,46 @@ void render_overlay(IDXGISwapChain* chain) {
             // Consume the verified scene sample for this exact Present before
             // recording. The recorder owns color/depth pairing and fails closed
             // when a requested depth frame is missing or ambiguous.
-            depth::SceneFrame scene{};
-            const depth::SceneFrame* sample = nullptr;
             if (depth_live.active() && depth_tracker) {
-                scene = depth_tracker->consume(capture_context);
-                sample = &scene;
-                if (scene.result == depth::SceneResult::ready)
-                    reshade_set_scene_depth(scene.texture());
+                scene_frame = depth_tracker->consume(immediate);
+                scene_sample = &scene_frame;
+                if (scene_frame.result == depth::SceneResult::ready)
+                    reshade_set_scene_depth(scene_frame.texture());
             }
-            // Prefer the native path clock this view just evaluated: it is the
-            // authored frame time and not gated by the editor config round
-            // trip, so separate layer takes start on the same frame.
-            double replay_time = -1.0;
-            if (!video::path_replay_time(replay_time))
-                replay_time = editor.playing ? editor.phase : -1.0;
-            video::capture(capture_chain, capture_device, capture_context, sample, replay_time);
         }
+    }
+    // Both optional effects and capture share this one real game Present.
+    // Capture runs after effects but before either editor's UI or path guides.
+    const auto clean_frame = [](IDXGISwapChain* capture_chain, ID3D11Device* capture_device,
+                                ID3D11DeviceContext* capture_context, void* user) {
+        const auto editor = editor_snapshot();
+        const auto snapshot = video::status();
+        if (!media_session_active() ||
+            (snapshot.state != video::State::recording && !editor.focused))
+            return;
+        const auto* sample = static_cast<const depth::SceneFrame*>(user);
+        // Prefer the native path clock this view just evaluated: it is the
+        // authored frame time and not gated by the editor config round trip,
+        // so separate layer takes start on the same frame.
+        double replay_time = -1.0;
+        if (!video::path_replay_time(replay_time))
+            replay_time = editor.playing ? editor.phase : -1.0;
+        video::capture(capture_chain, capture_device, capture_context, sample, replay_time);
     };
+    auto* frame_user = const_cast<depth::SceneFrame*>(scene_sample);
     bool effects_handled = false;
     if (reshade_enabled() || reshade_overlay_pending()) {
         // The manual ReShade API changes graphics state. Restore the exact
         // engine context before Dolly draws or the real Present continues.
         DeviceStateScope effects_scope;
-        effects_handled = reshade_render(chain, device, immediate, clean_frame, nullptr);
+        effects_handled = reshade_render(chain, device, immediate, clean_frame, frame_user);
     } else {
         // Applies pending disable/teardown without adding a state swap to the
         // ordinary camera path when ReShade has never been configured.
-        effects_handled = reshade_render(chain, device, immediate, clean_frame, nullptr);
+        effects_handled = reshade_render(chain, device, immediate, clean_frame, frame_user);
     }
     if (!effects_handled)
-        clean_frame(chain, device, immediate, nullptr);
+        clean_frame(chain, device, immediate, frame_user);
     if (reshade_overlay_open() || reshade_overlay_pending()) {
         clear_pending_input();
         editor_text_input_active(false);

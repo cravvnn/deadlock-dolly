@@ -135,6 +135,15 @@ scene target used by the depth export; the bundled presets set
 in ReShade's UI if a depth effect's falloff looks wrong). Dolly's existing
 native camera DOF controls continue to work.
 
+ReShade releases also disable their own depth detection and pause add-on events
+for a while after they see non-local network traffic, as an online-game
+protection. Dolly does not use that detection: it publishes its own verified
+scene depth through the runtime API, which that gate does not cover, so depth
+effects keep working while Deadlock is connected. Renaming the game executable
+is not needed. While add-on events are paused, video capture through ReShade
+waits for them to resume; Dolly reports that state instead of failing the
+runtime, and color effects continue to render.
+
 ## Implementation and validation
 
 The recorder uses three reusable GPU staging slots and a bounded CPU queue.
