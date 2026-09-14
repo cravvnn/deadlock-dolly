@@ -98,6 +98,7 @@ def bundle_self_test(report_path: Path) -> int:
         app_ui.notebook.select(app_ui.camera_tab)
         root.update()
         visible("slider")
+        report["checks"]["citadel_dof_card"] = bool(app_ui.citadel_dof_checkbox.winfo_ismapped())
         app_ui.full_editor.set(False)
         app_ui._apply_editor_mode()
         assert app_ui.notebook.select() == str(app_ui.setup_tab)

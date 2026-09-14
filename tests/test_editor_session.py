@@ -98,6 +98,33 @@ class EditorSessionTests(unittest.TestCase):
         self.app._submit.call_args.args[1]()
         self.controller.destroy_ragdolls.assert_called_once_with()
 
+    def test_citadel_buttons_dispatch_on_worker(self):
+        for action, method in (("toggle_citadel_glow", "toggle_citadel_glow"),
+                               ("toggle_healthbars", "toggle_healthbars"),
+                               ("near_player_opacity_fix", "near_player_opacity_fix")):
+            with self.subTest(action=action):
+                getattr(self.controller, method).reset_mock()
+                self.app._submit.reset_mock()
+                self.assertTrue(session.dispatch(self.app, {"action": action, "value": 0}, self.bridge))
+                getattr(self.controller, method).assert_not_called()
+                self.app._submit.call_args.args[1]()
+                getattr(self.controller, method).assert_called_once_with()
+
+    def test_citadel_dof_preview_finishes_before_the_project_is_committed(self):
+        self.app.project.keyframes = [Keyframe(0, 0, 0, 0, 0, 0, 0)]
+        self.app._mark_dirty = Mock()
+        self.app._refresh_tracks = Mock()
+        self.app._refresh_fixed = Mock()
+        session.dispatch(self.app, {"action": "set_citadel_dof_sensor_size", "value": 2.5}, self.bridge)
+        self.assertNotIn("r_citadel_depthoffield_sensor_size", self.app.project.setup_values)
+        work = self.app._submit.call_args.args
+        result = work[1]()
+        self.controller.preview_native_effects.assert_called_once()
+        work[2](result)
+        self.assertEqual(self.app.project.setup_values["r_citadel_depthoffield_sensor_size"], 2.5)
+        self.app._mark_dirty.assert_called_once()
+        self.app._refresh_fixed.assert_called_once_with()
+
     def setUp(self):
         self.bridge = Mock()
         self.bridge.editor_status.return_value = {"events": []}

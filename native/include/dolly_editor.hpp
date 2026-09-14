@@ -80,7 +80,13 @@ enum class EditorAction : std::uint32_t {
     SetVideoDepthExr,
     SetVideoLayerWorld,
     SetVideoLayerPlayers,
-    SetVideoLayerEffects
+    SetVideoLayerEffects,
+    ToggleCitadelGlow,
+    ToggleHealthbars,
+    NearPlayerOpacityFix,
+    SetCitadelDofEnabled,
+    SetCitadelDofSensorSize,
+    SetCitadelDofFocusDistance
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
@@ -92,6 +98,9 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoDepth) == 52,
               "Stable depth master action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoDepthExr) == 53,
               "Stable depth EXR action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::ToggleCitadelGlow) == 57 &&
+                  static_cast<std::uint32_t>(EditorAction::SetCitadelDofFocusDistance) == 62,
+              "Stable Citadel action IDs");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
@@ -154,8 +163,19 @@ struct EditorDofConfig {
     std::uint32_t sequence, abi, enabled, reserved;
     double values[11];
 };
+// Citadel DOF follows the native DOF block. `available` means a camera exists
+// to author against; `enabled` is the authored game switch itself.
+constexpr std::size_t kEditorCitadelDofOffset = kEditorDofOffset + sizeof(EditorDofConfig);
+struct EditorCitadelDofConfig {
+    char magic[8];
+    std::uint32_t sequence, abi, available, enabled;
+    double sensor_size, focus_distance;
+};
 #pragma pack(pop)
 static_assert(sizeof(EditorDofConfig) == 112, "Python optional DOF config layout");
+static_assert(sizeof(EditorCitadelDofConfig) == 40, "Python optional Citadel DOF config layout");
+static_assert(kEditorCitadelDofOffset + sizeof(EditorCitadelDofConfig) <= 2 * 1024 * 1024 + 4096,
+              "Citadel DOF config fits the mapping");
 static_assert(kEditorInputDiagnosticsOffset + sizeof(EditorInputDiagnostics) == kEditorDofOffset,
               "DOF config follows diagnostics");
 static_assert(kEditorDofOffset + sizeof(EditorDofConfig) <= 2 * 1024 * 1024 + 4096,
@@ -203,6 +223,8 @@ struct EditorSnapshot {
     CameraPose pose{};
     bool dof_available = false;
     std::array<double, 11> dof{};
+    bool citadel_dof_available = false, citadel_dof_enabled = false;
+    double citadel_dof_sensor = 1.0, citadel_dof_focus = 200.0;
     char shot_name[96]{}, message[128]{};
 };
 EditorSnapshot editor_snapshot() noexcept;

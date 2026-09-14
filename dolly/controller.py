@@ -1887,6 +1887,49 @@ class Controller:
             self._request("cl_destroy_ragdolls")
             self._message("Ragdoll cleanup command sent.")
 
+    def _console_cvar(self, name):
+        """Current value of a console cvar, or None when it cannot be read."""
+        try:
+            return read_cvar_value(name, self._request(name, allow_error=True))
+        except (RuntimeError, ValueError, OSError):
+            return None
+
+    def _require_quiet_session(self, label):
+        if self.status().get("playing") or getattr(self, "_export_timing", None):
+            raise RuntimeError(f"Stop shot playback or recording before {label}.")
+        self._require_probe()
+        self._require_demo()
+
+    def toggle_citadel_glow(self):
+        """Flip the Citadel glow set (hero, trooper, boss and health-bar glow)."""
+        with self._op_lock:
+            self._require_quiet_session("toggling glow")
+            disabling = self._console_cvar("citadel_boss_glow_disabled") != 1
+            state = 1 if disabling else 0
+            for name in ("citadel_boss_glow_disabled", "citadel_player_glow_disabled",
+                         "citadel_trooper_glow_disabled"):
+                self._request(f"{name} {state}", allow_error=True)
+            self._request(f"r_citadel_glow_health_bars {0 if disabling else 1}", allow_error=True)
+            self._message("Citadel glow disabled." if disabling else "Citadel glow enabled.")
+
+    def toggle_healthbars(self):
+        """Flip the enemy health-bar set together with the new unit-status mode."""
+        with self._op_lock:
+            self._require_quiet_session("toggling health bars")
+            enabling = self._console_cvar("citadel_healthbars_enabled") != 1
+            state = 1 if enabling else 0
+            self._request(f"citadel_healthbars_enabled {state}", allow_error=True)
+            self._request(f"citadel_unit_status_use_new {state}", allow_error=True)
+            self._message("Health bars enabled." if enabling else "Health bars disabled.")
+
+    def near_player_opacity_fix(self):
+        """Force full opacity on the near-player camera fades."""
+        with self._op_lock:
+            self._require_quiet_session("fixing near-player opacity")
+            self._request("citadel_camera_fade_viewed_near_opacity 1", allow_error=True)
+            self._request("citadel_camera_fade_other_near_opacity 1", allow_error=True)
+            self._message("Near-player fade opacity forced to full.")
+
     def toggle_replay(self):
         """Pause/resume replay time without restarting an authored native path.
 

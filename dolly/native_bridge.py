@@ -563,6 +563,21 @@ class NativeBridge(MediaTransport):
             self._store(offset + 8, even)
             self._editor_dof_sequence = even
 
+    def configure_editor_citadel_dof(self, sensor_size, focus_distance, *, available, enabled):
+        """Optional Citadel DOF block; does not mutate camera/effect runtime."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            previous = getattr(self, "_editor_citadel_dof_sequence", 0)
+            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
+            data = wire.pack_citadel_dof(odd, available, enabled, sensor_size, focus_distance)
+            offset = wire.CITADEL_DOF_OFFSET
+            self._store(offset + 8, odd)
+            self._mapping[offset:offset + 8] = data[:8]
+            self._mapping[offset + 12:offset + len(data)] = data[12:]
+            self._store(offset + 8, even)
+            self._editor_citadel_dof_sequence = even
+
     def editor_status(self):
         from . import editor_wire as wire
         with self._lock:

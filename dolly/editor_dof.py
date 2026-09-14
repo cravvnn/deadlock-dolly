@@ -93,3 +93,49 @@ def edited_project(project, time, control, value):
     _put_value(candidate, name, time, value)
     candidate.validate()
     return candidate
+
+
+# Citadel DOF: the game's own depth of field, authored alongside the native
+# engine controls. Enabling it sets both switches the engine needs.
+CITADEL_ENABLE = ("r_citadel_depthoffield_enable", "r_depth_of_field")
+CITADEL_SENSOR = "r_citadel_depthoffield_sensor_size"
+CITADEL_FOCUS = "r_citadel_depthoffield_focus_distance"
+CITADEL_ACTIONS = ("set_citadel_dof_enabled", "set_citadel_dof_sensor_size",
+                   "set_citadel_dof_focus_distance")
+CITADEL_SENSOR_DEFAULT = 1.0
+CITADEL_FOCUS_DEFAULT = 200.0
+
+
+def citadel_values_at(project, time):
+    """Current Citadel DOF switch, sensor size and focus distance."""
+    cvars = _cvars_at(project, time)
+    enabled = all(cvars.get(name, 0) for name in CITADEL_ENABLE)
+    sensor = float(cvars.get(CITADEL_SENSOR, CITADEL_SENSOR_DEFAULT))
+    focus = float(cvars.get(CITADEL_FOCUS, CITADEL_FOCUS_DEFAULT))
+    return bool(enabled), sensor, focus
+
+
+def edited_citadel_project(project, time, control, value):
+    if (type(control) is not int or not 0 <= control < len(CITADEL_ACTIONS)
+            or not math.isfinite(time) or time < 0):
+        raise ValueError("Invalid Citadel DOF control or shot time")
+    candidate = deepcopy(project)
+    if control == 0:
+        if isinstance(value, bool):
+            state = value
+        elif isinstance(value, (int, float)) and not isinstance(value, bool) \
+                and math.isfinite(value) and value in (0, 1):
+            state = bool(value)
+        else:
+            raise ValueError("Citadel DOF switch must be on or off")
+        for name in CITADEL_ENABLE:
+            _put_value(candidate, name, time, 1.0 if state else 0.0)
+    else:
+        name = CITADEL_SENSOR if control == 1 else CITADEL_FOCUS
+        _id, minimum, maximum, _discrete = EFFECTS[name]
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or not minimum <= value <= maximum):
+            raise ValueError("Citadel DOF value is outside the native control's range")
+        _put_value(candidate, name, time, validate_cvar_value(name, value))
+    candidate.validate()
+    return candidate

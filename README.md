@@ -195,7 +195,10 @@ separate terms in [assets/README.md](assets/README.md).
 first and ticked passes follow automatically — and announces that handoff in
 the status line, so Finish recording no longer looks like it starts a surprise
 take. The **In-game capture** switch now also sits on the Library page, so it
-is reachable without the Full editor. Includes the current user guide and
+is reachable without the Full editor. Adds in-game Camera-tab buttons for
+Citadel glow, health bars and the near-player opacity fix, and a **Citadel
+Depth of Field** card in both UIs with an Enable DOF switch plus log-scale
+sensor-size and focus-distance sliders. Includes the current user guide and
 start-here wording.
 
 **0.5.8:** fixes layered export take paths nesting inside the previous take,

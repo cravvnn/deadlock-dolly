@@ -1,6 +1,6 @@
 # Validation — 0.5.9 alpha
 
-## Export-flow wording
+## Export-flow wording and Citadel controls
 
 - The Export panel states that the color video records first and ticked passes
   are extra takes that follow automatically; the status line announces the
@@ -8,19 +8,29 @@
 - The **In-game capture** switch is now on the Library page beside
   **Open replay in Dolly** as well as the Cameras toolbar, so it is reachable
   without the Full editor switch.
-- The user guide and start-here files carry the same wording and the launcher
+- The in-game Camera tab adds Toggle Citadel glow, Healthbar Toggle and Near
+  player opacity fix buttons under Clear ragdolls. Each editor action is a new
+  appended ID (57–59); the toggles read the current cvar before flipping.
+- The in-game Lens tab renames the native card to **Native Depth of Field**
+  and adds a **Citadel Depth of Field** card with an Enable DOF switch and
+  sensor-size / log focus-distance sliders. Authored values flow through the
+  existing native effect binder and are published to the panel through a new
+  optional config block appended after the native DOF block.
+- The desktop Camera tab mirrors the Citadel card; its sliders author at the
+  playhead and apply through the existing paused-camera preview.
+- The user guide and start-here files carry the new controls and the launcher
   safety note about sessions Dolly did not start.
 
 ## Checks
 
-- Full Python suite: 1107 tests run, no failures, 17 optional skips.
-- Native MSVC Release: all 15 enabled CTest tests passed (native code is
-  unchanged from the published 0.5.8).
-- Frozen Windows build: PyInstaller build, packaged GUI smoke and a relocated
-  full-bundle startup check passed; the 0.5.9 Windows and source ZIPs match
-  their SHA256SUMS entries.
-- No game-runtime behavior changed in this build; it is a wording, guide and
-  packaging update on top of the published 0.5.8 depth fixes.
+- Full Python suite: 1116 tests run, no failures, 16 optional skips.
+- Native MSVC Release: all 15 enabled CTest tests passed, including the new
+  editor action IDs and the appended Citadel DOF block bounds.
+- Frozen Windows build: PyInstaller build, packaged GUI smoke, the library
+  capture-switch gate and a relocated full-bundle startup check passed; the
+  0.5.9 Windows and source ZIPs match their SHA256SUMS entries.
+- The live Citadel controls and sliders still need a replay check in Deadlock;
+  the automated suites cover the wire, dispatch and authoring paths only.
 
 # Validation — 0.5.8 alpha
 

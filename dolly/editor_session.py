@@ -187,6 +187,15 @@ def configure(app):
                 or getattr(app, "_native_dof_cache", None) != dof):
             publish_dof(dof[1], enabled=active)
             app._native_dof_bridge, app._native_dof_cache = bridge, dof
+    publish_citadel = getattr(bridge, "configure_editor_citadel_dof", None)
+    if callable(publish_citadel):
+        from .editor_dof import citadel_values_at
+        enabled, sensor, focus = citadel_values_at(app.project, max(0.0, playhead))
+        citadel = (active, enabled, round(sensor, 6), round(focus, 6))
+        if (getattr(app, "_native_citadel_dof_bridge", None) is not bridge
+                or getattr(app, "_native_citadel_dof_cache", None) != citadel):
+            publish_citadel(sensor, focus, available=active, enabled=active and enabled)
+            app._native_citadel_dof_bridge, app._native_citadel_dof_cache = bridge, citadel
 
 
 def _select(app, index):
@@ -292,12 +301,35 @@ def dispatch(app, event, bridge):
             app._refresh_fixed()
             configure(app)
         app._submit("Applying native DOF", lambda: app.controller.preview_native_effects(candidate, at), complete)
+    elif action.startswith("set_citadel_dof_"):
+        from .editor_dof import CITADEL_ACTIONS, edited_citadel_project
+        if action not in CITADEL_ACTIONS:
+            raise ValueError("Unsupported Citadel DOF control")
+        if app.controller.status().get("playing") or getattr(app, "playing", False):
+            raise ValueError("Pause shot playback before editing DOF.")
+        at = float(_value(app, "shot_time", 0) or 0)
+        candidate = edited_citadel_project(app.project, at,
+                                           CITADEL_ACTIONS.index(action), event["value"])
+        def complete(_result):
+            app.project = candidate
+            app._mark_dirty()
+            app._refresh_tracks()
+            app._refresh_fixed()
+            configure(app)
+        app._submit("Applying Citadel DOF", lambda: app.controller.preview_native_effects(candidate, at), complete)
     elif action == "play_pause":
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":
         app._play()
     elif action == "destroy_ragdolls":
         _native_operation(app, "Clearing ragdolls", app.controller.destroy_ragdolls, bridge)
+    elif action == "toggle_citadel_glow":
+        _native_operation(app, "Toggling Citadel glow", app.controller.toggle_citadel_glow, bridge)
+    elif action == "toggle_healthbars":
+        _native_operation(app, "Toggling health bars", app.controller.toggle_healthbars, bridge)
+    elif action == "near_player_opacity_fix":
+        _native_operation(app, "Fixing near-player opacity",
+                          app.controller.near_player_opacity_fix, bridge)
     elif action == "start_video":
         app._start_video_recording()
     elif action == "stop_video":

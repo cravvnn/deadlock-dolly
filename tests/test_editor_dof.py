@@ -96,3 +96,53 @@ class EditorDofTests(unittest.TestCase):
         self.assertEqual(DOF_CONFIG.unpack(packet), (b"DLYDOF01", 2, 1, 1, 0, *values))
         self.assertEqual(EXTRA_ACTIONS.index("set_framing") + 26, 40)
         self.assertEqual(EXTRA_ACTIONS.index("set_dof_10") + 26, 51)
+
+    def test_citadel_edits_author_both_switches_and_value_controls(self):
+        from dolly.editor_dof import CITADEL_ACTIONS, citadel_values_at, edited_citadel_project
+        project = Project(keyframes=[Keyframe(0, 1, 2, 3, 4, 5, 6)])
+        self.assertEqual(citadel_values_at(project, 0), (False, 1.0, 200.0))
+        enabled = edited_citadel_project(project, 0, 0, True)
+        self.assertEqual(enabled.setup_values["r_citadel_depthoffield_enable"], 1.0)
+        self.assertEqual(enabled.setup_values["r_depth_of_field"], 1.0)
+        sensor = edited_citadel_project(enabled, 0, 1, 2.5)
+        self.assertEqual(sensor.setup_values["r_citadel_depthoffield_sensor_size"], 2.5)
+        focus = edited_citadel_project(sensor, 0, 2, 750)
+        self.assertEqual(focus.setup_values["r_citadel_depthoffield_focus_distance"], 750.0)
+        self.assertEqual(citadel_values_at(focus, 0), (True, 2.5, 750.0))
+        disabled = edited_citadel_project(focus, 0, 0, False)
+        self.assertEqual(citadel_values_at(disabled, 0), (False, 2.5, 750.0))
+        self.assertFalse(project.setup_values)
+        self.assertEqual(len(CITADEL_ACTIONS), 3)
+
+    def test_citadel_edits_reject_out_of_range_values_and_keep_action_ids(self):
+        from dolly.editor_dof import edited_citadel_project
+        for control, value in ((0, .5), (1, .4), (1, 3.1), (2, -1), (2, 10001),
+                               (2, float("nan")), (True, 1)):
+            with self.subTest(control=control, value=value), self.assertRaises(ValueError):
+                edited_citadel_project(Project(), 0, control, value)
+        self.assertEqual(EXTRA_ACTIONS.index("toggle_citadel_glow") + 26, 57)
+        self.assertEqual(EXTRA_ACTIONS.index("toggle_healthbars") + 26, 58)
+        self.assertEqual(EXTRA_ACTIONS.index("near_player_opacity_fix") + 26, 59)
+        self.assertEqual(EXTRA_ACTIONS.index("set_citadel_dof_enabled") + 26, 60)
+        self.assertEqual(EXTRA_ACTIONS.index("set_citadel_dof_sensor_size") + 26, 61)
+        self.assertEqual(EXTRA_ACTIONS.index("set_citadel_dof_focus_distance") + 26, 62)
+
+    def test_citadel_wire_block_follows_the_native_dof_block(self):
+        from dolly.editor_wire import CITADEL_DOF, CITADEL_DOF_OFFSET, pack_citadel_dof
+        packet = pack_citadel_dof(4, True, True, 2.5, 750.0)
+        self.assertEqual(len(packet), 40)
+        self.assertEqual(CITADEL_DOF_OFFSET, DOF_OFFSET + 112)
+        self.assertLessEqual(CITADEL_DOF_OFFSET + len(packet), 2 * 1024 * 1024 + 4096)
+        self.assertEqual(CITADEL_DOF.unpack(packet), (b"DLYCDOF1", 4, 1, 1, 1, 2.5, 750.0))
+        for sensor, focus in ((.4, 750.0), (3.1, 750.0), (1.0, -1.0), (1.0, 10001.0)):
+            with self.subTest(sensor=sensor, focus=focus), self.assertRaises(ValueError):
+                pack_citadel_dof(4, True, True, sensor, focus)
+
+    def test_desktop_citadel_focus_mapping_round_trips(self):
+        from dolly.gui import DollyApp
+        for value in (0.0, 1.0, 200.0, 2500.0, 10000.0):
+            with self.subTest(value=value):
+                slider = DollyApp._focus_to_slider(value)
+                self.assertGreaterEqual(slider, 0.0)
+                self.assertLessEqual(slider, 1.0)
+                self.assertAlmostEqual(DollyApp._slider_to_focus(slider), value, places=6)

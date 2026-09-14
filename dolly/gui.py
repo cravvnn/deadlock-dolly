@@ -1453,6 +1453,107 @@ class DollyApp:
         self.canvas = tk.Canvas(view, width=230, height=55, background=PANEL, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _event: self._draw_path())
+        citadel = ttk.Frame(inspector, style="Card.TFrame", padding=(10, 8))
+        citadel.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        ttk.Label(citadel, text="CITADEL DEPTH OF FIELD", style="CardMuted.TLabel").pack(anchor="w", pady=(0, 5))
+        self.citadel_enabled = tk.BooleanVar(value=False)
+        self.citadel_dof_checkbox = ttk.Checkbutton(
+            citadel, text="Enable DOF", variable=self.citadel_enabled,
+            style="Card.TCheckbutton", command=self._toggle_citadel_dof)
+        self.citadel_dof_checkbox.pack(anchor="w", pady=(0, 6))
+        self.citadel_sensor = tk.DoubleVar(value=1.0)
+        self.citadel_sensor_text = tk.StringVar(value="Sensor size · 1.00")
+        ttk.Label(citadel, textvariable=self.citadel_sensor_text, style="CardMuted.TLabel").pack(anchor="w")
+        sensor = ttk.Scale(citadel, from_=.5, to=3.0, variable=self.citadel_sensor,
+                           command=lambda _value: self._citadel_sensor_changed())
+        sensor.pack(fill="x")
+        sensor.bind("<ButtonRelease-1>", lambda _event: self._citadel_sensor_commit())
+        self.citadel_sensor_scale = sensor
+        self.citadel_focus_internal = tk.DoubleVar(value=0.0)
+        self.citadel_focus_text = tk.StringVar(value="Focus distance · 200 in")
+        ttk.Label(citadel, textvariable=self.citadel_focus_text, style="CardMuted.TLabel").pack(anchor="w", pady=(6, 0))
+        focus = ttk.Scale(citadel, from_=0.0, to=1.0, variable=self.citadel_focus_internal,
+                          command=lambda _value: self._citadel_focus_changed())
+        focus.pack(fill="x")
+        focus.bind("<ButtonRelease-1>", lambda _event: self._citadel_focus_commit())
+        self.citadel_focus_scale = focus
+        self._refresh_citadel_dof()
+
+    # Citadel DOF (the game's own depth of field) authors the same shot values
+    # as the Effects tracks and applies them through the existing preview.
+    def _citadel_playhead(self):
+        try:
+            value = float(self.shot_time.get())
+        except (TypeError, ValueError):
+            value = 0.0
+        return max(0.0, value if math.isfinite(value) else 0.0)
+
+    @staticmethod
+    def _focus_to_slider(value):
+        return math.log(1.0 + max(0.0, float(value))) / math.log(10001.0)
+
+    @staticmethod
+    def _slider_to_focus(value):
+        return math.exp(min(1.0, max(0.0, float(value))) * math.log(10001.0)) - 1.0
+
+    def _refresh_citadel_dof(self):
+        if not hasattr(self, "citadel_dof_checkbox") or not hasattr(self, "citadel_enabled"):
+            return
+        from dolly.editor_dof import citadel_values_at
+        enabled, sensor, focus = citadel_values_at(self.project, self._citadel_playhead())
+        self.citadel_enabled.set(enabled)
+        self.citadel_sensor.set(sensor)
+        self.citadel_sensor_text.set(f"Sensor size · {sensor:.2f}")
+        self.citadel_focus_internal.set(self._focus_to_slider(focus))
+        self.citadel_focus_text.set(f"Focus distance · {focus:.0f} in")
+
+    def _commit_citadel_dof(self, control, value, label):
+        if self.busy or self.playing:
+            self.status_text.set("Pause playback and finish the current operation before editing DOF.")
+            self._refresh_citadel_dof()
+            return
+        from dolly.editor_dof import edited_citadel_project
+        at = self._citadel_playhead()
+        try:
+            candidate = edited_citadel_project(self.project, at, control, value)
+        except ValueError as exc:
+            self._error("Citadel DOF", exc)
+            self._refresh_citadel_dof()
+            return
+        def complete(_result):
+            self.project = candidate
+            self._mark_dirty()
+            self._refresh_tracks()
+            self._refresh_fixed()
+            self.status_text.set(label + " applied at the paused moment.")
+        self._close_paused_camera(stop=False)
+        self._submit("Applying Citadel DOF", lambda: self.controller.apply(candidate, at), complete)
+
+    def _toggle_citadel_dof(self):
+        self._commit_citadel_dof(0, bool(self.citadel_enabled.get()), "Citadel DOF")
+
+    def _citadel_sensor_changed(self):
+        try:
+            value = float(self.citadel_sensor.get())
+        except (TypeError, ValueError):
+            return
+        self.citadel_sensor_text.set(f"Sensor size · {value:.2f}")
+
+    def _citadel_sensor_commit(self):
+        value = min(3.0, max(.5, round(float(self.citadel_sensor.get()) / .05) * .05))
+        self.citadel_sensor.set(value)
+        self.citadel_sensor_text.set(f"Sensor size · {value:.2f}")
+        self._commit_citadel_dof(1, value, "Sensor size")
+
+    def _citadel_focus_changed(self):
+        focus = self._slider_to_focus(self.citadel_focus_internal.get())
+        self.citadel_focus_text.set(f"Focus distance · {focus:.0f} in")
+
+    def _citadel_focus_commit(self):
+        focus = min(10000.0, max(0.0, round(self._slider_to_focus(self.citadel_focus_internal.get()))))
+        self.citadel_focus_internal.set(self._focus_to_slider(focus))
+        self.citadel_focus_text.set(f"Focus distance · {focus:.0f} in")
+        self._commit_citadel_dof(2, focus, "Focus distance")
 
     def _open_paused_camera(self):
         if getattr(self, "native_editor_active", False):
@@ -2813,6 +2914,8 @@ class DollyApp:
         self._draw_path()
         if hasattr(self, "aspect_curve"):
             self.aspect_curve.set_current_time(float(time))
+        if not getattr(self, "playing", False):
+            self._refresh_citadel_dof()
 
     def _selected_track(self):
         index = self._selection_index(self.track_tree)
@@ -3027,6 +3130,7 @@ class DollyApp:
         self.setup_tree.delete(*self.setup_tree.get_children())
         for index, (name, value) in enumerate(sorted(self.project.setup_values.items())):
             self.setup_tree.insert("", "end", iid=str(index), values=(name, format_cvar_value(value)))
+        self._refresh_citadel_dof()
 
     def _draw_path(self):
         if not hasattr(self, "canvas"):

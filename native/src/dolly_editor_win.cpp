@@ -24,6 +24,7 @@ std::atomic<EditorOwner> gReShadePriorOwner{EditorOwner::Unfocused};
 std::atomic<unsigned> gReShadeDeferred{0};
 std::shared_ptr<const EditorConfig> gConfig;
 std::shared_ptr<const EditorDofConfig> gDofConfig;
+std::shared_ptr<const EditorCitadelDofConfig> gCitadelDofConfig;
 std::atomic<double> gSpeed{400};
 std::atomic<long> gMouseX{0}, gMouseY{0}, gFramingWheel{0};
 // Live wheel-burst tracking; camera -2 means no burst has been applied yet.
@@ -511,6 +512,13 @@ EditorSnapshot editor_snapshot() noexcept {
         result.dof_available = true;
         std::copy(std::begin(dof->values), std::end(dof->values), result.dof.begin());
     }
+    auto citadel = std::atomic_load(&gCitadelDofConfig);
+    if (citadel && citadel->available && gConnected.load()) {
+        result.citadel_dof_available = true;
+        result.citadel_dof_enabled = citadel->enabled != 0;
+        result.citadel_dof_sensor = citadel->sensor_size;
+        result.citadel_dof_focus = citadel->focus_distance;
+    }
     // Atomic field seqlock gives an internally coherent capture pose and tick.
     // Bounded retries never wait for the render callback.
     for (int attempt = 0; attempt < 4; ++attempt) {
@@ -541,7 +549,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoLayerEffects))
+        std::uint32_t(action) > std::uint32_t(EditorAction::SetCitadelDofFocusDistance))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -551,6 +559,14 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
          !state.camera_count || state.owner != EditorOwner::Panel ||
          std::abs(value) > 3.4028234663852886e38 ||
          (action <= EditorAction::SetDofOverride && value != 0 && value != 1)))
+        return false;
+    if (action >= EditorAction::SetCitadelDofEnabled &&
+        action <= EditorAction::SetCitadelDofFocusDistance &&
+        (!state.citadel_dof_available || !state.ready || !state.paused || state.playing ||
+         state.busy || !state.camera_count || state.owner != EditorOwner::Panel ||
+         (action == EditorAction::SetCitadelDofEnabled && value != 0 && value != 1) ||
+         (action == EditorAction::SetCitadelDofSensorSize && (value < .5 || value > 3)) ||
+         (action == EditorAction::SetCitadelDofFocusDistance && (value < 0 || value > 10000))))
         return false;
     if (action == EditorAction::SetFraming) {
         // The pose override carries the wheel scale factor (Python owns the
@@ -918,6 +934,30 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                 }
             }
         }
+        auto citadel_source = memory + kEditorCitadelDofOffset;
+        auto citadel_sequence = reinterpret_cast<volatile LONG*>(citadel_source + 8);
+        const auto citadel_first = InterlockedCompareExchange(citadel_sequence, 0, 0);
+        const auto citadel_previous = std::atomic_load(&gCitadelDofConfig);
+        if (!(citadel_first & 1) &&
+            (!citadel_previous || citadel_previous->sequence != std::uint32_t(citadel_first))) {
+            EditorCitadelDofConfig citadel{};
+            std::memcpy(&citadel, citadel_source, sizeof(citadel));
+            MemoryBarrier();
+            const bool valid =
+                citadel_first == InterlockedCompareExchange(citadel_sequence, 0, 0) &&
+                std::memcmp(citadel.magic, "DLYCDOF1", 8) == 0 && citadel.abi == 1 &&
+                citadel.available <= 1 && citadel.enabled <= 1 &&
+                std::isfinite(citadel.sensor_size) && citadel.sensor_size >= .5 &&
+                citadel.sensor_size <= 3 && std::isfinite(citadel.focus_distance) &&
+                citadel.focus_distance >= 0 && citadel.focus_distance <= 10000;
+            if (valid) {
+                try {
+                    std::atomic_store(&gCitadelDofConfig,
+                                      std::make_shared<const EditorCitadelDofConfig>(citadel));
+                } catch (...) {
+                }
+            }
+        }
         auto src = memory + kEditorConfigOffset;
         auto seq = reinterpret_cast<volatile LONG*>(src + 8);
         LONG before = InterlockedCompareExchange(seq, 0, 0);
@@ -989,6 +1029,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     }
     if (!connected) {
         std::atomic_store(&gDofConfig, std::shared_ptr<const EditorDofConfig>{});
+        std::atomic_store(&gCitadelDofConfig, std::shared_ptr<const EditorCitadelDofConfig>{});
         gOwner = EditorOwner::Disabled;
         reset_keys(true);
         cursor_mode(EditorOwner::Disabled);

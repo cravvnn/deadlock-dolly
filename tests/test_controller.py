@@ -845,6 +845,37 @@ class ControllerTests(unittest.TestCase):
             self.controller.destroy_ragdolls()
         self.assertNotIn("cl_destroy_ragdolls", self.console.requests)
 
+    def test_citadel_glow_toggle_reads_and_flips_the_group(self):
+        self.console.values["citadel_boss_glow_disabled"] = 0.0
+        self.controller.toggle_citadel_glow()
+        for name in ("citadel_boss_glow_disabled", "citadel_player_glow_disabled",
+                     "citadel_trooper_glow_disabled"):
+            self.assertIn(f"{name} 1", self.console.requests)
+        self.assertIn("r_citadel_glow_health_bars 0", self.console.requests)
+        self.console.requests.clear()
+        self.console.values["citadel_boss_glow_disabled"] = 1.0
+        self.controller.toggle_citadel_glow()
+        self.assertIn("citadel_boss_glow_disabled 0", self.console.requests)
+        self.assertIn("r_citadel_glow_health_bars 1", self.console.requests)
+        self.assertFalse(self.console.camera_writes)
+
+    def test_healthbar_toggle_flips_both_cvars(self):
+        self.console.values["citadel_healthbars_enabled"] = 0.0
+        self.controller.toggle_healthbars()
+        self.assertIn("citadel_healthbars_enabled 1", self.console.requests)
+        self.assertIn("citadel_unit_status_use_new 1", self.console.requests)
+        self.console.requests.clear()
+        self.console.values["citadel_healthbars_enabled"] = 1.0
+        self.controller.toggle_healthbars()
+        self.assertIn("citadel_healthbars_enabled 0", self.console.requests)
+        self.assertIn("citadel_unit_status_use_new 0", self.console.requests)
+
+    def test_near_player_opacity_fix_forces_full_opacity(self):
+        self.controller.near_player_opacity_fix()
+        self.assertIn("citadel_camera_fade_viewed_near_opacity 1", self.console.requests)
+        self.assertIn("citadel_camera_fade_other_near_opacity 1", self.console.requests)
+        self.assertFalse(self.console.camera_writes)
+
     def _run_with_clock(self, project, *, limit=4, speed=1, frozen=False):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=limit)

@@ -27,10 +27,15 @@ EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "s
                  "reshade", "start_video", "stop_video", "set_video_fps", "set_video_bitrate",
                  "set_video_encoder", "set_video_fixed_step", "set_video_speed", "destroy_ragdolls",
                  "set_framing") + DOF_ACTIONS + ("set_video_depth", "set_video_depth_exr",
-                 "set_video_layer_world", "set_video_layer_players", "set_video_layer_effects")
+                 "set_video_layer_world", "set_video_layer_players", "set_video_layer_effects",
+                 "toggle_citadel_glow", "toggle_healthbars", "near_player_opacity_fix",
+                 "set_citadel_dof_enabled", "set_citadel_dof_sensor_size",
+                 "set_citadel_dof_focus_distance")
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")
+CITADEL_DOF_OFFSET = DOF_OFFSET + DOF_CONFIG.size
+CITADEL_DOF = struct.Struct("<8s4I2d")
 
 
 def pack_dof(sequence, enabled, values):
@@ -41,6 +46,15 @@ def pack_dof(sequence, enabled, values):
     if any(value not in (0, 1) for value in checked[:2]):
         raise ValueError("Invalid native DOF switch")
     return DOF_CONFIG.pack(b"DLYDOF01", _uint(sequence, "sequence"), 1, int(enabled), 0, *checked)
+
+
+def pack_citadel_dof(sequence, available, enabled, sensor_size, focus_distance):
+    """Optional Citadel DOF block; appended after the native DOF block."""
+    if not isinstance(available, bool) or not isinstance(enabled, bool):
+        raise ValueError("Invalid Citadel DOF switch")
+    return CITADEL_DOF.pack(b"DLYCDOF1", _uint(sequence, "sequence"), 1, int(available),
+                            int(enabled), _finite(sensor_size, .5, 3, "sensor size"),
+                            _finite(focus_distance, 0, 10000, "focus distance"))
 
 
 def _text(value, capacity):

@@ -15,6 +15,7 @@
 #include <dxgi.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <deque>
 #include <memory>
@@ -922,13 +923,37 @@ void draw_panel(const EditorSnapshot& state) {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Clear accumulated ragdolls after repeated shot playback.");
                 ImGui::Spacing();
+                ImGui::BeginDisabled(state.playing);
+                action_button("Toggle Citadel glow", EditorAction::ToggleCitadelGlow,
+                              ImGui::GetContentRegionAvail().x);
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "Toggle hero, trooper, boss and health-bar glow together.");
+                ImGui::Spacing();
+                ImGui::BeginDisabled(state.playing);
+                action_button("Healthbar Toggle", EditorAction::ToggleHealthbars,
+                              ImGui::GetContentRegionAvail().x);
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "Toggle health bars together with the new unit-status mode.");
+                ImGui::Spacing();
+                ImGui::BeginDisabled(state.playing);
+                action_button("Near player opacity fix", EditorAction::NearPlayerOpacityFix,
+                              ImGui::GetContentRegionAvail().x);
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip(
+                        "Force full opacity on the near-player camera fades used while editing.");
+                ImGui::Spacing();
                 ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Lens")) {
                 ImGui::BeginDisabled(!state.ready || state.busy);
                 if (begin_panel_card("##dof-card")) {
-                    section_title("Depth of field", "Native engine");
+                    section_title("Native Depth of Field", "Dolly");
                     ImGui::BeginDisabled(!state.dof_available || !state.paused || state.playing ||
                                          !state.camera_count);
                     bool enabled = state.dof[0] != 0 && state.dof[1] != 0 &&
@@ -984,6 +1009,67 @@ void draw_panel(const EditorSnapshot& state) {
                     else
                         ImGui::TextWrapped(
                             "Alt: fine adjust | Ctrl+click: type.\nChanges save to Effects at the playhead.");
+                }
+                end_panel_card();
+                if (begin_panel_card("##citadel-dof-card")) {
+                    section_title("Citadel Depth of Field", "Game engine");
+                    ImGui::BeginDisabled(!state.citadel_dof_available || !state.paused ||
+                                         state.playing || !state.camera_count);
+                    bool citadel_enabled = state.citadel_dof_enabled;
+                    if (compact_checkbox("Enable DOF", &citadel_enabled, panel_scale))
+                        editor_enqueue(EditorAction::SetCitadelDofEnabled,
+                                       citadel_enabled ? 1 : 0);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                                        ImVec2(6 * panel_scale, 3 * panel_scale));
+                    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                        ImVec2(10 * panel_scale, 4 * panel_scale));
+                    static float sensor_draft = 0;
+                    static bool sensor_editing = false;
+                    if (!sensor_editing)
+                        sensor_draft = float(state.citadel_dof_sensor);
+                    ImGui::TextDisabled("Sensor size");
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##citadel-sensor", &sensor_draft, .5f, 3.0f, "%.2f",
+                                       ImGuiSliderFlags_AlwaysClamp);
+                    const bool sensor_committed = ImGui::IsItemDeactivatedAfterEdit();
+                    sensor_editing = ImGui::IsItemActive();
+                    if (sensor_committed)
+                        editor_enqueue(EditorAction::SetCitadelDofSensorSize, double(sensor_draft));
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Lens sensor size in inches, 0.5 to 3.0.");
+                    constexpr double kFocusMaximum = 10000.0;
+                    const auto focus_to_slider = [kFocusMaximum](double value) {
+                        return float(std::log(1.0 + std::max(0.0, value)) /
+                                     std::log(1.0 + kFocusMaximum));
+                    };
+                    const auto slider_to_focus = [kFocusMaximum](double value) {
+                        return std::exp(std::clamp(value, 0.0, 1.0) *
+                                        std::log(1.0 + kFocusMaximum)) - 1.0;
+                    };
+                    static float focus_draft = 0;
+                    static bool focus_editing = false;
+                    if (!focus_editing)
+                        focus_draft = focus_to_slider(state.citadel_dof_focus);
+                    char focus_label[64]{};
+                    std::snprintf(focus_label, sizeof(focus_label), "Focus distance · %.0f in",
+                                  slider_to_focus(focus_draft));
+                    ImGui::TextDisabled("%s", focus_label);
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##citadel-focus", &focus_draft, 0.0f, 1.0f, "",
+                                       ImGuiSliderFlags_AlwaysClamp);
+                    const bool focus_committed = ImGui::IsItemDeactivatedAfterEdit();
+                    focus_editing = ImGui::IsItemActive();
+                    if (focus_committed)
+                        editor_enqueue(EditorAction::SetCitadelDofFocusDistance,
+                                       slider_to_focus(focus_draft));
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Focus distance in inches, 0-10000 on a log scale.");
+                    ImGui::PopStyleVar(2);
+                    ImGui::EndDisabled();
+                    if (!state.camera_count)
+                        ImGui::TextWrapped("Capture a camera to author DOF settings.");
+                    else
+                        ImGui::TextWrapped("Changes save to Effects at the playhead.");
                 }
                 end_panel_card();
                 if (begin_panel_card("##reshade-card")) {

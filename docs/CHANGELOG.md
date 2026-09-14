@@ -1,6 +1,6 @@
 # Changes
 
-## 0.5.9 alpha — Export flow wording and launcher notes
+## 0.5.9 alpha — Export flow wording, Citadel controls and launcher notes
 
 - Clarify the layered export flow in the Export panel: the color video records
   first, ticked passes are extra takes that follow automatically, and the
@@ -9,6 +9,19 @@
 - Put the **In-game capture** switch on the Library page beside **Open replay
   in Dolly** as well as the Cameras toolbar, so it no longer requires the Full
   editor switch.
+- Add in-game Camera-tab buttons under Clear ragdolls: **Toggle Citadel glow**
+  (boss/player/trooper glow switches plus health-bar glow), **Healthbar
+  Toggle** (health bars and the new unit-status mode) and **Near player
+  opacity fix** (full opacity on the near-player camera fades). Each toggle
+  reads the current value before flipping.
+- Rename the native DOF card to **Native Depth of Field** and add a **Citadel
+  Depth of Field** card to the in-game Lens tab: an Enable DOF switch
+  (`r_citadel_depthoffield_enable` with `r_depth_of_field`) and sensor-size
+  and focus-distance sliders on the engine's documented bounds (0.5–3, 0–10000
+  with a logarithmic focus scale).
+- Mirror the Citadel DOF card on the desktop Camera tab. Sliders author the
+  shot at the playhead and apply it through the existing paused preview, so
+  values save to Effects and play back through the native effect binder.
 - Clarify launch-safety wording: Dolly refuses to launch or connect unless it
   started the game process itself and always passes `-dev -insecure -console`.
   The `-insecure` launch-option advice protects the temporary plugin-mount

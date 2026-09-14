@@ -311,7 +311,11 @@ when using that backend. **Stop / restore** is always available in the footer.
 
 The in-game panel has **Camera**, **Lens** and **Export** tabs. It remains freely
 draggable and resizable. Camera includes Updates / s inside Free camera and a
-standalone Clear ragdolls button below it. Lens contains DOF and the ReShade menu.
+standalone Clear ragdolls button below it, followed by **Toggle Citadel glow**,
+**Healthbar Toggle** and **Near player opacity fix**. The glow and health-bar
+buttons read the current values and flip them; the opacity fix forces the
+near-player camera fades back to full. Lens contains the **Native Depth of
+Field** card, the **Citadel Depth of Field** card and the ReShade menu.
 Export includes independent World, Players and Effects switches alongside depth.
 Save/load and full graph editing remain on the desktop; both surfaces share the
 same project. **Log** opens a separate resizable activity window.
@@ -330,6 +334,16 @@ Choose the scene first. Capture timing determines authored key timestamps;
 frozen preview determines whether replay time advances during playback.
 
 ## Depth of field and other camera variables
+
+The in-game **Lens** tab separates the two depth-of-field systems. **Native
+Depth of Field** is Dolly's own engine override (the focus ranges and ground
+tilt), and **Citadel Depth of Field** is the game's built-in effect. The
+Citadel card has an **Enable DOF** switch plus **Sensor size** and **Focus
+distance** sliders; both sliders author the shot at the playhead and apply it
+live, so they save to Effects and play back through the native effect binder.
+The desktop **Cameras** tab carries the same Citadel card, with the sliders
+applying through the paused-camera preview. Sensor size uses 0.5–3 inches and
+focus distance uses 0–10000 inches on a logarithmic scale.
 
 On **Effects**, use **+ Citadel DOF** as a starting point. The preset
 enables the native Citadel DOF controls and creates focus and aperture tracks.
