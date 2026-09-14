@@ -7,8 +7,11 @@ Native mode loads a user-mode DLL for camera rendering and in-game controls.
 It does not install a kernel driver.
 
 KEEP -insecure IN DEADLOCK'S LAUNCH OPTIONS WHILE USING DOLLY.
-The launcher also adds -dev -insecure -console to its editing session.
-Close that session before launching Deadlock normally.
+Dolly refuses to launch or connect unless it started the game process itself,
+and it always adds -dev -insecure -console to that process. The launch-option
+setting protects the brief window before gameinfo.gi is restored: if Deadlock
+is started outside Dolly while a session is open, exit that game first.
+Close the editing session before launching Deadlock normally.
 
 This source package includes the Windows native helper. Run Launch_Dolly.bat
 or python -m dolly with Python 3.10+ and Tcl/Tk. Windows EXE builds are covered

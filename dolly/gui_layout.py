@@ -258,7 +258,8 @@ def build_export(app):
     left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
     right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
     passes = card(left, "Output passes")
-    ttk.Label(passes, text="Color video is always included", style="CardMuted.TLabel").pack(anchor="w", pady=(0, GAP))
+    ttk.Label(passes, text="Color video always records first. Ticked passes are extra takes recorded automatically after it.",
+              style="CardMuted.TLabel", wraplength=320).pack(anchor="w", pady=(0, GAP))
     app.video_depth_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="Depth master (.mov)", variable=app.video_depth, command=app._depth_toggled)
     app.video_depth_checkbox.pack(anchor="w", pady=(0, GAP))
     app.video_depth_exr_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="EXR sequence (float)", variable=app.video_depth_exr)
@@ -287,6 +288,8 @@ def build_export(app):
     app.video_stop_button.configure(state="disabled")
     app.video_cancel_button.configure(state="disabled")
     ttk.Label(controls, textvariable=app.video_status_text, style="CardMuted.TLabel", wraplength=760).pack(fill="x")
+    ttk.Label(controls, text="With passes ticked: Record video records the color take. When it finishes, Dolly records each ticked pass in turn; you do not need to press Finish again.",
+              style="CardMuted.TLabel", wraplength=760).pack(fill="x")
     runtime = disclosure(body, "FFmpeg runtime")
     app.ffmpeg_path_entry = field(runtime.body, "Executable", app.ffmpeg_path)
     app.ffmpeg_browse_button = actions(runtime.body, (("Browse FFmpeg...", app._browse_ffmpeg), ("Save path", app._save_ffmpeg_preference),

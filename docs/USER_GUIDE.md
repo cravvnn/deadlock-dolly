@@ -44,7 +44,8 @@ only when the hideout has finished loading. Probe does not rerun the unlocker
 inside a demo. Netconsole remains the default; VConsole is a troubleshooting
 alternative selected before a new launch.
 
-The launcher keeps `-dev -insecure -console`. **Launch options…** accepts
+The launcher keeps `-dev -insecure -console` and refuses to launch or connect
+unless it started the game process itself. **Launch options…** accepts
 restricted additional display options such as `-windowed -w 1280 -h 720`.
 Replay/map commands, `-secure`, Vulkan and managed game/console arguments cannot
 override the editing configuration. Close this editing session before opening
@@ -219,9 +220,10 @@ they are not live previews or exact lens frustums. Large paths draw a reduced
 set of markers and always include the selected view. The desktop XY overview
 remains available.
 
-Expanded in-game position/rotation/aspect curves remain planned. Real-time MP4
-and ReShade color effects are available in 0.5.0; fixed-step rendering, audio
-and depth/world/hero/effect passes remain future Stage 3 work.
+Expanded in-game position/rotation/aspect curves remain planned. Real-time and
+fixed-step MP4 recording, the paired depth master, isolated layer takes and
+ReShade color effects (with the scene depth published to ReShade) are
+available; audio remains future work.
 
 ## Framing curve
 
@@ -308,6 +310,14 @@ standalone Clear ragdolls button below it. Lens contains DOF and the ReShade men
 Export includes independent World, Players and Effects switches alongside depth.
 Save/load and full graph editing remain on the desktop; both surfaces share the
 same project. **Log** opens a separate resizable activity window.
+
+The color video is always recorded first. Ticking **Depth master** or a layer
+adds extra takes: when the color take finishes (at the end of the shot, or when
+you press **Finish recording**), Dolly records each ticked pass in turn, playing
+the shot again for each one. The passes land in subfolders of the take, and you
+do not need to press anything between takes. Press **Finish recording** only to
+end the color take early; the queued passes still follow. **Discard recording**
+drops the current take instead.
 
 **Frozen preview** is off by default. It moves along shot seconds through the
 currently paused scene rather than resuming or seeking to the shot's start.

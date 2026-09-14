@@ -195,8 +195,10 @@ separate terms in [assets/README.md](assets/README.md).
 replaces stale bundled ReShade search paths instead of listing each effect
 several times, publishes the verified scene depth to ReShade for depth-based
 effects, and stops depth takes failing on the scene tracker's observation
-budget or on a later scene pass without per-view constants. Diagnostics now
-include the newest game crash dumps and name the depth rejection reason.
+budget or on a later scene pass without per-view constants. The Export panel
+now states that the color video records first and ticked passes follow it, and
+diagnostics include the newest game crash dumps and name the depth rejection
+reason.
 
 **0.5.7:** matches the desktop and in-game panels to the wireframe layout and
 keeps Windows builds manual.

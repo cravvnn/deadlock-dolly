@@ -644,6 +644,17 @@ class VideoGuiTests(unittest.TestCase):
         self.assertEqual(suggested.parent, Path(self.folder.name))
         self.assertNotIn("shot", suggested.parts)
 
+    def test_color_take_completion_announces_the_queued_passes(self):
+        self.app._base_capture = SimpleNamespace(path=Path(self.folder.name) / "shot.mp4")
+        self.app._layer_queue = [("players", "black"), ("players", "white")]
+        self.app._active_layer_take = None
+        self.app.video_export.output_path = Path(self.folder.name) / "shot" / "shot.mp4"
+        self.app.video_export.status.return_value = {"state": "completed"}
+        self.app._submit = Mock()
+        self.app._log = Mock()
+        self.app._video_operation_done({"state": "completed"})
+        self.assertIn("Color take saved", self.app.status_text.get())
+
     def test_combine_layer_writes_rgba_mov_and_removes_intermediates(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")

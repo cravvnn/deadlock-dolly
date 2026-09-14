@@ -617,6 +617,11 @@ class DollyApp:
                     # the queue advances to the next layer.
                     self._pending_combine = taken[0]
             self._pipeline_advance = True
+            if (taken is None and self._base_capture is not None and self._layer_queue
+                    and not status.get("master")):
+                # The color take of a layered run just landed. Say so, because
+                # the selected pass takes start immediately afterwards.
+                self.status_text.set("Color take saved. Recording the selected passes…")
         elif state in ("failed", "cancelled"):
             layered = self._base_capture is not None or self._layer_queue
             self._pending_combine = None
