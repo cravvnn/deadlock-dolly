@@ -47,6 +47,39 @@ class ReleasePackagingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release_files.source_files(self.root)
 
+    def test_windows_bundle_omits_runtime_logs_demos_and_update_staging(self):
+        for name in ["Dolly.exe", "BUILD_INFO.json", "_internal/base_library.zip",
+                     "_internal/python312.dll", "logs/Dolly.log",
+                     "logs/20260912_065349_ccf753618f/session.json",
+                     "shot.dem", "clip.mp4", ".env", ".env.local",
+                     ".dolly-update-0.5.14/Dolly.zip", "build/note.txt"]:
+            file = self.root / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("fixture")
+        expected = {"Dolly.exe", "BUILD_INFO.json", "_internal/base_library.zip", "_internal/python312.dll"}
+        names = {path.relative_to(self.root).as_posix() for path in release_files.bundle_files(self.root)}
+        self.assertEqual(names, expected)
+
+    def test_windows_bundle_zip_prefixes_and_never_archives_runtime_data(self):
+        for name in ["Dolly.exe", "_internal/base_library.zip", "logs/Dolly.log",
+                     "logs/20260912_065349_ccf753618f/session.json", "shot.dem"]:
+            file = self.root / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("fixture")
+        archive = release_files.bundle_zip(self.root, self.root / "windows.zip")
+        with zipfile.ZipFile(archive) as package:
+            self.assertEqual(set(package.namelist()),
+                             {"DeadlockDolly/Dolly.exe", "DeadlockDolly/_internal/base_library.zip"})
+            self.assertIsNone(package.testzip())
+
+    def test_windows_bundle_zip_guard_rejects_a_leaked_excluded_path(self):
+        leaked = self.root / "logs/Dolly.log"
+        leaked.parent.mkdir(parents=True)
+        leaked.write_text("fixture")
+        with patch.object(release_files, "bundle_files", return_value=[leaked]):
+            with self.assertRaisesRegex(OSError, "Excluded runtime data"):
+                release_files.bundle_zip(self.root, self.root / "windows.zip")
+
     def icon_fixture(self):
         icon = Path(__file__).resolve().parents[1] / "assets/dolly.ico"
         raw = icon.read_bytes()

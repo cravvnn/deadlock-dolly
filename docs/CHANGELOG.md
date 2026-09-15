@@ -10,6 +10,10 @@
   reported that the build did not accept the switches), so those master
   switches are never touched. Exact prior values are still snapshotted and
   restored on the next press.
+- Build the Windows package from an explicit file list that never includes
+  runtime `logs/`, demos, recordings or staged update folders, so a folder that
+  was run in place cannot distribute session journals; the source export already
+  enforced the same rule.
 
 ## 0.5.12 alpha — In-folder updates and smoother recovery
 

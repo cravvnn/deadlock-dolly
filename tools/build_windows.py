@@ -14,13 +14,12 @@ import struct
 import subprocess
 import sys
 import tempfile
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from dolly import __version__
 from dolly.launcher import UNLOCKER_SHA256
-from release_files import source_zip, sha256
+from release_files import bundle_zip, sha256, source_zip
 from build_native import build_native, copy_native_runtime, reject_game_binaries
 from fetch_ffmpeg import download as download_ffmpeg, stage as stage_ffmpeg
 
@@ -212,13 +211,7 @@ def main() -> int:
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     windows_zip = dist / f"Deadlock_Dolly_{__version__}_Windows_x64.zip"
-    with zipfile.ZipFile(windows_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for file in sorted(bundle.rglob("*")):
-            if file.is_file():
-                archive.write(file, "DeadlockDolly/" + file.relative_to(bundle).as_posix())
-    with zipfile.ZipFile(windows_zip) as archive:
-        if archive.testzip() is not None:
-            raise RuntimeError("Windows archive integrity check failed")
+    bundle_zip(bundle, windows_zip)
     sources = source_zip(ROOT, dist / f"Deadlock_Dolly_{__version__}_Source.zip")
     (dist / "SHA256SUMS.txt").write_text("".join(f"{sha256(path)}  {path.name}\n" for path in (windows_zip, sources)), encoding="utf-8")
     print(f"Ready: {windows_zip}\nSource: {sources}\nNothing was uploaded or published.")
