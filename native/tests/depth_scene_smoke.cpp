@@ -253,6 +253,8 @@ void check(D3D_DRIVER_TYPE driver) {
     t.context.p->Draw(3, 0);
     require(t.tracker->consume(t.context.p).result == SceneResult::incompatible_view,
             "Forward-Z depth overwrite silently accepted");
+    require(std::strstr(scene_diagnostic(), "depth function=LESS") != nullptr,
+            "Forward-Z rejection did not report the observed depth comparison");
     // A later full supported scene draw rewrites the target, so an earlier
     // unsupported pass on the same source must not poison the frame forever.
     t.bind(t.context.p, scene.view.p);

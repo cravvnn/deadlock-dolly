@@ -14,6 +14,9 @@
   runtime `logs/`, demos, recordings or staged update folders, so a folder that
   was run in place cannot distribute session journals; the source export already
   enforced the same rule.
+- Name the observed depth comparison in the scene-depth rejection diagnostic
+  (for example `why=depth function=LESS`), so a failed depth take identifies the
+  offending pass from its own message instead of only reporting "depth function".
 
 ## 0.5.12 alpha — In-folder updates and smoother recovery
 

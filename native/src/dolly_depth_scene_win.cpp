@@ -56,6 +56,19 @@ void note_failure(const char* reason) noexcept {
     if (lock.owns_lock())
         std::snprintf(gLastFailure, sizeof(gLastFailure), "%s", reason);
 }
+const char* comparison_name(D3D11_COMPARISON_FUNC value) noexcept {
+    switch (value) {
+    case D3D11_COMPARISON_NEVER: return "NEVER";
+    case D3D11_COMPARISON_LESS: return "LESS";
+    case D3D11_COMPARISON_EQUAL: return "EQUAL";
+    case D3D11_COMPARISON_LESS_EQUAL: return "LESS_EQUAL";
+    case D3D11_COMPARISON_GREATER: return "GREATER";
+    case D3D11_COMPARISON_NOT_EQUAL: return "NOT_EQUAL";
+    case D3D11_COMPARISON_GREATER_EQUAL: return "GREATER_EQUAL";
+    case D3D11_COMPARISON_ALWAYS: return "ALWAYS";
+    }
+    return "unknown";
+}
 const char* scene_result_name(SceneResult result) noexcept {
     switch (result) {
     case SceneResult::ready: return "ready";
@@ -414,8 +427,16 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
         const bool supported = full_viewport && reversed_test;
         std::lock_guard<std::mutex> lock(impl->mutex);
         impl->note_target(texture.p);
-        if (!supported && (!impl->first_source.p || impl->first_source.p == texture.p))
-            note_failure(full_viewport ? "depth function" : "viewport");
+        if (!supported && (!impl->first_source.p || impl->first_source.p == texture.p)) {
+            if (full_viewport) {
+                char reason[64]{};
+                std::snprintf(reason, sizeof(reason), "depth function=%s",
+                              comparison_name(desc.DepthFunc));
+                note_failure(reason);
+            } else {
+                note_failure("viewport");
+            }
+        }
         auto* record = impl->record(context);
         if (!record)
             return;
