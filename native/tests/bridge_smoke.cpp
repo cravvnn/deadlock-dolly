@@ -1318,9 +1318,10 @@ void run() {
     config.playback_flags = 1;
     std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
     editor_worker_tick(f.mapping.data(), true);
-    require(!editor_enqueue(EditorAction::SetPlaybackSpeed, 1) &&
-                !editor_enqueue(EditorAction::SetPlaybackRate, 30),
-            "Playback controls changed settings during a playing shot");
+    require(editor_enqueue(EditorAction::SetPlaybackSpeed, .5),
+            "Live playback speed was rejected during a playing shot");
+    require(!editor_enqueue(EditorAction::SetPlaybackRate, 30),
+            "The update rate changed during a playing shot");
     config.sequence += 2;
     config.playback_flags = 0;
     std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));

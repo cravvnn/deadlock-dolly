@@ -91,6 +91,7 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
         raise ValueError("An unfinished update must be recovered first")
     names = sorted(set(old["files"]) | set(new["files"]) | {MANIFEST})
     before = {}
+    modified = set()
     for name in names:
         path = checked_file(target, name)
         if name != MANIFEST:
@@ -98,8 +99,10 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
                 raise ValueError("Staged update changed")
             if path.exists() and name not in old["files"]:
                 raise ValueError("Update would overwrite an unowned file: " + name)
-            if name in old["files"] and (not path.is_file() or digest_file(path) != old["files"][name]):
-                raise ValueError("Application file was modified; preserve it before updating: " + name)
+            if name in old["files"] and path.is_file() and digest_file(path) != old["files"][name]:
+                # A locally modified application file (for example a hand-built
+                # DLL) is backed up like any other before the new version wins.
+                modified.add(name)
         before[name] = digest_file(path) if path.is_file() else None
         if path.is_file():
             backup = checked_file(work / "backup", name)
@@ -110,7 +113,7 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
                 os.fsync(durable.fileno())
             if digest_file(backup) != before[name]:
                 raise ValueError("Update backup verification failed")
-    state = {"state": "applying", "target": str(target), "before": before}
+    state = {"state": "applying", "target": str(target), "before": before, "modified": sorted(modified)}
     atomic_json(work / "journal.json", state)
     atomic_json(target / PENDING, plan)
     try:
@@ -237,7 +240,7 @@ def launch_program(command, cwd, *, wait=False):
 
 def launch_worker(target, work, *, recover=False, parent_pid=None):
     target, work = Path(target).resolve(), Path(work).resolve()
-    if work.parent != target.parent or not work.name.startswith(".dolly-update-"):
+    if work.parent != target or not work.name.startswith(".dolly-update-"):
         raise ValueError("Unexpected update workspace")
     # A private copy can replace Dolly.exe after both onefile processes close.
     helper = work / "DollyUpdater.exe"
@@ -260,12 +263,76 @@ def pending_work(target):
         return None
     plan = json.loads(marker.read_text(encoding="utf-8"))
     work = Path(plan["work"]).resolve()
-    if Path(plan["target"]).resolve() != target or work.parent != target.parent or not work.name.startswith(".dolly-update-"):
+    if Path(plan["target"]).resolve() != target or work.parent != target or not work.name.startswith(".dolly-update-"):
         raise ValueError("Invalid pending update recovery location")
     saved = json.loads((work / "plan.json").read_text(encoding="utf-8"))
     if saved != plan:
         raise ValueError("Pending update plan disagrees with recovery journal")
     return work
+
+
+def _workspace_finished(work, keep):
+    """Decide whether a workspace is safe to delete or still in use."""
+    if keep is not None and work.resolve() == keep:
+        return False
+    journal = work / "journal.json"
+    if journal.exists():
+        try:
+            state = json.loads(journal.read_text(encoding="utf-8")).get("state")
+        except (OSError, ValueError):
+            return False
+        return state != "applying"
+    if (work / "result.json").exists():
+        return True
+    try:
+        # No result yet: another instance may still be downloading.
+        return time.time() - work.stat().st_mtime >= 3600
+    except OSError:
+        return False
+
+
+def _workspace_records_target(work, target):
+    """Only claim a legacy sidecar workspace that names this installation."""
+    recorded = None
+    for name in ("plan.json", "journal.json"):
+        try:
+            data = json.loads((work / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data.get("target"), str):
+            recorded = data["target"]
+    if recorded is None:
+        return False
+    try:
+        return Path(recorded).resolve() == target
+    except OSError:
+        return False
+
+
+def cleanup_workspaces(target, keep=None):
+    """Remove update workspaces that no recovery depends on.
+
+    The public launcher calls this before opening the editor, and after a
+    successful update the relaunched launcher removes the folder it was
+    installed from. Workspaces are kept while a recovery is pending or a
+    transaction is mid-apply. A recently touched folder without a result may be
+    an active download in another instance and is left alone for an hour.
+    Releases before the in-folder change staged beside the install; those
+    legacy folders are removed too when they record this installation.
+    """
+    target = Path(target).resolve()
+    keep = Path(keep).resolve() if keep is not None else None
+    if (target / PENDING).exists():
+        return
+    candidates = {w.resolve() for w in target.glob(".dolly-update-*") if w.is_dir()}
+    candidates.update(w.resolve() for w in target.parent.glob(".dolly-update-*")
+                      if w.is_dir() and _workspace_records_target(w, target))
+    for work in sorted(candidates):
+        if _workspace_finished(work, keep):
+            try:
+                shutil.rmtree(work)
+            except OSError:
+                pass
 
 
 def self_test(report):
@@ -326,7 +393,7 @@ def main(argv=None):
         args.recover = True
     plan = json.loads(args.plan.read_text(encoding="utf-8"))
     work, target = Path(plan["work"]).resolve(), Path(plan["target"]).resolve()
-    if args.plan.resolve().parent != work or not work.name.startswith(".dolly-update-") or work.parent != target.parent:
+    if args.plan.resolve().parent != work or not work.name.startswith(".dolly-update-") or work.parent != target:
         raise ValueError("Unexpected update workspace")
     try:
         if args.parent:

@@ -30,17 +30,21 @@ An explicitly selected external FFmpeg or ReShade installation is not replaced.
 
 Only files listed in the application manifest are updated. Shots, replays,
 exports, logs and unknown custom files are preserved, even inside the install
-folder. An update refuses to overwrite modified managed files or an unowned file
-that conflicts with a new package. Keep edited shader presets and external tools
-outside the bundled runtime to avoid those conflicts.
+folder. A managed application file that was modified locally (for example a
+hand-built DLL) is backed up in the update folder and replaced. An update still
+refuses to overwrite an unowned file that conflicts with a new package. Keep
+edited shader presets and external tools outside the bundled runtime to avoid
+those conflicts.
 
 ## Interrupted updates and recovery
 
 The updater verifies complete backups before changing installed files, journals
 the transaction, and restores the previous files on replacement or startup-check
-failure. Staging and backups are kept in a `.dolly-update-*` folder beside Dolly.
-Those folders contain update diagnostics and may be removed after confirming the
-new build works; do not remove them while an update or recovery is pending.
+failure. Staging and backups are kept in a `.dolly-update-*` folder inside the
+Dolly folder, never beside it. After a successful update the following launch
+removes that folder automatically; it is kept only while a recovery is pending
+or a transaction is unfinished. A verified download is reused on a retry instead
+of downloading the same release again.
 
 After an interrupted update, close Deadlock and open `Dolly.exe` again. This
 self-contained launcher can recover even if the editor runtime in `_internal`
@@ -49,11 +53,11 @@ the old processes to close, restores journaled application files, then reopens
 Dolly. No separate updater executable is installed beside Dolly.exe.
 
 Recovery does not restore, replace or downgrade your preferences or shot files.
-Keep the neighboring `.dolly-update-*` folder and verified backups until recovery
-finishes. If the public Dolly.exe itself is damaged and cannot start, the private
-`DollyUpdater.exe` in that recovery folder can be run with `--plan plan.json
---recover`; otherwise extract a fresh release into a separate folder. Ordinary
-recovery needs only Dolly.exe.
+Keep the `.dolly-update-*` folder inside the Dolly folder and its verified
+backups until recovery finishes. If the public Dolly.exe itself is damaged and
+cannot start, the private `DollyUpdater.exe` in that recovery folder can be run
+with `--plan plan.json --recover`; otherwise extract a fresh release into a
+separate folder. Ordinary recovery needs only Dolly.exe.
 
 ## For the publisher
 
@@ -63,8 +67,8 @@ recovery needs only Dolly.exe.
    FFmpeg, and matching native/Python components. Both GUI and updater smoke
    checks must pass.
 3. Create a release from the intended commit on main, using a tag such as
-   `v0.5.10-alpha`. Attach the generated
-   `Deadlock_Dolly_0.5.10-alpha_Windows_x64.zip`, source ZIP and SHA256SUMS.txt.
+   `v0.5.13-alpha`. Attach the generated
+   `Deadlock_Dolly_0.5.13-alpha_Windows_x64.zip`, source ZIP and SHA256SUMS.txt.
 4. Leave GitHub's pre-release box unchecked and mark the release Latest.
    "alpha" can remain in the title and version. GitHub must expose the uploaded
    Windows asset's SHA-256 digest before the updater accepts it.

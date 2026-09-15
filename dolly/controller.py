@@ -63,6 +63,13 @@ CAMERA_READBACK_INTERVAL = .25
 CAMERA_DRIFT_LIMIT = 64.0
 CAMERA_DRIFT_SAMPLES = 3
 NATIVE_PAUSE_TIMEOUT = 3.0
+# Live-verified switches for the in-game health-bar toggle. Disabling
+# citadel_unit_status_enabled or citadel_hud_objective_health_enabled while a
+# replay renders hangs the game with a DX11 device error, so those master
+# switches are never written. Prior values are snapshotted before hiding and
+# restored exactly on re-enable; bar glow stays owned by toggle_citadel_glow.
+HEALTHBAR_SWITCH_CVARS = ("citadel_healthbars_enabled", "citadel_unit_status_use_new")
+HEALTHBAR_SWITCH_ON = {"citadel_healthbars_enabled": 1.0, "citadel_unit_status_use_new": 1.0}
 
 
 class CameraPositionError(RuntimeError):
@@ -196,6 +203,7 @@ class Controller:
         self._restore = {}
         self._demo_speed_changed = False
         self._playback_restore = {}
+        self._healthbar_restore = {}
         self._playback_details = None
         self._playback_metrics = {}
         self._playback_samples = deque(maxlen=256)
@@ -409,6 +417,7 @@ class Controller:
             self._native_manual = False
             self._game_ui_visible = False
             self._game_ui_restore.clear()
+            self._healthbar_restore.clear()
             self._console_open = None
             self._native_last_status = {}
             self._native_handoff_details = {}
@@ -1913,14 +1922,56 @@ class Controller:
             self._message("Citadel glow disabled." if disabling else "Citadel glow enabled.")
 
     def toggle_healthbars(self):
-        """Flip the enemy health-bar set together with the new unit-status mode."""
+        """Hide or restore the health bars.
+
+        Only the live-verified switches are written, one command at a time.
+        The exact prior values are snapshotted and restored on the next press.
+        Bar glow stays owned by :meth:`toggle_citadel_glow`.
+        """
         with self._op_lock:
             self._require_quiet_session("toggling health bars")
-            enabling = self._console_cvar("citadel_healthbars_enabled") != 1
-            state = 1 if enabling else 0
-            self._request(f"citadel_healthbars_enabled {state}", allow_error=True)
-            self._request(f"citadel_unit_status_use_new {state}", allow_error=True)
-            self._message("Health bars enabled." if enabling else "Health bars disabled.")
+            if self._healthbar_restore:
+                values = dict(self._healthbar_restore)
+                for name, value in values.items():
+                    self._request(f"{name} {numeric(value)}", allow_error=True)
+                for name, expected in values.items():
+                    current = self._console_cvar(name)
+                    if current is not None and current != expected:
+                        raise RuntimeError(
+                            f"The game did not restore {name}. Health-bar state is unchanged; retry.")
+                self._healthbar_restore.clear()
+                self._message("Health bars restored.")
+                return
+            if self._console_cvar("citadel_healthbars_enabled") == 0:
+                # Already hidden outside Dolly; turn the switches back on.
+                applied = []
+                for name, value in HEALTHBAR_SWITCH_ON.items():
+                    self._request(f"{name} {numeric(value)}", allow_error=True)
+                    if self._console_cvar(name) == value:
+                        applied.append(name)
+                if len(applied) != len(HEALTHBAR_SWITCH_ON):
+                    raise RuntimeError("This game build did not accept the health-bar switches.")
+                self._message("Health bars enabled.")
+                return
+            snapshot = {}
+            for name in HEALTHBAR_SWITCH_CVARS:
+                value = self._console_cvar(name)
+                snapshot[name] = value if value is not None else HEALTHBAR_SWITCH_ON[name]
+            applied = []
+            for name in HEALTHBAR_SWITCH_CVARS:
+                self._request(f"{name} 0", allow_error=True)
+                if self._console_cvar(name) == 0.0:
+                    applied.append(name)
+            if not applied:
+                raise RuntimeError(
+                    "This game build did not accept the health-bar switches. Nothing changed.")
+            self._healthbar_restore = snapshot
+            if len(applied) == len(HEALTHBAR_SWITCH_CVARS):
+                self._message("Health bars hidden.")
+            else:
+                unavailable = ", ".join(name for name in HEALTHBAR_SWITCH_CVARS
+                                         if name not in applied)
+                self._message("Health bars hidden. This build did not report: " + unavailable + ".")
 
     def near_player_opacity_fix(self):
         """Force full opacity on the near-player camera fades."""
@@ -1929,6 +1980,37 @@ class Controller:
             self._request("citadel_camera_fade_viewed_near_opacity 1", allow_error=True)
             self._request("citadel_camera_fade_other_near_opacity 1", allow_error=True)
             self._message("Near-player fade opacity forced to full.")
+
+    def set_playback_speed(self, speed):
+        """Apply a replay speed immediately through the demo timescale.
+
+        While paused the value applies on the next resume; while playing the
+        replay slows or speeds up immediately. The native camera path follows
+        replay time, so an authored shot scales with it. Stop / restore still
+        returns a Dolly-owned speed to 1x.
+        """
+        with self._op_lock:
+            if isinstance(speed, bool) or not isinstance(speed, (int, float)):
+                raise ValueError("Playback speed must be a number between 0.05 and 4.")
+            speed = float(speed)
+            if not math.isfinite(speed) or not .05 <= speed <= 4:
+                raise ValueError("Playback speed must be between 0.05 and 4.")
+            if getattr(self, "_export_timing", None) is not None:
+                raise RuntimeError("Stop the fixed-step export before changing playback speed.")
+            details = self._playback_details
+            if details is not None and details.get("camera_backend") == "console":
+                raise RuntimeError(
+                    "Live speed changes require the native camera. Stop the shot and choose a speed before playing.")
+            if self._demo is None:
+                self._message(f"Replay speed set to {numeric(speed)}x for the next replay.")
+                return self.status()
+            self._require_demo(require_tick=False)
+            self._request("demo_timescale " + numeric(speed))
+            self._demo_speed_changed = True
+            if details is not None:
+                details["speed"] = speed
+            self._message(f"Replay speed set to {numeric(speed)}x.")
+            return self.status()
 
     def toggle_replay(self):
         """Pause/resume replay time without restarting an authored native path.
@@ -2705,8 +2787,17 @@ class Controller:
                     raise RuntimeError("Native camera time changed unexpectedly. Playback stopped before following that seek.")
                 tick = int(status["tick"])
                 if previous_tick is not None:
+                    # A live speed change updates the demo timescale; keep the
+                    # jump bound scaled to the speed actually playing.
+                    live_speed = speed
+                    details = self._playback_details
+                    if details:
+                        candidate = details.get("speed", speed)
+                        if (isinstance(candidate, (int, float)) and math.isfinite(candidate)
+                                and .05 <= candidate <= 4):
+                            live_speed = float(candidate)
                     allowed = max(128, project.tick_rate * 2,
-                                  max(0, now - previous_poll) * project.tick_rate * speed * 2 + 4)
+                                  max(0, now - previous_poll) * project.tick_rate * live_speed * 2 + 4)
                     if tick < previous_tick or tick - previous_tick > allowed:
                         raise RuntimeError("The replay jumped during the native shot. Camera playback stopped.")
                     if frozen and tick != previous_tick:

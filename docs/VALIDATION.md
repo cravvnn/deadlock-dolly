@@ -1,3 +1,77 @@
+# Validation — 0.5.13 alpha
+
+## Safe health-bar toggle
+
+- The health-bar toggle writes only `citadel_healthbars_enabled` and
+  `citadel_unit_status_use_new`, one command at a time, and never writes
+  `citadel_unit_status_enabled` or `citadel_hud_objective_health_enabled`.
+  Writing those master switches during a rendered replay hung the game with a
+  DX11 device error on 2026-09-14 (Windows Application Hang, deadlock.exe PID
+  460780, 13 seconds after the writes). Live toggles of the safe pair succeeded
+  earlier the same day on the same build.
+- A regression test asserts the hang-prone master switches are never written
+  and that the safe pair is snapshotted and restored exactly.
+
+## Checks
+
+- Full Python suite: 1127 tests run, no failures, 17 optional skips.
+- The live replay toggle is rechecked in Deadlock with the 0.5.13 build before
+  it is published.
+
+# Validation — 0.5.12 alpha
+
+## In-folder updates and recovery
+
+- Update staging, payloads and backups live in a `.dolly-update-*` folder inside
+  the Dolly folder. The launcher removes finished, failed and abandoned
+  workspaces, including legacy folders that earlier releases staged beside the
+  installation when they record this installation, while keeping any workspace
+  with a pending recovery or an applying transaction.
+- A deferred or retried update reuses an already-downloaded verified package
+  instead of downloading the release again.
+- A managed application file that was modified locally (for example a hand-built
+  native DLL) is backed up and replaced; a failed startup check still restores
+  it through rollback.
+
+## Checks
+
+- Full Python suite: 1126 tests run, no failures, 16 optional skips.
+- Source updater self-test passed: rollback, install and user-file preservation.
+- The frozen Windows package, native CTest run and relocated bundle startup
+  check are recorded with the 0.5.12 release build.
+- A real update hop runs on a machine with 0.5.11 installed to confirm the new
+  launcher removes the legacy beside-install folder after updating.
+
+# Validation — 0.5.11 alpha
+
+## Live replay speed and health-bar master
+
+- Playback speed applies live through `demo_timescale` while the replay is
+  playing or paused, in addition to the next Play shot. The native monitor
+  scales its replay-jump bound to the live speed; Stop / restore still returns
+  a Dolly-owned speed to 1×. Console-backend shots refuse a live change.
+- Toggle health bars is a master hide/restore for `citadel_unit_status_enabled`,
+  `citadel_healthbars_enabled` and `citadel_hud_objective_health_enabled`. It
+  snapshots each cvar's exact prior value (falling back to the build defaults
+  only for unreadable names), verifies the readback and restores the snapshot
+  on the next press. Style switches and `r_citadel_glow_health_bars` are not
+  touched; bar glow stays with Toggle Citadel glow.
+- The desktop Playback speed field applies the same live timescale as the
+  in-game combo. The in-game combo is no longer disabled during a playing shot.
+
+## Checks
+
+- Full Python suite: 1121 tests run, no failures, 16 optional skips.
+- Native MSVC Release: all 15 enabled CTest tests passed, including the
+  live-speed gate (speed accepted while a shot plays; update rate still
+  rejected) and the existing editor action IDs.
+- Frozen Windows build: PyInstaller build, packaged GUI smoke and a relocated
+  full-bundle startup check passed; the 0.5.11 Windows and source ZIPs match
+  their SHA256SUMS entries.
+- The live health-bar master switches and the live playback-speed change still
+  need a replay check in Deadlock; the automated suites cover the wire,
+  dispatch, snapshot/restore and authoring paths only.
+
 # Validation — 0.5.10 alpha
 
 ## Citadel controls

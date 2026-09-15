@@ -45,7 +45,7 @@ class LauncherTests(unittest.TestCase):
             editor.assert_not_called()
 
     def test_recovery_runs_without_the_editor_runtime_and_waits_for_bootloader(self):
-        work = self.target.parent / ".dolly-update-test"
+        work = self.target / ".dolly-update-test"
         with patch.object(worker, "pending_work", return_value=work), \
              patch.object(boot, "launcher_process_ids", return_value=(123, 100)), \
              patch.object(worker, "check_processes") as check, patch.object(worker, "launch_worker") as launch, \
@@ -76,11 +76,13 @@ class LauncherTests(unittest.TestCase):
                 if game: check.assert_not_called()
 
     def test_verified_download_reports_ready_but_does_not_install_in_worker_thread(self):
-        events = queue.Queue(); release = {"version": "1.2.3"}; work = self.target.parent / ".dolly-update-test"
+        events = queue.Queue(); release = {"version": "1.2.3"}; work = self.target / ".dolly-update-test"
         with patch.object(worker, "check_processes"), patch.object(updater, "check_latest", return_value=release), \
-             patch.object(updater, "download_update", return_value=work), patch.object(worker, "launch_worker") as install:
+             patch.object(updater, "download_update", return_value=work) as download, \
+             patch.object(worker, "launch_worker") as install:
             boot.check_for_update(self.target, events, (123,))
             self.assertEqual(events.get_nowait(), ("ready", work))
+            self.assertEqual(download.call_args.args[1], self.target)
             install.assert_not_called()
 
     def test_skipped_window_ignores_late_ready_event(self):
@@ -108,7 +110,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_legacy_manifest_migrates_to_single_public_executable(self):
         package(self.target, "1.0.0")
-        work = self.target.parent / ".dolly-update-migrate"
+        work = self.target / ".dolly-update-migrate"
         package(work / "payload", "1.0.1")
         runtime = work / "payload/_internal/DollyApp.exe"
         runtime.write_text("new editor")
@@ -121,7 +123,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual((self.target / "_internal/DollyApp.exe").read_text(), "new editor")
 
     def test_pending_recovery_requires_matching_plan(self):
-        work = self.target.parent / ".dolly-update-test"; work.mkdir()
+        work = self.target / ".dolly-update-test"; work.mkdir()
         plan = {"target": str(self.target), "work": str(work)}
         worker.atomic_json(self.target / worker.PENDING, plan)
         worker.atomic_json(work / "plan.json", {**plan, "target": str(self.target.parent)})

@@ -586,7 +586,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
             return false;
     }
     if (action == EditorAction::SetPlaybackSpeed &&
-        (value < .05 || value > 4 || state.playing || state.busy))
+        (value < .05 || value > 4 || state.busy))
         return false;
     if (action == EditorAction::SetPlaybackRate &&
         ((value != 30 && value != 60 && value != 120) || state.playing || state.busy))

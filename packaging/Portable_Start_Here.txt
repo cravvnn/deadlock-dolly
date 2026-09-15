@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.10 ALPHA — WINDOWS PORTABLE
+DEADLOCK DOLLY 0.5.13 ALPHA — WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -169,7 +169,7 @@ https://github.com/cravvnn/deadlock-dolly/issues
 
 Include the Dolly version, the action that failed and the Export diagnostics
 ZIP. If Dolly does not open, include logs/Dolly_startup.log and logs/Dolly.log
-when available. Logs and recovery journals are beside Dolly.exe.
+when available. Logs and recovery journals stay in the Dolly folder.
 
 Full guide: https://github.com/cravvnn/deadlock-dolly/blob/main/docs/USER_GUIDE.md
 Component notices are in LICENSE.txt and _internal/third_party.
@@ -181,6 +181,7 @@ Open Dolly.exe: its startup window checks the published GitHub Latest release.
 Use Open Dolly to skip a slow check. The updater is built into Dolly.exe. Automatic updates
 wait for saved work and a closed game. Settings > Updates has manual checking
 and an automatic-update switch. Shots, settings and external tool paths stay.
-After an interrupted update, close Deadlock and reopen Dolly.exe to recover.
-Keep the neighboring .dolly-update-* recovery folder and the _internal folder.
-See Updating.md for details.
+Update files live in a .dolly-update-* folder inside the Dolly folder and are
+removed automatically after a successful update. After an interrupted update,
+close Deadlock and reopen Dolly.exe to recover. Keep the .dolly-update-* folder
+and the _internal folder while a recovery is pending. See Updating.md for details.

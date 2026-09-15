@@ -48,7 +48,7 @@ class UpdateUI:
                 if release is None:
                     self.events.put(("status", "Dolly is up to date with the published Latest release."))
                 else:
-                    work = updater.download_update(release, application_root().parent,
+                    work = updater.download_update(release, application_root(),
                         lambda message: self.events.put(("status", message)))
                     self.events.put(("ready", (work, release["version"])))
             except Exception as error:

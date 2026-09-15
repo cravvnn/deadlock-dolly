@@ -236,7 +236,7 @@ class EditorSessionTests(unittest.TestCase):
         self.app._submit.call_args.args[1]()
         self.controller.seek_relative.assert_called_once_with(-1, tick_rate=128)
 
-    def test_playback_options_sync_both_directions_without_game_commands(self):
+    def test_playback_options_sync_both_directions_and_apply_speed_live(self):
         self.app.native_editor_active = True
         self.app.speed.set("0.1")
         self.app.rate.set("120")
@@ -248,7 +248,11 @@ class EditorSessionTests(unittest.TestCase):
         self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("0.25", "30"))
         config = self.bridge.configure_editor.call_args.kwargs
         self.assertEqual((config["playback_speed"], config["playback_rate"]), (.25, 30))
-        self.app._submit.assert_not_called()
+        # The speed applies live through the controller; the rate only updates
+        # the next shot because it paces the monitoring thread.
+        self.assertEqual(self.app._submit.call_count, 1)
+        self.app._submit.call_args.args[1]()
+        self.controller.set_playback_speed.assert_called_once_with(.25)
 
     def test_video_export_options_sync_both_directions(self):
         self.app.native_editor_active = True
@@ -356,16 +360,19 @@ class EditorSessionTests(unittest.TestCase):
                 self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("1", "60"))
         self.bridge.configure_editor.assert_not_called()
 
-    def test_busy_or_playing_cannot_change_running_shot_settings(self):
+    def test_busy_blocks_playback_events_and_playing_allows_live_speed(self):
         for action, value in (("set_playback_speed", .1), ("set_playback_rate", 120)):
             self.app.busy = True
             self.assertFalse(session.dispatch(self.app, {"action": action, "value": value}, self.bridge))
             self.app.busy = False
-            self.controller.status.return_value["playing"] = True
-            # Consume a stale event without applying it after a shot started.
-            self.assertTrue(session.dispatch(self.app, {"action": action, "value": value}, self.bridge))
-            self.controller.status.return_value["playing"] = False
-            self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("1", "60"))
+        self.controller.status.return_value["playing"] = True
+        # Speed applies live while the replay plays; the rate stays fixed
+        # because it paces the monitoring thread for the running shot.
+        self.assertTrue(session.dispatch(self.app, {"action": "set_playback_speed", "value": .1}, self.bridge))
+        self.assertTrue(session.dispatch(self.app, {"action": "set_playback_rate", "value": 120}, self.bridge))
+        self.assertEqual((self.app.speed.get(), self.app.rate.get()), ("0.1", "60"))
+        self.controller.status.return_value["playing"] = False
+        self.assertEqual(self.app._submit.call_count, 1)
 
     def test_in_game_options_are_acknowledged_once_after_application(self):
         self.app.native_editor_active = True

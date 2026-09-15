@@ -63,6 +63,10 @@ bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceCon
 // texture is reference-counted until it is replaced or the device is released.
 void reshade_set_scene_depth(ID3D11Texture2D* texture) noexcept;
 
+// TEMPORARY depth-feed diagnostic: appends a deduplicated state line to
+// %TEMP%\dolly_depth_debug.log. Remove with the depth investigation.
+void reshade_depth_debug(const char* text) noexcept;
+
 // Render lock must be held, all calls to reshade_render stopped. Call before
 // ResizeBuffers, device removal, or overlay device teardown. This releases all
 // runtime references to the backbuffer; a later Present can create a new runtime.

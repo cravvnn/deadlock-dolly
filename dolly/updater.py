@@ -121,6 +121,18 @@ def check_latest(current):
     return select_release(json.loads(payload), current)
 
 
+def verify_payload(destination, version):
+    """Recheck a staged payload against its own manifest before it is trusted."""
+    destination = Path(destination)
+    manifest = read_manifest(destination)
+    if manifest["version"] != version:
+        raise ValueError("Release version disagrees with package")
+    for name, digest in manifest["files"].items():
+        if digest_file(destination / name) != digest:
+            raise ValueError("Update package file checksum mismatch: " + name)
+    return manifest
+
+
 def extract_verified(archive, destination, release):
     if digest_file(archive) != release["sha256"]:
         raise ValueError("Update download checksum mismatch")
@@ -149,19 +161,38 @@ def extract_verified(archive, destination, release):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with z.open(entry) as source, target.open("xb") as out:
                     shutil.copyfileobj(source, out, 1024 * 1024)
-    manifest = read_manifest(destination)
-    if manifest["version"] != release["version"]:
-        raise ValueError("Release version disagrees with package")
-    for name, digest in manifest["files"].items():
-        if digest_file(destination / name) != digest:
-            raise ValueError("Update package file checksum mismatch: " + name)
-    return manifest
+    return verify_payload(destination, release["version"])
 
 
-def download_update(release, parent, progress=lambda text: None):
-    # Staging beside the install keeps replacement on one volume. This directory
-    # is application-created; a failed download never changes installed files.
-    work = Path(tempfile.mkdtemp(prefix=".dolly-update-", dir=parent))
+def staged_payload(target, version):
+    """Return a verified workspace already holding this version, if any.
+
+    A deferred or retried update reuses its download instead of fetching the
+    same release again and leaving another update folder behind. The completion
+    marker is written only after full extraction verification; install rechecks
+    every staged file, so a tampered payload still fails closed.
+    """
+    for work in sorted(Path(target).glob(".dolly-update-*")):
+        try:
+            marker = json.loads((work / "verified.json").read_text(encoding="utf-8"))
+            manifest = read_manifest(work / "payload")
+        except (OSError, ValueError):
+            continue
+        if marker.get("version") == version and manifest["version"] == version:
+            return work
+    return None
+
+
+def download_update(release, target, progress=lambda text: None):
+    # Staging inside the install folder keeps update artifacts on one volume and
+    # out of the user's surrounding folders. This directory is application-
+    # created; a failed download never changes installed files.
+    target = Path(target)
+    work = staged_payload(target, release["version"])
+    if work is not None:
+        progress(f"Using downloaded Dolly {release['version']}")
+        return work
+    work = Path(tempfile.mkdtemp(prefix=".dolly-update-", dir=target))
     archive = work / "download.zip"
     downloaded = 0
     with open_url(release["url"]) as response, archive.open("xb") as output:
@@ -174,5 +205,7 @@ def download_update(release, parent, progress=lambda text: None):
     if downloaded != release["size"]:
         raise ValueError("Incomplete update download")
     extract_verified(archive, work / "payload", release)
+    (work / "verified.json").write_text(
+        json.dumps({"version": release["version"], "sha256": release["sha256"]}) + "\n", encoding="utf-8")
     archive.unlink()
     return work

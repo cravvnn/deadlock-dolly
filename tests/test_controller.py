@@ -859,16 +859,78 @@ class ControllerTests(unittest.TestCase):
         self.assertIn("r_citadel_glow_health_bars 1", self.console.requests)
         self.assertFalse(self.console.camera_writes)
 
-    def test_healthbar_toggle_flips_both_cvars(self):
-        self.console.values["citadel_healthbars_enabled"] = 0.0
+    def test_healthbar_toggle_hides_and_restores_exact_switch_values(self):
+        self.console.values.update({
+            "citadel_healthbars_enabled": 1.0,
+            "citadel_unit_status_use_new": 1.0,
+        })
         self.controller.toggle_healthbars()
-        self.assertIn("citadel_healthbars_enabled 1", self.console.requests)
-        self.assertIn("citadel_unit_status_use_new 1", self.console.requests)
+        self.assertIn("citadel_healthbars_enabled 0", self.console.operations)
+        self.assertIn("citadel_unit_status_use_new 0", self.console.operations)
+        self.assertEqual(self.controller._healthbar_restore,
+                         {"citadel_healthbars_enabled": 1.0, "citadel_unit_status_use_new": 1.0})
+        self.assertNotIn("r_citadel_glow_health_bars 0", self.console.operations)
+        for name in ("citadel_unit_status_enabled", "citadel_hud_objective_health_enabled"):
+            self.assertNotIn(name, " ".join(self.console.operations))
         self.console.requests.clear()
-        self.console.values["citadel_healthbars_enabled"] = 1.0
+        self.console.operations.clear()
         self.controller.toggle_healthbars()
-        self.assertIn("citadel_healthbars_enabled 0", self.console.requests)
-        self.assertIn("citadel_unit_status_use_new 0", self.console.requests)
+        self.assertIn("citadel_healthbars_enabled 1", self.console.operations)
+        self.assertIn("citadel_unit_status_use_new 1", self.console.operations)
+        self.assertEqual(self.controller._healthbar_restore, {})
+        self.assertFalse(self.console.camera_writes)
+
+    def test_healthbar_toggle_never_writes_the_hang_prone_master_switches(self):
+        self.console.values.update({
+            "citadel_healthbars_enabled": 1.0,
+            "citadel_unit_status_use_new": 1.0,
+            "citadel_unit_status_enabled": 1.0,
+            "citadel_hud_objective_health_enabled": 2.0,
+        })
+        self.controller.toggle_healthbars()
+        written = " ".join(self.console.operations)
+        for name in ("citadel_unit_status_enabled", "citadel_hud_objective_health_enabled"):
+            self.assertNotIn(name + " 0", written)
+            self.assertNotIn(name + " 1", written)
+            self.assertNotIn(name + " 2", written)
+        self.assertEqual(sorted(self.controller._healthbar_restore),
+                         ["citadel_healthbars_enabled", "citadel_unit_status_use_new"])
+
+    def test_healthbar_toggle_enables_when_bars_are_already_hidden(self):
+        self.console.values.update({
+            "citadel_healthbars_enabled": 0.0,
+            "citadel_unit_status_use_new": 0.0,
+        })
+        self.controller.toggle_healthbars()
+        self.assertIn("citadel_healthbars_enabled 1", self.console.operations)
+        self.assertIn("citadel_unit_status_use_new 1", self.console.operations)
+        self.assertEqual(self.controller._healthbar_restore, {})
+
+    def test_healthbar_toggle_reports_when_no_switch_exists(self):
+        with self.assertRaisesRegex(RuntimeError, "health-bar switches"):
+            self.controller.toggle_healthbars()
+        self.assertEqual(self.controller._healthbar_restore, {})
+        self.assertFalse(self.console.camera_writes)
+
+    def test_live_playback_speed_applies_timescale_and_stop_resets_it(self):
+        self.controller.set_playback_speed(.25)
+        self.assertEqual(self.console.values["demo_timescale"], .25)
+        self.assertTrue(self.controller._demo_speed_changed)
+        self.controller.stop()
+        self.assertEqual(self.console.values["demo_timescale"], 1)
+
+    def test_live_playback_speed_refuses_a_running_console_shot(self):
+        self.controller._playback_details = {"camera_backend": "console", "speed": 1.0}
+        with self.assertRaisesRegex(RuntimeError, "native camera"):
+            self.controller.set_playback_speed(.25)
+        self.assertEqual(self.console.values["demo_timescale"], .5)
+        self.assertFalse(self.controller._demo_speed_changed)
+
+    def test_live_playback_speed_rejects_out_of_range_values(self):
+        for value in (0, .01, 4.1, float("nan"), True, "fast"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.controller.set_playback_speed(value)
+        self.assertEqual(self.console.values["demo_timescale"], .5)
 
     def test_near_player_opacity_fix_forces_full_opacity(self):
         self.controller.near_player_opacity_fix()

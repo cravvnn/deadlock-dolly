@@ -1,7 +1,9 @@
 """Updater trust boundaries, interrupted transactions and preference migration."""
 import copy
 import hashlib
+from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -135,11 +137,70 @@ install(json.loads(Path(sys.argv[1]).read_text()),replace=cut_power)
         w.rollback(self.plan)
         self.assertEqual(self.snapshot(), self.before)
 
-    def test_modified_owned_file_aborts_without_overwriting_it(self):
+    def test_modified_owned_file_is_backed_up_then_replaced(self):
         (self.target / "Dolly.exe").write_text("customized")
-        before = self.snapshot()
-        with self.assertRaisesRegex(ValueError, "modified"): w.install(self.plan)
-        self.assertEqual(self.snapshot(), before)
+        w.install(self.plan)
+        self.assertEqual((self.target / "Dolly.exe").read_text(), "1.0.1")
+        self.assertEqual((self.work / "backup/Dolly.exe").read_text(), "customized")
+        state = json.loads((self.work / "journal.json").read_text())
+        self.assertEqual(state["modified"], ["Dolly.exe"])
+
+    def test_modified_owned_file_is_restored_when_startup_check_fails(self):
+        (self.target / "Dolly.exe").write_text("customized")
+        def fail(_): raise RuntimeError("bad new build")
+        with self.assertRaisesRegex(RuntimeError, "bad new build"): w.install(self.plan, fail)
+        self.assertEqual((self.target / "Dolly.exe").read_text(), "customized")
+
+    def test_download_stages_inside_install_and_reuses_verified_payload(self):
+        archive, release = self.make_zip()
+        release.update(url="https://github.com/cravvnn/deadlock-dolly/releases/download/v1.0.1/package.zip",
+                       size=archive.stat().st_size)
+        with patch.object(u, "open_url", side_effect=[BytesIO(archive.read_bytes())]) as opened:
+            work = u.download_update(release, self.target)
+            reused = u.download_update(release, self.target)
+        self.assertEqual(Path(work), Path(reused))
+        self.assertEqual(Path(work).parent, self.target)
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual([p.name for p in self.target.glob(".dolly-update-*")], [Path(work).name])
+        self.assertTrue((Path(work) / "payload/UPDATE_MANIFEST.json").is_file())
+        (Path(work) / "verified.json").unlink()
+        self.assertIsNone(u.staged_payload(self.target, "1.0.1"))
+
+    def test_cleanup_removes_stale_workspaces_but_keeps_live_ones(self):
+        stale = self.root / ".dolly-update-stale"; (stale / "payload").mkdir(parents=True)
+        os.utime(stale, (0, 0))
+        failed = self.root / ".dolly-update-failed"; failed.mkdir()
+        (failed / "result.json").write_text('{"passed": false}')
+        recovered = self.root / ".dolly-update-recovered"; recovered.mkdir()
+        (recovered / "journal.json").write_text('{"state": "rolled_back"}')
+        applying = self.root / ".dolly-update-applying"; applying.mkdir()
+        (applying / "journal.json").write_text('{"state": "applying"}')
+        active = self.root / ".dolly-update-active"; (active / "payload").mkdir(parents=True)
+        w.cleanup_workspaces(self.root, keep=active)
+        self.assertFalse(stale.exists())
+        self.assertFalse(failed.exists())
+        self.assertFalse(recovered.exists())
+        self.assertTrue(applying.exists())
+        self.assertTrue(active.exists())
+
+    def test_cleanup_defers_while_recovery_is_pending(self):
+        stale = self.root / ".dolly-update-stale"; stale.mkdir()
+        (self.root / w.PENDING).write_text("{}")
+        w.cleanup_workspaces(self.root)
+        self.assertTrue(stale.exists())
+
+    def test_cleanup_removes_legacy_sidecar_workspace_for_this_install_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            install = parent / "install"; install.mkdir()
+            legacy = parent / ".dolly-update-legacy"; legacy.mkdir()
+            (legacy / "plan.json").write_text(json.dumps({"target": str(install), "work": str(legacy)}))
+            (legacy / "journal.json").write_text(json.dumps({"state": "complete", "target": str(install)}))
+            other = parent / ".dolly-update-other"; other.mkdir()
+            (other / "plan.json").write_text(json.dumps({"target": str(parent / "elsewhere"), "work": str(other)}))
+            w.cleanup_workspaces(install)
+            self.assertFalse(legacy.exists())
+            self.assertTrue(other.exists())
 
     def test_new_package_cannot_overwrite_unowned_file(self):
         name = "_internal/custom-user-shader.fx"
@@ -242,11 +303,11 @@ class UpdateUITests(unittest.TestCase):
         m.app.root.grab_current.return_value = object()
         self.assertFalse(m.safe_to_restart())
 
-    def test_restart_launches_helper_outside_install_then_closes_app(self):
+    def test_restart_launches_in_install_helper_then_closes_app(self):
         from dolly import update_ui
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "install"; target.mkdir()
-            work = Path(directory) / ".dolly-update-verified"; work.mkdir()
+            work = target / ".dolly-update-verified"; work.mkdir()
             (target / "Dolly.exe").write_bytes(b"helper")
             m = self.manager(); m.ready = (work, "1.0.1")
             with patch.object(update_ui, "application_root", return_value=target), \

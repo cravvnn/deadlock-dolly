@@ -380,11 +380,6 @@ def dispatch(app, event, bridge):
             configure(app)
         app._submit("Saving movement speed", lambda: save_settings(settings), saved)
     elif action in ("set_playback_speed", "set_playback_rate"):
-        # These settings apply to the next shot. Changing a running shot's
-        # displayed speed without updating its replay/native clock is unsafe.
-        if app.controller.status().get("playing") or getattr(app, "playing", False):
-            app.status_text.set("Stop path playback before changing playback options.")
-            return True
         value = event["value"]
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
             raise ValueError("Playback option must be a finite number")
@@ -392,7 +387,15 @@ def dispatch(app, event, bridge):
             if not .05 <= value <= 4:
                 raise ValueError("Playback speed must be between 0.05 and 4.")
             app.speed.set(f"{value:g}")
+            # Apply immediately: the controller updates demo_timescale for the
+            # running or paused replay as well as the next Play shot.
+            app._submit("Applying playback speed", lambda: app.controller.set_playback_speed(value))
         else:
+            # The update rate paces Dolly's monitoring thread and is fixed when
+            # a shot starts; changing it mid-shot is still unsafe.
+            if app.controller.status().get("playing") or getattr(app, "playing", False):
+                app.status_text.set("Stop path playback before changing the update rate.")
+                return True
             if value not in (30, 60, 120):
                 raise ValueError("Choose a playback update rate of 30, 60, or 120.")
             app.rate.set(str(int(value)))

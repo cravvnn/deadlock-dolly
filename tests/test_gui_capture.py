@@ -48,6 +48,10 @@ class FakeController:
             raise self.failure
         return Keyframe(self.replay_time, 100.0, 20.0, 30.0, 4.0, 5.0, 6.0, 90.0)
 
+    def set_playback_speed(self, speed):
+        self.calls.append(("speed", speed))
+        return self.status()
+
     def status(self):
         return {"tick": self.tick}
 
@@ -323,8 +327,10 @@ class GuiCaptureTests(unittest.TestCase):
         self.app._snapshot = lambda: self.app.project
         self.app.controller.play = Mock()
         self.app.controller._native_bridge = lambda: None
-        for action, value in (("set_playback_speed", .1), ("set_playback_rate", 120)):
-            self.assertTrue(dispatch_editor_action(self.app, {"action": action, "value": value}, Mock()))
+        self.assertTrue(dispatch_editor_action(self.app, {"action": "set_playback_speed", "value": .1}, Mock()))
+        # The live speed apply owns the worker until it finishes.
+        self.harness.finish()
+        self.assertTrue(dispatch_editor_action(self.app, {"action": "set_playback_rate", "value": 120}, Mock()))
         self.app._play()
         self.harness.finish()
         settings = self.app.controller.play.call_args.kwargs

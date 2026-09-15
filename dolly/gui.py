@@ -2049,6 +2049,9 @@ class DollyApp:
         self.speed_combo = ttk.Combobox(controls, textvariable=self.speed,
             values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"), width=6)
         self.speed_combo.pack(side="left")
+        self.speed_combo.bind("<<ComboboxSelected>>",
+                              lambda _event: self._apply_playback_speed())
+        self.speed_combo.bind("<Return>", lambda _event: self._apply_playback_speed())
         self.playback_disclosure = gui_layout.disclosure(frame, "Playback options")
         options = self.playback_disclosure.body
         row = ttk.Frame(options)
@@ -2879,6 +2882,24 @@ class DollyApp:
     def _set_seek_relief(self):
         """Toggle the native render relief that prevents seek-time overload."""
         self.controller.set_seek_relief(self.seek_relief.get())
+
+    def _apply_playback_speed(self):
+        """Apply the desktop speed to the running or paused replay."""
+        if self.closed or self.busy:
+            return
+        try:
+            speed = _finite(self.speed.get(), "Playback speed")
+        except ValueError:
+            return
+        if not .05 <= speed <= 4:
+            return
+        if not self.controller.status().get("connected"):
+            return
+        if speed == getattr(self, "_live_playback_speed", None):
+            return
+        if self._submit("Applying playback speed",
+                        lambda: self.controller.set_playback_speed(speed)):
+            self._live_playback_speed = speed
 
     def _play(self):
         def operation():

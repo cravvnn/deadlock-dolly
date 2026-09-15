@@ -312,13 +312,15 @@ when using that backend. **Stop / restore** is always available in the footer.
 The in-game panel has **Camera**, **Lens** and **Export** tabs. It remains freely
 draggable and resizable. Camera includes Updates / s inside Free camera and a
 standalone Clear ragdolls button below it, followed by **Toggle Citadel glow**,
-**Healthbar Toggle** and **Near player opacity fix**. The glow and health-bar
-buttons read the current values and flip them; the opacity fix forces the
-near-player camera fades back to full. Lens contains the **Native Depth of
-Field** card, the **Citadel Depth of Field** card and the ReShade menu.
-Export includes independent World, Players and Effects switches alongside depth.
-Save/load and full graph editing remain on the desktop; both surfaces share the
-same project. **Log** opens a separate resizable activity window.
+**Toggle health bars** and **Near player opacity fix**. The glow button flips
+the glow switches; **Toggle health bars** is a master hide/restore for unit,
+HUD and objective bars that snapshots their exact current values and puts them
+back on the next press. Bar glow stays with the glow button. The opacity fix
+forces the near-player camera fades back to full. Lens contains the **Native
+Depth of Field** card, the **Citadel Depth of Field** card and the ReShade
+menu. Export includes independent World, Players and Effects switches alongside
+depth. Save/load and full graph editing remain on the desktop; both surfaces
+share the same project. **Log** opens a separate resizable activity window.
 
 The color video is always recorded first. Ticking **Depth master** or a layer
 adds extra takes: when the color take finishes (at the end of the shot, or when
@@ -438,11 +440,13 @@ restoration behavior. Other camera cvars require Console mode.
 - **Stop / restore** restores the captured cvar baseline (including the exact original `r_aspectratio`) and returns replay
   speed to **1×** if Dolly changed it. It leaves replay time paused and returns
   native camera ownership to the game; the underlying spectator view can differ. Previous replay speed is not queried.
-- Playback speed is 0.05×–4×. F8 shares **Playback speed** and **Updates / s**
-  with the desktop. Stop the current shot before changing them. Updates / s
-  choices are 30/60/120. They control
-  camera commands with Console, and editor monitoring with Native. They do
-  not set the game's render or recording frame rate.
+- Playback speed is 0.05×–4× and applies immediately through the replay's demo
+  timescale, whether the replay is playing or paused, as well as to the next
+  Play shot. F8 shares **Playback speed** with the desktop. Slow motion is the
+  recommended way to review heavy-effect shots. **Updates / s** still requires
+  a stopped shot; choices are 30/60/120. It controls camera commands with
+  Console and editor monitoring with Native. Neither setting changes the game's
+  render or recording frame rate.
 - On supported Windows versions, frame pacing uses a dedicated high-resolution
   waitable timer. An unavailable timer falls back to normal event waits and is
   reported in diagnostics. No system-wide timer setting is changed.

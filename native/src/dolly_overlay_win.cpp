@@ -843,7 +843,6 @@ void draw_panel(const EditorSnapshot& state) {
                     ImGui::SameLine();
                     action_button("Forward 1 second", EditorAction::SeekForward, half);
                     ImGui::Spacing();
-                    ImGui::BeginDisabled(state.playing);
                     ImGui::TextUnformatted("Playback speed");
                     ImGui::SetNextItemWidth(-1);
                     char playback_speed[32]{};
@@ -860,8 +859,7 @@ void draw_panel(const EditorSnapshot& state) {
                     }
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
-                            "Playback speed for the next Play shot. Shared with the desktop controls.");
-                    ImGui::EndDisabled();
+                            "Replay speed. Applies immediately to a playing or paused replay and to the next Play shot. Stop / restore returns to 1x.");
                 }
                 end_panel_card();
                 if (begin_panel_card("##flight-card")) {
@@ -932,12 +930,12 @@ void draw_panel(const EditorSnapshot& state) {
                         "Toggle hero, trooper, boss and health-bar glow together.");
                 ImGui::Spacing();
                 ImGui::BeginDisabled(state.playing);
-                action_button("Healthbar Toggle", EditorAction::ToggleHealthbars,
+                action_button("Toggle health bars", EditorAction::ToggleHealthbars,
                               ImGui::GetContentRegionAvail().x);
                 ImGui::EndDisabled();
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip(
-                        "Toggle health bars together with the new unit-status mode.");
+                        "Hide or restore the health bars. Bar glow stays with Toggle Citadel glow.");
                 ImGui::Spacing();
                 ImGui::BeginDisabled(state.playing);
                 action_button("Near player opacity fix", EditorAction::NearPlayerOpacityFix,
@@ -1403,6 +1401,20 @@ void render_overlay(IDXGISwapChain* chain) {
                 scene_sample = &scene_frame;
                 if (scene_frame.result == depth::SceneResult::ready)
                     reshade_set_scene_depth(scene_frame.texture());
+                char depth_debug[176]{};
+                std::snprintf(depth_debug, sizeof(depth_debug),
+                              "consume: result=%d tex=%p live=%d tracker=%d",
+                              static_cast<int>(scene_frame.result),
+                              static_cast<const void*>(scene_frame.texture()),
+                              depth_live.active() ? 1 : 0, depth_tracker ? 1 : 0);
+                reshade_depth_debug(depth_debug);
+            } else {
+                char depth_debug[176]{};
+                std::snprintf(depth_debug, sizeof(depth_debug),
+                              "consume: skipped live=%d tracker=%d requested=%d hooks=%d",
+                              depth_live.active() ? 1 : 0, depth_tracker ? 1 : 0,
+                              depth_live.requested() ? 1 : 0, depth_live.hooks() ? 1 : 0);
+                reshade_depth_debug(depth_debug);
             }
         }
     }

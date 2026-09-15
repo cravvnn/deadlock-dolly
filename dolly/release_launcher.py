@@ -55,7 +55,7 @@ def check_for_update(target, events, excluded):
         if release is None:
             events.put(("open", "Dolly is up to date. Opening the editor..."))
         else:
-            work = updater.download_update(release, target.parent,
+            work = updater.download_update(release, target,
                 lambda message: events.put(("status", message)))
             events.put(("ready", work))
     except Exception as error:
@@ -157,6 +157,7 @@ def main(argv=None, *, target=None):
         update_worker.check_processes(target, exclude_pid=ids)
         update_worker.launch_worker(target, pending, recover=True, parent_pid=ids[-1])
         return 0
+    update_worker.cleanup_workspaces(target)
     try:
         automatic = load_settings().auto_updates
     except (OSError, ValueError):

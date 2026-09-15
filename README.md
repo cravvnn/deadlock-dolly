@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.10 alpha.** The portable Windows build opens through
+**Current source: 0.5.13 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -127,15 +127,16 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.10 is an alpha. Camera capture, interpolation and native playback keep the
+0.5.13 is an alpha. Camera capture, interpolation and native playback keep the
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
 the compatibility scanner and AOB fallback, real-time and fixed-step recording,
 the paired depth master and layer takes, the ReShade runtime with a bundled
 shader library and depth publication, the Citadel glow / health-bar / DOF
-controls, and the startup update check. Earlier renderer slowdowns do not have
-a confirmed general fix; build and release checks live in
-[VALIDATION.md](docs/VALIDATION.md). Audio, expanded in-game curve editing and
-arbitrary output resizing remain planned.
+controls, the live replay speed control, in-folder update staging, and the
+startup update check. Earlier
+renderer slowdowns do not have a confirmed general fix; build and release checks
+live in [VALIDATION.md](docs/VALIDATION.md). Audio, expanded in-game curve
+editing and arbitrary output resizing remain planned.
 
 ## Session files
 
@@ -191,6 +192,26 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.13:** fixes the health-bar toggle hang: it no longer writes the
+`citadel_unit_status_enabled` or `citadel_hud_objective_health_enabled` master
+switches, which could hang the game with a DX11 device error while a replay
+rendered. The toggle uses the two live-verified switches again, written one
+command at a time, and still restores the exact prior values on the next press.
+
+**0.5.12:** keeps update downloads, staging and backups inside a
+`.dolly-update-*` folder in the Dolly folder and removes the folder once the
+update completes or rolls back safely, instead of leaving folders beside Dolly.
+A deferred or retried update reuses its verified download, and a locally
+modified managed file (for example a hand-built native DLL) is backed up and
+replaced rather than blocking the update.
+
+**0.5.11:** makes **Playback speed** apply immediately through the replay's
+demo timescale, so a playing or paused replay slows or speeds up without a
+restart (Stop / restore still returns a Dolly-owned speed to 1×), and turns the
+health-bar button into **Toggle health bars**, a master hide/restore for unit,
+HUD and objective bars that snapshots and restores their exact prior values.
+Bar glow stays with Toggle Citadel glow.
 
 **0.5.10:** adds in-game Camera-tab buttons for Citadel glow, health bars and
 the near-player opacity fix, and a **Citadel Depth of Field** card in both UIs

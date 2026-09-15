@@ -1,5 +1,42 @@
 # Changes
 
+## 0.5.13 alpha — Safe health-bar toggle
+
+- Restore the health-bar toggle to the two live-verified switches
+  (`citadel_healthbars_enabled` and `citadel_unit_status_use_new`), written one
+  command at a time. Writing `citadel_unit_status_enabled 0` or
+  `citadel_hud_objective_health_enabled 0` while a replay renders hung the game
+  with a DX11 device error (Windows logged an Application Hang and Dolly then
+  reported that the build did not accept the switches), so those master
+  switches are never touched. Exact prior values are still snapshotted and
+  restored on the next press.
+
+## 0.5.12 alpha — In-folder updates and smoother recovery
+
+- Keep update downloads, staging and backups in a `.dolly-update-*` folder
+  inside the Dolly folder instead of beside it; the next launch removes the
+  folder once the update completes or rolls back safely, including legacy
+  folders that older releases staged next to the installation.
+- Reuse an already-downloaded verified package when an update is deferred or
+  retried, so the same release is not downloaded again.
+- Back up and replace a locally modified managed application file (for example
+  a hand-built native DLL) instead of refusing the update; a failed startup
+  check still restores it through rollback.
+
+## 0.5.11 alpha — Live replay speed and health-bar master
+
+- Make **Playback speed** apply immediately: changing it in-game or on the
+  desktop updates the replay's demo timescale while a replay is playing or
+  paused, so heavy-effect shots can be reviewed in slow motion without
+  restarting. Stop / restore still returns a Dolly-owned speed to 1×, and the
+  update rate still requires a stopped shot.
+- Rework the health-bar button as **Toggle health bars**, a master hide/restore
+  for unit, HUD and objective bars (`citadel_unit_status_enabled`,
+  `citadel_healthbars_enabled`, `citadel_hud_objective_health_enabled`). It
+  snapshots the exact prior values, verifies the readback and restores them on
+  the next press. The old style switches are no longer touched and bar glow
+  stays with **Toggle Citadel glow**.
+
 ## 0.5.10 alpha — Citadel controls
 
 - Add in-game Camera-tab buttons under Clear ragdolls: **Toggle Citadel glow**
