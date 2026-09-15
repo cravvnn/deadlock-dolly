@@ -1,3 +1,28 @@
+# Validation — 0.5.14 alpha
+
+## Package privacy and depth diagnostics
+
+- The Windows ZIP is written from an explicit bundle allowlist. Runtime
+  `logs/`, demos, recordings, `.env` files and `.dolly-update-*` staging never
+  enter it, and an archive guard rejects an excluded path if one is ever
+  listed. This closes the leak where a Dolly folder that had been run in place
+  shipped session journals in a ZIP handed to another user.
+- The scene-depth rejection diagnostic now names the observed comparison
+  (`why=depth function=LESS` and similar) instead of only "depth function".
+  The forward-Z smoke case asserts the new text. Selector behavior is
+  unchanged: an incompatible full-viewport depth write still fails the take
+  closed, and this diagnostic does not yet fix a rejected take.
+
+## Checks
+
+- Full Python suite: 1130 tests run, no failures, 16 optional skips.
+- Native MSVC Release: all 15 enabled CTest tests passed.
+- Frozen Windows build: PyInstaller build, packaged GUI smoke and a relocated
+  full-bundle startup check passed; the 0.5.14 Windows and source ZIPs match
+  their SHA256SUMS entries.
+- No game-runtime behavior changed; both items are packaging and diagnostic
+  changes.
+
 # Validation — 0.5.13 alpha
 
 ## Safe health-bar toggle

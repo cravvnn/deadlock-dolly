@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.13 alpha.** The portable Windows build opens through
+**Current source: 0.5.14 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -127,7 +127,7 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.13 is an alpha. Camera capture, interpolation and native playback keep the
+0.5.14 is an alpha. Camera capture, interpolation and native playback keep the
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
 the compatibility scanner and AOB fallback, real-time and fixed-step recording,
 the paired depth master and layer takes, the ReShade runtime with a bundled
@@ -192,6 +192,12 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.14:** builds the Windows package from an explicit file list so a Dolly
+folder that was run in place can no longer leak its session journals or staged
+updates into a shared ZIP, and names the observed depth comparison (for example
+`why=depth function=LESS`) when the scene-depth guard rejects a frame, so a
+failed depth take identifies the offending pass from its own message.
 
 **0.5.13:** fixes the health-bar toggle hang: it no longer writes the
 `citadel_unit_status_enabled` or `citadel_hud_objective_health_enabled` master

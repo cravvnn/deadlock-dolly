@@ -1,5 +1,15 @@
 # Changes
 
+## 0.5.14 alpha — Package privacy and depth diagnostics
+
+- Build the Windows package from an explicit file list that never includes
+  runtime `logs/`, demos, recordings or staged update folders, so a folder that
+  was run in place cannot distribute session journals; the source export already
+  enforced the same rule.
+- Name the observed depth comparison in the scene-depth rejection diagnostic
+  (for example `why=depth function=LESS`), so a failed depth take identifies the
+  offending pass from its own message instead of only reporting "depth function".
+
 ## 0.5.13 alpha — Safe health-bar toggle
 
 - Restore the health-bar toggle to the two live-verified switches
@@ -10,13 +20,6 @@
   reported that the build did not accept the switches), so those master
   switches are never touched. Exact prior values are still snapshotted and
   restored on the next press.
-- Build the Windows package from an explicit file list that never includes
-  runtime `logs/`, demos, recordings or staged update folders, so a folder that
-  was run in place cannot distribute session journals; the source export already
-  enforced the same rule.
-- Name the observed depth comparison in the scene-depth rejection diagnostic
-  (for example `why=depth function=LESS`), so a failed depth take identifies the
-  offending pass from its own message instead of only reporting "depth function".
 
 ## 0.5.12 alpha — In-folder updates and smoother recovery
 
