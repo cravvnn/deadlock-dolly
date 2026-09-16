@@ -1,5 +1,20 @@
 # Changes
 
+## 0.5.15 alpha — September 16 Deadlock build support
+
+- Support the September 16, 2026 Deadlock client (`client.dll`
+  `472dad57…`): refresh the reviewed compatibility profile, the bundled manifest
+  and the generated native profile table, and rebuild the native helper against
+  it. `server.dll` changed too; `scenesystem.dll`, `rendersystemdx11.dll`,
+  `tier0.dll`, `engine2.dll` and `gameinfo.gi` are unchanged by this update.
+- Re-verify the reviewed camera path on the new client: the main-view setup
+  prologue, the sole caller, the `CViewRender` vtable, the globals pointer and
+  the aspect source all re-resolve, the relocated-call list is unchanged in
+  shape, and every view and field offset is identical; only addresses moved.
+- Keep the reviewed `globals+0x30` clock fallback for the new client until a
+  render-fraction observation is recorded for it, matching the rule that a
+  clock-field review is never inherited across client hashes.
+
 ## 0.5.14 alpha — Package privacy and depth diagnostics
 
 - Build the Windows package from an explicit file list that never includes

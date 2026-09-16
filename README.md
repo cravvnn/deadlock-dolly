@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.14 alpha.** The portable Windows build opens through
+**Current source: 0.5.15 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -127,7 +127,7 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.14 is an alpha. Camera capture, interpolation and native playback keep the
+0.5.15 is an alpha. Camera capture, interpolation and native playback keep the
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
 the compatibility scanner and AOB fallback, real-time and fixed-step recording,
 the paired depth master and layer takes, the ReShade runtime with a bundled
@@ -192,6 +192,15 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.15:** supports the September 16, 2026 Deadlock client build
+(`client.dll` `472dad57…`). The reviewed compatibility profile, bundled manifest
+and generated native profile table list the new build and the native helper was
+rebuilt against it; the camera symbols and all view and field offsets were
+re-verified, and `scenesystem.dll`, `rendersystemdx11.dll`, `tier0.dll` and
+`engine2.dll` are unchanged by this game update. The new client keeps the
+reviewed `globals+0x30` clock fallback until a render-fraction observation is
+recorded for it.
 
 **0.5.14:** builds the Windows package from an explicit file list so a Dolly
 folder that was run in place can no longer leak its session journals or staged
