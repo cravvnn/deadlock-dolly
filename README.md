@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.16 alpha.** The portable Windows build opens through
+**Current source: 0.5.17 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -127,7 +127,7 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.16 is an alpha. Camera capture, interpolation and native playback keep the
+0.5.17 is an alpha. Camera capture, interpolation and native playback keep the
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
 the compatibility scanner and AOB fallback, real-time and fixed-step recording,
 the paired depth master and layer takes, the ReShade runtime with a bundled
@@ -192,6 +192,12 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.17:** skips unverifiable transition frames at the start of a depth take
+(for example a full-viewport `ALWAYS` depth write before the world pass)
+instead of failing the take, and reports the skip count in zero-frame
+diagnostics. Any scene failure after the first captured frame still stops the
+take.
 
 **0.5.16:** keeps the verified scene depth when a full-viewport `EQUAL` depth
 write touches the chosen scene texture instead of failing the take

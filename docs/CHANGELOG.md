@@ -1,5 +1,17 @@
 # Changes
 
+## 0.5.17 alpha — Depth takes skip transition frames
+
+- A depth take now skips presented frames that have no verified scene pass yet
+  — for example a cleared scene target or a full-viewport `ALWAYS` depth write
+  during a loading/transition frame — instead of failing on the first frame
+  with `scene result=missing why=depth function=ALWAYS`. The skip is bounded
+  and stops at the first captured frame; any scene failure after that still
+  stops the take closed. Reported case: a 1920x1080 60 FPS take failed on its
+  first frame (`frames_written=0`).
+- Zero-frame diagnostics now include the transition-frame skip count
+  (`scene-skip=` in the capture summary).
+
 ## 0.5.16 alpha — Depth guard and encoder diagnostics
 
 - Keep a verified scene-depth frame when a full-viewport `EQUAL` depth write
