@@ -204,6 +204,7 @@ class Controller:
         self._demo_speed_changed = False
         self._playback_restore = {}
         self._healthbar_restore = {}
+        self._glow_disabled = False
         self._playback_details = None
         self._playback_metrics = {}
         self._playback_samples = deque(maxlen=256)
@@ -820,6 +821,13 @@ class Controller:
                 raise RuntimeError("Replay changed while confirming the recovered paused view.")
             self._probe_result = dict(previous_probe, demo=checked, native_camera=paused)
             self._replay_recovery.update(stage="ready", initial_update=ready, paused_tick=checked["tick"])
+            if self._glow_disabled:
+                # Reloading the replay restores the game's default glow. A take
+                # must keep the user's choice, so re-assert it before playback.
+                try:
+                    self._apply_citadel_glow()
+                except Exception:
+                    LOG.exception("Could not re-apply the Citadel glow choice after recovery")
             self._message("Replay prepared. Starting the shot…", startup_stage="replay_ready")
             return checked
         except Exception as exc:
@@ -1909,17 +1917,23 @@ class Controller:
         self._require_probe()
         self._require_demo()
 
+    def _apply_citadel_glow(self):
+        """Write the remembered glow choice; used by the toggle and recovery."""
+        state = 1 if self._glow_disabled else 0
+        for name in ("citadel_boss_glow_disabled", "citadel_player_glow_disabled",
+                     "citadel_trooper_glow_disabled"):
+            self._request(f"{name} {state}", allow_error=True)
+        self._request(f"r_citadel_glow_health_bars {0 if self._glow_disabled else 1}",
+                      allow_error=True)
+
     def toggle_citadel_glow(self):
-        """Flip the Citadel glow set (hero, trooper, boss and health-bar glow)."""
+        """Flip the Citadel glow set and keep the choice across replay resets."""
         with self._op_lock:
             self._require_quiet_session("toggling glow")
-            disabling = self._console_cvar("citadel_boss_glow_disabled") != 1
-            state = 1 if disabling else 0
-            for name in ("citadel_boss_glow_disabled", "citadel_player_glow_disabled",
-                         "citadel_trooper_glow_disabled"):
-                self._request(f"{name} {state}", allow_error=True)
-            self._request(f"r_citadel_glow_health_bars {0 if disabling else 1}", allow_error=True)
-            self._message("Citadel glow disabled." if disabling else "Citadel glow enabled.")
+            self._glow_disabled = self._console_cvar("citadel_boss_glow_disabled") != 1
+            self._apply_citadel_glow()
+            self._message("Citadel glow disabled." if self._glow_disabled
+                          else "Citadel glow enabled.")
 
     def toggle_healthbars(self):
         """Hide or restore the health bars.

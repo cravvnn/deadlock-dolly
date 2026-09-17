@@ -70,6 +70,23 @@ class ReplayRecoveryTests(unittest.TestCase):
         self.assertFalse(self.controller._replay_recovery_active)
         self.assertTrue(self.controller._probe_result['capabilities']['spec_goto'])
 
+    def test_disabled_glow_is_reapplied_after_recovery(self):
+        self.console.values["citadel_boss_glow_disabled"] = 0.0
+        self.controller.toggle_citadel_glow()
+        self.console.requests.clear()
+        self.console.operations.clear()
+        self.recover()
+        for name in ("citadel_boss_glow_disabled", "citadel_player_glow_disabled",
+                     "citadel_trooper_glow_disabled"):
+            self.assertIn(f"{name} 1", self.console.requests)
+        self.assertIn("r_citadel_glow_health_bars 0", self.console.requests)
+
+    def test_default_glow_state_is_not_rewritten_by_recovery(self):
+        self.console.requests.clear()
+        self.console.operations.clear()
+        self.recover()
+        self.assertNotIn("glow", " ".join(self.console.requests + self.console.operations))
+
     def test_old_same_file_never_satisfies_inactive_boundary(self):
         self.never_inactive = True
         with self.assertRaisesRegex(RuntimeError, 'will not restart'):

@@ -605,6 +605,36 @@ struct Child {
         }
     }
 };
+// Names the first failing write stage and appends a bounded tail of that
+// child's stderr, so a stopped take keeps its cause in the media error even
+// though the temporary FFmpeg logs are removed during cleanup.
+enum class WriteStage { color_pipe, depth_sequence, depth_pipe };
+const wchar_t* write_stage_name(WriteStage stage) noexcept {
+    switch (stage) {
+    case WriteStage::color_pipe: return L"the color FFmpeg pipe";
+    case WriteStage::depth_sequence: return L"the depth sequence writer";
+    case WriteStage::depth_pipe: return L"the depth FFmpeg pipe";
+    }
+    return L"the encoder";
+}
+std::wstring write_failure_detail(WriteStage stage, HRESULT hr, const Child& color,
+                                  const Child& depth) {
+    std::wstring detail = write_stage_name(stage);
+    if (hr == HRESULT_FROM_WIN32(ERROR_BROKEN_PIPE))
+        detail += L" closed its input";
+    else
+        detail += L" failed";
+    const Child* failed = stage == WriteStage::color_pipe   ? &color
+                          : stage == WriteStage::depth_pipe ? &depth
+                                                            : nullptr;
+    const auto tail = failed ? read_log_tail(failed->log) : std::wstring();
+    if (!tail.empty()) {
+        constexpr std::size_t kTailLimit = 110;
+        detail += L": ";
+        detail += tail.size() > kTailLimit ? tail.substr(tail.size() - kTailLimit) : tail;
+    }
+    return detail;
+}
 bool spawn_encoder(Session& s, Child& child, const std::wstring& command, const std::wstring& output,
                    const wchar_t* label, std::wstring& error) {
     if (GetFileAttributesW(output.c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -713,16 +743,21 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         // One paired write: color frame to the main encoder, linear depth to
         // the ProRes depth.mov and the optional EXR/preview sequence. Pairing
         // is by frame index so a slow depth writer fails the take instead of
-        // silently diverging the two masters.
+        // silently diverging the two masters. The first failure records which
+        // stage failed so the media error can carry its FFmpeg stderr tail.
+        WriteStage write_stage = WriteStage::color_pipe;
         const auto write_frame = [&](const CpuFrame& frame) -> HRESULT {
+            write_stage = WriteStage::color_pipe;
             HRESULT hr = write_all(child.input, frame.pixels.data(), frame.pixels.size());
             if (FAILED(hr))
                 return hr;
             if (!s->depth_enabled)
                 return S_OK;
+            write_stage = WriteStage::depth_sequence;
             if (!s->depth_output.write(frame.depth, frame.pts))
                 return s->depth_output.error();
             if (depth_child.process && depth_child.input) {
+                write_stage = WriteStage::depth_pipe;
                 const auto* linear = s->depth_output.linear_data();
                 const auto count = s->depth_output.linear_count();
                 depth_gray.resize(count);
@@ -748,10 +783,14 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 s->consumed.store(read + 1, std::memory_order_release);
                 s->wake.notify_all();
                 if (FAILED(hr)) {
-                    fail(*s, hr,
-                         s->depth_enabled
-                             ? L"Paired depth output could not be written; recording stopped."
-                             : L"FFmpeg stopped accepting frames. Check the encoder and output path.");
+                    std::wstring message =
+                        s->depth_enabled
+                            ? L"Paired depth output could not be written; recording stopped."
+                            : L"FFmpeg stopped accepting frames. Check the encoder and "
+                              L"output path.";
+                    message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) +
+                               L")";
+                    fail_text(*s, hr, message);
                     break;
                 }
                 wrote_any = true;
@@ -779,9 +818,13 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             s->consumed.store(read + 1, std::memory_order_release);
             s->wake.notify_all();
             if (FAILED(hr)) {
-                fail(*s, hr, s->depth_enabled
-                                ? L"Paired depth output could not be written while finishing."
-                                : L"FFmpeg stopped accepting frames while finishing.");
+                std::wstring message =
+                    s->depth_enabled
+                        ? L"Paired depth output could not be written while finishing."
+                        : L"FFmpeg stopped accepting frames while finishing.";
+                message +=
+                    L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
+                fail_text(*s, hr, message);
                 break;
             }
             wrote_any = true;

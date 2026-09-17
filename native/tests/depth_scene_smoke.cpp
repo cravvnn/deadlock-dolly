@@ -31,6 +31,7 @@ struct Test {
     Com<ID3D11DeviceContext> context, deferred;
     Com<ID3D11VertexShader> vs;
     Com<ID3D11DepthStencilState> state;
+    Com<ID3D11DepthStencilState> equal_state;
     Com<ID3D11RasterizerState> raster;
     Com<ID3D11Buffer> cb, indices, args, indexed_args;
     std::shared_ptr<SceneTracker> tracker;
@@ -61,6 +62,9 @@ struct Test {
         ds.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
         require(SUCCEEDED(device.p->CreateDepthStencilState(&ds, &state.p)),
                 "Create depth state failed");
+        ds.DepthFunc = D3D11_COMPARISON_EQUAL;
+        require(SUCCEEDED(device.p->CreateDepthStencilState(&ds, &equal_state.p)),
+                "Create EQUAL depth state failed");
         D3D11_RASTERIZER_DESC rs{};
         rs.FillMode = D3D11_FILL_SOLID;
         rs.CullMode = D3D11_CULL_NONE;
@@ -261,6 +265,21 @@ void check(D3D_DRIVER_TYPE driver) {
     t.context.p->Draw(3, 0);
     require(t.tracker->consume(t.context.p).result == SceneResult::ready,
             "A full scene pass did not recover from an incompatible draw");
+    // EQUAL depth writes can only re-store values they compared equal to, so
+    // they must not invalidate the verified scene sample or its calibration.
+    t.bind(t.context.p, scene.view.p);
+    t.calibration(17);
+    t.context.p->Draw(3, 0);
+    t.context.p->OMSetDepthStencilState(t.equal_state.p, 0);
+    t.context.p->Draw(3, 0);
+    t.read(t.tracker->consume(t.context.p), 34);
+    require(std::strstr(scene_diagnostic(), "depth function=EQUAL") == nullptr,
+            "An EQUAL depth write was treated as an incompatible overwrite");
+    // An EQUAL-only frame has no verified pass to offer and stays missing.
+    t.context.p->OMSetDepthStencilState(t.equal_state.p, 0);
+    t.context.p->Draw(3, 0);
+    require(t.tracker->consume(t.context.p).result == SceneResult::missing,
+            "An EQUAL-only frame was accepted without a supported scene pass");
     // A supported draw we cannot calibrate (no per-view constants) used the
     // frame's camera, so it keeps the frame's verified calibration instead of
     // failing the whole frame.

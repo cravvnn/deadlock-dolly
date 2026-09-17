@@ -424,10 +424,19 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
                                    viewport.MaxDepth == 1;
         const bool reversed_test = desc.DepthFunc == D3D11_COMPARISON_GREATER_EQUAL ||
                                    desc.DepthFunc == D3D11_COMPARISON_GREATER;
+        // An EQUAL test with writes can only store a depth that is already
+        // stored: the fragment passes only when its depth equals the stored
+        // value, and the write then stores that same value. Such a pass cannot
+        // alter the verified scene sample, so ignore it instead of treating it
+        // as an incompatible overwrite. A frame with no supported main pass
+        // still fails closed through the normal missing/cleared states.
+        const bool value_preserving = desc.DepthFunc == D3D11_COMPARISON_EQUAL;
         const bool supported = full_viewport && reversed_test;
+        const bool harmless = full_viewport && value_preserving;
         std::lock_guard<std::mutex> lock(impl->mutex);
         impl->note_target(texture.p);
-        if (!supported && (!impl->first_source.p || impl->first_source.p == texture.p)) {
+        if (!supported && !harmless &&
+            (!impl->first_source.p || impl->first_source.p == texture.p)) {
             if (full_viewport) {
                 char reason[64]{};
                 std::snprintf(reason, sizeof(reason), "depth function=%s",
@@ -437,6 +446,8 @@ void SceneTracker::draw(ID3D11DeviceContext* context) noexcept {
                 note_failure("viewport");
             }
         }
+        if (harmless)
+            return;
         auto* record = impl->record(context);
         if (!record)
             return;

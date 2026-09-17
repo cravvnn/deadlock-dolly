@@ -852,11 +852,13 @@ class ControllerTests(unittest.TestCase):
                      "citadel_trooper_glow_disabled"):
             self.assertIn(f"{name} 1", self.console.requests)
         self.assertIn("r_citadel_glow_health_bars 0", self.console.requests)
+        self.assertTrue(self.controller._glow_disabled)
         self.console.requests.clear()
         self.console.values["citadel_boss_glow_disabled"] = 1.0
         self.controller.toggle_citadel_glow()
         self.assertIn("citadel_boss_glow_disabled 0", self.console.requests)
         self.assertIn("r_citadel_glow_health_bars 1", self.console.requests)
+        self.assertFalse(self.controller._glow_disabled)
         self.assertFalse(self.console.camera_writes)
 
     def test_healthbar_toggle_hides_and_restores_exact_switch_values(self):
