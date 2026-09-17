@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.18 alpha.** The portable Windows build opens through
+**Current source: 0.5.19 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -127,7 +127,7 @@ unrecognized build instead of injecting. **Settings → Troubleshooting & recove
 Native is unavailable. See [game updates](docs/internal/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
-0.5.18 is an alpha. Camera capture, interpolation and native playback keep the
+0.5.19 is an alpha. Camera capture, interpolation and native playback keep the
 0.4.7 baseline, plus the recorded-demo handling from 0.4.8. The 0.5.x line adds
 the compatibility scanner and AOB fallback, real-time and fixed-step recording,
 the paired depth master and layer takes, the ReShade runtime with a bundled
@@ -192,6 +192,8 @@ their own notices under `third_party/` and `native/vendor/`. Artwork has
 separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
+
+**0.5.19:** exports a players-only layer: real players plus their weapons, attachments and carried objects, no NPCs, with scenery occlusion kept and real alpha in one fixed-step pass.
 
 **0.5.18:** reads each replay's own tick rate and uses it for replay-timed
 cameras, so 32-tick replays line up instead of running the shot at double

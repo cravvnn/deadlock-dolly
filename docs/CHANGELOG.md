@@ -1,5 +1,28 @@
 # Changes
 
+## 0.5.19 alpha — Players-only layer export
+
+- The **Players** layer is now a players-only export. It is recorded by a native
+  ownership capture that selects the exact draws produced by scene objects owned by
+  player pawns, so the layer contains real players and their equipment (weapons,
+  attachments and carried objects) while NPCs and creeps stay out. The world stays
+  in the scene, so scenery occlusion is preserved, and the layer keeps real coverage
+  alpha in one fixed-step pass instead of a black/white matte pair. The output is the
+  alpha-capable ProRes 4444 layer master beside its driving take. Per-player (single
+  pawn) selection is not part of this release.
+- Each owner is classified through the scene graph (scene object -> scene node ->
+  owner pawn) using the game's own schema output, so no hero IDs are hardcoded and a
+  player's attachments follow their pawn automatically.
+- Adds the reviewed compatibility profile for the September 17 client build
+  (`3c07cea8…`); engine modules are unchanged.
+- Verification behind this release: the capture is part of the native bridge binary
+  (16/16 native tests) and the full Python suite passes (1154 tests). The capture path
+  itself was proven end-to-end with ownership-verified, alpha-exact MOV proofs across
+  96, 192 and 256-frame fixed-step takes for several heroes, including the largest and
+  smallest skeletons and an attachment-carrying phasing hero, with every captured
+  frame paired against the color take's authored timeline. The Players layer UI path
+  reuses those verified primitives.
+
 ## 0.5.18 alpha — Replay tick-rate alignment
 
 - Replay-timed cameras now use the open replay's own tick rate from its
