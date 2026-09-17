@@ -1,21 +1,22 @@
 {
   "manifest_format": 1,
   "native_abi": 3,
-  "generated_utc": "2026-09-17",
+  "generated_utc": "2026-09-17b",
   "generator": "tools/generate_profile.py",
   "reviewed_client_utc": "2026-09-11",
   "modules": {
     "citadel/bin/win64/client.dll": {
       "role": "client",
-      "reviewed_utc": "2026-09-17",
-      "latest_timestamp": 1789673098,
+      "reviewed_utc": "2026-09-17b",
+      "latest_timestamp": 1789685275,
       "accepted": [
         "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
         "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
         "168d35bc3ba52419770978b489b2feffe941fd9e6108b4cd97d4a116e2d931cc",
         "6b574bb0cc044fdf7f76d0abce78e2a10ab17507b92ade14fc2313e5495b7a61",
         "472dad5754d59068ee635efbb0ca2963f19876c4d965e21ecda60c235dc57faa",
-        "3c07cea8a2e3491bdb34062edb7f4d827402fd235fd3fe307e331e7fcb5a222c"
+        "3c07cea8a2e3491bdb34062edb7f4d827402fd235fd3fe307e331e7fcb5a222c",
+        "d1ee16fc5615c3569f25f76d9bcfb364f3f570c642671aaff35ce71356221e26"
       ]
     },
     "bin/win64/engine2.dll": {
@@ -44,6 +45,7 @@
     "deadlock-2026-09-11-complete.json",
     "deadlock-2026-09-11b-complete.json",
     "deadlock-2026-09-16-complete.json",
-    "deadlock-2026-09-17-complete.json"
+    "deadlock-2026-09-17-complete.json",
+    "deadlock-2026-09-17b-complete.json"
   ]
 }
