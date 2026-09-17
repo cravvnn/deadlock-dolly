@@ -1,5 +1,6 @@
 #include "dolly_depth_scene.hpp"
 #include "dolly_render_class.hpp"
+#include "dolly_player_capture.hpp"
 #include <d3d11.h>
 #include <MinHook.h>
 #include <array>
@@ -162,6 +163,8 @@ template <unsigned I>
 void STDMETHODCALLTYPE indexed(ID3D11DeviceContext* c, UINT n, UINT start, INT base) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, INT);
     if (n)
+        player_capture::draw(c, 0, n, 1, 0);
+    if (n)
         classify::draw(c, 0);
     reinterpret_cast<Fn>(originals[I][0])(c, n, start, base);
     if (n)
@@ -169,6 +172,8 @@ void STDMETHODCALLTYPE indexed(ID3D11DeviceContext* c, UINT n, UINT start, INT b
 }
 template <unsigned I> void STDMETHODCALLTYPE draw(ID3D11DeviceContext* c, UINT n, UINT start) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT);
+    if (n)
+        player_capture::draw(c, 1, n, 1, 0);
     if (n)
         classify::draw(c, 1);
     reinterpret_cast<Fn>(originals[I][1])(c, n, start);
@@ -180,8 +185,11 @@ void STDMETHODCALLTYPE indexed_instanced(ID3D11DeviceContext* c, UINT n, UINT in
                                          INT base, UINT first) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT, INT, UINT);
     if (n && instances)
+        player_capture::draw(c, 2, n, instances, first);
+    if (n && instances)
         classify::draw(c, 2);
-    reinterpret_cast<Fn>(originals[I][2])(c, n, instances, start, base, first);
+    player_capture::redirect_indexed(c, n, instances, start, base, first,
+                                 reinterpret_cast<Fn>(originals[I][2]));
     if (n && instances)
         observe_draw(c);
 }
@@ -190,6 +198,8 @@ void STDMETHODCALLTYPE instanced(ID3D11DeviceContext* c, UINT n, UINT instances,
                                  UINT first) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT, UINT);
     if (n && instances)
+        player_capture::draw(c, 3, n, instances, first);
+    if (n && instances)
         classify::draw(c, 3);
     reinterpret_cast<Fn>(originals[I][3])(c, n, instances, start, first);
     if (n && instances)
@@ -197,6 +207,7 @@ void STDMETHODCALLTYPE instanced(ID3D11DeviceContext* c, UINT n, UINT instances,
 }
 template <unsigned I> void STDMETHODCALLTYPE automatic(ID3D11DeviceContext* c) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*);
+    player_capture::draw(c, 4, 0, 0, 0);
     classify::draw(c, 4);
     reinterpret_cast<Fn>(originals[I][4])(c);
     observe_draw(c);
@@ -204,6 +215,7 @@ template <unsigned I> void STDMETHODCALLTYPE automatic(ID3D11DeviceContext* c) {
 template <unsigned I, unsigned M>
 void STDMETHODCALLTYPE indirect(ID3D11DeviceContext* c, ID3D11Buffer* args, UINT offset) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11Buffer*, UINT);
+    player_capture::draw(c, M, 0, 0, 0);
     classify::draw(c, M);
     reinterpret_cast<Fn>(originals[I][M])(c, args, offset);
     observe_draw(c);
@@ -231,7 +243,9 @@ void STDMETHODCALLTYPE clear(ID3D11DeviceContext* c, ID3D11DepthStencilView* dsv
 template <unsigned I>
 void STDMETHODCALLTYPE execute(ID3D11DeviceContext* c, ID3D11CommandList* list, BOOL restore) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11CommandList*, BOOL);
+    player_capture::command(c, list, 4);
     reinterpret_cast<Fn>(originals[I][9])(c, list, restore);
+    player_capture::command(c, list, 5);
     if (auto tracker = std::atomic_load(&active))
         tracker->execute(c, list);
 }
@@ -239,6 +253,8 @@ template <unsigned I>
 HRESULT STDMETHODCALLTYPE finish(ID3D11DeviceContext* c, BOOL restore, ID3D11CommandList** list) {
     using Fn = HRESULT(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, BOOL, ID3D11CommandList**);
     const auto result = reinterpret_cast<Fn>(originals[I][10])(c, restore, list);
+    if (SUCCEEDED(result) && list && *list)
+        player_capture::command(c, *list, 3);
     if (SUCCEEDED(result) && list && *list)
         if (auto tracker = std::atomic_load(&active))
             tracker->finish(c, *list);

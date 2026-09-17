@@ -52,6 +52,7 @@ dolly/navigation.py
 dolly/navigation_input.py
 dolly/pacing.py
 dolly/path.py
+dolly/player_layer.py
 dolly/playback.py
 dolly/replays.py
 dolly/runtime.py
@@ -68,6 +69,13 @@ native/include/dolly_effects.hpp
 native/include/dolly_flight.hpp
 native/include/dolly_overlay.hpp
 native/include/dolly_path.hpp
+native/include/dolly_player_capture.hpp
+native/include/dolly_player_material_matte.hpp
+native/include/dolly_player_matte_capture.hpp
+native/include/dolly_player_matte_pass.hpp
+native/include/dolly_player_sequence_writer.hpp
+native/include/dolly_player_snapshot.hpp
+native/include/dolly_player_vertex_guard.hpp
 native/include/dolly_pattern_scan.hpp
 native/include/dolly_protocol.hpp
 native/include/dolly_renderer_diagnostics.hpp
@@ -79,6 +87,7 @@ native/profiles/deadlock-client-2026-09-09-engine-2026-08-13.json
 native/profiles/deadlock-2026-09-11-complete.json
 native/profiles/deadlock-2026-09-11b-complete.json
 native/profiles/deadlock-2026-09-16-complete.json
+native/profiles/deadlock-2026-09-17-complete.json
 native/profiles/manifest.json
 native/src/bridge_win.cpp
 native/src/dolly_compat_generated.hpp
@@ -87,6 +96,7 @@ native/src/dolly_editor_win.cpp
 native/src/dolly_effects.cpp
 native/src/dolly_overlay_win.cpp
 native/src/dolly_path.cpp
+native/src/dolly_player_capture.cpp
 native/src/dolly_renderer_diagnostics_win.cpp
 native/src/dolly_visualization.cpp
 native/src/dolly_visualization_runtime_win.cpp
@@ -175,6 +185,7 @@ tests/test_paused_gui.py
 tests/test_paused_refresh.py
 tests/test_playback.py
 tests/test_playback_transitions.py
+tests/test_player_layer.py
 tests/test_portable.py
 tests/test_preview_convergence.py
 tests/test_release_packaging.py

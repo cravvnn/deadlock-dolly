@@ -1,0 +1,75 @@
+#pragma once
+#include <d3d11.h>
+#include <d3dcompiler.h>
+#include <wrl/client.h>
+#include <vector>
+#include <cstring>
+#include "dolly_player_matte_pass.hpp"
+namespace dolly::player_capture {
+class MatteCapture {
+    template<class T> using Com=Microsoft::WRL::ComPtr<T>;
+    Com<ID3D11Texture2D> target,staging;Com<ID3D11RenderTargetView> view;
+    Com<ID3D11PixelShader> white;Com<ID3D11Query> query;Com<ID3D11DeviceContext> context;
+public:
+    unsigned width=0,height=0,bytesPerPixel=4;bool pending=false,complete=false;HRESULT failure=S_OK;
+    std::vector<unsigned char> pixels;
+    bool prepare(ID3D11DeviceContext* c,unsigned w,unsigned h,ID3D11PixelShader* material=nullptr,bool hdr=false,bool preserveMaterial=false) {
+        if(context || !c || c->GetType()!=D3D11_DEVICE_CONTEXT_IMMEDIATE || !w || !h || w>3840 || h>2160)return false;
+        Com<ID3D11Device> device;c->GetDevice(&device);width=w;height=h;bytesPerPixel=hdr?8:4;
+        if(material)white=material;
+        else if(!preserveMaterial) {
+            Com<ID3DBlob> code,error;
+            const char source[]="float4 main():SV_Target{return 1;}";
+            failure=D3DCompile(source,sizeof(source)-1,nullptr,nullptr,nullptr,"main","ps_5_0",0,0,&code,&error);
+            if(FAILED(failure))return false;
+            failure=device->CreatePixelShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&white);if(FAILED(failure))return false;
+        }
+        D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.MipLevels=d.ArraySize=1;d.Format=hdr?DXGI_FORMAT_R16G16B16A16_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.BindFlags=D3D11_BIND_RENDER_TARGET;
+        failure=device->CreateTexture2D(&d,nullptr,&target);if(FAILED(failure))return false;
+        failure=device->CreateRenderTargetView(target.Get(),nullptr,&view);if(FAILED(failure))return false;
+        d.BindFlags=0;d.Usage=D3D11_USAGE_STAGING;d.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        failure=device->CreateTexture2D(&d,nullptr,&staging);if(FAILED(failure))return false;
+        D3D11_QUERY_DESC q{D3D11_QUERY_EVENT,0};failure=device->CreateQuery(&q,&query);if(FAILED(failure))return false;
+        pixels.resize(std::size_t(w)*h*bytesPerPixel); // Allocate before changing state or calling the original.
+        const FLOAT black[4]{};c->ClearRenderTargetView(view.Get(),black);
+        context=c;return true;
+    }
+    template<class Draw> bool append(ID3D11DeviceContext* c,Draw original,bool preserveDepth=false,bool preserveMaterial=false,bool coverageAlpha=false) {
+        return context.Get()==c && !pending && !complete && redirect_matte(c,view.Get(),white.Get(),original,preserveDepth,preserveMaterial,coverageAlpha);
+    }
+    bool finish(ID3D11DeviceContext* c) {
+        if(!context || context.Get()!=c || pending || complete)return false;
+        c->CopyResource(staging.Get(),target.Get());c->End(query.Get());pending=true;return true;
+    }
+    template<class Draw> bool begin(ID3D11DeviceContext* c,unsigned w,unsigned h,Draw original,ID3D11PixelShader* material=nullptr,bool preserveDepth=false,bool hdr=false) {
+        return prepare(c,w,h,material,hdr) && append(c,original,preserveDepth) && finish(c);
+    }
+    // Called only after capture admission is closed and writers have drained.
+    // Keep CPU pixels for diagnostics; release COM resources before DLL teardown.
+    void release_gpu() noexcept {
+        query.Reset();view.Reset();white.Reset();staging.Reset();target.Reset();context.Reset();pending=false;
+    }
+    // Reuse one completed slot for the next frame of a bounded sequence. The
+    // target is cleared again so no pixel from the previous frame survives.
+    bool recycle(ID3D11DeviceContext* c) noexcept {
+        if(!context || context.Get()!=c || pending || !complete)return false;
+        const FLOAT black[4]{};c->ClearRenderTargetView(view.Get(),black);
+        complete=false;failure=S_OK;return true;
+    }
+    // A recycled slot keeps its target; callers must not prepare it again.
+    bool reusable_for(ID3D11DeviceContext* c,unsigned w,unsigned h) const noexcept {
+        return context.Get()==c && width==w && height==h && !pending && !complete;
+    }
+    int poll(ID3D11DeviceContext* c) noexcept {
+        if(!pending || c!=context.Get())return 0;
+        BOOL done=FALSE;failure=c->GetData(query.Get(),&done,sizeof(done),D3D11_ASYNC_GETDATA_DONOTFLUSH);
+        if(failure==S_FALSE || (SUCCEEDED(failure)&&!done))return 0;
+        if(FAILED(failure)){pending=false;return -1;}
+        D3D11_MAPPED_SUBRESOURCE m{};failure=c->Map(staging.Get(),0,D3D11_MAP_READ,D3D11_MAP_FLAG_DO_NOT_WAIT,&m);
+        if(failure==DXGI_ERROR_WAS_STILL_DRAWING)return 0;
+        if(FAILED(failure)){pending=false;return -1;}
+        for(unsigned y=0;y<height;++y)std::memcpy(pixels.data()+std::size_t(y)*width*bytesPerPixel,static_cast<const unsigned char*>(m.pData)+std::size_t(y)*m.RowPitch,width*bytesPerPixel);
+        c->Unmap(staging.Get(),0);pending=false;complete=true;return 1;
+    }
+};
+}

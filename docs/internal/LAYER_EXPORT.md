@@ -2,20 +2,30 @@
 
 0.5.4 records the normal scene at 30/60/120/300/600 FPS and can write a paired
 float depth master (default off) with a normalized grayscale preview video in
-the same folder. Depth is the only numerical/data master. The planned
-hero/world/effects layers are **encoded video** outputs, not raw data:
-alpha-capable or lossless/mezzanine codecs (for example ProRes or FFV1) are
-used where a matte needs precision. Separated hero/world/effects passes are not
-implemented yet. The color recorder still copies the final color backbuffer;
-there is no verified hero draw ID feed.
+the same folder. Depth is the only numerical/data master. The world and effects
+layers are **encoded video** outputs, not raw data: alpha-capable or
+lossless/mezzanine codecs (for example ProRes or FFV1) are used where a matte
+needs precision. The world and effects layers isolate scene classes with
+`sc_setclassflags` and derive alpha from a black/white matte pair.
+
+The **players layer** is recorded by the native ownership capture instead of a
+scene-class filter. Every captured draw must be produced by a scene object
+whose owner pawn classifies as a player pawn (scene object -> scene node ->
+owner entity), so the layer contains real players and their equipment
+(weapons, attachments, carried objects) while NPCs and creeps stay out. The
+capture keeps the world in the scene, so scenery occlusion is preserved, and it
+records real coverage alpha in one fixed-step pass instead of a matte pair. Its
+output is the alpha-capable ProRes 4444 layer master; the take that drives it
+is kept beside it. Per-player selection (one chosen pawn instead of all
+players) is not part of this release.
 
 ## Required render passes
 
 | Output | Implementation requirement | Intended master |
 | --- | --- | --- |
 | Depth | Capture the main camera's depth before it is cleared or reused; verify projection, reverse Z, resolution scaling and sample count. | Float OpenEXR sequence plus a normalized grayscale preview video in `<video>.depth`. |
-| Heroes | Identify hero draw objects and their attachments; render foreground color and coverage while retaining world occlusion. | Encoded video with alpha, or a separate matte encoded with an alpha-capable or lossless codec. |
-| World without heroes | Render the same scene time with identified heroes omitted, including the background they previously covered. | Encoded color recording. |
+| Players | Identify player-owned draw objects and their equipment; render foreground color and coverage while retaining world occlusion. | Implemented by the native ownership capture: ProRes 4444 layer master with real alpha. |
+| World without players | Render the same scene time with identified players omitted, including the background they previously covered. | Encoded color recording (scene-class filter). |
 
 A generic animated-object filter can also remove creeps, other NPCs and moving
 props. It must not be presented as a hero-only filter. Weapons, ragdolls, shadows,

@@ -73,7 +73,7 @@ if(WIN32)
     target_include_directories(minhook PUBLIC vendor/minhook/include)
 
     add_library(dolly_depth_scene STATIC src/dolly_depth_scene_win.cpp src/dolly_depth_hooks_win.cpp
-        src/dolly_render_class_win.cpp)
+        src/dolly_render_class_win.cpp src/dolly_player_capture.cpp)
     target_link_libraries(dolly_depth_scene PUBLIC dolly_depth_readback minhook dxguid)
     if(BUILD_TESTING)
         add_executable(depth_scene_smoke tests/depth_scene_smoke.cpp)

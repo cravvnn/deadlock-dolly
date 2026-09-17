@@ -8,6 +8,7 @@
 #include "dolly_depth_live.hpp"
 #include "dolly_depth_scene.hpp"
 #include "dolly_render_class.hpp"
+#include "dolly_player_capture.hpp"
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
 #include "MinHook.h"
@@ -1332,6 +1333,14 @@ void render_overlay(IDXGISwapChain* chain) {
     }
     if (!target && !create_target(chain))
         return;
+    player_capture::present_boundary(immediate);
+    // The player capture requests the existing scene hooks and the layout
+    // hooks only after its exact gates and marker; nothing is installed for a
+    // normal session.
+    if (player_capture::layout_hook_requested())
+        player_capture::install_layout_hook(device);
+    if (player_capture::draw_hooks_requested())
+        player_capture::draw_hooks_result(depth::install_scene_hooks(device, immediate));
     // Scene depth is consumed once per Present here, outside ReShade's add-on
     // event callbacks: ReShade gates those events while it detects high
     // non-local network traffic (its online depth protection), but Dolly

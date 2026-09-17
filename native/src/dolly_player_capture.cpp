@@ -1,0 +1,973 @@
+// Private opt-in observer with bounded GPU snapshots and single-draw matte diagnostics.
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <d3d11.h>
+#include <d3dcompiler.h>
+#include <MinHook.h>
+#include <array>
+#include <atomic>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <string>
+#include "dolly_player_capture.hpp"
+#include "dolly_player_snapshot.hpp"
+#include "dolly_player_matte_capture.hpp"
+#include "dolly_player_material_matte.hpp"
+#include "dolly_player_vertex_guard.hpp"
+#include "dolly_player_sequence_writer.hpp"
+
+namespace dolly::player_capture {
+namespace {
+constexpr unsigned Capacity = 65536;
+struct Event { std::uint64_t w[136]{}; };
+static_assert(sizeof(Event) == 1088);
+std::array<Event, Capacity> events;
+std::array<std::atomic<bool>, Capacity> completed{};
+constexpr std::uint64_t Closed = std::uint64_t(1) << 63;
+std::atomic<unsigned> used{0}, dropped{0};
+std::atomic<std::uint64_t> admission{Closed};
+std::atomic<bool> armed{false}, samplingDone{false}, captureActive{false};
+std::atomic<double> authoredReplayTime{-1.0};
+ULONGLONG drainStarted=0;
+std::uintptr_t sceneBase = 0;
+Producer original = nullptr;
+bool configured = false, hashesOk = false, attempted = false, captured = false, producerInstalled = false;
+std::atomic<bool> wantDrawHooks{false};
+std::atomic<int> drawHooks{0};
+// Private COM metadata is lifetime-bound to the layout, so pointer reuse cannot
+// inherit a stale declaration. No input/render state is changed.
+const GUID LayoutKey={0x7c6ea90b,0xc290,0x4f0c,{0xa7,0x76,0x9b,0xc9,0x2e,0x51,0xd4,0x06}};
+struct LayoutInfo {std::uint64_t w[8]{};};
+std::atomic<bool> layoutRequested{false};
+using CreateLayout=HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*,const D3D11_INPUT_ELEMENT_DESC*,UINT,const void*,SIZE_T,ID3D11InputLayout**);
+CreateLayout originalLayout=nullptr;
+const GUID ShaderKey={0xb1a1d260,0xa73c,0x46ae,{0x82,0x49,0x4e,0x4a,0x27,0xfa,0x61,0xd4}};
+const GUID VertexBytesKey={0x369a0c21,0xef10,0x4a0c,{0xac,0xa5,0x92,0x79,0x37,0x21,0xab,0x08}};
+struct ShaderInfo {std::uint64_t w[8]{};};
+using CreateShader=HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*,const void*,SIZE_T,ID3D11ClassLinkage*,ID3D11VertexShader**);
+CreateShader originalShader=nullptr;
+HRESULT STDMETHODCALLTYPE shader_hook(ID3D11Device* device,const void* bytes,SIZE_T length,ID3D11ClassLinkage* linkage,ID3D11VertexShader** output);
+
+ID3D11Device* layoutDevice=nullptr; // retained for the bounded process lifetime
+const GUID PixelBytesKey={0x4fa14e83,0xd077,0x4773,{0x9d,0x31,0x31,0x63,0xd1,0x5f,0x17,0x82}};
+using CreatePixel=HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*,const void*,SIZE_T,ID3D11ClassLinkage*,ID3D11PixelShader**);
+CreatePixel originalPixel=nullptr;
+HRESULT STDMETHODCALLTYPE pixel_hook(ID3D11Device* device,const void* bytes,SIZE_T length,ID3D11ClassLinkage* linkage,ID3D11PixelShader** output) {
+    const auto hr=originalPixel(device,bytes,length,linkage,output);
+    if(device==layoutDevice && SUCCEEDED(hr) && output && *output && bytes && length>=36 && length<=1024*1024 && !linkage)
+        (*output)->SetPrivateData(PixelBytesKey,static_cast<UINT>(length),bytes);
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE layout_hook(ID3D11Device* device,const D3D11_INPUT_ELEMENT_DESC* desc,
+        UINT count,const void* bytes,SIZE_T length,ID3D11InputLayout** output) {
+    const auto hr=originalLayout(device,desc,count,bytes,length,output);
+    if(device!=layoutDevice || FAILED(hr) || !output || !*output || !desc || count>32) return hr;
+    LayoutInfo info{};info.w[0]=1;
+    for(UINT i=0;i<count;++i) if(desc[i].SemanticName &&
+            _stricmp(desc[i].SemanticName,"TEXCOORD")==0 && desc[i].SemanticIndex==13) {
+        ++info.w[1];info.w[2]=desc[i].InputSlot;info.w[3]=desc[i].Format;
+        info.w[4]=desc[i].AlignedByteOffset;info.w[5]=desc[i].InputSlotClass;
+        info.w[6]=desc[i].InstanceDataStepRate;
+    }
+    ID3D11ShaderReflection* reflection=nullptr;
+    if(SUCCEEDED(D3DReflect(bytes,length,__uuidof(ID3D11ShaderReflection),reinterpret_cast<void**>(&reflection)))) {
+        D3D11_SHADER_DESC shader{};
+        if(SUCCEEDED(reflection->GetDesc(&shader))) for(UINT i=0;i<shader.InputParameters;++i) {
+            D3D11_SIGNATURE_PARAMETER_DESC param{};
+            if(FAILED(reflection->GetInputParameterDesc(i,&param))) continue;
+            if(param.SemanticName && _stricmp(param.SemanticName,"TEXCOORD")==0 && param.SemanticIndex==13)
+                info.w[7]|=param.Mask;
+        }
+        reflection->Release();
+    }
+    // Failure leaves the layout unknown. Never affect the original HRESULT/output.
+    (*output)->SetPrivateData(LayoutKey,sizeof(info),&info);
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE shader_hook(ID3D11Device* device,const void* bytes,SIZE_T length,ID3D11ClassLinkage* linkage,ID3D11VertexShader** output) {
+    const auto hr=originalShader(device,bytes,length,linkage,output);
+    if(device!=layoutDevice || FAILED(hr) || !output || !*output)return hr;
+    if(!linkage && bytes && length>=36 && length<=1024*1024)(*output)->SetPrivateData(VertexBytesKey,static_cast<UINT>(length),bytes);
+    ShaderInfo info{};info.w[0]=1;ID3D11ShaderReflection* reflection=nullptr;
+    const auto reflected=D3DReflect(bytes,length,__uuidof(ID3D11ShaderReflection),reinterpret_cast<void**>(&reflection));
+    info.w[1]=static_cast<std::uint32_t>(reflected);
+    if(SUCCEEDED(reflected)) {
+        D3D11_SHADER_DESC desc{};
+        if(SUCCEEDED(reflection->GetDesc(&desc))) {
+            for(UINT i=0;i<desc.InputParameters;++i) {
+                D3D11_SIGNATURE_PARAMETER_DESC param{};
+                if(SUCCEEDED(reflection->GetInputParameterDesc(i,&param)) && param.SemanticName &&
+                    _stricmp(param.SemanticName,"TEXCOORD")==0 && param.SemanticIndex==13) {
+                    ++info.w[2];info.w[3]=param.Register;info.w[4]=param.ReadWriteMask;
+                }
+            }
+            for(UINT i=0;i<desc.BoundResources;++i) {
+                D3D11_SHADER_INPUT_BIND_DESC binding{};
+                if(SUCCEEDED(reflection->GetResourceBindingDesc(i,&binding)) && binding.BindPoint==1 && binding.Type==D3D_SIT_STRUCTURED) {
+                    info.w[5]=1;info.w[6]=binding.Type;info.w[7]=binding.BindCount;
+                }
+            }
+        }
+        reflection->Release();
+    }
+    (*output)->SetPrivateData(ShaderKey,sizeof(info),&info);return hr;
+}
+std::wstring directory;
+ULONGLONG started = 0;
+std::uint32_t startFrame = 0;
+std::atomic<std::uint64_t> presentEpoch{0};std::uint64_t startPresent=0;
+std::array<std::uint32_t,24> allowedHandles{};unsigned allowedCount=0;
+struct GpuSlot {GpuSnapshot snapshot;bool used=false,pending=false;std::uint32_t owner=0;std::uint64_t startEvent=0,drawEvent=0;ULONGLONG polled=0;};
+constexpr unsigned AggregateDrawLimit=24;
+constexpr unsigned SequenceRing=3;
+constexpr unsigned SequenceMaxCap=256;
+std::array<GpuSlot,SequenceRing*AggregateDrawLimit> gpuSlots;
+struct MatteSlot {MatteCapture capture;bool attempted=false;std::uint64_t draw=0,event=0;ULONGLONG polled=0;};
+std::array<MatteSlot,SequenceRing*AggregateDrawLimit> mattes;
+bool matteMode=false,meshMode=false,materialMode=false,occlusionMode=false,guardMode=false,colorMode=false,aggregateMode=false;std::uint64_t meshFrame=0,meshProducerFrame=0;bool meshFrameSet=false;
+struct ColorFrame {MatteCapture capture;bool prepared=false,sealed=false;unsigned draws=0;std::uint64_t first=0,last=0,epoch=0;std::uint64_t header[8]{};ULONGLONG polled=0;};
+std::array<ColorFrame,SequenceRing> colorFrames;unsigned colorIndex=0;bool sequenceMode=false,sequenceV2=false,sequenceV3=false;
+double lastSealedReplayTime=-1.0;
+long long lastSealedFrame=-1;
+unsigned sequenceCap=2,framesSealed=0,framesWritten=0;
+bool playersOnly=false;std::uint32_t ownerFieldOffset=0;bool sequenceStall=false;ULONGLONG firstSeal=0,lastSeal=0;
+// Kept for the life of the process: a static writer would join its worker
+// inside DLL detach. The explicit finish in tick() still closes the file.
+SequenceWriter* sequenceWriterInstance=nullptr;
+SequenceWriter& sequence_writer() noexcept { if(!sequenceWriterInstance)sequenceWriterInstance=new SequenceWriter(); return *sequenceWriterInstance; }
+bool sequenceWriterReady=false;
+struct FrameMeta {double replay_time=-1.0;std::uint64_t epoch=0,draws=0,first=0,last=0,wall_ms=0,delta_ms=0;};
+std::array<FrameMeta,SequenceMaxCap> frameMeta{};
+void release_frame_slots(unsigned ring) noexcept {
+    const unsigned first=ring*AggregateDrawLimit;
+    for(unsigned i=0;i<AggregateDrawLimit;++i) {
+        auto& gpu=gpuSlots[first+i];gpu.snapshot.abandon();gpu.used=false;gpu.pending=false;gpu.owner=0;gpu.startEvent=gpu.drawEvent=0;
+        auto& matte=mattes[first+i];matte.attempted=false;matte.draw=matte.event=0;
+    }
+}
+bool any_frame_pending() noexcept {
+    for(const auto& slot:colorFrames)if(slot.capture.pending)return true;
+    return false;
+}
+bool any_snapshot_pending() noexcept {
+    for(const auto& slot:gpuSlots)if(slot.pending)return true;
+    return false;
+}
+bool ring_snapshots_pending(unsigned ring) noexcept {
+    const unsigned first=ring*AggregateDrawLimit;
+    for(unsigned i=0;i<AggregateDrawLimit;++i)if(gpuSlots[first+i].pending)return true;
+    return false;
+}
+thread_local std::uint64_t pendingMatteDraw=0;
+thread_local unsigned pendingMatteSlot=0;
+unsigned dbg[8]{};std::uint64_t lastDrawEpoch=0;
+unsigned publishCalls=0,publishValid=0;double maxAuthored=-1.0,lastAuthored=-1.0;ULONGLONG lastAuthoredTick=0,lastAdvancedTick=0;
+std::atomic<std::uintptr_t> firstPresentDevice{0},lastPresentDevice{0};
+std::atomic<unsigned> presentDeviceChanges{0};
+std::atomic<unsigned long long> drawHookCalls{0},producerCalls{0},producerKnownCalls{0};
+ULONGLONG lastTimeline=0;
+
+constexpr unsigned char Prologue[] = {
+    0x48,0x8b,0xc4,0x4c,0x89,0x48,0x20,0x48,0x89,0x50,0x10,0x48,0x89,0x48,0x08,0x55,
+    0x53,0x48,0x8d,0x68,0xe8,0x48,0x81,0xec,0x08,0x01,0x00,0x00,0x48,0x89,0x70,0xe8};
+template<class T> bool read(std::uintptr_t address, T& output) noexcept {
+    if (address < 0x10000 || address > 0x00007fffffffffffULL - sizeof(T)) return false;
+    __try { std::memcpy(&output, reinterpret_cast<const void*>(address), sizeof(T)); return true; }
+    __except(EXCEPTION_EXECUTE_HANDLER) { std::memset(&output,0,sizeof(T)); return false; }
+}
+template<class T> T value(std::uintptr_t address) noexcept { T v{}; read(address,v); return v; }
+bool class_name_contains(std::uintptr_t object,const char* needle) noexcept {
+    if(!object)return false;
+    const auto vtable=value<std::uintptr_t>(object);
+    if(!vtable)return false;
+    std::int32_t relative=0;
+    if(!read(vtable-8,relative))return false;
+    const auto locator=vtable-8+static_cast<std::intptr_t>(relative);
+    std::int32_t type_relative=0;
+    if(!read(locator+0xc,type_relative))return false;
+    const auto descriptor=locator+0xc+static_cast<std::intptr_t>(type_relative);
+    char name[160]{};
+    for(unsigned i=0;i<sizeof(name)-1;++i){name[i]=value<char>(descriptor+0x10+i);if(!name[i])break;}
+    name[sizeof(name)-1]=0;
+    return std::strstr(name,needle)!=nullptr;
+}
+struct OwnerClass {std::uint32_t handle=0;bool player=false;};
+std::array<OwnerClass,64> ownerClasses{};unsigned ownerClassCount=0;
+// Players-only mode classifies each owner handle through the scene graph:
+// scene object -> scene node -> owner entity (schema m_pOwner offset) -> RTTI.
+// Attachments share the pawn handle, so they classify with their player.
+bool owner_is_player(std::uint32_t handle,std::uintptr_t scene) noexcept {
+    if(!playersOnly){for(unsigned n=0;n<allowedCount;++n)if(handle==allowedHandles[n])return true;return false;}
+    for(unsigned i=0;i<ownerClassCount;++i)if(ownerClasses[i].handle==handle)return ownerClasses[i].player;
+    bool player=false;
+    if(ownerClassCount<ownerClasses.size()){
+        const auto link=scene?value<std::uintptr_t>(scene+0x110):0;
+        const auto node=link?link-0x140:0;
+        const auto entity=node?value<std::uintptr_t>(node+ownerFieldOffset):0;
+        player=class_name_contains(entity,"CitadelPlayerPawn");
+        ownerClasses[ownerClassCount].handle=handle;
+        ownerClasses[ownerClassCount].player=player;
+        ++ownerClassCount;
+    }
+    return player;
+}
+std::uint64_t stamp() noexcept { LARGE_INTEGER t{}; QueryPerformanceCounter(&t); return t.QuadPart; }
+std::uint32_t frame() noexcept { return sceneBase ? value<std::uint32_t>(sceneBase+0x8ce9b8) : 0; }
+std::uintptr_t cpu(std::uintptr_t global) noexcept {
+    return sceneBase ? value<std::uintptr_t>(value<std::uintptr_t>(sceneBase+global)+0x18) : 0;
+}
+std::uintptr_t buffer(std::uintptr_t global) noexcept {
+    return sceneBase ? value<std::uintptr_t>(value<std::uintptr_t>(sceneBase+global)+0x60) : 0;
+}
+// One capture only. Every writer owns a unique slot. The worker reads after
+// closing admission and observing the closed admission word has no writers; slots are never recycled.
+struct Write {
+    Event* event = nullptr;
+    bool admitted = false;
+    explicit Write(unsigned kind) noexcept {
+        if (!armed.load(std::memory_order_acquire)) return;
+        if(samplingDone.load(std::memory_order_acquire) && kind!=9 && kind!=10 && kind!=11 && kind!=12)return;
+        auto state=admission.load(std::memory_order_acquire);
+        do {
+            if(state & Closed) return;
+        } while(!admission.compare_exchange_weak(state,state+1,std::memory_order_acq_rel));
+        admitted = true;
+        const auto index = used.fetch_add(1,std::memory_order_relaxed);
+        if (index >= Capacity) { dropped.fetch_add(1,std::memory_order_relaxed); return; }
+        event = &events[index];
+        event->w[0]=kind; event->w[1]=GetCurrentThreadId();
+        event->w[2]=stamp(); event->w[4]=frame();
+    }
+    ~Write() {
+        if (event) { event->w[5]=frame(); event->w[3]=stamp(); completed[event-events.data()].store(true,std::memory_order_release); }
+        if (admitted) admission.fetch_sub(1,std::memory_order_acq_rel);
+    }
+};
+int __fastcall hook(std::uintptr_t a, void* object, void* mesh, void* opaque, void* params,
+                    std::uint32_t mode, unsigned char* flag, std::uint32_t* outA, std::uint32_t* outB) {
+    const auto obj=reinterpret_cast<std::uintptr_t>(object);
+    ++producerCalls;
+    // Bounded sequences record only reviewed-player producers; every other
+    // producer is forwarded exactly once without consuming the event buffer.
+    if(sequenceV2) {
+        const auto owner=value<std::uint32_t>(obj+0xc0);
+        if(!owner_is_player(owner,obj))return original(a,object,mesh,opaque,params,mode,flag,outA,outB);
+        ++producerKnownCalls;
+    }
+    Write write(1);
+    auto* e=write.event;
+    const auto m=reinterpret_cast<std::uintptr_t>(mesh);
+    if (e) {
+        e->w[6]=obj; e->w[7]=m;
+        e->w[8]=value<std::uint32_t>(obj+0xc0);
+        e->w[9]=value<std::uintptr_t>(obj);
+        e->w[34]=value<std::uint64_t>(value<std::uintptr_t>(m+0x48)+0x10);
+        e->w[35]=mode;
+    }
+    // Exactly one original invocation. The first register argument remains
+    // opaque; caller-owned in/out pointers and all nine argument slots survive.
+    const int result=original(a,object,mesh,opaque,params,mode,flag,outA,outB);
+    if (e) {
+        e->w[10]=static_cast<std::uint32_t>(result);
+        const auto stack=value<std::uintptr_t>(sceneBase+0x8cfce8);
+        const auto base=value<std::uintptr_t>(stack+0x18);
+        const auto end=value<std::uintptr_t>(stack+8);
+        const auto capacity=value<std::uint32_t>(sceneBase+0x8cfde8);
+        e->w[11]=base;
+        e->w[22]=cpu(0x8cfce0);
+        e->w[23]=buffer(0x8cfd40); // CSceneSystem+0x2a60
+        e->w[24]=buffer(0x8cfde0); // CSceneSystem+0x2b00
+        e->w[25]=buffer(0x8cfc50); // sequential instance IDs
+        const auto cache=value<std::uintptr_t>(m+0x48);
+        e->w[26]=value<std::uint32_t>(cache+0x20);
+        e->w[27]=value<std::uint32_t>(cache+0x28);
+        e->w[28]=value<std::uint32_t>(cache+0x24);
+        e->w[29]=value<std::uint32_t>(obj+0xc0);
+        if (result >= 0 && static_cast<unsigned>(result)<capacity && base && end>=base) {
+            const auto address=base+static_cast<std::uint64_t>(result)*32;
+            std::uint32_t record[8]{};
+            if (address>=base && address<=end && end-address>=sizeof(record) && read(address,record)) {
+                for(unsigned i=0;i<8;++i) e->w[14+i]=record[i];
+                e->w[12]=record[1]; e->w[13]=1;
+            }
+        }
+        e->w[30]=cpu(0x8cfce8);
+        e->w[31]=buffer(0x8cfd40);
+        e->w[32]=buffer(0x8cfde0);
+        e->w[33]=value<std::uint64_t>(cache+0x10);
+        e->w[36]=sceneBase;
+    }
+    return result;
+}
+bool install(void* target) noexcept {
+    unsigned char bytes[sizeof(Prologue)]{};
+    if (!read(reinterpret_cast<std::uintptr_t>(target),bytes) || std::memcmp(bytes,Prologue,sizeof(bytes))) return false;
+    const auto init=MH_Initialize();
+    if (init!=MH_OK && init!=MH_ERROR_ALREADY_INITIALIZED) return false;
+    if (MH_CreateHook(target,reinterpret_cast<void*>(&hook),reinterpret_cast<void**>(&original))!=MH_OK) return false;
+    if (MH_EnableHook(target)!=MH_OK) { MH_RemoveHook(target); return false; }
+    return true;
+}
+void status(const char* text) noexcept {
+    try { std::ofstream f(directory+L"dolly_owner_status.txt",std::ios::trunc); f<<text<<'\n'; }
+    catch (...) {}
+}
+bool dump(const wchar_t* path) noexcept {
+    if (admission.load(std::memory_order_acquire)!=Closed) return false;
+    try {
+        const std::uint64_t header[8]={0x31564f52504c4c44ULL,12,sizeof(Event),std::min(used.load(),Capacity),
+            dropped.load(),startFrame,frame(),sceneBase};
+        std::ofstream f(path,std::ios::binary|std::ios::trunc);
+        f.write(reinterpret_cast<const char*>(header),sizeof(header));
+        f.write(reinterpret_cast<const char*>(events.data()),header[3]*sizeof(Event));
+        f.flush();
+        auto saveMatte=[](std::ofstream& m,const MatteSlot& slot) {
+            const auto& matte=slot.capture;
+            const std::uint32_t header[4]={matte.width,matte.height,static_cast<std::uint32_t>(slot.draw),static_cast<std::uint32_t>(slot.event)};
+            m.write(reinterpret_cast<const char*>(header),sizeof(header));m.write(reinterpret_cast<const char*>(matte.pixels.data()),matte.pixels.size());
+        };
+        if(aggregateMode && !sequenceV2) {
+            std::ofstream m(directory+L"dolly_owner_color_frame.bin",std::ios::binary|std::ios::trunc);
+            for(unsigned i=0;i<(sequenceMode?2u:1u);++i) {
+                const auto& slot=colorFrames[i];const auto& capture=slot.capture;
+                if(!capture.complete)continue;
+                const std::uint64_t header[8]={0x314641524c4f4344ULL,capture.width,capture.height,slot.draws,slot.first,slot.last,slot.epoch,8};
+                m.write(reinterpret_cast<const char*>(header),sizeof(header));m.write(reinterpret_cast<const char*>(capture.pixels.data()),capture.pixels.size());
+            }
+            m.flush();if(!m)return false;
+        }
+        if(sequenceV2 && framesSealed>0) {
+            // Pairing metadata for the recorder's take: authored-path replay
+            // time, epoch and draw window for every streamed player frame.
+            std::ofstream m(directory+L"dolly_owner_frame_meta.bin",std::ios::binary|std::ios::trunc);
+            const std::uint64_t header[8]={0x314154454d564f44ULL,1,64,framesSealed,0,0,0,0};
+            m.write(reinterpret_cast<const char*>(header),sizeof(header));
+            for(unsigned i=0;i<framesSealed;++i) {
+                std::uint64_t replay=0;std::memcpy(&replay,&frameMeta[i].replay_time,8);
+                const std::uint64_t record[8]={i,replay,frameMeta[i].epoch,frameMeta[i].draws,frameMeta[i].first,frameMeta[i].last,frameMeta[i].wall_ms,frameMeta[i].delta_ms};
+                m.write(reinterpret_cast<const char*>(record),sizeof(record));
+            }
+            m.flush();if(!m)return false;
+        }
+        if(meshMode && !aggregateMode) {            unsigned count=0;for(const auto& slot:mattes)if(slot.capture.complete)++count;
+            std::ofstream m(directory+(colorMode?L"dolly_owner_colors.bin":L"dolly_owner_mattes.bin"),std::ios::binary|std::ios::trunc);
+            const std::uint32_t header[2]={colorMode?0x31434f44u:0x314d4f44u,count};m.write(reinterpret_cast<const char*>(header),sizeof(header));
+            for(const auto& slot:mattes)if(slot.capture.complete)saveMatte(m,slot);
+            m.flush();if(!m)return false;
+        } else if(mattes[0].capture.complete) {
+            std::ofstream m(directory+L"dolly_owner_matte.rgba",std::ios::binary|std::ios::trunc);saveMatte(m,mattes[0]);m.flush();if(!m)return false;
+        }
+        return bool(f);
+    } catch (...) { return false; }
+}
+}
+void publish_replay_time(double seconds) noexcept {
+    ++publishCalls;
+    if(seconds>=0.0){++publishValid;lastAuthored=seconds;lastAuthoredTick=GetTickCount64();if(seconds>maxAuthored){maxAuthored=seconds;lastAdvancedTick=lastAuthoredTick;}}
+    authoredReplayTime.store(seconds,std::memory_order_release);
+}
+double current_replay_time() noexcept { return authoredReplayTime.load(std::memory_order_acquire); }
+void configure(std::uintptr_t base, bool hashes_ok) noexcept {
+    if (configured) return;
+    configured=true; sceneBase=base; hashesOk=hashes_ok;
+    layoutRequested.store(hashes_ok,std::memory_order_release);
+    HMODULE self=nullptr;
+    wchar_t path[32768]{};
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          reinterpret_cast<LPCWSTR>(&configure),&self)) {
+        const auto n=GetModuleFileNameW(self,path,32768);
+        if(n && n<32768) { directory.assign(path,n); directory.resize(directory.find_last_of(L"\\/")+1); }
+    }
+}
+void stall_report() noexcept {
+    if(!sequenceV2) return;
+    std::ofstream f(directory+L"dolly_owner_stall.txt",std::ios::binary|std::ios::trunc);
+    if(!f) return;
+    f<<"framesSealed "<<framesSealed<<" framesWritten "<<framesWritten<<" colorIndex "<<colorIndex
+     <<" used "<<used.load()<<" dropped "<<dropped.load()<<" stall "<<(sequenceStall?1:0)
+     <<" refused "<<sequence_writer().refused()<<" writerErr "<<(sequence_writer().error()?1:0)
+     <<" firstSeal "<<(firstSeal?firstSeal-started:0)<<" lastSeal "<<(lastSeal?lastSeal-started:0)
+     <<" now "<<(GetTickCount64()-started)<<" replay "<<lastSealedReplayTime
+     <<" meshFrameSet "<<(meshFrameSet?1:0)<<" meshFrame "<<meshFrame<<" lastDrawEpoch "<<lastDrawEpoch
+     <<" startPresent "<<startPresent<<"\n";
+    f<<"dbg";for(int i=0;i<8;++i)f<<" "<<i<<"="<<dbg[i];f<<"\n";
+    f<<"publish calls "<<publishCalls<<" valid "<<publishValid<<" max "<<maxAuthored<<" last "<<lastAuthored
+     <<" lastAge "<<(lastAuthoredTick?GetTickCount64()-lastAuthoredTick:0)
+     <<" lastAdvance "<<(lastAdvancedTick?GetTickCount64()-lastAdvancedTick:0)<<"\n";
+    f<<"present device first "<<firstPresentDevice.load()<<" last "<<lastPresentDevice.load()
+     <<" changes "<<presentDeviceChanges.load()<<"\n";
+    f<<"calls draw "<<drawHookCalls.load()<<" producers "<<producerCalls.load()
+     <<" known "<<producerKnownCalls.load()<<"\n";
+    for(unsigned i=0;i<SequenceRing;++i) {
+        const auto& s=colorFrames[i];
+        f<<"ring "<<i<<" sealed "<<(s.sealed?1:0)<<" prepared "<<(s.prepared?1:0)
+         <<" pend "<<(s.capture.pending?1:0)<<" complete "<<(s.capture.complete?1:0)
+         <<" draws "<<s.draws<<" first "<<s.first<<" last "<<s.last<<" epoch "<<s.epoch
+         <<" snapPend "<<(ring_snapshots_pending(i)?1:0)
+         <<" w "<<s.capture.width<<" h "<<s.capture.height<<"\n";
+    }
+    for(std::size_t i=0;i<gpuSlots.size();++i) {
+        const auto& g=gpuSlots[i];
+        if(g.used||g.pending) f<<"slot "<<i<<" used "<<(g.used?1:0)<<" pend "<<(g.pending?1:0)
+            <<" owner "<<g.owner<<" startEvent "<<g.startEvent<<" drawEvent "<<g.drawEvent<<"\n";
+    }
+    f.flush();
+}
+void arm_capture() noexcept {
+    startFrame=frame();startPresent=presentEpoch.load(std::memory_order_acquire);started=GetTickCount64();
+    if(sequenceV2 && !sequenceWriterReady) {
+        sequenceWriterReady=sequence_writer().open(directory+L"dolly_owner_color_frame.bin",2);
+        if(!sequenceWriterReady){status("rejected sequence writer open");captured=true;return;}
+    }
+    admission.store(0,std::memory_order_release);
+    captureActive.store(true,std::memory_order_release);
+    armed.store(true,std::memory_order_release); status(sequenceV2?"armed bounded player sequence capture":"armed four main-window presentation intervals, maximum 1500 ms");
+}
+void tick() noexcept {
+    if (!configured || directory.empty() || captured) return;
+    if (!attempted) {
+        if (GetFileAttributesW((directory+L"dolly_owner_start.txt").c_str())==INVALID_FILE_ATTRIBUTES) return;
+        attempted=true;
+        if (!hashesOk || !sceneBase || value<std::uintptr_t>(sceneBase+0x8cd2e0)!=sceneBase+0x5d4fe8) {
+            status("rejected exact module/layout gate"); captured=true; return;
+        }
+        try {
+            std::ifstream marker(directory+L"dolly_owner_start.txt");std::string mode;
+            marker>>mode>>allowedCount;
+            sequenceV3=mode=="color-sequence-v3";
+            sequenceV2=sequenceV3 || mode=="color-sequence-v2";
+            sequenceMode=sequenceV2 || mode=="color-sequence-v1";
+            aggregateMode=sequenceMode || mode=="color-aggregate-v1";
+            colorMode=aggregateMode || mode=="color-guarded-v1";
+            guardMode=colorMode || mode=="matte-guarded-v1";
+            occlusionMode=guardMode || mode=="matte-occluded-v1";
+            materialMode=occlusionMode || mode=="matte-material-v1";
+            meshMode=materialMode || mode=="matte-meshes-v1";
+            matteMode=meshMode || mode=="matte-redirect-v1";
+            if((mode!="gpu-snapshot-v1" && !matteMode) || allowedCount>allowedHandles.size()) {
+                status("rejected GPU marker format/count");captured=true;return;
+            }
+            if(meshMode && allowedCount!=1){status("rejected mesh mode requires one exact owner");captured=true;return;}
+            for(unsigned i=0;i<allowedCount;++i) if(!(marker>>allowedHandles[i]) || !allowedHandles[i]) {
+                status("rejected GPU marker handles");captured=true;return;
+            }
+            if(sequenceV2) {
+                unsigned cap=0;
+                if(!(marker>>cap) || cap<2 || cap>SequenceMaxCap){status("rejected sequence frame cap");captured=true;return;}
+                sequenceCap=cap;
+            }
+            std::string option;
+            if(marker>>option) {
+                unsigned offset=0;
+                if(option!="players" || !(marker>>offset) || offset<0x100 || offset>0x4000) {
+                    status("rejected GPU marker option");captured=true;return;
+                }
+                playersOnly=true;ownerFieldOffset=offset;
+            }
+            if(!playersOnly && allowedCount<1){status("rejected GPU marker format/count");captured=true;return;}
+        } catch(...) {status("rejected GPU marker read");captured=true;return;}
+        wantDrawHooks.store(true,std::memory_order_release);
+        started=GetTickCount64(); status("waiting for observed game device draw hooks");
+    }
+    if(!producerInstalled) {
+        const int hooks=drawHooks.load(std::memory_order_acquire);
+        if(hooks==0 && GetTickCount64()-started<2000) return;
+        if(hooks!=1) { status("rejected draw-hook installation or readiness timeout"); captured=true; return; }
+        if (!install(reinterpret_cast<void*>(sceneBase+0x564b0))) {
+            status("rejected producer signature or hook installation"); captured=true; return;
+        }
+        producerInstalled=true;
+        arm_capture();
+    }
+    const auto elapsed=GetTickCount64()-started;
+    const auto sinceFirstSeal=firstSeal?GetTickCount64()-firstSeal:0;
+    const bool captureFull=sequenceV2?framesSealed>=sequenceCap:presentEpoch.load(std::memory_order_acquire)-startPresent>=4;
+    // v3 arms before playback; a long forward seek may consume most of the
+    // wall clock, so the capture budget only starts at the first sealed frame
+    // (120 s standalone allowance keeps preparation itself bounded).
+    const ULONGLONG captureBudget=sequenceV3?(firstSeal?3000ULL+1200ULL*sequenceCap:120000ULL):sequenceV2?1500ULL+500ULL*sequenceCap:1500ULL;
+    const auto budgetElapsed=(sequenceV3&&firstSeal)?sinceFirstSeal:elapsed;
+    if (armed.load(std::memory_order_acquire) && !samplingDone.load(std::memory_order_acquire) &&
+        (captureFull || budgetElapsed>=captureBudget || used.load()>=Capacity)) {
+        drainStarted=GetTickCount64();samplingDone.store(true,std::memory_order_release);
+        status(sequenceV2?"draining bounded sequence readbacks":"draining previously submitted GPU readbacks, maximum 250 ms");
+    }
+    const bool sequenceDrained=sequenceV2 && sequenceWriterReady && framesWritten>=framesSealed && !any_frame_pending() && !any_snapshot_pending();
+    if(armed.load(std::memory_order_acquire) && samplingDone.load(std::memory_order_acquire) &&
+       (sequenceDrained || GetTickCount64()-drainStarted>=(sequenceV2?3000:250) || used.load()>=Capacity)) {
+        armed.store(false,std::memory_order_release);
+        captureActive.store(false,std::memory_order_release);
+        admission.fetch_or(Closed,std::memory_order_acq_rel);
+    }
+    if (!armed.load(std::memory_order_acquire) && admission.load(std::memory_order_acquire)==Closed) {
+        const bool saved=dump((directory+L"dolly_owner_events.bin").c_str());
+        stall_report();
+        // No writer may use a capture object here. Avoid COM releases in DLL teardown.
+        for(auto& slot:gpuSlots){slot.snapshot.release();slot.pending=false;}
+        for(auto& slot:mattes)slot.capture.release_gpu();
+        for(auto& slot:colorFrames)slot.capture.release_gpu();
+        const bool writerDrained=sequenceV2?(sequenceWriterReady&&sequence_writer().finish()):true;
+        const bool sequenceComplete=!sequenceV2||(writerDrained && !sequenceStall && framesWritten==framesSealed &&
+            framesSealed==sequenceCap && sequence_writer().refused()==0 && !sequence_writer().error());
+        if(saved && sequenceComplete)status(dropped.load()?"complete with overflow; reject proof":"complete");
+        else if(saved) {
+            char buf[192];
+            std::snprintf(buf,sizeof(buf),
+                "failed incomplete sequence; reject proof frames=%u written=%u first=%llu last=%llu elapsed=%llu replay=%.3f stalled=%d refused=%u drainPending=%d",
+                framesSealed,framesWritten,firstSeal?firstSeal-started:0ULL,lastSeal?lastSeal-started:0ULL,GetTickCount64()-started,
+                lastSealedReplayTime,sequenceStall?1:0,sequenceV2?sequence_writer().refused():0u,
+                sequenceV2?(any_frame_pending()||any_snapshot_pending())?1:0:0);
+            status(buf);
+        }
+        else status("failed to write diagnostic");
+        captured=true;
+    }
+}
+bool layout_hook_requested() noexcept {return layoutRequested.exchange(false,std::memory_order_acq_rel);}
+bool install_layout_hook(ID3D11Device* device) noexcept {
+    if(!device || originalLayout) return false;
+    const auto init=MH_Initialize();
+    if(init!=MH_OK && init!=MH_ERROR_ALREADY_INITIALIZED) return false;
+    auto** table=*reinterpret_cast<void***>(device);
+    auto* target=table[11];auto* shaderTarget=table[12];auto* pixelTarget=table[15];
+    if(MH_CreateHook(target,reinterpret_cast<void*>(&layout_hook),reinterpret_cast<void**>(&originalLayout))!=MH_OK)return false;
+    if(MH_CreateHook(shaderTarget,reinterpret_cast<void*>(&shader_hook),reinterpret_cast<void**>(&originalShader))!=MH_OK) {
+        MH_RemoveHook(target);originalLayout=nullptr;return false;
+    }
+    if(MH_CreateHook(pixelTarget,reinterpret_cast<void*>(&pixel_hook),reinterpret_cast<void**>(&originalPixel))!=MH_OK) {
+        MH_RemoveHook(target);MH_RemoveHook(shaderTarget);originalLayout=nullptr;originalShader=nullptr;return false;
+    }
+    layoutDevice=device;device->AddRef();
+    if(MH_EnableHook(target)!=MH_OK || MH_EnableHook(shaderTarget)!=MH_OK || MH_EnableHook(pixelTarget)!=MH_OK) {
+        MH_DisableHook(target);MH_DisableHook(shaderTarget);MH_DisableHook(pixelTarget);MH_RemoveHook(target);MH_RemoveHook(shaderTarget);MH_RemoveHook(pixelTarget);
+        originalLayout=nullptr;originalShader=nullptr;originalPixel=nullptr;layoutDevice->Release();layoutDevice=nullptr;return false;
+    }
+    return true;
+}
+bool draw_hooks_requested() noexcept { return wantDrawHooks.load(std::memory_order_acquire) && drawHooks.load(std::memory_order_acquire)==0; }
+void draw_hooks_result(bool installed) noexcept { drawHooks.store(installed?1:-1,std::memory_order_release); }
+void gpu_poll(ID3D11DeviceContext* c) noexcept {
+    if(c->GetType()!=D3D11_DEVICE_CONTEXT_IMMEDIATE)return;
+    const auto now=GetTickCount64();
+    for(auto& slot:colorFrames)if(slot.capture.pending && slot.polled!=now) {
+        slot.polled=now;const int result=slot.capture.poll(c);
+        if(result){Write out(11);if(out.event){out.event->w[6]=slot.first;out.event->w[7]=result==1;out.event->w[8]=static_cast<std::uint32_t>(slot.capture.failure);out.event->w[9]=1;}}
+        if(sequenceV2 && result!=0 && slot.sealed && !slot.capture.complete)sequenceStall=true;
+    }
+    if(sequenceV2) {
+        // Frames stream in capture order; a busy slot or failed write is
+        // reported instead of skipping or reordering the take.
+        unsigned guard=SequenceRing;
+        while(guard-- && framesWritten<framesSealed) {
+            const unsigned ring=framesWritten%SequenceRing;
+            auto& slot=colorFrames[ring];
+            if(!slot.sealed || slot.capture.pending || !slot.capture.complete)break;
+            // Keep every per-draw GPU record: a frame may finish its color
+            // readback while some of its snapshots are still in flight.
+            if(ring_snapshots_pending(ring))break;
+            if(!sequenceWriterReady || !sequence_writer().push(slot.header,std::move(slot.capture.pixels))) {sequenceStall=true;break;}
+            ++framesWritten;
+            slot.capture.pixels=sequence_writer().take_buffer(static_cast<std::size_t>(slot.capture.width)*slot.capture.height*slot.capture.bytesPerPixel);
+            slot.capture.recycle(c);
+            slot.sealed=false;slot.prepared=false;slot.draws=0;slot.first=slot.last=slot.epoch=0;
+            release_frame_slots(ring);
+        }
+    }
+    for(auto& slot:mattes)if(slot.capture.pending && slot.polled!=now) {
+        slot.polled=now;const int result=slot.capture.poll(c);
+        if(result) {Write out(11);if(out.event){out.event->w[6]=slot.draw;out.event->w[7]=result==1;out.event->w[8]=static_cast<std::uint32_t>(slot.capture.failure);}}
+    }
+    for(auto& slot:gpuSlots)if(slot.pending && slot.polled!=now) {
+        slot.polled=now;const int result=slot.snapshot.poll(c);
+        if(!result)continue;
+        Write out(9);if(out.event) {
+            auto* e=out.event;e->w[6]=slot.startEvent;e->w[7]=slot.drawEvent;
+            e->w[8]=slot.snapshot.id;e->w[9]=result==1;e->w[10]=static_cast<std::uint32_t>(slot.snapshot.failure);
+            for(unsigned i=0;i<8;++i)e->w[14+i]=slot.snapshot.record[i];
+        }
+        slot.pending=false;
+    }
+}
+void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
+    lastDrawEpoch=e->w[135];
+    if(sequenceMode && (e->w[135]==startPresent || (sequenceV2?(framesSealed>=sequenceCap || sequenceStall ||
+        colorFrames[colorIndex].sealed || colorFrames[colorIndex].capture.pending || colorFrames[colorIndex].capture.complete):colorIndex>=2))){++dbg[0];return;}
+    if(sequenceV3) {
+        // Shot-aligned capture: one frame per authored replay frame. The
+        // published clock is continuous with jitter, so quantize it to the
+        // replay's 60 Hz frame index; a frame is captured exactly once.
+        const double authored=authoredReplayTime.load(std::memory_order_acquire);
+        if(authored<0.0){++dbg[1];return;}
+        const long long frameIndex=static_cast<long long>(std::floor(authored*60.0));
+        if(frameIndex<=lastSealedFrame){++dbg[1];return;}
+    }
+    // Diagnostic mesh-size selection only; all ownership and GPU gates still apply.
+    if(matteMode && (e->w[8]!=2 || (!meshMode && e->w[9]<10000))){++dbg[2];return;}
+    if(meshMode && meshFrameSet && e->w[135]!=meshFrame){++dbg[3];return;}
+    if(e->w[121]!=1 || e->w[122]!=0 || e->w[123]!=1 || !(e->w[125]&1) ||
+       e->w[126]!=1 || e->w[127]!=D3D_SIT_STRUCTURED || e->w[128]!=1 ||
+       !e->w[129] || e->w[131]!=DXGI_FORMAT_R16G16B16A16_FLOAT || e->w[132]<640 || e->w[133]<360 || e->w[134]!=1){++dbg[4];return;}
+    if(!allowedCount || e->w[7]!=0 || e->w[10]!=1 || (e->w[8]!=2 && e->w[8]!=3) ||
+        e->w[112]!=1 || e->w[113]!=1 || e->w[114]>=32 || e->w[115]!=DXGI_FORMAT_R32_UINT ||
+        e->w[116]==0xffffffff || e->w[117]!=1 || e->w[118]!=1){++dbg[5];return;}
+    const unsigned slot=static_cast<unsigned>(e->w[114]);
+    const auto packed=e->w[49+slot*2];const auto offset=(packed>>32)+e->w[116]+e->w[11]*4;
+    if(!(e->w[45]&(1ULL<<slot)) || (packed&0xffffffff)!=4 || offset%4 || offset>0xffffffff)return;
+    const auto index=offset/4;
+    if(e->w[27]!=32 || e->w[28]!=0 || index>=e->w[29])return;
+    const unsigned drawLimit=aggregateMode?AggregateDrawLimit:meshMode?8u:3u;
+    const unsigned firstSlot=sequenceMode?colorIndex*drawLimit:0;
+    GpuSlot* target=nullptr;for(unsigned i=firstSlot;i<firstSlot+drawLimit;++i)if(!gpuSlots[i].used){target=&gpuSlots[i];break;}
+    if(!target){++dbg[6];return;}
+    const unsigned limit=std::min(used.load(std::memory_order_acquire),Capacity);
+    unsigned producer=Capacity;
+    for(unsigned i=limit;i-->0;) {
+        if(!completed[i].load(std::memory_order_acquire))continue;const auto& p=events[i];
+        if(p.w[0]!=1 || !p.w[13] || p.w[10]!=index || p.w[24]!=e->w[25] || p.w[4]!=(meshMode && meshFrameSet?meshProducerFrame:e->w[4]) || p.w[4]!=p.w[5] || p.w[8]!=p.w[29])continue;
+        const bool known=owner_is_player(static_cast<std::uint32_t>(p.w[8]),static_cast<std::uintptr_t>(p.w[6]));
+        bool taken=false;for(auto& candidate:gpuSlots)taken|=candidate.used && candidate.owner==p.w[8];
+        if(known && (meshMode || !taken)){producer=i;break;}
+    }
+    if(producer==Capacity){++dbg[7];return;}
+    ID3D11ShaderResourceView* srv=nullptr;c->VSGetShaderResources(1,1,&srv);
+    ID3D11Resource* resource=nullptr;ID3D11Buffer* records=nullptr;
+    if(srv){srv->GetResource(&resource);srv->Release();}
+    if(resource){resource->QueryInterface(__uuidof(ID3D11Buffer),reinterpret_cast<void**>(&records));resource->Release();}
+    ID3D11Buffer* ids=nullptr;UINT stride=0,base=0;c->IAGetVertexBuffers(slot,1,&ids,&stride,&base);
+    if(records && ids && reinterpret_cast<std::uintptr_t>(records)==e->w[25] && reinterpret_cast<std::uintptr_t>(ids)==e->w[46]) {
+        auto commitStart=[&]{
+            Write start(8);if(start.event) {
+                auto* out=start.event;target->used=true;target->owner=static_cast<std::uint32_t>(events[producer].w[8]);
+                target->startEvent=std::uint64_t(out-events.data())+1;target->drawEvent=std::uint64_t(e-events.data())+1;
+                out->w[6]=target->drawEvent;out->w[7]=producer+1;out->w[8]=index;out->w[9]=target->owner;
+                out->w[10]=e->w[25];out->w[11]=e->w[46];out->w[12]=offset;
+                target->pending=target->snapshot.begin(c,records,ids,static_cast<UINT>(offset));
+                out->w[13]=target->pending;out->w[14]=static_cast<std::uint32_t>(target->snapshot.failure);
+                if(target->pending && matteMode && e->w[8]==2 && (meshMode || !mattes[0].attempted)) {
+                    pendingMatteDraw=target->drawEvent;pendingMatteSlot=meshMode?static_cast<unsigned>(target-gpuSlots.data()):0;
+                    if(meshMode && !meshFrameSet){meshFrame=e->w[135];meshProducerFrame=events[producer].w[4];meshFrameSet=true;}
+                }
+            }
+        };
+        if(scratch) {
+            Write drawWrite(2);if(!drawWrite.event){records->Release();ids->Release();return;}
+            *drawWrite.event=*e;e=drawWrite.event;
+            // Keep the draw record open while the start record is written, so
+            // its timestamps still enclose the start event.
+            commitStart();
+        } else commitStart();
+    }
+    if(records)records->Release();if(ids)ids->Release();
+}
+static void gather_draw(ID3D11DeviceContext* c,Event* e,unsigned method,unsigned vertices,unsigned instances,unsigned first) noexcept {
+    e->w[135]=presentEpoch.load(std::memory_order_acquire);
+    e->w[6]=reinterpret_cast<std::uintptr_t>(c); e->w[7]=c->GetType();
+    e->w[8]=method; e->w[9]=vertices; e->w[10]=instances; e->w[11]=first;
+    e->w[12]=~std::uint64_t(0);
+    const auto identity=buffer(0x8cfc50);
+    ID3D11Buffer* vb[32]{}; UINT strides[32]{},offsets[32]{};
+    c->IAGetVertexBuffers(0,32,vb,strides,offsets);
+    e->w[46]=identity;
+    for(unsigned i=0;i<32;++i) {
+        e->w[48+2*i]=reinterpret_cast<std::uintptr_t>(vb[i]);
+        e->w[49+2*i]=(std::uint64_t(offsets[i])<<32)|strides[i];
+        if(vb[i]) {
+            if(reinterpret_cast<std::uintptr_t>(vb[i])==identity && identity) {
+                // Preserve all matching slots; semantic selection remains unproven.
+                e->w[45]|=std::uint64_t(1)<<i;
+                if(e->w[12]!=~std::uint64_t(0)) e->w[16]=1;
+                e->w[12]=i; e->w[13]=offsets[i]; e->w[14]=strides[i]; e->w[15]=identity;
+            }
+            vb[i]->Release();
+        }
+    }
+    ID3D11ShaderResourceView* srv[4]{};
+    c->VSGetShaderResources(0,4,srv);
+    for(unsigned i=0;i<4;++i) if(srv[i]) {
+        const unsigned at=18+i*6;
+        e->w[at]=reinterpret_cast<std::uintptr_t>(srv[i]);
+        D3D11_SHADER_RESOURCE_VIEW_DESC view{}; srv[i]->GetDesc(&view);
+        ID3D11Resource* resource=nullptr; srv[i]->GetResource(&resource);
+        if(resource) {
+            ID3D11Buffer* b=nullptr;
+            if(SUCCEEDED(resource->QueryInterface(__uuidof(ID3D11Buffer),reinterpret_cast<void**>(&b)))) {
+                D3D11_BUFFER_DESC d{}; b->GetDesc(&d);
+                e->w[at+1]=reinterpret_cast<std::uintptr_t>(b); e->w[at+2]=d.ByteWidth;
+                e->w[at+3]=d.StructureByteStride;
+                if(view.ViewDimension==D3D11_SRV_DIMENSION_BUFFER || view.ViewDimension==D3D11_SRV_DIMENSION_BUFFEREX) {
+                    e->w[at+4]=view.Buffer.FirstElement; e->w[at+5]=view.Buffer.NumElements;
+                }
+                b->Release();
+            }
+            resource->Release();
+        }
+        srv[i]->Release();
+    }
+    ID3D11InputLayout* layout=nullptr; c->IAGetInputLayout(&layout);
+    e->w[42]=reinterpret_cast<std::uintptr_t>(layout);
+    if(layout) {
+        LayoutInfo info{};UINT size=sizeof(info);
+        if(SUCCEEDED(layout->GetPrivateData(LayoutKey,&size,&info)) && size==sizeof(info))
+            for(unsigned i=0;i<8;++i)e->w[112+i]=info.w[i];
+        layout->Release();
+    }
+    e->w[43]=buffer(0x8cfd40); e->w[44]=buffer(0x8cfde0);
+    ID3D11VertexShader* shader=nullptr;c->VSGetShader(&shader,nullptr,nullptr);
+    e->w[120]=reinterpret_cast<std::uintptr_t>(shader);
+    if(shader) {
+        ShaderInfo info{};UINT size=sizeof(info);
+        if(SUCCEEDED(shader->GetPrivateData(ShaderKey,&size,&info)) && size==sizeof(info))
+            for(unsigned i=0;i<8;++i)e->w[121+i]=info.w[i];
+        shader->Release();
+    }
+    ID3D11RenderTargetView* target=nullptr;ID3D11DepthStencilView* depthView=nullptr;
+    c->OMGetRenderTargets(1,&target,&depthView);e->w[129]=reinterpret_cast<std::uintptr_t>(target);e->w[130]=reinterpret_cast<std::uintptr_t>(depthView);
+    if(target) {
+        D3D11_RENDER_TARGET_VIEW_DESC desc{};target->GetDesc(&desc);e->w[131]=desc.Format;
+        ID3D11Resource* resource=nullptr;target->GetResource(&resource);
+        if(resource) {
+            ID3D11Texture2D* texture=nullptr;
+            if(SUCCEEDED(resource->QueryInterface(__uuidof(ID3D11Texture2D),reinterpret_cast<void**>(&texture)))) {
+                D3D11_TEXTURE2D_DESC d{};texture->GetDesc(&d);e->w[132]=d.Width;e->w[133]=d.Height;e->w[134]=d.SampleDesc.Count;texture->Release();
+            }
+            resource->Release();
+        }
+        target->Release();
+    }
+    if(depthView)depthView->Release();
+}
+void draw(ID3D11DeviceContext* c, unsigned method, unsigned vertices, unsigned instances, unsigned first) noexcept {
+    if(!captureActive.load(std::memory_order_acquire))return;
+    ++drawHookCalls;
+    pendingMatteDraw=0;
+    if(samplingDone.load(std::memory_order_acquire)) {
+        static thread_local ULONGLONG lastPoll=0;
+        const auto now=GetTickCount64();
+        if(c && c->GetType()==D3D11_DEVICE_CONTEXT_IMMEDIATE && now!=lastPoll) {
+            lastPoll=now;Write pin(12);if(pin.event)gpu_poll(c);
+        }
+        return;
+    }
+    if(!c) return;
+    if(sequenceV2) {
+        // Capture-only events: gather into a scratch record and commit it only
+        // when the draw is selected, so unselected draws cannot exhaust the
+        // bounded event buffer during a sequence. The scratch needs the same
+        // standard header words a Write would have produced, because the
+        // producer match compares its engine frame.
+        gpu_poll(c);
+        Event scratch{};
+        scratch.w[0]=2;scratch.w[1]=GetCurrentThreadId();scratch.w[2]=stamp();scratch.w[4]=frame();
+        gather_draw(c,&scratch,method,vertices,instances,first);
+        gpu_select(c,&scratch,true);
+        return;
+    }
+    Write write(2); auto* e=write.event;
+    if(!e) return;
+    gpu_poll(c);
+    gather_draw(c,e,method,vertices,instances,first);
+    gpu_select(c,e,false); // At most three nonblocking, full-buffer snapshots before original draws.
+}
+void redirect_indexed(ID3D11DeviceContext* c,unsigned n,unsigned instances,unsigned start,int base,unsigned first,IndexedOriginal originalDraw) noexcept {
+    const auto selected=pendingMatteDraw;pendingMatteDraw=0;
+    if(!selected || pendingMatteSlot>=mattes.size()) {originalDraw(c,n,instances,start,base,first);return;}
+    auto& colorSlot=colorFrames[sequenceMode?pendingMatteSlot/AggregateDrawLimit:0];
+    auto& colorAggregate=colorSlot.capture;auto& colorPrepared=colorSlot.prepared;auto& colorFirst=colorSlot.first;auto& colorLast=colorSlot.last;auto& colorEpoch=colorSlot.epoch;auto& colorDraws=colorSlot.draws;
+    auto& slot=mattes[pendingMatteSlot];auto& matte=slot.capture;
+    if(slot.attempted){originalDraw(c,n,instances,start,base,first);return;}slot.attempted=true;
+    Write transaction(10);auto* out=transaction.event;
+    if(!out){originalDraw(c,n,instances,start,base,first);return;}
+    const auto& drawEvent=events[selected-1];slot.draw=selected;slot.event=std::uint64_t(out-events.data())+1;
+    out->w[6]=selected;bool called=false,captured=false;
+    try {
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> material;
+        if(colorMode) {
+            Microsoft::WRL::ComPtr<ID3D11BlendState> blend;FLOAT factors[4]{};UINT mask=0;c->OMGetBlendState(&blend,factors,&mask);
+            D3D11_BLEND_DESC desc{};if(blend)blend->GetDesc(&desc);else desc.RenderTarget[0].RenderTargetWriteMask=15;
+            const auto& rt=desc.RenderTarget[0];out->w[28]=rt.BlendEnable;out->w[29]=rt.SrcBlend;out->w[30]=rt.DestBlend;
+            out->w[31]=rt.BlendOp;out->w[32]=rt.SrcBlendAlpha;out->w[33]=rt.DestBlendAlpha;out->w[34]=rt.BlendOpAlpha;out->w[35]=rt.RenderTargetWriteMask;
+            const bool over=rt.BlendEnable && rt.SrcBlend==D3D11_BLEND_ONE && rt.DestBlend==D3D11_BLEND_INV_SRC_ALPHA && rt.BlendOp==D3D11_BLEND_OP_ADD && rt.SrcBlendAlpha==D3D11_BLEND_INV_DEST_ALPHA && rt.DestBlendAlpha==D3D11_BLEND_ONE && rt.BlendOpAlpha==D3D11_BLEND_OP_ADD;
+            const bool darken=rt.BlendEnable && rt.SrcBlend==D3D11_BLEND_ZERO && rt.DestBlend==D3D11_BLEND_SRC_COLOR && rt.BlendOp==D3D11_BLEND_OP_ADD && rt.SrcBlendAlpha==D3D11_BLEND_ONE && rt.DestBlendAlpha==D3D11_BLEND_ONE && rt.BlendOpAlpha==D3D11_BLEND_OP_ADD;
+            if((rt.BlendEnable && !(aggregateMode && (over || darken))) || rt.RenderTargetWriteMask!=15)throw 3;
+            out->w[27]=aggregateMode?2:1;
+        }
+        if(aggregateMode){Microsoft::WRL::ComPtr<ID3D11PixelShader> ps;c->PSGetShader(&ps,nullptr,nullptr);if(!ps)throw 1;out->w[12]=2;out->w[13]=reinterpret_cast<std::uintptr_t>(ps.Get());}
+        if(materialMode && !aggregateMode) {
+            Microsoft::WRL::ComPtr<ID3D11PixelShader> originalPS;c->PSGetShader(&originalPS,nullptr,nullptr);
+            UINT size=0;if(!originalPS || FAILED(originalPS->GetPrivateData(PixelBytesKey,&size,nullptr)) || size>1024*1024)throw 1;
+            std::vector<unsigned char> bytes(size);if(FAILED(originalPS->GetPrivateData(PixelBytesKey,&size,bytes.data())))throw 1;
+            Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflection;
+            if(FAILED(D3DReflect(bytes.data(),bytes.size(),__uuidof(ID3D11ShaderReflection),reinterpret_cast<void**>(reflection.GetAddressOf()))))throw 1;
+            D3D11_SHADER_DESC desc{};if(FAILED(reflection->GetDesc(&desc)))throw 1;
+            bool target0=false;for(UINT i=0;i<desc.OutputParameters;++i){D3D11_SIGNATURE_PARAMETER_DESC out{};
+                if(SUCCEEDED(reflection->GetOutputParameterDesc(i,&out)) && out.SystemValueType==D3D_NAME_TARGET && out.SemanticIndex==0 && out.Register==0 && out.ComponentType==D3D_REGISTER_COMPONENT_FLOAT32 && out.Mask==15)target0=true;}
+            if(!target0)throw 1;
+            auto patched=material_white(bytes.data(),bytes.size(),!colorMode);if(patched.empty())throw 1;
+            Microsoft::WRL::ComPtr<ID3D11Device> device;c->GetDevice(&device);
+            if(FAILED(device->CreatePixelShader(patched.data(),patched.size(),nullptr,&material)))throw 1;
+            out->w[12]=1;out->w[13]=reinterpret_cast<std::uintptr_t>(originalPS.Get());out->w[14]=bytes.size();
+        }
+        Microsoft::WRL::ComPtr<ID3D11VertexShader> originalVS,guardedVS;
+        if(guardMode) {
+            c->VSGetShader(&originalVS,nullptr,nullptr);UINT size=0;
+            if(!originalVS || FAILED(originalVS->GetPrivateData(VertexBytesKey,&size,nullptr)) || size>1024*1024)throw 2;
+            std::vector<unsigned char> bytes(size);if(FAILED(originalVS->GetPrivateData(VertexBytesKey,&size,bytes.data())))throw 2;
+            Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflection;
+            if(FAILED(D3DReflect(bytes.data(),bytes.size(),__uuidof(ID3D11ShaderReflection),reinterpret_cast<void**>(reflection.GetAddressOf()))))throw 2;
+            D3D11_SHADER_DESC desc{};if(FAILED(reflection->GetDesc(&desc)))throw 2;
+            unsigned position=99;for(UINT i=0;i<desc.OutputParameters;++i){D3D11_SIGNATURE_PARAMETER_DESC param{};
+                if(SUCCEEDED(reflection->GetOutputParameterDesc(i,&param)) && param.SystemValueType==D3D_NAME_POSITION && param.Mask==15)position=param.Register;}
+            const auto& gpu=gpuSlots[pendingMatteSlot];const auto& request=events[gpu.startEvent-1];
+            const auto& producer=events[request.w[7]-1];std::array<std::uint32_t,8> expected{};
+            for(unsigned i=0;i<8;++i){expected[i]=static_cast<std::uint32_t>(producer.w[14+i]);out->w[18+i]=expected[i];}
+            const auto id=static_cast<unsigned>(request.w[8]);
+            auto patched=vertex_record_guard(bytes.data(),bytes.size(),static_cast<unsigned>(drawEvent.w[124]),position,id,expected);if(patched.empty())throw 2;
+            Microsoft::WRL::ComPtr<ID3D11Device> device;c->GetDevice(&device);
+            if(FAILED(device->CreateVertexShader(patched.data(),patched.size(),nullptr,&guardedVS)))throw 2;
+            out->w[16]=1;out->w[17]=id;out->w[26]=reinterpret_cast<std::uintptr_t>(originalVS.Get());
+        }
+        auto renderOriginal=[&]{
+            struct RestoreVS {ID3D11DeviceContext* c;ID3D11VertexShader* vs;~RestoreVS(){if(vs)c->VSSetShader(vs,nullptr,0);}} restore{c,originalVS.Get()};
+            if(guardedVS)c->VSSetShader(guardedVS.Get(),nullptr,0);
+            called=true;originalDraw(c,n,instances,start,base,first);
+        };
+        if(aggregateMode) {
+            if(!colorPrepared){
+                if(colorAggregate.reusable_for(c,static_cast<unsigned>(drawEvent.w[132]),static_cast<unsigned>(drawEvent.w[133]))){
+                    // Recycled ring slot: the capture keeps its cleared target.
+                } else if(!colorAggregate.prepare(c,static_cast<unsigned>(drawEvent.w[132]),static_cast<unsigned>(drawEvent.w[133]),nullptr,true,true))throw 3;
+                colorPrepared=true;colorFirst=selected;colorEpoch=drawEvent.w[135];
+            }
+            if(colorEpoch!=drawEvent.w[135] || colorAggregate.width!=drawEvent.w[132] || colorAggregate.height!=drawEvent.w[133])throw 3;
+            captured=colorAggregate.append(c,renderOriginal,true,true,true);out->w[36]=1;
+            if(captured){++colorDraws;colorLast=selected;}
+        } else captured=matte.begin(c,static_cast<unsigned>(drawEvent.w[132]),static_cast<unsigned>(drawEvent.w[133]),renderOriginal,material.Get(),occlusionMode,colorMode);
+        out->w[15]=occlusionMode;
+    }catch(...){matte.failure=E_FAIL;}
+    if(!called){originalDraw(c,n,instances,start,base,first);called=true;}
+    out->w[7]=called;out->w[8]=captured;out->w[9]=static_cast<std::uint32_t>(matte.failure);
+    out->w[10]=aggregateMode?colorAggregate.width:matte.width;out->w[11]=aggregateMode?colorAggregate.height:matte.height;
+}
+void update(ID3D11DeviceContext* c, ID3D11Resource* destination, unsigned sub,
+            const D3D11_BOX* box,const void* source,unsigned row,unsigned depth,UpdateOriginal originalUpdate) noexcept {
+    // Bounded sequences skip upload diagnostics: the color path never reads
+    // them and their samples would exhaust the bounded event capacity first.
+    if(sequenceV2) { originalUpdate(c,destination,sub,box,source,row,depth); return; }
+    Write write(6);auto* e=write.event;
+    if(e && c && destination) {
+        e->w[6]=reinterpret_cast<std::uintptr_t>(c);e->w[7]=c->GetType();
+        e->w[8]=reinterpret_cast<std::uintptr_t>(destination);
+        D3D11_RESOURCE_DIMENSION dimension{};destination->GetType(&dimension);e->w[9]=dimension;
+        e->w[14]=sub;e->w[15]=reinterpret_cast<std::uintptr_t>(source);
+        e->w[18]=row;e->w[19]=depth;e->w[23]=box!=nullptr;
+        ID3D11Buffer* b=nullptr;
+        if(dimension==D3D11_RESOURCE_DIMENSION_BUFFER && SUCCEEDED(destination->QueryInterface(__uuidof(ID3D11Buffer),reinterpret_cast<void**>(&b)))) {
+            D3D11_BUFFER_DESC desc{};b->GetDesc(&desc);
+            e->w[10]=reinterpret_cast<std::uintptr_t>(b);e->w[11]=desc.ByteWidth;
+            e->w[12]=desc.StructureByteStride;e->w[13]=desc.Usage;
+            const std::uint64_t left=box?box->left:0,right=box?box->right:desc.ByteWidth;
+            e->w[16]=left;e->w[17]=right;
+            const bool valid=source && sub==0 && left<right && right<=desc.ByteWidth &&
+                (!box || (box->top==0 && box->front==0 && box->bottom==1 && box->back==1));
+            e->w[20]=valid;
+            if(valid && desc.StructureByteStride==32) {
+                const unsigned limit=std::min(used.load(std::memory_order_acquire),Capacity);
+                for(unsigned i=0;i<limit;++i) {
+                    if(!completed[i].load(std::memory_order_acquire))continue;
+                    const auto& prior=events[i];
+                    if(prior.w[0]!=1 || !prior.w[13] || prior.w[24]!=e->w[10] || prior.w[10]>=262144)continue;
+                    const auto offset=prior.w[10]*32;
+                    if(offset<left || offset+32>right)continue;
+                    if(e->w[21]>=4096) {e->w[22]=1;break;}
+                    Write sample(7);auto* out=sample.event;
+                    if(!out) {e->w[22]=1;break;}
+                    out->w[6]=std::uint64_t(e-events.data())+1;out->w[7]=i+1;
+                    out->w[8]=e->w[10];out->w[9]=prior.w[10];out->w[10]=offset;
+                    std::uint32_t record[8]{};
+                    const auto address=reinterpret_cast<std::uintptr_t>(source)+offset-left;
+                    if(address>=reinterpret_cast<std::uintptr_t>(source) && read(address,record)) {
+                        out->w[11]=1;for(unsigned n=0;n<8;++n)out->w[14+n]=record[n];
+                    }
+                    ++e->w[21];
+                }
+            }
+            b->Release();
+        }
+    }
+    // Submission is forwarded exactly once, even outside capture or on unknown resources.
+    originalUpdate(c,destination,sub,box,source,row,depth);
+    if(e)e->w[25]=1;
+}
+void present_boundary(ID3D11DeviceContext* c) noexcept {
+    if(!captureActive.load(std::memory_order_acquire))return;
+    if(sequenceV2) {
+        const auto now=GetTickCount64();
+        if(now-lastTimeline>=1000) {
+            lastTimeline=now;
+            try {
+                std::ofstream t(directory+L"dolly_owner_timeline.txt",std::ios::app);
+                t<<(now-started)<<" draw "<<drawHookCalls.load()<<" producers "<<producerCalls.load()
+                 <<" known "<<producerKnownCalls.load()<<" draws "<<drawHookCalls.load()
+                 <<" sealed "<<framesSealed<<" written "<<framesWritten
+                 <<" presents "<<presentEpoch.load()<<" devChanges "<<presentDeviceChanges.load()<<'\n';
+            } catch(...) {}
+        }
+    }
+    if(c) {
+        ID3D11Device* device=nullptr;
+        c->GetDevice(&device);
+        const auto value=reinterpret_cast<std::uintptr_t>(device);
+        if(device)device->Release();
+        if(firstPresentDevice.load(std::memory_order_relaxed)==0)firstPresentDevice.store(value,std::memory_order_relaxed);
+        const auto previous=lastPresentDevice.exchange(value,std::memory_order_relaxed);
+        if(previous && previous!=value)presentDeviceChanges.fetch_add(1,std::memory_order_relaxed);
+    }
+    if(aggregateMode && (sequenceV2?framesSealed<sequenceCap:colorIndex<2)){
+        auto& slot=colorFrames[colorIndex];
+        if(slot.prepared && !slot.sealed) {
+            Write seal(14);if(seal.event){
+                const std::uint64_t header[8]={0x314641524c4f4344ULL,slot.capture.width,slot.capture.height,slot.draws,slot.first,slot.last,slot.epoch,8};
+                for(unsigned i=0;i<8;++i)slot.header[i]=header[i];
+                slot.sealed=true;seal.event->w[6]=slot.epoch;seal.event->w[7]=slot.draws;
+                seal.event->w[8]=slot.capture.finish(c);
+                if(sequenceV2 && framesSealed<SequenceMaxCap) {
+                    auto& meta=frameMeta[framesSealed];
+                    const auto sealNow=GetTickCount64();
+                    meta.replay_time=authoredReplayTime.load(std::memory_order_acquire);
+                    meta.epoch=slot.epoch;meta.draws=slot.draws;meta.first=slot.first;meta.last=slot.last;
+                    meta.wall_ms=firstSeal?sealNow-firstSeal:0;
+                    meta.delta_ms=lastSeal?sealNow-lastSeal:0;
+                    if(!firstSeal)firstSeal=sealNow;
+                    lastSeal=sealNow;
+                    if(sequenceV3) {
+                        const long long frameIndex=static_cast<long long>(std::floor(meta.replay_time*60.0));
+                        if(frameIndex>=0) meta.replay_time=frameIndex/60.0;
+                        lastSealedFrame=frameIndex;
+                        lastSealedReplayTime=meta.replay_time;
+                    }
+                }
+                if(sequenceMode){
+                    ++framesSealed;
+                    if(sequenceV2)colorIndex=(colorIndex+1)%SequenceRing;else ++colorIndex;
+                    meshFrameSet=false;meshFrame=meshProducerFrame=0;
+                }
+            }
+        }
+    }
+    const auto prior=presentEpoch.fetch_add(1,std::memory_order_acq_rel);
+    Write write(13);if(write.event){write.event->w[6]=prior;write.event->w[7]=prior+1;}
+}
+void command(ID3D11DeviceContext* c, ID3D11CommandList* list, unsigned kind) noexcept {
+    if(!captureActive.load(std::memory_order_acquire))return;
+    Write write(kind); if(!write.event) return;
+    write.event->w[6]=reinterpret_cast<std::uintptr_t>(c);
+    write.event->w[7]=reinterpret_cast<std::uintptr_t>(list);
+}
+}

@@ -297,6 +297,17 @@ class Controller:
         """The only process eligible for an optional capture hotkey."""
         return self._session.pid if self._alive() else None
 
+    def deployment_directory(self):
+        """Directory that receives native capture marker files, or None.
+
+        The player layer writes its capture marker beside the deployed native
+        DLL; the launcher owns that folder and removes it with the session.
+        """
+        overlay = getattr(self._session, "overlay_dir", None) if self._session else None
+        if overlay is None:
+            return None
+        return Path(overlay) / "cvar_unlocker" / "bin" / "win64"
+
     def _require_connection(self):
         if not self._alive():
             raise RuntimeError("Launch the local replay from Dolly first. Connections to separately launched games are disabled.")

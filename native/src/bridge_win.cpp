@@ -22,6 +22,7 @@
 #include "dolly_replay_clock.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_overlay.hpp"
+#include "dolly_player_capture.hpp"
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_media.hpp"
@@ -44,6 +45,11 @@ constexpr char kEngineHash[] = "887201acec33837fdb18d73c04f8e0894971d26eebafe992
 constexpr char kUpdatedEngineHash[] =
     "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d";
 constexpr char kUnlockerHash[] = "74047120e79245d479e61142a878f3311c8384a1f5f33e3f1cb8f3e87749e42a";
+// Reviewed scenesystem.dll for the player layer capture. Any other build keeps
+// the capture disabled instead of patching unverified producer code; re-review
+// this hash in the same turn as a game update.
+constexpr char kPlayerCaptureScenesystemHash[] =
+    "e480a7f28ae073dd4a83833bfee8db44bfff22f097147f2f697a109b2ea2de4b";
 constexpr std::uintptr_t kDemoGlobal = 0x61b618, kDemoTable = 0x535730, kEngineTable = 0x540128;
 // Identical across every reviewed client build; the exact-hash path re-checks it.
 constexpr unsigned char kSetupPrologue[] = {
@@ -453,6 +459,18 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // Each view republishes its own state; only a successful path evaluation
     // below turns the native path clock back on.
     video::publish_path_replay_time(false, 0);
+    player_capture::publish_replay_time(-1.0);
+    // Player layer capture: configure once against the reviewed scenesystem
+    // build, then let the probe's bounded state machine advance every view.
+    static const bool player_capture_configured = [] {
+        const auto module = GetModuleHandleW(L"scenesystem.dll");
+        player_capture::configure(
+            reinterpret_cast<std::uintptr_t>(module),
+            module != nullptr && hash_file(module_path(module)) == kPlayerCaptureScenesystemHash);
+        return true;
+    }();
+    (void)player_capture_configured;
+    player_capture::tick();
     const auto& c = command->wire;
     if (c.command != seen) {
         // Every new command is first acknowledged by a real matching main view.
@@ -672,8 +690,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     for (int i = 0; i < 7; ++i)
         status.applied_pose[i] = applied[i];
     status.applied_fov = fov;
-    if (c.mode == std::uint32_t(Mode::Play))
+    if (c.mode == std::uint32_t(Mode::Play)) {
         video::publish_path_replay_time(true, phase);
+        player_capture::publish_replay_time(phase);
+    }
     finish(completed ? State::Completed
                      : (c.mode == std::uint32_t(Mode::Play) ? State::Playing : State::Armed),
            0,

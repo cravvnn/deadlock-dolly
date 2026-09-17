@@ -541,14 +541,44 @@ class VideoGuiTests(unittest.TestCase):
         self.assertEqual(self.app._layer_queue, [("world", "black")])
         self.assertTrue(self.app.video_fixed_step.get())
 
-    def test_players_layer_queues_a_black_and_white_matte_pair(self):
+    def test_players_layer_queues_a_native_capture(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")
         self.app.ffmpeg_path.set(str(exe))
         self.app.video_layer_players.set(True)
         self.app._layer_toggled()
         self.app._start_video_recording()
-        self.assertEqual(self.app._layer_queue, [("players", "black"), ("players", "white")])
+        self.assertEqual(self.app._layer_queue, [("players", "capture")])
+
+    def test_next_layer_take_arms_the_players_capture(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
+                            fixed_step=True, speed=1.0, layers=("players",),
+                            ffmpeg_path=exe).validated()
+        (Path(self.folder.name) / "shot").mkdir()
+        deploy = Path(self.folder.name) / "deploy"
+        deploy.mkdir()
+        layout = ("          0          408      CGameSceneNode                           "
+                  "m_pOwner                                 CGameSceneNode*\n")
+        self.app._base_capture = base
+        self.app._layer_queue = [("players", "capture")]
+        self.app.project = self.two_camera_project()
+        self.app.controller = Mock()
+        self.app.controller.deployment_directory.return_value = deploy
+        self.app.controller._request.return_value = layout
+        self.app._snapshot = Mock(return_value=Mock())
+        result = self.app._start_next_layer_take()
+        self.app.controller.apply_layer_mode.assert_not_called()
+        marker = (deploy / "dolly_owner_start.txt").read_text(encoding="ascii")
+        self.assertEqual(marker, "color-sequence-v3 0 60 players 408\n")
+        options = self.app.video_export.start.call_args.args[0]
+        self.assertEqual(options.path, Path(self.folder.name) / "shot" / "players" / "players.mp4")
+        self.assertEqual(options.layers, ())
+        self.assertFalse(options.white_clear)
+        self.assertTrue(options.fixed_step)
+        self.assertEqual(result, self.app.video_export.start.return_value)
+        self.assertEqual(self.app._active_layer_take, ("players", "capture"))
 
     def test_next_layer_take_hides_the_layer_and_starts_a_fixed_step_take(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"

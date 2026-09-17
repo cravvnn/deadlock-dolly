@@ -20,7 +20,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import editor_session, gui_layout
+from dolly import editor_session, gui_layout, player_layer
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, EDITOR_KEY_CHOICES, EditorBinding, default_action_bindings, validate_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING, KEY_CHOICES
@@ -556,12 +556,16 @@ class DollyApp:
         # isolated take per selected layer after the color take completes.
         self._auto_finish_layered = bool(options.depth or options.layers) and project is not None
         self._base_capture = options if options.layers else None
-        # Players and effects need a real alpha channel: record each twice
-        # (black clear then white clear) and combine them into an RGBA master.
+        # Players need a real alpha channel: their layer is recorded by the
+        # native ownership capture (players plus their equipment, no NPCs).
+        # Every other layer records a black and white pass and combines them.
         queue = []
         for name in options.layers:
+            if name == "players":
+                queue.append((name, "capture"))
+                continue
             queue.append((name, "black"))
-            if name in ("players", "effects"):
+            if name == "effects":
                 queue.append((name, "white"))
         self._layer_queue = queue
         self._active_layer_take = None
@@ -614,7 +618,11 @@ class DollyApp:
             taken = getattr(self, "_active_layer_take", None)
             if taken is not None:
                 self._active_layer_take = None
-                if taken[1] == "white":
+                if taken[1] == "capture":
+                    # The native players-only capture rides the take; the
+                    # alpha master is built from the capture bundle next.
+                    self._pending_capture = taken[0]
+                elif taken[1] == "white":
                     # Both matte passes are in; the alpha combine runs before
                     # the queue advances to the next layer.
                     self._pending_combine = taken[0]
@@ -627,6 +635,7 @@ class DollyApp:
         elif state in ("failed", "cancelled"):
             layered = self._base_capture is not None or self._layer_queue
             self._pending_combine = None
+            self._pending_capture = None
             self._pipeline_advance = False
             self._base_capture = None
             self._layer_queue = []
@@ -657,6 +666,12 @@ class DollyApp:
         """
         if not getattr(self, "_pipeline_advance", False) or self.busy:
             return
+        if getattr(self, "_pending_capture", None) is not None:
+            layer, self._pending_capture = self._pending_capture, None
+            self._pipeline_advance = False
+            self._submit("Building players layer", lambda: self._finish_player_capture(layer),
+                         self._video_operation_done)
+            return
         if getattr(self, "_pending_combine", None) is not None:
             layer, self._pending_combine = self._pending_combine, None
             self._pipeline_advance = False
@@ -680,6 +695,8 @@ class DollyApp:
     def _start_next_layer_take(self):
         """Worker step: hide the layer's classes and start its next pass."""
         layer, pass_name = self._layer_queue.pop(0)
+        if pass_name == "capture":
+            return self._start_player_capture(layer)
         applied = self.controller.apply_layer_mode(layer)
         LOG.info("Layer take %s (%s pass) hidden classes: %s", layer, pass_name,
                  ", ".join(applied.get("hidden", ())))
@@ -708,6 +725,68 @@ class DollyApp:
         self._auto_finish_layered = True
         self._take_playing_seen = False
         return self.video_export.start(options, project=self._snapshot())
+
+    def _player_layer_frames(self, base):
+        """Frames the players capture must cover: the color take's own length."""
+        project = self.project
+        if project is None or len(project.keyframes) < 2:
+            raise RuntimeError("The players layer needs a camera path so its frames match the color take.")
+        frames = int(round(project.duration * base.fps))
+        if not player_layer.MIN_FRAMES <= frames <= player_layer.MAX_FRAMES:
+            raise RuntimeError("The players layer supports %d..%d frames at %d FPS."
+                               % (player_layer.MIN_FRAMES, player_layer.MAX_FRAMES, base.fps))
+        return frames
+
+    def _start_player_capture(self, layer):
+        """Worker step: arm the native players-only capture, then record its take.
+
+        Unlike the other layers this hides no scene classes: the native capture
+        selects the exact draws owned by player pawns (and their equipment), so
+        NPCs stay out while the world stays in for occlusion.
+        """
+        base = self._base_capture
+        deployment = self.controller.deployment_directory()
+        if deployment is None:
+            raise RuntimeError("Launch the game through Dolly before recording the players layer.")
+        layout = self.controller._request(
+            "schema_detailed_class_layout " + player_layer.OWNER_LAYOUT_CLASS, timeout=5)
+        owner_offset = player_layer.parse_owner_offset(str(layout))
+        frames = self._player_layer_frames(base)
+        player_layer.begin_capture(deployment, owner_offset, frames)
+        LOG.info("Players layer capture armed: %d frames, owner offset %d", frames, owner_offset)
+        folder = base.path.with_suffix("")
+        target = folder / layer / (layer + ".mp4")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
+                               base.preset, base.ffmpeg_path, True, base.speed,
+                               False, False, (), False, True).validated()
+        self._active_layer_take = (layer, "capture")
+        self._pending_auto_play = True
+        self._auto_finish_layered = True
+        self._take_playing_seen = False
+        return self.video_export.start(options, project=self._snapshot())
+
+    def _finish_player_capture(self, layer):
+        """Worker step: wait for the capture, then write the alpha layer master."""
+        base = self._base_capture
+        if base is None:
+            raise RuntimeError("The players layer capture lost the recording options.")
+        deployment = self.controller.deployment_directory()
+        if deployment is None:
+            raise RuntimeError("The players layer capture directory is gone.")
+        status = player_layer.wait_for_capture(deployment, timeout=180.0)
+        if not status.startswith("complete"):
+            raise RuntimeError("The players layer capture did not finish cleanly: "
+                               + (status or "no status was reported"))
+        layer_dir = base.path.with_suffix("") / layer
+        previews = player_layer.write_previews(deployment / player_layer.BUNDLE_NAME,
+                                               layer_dir / "capture")
+        ffmpeg = resolve_ffmpeg(base.ffmpeg_path) or bundled_ffmpeg_path()
+        if ffmpeg is None:
+            raise RuntimeError("The players layer needs ffmpeg for its alpha master.")
+        master = player_layer.encode_layer(Path(ffmpeg), previews, layer_dir / (layer + ".mov"),
+                                           fps=base.fps)
+        LOG.info("Players layer alpha master saved to %s", master)
 
     def _combine_layer(self, layer):
         """Build the RGBA layer master from its black and white passes.
