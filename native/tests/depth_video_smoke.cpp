@@ -153,20 +153,30 @@ int wmain(int argc, wchar_t** argv) {
         require(fs::create_directory(root), "Could not create unique output directory");
         Test t;
         for (unsigned mode = 0; mode < 7; ++mode) {
-            const auto path = root / (std::to_wstring(mode) + (mode == 5 ? L".mp4" : L".mkv"));
+            // Each take gets its own folder: the depth layer lives beside the
+            // color file as <parent>\depth and is never overwritten.
+            const fs::path mode_root = root / std::to_wstring(mode);
+            require(fs::create_directory(mode_root), "Could not create mode output directory");
+            const auto path = mode_root / (std::to_wstring(mode) + (mode == 5 ? L".mp4" : L".mkv"));
             video::Options options;
             options.path = path.c_str();
             options.ffmpeg = argv[1];
             options.encoder = video::Encoder::ffmpeg;
             options.codec = video::Codec::lossless;
-            if (mode == 5) {
-                options.encoder = video::Encoder::media_foundation;
-                options.codec = video::Codec::h264_mf;
-            }
             options.fps = 30;
             options.bitrate = 2000000;
             options.fixed_step = mode != 1;
             options.depth = true;
+            if (mode == 5) {
+                // The paired depth master needs the external encoder; a native
+                // Media Foundation request must be rejected.
+                options.encoder = video::Encoder::media_foundation;
+                options.codec = video::Codec::h264_mf;
+                require(!video::start(options), "Depth take accepted a native encoder");
+                video::shutdown();
+                video::reset_resources();
+                continue;
+            }
             require(video::start(options), "Paired recording start failed");
             const auto end = GetTickCount64() + 15000;
             bool enough = false;
@@ -204,16 +214,18 @@ int wmain(int argc, wchar_t** argv) {
             video::shutdown();
             video::reset_resources();
             if (expected == video::State::completed) {
-                require(fs::exists(path) && fs::exists(path.wstring() + L".depth/manifest.json"),
+                require(fs::exists(path) && fs::exists(mode_root / L"depth" / L"manifest.json"),
                         "Completed pair missing output");
                 std::ofstream report(root / (std::to_wstring(mode) + L".status"));
                 report << status.frames_written << " " << status.frames_dropped << "\n";
             } else
-                require(!fs::exists(path) && !fs::exists(path.wstring() + L".depth"),
+                require(!fs::exists(path) && !fs::exists(mode_root / L"depth"),
                         "Failed/cancelled pair retained output");
         }
-        const auto collision = root / L"collision.mkv";
-        const fs::path collision_dir = collision.wstring() + L".depth";
+        const fs::path collision_root = root / L"collision";
+        require(fs::create_directory(collision_root), "Create collision folder failed");
+        const auto collision = collision_root / L"collision.mkv";
+        const fs::path collision_dir = collision_root / L"depth";
         require(fs::create_directory(collision_dir), "Create collision fixture failed");
         {
             std::ofstream foreign(collision_dir / "keep.txt");
