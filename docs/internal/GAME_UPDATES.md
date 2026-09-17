@@ -43,7 +43,7 @@ reviewed profile.
    caller, vtable, globals and engine-client addresses and that field offsets are
    unchanged.
 3. Rebuild `DollyNative.dll` on Windows x64 (see
-   [BUILDING.md](BUILDING.md)) and ship a release that lists the new build.
+   [BUILDING.md](../BUILDING.md)) and ship a release that lists the new build.
 4. Play a short path in the updated client and Stop / restore before publishing.
 
 ## 0.3.13 compatibility

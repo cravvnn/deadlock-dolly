@@ -83,7 +83,7 @@ Starting with 0.5.6-alpha, opening Dolly.exe shows a startup update check agains
 the published GitHub Latest release and updates automatically when safe. The
 updater is built into Dolly.exe; the editor runtime stays under _internal. Settings, shots and external tool
 paths are preserved. Use Settings / Updates for manual checks or to turn off
-automatic installation. See [Updating Dolly](docs/UPDATING.md) for release
+automatic installation. See [Updating Dolly](docs/internal/UPDATING.md) for release
 publishing and interrupted-update recovery.
 
 ## Video and ReShade
@@ -100,7 +100,7 @@ sequence) beside the color video. **World**, **Players** and **Effects** record
 isolated layer takes; players and effects also get an alpha master built from
 black and white matte passes. Depth and layer takes need a verified scene
 sample for every frame and stop with an error instead of writing unpaired
-data. See [Layer export](docs/LAYER_EXPORT.md) for details.
+data. See [Layer export](docs/internal/LAYER_EXPORT.md) for details.
 
 Select a compatible ReShade64.dll in **Settings → ReShade** to enable ReShade color effects.
 **F11** opens its own menu; **Settings → Controls & keybinds** changes that shortcut. ReShade is an
@@ -124,7 +124,7 @@ Native mode supports reviewed builds of `client.dll`, `engine2.dll` and
 bundled compatibility manifest (`native/profiles/manifest.json`) and reports an
 unrecognized build instead of injecting. **Settings → Troubleshooting & recovery → Startup controls** has a
 **Check game build** action, and **Console (legacy)** remains available when
-Native is unavailable. See [game updates](docs/GAME_UPDATES.md) for the
+Native is unavailable. See [game updates](docs/internal/GAME_UPDATES.md) for the
 manifest, signature scanning and profile-generation workflow.
 
 0.5.17 is an alpha. Camera capture, interpolation and native playback keep the
@@ -135,7 +135,7 @@ shader library and depth publication, the Citadel glow / health-bar / DOF
 controls, the live replay speed control, in-folder update staging, and the
 startup update check. Earlier
 renderer slowdowns do not have a confirmed general fix; build and release checks
-live in [VALIDATION.md](docs/VALIDATION.md). Audio, expanded in-game curve
+live in [VALIDATION.md](docs/internal/VALIDATION.md). Audio, expanded in-game curve
 editing and arbitrary output resizing remain planned.
 
 ## Session files
@@ -173,7 +173,7 @@ compiled Windows helper. EXE builds use the pinned dependencies in
 | `packaging/`, `tools/` | Executable build and packaging |
 | `examples/` | Example shot |
 | `third_party/` | Bundled unlocker and component notices |
-| `docs/` | User guide, build instructions and technical reference |
+| `docs/` | User guide and build instructions (`docs/internal/` keeps maintainer research notes) |
 
 Logs, replays, personal shots and build outputs are excluded from Git.
 `SOURCE_FILES.txt` lists the source archive contents.
@@ -294,7 +294,7 @@ configurable F11, and the REPLAY home heading.
 **0.4.8:** handles native shot starts between recorded packets, preserves the
 current scene for frozen native previews, and records bounded view history for
 slowdown diagnosis. The native DLL is unchanged. ReShade and layer-export
-research is documented in [STAGE3_PLAN.md](docs/STAGE3_PLAN.md); those features
+research is documented in [STAGE3_PLAN.md](docs/internal/STAGE3_PLAN.md); those features
 are not implemented in this update.
 
 **0.4.7:** restores paused flight when closing F8 from a held camera, waits for

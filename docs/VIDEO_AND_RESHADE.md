@@ -65,7 +65,7 @@ available without it.
 
 Audio and arbitrary output resizing are not included. Fixed-step video export,
 paired depth masters and isolated layer takes are available; see
-[LAYER_EXPORT.md](LAYER_EXPORT.md).
+[LAYER_EXPORT.md](internal/LAYER_EXPORT.md).
 
 ## High frame rates and fixed-step
 
@@ -83,7 +83,7 @@ lower FPS if the encoder rejects the configuration.
 
 The paired depth master and layer takes need a verified scene sample for every
 captured frame. They fail closed (stop the take with an error) instead of
-recording unpaired data; see [LAYER_EXPORT.md](LAYER_EXPORT.md) for renderer
+recording unpaired data; see [LAYER_EXPORT.md](internal/LAYER_EXPORT.md) for renderer
 requirements.
 
 ## Set up ReShade
@@ -164,4 +164,4 @@ redistributed.
 References: [ReShade runtime API](https://crosire.github.io/reshade-docs/structreshade_1_1api_1_1effect__runtime.html),
 [official installer source](https://github.com/crosire/reshade/blob/18deaa52de0c425a78b329e9cb3c497281cd00ec/setup/MainWindow.xaml.cs),
 [Media Foundation sink writer](https://learn.microsoft.com/en-us/windows/win32/medfound/tutorial--using-the-sink-writer-to-encode-video).
-Build checks and remaining runtime tests are recorded in [VALIDATION.md](VALIDATION.md).
+Build checks and remaining runtime tests are recorded in [VALIDATION.md](internal/VALIDATION.md).

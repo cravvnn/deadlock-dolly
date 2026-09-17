@@ -5,7 +5,7 @@ Research date: September 10, 2026.
 ## Implementation status — 0.5.0
 
 Real-time, video-only MP4 capture and an optional ReShade color-effects/menu
-integration are implemented. See [Video and ReShade](VIDEO_AND_RESHADE.md).
+integration are implemented. See [Video and ReShade](../VIDEO_AND_RESHADE.md).
 The 0.4.8 recorded-packet changes are retained. The owner reports stable 0.4.7
 playback; that native camera hook/interpolation remains unchanged here.
 

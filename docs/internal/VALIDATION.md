@@ -1,3 +1,70 @@
+# Validation — 0.5.17 alpha
+
+## Depth takes skip transition frames
+
+- A depth take no longer fails on its first presented frame when the scene
+  target has no verified pass yet (a cleared target or a full-viewport `ALWAYS`
+  depth write during a loading/transition frame). Nothing has been captured at
+  that point, so the color+depth pair is skipped within a bounded budget; the
+  first captured frame must still be verified, and any scene failure after it
+  stops the take closed. Supplied report: a 1920x1080 60 FPS depth take failed
+  with `scene result=missing why=depth function=ALWAYS event=incompatible`
+  (`frames_written=0`) while the color-only take recorded normally.
+- Zero-frame diagnostics now report the skip count (`scene-skip=`).
+- The manual paired-depth smoke harness was updated to the current
+  `<parent>\depth` layer layout, the native-encoder rejection and a
+  transition-frame skip mode.
+
+## Checks
+
+- Full Python suite: 1132 tests run, no failures, 16 optional skips.
+- Native MSVC Release: all 16 enabled CTest tests passed.
+- Paired depth smoke (manual, bundled FFmpeg): all modes passed, including the
+  new transition-frame skip, cancellation, mid-take missing-source failure,
+  reset, native-encoder rejection and the depth-folder collision case.
+- Frozen Windows build: PyInstaller runtime and onefile launcher, embedded
+  updater smoke and the relocated full-bundle startup check passed;
+  `Deadlock_Dolly_0.5.17-alpha_Windows_x64.zip` (114,134,249 bytes) and
+  `Deadlock_Dolly_0.5.17-alpha_Source.zip` (23,697,604 bytes) match their
+  SHA256SUMS entries.
+- Live Deadlock checks are still required for a real transition frame at the
+  start of a depth take.
+
+# Validation — 0.5.16 alpha
+
+## Depth guard, encoder diagnostics and glow persistence
+
+- The scene observer accepts a full-viewport `EQUAL` depth write on the
+  verified scene target instead of failing the frame. An EQUAL test with writes
+  can only re-store the value it compared against, so the exported depth and
+  its verified calibration cannot change; a frame with no supported scene pass
+  still fails closed. This addresses the supplied rejection
+  `scene result=incompatible why=depth function=EQUAL event=incompatible`
+  (2560×1440, 120 FPS, 428 color frames written before the failed frame).
+- A stopped FFmpeg take names the failing write stage (color pipe, depth
+  sequence or depth pipe) and appends a bounded tail of that child's stderr to
+  the media error before cleanup removes the temporary logs. The supplied
+  reports of `Paired depth output could not be written` /
+  `FFmpeg stopped accepting frames` (`0x8007006D`) at 3840×2160, 600 FPS did
+  not name the process that exited after two frames.
+- The Citadel glow toggle remembers the disabled state and re-asserts it after
+  the replay recovery that recording preparation performs, so a take started
+  with glow off stays off. Reported behavior: glow returned after Record and
+  the toggle refused while recording.
+
+## Checks
+
+- Full Python suite: 1132 tests run, no failures, 16 optional skips.
+- Native MSVC Release: all 16 enabled CTest tests passed, including the new
+  EQUAL scene case and the video encoder smoke.
+- Frozen Windows build: PyInstaller runtime and onefile launcher, embedded
+  updater smoke and the relocated full-bundle startup check passed;
+  `Deadlock_Dolly_0.5.16-alpha_Windows_x64.zip` (114,133,090 bytes) and
+  `Deadlock_Dolly_0.5.16-alpha_Source.zip` (23,696,086 bytes) match their
+  SHA256SUMS entries.
+- Live Deadlock checks are still required for the accepted EQUAL pass in a real
+  depth take and for glow persistence across a real Record.
+
 # Validation — 0.5.14 alpha
 
 ## Package privacy and depth diagnostics

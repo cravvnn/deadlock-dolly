@@ -135,7 +135,7 @@ tools and temporary analysis dependencies are excluded from the release.
    The renderer and recording are not synchronized with this console backend,
    so this narrow endpoint correction cannot promise frame-perfect motion.
 
-See [BUILDING.md](BUILDING.md) for GitHub instructions and
+See [BUILDING.md](../BUILDING.md) for GitHub instructions and
 [HISTORY_VALIDATION.md](HISTORY_VALIDATION.md) for previous reports.
 No GitHub repository or release was modified by this work.
 
@@ -251,7 +251,7 @@ Continuous manual movement itself neither seeks nor resumes the replay.
 This release targets the paused-startup regression; unchanged rotation curves
 and console-based playback still require native footage to assess smoothness.
 
-See [BUILDING.md](BUILDING.md) for step-by-step GitHub updates and
+See [BUILDING.md](../BUILDING.md) for step-by-step GitHub updates and
 [HISTORY_VALIDATION.md](HISTORY_VALIDATION.md) for earlier validation.
 User recordings, logs and diagnostic exports are excluded from the archives.
 No GitHub repository or release was modified by this work.
@@ -359,7 +359,7 @@ perfectly smooth native footage or eliminate stalls caused by game rendering.
 - [Python performance-counter documentation](https://docs.python.org/3.12/library/time.html#time.perf_counter)
 - [Microsoft GetTickCount64 resolution](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-gettickcount64)
 - [Previous validation](HISTORY_VALIDATION.md)
-- [Build and GitHub update instructions](BUILDING.md)
+- [Build and GitHub update instructions](../BUILDING.md)
 
 Original diagnostics, log paths and recordings are excluded from source and
 update archives. No GitHub repository or release was modified by this work.
@@ -459,7 +459,7 @@ No GitHub repository was modified by this repair. The small update ZIP contains
 the four corrected tests and these two documentation files at their original
 repository paths. The full source ZIP includes the same corrections.
 
-Build and upload instructions are in [BUILDING.md](BUILDING.md). The retained
+Build and upload instructions are in [BUILDING.md](../BUILDING.md). The retained
 camera investigations, tests and previous visual checks are in
 [HISTORY_VALIDATION.md](HISTORY_VALIDATION.md).
 
@@ -917,7 +917,7 @@ The GitHub update is cumulative against 0.3.5, including the 0.3.6 endpoint fix.
 
 1. Apply `Deadlock_Dolly_0.3.7_GitHub_Update.zip` to the existing 0.3.5 or 0.3.6
    repository and start a fresh **Actions → Build Windows app → Run workflow**.
-   See [BUILDING.md](BUILDING.md) for the upload and extraction steps.
+   See [BUILDING.md](../BUILDING.md) for the upload and extraction steps.
 2. Close the old editing session, complete any pending configuration recovery,
    and extract the complete new Windows package, including `_internal`.
 3. Open the same saved shot. Keep playback speed at 0.1 and updates/sec at 120.

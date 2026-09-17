@@ -164,11 +164,10 @@ def main() -> int:
     shutil.copy2(ROOT / "native" / "vendor" / "reshade" / "LICENSE.md",
                  third_party / "notices" / "ReShade-API-LICENSE.md")
     video_guide = (ROOT / "docs" / "VIDEO_AND_RESHADE.md").read_text(encoding="utf-8")
+    # Maintainer notes stay in the repository; point their links at GitHub.
     video_guide = video_guide.replace(
-        "](VALIDATION.md)", "](https://github.com/cravvnn/deadlock-dolly/blob/main/docs/VALIDATION.md)")
+        "](internal/", "](https://github.com/cravvnn/deadlock-dolly/blob/main/docs/internal/")
     (bundle / "Video_and_ReShade.md").write_text(video_guide, encoding="utf-8")
-    shutil.copy2(ROOT / "docs" / "LAYER_EXPORT.md", bundle / "LAYER_EXPORT.md")
-    shutil.copy2(ROOT / "docs" / "UPDATING.md", bundle / "Updating.md")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     for extension in ("md", "json"):

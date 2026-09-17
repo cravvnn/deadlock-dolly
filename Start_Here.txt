@@ -176,7 +176,7 @@ publication, the Citadel DOF and glow controls, the live replay speed control,
 in-folder update staging, and the startup update check. Earlier renderer
 slowdowns do not have a confirmed general fix. Audio, expanded in-game curves
 and arbitrary output resizing remain planned.
-Technical details and validation results are in docs/VALIDATION.md.
+Technical details and validation results are in docs/internal/VALIDATION.md.
 
 
 UPDATING AND RECOVERY

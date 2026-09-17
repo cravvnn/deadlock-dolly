@@ -9,8 +9,8 @@ use the same bounded cubic interpolation as the editor.
 ## Supported controls
 
 The complete table and JSON catalog are in
-[SUPPORTED_CAMERA_CVARS.md](SUPPORTED_CAMERA_CVARS.md) and
-[SUPPORTED_CAMERA_CVARS.json](SUPPORTED_CAMERA_CVARS.json). There are fourteen
+[SUPPORTED_CAMERA_CVARS.md](../SUPPORTED_CAMERA_CVARS.md) and
+[SUPPORTED_CAMERA_CVARS.json](../SUPPORTED_CAMERA_CVARS.json). There are fourteen
 native effect controls, including the four-component `r_dof_override_ranges`.
 Use **+ Range DOF** for the new range track or **+ Citadel DOF** for the existing
 focus/aperture preset. Range key values and optional restore values accept

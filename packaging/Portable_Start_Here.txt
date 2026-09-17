@@ -184,4 +184,5 @@ and an automatic-update switch. Shots, settings and external tool paths stay.
 Update files live in a .dolly-update-* folder inside the Dolly folder and are
 removed automatically after a successful update. After an interrupted update,
 close Deadlock and reopen Dolly.exe to recover. Keep the .dolly-update-* folder
-and the _internal folder while a recovery is pending. See Updating.md for details.
+and the _internal folder while a recovery is pending. Update details:
+https://github.com/cravvnn/deadlock-dolly/blob/main/docs/internal/UPDATING.md

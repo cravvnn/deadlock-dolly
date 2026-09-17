@@ -18,7 +18,7 @@ Build locally using the commands below. The build creates both the native helper
 and the desktop executables; package components must come from the same completed
 build. Inspect `build/checks/` if a check fails. Keep verification enabled.
 A successful build does not publish anything or prove in-game behavior; complete
-the relevant [in-game checks](STAGE1_TESTING.md) before publishing.
+the relevant [in-game checks](internal/STAGE1_TESTING.md) before publishing.
 
 Do not upload the game's `client.dll`, `engine2.dll`, `tier0.dll` or `server.dll`.
 They are inspected from an installation and are not distributed with Dolly.
@@ -26,7 +26,7 @@ The official unlocker under `third_party` is a separate packaged component.
 
 ## Publish the tested package
 
-Follow [UPDATING.md: For the publisher](UPDATING.md#for-the-publisher) for version,
+Follow [UPDATING.md: For the publisher](internal/UPDATING.md#for-the-publisher) for version,
 asset and update-channel requirements. Create the release from the tested commit
 on main and upload the generated Windows ZIP, source ZIP and `SHA256SUMS.txt`
 from `dist/`. Upload the complete Windows ZIP, not just `Dolly.exe`.
@@ -118,10 +118,10 @@ this reviewed profile.
 - Original component notices accompany the binary. Python's installed license
   and PyInstaller's COPYING file are copied from the actual build environment.
 
-The result is an unsigned portable app with the [startup updater](UPDATING.md).
+The result is an unsigned portable app with the [startup updater](internal/UPDATING.md).
 No installer or certificate-based code signing is configured. A successful
 bundle startup or native callback test does not establish Deadlock camera
-compatibility. Complete [STAGE1_TESTING.md](STAGE1_TESTING.md) on the supported
+compatibility. Complete [STAGE1_TESTING.md](internal/STAGE1_TESTING.md) on the supported
 DX11 game build before publishing. The new in-game panel, native input and
 ReShade coexistence have not been tested in the Linux development workspace.
 Console remains available through Troubleshooting for the older workflow.

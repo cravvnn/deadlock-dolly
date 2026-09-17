@@ -131,5 +131,5 @@ The existing GitHub Windows workflow builds both `DollyNative.dll` and
 `Dolly.exe`, runs automated checks, and packages the helper with the application.
 It does not launch Deadlock or publish a release. The supplied source and GitHub
 update ZIPs contain source/build files; they do not contain a Linux-built EXE.
-See [BUILDING.md](BUILDING.md) for the Windows toolchain and
+See [BUILDING.md](../BUILDING.md) for the Windows toolchain and
 [VALIDATION.md](VALIDATION.md) for the checks completed for this revision.
