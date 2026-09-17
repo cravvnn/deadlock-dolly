@@ -1,5 +1,21 @@
 # Changes
 
+## 0.5.16 alpha — Depth guard and encoder diagnostics
+
+- Keep a verified scene-depth frame when a full-viewport `EQUAL` depth write
+  targets the chosen scene texture. An EQUAL test with writes can only store
+  the depth value it compared against, so the exported depth cannot change;
+  the frame stays ready with its verified calibration. A frame with no
+  supported main pass still fails closed. This addresses the reported
+  `why=depth function=EQUAL` depth-take rejection.
+- Name the failing FFmpeg write stage (color pipe, depth sequence or depth
+  pipe) and append a bounded tail of that process's stderr to the media error,
+  so a stopped take keeps its cause after the temporary FFmpeg logs are
+  removed during cleanup.
+- Keep the Citadel glow choice across replay resets: the toggle remembers the
+  disabled state and re-asserts it after the recovery that recording
+  preparation performs, so a take started with glow off stays off.
+
 ## 0.5.15 alpha — September 16 Deadlock build support
 
 - Support the September 16, 2026 Deadlock client (`client.dll`
