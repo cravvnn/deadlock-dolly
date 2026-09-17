@@ -22,7 +22,8 @@ def record(command, tick, payload=b""):
     return varint(command) + varint(tick) + varint(len(payload)) + payload
 
 
-def synthetic_demo(ticks=(1, 22631, 22634, 22637, 48391, 48394, 48397), *, compressed=True):
+def synthetic_demo(ticks=(1, 22631, 22634, 22637, 48391, 48394, 48397), *, compressed=True,
+                   playback_time=None):
     body = record(1, 0xffffffff, b"\x0a\x08PBDEMS2\0\x10\x30")
     body += record(8, 0xffffffff, b"signon")
     body += record(13 | (64 if compressed else 0), ticks[0], b"full snapshot")
@@ -32,7 +33,10 @@ def synthetic_demo(ticks=(1, 22631, 22634, 22637, 48391, 48394, 48397), *, compr
     spawn = len(body) + 16
     body += record(15, ticks[-1])
     info = len(body) + 16
-    body += record(2, ticks[-1], b"\x10" + varint(ticks[-1]) + b"\x18" + varint(len(ticks)))
+    fields = b"\x10" + varint(ticks[-1]) + b"\x18" + varint(len(ticks))
+    if playback_time is not None:
+        fields = b"\x0d" + struct.pack("<f", playback_time) + fields
+    body += record(2, ticks[-1], fields)
     return b"PBDEMS2\0" + struct.pack("<II", info, spawn) + body
 
 
@@ -65,6 +69,23 @@ class DemoPacketTests(unittest.TestCase):
     def test_negative_signon_is_excluded_and_snapshot_does_not_duplicate_packet(self):
         index = demo_packets.packet_index(self.file)
         self.assertEqual(list(index.ticks), [1, 22631, 22634, 22637, 48391, 48394, 48397])
+
+    def test_file_info_duration_supplies_the_replay_tick_rate(self):
+        # A 32 ticks/second SourceTV replay, matching the user's 105060804.dem.
+        self.file.write_bytes(synthetic_demo(playback_time=48397 / 32))
+        index = demo_packets.packet_index(self.file)
+        self.assertIsNotNone(index)
+        self.assertAlmostEqual(index.playback_time, 48397 / 32, places=3)
+        self.assertAlmostEqual(index.tick_rate, 32.0, places=3)
+
+    def test_missing_or_invalid_duration_leaves_the_rate_unknown(self):
+        self.file.write_bytes(synthetic_demo())
+        self.assertIsNone(demo_packets.packet_index(self.file).tick_rate)
+        for seconds in (0.0, -5.0, float("inf")):
+            self.file.write_bytes(synthetic_demo(playback_time=seconds))
+            index = demo_packets.packet_index(self.file)
+            self.assertIsNotNone(index, f"duration {seconds} rejected the whole index")
+            self.assertIsNone(index.tick_rate, f"duration {seconds} produced a rate")
 
     @unittest.skipIf(
         os.environ.get("CI") == "true",

@@ -25,7 +25,7 @@ from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, EDITOR_KEY_CHOICES
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING, KEY_CHOICES
 from dolly.branding import apply_window_icon
-from dolly.controller import Controller
+from dolly.controller import Controller, tick_rate_advice, tick_rates_match
 from dolly.curve import AspectCurve
 from dolly.display import focus_window
 from dolly.hotkey import CaptureHotkey
@@ -153,6 +153,7 @@ class DollyApp:
         self.seek_relief = tk.BooleanVar(value=True)
         self.capture_mode = tk.StringVar(value="Replay timing")
         self.segment_seconds = tk.StringVar(value="3")
+        self._tick_rate_prompted = set()
         self.show_coordinates = tk.BooleanVar(value=False)
         self.app_settings = self._load_app_settings()
         self.full_editor = tk.BooleanVar(value=self.app_settings.full_editor)
@@ -1923,7 +1924,8 @@ class DollyApp:
         actions = ttk.Frame(body)
         actions.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         ttk.Button(actions, text="Use current replay tick", command=self._use_current_tick).pack(side="left")
-        ttk.Button(actions, text="Apply settings", command=self._apply_options).pack(side="left", padx=8)
+        ttk.Button(actions, text="Retime to replay", command=self._retime_to_replay).pack(side="left", padx=8)
+        ttk.Button(actions, text="Apply settings", command=self._apply_options).pack(side="left")
         ttk.Button(actions, text="Done", command=dialog.destroy).pack(side="right")
         ttk.Label(body, text="Captured positions stay in view coordinates. Height is Z.\nBank uses Dolly’s last applied value; capture starts with bank 0.",
                   style="Muted.TLabel", wraplength=510).grid(row=10, column=0, columnspan=2, sticky="w", pady=(14, 0))
@@ -2383,6 +2385,7 @@ class DollyApp:
         self._log(json.dumps(result, indent=2, default=str))
         message = result.get("message") if isinstance(result, dict) else None
         self.status_text.set(str(message or "Camera support check finished. Open the activity log for the results."))
+        self._offer_replay_tick_rate(result)
 
     def _read_standard_aspect(self):
         raw = self.standard_aspect.get().strip()
@@ -2760,6 +2763,68 @@ class DollyApp:
     def _replace_camera_here(self):
         self._capture_view("replace")
 
+    @staticmethod
+    def _valid_tick_rate(value):
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value) and value > 0)
+
+    def _resolve_replay_tick_rate(self, candidate, *, adopt=False):
+        """Use the loaded replay's own ticks/second for replay-timed capture.
+
+        The replay file's CDemoFileInfo is authoritative (32 and 64 tick
+        recordings are both current). A camera-less shot adopts the rate
+        silently; an existing path is retimed with confirmation so two time
+        bases never mix. Declining blocks the capture instead of writing a
+        camera against the wrong clock. Returns the rate the capture must use.
+        """
+        try:
+            detected = self.controller.replay_tick_rate()
+        except Exception:
+            LOG.exception("Could not read the loaded replay's tick rate")
+            detected = None
+        if not self._valid_tick_rate(detected) or tick_rates_match(detected, candidate.tick_rate):
+            return float(candidate.tick_rate)
+        advice = tick_rate_advice(detected, candidate.tick_rate)
+        if not adopt and candidate.keyframes:
+            key = (round(float(detected), 3), round(float(candidate.tick_rate), 3))
+            if key not in self._tick_rate_prompted:
+                self._tick_rate_prompted.add(key)
+                if messagebox.askyesno("Replay tick rate",
+                                       advice + "\n\nRetime this shot to the replay and continue?",
+                                       parent=self.root):
+                    adopt = True
+            if not adopt:
+                raise ValueError(advice)
+        candidate.retime(float(detected))
+        self.status_text.set(f"This replay runs at {float(detected):.3g} ticks/second; the shot now uses it.")
+        return float(candidate.tick_rate)
+
+    def _offer_replay_tick_rate(self, result=None):
+        """Check the loaded replay against the open shot and offer a retime."""
+        detected = result.get("replay_tick_rate") if isinstance(result, dict) else None
+        if not self._valid_tick_rate(detected):
+            try:
+                detected = self.controller.replay_tick_rate()
+            except Exception:
+                LOG.exception("Could not read the loaded replay's tick rate")
+                return
+        if not self._valid_tick_rate(detected) or tick_rates_match(detected, self.project.tick_rate):
+            return
+        candidate = copy.deepcopy(self.project)
+        try:
+            self._resolve_replay_tick_rate(candidate, adopt=not candidate.keyframes)
+        except ValueError as exc:
+            self.status_text.set(str(exc))
+            return
+        if tick_rates_match(candidate.tick_rate, self.project.tick_rate):
+            return
+        self.project = candidate
+        self._refresh_project()
+        self._mark_dirty()
+        self._set_time(0)
+        self.status_text.set(f"Shot retimed to this replay's {float(candidate.tick_rate):.3g} ticks/second. "
+                             "Camera and effect times now match the replay.")
+
     def _capture_view(self, action, native_snapshot=None):
         if action == "append" and not self.project.keyframes:
             action = "start"
@@ -2775,6 +2840,9 @@ class DollyApp:
             selected = self._selection_index(self.camera_tree) if action == "replace" else None
             if action == "replace" and selected is None:
                 raise ValueError("Select the view you want to replace, then frame its new position in the game.")
+            capture_rate = candidate.tick_rate
+            if replay_timing and action != "replace":
+                capture_rate = self._resolve_replay_tick_rate(candidate, adopt=(action == "start"))
             if action == "start":
                 time = 0.0
             elif action == "replace":
@@ -2789,11 +2857,11 @@ class DollyApp:
                 if native_snapshot is not None:
                     key, tick = self.controller.capture_native_snapshot(native_snapshot, time=time)
                     if replay_timing and action != "replace":
-                        key.time = 0.0 if action == "start" else (tick - candidate.start_tick) / candidate.tick_rate
+                        key.time = 0.0 if action == "start" else (tick - candidate.start_tick) / capture_rate
                     return key, tick
                 if replay_timing and action != "replace":
                     start_tick = None if action == "start" else candidate.start_tick
-                    key = self.controller.capture_at_replay(start_tick, candidate.tick_rate)
+                    key = self.controller.capture_at_replay(start_tick, capture_rate)
                 else:
                     key = self.controller.capture(time)
                 return key, self.controller.status().get("tick")
@@ -2822,6 +2890,7 @@ class DollyApp:
                 candidate.validate()
                 self.project = candidate
                 self.start_tick.set(_number(candidate.start_tick))
+                self.tick_rate.set(_number(candidate.tick_rate))
                 self.interpolation.set(candidate.interpolation)
                 self._mark_dirty()
                 self._refresh_keys(key.time)
@@ -2844,6 +2913,38 @@ class DollyApp:
             self.status_text.set("Stop playback and finish the current operation before changing shot timing.")
             return
         self._submit("Reading replay tick", self.controller.current_tick, self._set_start_tick)
+
+    def _retime_to_replay(self):
+        """Explicit one-step repair for a shot authored at another replay rate."""
+        if self.busy or self.playing:
+            self.status_text.set("Stop playback and finish the current operation before retiming the shot.")
+            return
+        detected = None
+        try:
+            detected = self.controller.replay_tick_rate()
+        except Exception:
+            LOG.exception("Could not read the loaded replay's tick rate")
+        if not self._valid_tick_rate(detected):
+            self.status_text.set("Load a replay through Dolly first; its tick rate is read from the replay file.")
+            return
+        if tick_rates_match(detected, self.project.tick_rate):
+            self.status_text.set(f"This shot already matches the replay's {float(detected):.3g} ticks/second.")
+            return
+        if not messagebox.askyesno(
+                "Retime shot",
+                f"Replay: {float(detected):.3g} ticks/second\nShot: {float(self.project.tick_rate):.3g} ticks/second\n\n"
+                "Retime this shot so its camera and effect times match the replay?",
+                parent=self.root):
+            return
+        candidate = copy.deepcopy(self.project)
+        candidate.retime(float(detected))
+        self.project = candidate
+        self.tick_rate.set(_number(candidate.tick_rate))
+        self._refresh_project()
+        self._mark_dirty()
+        self._set_time(0)
+        self.status_text.set(f"Shot retimed to this replay's {float(detected):.3g} ticks/second. "
+                             "Camera and effect times now match the replay.")
 
     def _set_start_tick(self, tick):
         self.start_tick.set(str(int(tick)))
@@ -2903,6 +3004,9 @@ class DollyApp:
 
     def _play(self):
         def operation():
+            # One last chance to repair a shot authored at another replay rate
+            # before the path runs; the controller only warns from here.
+            self._offer_replay_tick_rate()
             project = self._snapshot()
             # Play shot always runs the complete shot, independently of the
             # selected key or the cursor used for single-frame previews.
@@ -3262,6 +3366,7 @@ class DollyApp:
                 self.status_text.set("Shot imported: camera positions and timing are preserved. Framing starts at normal aspect; old FOV values are kept as inactive metadata.")
             else:
                 self.status_text.set(f"Opened {Path(path).name}.")
+            self._offer_replay_tick_rate()
         self._guard("Open shot", operation)
 
     def save(self, save_as=False):

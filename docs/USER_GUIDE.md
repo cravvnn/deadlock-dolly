@@ -6,7 +6,7 @@ runtime. The existing native camera hook and interpolation are unchanged.
 
 [Video and ReShade setup](VIDEO_AND_RESHADE.md) covers output settings, F11,
 installation and current limits. Windows/Deadlock validation is recorded in
-[VALIDATION.md](VALIDATION.md).
+[VALIDATION.md](internal/VALIDATION.md).
 
 ## Start here
 
@@ -54,7 +54,7 @@ Deadlock normally.
 The native helper runs inside the game's user-mode process; it is **not a
 kernel driver**. Native launch checks reviewed `client.dll`, `engine2.dll` and
 `tier0.dll` fingerprints. Unknown updates are blocked. See
-[GAME_UPDATES.md](GAME_UPDATES.md); do not replace game DLLs or edit fingerprints
+[GAME_UPDATES.md](internal/GAME_UPDATES.md); do not replace game DLLs or edit fingerprints
 to force compatibility. **Console (legacy)** in Troubleshooting preserves the
 older workflow without the Stage 1 DX11 panel/native flight.
 
@@ -199,8 +199,15 @@ in the game console. The native input behavior above does not apply to it.
 **Replay timing** assigns keys from their actual replay ticks: capture a view,
 advance the demo, and capture the next. Capturing twice at the same tick cannot
 create distinct arrival times; advance, replace the key, or use Timed shot.
-The project's default is **64 ticks/second**, not automatic tick-rate detection.
-Normal playback and relative seek require a readable current replay tick.
+Replays are recorded at different rates (32 and 64 ticks/second are both
+current), so Dolly reads the open replay's own duration metadata and uses that
+rate: a new shot adopts it automatically, and a saved shot that disagrees is
+offered a one-step retime when it is checked or opened. **Retime to replay**
+under More → Coordinates / timing… re-offers that repair at any time;
+a capture that would mix two clocks is refused with the same advice, and
+playback of a mismatched shot warns in the status line. **Ticks / second**
+stays manually editable. Normal playback and relative seek require a readable
+current replay tick.
 
 At 0.1 speed, a four-second shot takes about forty real seconds. Smooth spline
 geometry does not guarantee constant speed; spacing and arrival times determine
@@ -386,7 +393,7 @@ shot. Filling it in deliberately overrides that restoration value.
 
 With Native playback, supported DOF curves use the camera's frame phase and
 native typed setters with readback. **Updates / s** affects editor monitoring
-only. See [native DOF support](NATIVE_EFFECTS.md) for the exact controls and
+only. See [native DOF support](internal/NATIVE_EFFECTS.md) for the exact controls and
 restoration behavior. Other camera cvars require Console mode.
 
 ## Playback behavior
@@ -455,7 +462,7 @@ Native input/render integration is restricted to reviewed game builds. Console
 remains available for comparison. The Native session now offers real-time MP4
 recording through Export and F8; Console mode still uses external recording
 software. Runtime checks are listed in
-[STAGE1_TESTING.md](STAGE1_TESTING.md) and [STAGE2_TESTING.md](STAGE2_TESTING.md).
+[STAGE1_TESTING.md](internal/STAGE1_TESTING.md) and [STAGE2_TESTING.md](internal/STAGE2_TESTING.md).
 
 ## Experimental playback smoothing
 
@@ -565,11 +572,11 @@ binary. Run recovery as described above if a configuration edit remains pending.
 - `dolly/`: complete Python editor, controller, path engine, launcher and console source.
 - `tests/`: automated path, transport, controller and launcher/recovery checks.
 - `native/`: native camera source, exact-build profile, C++ tests and vendored dependency.
-- `docs/NATIVE_CAMERA.md`: native driver scope, compatibility and first test.
+- `docs/internal/NATIVE_CAMERA.md`: native driver scope, compatibility and first test.
 - `examples/demo_shot.dolly.json`: a **synthetic** example of file structure.
   Its coordinates are not a verified location in your replay; capture your own.
-- `docs/CONSOLE_RESEARCH.md`: source evidence and remaining integration questions.
-- `docs/VALIDATION.md`: what was and was not tested for this release.
+- `docs/internal/CONSOLE_RESEARCH.md`: source evidence and remaining integration questions.
+- `docs/internal/VALIDATION.md`: what was and was not tested for this release.
 - `third_party/`: official unlocker binary, provenance and third-party licenses.
 
 Run `python -m unittest discover -s tests -v` from this folder to run the tests.

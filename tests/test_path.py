@@ -58,6 +58,25 @@ class PathTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "camera keyframe"):
             project.evaluate(0)
 
+    def test_retime_rescales_every_authored_time_to_the_replays_rate(self):
+        project = Project(start_tick=640, tick_rate=64, keyframes=[key(0, 1), key(2, 2)],
+                          tracks=[CvarTrack("r_depth_of_field", [TrackKey(0, 1), TrackKey(1.5, 0)], "step")])
+        project.retime(32)
+        self.assertEqual(project.tick_rate, 32)
+        self.assertEqual([item.time for item in project.keyframes], [0.0, 4.0])
+        self.assertEqual([item.time for item in project.tracks[0].keys], [0.0, 3.0])
+        self.assertEqual(project.duration, 4.0)
+        project.retime(32)
+        self.assertEqual([item.time for item in project.keyframes], [0.0, 4.0])
+
+    def test_retime_rejects_invalid_rates_without_changing_times(self):
+        project = Project(tick_rate=64, keyframes=[key(0), key(1)])
+        for rate in (0, -1, float("nan"), float("inf"), True, "32"):
+            with self.subTest(rate=rate), self.assertRaises(ValueError):
+                project.retime(rate)
+        self.assertEqual([item.time for item in project.keyframes], [0.0, 1.0])
+        self.assertEqual(project.tick_rate, 64)
+
     def test_single_key_holds_and_negative_evaluation_is_clamped(self):
         project = Project(keyframes=[key(2, x=5, yaw=720, fov=35)])
         for time in (-10, 0, 2, 900):

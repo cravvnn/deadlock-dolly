@@ -91,6 +91,31 @@ def numeric(value):
     return format(value, ".9g")
 
 
+def tick_rates_match(left, right, tolerance=.02):
+    """True when two replay tick rates describe the same clock.
+
+    Replay files are recorded at different rates (32 and 64 are both live
+    today), so a project's ticks/second must match the loaded replay before a
+    tick is converted to an authored shot second. The tolerance absorbs the
+    rounding in engine status text; half a tick is always accepted.
+    """
+    try:
+        left, right = float(left), float(right)
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(left) or not math.isfinite(right) or left <= 0 or right <= 0:
+        return False
+    return abs(left - right) <= max(.5, tolerance * max(left, right))
+
+
+def tick_rate_advice(replay_rate, project_rate):
+    """Explain a replay/project tick-rate mismatch and how to repair it."""
+    return (f"This replay runs at {float(replay_rate):.3g} ticks/second, but the shot uses "
+            f"{float(project_rate):.3g}. Replay-timed cameras would arrive at the wrong replay "
+            "moments. Retime the shot to this replay (Shot settings) or set Ticks/second to "
+            "match before adding or replacing cameras.")
+
+
 def _tail_file(path, limit=2_000_000):
     with Path(path).open("rb") as stream:
         stream.seek(0, 2)
@@ -353,6 +378,38 @@ class Controller:
         if require_tick and result.get("tick") is None:
             raise RuntimeError("The replay is recognized, but its current tick was not reported. Export diagnostics before normal playback, or explicitly select Frozen preview.")
         return result
+
+    def replay_tick_rate(self):
+        """Ticks per second of the loaded replay, or None when unknown.
+
+        The replay file's own CDemoFileInfo (playback_ticks / playback_time)
+        is authoritative: matchmaking replays are recorded at 32 ticks/second
+        as well as 64, so the project's ticks/second must adopt this value or
+        every replay-timed camera arrives at the wrong replay moment. Engine
+        status metadata is a fallback when the file index is unavailable; an
+        unknown rate is never guessed.
+        """
+        if self._demo:
+            index = packet_index(self._demo)
+            if index is not None and index.tick_rate:
+                return float(index.tick_rate)
+        demo = self._probe_result.get("demo") if isinstance(self._probe_result, dict) else None
+        if isinstance(demo, dict):
+            rate = demo.get("tick_rate")
+            if (isinstance(rate, (int, float)) and not isinstance(rate, bool)
+                    and math.isfinite(rate) and rate > 0):
+                return float(rate)
+        return None
+
+    def _replay_tick_rate_warning(self, project):
+        """Text for a project/replay tick-rate mismatch, or None to stay quiet."""
+        detected = self.replay_tick_rate()
+        if detected is None or tick_rates_match(detected, project.tick_rate):
+            return None
+        LOG.warning("Replay tick rate %.3f does not match the shot's %.3f", detected, project.tick_rate)
+        return (f"This replay runs at {detected:.3g} ticks/second but the shot uses "
+                f"{project.tick_rate:g}; replay-timed camera arrival times will not line up. "
+                "Retime the shot to this replay in Shot settings.")
 
     def _replay_begun(self, minimum_tick=2):
         """Require the replay to apply its first full packet before pausing.
@@ -941,6 +998,7 @@ class Controller:
                                   "live_tick_available": info.get("tick") is not None,
                                   "camera_effect_verified": False,
                                   "note": "Command availability only. Visual rotation, framing and DOF must be tested in the installed game."}
+            self._probe_result["replay_tick_rate"] = self.replay_tick_rate()
             native = self._native_bridge()
             if native is not None:
                 native_status = native.status()
@@ -1155,6 +1213,11 @@ class Controller:
                 start_tick = float(start_tick)
                 if not math.isfinite(start_tick) or start_tick < 0 or not start_tick.is_integer():
                     raise ValueError("Shot start tick must be a nonnegative integer.")
+            detected = self.replay_tick_rate()
+            if detected is not None and not tick_rates_match(detected, tick_rate):
+                # Refuse to write a camera time against a clock this replay
+                # does not use; the UI retimes the shot instead.
+                raise RuntimeError(tick_rate_advice(detected, tick_rate))
             if self._supports_native_flight():
                 snapshot = self._sample_paused_native_view()
                 tick = snapshot["tick"]
@@ -2468,6 +2531,7 @@ class Controller:
             if self._native_bridge() is not None and not frozen:
                 self._prepare_native_shot_replay()
             self._snapshot(project)
+            tick_rate_warning = self._replay_tick_rate_warning(project)
             self._playback_details = {"project": project.to_dict(), "start_time": start,
                                       "speed": speed, "rate": rate, "frozen": bool(frozen),
                                       "hide_hud": bool(hide_hud),
@@ -2475,6 +2539,8 @@ class Controller:
                                                     "nominal_delay_seconds": window / 2,
                                                     "kind": "shared_phase_finite_window"},
                                       "clock_max_lead_ticks": 0 if frozen else 1}
+            if tick_rate_warning:
+                self._playback_details["tick_rate_warning"] = tick_rate_warning
             native = self._native_bridge()
             self._playback_details["camera_backend"] = "native" if native is not None else "console"
             self._playback_details["replay_recovery"] = deepcopy(self._replay_recovery) if native is not None and not frozen else None
@@ -2570,8 +2636,11 @@ class Controller:
                         self._request("demo_timescale " + numeric(speed) + "; demo_resume")
                     self._playback_details["initial_tick"] = positioned_demo.get("tick")
                     self._applied_pose = frame
-                    self._message("Playing native frozen preview." if frozen else
-                                  "Playing native camera path at render time.", playing=True, time=start)
+                    message = ("Playing native frozen preview." if frozen
+                               else "Playing native camera path at render time.")
+                    if tick_rate_warning:
+                        message += " WARNING: " + tick_rate_warning
+                    self._message(message, playing=True, time=start)
                     self._thread = threading.Thread(target=self._run_native,
                         args=(project, start, speed, rate, bool(frozen)), daemon=True, name="DollyNativePlayback")
                     self._thread.start()
@@ -2585,8 +2654,10 @@ class Controller:
                 self._playback_details["camera_prepared_at"] = self._recent_camera_targets[-1][0]
                 self._request(command)
                 self._applied_pose = frame
-                self._message("Playing frozen preview." if frozen else "Playing shot with the replay.",
-                              playing=True, time=start)
+                message = ("Playing frozen preview." if frozen else "Playing shot with the replay.")
+                if tick_rate_warning:
+                    message += " WARNING: " + tick_rate_warning
+                self._message(message, playing=True, time=start)
                 self._thread = threading.Thread(target=self._run, args=(project, start, speed, rate, frozen, smoothing),
                                                 daemon=True, name="DollyPlayback")
                 self._thread.start()
@@ -3419,6 +3490,7 @@ class Controller:
                   "camera_calibration": self._camera_calibration,
                   "paused_camera": deepcopy(self._paused_details),
                   "local_demo_name": self._demo.name if self._demo else None,
+                  "replay_tick_rate": self.replay_tick_rate(),
                   "runtime_verified_in_Deadlock": False}
         bridge = self._native_bridge()
         if bridge is not None and callable(getattr(bridge, "diagnostics", None)):

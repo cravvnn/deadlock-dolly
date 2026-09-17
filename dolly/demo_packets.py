@@ -9,6 +9,7 @@ from array import array
 from bisect import bisect_left
 from collections import OrderedDict
 from dataclasses import dataclass
+import math
 import os
 from pathlib import Path
 import stat
@@ -36,6 +37,20 @@ class PacketIndex:
     """Sorted packet ticks, with file identity checked by the public reader."""
     ticks: array
     total_ticks: int
+    playback_time: float | None = None
+
+    @property
+    def tick_rate(self) -> float | None:
+        """Replay ticks per second from ``CDemoFileInfo``, or None.
+
+        Replay files are recorded at different rates (32 and 64 are both live
+        today), so this is the only trustworthy conversion between a replay
+        tick and an authored shot second. A missing or malformed duration
+        leaves the rate unknown instead of guessing one.
+        """
+        if not self.playback_time or self.playback_time <= 0 or self.total_ticks <= 0:
+            return None
+        return self.total_ticks / self.playback_time
 
     def following(self, tick: int) -> int | None:
         # Tick zero / signon and the first snapshot floor have a separate,
@@ -112,6 +127,7 @@ def _scan(stream, size, check_cancelled):
     ticks = array("I")
     stop_tick = None
     info_tick = None
+    playback_time = None
     spawn_seen = False
     seen_header = False
     last_record_tick = -1
@@ -170,13 +186,18 @@ def _scan(stream, size, check_cancelled):
             if fields.get(2) != (0, tick):
                 raise _InvalidIndex("Mismatched playback tick count")
             info_tick = tick
+            recorded = fields.get(1)
+            if recorded is not None and recorded[0] == 5 and len(recorded[1]) == 4:
+                seconds = struct.unpack("<f", recorded[1])[0]
+                if math.isfinite(seconds) and seconds > 0:
+                    playback_time = float(seconds)
         elif kind == 2:
             raise _InvalidIndex("Mismatched FileInfo offset")
         stream.seek(payload_end)
     if (not seen_header or not spawn_seen or not ticks or info_tick is None or
             stop_tick != info_tick or ticks[-1] > info_tick):
         raise _InvalidIndex("Incomplete replay packet index")
-    return PacketIndex(ticks, info_tick)
+    return PacketIndex(ticks, info_tick, playback_time)
 
 
 def packet_index(path, *, check_cancelled: Callable[[], None] | None = None) -> PacketIndex | None:

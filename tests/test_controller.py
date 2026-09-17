@@ -15,7 +15,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 import zipfile
 
-from dolly.controller import Controller, frame_commands, parse_camera, read_cvar_value
+from dolly.controller import (Controller, frame_commands, parse_camera, read_cvar_value,
+                              tick_rate_advice, tick_rates_match)
 from dolly.console import ConsoleError
 from dolly.path import CvarTrack, Keyframe, Project, TrackKey, STANDARD_ASPECT
 
@@ -712,6 +713,37 @@ class ControllerTests(unittest.TestCase):
             with self.subTest(start=start, rate=rate), self.assertRaises(ValueError):
                 self.controller.capture_at_replay(start, rate)
             self.assertEqual(self.console.requests, [])
+
+    def test_tick_rate_match_accepts_rounding_and_rejects_a_different_clock(self):
+        self.assertTrue(tick_rates_match(64, 63.98))
+        self.assertTrue(tick_rates_match(32.0, 32.0038))
+        self.assertTrue(tick_rates_match(32.0, 32.5))
+        self.assertFalse(tick_rates_match(64, 32))
+        self.assertFalse(tick_rates_match(0, 64))
+        self.assertFalse(tick_rates_match(None, 64))
+        self.assertFalse(tick_rates_match(64, "not a rate"))
+        self.assertIn("32 ticks/second", tick_rate_advice(32, 64))
+
+    def test_replay_tick_rate_prefers_the_file_then_engine_metadata(self):
+        self.assertIsNone(self.controller.replay_tick_rate())
+        self.controller._probe_result = {"demo": {"tick_rate": 32.0}}
+        self.assertEqual(self.controller.replay_tick_rate(), 32.0)
+        # A status line without the metadata duration stays unknown: its
+        # "Minutes" value moves during load and is not a clock.
+        self.controller._probe_result = {"demo": {"total_ticks": 46777, "tick": 0}}
+        self.assertIsNone(self.controller.replay_tick_rate())
+
+    def test_capture_at_replay_refuses_a_tick_rate_the_replay_does_not_use(self):
+        self.controller._probe_result = {"demo": {"tick_rate": 32.0}}
+        with self.assertRaisesRegex(RuntimeError, "32 ticks/second"):
+            self.controller.capture_at_replay(None, 64)
+        self.assertEqual(self.console.camera_writes, [])
+
+    def test_capture_at_replay_accepts_the_replays_own_tick_rate(self):
+        self.controller._probe_result = {"demo": {"tick_rate": 32.0}}
+        self.console.demo_outputs.extend([119, 120, 120])
+        frame = self.controller.capture_at_replay(None, 32)
+        self.assertEqual(frame.time, 0)
 
     def test_stop_restores_actual_snapshot_when_no_explicit_override(self):
         project = make_project()

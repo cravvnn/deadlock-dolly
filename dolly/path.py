@@ -347,6 +347,29 @@ class Project:
         ends.extend(track.keys[-1].time for track in self.tracks if track.keys)
         return float(max(ends))
 
+    def retime(self, tick_rate: float) -> None:
+        """Reinterpret every authored time at a corrected replay tick rate.
+
+        Replay-timed captures are authored as ``(replay tick - start tick) /
+        rate``. When the loaded replay uses a different rate (its own
+        CDemoFileInfo is authoritative), stored times are scaled by
+        ``old_rate / new_rate`` and the project adopts the new rate. Camera keys
+        and cvar tracks share one shot timeline, so all times move together.
+        """
+        rate = _finite(tick_rate, "Tick rate")
+        if rate <= 0:
+            raise ValueError("Tick rate must be positive")
+        factor = _finite(self.tick_rate, "Tick rate") / rate
+        if not math.isfinite(factor) or factor <= 0:
+            raise ValueError("This shot's current tick rate is invalid; set Ticks/second manually.")
+        for key in self.keyframes:
+            key.time = _finite(key.time, "Camera time") * factor
+        for track in self.tracks:
+            for key in track.keys:
+                key.time = _finite(key.time, "Track time") * factor
+        self.tick_rate = rate
+        self.validate()
+
     def evaluate(self, time: float) -> dict[str, Any]:
         """Evaluate without state: forward playback and rewinds are identical.
 

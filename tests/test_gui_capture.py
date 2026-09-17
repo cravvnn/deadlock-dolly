@@ -34,6 +34,7 @@ class FakeController:
         self.failure = None
         self.calls = []
         self.replay_time = 0.0
+        self.replay_rate = None
         self.standard_aspect = STANDARD_ASPECT
 
     def capture(self, time):
@@ -47,6 +48,9 @@ class FakeController:
         if self.failure:
             raise self.failure
         return Keyframe(self.replay_time, 100.0, 20.0, 30.0, 4.0, 5.0, 6.0, 90.0)
+
+    def replay_tick_rate(self):
+        return self.replay_rate
 
     def set_playback_speed(self, speed):
         self.calls.append(("speed", speed))
@@ -71,6 +75,7 @@ class CaptureHarness:
         app.lens_interpolation = Var("smooth")
         app.capture_mode = Var("Timed shot")
         app.segment_seconds = Var("3")
+        app._tick_rate_prompted = set()
         app.frozen = Var(False)
         app.hide_hud = Var(True)
         app.speed = Var("1")
@@ -94,8 +99,10 @@ class CaptureHarness:
         app.camera_tab = object()
         app._mark_dirty = Mock()
         app._refresh_keys = Mock()
+        app._refresh_project = Mock()
         app._set_time = Mock()
         app._draw_path = Mock()
+        app._log = Mock()
         self.errors = []
         self.pending = None
         app._error = lambda _label, error: self.errors.append(error)
@@ -242,6 +249,83 @@ class GuiCaptureTests(unittest.TestCase):
         self.harness.capture()
         self.assertEqual([key.time for key in self.app.project.keyframes], [0, 1.25])
         self.assertEqual(self.app.controller.calls[-1], ("replay", 640, 64.0))
+
+    def test_replay_timing_adopts_the_replays_own_rate_for_a_new_path(self):
+        self.app.capture_mode.set("Replay timing")
+        self.app.controller.replay_rate = 32.0
+        self.app.controller.tick = 640
+        self.harness.capture()
+        self.assertEqual(self.app.project.tick_rate, 32)
+        self.assertEqual(self.app.tick_rate.get(), "32")
+        self.assertEqual(self.app.project.start_tick, 640)
+        self.assertEqual(self.app.controller.calls[-1], ("replay", None, 32.0))
+
+    def test_replay_timing_retimes_an_existing_path_after_confirmation(self):
+        self.app.project = Project(name="Shot", start_tick=640, tick_rate=64, keyframes=[
+            Keyframe(0, 1, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT),
+            Keyframe(2, 2, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT)])
+        self.app.start_tick.set("640")
+        self.app.tick_rate.set("64")
+        self.app.capture_mode.set("Replay timing")
+        self.app.controller.replay_rate = 32.0
+        self.app.controller.replay_time = 4.5
+        with patch("dolly.gui.messagebox.askyesno", return_value=True) as ask:
+            self.harness.capture()
+        ask.assert_called_once()
+        self.assertEqual([key.time for key in self.app.project.keyframes], [0.0, 4.0, 4.5])
+        self.assertEqual(self.app.project.tick_rate, 32)
+        self.assertEqual(self.app.tick_rate.get(), "32")
+
+    def test_replay_timing_declined_retime_blocks_the_capture(self):
+        self.app.project = Project(name="Shot", start_tick=640, tick_rate=64, keyframes=[
+            Keyframe(0, 1, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT),
+            Keyframe(2, 2, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT)])
+        self.app.start_tick.set("640")
+        self.app.tick_rate.set("64")
+        self.app.capture_mode.set("Replay timing")
+        self.app.controller.replay_rate = 32.0
+        with patch("dolly.gui.messagebox.askyesno", return_value=False) as ask:
+            self.app.capture_here()
+        ask.assert_called_once()
+        self.assertIsNone(self.harness.pending)
+        self.assertEqual([key.time for key in self.app.project.keyframes], [0.0, 2.0])
+        self.assertEqual(self.app.project.tick_rate, 64)
+        self.assertEqual(self.app.controller.calls, [])
+        self.assertIn("32 ticks/second", str(self.harness.errors[-1]))
+
+    def test_probe_offer_retimes_the_open_shot_for_the_replay_rate(self):
+        self.app.project = Project(name="Shot", start_tick=640, tick_rate=64, keyframes=[
+            Keyframe(0, 1, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT),
+            Keyframe(2, 2, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT)])
+        self.app.controller.replay_rate = 32.0
+        with patch("dolly.gui.messagebox.askyesno", return_value=True) as ask:
+            self.app._probe_result({"replay_tick_rate": 32.0})
+        ask.assert_called_once()
+        self.assertEqual([key.time for key in self.app.project.keyframes], [0.0, 4.0])
+        self.assertEqual(self.app.project.tick_rate, 32)
+        self.app._refresh_project.assert_called_once()
+
+    def test_manual_retime_repairs_a_mismatched_shot(self):
+        self.app.project = Project(name="Shot", start_tick=640, tick_rate=64, keyframes=[
+            Keyframe(0, 1, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT),
+            Keyframe(2, 2, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT)])
+        self.app.controller.replay_rate = 32.0
+        with patch("dolly.gui.messagebox.askyesno", return_value=True) as ask:
+            self.app._retime_to_replay()
+        ask.assert_called_once()
+        self.assertEqual([key.time for key in self.app.project.keyframes], [0.0, 4.0])
+        self.assertEqual(self.app.project.tick_rate, 32)
+        self.assertEqual(self.app.tick_rate.get(), "32")
+
+    def test_manual_retime_is_a_no_op_when_rates_already_match(self):
+        self.app.project = Project(name="Shot", tick_rate=32, keyframes=[
+            Keyframe(0, 1, 0, 0, 0, 0, 0, 90, STANDARD_ASPECT)])
+        self.app.controller.replay_rate = 32.0
+        with patch("dolly.gui.messagebox.askyesno") as ask:
+            self.app._retime_to_replay()
+        ask.assert_not_called()
+        self.assertEqual(self.app.project.tick_rate, 32)
+        self.assertIn("already matches", self.app.status_text.get())
 
     def test_nonpositive_interval_cannot_create_duplicate_timed_view(self):
         self.harness.capture()
