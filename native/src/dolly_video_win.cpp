@@ -127,14 +127,14 @@ struct Session {
     // Depth-only diagnostics: pre-play frames are skipped because depth needs
     // an exact replay time. Zero color frames plus non-zero skips identifies a
     // shot that never started, instead of a silent empty take.
-    std::atomic<std::uint64_t> depth_skips{0}, depth_skip_since{0};
+    std::atomic<std::uint64_t> depth_skips{0}, depth_skip_since{0}, scene_skip_since{0};
     std::atomic<double> depth_last_replay{-2.0};
     // Last authored-path time submitted. The path clamps at its end, so
     // duplicate clamped frames are dropped to keep every take the same length.
     std::atomic<double> shot_last_replay{-1.0};
     // Capture-path accounting for zero-frame diagnosis.
     std::atomic<std::uint64_t> capture_calls{0}, capture_not_ready{0}, capture_preplay{0},
-        capture_dropped{0}, capture_submitted{0}, capture_produced{0};
+        capture_scene_skips{0}, capture_dropped{0}, capture_submitted{0}, capture_produced{0};
     // The render callback is the sole producer, the encoder the sole consumer.
     CpuFrame cpu[kSlots];
     std::atomic<std::uint64_t> produced{0}, consumed{0}, gpu_pending{0};
@@ -407,14 +407,17 @@ void fail_text(Session& s, HRESULT hr, const std::wstring& message) noexcept {
     publish_error(s, hr, message.c_str(), message.size());
 }
 std::wstring capture_diagnostic(const Session& s) {
-    wchar_t text[384]{};
-    std::swprintf(text, 384,
-                  L"capture attempts=%llu no-lock=%llu calls=%llu not-ready=%llu preplay=%llu submitted=%llu dropped=%llu produced=%llu",
+    wchar_t text[448]{};
+    std::swprintf(text, 448,
+                  L"capture attempts=%llu no-lock=%llu calls=%llu not-ready=%llu preplay=%llu "
+                  L"scene-skip=%llu submitted=%llu dropped=%llu produced=%llu",
                   static_cast<unsigned long long>(gCaptureAttempts.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(gCaptureNoLock.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(s.capture_calls.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(s.capture_not_ready.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(s.capture_preplay.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(
+                      s.capture_scene_skips.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(s.capture_submitted.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(s.capture_dropped.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(s.capture_produced.load(std::memory_order_relaxed)));
@@ -1543,8 +1546,8 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     if (s.depth_enabled) {
         depth::ProjectionBuffer calibration[14]{};
         const auto count = scene ? scene->calibration(calibration, 14) : 0;
-        if (!scene || scene->result != depth::SceneResult::ready || !count ||
-            !std::isfinite(replay_time) || replay_time < 0) {
+        const bool scene_ready = scene && scene->result == depth::SceneResult::ready && count > 0;
+        const auto fail_scene = [&]() {
             wchar_t detail[352]{};
             MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail, 351);
             std::wstring message =
@@ -1552,6 +1555,39 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
             message += detail;
             message += L")";
             fail_text(s, E_FAIL, message);
+        };
+        if (!scene_ready) {
+            // A prepared take can present transition frames first: the scene
+            // target may be cleared or overwritten by an unsupported pass
+            // (for example a full-viewport ALWAYS write) before the world pass
+            // renders. Nothing has been captured yet, so skip the color+depth
+            // pair instead of failing; a bounded budget still ends a take that
+            // never produces a verified frame.
+            if (gpu.submitted == 0) {
+                const auto skips =
+                    s.capture_scene_skips.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (skips == 1)
+                    s.scene_skip_since.store(GetTickCount64(), std::memory_order_relaxed);
+                const auto since = s.scene_skip_since.load(std::memory_order_relaxed);
+                if (since && GetTickCount64() - since > 10000) {
+                    wchar_t detail[352]{};
+                    MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail, 351);
+                    wchar_t message[512]{};
+                    std::swprintf(
+                        message, 512,
+                        L"The shot never produced a verified scene frame; %llu transition frames were skipped. (%s)",
+                        static_cast<unsigned long long>(skips), detail);
+                    fail_text(s, E_FAIL, message);
+                }
+                return;
+            }
+            fail_scene();
+            return;
+        }
+        if (!std::isfinite(replay_time) || replay_time < 0) {
+            // The pre-play skip above normally prevents this; keep the guard
+            // so an unpaired frame can never be captured.
+            fail_scene();
             return;
         }
         const depth::Frame metadata{s.width, s.height, gpu.submitted, replay_time, {}};

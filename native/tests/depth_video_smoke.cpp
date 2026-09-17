@@ -152,7 +152,7 @@ int wmain(int argc, wchar_t** argv) {
             fs::path(argv[2]) / (L"depth-video-" + std::to_wstring(GetCurrentProcessId()));
         require(fs::create_directory(root), "Could not create unique output directory");
         Test t;
-        for (unsigned mode = 0; mode < 6; ++mode) {
+        for (unsigned mode = 0; mode < 7; ++mode) {
             const auto path = root / (std::to_wstring(mode) + (mode == 5 ? L".mp4" : L".mkv"));
             video::Options options;
             options.path = path.c_str();
@@ -171,7 +171,12 @@ int wmain(int argc, wchar_t** argv) {
             const auto end = GetTickCount64() + 15000;
             bool enough = false;
             for (unsigned frame = 0; GetTickCount64() < end; ++frame) {
-                t.present(frame % 100 + 1);
+                // Mode 6 starts with transition frames that have no verified
+                // scene; they must be skipped, not fail the take.
+                if (mode == 6 && frame < 3)
+                    t.present(frame % 100 + 1, true);
+                else
+                    t.present(frame % 100 + 1);
                 const auto status = video::status();
                 if (status.state == video::State::failed) {
                     std::fwprintf(stderr, L"%ls\n", status.error);
@@ -229,7 +234,7 @@ int wmain(int argc, wchar_t** argv) {
         require(!fs::exists(collision) && fs::exists(collision_dir / "keep.txt"),
                 "Collision cleanup changed foreign output");
         std::wprintf(
-            L"Paired depth/video recordings, cancellation, missing-source failure and reset passed.\n%ls\n",
+            L"Paired depth/video recordings, cancellation, missing-source failure, transition-frame skipping and reset passed.\n%ls\n",
             root.c_str());
         return 0;
     } catch (const std::exception& e) {
