@@ -1,5 +1,20 @@
 # Changes
 
+## 0.5.18 alpha — Replay tick-rate alignment
+
+- Replay-timed cameras now use the open replay's own tick rate from its
+  `CDemoFileInfo`. Matchmaking replays are recorded at 32 ticks/second as well
+  as 64; a 32-tick replay used to be treated as 64, so a shot's cameras arrived
+  at the wrong replay moments. Reported case: a shot at 0.1x playback whose last
+  camera missed the action it framed because the replay reached only half the
+  authored ticks.
+- A new shot adopts the detected rate. A saved shot that disagrees is offered a
+  one-step retime when the replay is checked or opened, and **Retime to replay**
+  in shot timing does it at any time. A capture that would mix two clocks is
+  refused with instructions instead of writing a camera against the wrong one.
+- Playback of a mismatched shot warns in the status line, and diagnostics report
+  the detected replay tick rate.
+
 ## 0.5.17 alpha — Depth takes skip transition frames
 
 - A depth take now skips presented frames that have no verified scene pass yet
