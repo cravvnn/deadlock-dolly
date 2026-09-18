@@ -1,5 +1,25 @@
 # Changes
 
+## 0.5.21 alpha — Players-only layer export
+
+- The **Players** layer records real players plus their weapons, attachments and
+  carried objects, with NPCs and creeps left out, while the untouched world still
+  occludes them and the layer keeps real coverage alpha in one fixed-step pass.
+  The native bridge classifies every scene object's owner through the scene graph
+  (scene object -> scene node -> owner pawn) with the game's live schema and
+  records exactly the draws those objects produce.
+- Supports the current September 17 client builds: the update re-tagged character
+  input layouts and moved the draw/submit timing, so the capture pairs draws
+  through the identity-buffer binding, accepts a one-frame submit lag, and
+  validates every recorded draw against its owner's record read back from the
+  GPU -- a draw whose record moved is dropped instead of trusted.
+- A take that ends early (a replay returning to the hideout) or a stop request
+  finishes the capture with the frames it already sealed instead of waiting out
+  its whole budget.
+- Verified live on the current build: a 57-frame fixed-step take captured 16-22
+  validated draws per frame, previews show both players with their equipment and
+  no world, and the native and Python suites pass (16/16 and 1157 tests).
+
 ## 0.5.20 alpha — September 17 game compatibility
 
 - Adds the reviewed compatibility profile for the September 17 client builds

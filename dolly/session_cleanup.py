@@ -26,7 +26,10 @@ GENERATED_FILES = frozenset({
         "dolly_owner_start.txt", "dolly_owner_start.tmp", "dolly_owner_status.txt",
         "dolly_owner_events.bin", "dolly_owner_color_frame.bin", "dolly_owner_frame_meta.bin",
         "dolly_owner_matte.rgba", "dolly_owner_mattes.bin", "dolly_owner_colors.bin",
-        "dolly_owner_stall.txt", "dolly_owner_timeline.txt", "dolly_owner_draws.txt")),
+        "dolly_owner_stall.txt", "dolly_owner_timeline.txt", "dolly_owner_draws.txt",
+        "dolly_owner_producers.txt", "dolly_owner_records.txt",
+        "dolly_owner_frame_stats.txt", "dolly_owner_stop.txt",
+        "dolly_owner_captures.txt")),
 })
 GENERATED_DIRS = frozenset({"cvar_unlocker", "cvar_unlocker/bin", "cvar_unlocker/bin/win64"})
 

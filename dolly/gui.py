@@ -778,6 +778,10 @@ class DollyApp:
         deployment = self.controller.deployment_directory()
         if deployment is None:
             raise RuntimeError("The players layer capture directory is gone.")
+        try:
+            player_layer.request_stop(deployment)
+        except OSError as exc:
+            LOG.warning("Players layer stop request failed: %s", exc)
         status = player_layer.wait_for_capture(deployment, timeout=180.0)
         if not status.startswith("complete"):
             raise RuntimeError("The players layer capture did not finish cleanly: "

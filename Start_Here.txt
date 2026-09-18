@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.20 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.5.21 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -168,7 +168,7 @@ Native mode supports reviewed client.dll, engine2.dll and tier0.dll builds.
 A Deadlock update can require a Dolly update. Home > Troubleshooting contains
 the manual startup controls and Console (legacy) driver.
 
-0.5.20 is an alpha. The camera hook and interpolation remain unchanged from
+0.5.21 is an alpha. The camera hook and interpolation remain unchanged from
 0.4.7, and recorded-demo handling from 0.4.8 is retained. The 0.5.x line adds
 the compatibility scanner, real-time and fixed-step recording, the paired depth
 master, isolated layer takes, ReShade with a bundled shader library and depth
@@ -183,7 +183,7 @@ UPDATING AND RECOVERY
 
 Close Deadlock and Dolly before updating. If the old installation has a pending
 gameinfo recovery, use its Recover_Game_Config.bat first. Keep saved shots and
-logs, including any recovery backup. Use the complete new package; 0.5.20 uses
+logs, including any recovery backup. Use the complete new package; 0.5.21 uses
 camera ABI 3 and editor ABI 2 and its native helper must match the editor.
 
 After an interrupted launch, close Deadlock and use File > Recover game

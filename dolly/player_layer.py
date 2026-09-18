@@ -33,6 +33,7 @@ ENTITY_SCENE_NODE_FIELD = "m_pGameSceneNode"
 SCENE_NODE_FIELD_OFFSET = 816
 MARKER_NAME = "dolly_owner_start.txt"
 STATUS_NAME = "dolly_owner_status.txt"
+STOP_NAME = "dolly_owner_stop.txt"
 BUNDLE_NAME = "dolly_owner_color_frame.bin"
 META_NAME = "dolly_owner_frame_meta.bin"
 BUNDLE_MAGIC = 0x314641524c4f4344
@@ -85,7 +86,26 @@ def begin_capture(deployment: Path, owner_offset: int, frames: int,
     temporary = marker.with_name(marker.name + ".tmp")
     temporary.write_text(marker_text(owner_offset, frames, back_offset), encoding="ascii")
     os.replace(temporary, marker)
+    stop = Path(deployment) / STOP_NAME
+    try:
+        stop.unlink()
+    except FileNotFoundError:
+        pass
     return marker
+
+
+def request_stop(deployment: Path) -> Path:
+    """Ask a running capture to finish now, at the frames it already sealed.
+
+    The take can end before the frame cap (a replay returning to the hideout,
+    a stopped recording), so the recorder drops this file and the capture
+    completes with its captured frames instead of waiting out its budget.
+    """
+    stop = Path(deployment) / STOP_NAME
+    temporary = stop.with_name(stop.name + ".tmp")
+    temporary.write_text("stop\n", encoding="ascii")
+    os.replace(temporary, stop)
+    return stop
 
 
 def capture_status(deployment: Path) -> str:
@@ -170,7 +190,9 @@ def encode_layer(ffmpeg: Path, previews: list[Path], output: Path, *, fps: int =
         raise RuntimeError("The player layer needs an FFmpeg executable for its alpha video.")
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-n", "-threads", "2",
+    # Overwrite on purpose: a re-recorded take must replace its layer master
+    # instead of silently keeping an older file under the same name.
+    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-threads", "2",
                "-framerate", str(fps), "-start_number", "0",
                "-i", str(previews[0].with_name(previews[0].name.replace("000", "%03d"))),
                "-frames:v", str(len(previews)), "-an", "-c:v", "prores_ks", "-profile:v", "4444",

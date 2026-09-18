@@ -63,6 +63,16 @@ class MarkerTests(unittest.TestCase):
             (deployment / player_layer.STATUS_NAME).write_text("complete\n", encoding="ascii")
             self.assertEqual(player_layer.wait_for_capture(deployment, timeout=1), "complete")
 
+    def test_stop_request_is_written_and_a_new_capture_clears_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            deployment = Path(folder)
+            player_layer.begin_capture(deployment, 48, 8)
+            stop = player_layer.request_stop(deployment)
+            self.assertEqual(stop.name, player_layer.STOP_NAME)
+            self.assertTrue(stop.is_file())
+            player_layer.begin_capture(deployment, 48, 8)
+            self.assertFalse(stop.exists())
+
 
 class BundleTests(unittest.TestCase):
     def bundle(self, width, height, pixels, magic=None):
