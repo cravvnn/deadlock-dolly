@@ -3218,6 +3218,11 @@ class Controller:
                 return
         with self._state_lock:
             self._state["playing"] = False
+        if self._console and self._console.is_connected and self._alive():
+            try:
+                self.reset_layer_modes()
+            except (RuntimeError, ValueError, OSError) as exc:
+                LOG.warning("Could not restore scene classes: %s", exc)
         if restoration_error:
             self._message(restoration_error, playing=False)
 
@@ -3374,17 +3379,24 @@ class Controller:
         return {"mode": mode, "hidden": targets, "classes": classes}
 
     def reset_layer_modes(self):
-        """Restore every scene class the layer export can hide."""
+        """Restore every scene class the layer export can hide.
+
+        Raises when any class could not be shown again: a silently failed
+        restore would leave the game hiding players or effects.
+        """
         try:
             classes = self.scene_classes()
         except (RuntimeError, ValueError, OSError):
             classes = [name for spec in self.LAYER_MODES.values()
                        for name in (*spec.get("keep", ()), *spec.get("hide", ()))]
+        failures = []
         for name in classes:
             try:
                 self._request("sc_setclassflags " + name + " 0")
-            except (RuntimeError, ValueError, OSError):
-                pass
+            except (RuntimeError, ValueError, OSError) as exc:
+                failures.append(name + " (" + str(exc) + ")")
+        if failures:
+            raise RuntimeError("Could not restore scene classes: " + ", ".join(failures))
 
     # Screen post-processing that contaminates black/white matte passes.
     # Bloom spills over the layer and the forced white clear; eye-adaptation

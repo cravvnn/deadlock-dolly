@@ -656,7 +656,10 @@ class DollyApp:
             self.controller.end_matte_layer()
         except (RuntimeError, ValueError, OSError):
             pass
-        self.controller.reset_layer_modes()
+        try:
+            self.controller.reset_layer_modes()
+        except (RuntimeError, ValueError, OSError) as exc:
+            LOG.warning("Scene classes could not all be restored: %s", exc)
 
     def _advance_layer_pipeline(self):
         """Poll-driven layer queue: alpha combine, next take, then restore.
@@ -742,12 +745,16 @@ class DollyApp:
 
         Unlike the other layers this hides no scene classes: the native capture
         selects the exact draws owned by player pawns (and their equipment), so
-        NPCs stay out while the world stays in for occlusion.
+        NPCs stay out while the world stays in for occlusion. Every class must
+        be visible though: a previous layer take (for example the world layer)
+        hides the skinned objects, and the capture would then seal no frames.
         """
         base = self._base_capture
         deployment = self.controller.deployment_directory()
         if deployment is None:
             raise RuntimeError("Launch the game through Dolly before recording the players layer.")
+        self.controller.reset_layer_modes()
+        LOG.info("Scene classes restored for the players layer capture.")
         layout = self.controller._request(
             "schema_detailed_class_layout " + player_layer.OWNER_LAYOUT_CLASS, timeout=5)
         owner_offset = player_layer.parse_owner_offset(str(layout))
