@@ -193,7 +193,7 @@ separate terms in [assets/README.md](assets/README.md).
 
 ## Updates
 
-**0.5.19:** exports a players-only layer: real players plus their weapons, attachments and carried objects, no NPCs, with scenery occlusion kept and real alpha in one fixed-step pass.
+**0.5.19:** supports the September 17 Deadlock client builds (including the 25379260 hotfix) and re-verifies capture and playback on them. The players-only layer export is built in but not available yet: the update moved the render-side draw records behind its selection, so the **Players layer** option stays disabled until the gates are re-derived and verified live.
 
 **0.5.18:** reads each replay's own tick rate and uses it for replay-timed
 cameras, so 32-tick replays line up instead of running the shot at double

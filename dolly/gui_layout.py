@@ -275,7 +275,8 @@ def build_export(app):
     app.video_depth_exr_checkbox.pack(anchor="w", pady=(0, GAP))
     app.video_layer_checkboxes = []
     for title, var in (("World layer", app.video_layer_world), ("Players layer (alpha)", app.video_layer_players), ("Effects layer (alpha)", app.video_layer_effects)):
-        cb = ttk.Checkbutton(passes, style="Card.TCheckbutton", text=title, variable=var, command=app._layer_toggled)
+        state = "disabled" if var is app.video_layer_players else "normal"
+        cb = ttk.Checkbutton(passes, style="Card.TCheckbutton", text=title, variable=var, command=app._layer_toggled, state=state)
         cb.pack(anchor="w", pady=(0, GAP))
         app.video_layer_checkboxes.append(cb)
     capture = card(right, "Capture")

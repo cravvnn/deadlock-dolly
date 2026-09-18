@@ -1,27 +1,29 @@
 # Changes
 
-## 0.5.19 alpha — Players-only layer export
+## 0.5.19 alpha — September 17 game compatibility
 
-- The **Players** layer is now a players-only export. It is recorded by a native
-  ownership capture that selects the exact draws produced by scene objects owned by
-  player pawns, so the layer contains real players and their equipment (weapons,
-  attachments and carried objects) while NPCs and creeps stay out. The world stays
-  in the scene, so scenery occlusion is preserved, and the layer keeps real coverage
-  alpha in one fixed-step pass instead of a black/white matte pair. The output is the
-  alpha-capable ProRes 4444 layer master beside its driving take. Per-player (single
+- Adds the reviewed compatibility profile for the September 17 client builds
+  (buildids 25376188 and the 25379260 hotfix, client `d1ee16fc…`). Engine modules
+  (engine2, tier0, scenesystem, rendersystemdx11) are unchanged between the two
+  builds, and the scanner reports the game as supported. Capture, playback and
+  export were re-verified live on the current build.
+- The players-only layer export implementation is included but not enabled yet:
+  the game update moved the render-side draw records its selection gates read, so
+  the **Players layer** option stays disabled until those gates are re-derived and
+  verified live. The world and effects layers are unchanged. Per-player (single
   pawn) selection is not part of this release.
-- Each owner is classified through the scene graph (scene object -> scene node ->
-  owner pawn) using the game's own schema output, so no hero IDs are hardcoded and a
-  player's attachments follow their pawn automatically.
-- Adds the reviewed compatibility profile for the September 17 client build
-  (`3c07cea8…`); engine modules are unchanged.
-- Verification behind this release: the capture is part of the native bridge binary
-  (16/16 native tests) and the full Python suite passes (1154 tests). The capture path
-  itself was proven end-to-end with ownership-verified, alpha-exact MOV proofs across
-  96, 192 and 256-frame fixed-step takes for several heroes, including the largest and
-  smallest skeletons and an attachment-carrying phasing hero, with every captured
-  frame paired against the color take's authored timeline. The Players layer UI path
-  reuses those verified primitives.
+- The ownership capture itself remains in the native bridge: it selects the exact
+  draws produced by scene objects owned by player pawns, so a layer contains real
+  players and their equipment (weapons, attachments and carried objects) while
+  NPCs and creeps stay out, the world stays in the scene so scenery occlusion is
+  preserved, and real coverage alpha arrives in one fixed-step pass. The research
+  path behind it was proven end-to-end with ownership-verified, alpha-exact MOV
+  proofs across 96, 192 and 256-frame fixed-step takes for several heroes,
+  including the largest and smallest skeletons and an attachment-carrying phasing
+  hero, with every captured frame paired against the color take's authored
+  timeline.
+- Verification behind this release: the capture is part of the native bridge
+  binary (16/16 native tests) and the full Python suite passes (1156 tests).
 
 ## 0.5.18 alpha — Replay tick-rate alignment
 
