@@ -15,10 +15,18 @@ import time
 
 OWNER = "Deadlock Dolly"
 PREFIX = "citadel_dolly_"
+_CAPTURE_BIN = "cvar_unlocker/bin/win64/"
+# The player layer capture writes bounded diagnostic artifacts beside the
+# deployed DLL; they are ours and are removed with the rest of the session.
 GENERATED_FILES = frozenset({
     ".dolly-session.json", "cvar_unlocker/bin/win64/server.dll",
     "cvar_unlocker/bin/win64/dolly_cvar_unlocker.dll",
     "cvar_unlocker/bin/win64/dolly_native.cfg",
+    *(_CAPTURE_BIN + name for name in (
+        "dolly_owner_start.txt", "dolly_owner_start.tmp", "dolly_owner_status.txt",
+        "dolly_owner_events.bin", "dolly_owner_color_frame.bin", "dolly_owner_frame_meta.bin",
+        "dolly_owner_matte.rgba", "dolly_owner_mattes.bin", "dolly_owner_colors.bin",
+        "dolly_owner_stall.txt", "dolly_owner_timeline.txt", "dolly_owner_draws.txt")),
 })
 GENERATED_DIRS = frozenset({"cvar_unlocker", "cvar_unlocker/bin", "cvar_unlocker/bin/win64"})
 

@@ -137,7 +137,7 @@ std::array<ColorFrame,SequenceRing> colorFrames;unsigned colorIndex=0;bool seque
 double lastSealedReplayTime=-1.0;
 long long lastSealedFrame=-1;
 unsigned sequenceCap=2,framesSealed=0,framesWritten=0;
-bool playersOnly=false;std::uint32_t ownerFieldOffset=0;bool sequenceStall=false;ULONGLONG firstSeal=0,lastSeal=0;
+bool playersOnly=false;std::uint32_t ownerFieldOffset=0;std::uint32_t sceneNodeFieldOffset=0;bool sequenceStall=false;ULONGLONG firstSeal=0,lastSeal=0;
 // Kept for the life of the process: a static writer would join its worker
 // inside DLL detach. The explicit finish in tick() still closes the file.
 SequenceWriter* sequenceWriterInstance=nullptr;
@@ -167,7 +167,7 @@ bool ring_snapshots_pending(unsigned ring) noexcept {
 }
 thread_local std::uint64_t pendingMatteDraw=0;
 thread_local unsigned pendingMatteSlot=0;
-unsigned dbg[8]{};std::uint64_t lastDrawEpoch=0;
+unsigned dbg[12]{};std::uint64_t lastDrawEpoch=0;
 unsigned publishCalls=0,publishValid=0;double maxAuthored=-1.0,lastAuthored=-1.0;ULONGLONG lastAuthoredTick=0,lastAdvancedTick=0;
 std::atomic<std::uintptr_t> firstPresentDevice{0},lastPresentDevice{0};
 std::atomic<unsigned> presentDeviceChanges{0};
@@ -183,23 +183,65 @@ template<class T> bool read(std::uintptr_t address, T& output) noexcept {
     __except(EXCEPTION_EXECUTE_HANDLER) { std::memset(&output,0,sizeof(T)); return false; }
 }
 template<class T> T value(std::uintptr_t address) noexcept { T v{}; read(address,v); return v; }
+std::uintptr_t module_base_of(std::uintptr_t address) noexcept {
+    MEMORY_BASIC_INFORMATION info{};
+    if(!VirtualQuery(reinterpret_cast<const void*>(address),&info,sizeof(info)))return 0;
+    return reinterpret_cast<std::uintptr_t>(info.AllocationBase);
+}
+bool class_name_from(std::uintptr_t descriptor,const char* needle) noexcept {
+    char name[160]{};
+    for(unsigned i=0;i<sizeof(name)-1;++i){name[i]=value<char>(descriptor+0x10+i);if(!name[i])break;}
+    return std::strstr(name,needle)!=nullptr;
+}
+// MSVC x64 RTTI stores image-relative offsets in the vtable's -1 slot and in
+// the complete object locator. Resolve against the module base, and also
+// accept a self-relative layout, so a toolchain change cannot blind us.
 bool class_name_contains(std::uintptr_t object,const char* needle) noexcept {
     if(!object)return false;
     const auto vtable=value<std::uintptr_t>(object);
-    if(!vtable)return false;
+    if(!vtable||vtable<0x10000)return false;
+    const auto base=module_base_of(vtable);
+    if(!base)return false;
+    // The slot is an absolute complete-object-locator pointer at runtime; the
+    // locator's own type-descriptor field is image-relative. Fallbacks keep
+    // older/other layouts working.
+    const auto absolute=value<std::uintptr_t>(vtable-8);
     std::int32_t relative=0;
     if(!read(vtable-8,relative))return false;
-    const auto locator=vtable-8+static_cast<std::intptr_t>(relative);
-    std::int32_t type_relative=0;
-    if(!read(locator+0xc,type_relative))return false;
-    const auto descriptor=locator+0xc+static_cast<std::intptr_t>(type_relative);
-    char name[160]{};
-    for(unsigned i=0;i<sizeof(name)-1;++i){name[i]=value<char>(descriptor+0x10+i);if(!name[i])break;}
-    name[sizeof(name)-1]=0;
-    return std::strstr(name,needle)!=nullptr;
+    const std::uintptr_t locators[3]={absolute,
+                                      base+static_cast<std::intptr_t>(relative),
+                                      vtable-8+static_cast<std::intptr_t>(relative)};
+    for(auto locator:locators){
+        if(!locator||locator<0x10000)continue;
+        std::uint32_t signature=0;
+        if(!read(locator,signature)||signature!=1)continue;
+        std::int32_t type_relative=0;
+        if(!read(locator+0xc,type_relative))continue;
+        const std::uintptr_t descriptors[2]={base+static_cast<std::intptr_t>(type_relative),
+                                             locator+0xc+static_cast<std::intptr_t>(type_relative)};
+        for(auto descriptor:descriptors) if(class_name_from(descriptor,needle))return true;
+    }
+    return false;
 }
 struct OwnerClass {std::uint32_t handle=0;bool player=false;};
-std::array<OwnerClass,64> ownerClasses{};unsigned ownerClassCount=0;
+std::array<OwnerClass,256> ownerClasses{};unsigned ownerClassCount=0,ownerClassRotate=0;
+// The scene -> node link and the node's embedded scene-object member move with
+// engine updates, so the first classification discovers them inside a bounded
+// window and every later one reuses the pair. A player is only ever accepted
+// on an exact player-pawn class match; a wrong pair cannot produce one.
+unsigned discoveredLinkOffset=0,discoveredLinkDelta=0;
+bool classifies_as_player(std::uintptr_t scene,unsigned link_offset,unsigned delta) noexcept {
+    if(!scene)return false;
+    const auto link=value<std::uintptr_t>(scene+link_offset);
+    if(!link||link<0x10000)return false;
+    const auto node=link-delta;
+    const auto entity=value<std::uintptr_t>(node+ownerFieldOffset);
+    if(!entity||entity<0x10000)return false;
+    // The owner entity must point back at the node it was read from; a wrong
+    // link cannot satisfy both directions of the schema relation.
+    if(sceneNodeFieldOffset && value<std::uintptr_t>(entity+sceneNodeFieldOffset)!=node)return false;
+    return class_name_contains(entity,"CitadelPlayerPawn");
+}
 // Players-only mode classifies each owner handle through the scene graph:
 // scene object -> scene node -> owner entity (schema m_pOwner offset) -> RTTI.
 // Attachments share the pawn handle, so they classify with their player.
@@ -207,16 +249,84 @@ bool owner_is_player(std::uint32_t handle,std::uintptr_t scene) noexcept {
     if(!playersOnly){for(unsigned n=0;n<allowedCount;++n)if(handle==allowedHandles[n])return true;return false;}
     for(unsigned i=0;i<ownerClassCount;++i)if(ownerClasses[i].handle==handle)return ownerClasses[i].player;
     bool player=false;
-    if(ownerClassCount<ownerClasses.size()){
-        const auto link=scene?value<std::uintptr_t>(scene+0x110):0;
-        const auto node=link?link-0x140:0;
-        const auto entity=node?value<std::uintptr_t>(node+ownerFieldOffset):0;
-        player=class_name_contains(entity,"CitadelPlayerPawn");
-        ownerClasses[ownerClassCount].handle=handle;
-        ownerClasses[ownerClassCount].player=player;
-        ++ownerClassCount;
+    {
+        if(discoveredLinkOffset){
+            player=classifies_as_player(scene,discoveredLinkOffset,discoveredLinkDelta);
+        } else {
+            // The scene object is stable, so its link is tried first; the
+            // scene node layout moves with client updates, so the node base is
+            // searched finely. A wrong pair cannot match a player class.
+            static const unsigned link_offsets[]={
+                0x110,0x108,0x118,0x100,0x120,0x90,0x98,0xa0,0xa8,0xb0,0xb8,0xc0,0xc8,0xd0,0xd8,
+                0xe0,0xe8,0xf0,0xf8,0x128,0x130,0x138,0x140,0x148,0x150,0x158,0x160,0x168,0x170,0x178};
+            for(unsigned link_offset:link_offsets)
+                for(unsigned delta=0;delta<=0x200&&!player;delta+=8)
+                    if(classifies_as_player(scene,link_offset,delta)) {
+                        discoveredLinkOffset=link_offset;discoveredLinkDelta=delta;player=true;break;
+                    }
+        }
+        unsigned slot=ownerClassCount;
+        if(slot<ownerClasses.size()){
+            ++ownerClassCount;
+        } else {
+            // Never let early non-player owners crowd players out of the
+            // cache: reuse a negative slot round-robin, keep every positive.
+            for(unsigned step=0;step<ownerClasses.size();++step){
+                const unsigned candidate=(ownerClassRotate+step)%ownerClasses.size();
+                if(!ownerClasses[candidate].player){slot=candidate;ownerClassRotate=(candidate+1)%ownerClasses.size();break;}
+            }
+        }
+        ownerClasses[slot].handle=handle;
+        ownerClasses[slot].player=player;
     }
     return player;
+}
+// A players-only capture admits every player, so the same producer record is
+// re-submitted many times inside one renderer frame. Exact duplicates are
+// forwarded once but recorded once: the bounded event ring must survive the
+// whole take.
+struct ProducerEntry {
+    std::uint64_t frame=0,instance=0,records=0,event=0;
+    std::uint32_t owner=0;
+    std::uint32_t record[8]{};
+};
+std::array<ProducerEntry,4096> producerTable{};unsigned producerTableCount=0,producerTableRotate=0;
+void producer_store(std::uint64_t frame,std::uint64_t instance,std::uint64_t records,
+                    std::uint32_t owner,const std::uint32_t* record,std::uint64_t event) noexcept {
+    for(unsigned i=0;i<producerTableCount;++i) {
+        auto& entry=producerTable[i];
+        if(entry.frame==frame&&entry.instance==instance&&entry.records==records) {
+            entry.owner=owner;entry.event=event;
+            for(unsigned n=0;n<8;++n)entry.record[n]=record[n];
+            return;
+        }
+    }
+    unsigned slot=producerTableCount;
+    if(slot<producerTable.size())++producerTableCount;
+    else {slot=producerTableRotate;producerTableRotate=(producerTableRotate+1)%producerTable.size();}
+    auto& entry=producerTable[slot];
+    entry.frame=frame;entry.instance=instance;entry.records=records;entry.owner=owner;entry.event=event;
+    for(unsigned n=0;n<8;++n)entry.record[n]=record[n];
+}
+// Every player capture pairs draws through this table instead of the bounded
+// event ring, which a players-only take would fill long before it finished.
+const ProducerEntry* producer_lookup(std::uint64_t frame,std::uint64_t instance,
+                                     std::uint64_t records) noexcept {
+    for(unsigned i=producerTableCount;i-->0;) {
+        const auto& entry=producerTable[i];
+        if(entry.frame==frame&&entry.instance==instance&&entry.records==records)return &entry;
+    }
+    return nullptr;
+}
+struct ProducerKey {std::uint64_t frame=0,object=0,mesh=0;};
+std::array<ProducerKey,512> producerKeys{};unsigned producerKeyCount=0;
+bool producer_seen(std::uint64_t frame,std::uint64_t object,std::uint64_t mesh) noexcept {
+    for(unsigned i=0;i<producerKeyCount;++i)
+        if(producerKeys[i].frame==frame&&producerKeys[i].object==object&&producerKeys[i].mesh==mesh)return true;
+    if(producerKeyCount>=producerKeys.size())producerKeyCount=0;
+    producerKeys[producerKeyCount]={frame,object,mesh};
+    ++producerKeyCount;
+    return false;
 }
 std::uint64_t stamp() noexcept { LARGE_INTEGER t{}; QueryPerformanceCounter(&t); return t.QuadPart; }
 std::uint32_t frame() noexcept { return sceneBase ? value<std::uint32_t>(sceneBase+0x8ce9b8) : 0; }
@@ -259,7 +369,35 @@ int __fastcall hook(std::uintptr_t a, void* object, void* mesh, void* opaque, vo
     if(sequenceV2) {
         const auto owner=value<std::uint32_t>(obj+0xc0);
         if(!owner_is_player(owner,obj))return original(a,object,mesh,opaque,params,mode,flag,outA,outB);
+        // Shot-aligned captures only ever record during the authored take;
+        // preparation frames would otherwise fill the bounded event buffer
+        // before the first frame can be sealed.
+        if(sequenceV3 && authoredReplayTime.load(std::memory_order_acquire)<0.0)return original(a,object,mesh,opaque,params,mode,flag,outA,outB);
         ++producerKnownCalls;
+        if(producer_seen(frame(),obj,reinterpret_cast<std::uintptr_t>(mesh)))
+            return original(a,object,mesh,opaque,params,mode,flag,outA,outB);
+    }
+    if(sequenceV2) {
+        // Shot-aligned captures pair draws through the producer table and
+        // never consume the bounded event ring: a players-only take would
+        // otherwise fill it long before the last frame is sealed.
+        const int sequenceResult=original(a,object,mesh,opaque,params,mode,flag,outA,outB);
+        const auto engineFrame=frame();
+        const auto ownerHandle=value<std::uint32_t>(obj+0xc0);
+        const auto stack=value<std::uintptr_t>(sceneBase+0x8cfce8);
+        const auto base=value<std::uintptr_t>(stack+0x18);
+        const auto end=value<std::uintptr_t>(stack+8);
+        const auto capacity=value<std::uint32_t>(sceneBase+0x8cfde8);
+        const auto recordsBuffer=buffer(0x8cfde0);
+        if(sequenceResult >= 0 && static_cast<unsigned>(sequenceResult)<capacity && base && end>=base) {
+            const auto address=base+static_cast<std::uint64_t>(sequenceResult)*32;
+            std::uint32_t sequenceRecord[8]{};
+            if(address>=base && address<=end && end-address>=sizeof(sequenceRecord) &&
+               read(address,sequenceRecord))
+                producer_store(engineFrame,static_cast<std::uint64_t>(static_cast<std::uint32_t>(sequenceResult)),
+                               recordsBuffer,ownerHandle,sequenceRecord,0);
+        }
+        return sequenceResult;
     }
     Write write(1);
     auto* e=write.event;
@@ -274,36 +412,44 @@ int __fastcall hook(std::uintptr_t a, void* object, void* mesh, void* opaque, vo
     // Exactly one original invocation. The first register argument remains
     // opaque; caller-owned in/out pointers and all nine argument slots survive.
     const int result=original(a,object,mesh,opaque,params,mode,flag,outA,outB);
+    const auto engineFrame=frame();
+    const auto ownerHandle=value<std::uint32_t>(obj+0xc0);
+    const auto stack=value<std::uintptr_t>(sceneBase+0x8cfce8);
+    const auto base=value<std::uintptr_t>(stack+0x18);
+    const auto end=value<std::uintptr_t>(stack+8);
+    const auto capacity=value<std::uint32_t>(sceneBase+0x8cfde8);
+    const auto recordsBuffer=buffer(0x8cfde0); // CSceneSystem+0x2b00
+    std::uint32_t record[8]{};
+    bool recordOk=false;
+    if (result >= 0 && static_cast<unsigned>(result)<capacity && base && end>=base) {
+        const auto address=base+static_cast<std::uint64_t>(result)*32;
+        recordOk=address>=base && address<=end && end-address>=sizeof(record) && read(address,record);
+    }
     if (e) {
         e->w[10]=static_cast<std::uint32_t>(result);
-        const auto stack=value<std::uintptr_t>(sceneBase+0x8cfce8);
-        const auto base=value<std::uintptr_t>(stack+0x18);
-        const auto end=value<std::uintptr_t>(stack+8);
-        const auto capacity=value<std::uint32_t>(sceneBase+0x8cfde8);
         e->w[11]=base;
         e->w[22]=cpu(0x8cfce0);
         e->w[23]=buffer(0x8cfd40); // CSceneSystem+0x2a60
-        e->w[24]=buffer(0x8cfde0); // CSceneSystem+0x2b00
+        e->w[24]=recordsBuffer;
         e->w[25]=buffer(0x8cfc50); // sequential instance IDs
         const auto cache=value<std::uintptr_t>(m+0x48);
         e->w[26]=value<std::uint32_t>(cache+0x20);
         e->w[27]=value<std::uint32_t>(cache+0x28);
         e->w[28]=value<std::uint32_t>(cache+0x24);
-        e->w[29]=value<std::uint32_t>(obj+0xc0);
-        if (result >= 0 && static_cast<unsigned>(result)<capacity && base && end>=base) {
-            const auto address=base+static_cast<std::uint64_t>(result)*32;
-            std::uint32_t record[8]{};
-            if (address>=base && address<=end && end-address>=sizeof(record) && read(address,record)) {
-                for(unsigned i=0;i<8;++i) e->w[14+i]=record[i];
-                e->w[12]=record[1]; e->w[13]=1;
-            }
+        e->w[29]=ownerHandle;
+        if (recordOk) {
+            for(unsigned i=0;i<8;++i) e->w[14+i]=record[i];
+            e->w[12]=record[1]; e->w[13]=1;
         }
         e->w[30]=cpu(0x8cfce8);
         e->w[31]=buffer(0x8cfd40);
-        e->w[32]=buffer(0x8cfde0);
+        e->w[32]=recordsBuffer;
         e->w[33]=value<std::uint64_t>(cache+0x10);
         e->w[36]=sceneBase;
     }
+    if (recordOk)
+        producer_store(engineFrame,static_cast<std::uint64_t>(static_cast<std::uint32_t>(result)),
+                       recordsBuffer,ownerHandle,record,e?static_cast<std::uint64_t>(e-events.data())+1:0);
     return result;
 }
 bool install(void* target) noexcept {
@@ -394,10 +540,11 @@ void stall_report() noexcept {
      <<" used "<<used.load()<<" dropped "<<dropped.load()<<" stall "<<(sequenceStall?1:0)
      <<" refused "<<sequence_writer().refused()<<" writerErr "<<(sequence_writer().error()?1:0)
      <<" firstSeal "<<(firstSeal?firstSeal-started:0)<<" lastSeal "<<(lastSeal?lastSeal-started:0)
+     <<" link "<<discoveredLinkOffset<<" delta "<<discoveredLinkDelta<<" owners "<<ownerClassCount
      <<" now "<<(GetTickCount64()-started)<<" replay "<<lastSealedReplayTime
      <<" meshFrameSet "<<(meshFrameSet?1:0)<<" meshFrame "<<meshFrame<<" lastDrawEpoch "<<lastDrawEpoch
      <<" startPresent "<<startPresent<<"\n";
-    f<<"dbg";for(int i=0;i<8;++i)f<<" "<<i<<"="<<dbg[i];f<<"\n";
+    f<<"dbg";for(int i=0;i<12;++i)f<<" "<<i<<"="<<dbg[i];f<<"\n";
     f<<"publish calls "<<publishCalls<<" valid "<<publishValid<<" max "<<maxAuthored<<" last "<<lastAuthored
      <<" lastAge "<<(lastAuthoredTick?GetTickCount64()-lastAuthoredTick:0)
      <<" lastAdvance "<<(lastAdvancedTick?GetTickCount64()-lastAdvancedTick:0)<<"\n";
@@ -454,7 +601,9 @@ void tick() noexcept {
             if((mode!="gpu-snapshot-v1" && !matteMode) || allowedCount>allowedHandles.size()) {
                 status("rejected GPU marker format/count");captured=true;return;
             }
-            if(meshMode && allowedCount!=1){status("rejected mesh mode requires one exact owner");captured=true;return;}
+            // Sequence modes inherit the mesh *selection* behavior, but only the
+            // explicit mesh marker requires exactly one fixed owner.
+            if(mode=="matte-meshes-v1" && allowedCount!=1){status("rejected mesh mode requires one exact owner");captured=true;return;}
             for(unsigned i=0;i<allowedCount;++i) if(!(marker>>allowedHandles[i]) || !allowedHandles[i]) {
                 status("rejected GPU marker handles");captured=true;return;
             }
@@ -465,11 +614,12 @@ void tick() noexcept {
             }
             std::string option;
             if(marker>>option) {
-                unsigned offset=0;
-                if(option!="players" || !(marker>>offset) || offset<0x100 || offset>0x4000) {
+                unsigned offset=0,back=0;
+                if(option!="players" || !(marker>>offset) || offset<8 || offset>0x4000 ||
+                   !(marker>>back) || back<8 || back>0x4000) {
                     status("rejected GPU marker option");captured=true;return;
                 }
-                playersOnly=true;ownerFieldOffset=offset;
+                playersOnly=true;ownerFieldOffset=offset;sceneNodeFieldOffset=back;
             }
             if(!playersOnly && allowedCount<1){status("rejected GPU marker format/count");captured=true;return;}
         } catch(...) {status("rejected GPU marker read");captured=true;return;}
@@ -595,6 +745,28 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
         slot.pending=false;
     }
 }
+// One bounded diagnostic dump of the draws that reach shot-aligned capture.
+// It names the reason a draw was not captured and keeps the raw binding
+// fields, so a game update's layout drift is visible instead of silent.
+void draw_probe(const char* reason,const Event* e) noexcept {
+    static unsigned count=0;
+    if(!sequenceV2||count>=48)return;
+    try {
+        std::ofstream f(directory+L"dolly_owner_draws.txt",count?(std::ios::out|std::ios::app):(std::ios::out|std::ios::trunc));
+        if(!f)return;
+        if(!count)f<<"reason frame epoch type method vertices instances first records ids mask packed w112 w113 w114 w115 w116 w121 w122 w123 w125 w126 w127 w128 w129 w131 w132 w133 w134 w27 w28 w29\n";
+        const auto slot=static_cast<unsigned>(e->w[114]);
+        const auto packed=e->w[49+slot*2];
+        f<<reason<<' '<<e->w[4]<<' '<<e->w[135]<<' '<<e->w[7]<<' '<<e->w[8]<<' '<<e->w[9]<<' '<<e->w[10]<<' '<<e->w[11]
+         <<' '<<e->w[25]<<' '<<e->w[46]<<' '<<e->w[45]<<' '<<packed
+         <<' '<<e->w[112]<<' '<<e->w[113]<<' '<<e->w[114]<<' '<<e->w[115]<<' '<<e->w[116]
+         <<' '<<e->w[121]<<' '<<e->w[122]<<' '<<e->w[123]<<' '<<e->w[125]<<' '<<e->w[126]
+         <<' '<<e->w[127]<<' '<<e->w[128]<<' '<<e->w[129]<<' '<<e->w[131]<<' '<<e->w[132]
+         <<' '<<e->w[133]<<' '<<e->w[134]<<' '<<e->w[27]<<' '<<e->w[28]<<' '<<e->w[29]<<'\n';
+        f.flush();
+        ++count;
+    } catch(...) {}
+}
 void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
     lastDrawEpoch=e->w[135];
     if(sequenceMode && (e->w[135]==startPresent || (sequenceV2?(framesSealed>=sequenceCap || sequenceStall ||
@@ -607,6 +779,7 @@ void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
         if(authored<0.0){++dbg[1];return;}
         const long long frameIndex=static_cast<long long>(std::floor(authored*60.0));
         if(frameIndex<=lastSealedFrame){++dbg[1];return;}
+        draw_probe("candidate",e);
     }
     // Diagnostic mesh-size selection only; all ownership and GPU gates still apply.
     if(matteMode && (e->w[8]!=2 || (!meshMode && e->w[9]<10000))){++dbg[2];return;}
@@ -619,40 +792,41 @@ void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
         e->w[116]==0xffffffff || e->w[117]!=1 || e->w[118]!=1){++dbg[5];return;}
     const unsigned slot=static_cast<unsigned>(e->w[114]);
     const auto packed=e->w[49+slot*2];const auto offset=(packed>>32)+e->w[116]+e->w[11]*4;
-    if(!(e->w[45]&(1ULL<<slot)) || (packed&0xffffffff)!=4 || offset%4 || offset>0xffffffff)return;
+    if(!(e->w[45]&(1ULL<<slot)) || (packed&0xffffffff)!=4 || offset%4 || offset>0xffffffff){++dbg[8];draw_probe("packed",e);return;}
     const auto index=offset/4;
-    if(e->w[27]!=32 || e->w[28]!=0 || index>=e->w[29])return;
+    if(e->w[27]!=32 || e->w[28]!=0 || index>=e->w[29]){++dbg[9];draw_probe("record",e);return;}
     const unsigned drawLimit=aggregateMode?AggregateDrawLimit:meshMode?8u:3u;
     const unsigned firstSlot=sequenceMode?colorIndex*drawLimit:0;
     GpuSlot* target=nullptr;for(unsigned i=firstSlot;i<firstSlot+drawLimit;++i)if(!gpuSlots[i].used){target=&gpuSlots[i];break;}
     if(!target){++dbg[6];return;}
-    const unsigned limit=std::min(used.load(std::memory_order_acquire),Capacity);
-    unsigned producer=Capacity;
-    for(unsigned i=limit;i-->0;) {
-        if(!completed[i].load(std::memory_order_acquire))continue;const auto& p=events[i];
-        if(p.w[0]!=1 || !p.w[13] || p.w[10]!=index || p.w[24]!=e->w[25] || p.w[4]!=(meshMode && meshFrameSet?meshProducerFrame:e->w[4]) || p.w[4]!=p.w[5] || p.w[8]!=p.w[29])continue;
-        const bool known=owner_is_player(static_cast<std::uint32_t>(p.w[8]),static_cast<std::uintptr_t>(p.w[6]));
-        bool taken=false;for(auto& candidate:gpuSlots)taken|=candidate.used && candidate.owner==p.w[8];
-        if(known && (meshMode || !taken)){producer=i;break;}
-    }
-    if(producer==Capacity){++dbg[7];return;}
+    const auto producerFrame=static_cast<std::uint64_t>(meshMode && meshFrameSet?meshProducerFrame:e->w[4]);
+    const ProducerEntry* producer=producer_lookup(producerFrame,index,e->w[25]);
+    if(!producer){++dbg[7];draw_probe("noproducer",e);return;}
+    bool taken=false;for(auto& candidate:gpuSlots)taken|=candidate.used && candidate.owner==producer->owner;
+    if(!meshMode && taken){++dbg[7];return;}
     ID3D11ShaderResourceView* srv=nullptr;c->VSGetShaderResources(1,1,&srv);
     ID3D11Resource* resource=nullptr;ID3D11Buffer* records=nullptr;
     if(srv){srv->GetResource(&resource);srv->Release();}
     if(resource){resource->QueryInterface(__uuidof(ID3D11Buffer),reinterpret_cast<void**>(&records));resource->Release();}
     ID3D11Buffer* ids=nullptr;UINT stride=0,base=0;c->IAGetVertexBuffers(slot,1,&ids,&stride,&base);
+    if(!(records && ids && reinterpret_cast<std::uintptr_t>(records)==e->w[25] && reinterpret_cast<std::uintptr_t>(ids)==e->w[46])) {
+        ++dbg[10];draw_probe("identity",e);
+    }
     if(records && ids && reinterpret_cast<std::uintptr_t>(records)==e->w[25] && reinterpret_cast<std::uintptr_t>(ids)==e->w[46]) {
         auto commitStart=[&]{
-            Write start(8);if(start.event) {
-                auto* out=start.event;target->used=true;target->owner=static_cast<std::uint32_t>(events[producer].w[8]);
+            Write start(8);if(!start.event){++dbg[11];draw_probe("noevent",e);}if(start.event) {
+                auto* out=start.event;target->used=true;target->owner=producer->owner;
                 target->startEvent=std::uint64_t(out-events.data())+1;target->drawEvent=std::uint64_t(e-events.data())+1;
-                out->w[6]=target->drawEvent;out->w[7]=producer+1;out->w[8]=index;out->w[9]=target->owner;
+                out->w[6]=target->drawEvent;out->w[7]=producer->event;out->w[8]=index;out->w[9]=target->owner;
                 out->w[10]=e->w[25];out->w[11]=e->w[46];out->w[12]=offset;
+                // The guard validates the exact producer record; keeping it in
+                // the start event decouples the draw from ring pressure.
+                for(unsigned n=0;n<8;++n)out->w[18+n]=producer->record[n];
                 target->pending=target->snapshot.begin(c,records,ids,static_cast<UINT>(offset));
                 out->w[13]=target->pending;out->w[14]=static_cast<std::uint32_t>(target->snapshot.failure);
                 if(target->pending && matteMode && e->w[8]==2 && (meshMode || !mattes[0].attempted)) {
                     pendingMatteDraw=target->drawEvent;pendingMatteSlot=meshMode?static_cast<unsigned>(target-gpuSlots.data()):0;
-                    if(meshMode && !meshFrameSet){meshFrame=e->w[135];meshProducerFrame=events[producer].w[4];meshFrameSet=true;}
+                    if(meshMode && !meshFrameSet){meshFrame=e->w[135];meshProducerFrame=producer->frame;meshFrameSet=true;}
                 }
             }
         };
@@ -825,8 +999,8 @@ void redirect_indexed(ID3D11DeviceContext* c,unsigned n,unsigned instances,unsig
             unsigned position=99;for(UINT i=0;i<desc.OutputParameters;++i){D3D11_SIGNATURE_PARAMETER_DESC param{};
                 if(SUCCEEDED(reflection->GetOutputParameterDesc(i,&param)) && param.SystemValueType==D3D_NAME_POSITION && param.Mask==15)position=param.Register;}
             const auto& gpu=gpuSlots[pendingMatteSlot];const auto& request=events[gpu.startEvent-1];
-            const auto& producer=events[request.w[7]-1];std::array<std::uint32_t,8> expected{};
-            for(unsigned i=0;i<8;++i){expected[i]=static_cast<std::uint32_t>(producer.w[14+i]);out->w[18+i]=expected[i];}
+            std::array<std::uint32_t,8> expected{};
+            for(unsigned i=0;i<8;++i){expected[i]=static_cast<std::uint32_t>(request.w[18+i]);out->w[18+i]=expected[i];}
             const auto id=static_cast<unsigned>(request.w[8]);
             auto patched=vertex_record_guard(bytes.data(),bytes.size(),static_cast<unsigned>(drawEvent.w[124]),position,id,expected);if(patched.empty())throw 2;
             Microsoft::WRL::ComPtr<ID3D11Device> device;c->GetDevice(&device);

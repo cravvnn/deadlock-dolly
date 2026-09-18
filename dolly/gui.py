@@ -751,9 +751,13 @@ class DollyApp:
         layout = self.controller._request(
             "schema_detailed_class_layout " + player_layer.OWNER_LAYOUT_CLASS, timeout=5)
         owner_offset = player_layer.parse_owner_offset(str(layout))
+        entity_layout = self.controller._request(
+            "schema_detailed_class_layout " + player_layer.ENTITY_LAYOUT_CLASS, timeout=5)
+        back_offset = player_layer.parse_scene_node_offset(str(entity_layout))
         frames = self._player_layer_frames(base)
-        player_layer.begin_capture(deployment, owner_offset, frames)
-        LOG.info("Players layer capture armed: %d frames, owner offset %d", frames, owner_offset)
+        player_layer.begin_capture(deployment, owner_offset, frames, back_offset)
+        LOG.info("Players layer capture armed: %d frames, owner offset %d, back link %d",
+                 frames, owner_offset, back_offset)
         folder = base.path.with_suffix("")
         target = folder / layer / (layer + ".mp4")
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -28,15 +28,30 @@ CAPTURE_MODE = "color-sequence-v3"
 OWNER_LAYOUT_CLASS = "CGameSceneNode"
 OWNER_FIELD_NAME = "m_pOwner"
 PLAYER_CLASS_NAME = "CitadelPlayerPawn"
+ENTITY_LAYOUT_CLASS = "C_BaseEntity"
+ENTITY_SCENE_NODE_FIELD = "m_pGameSceneNode"
+SCENE_NODE_FIELD_OFFSET = 816
 MARKER_NAME = "dolly_owner_start.txt"
 STATUS_NAME = "dolly_owner_status.txt"
 BUNDLE_NAME = "dolly_owner_color_frame.bin"
 META_NAME = "dolly_owner_frame_meta.bin"
 BUNDLE_MAGIC = 0x314641524c4f4344
 MIN_FRAMES, MAX_FRAMES = 2, 256
-_MIN_OFFSET, _MAX_OFFSET = 0x100, 0x4000
+# The owner offset is read from the game's schema each run, so it may be small
+# or move after a game update; only an implausible value is refused.
+_MIN_OFFSET, _MAX_OFFSET = 8, 0x4000
 
 _OWNER_FIELD = re.compile(r"^\s*(\+?)\s*(\d+)\s+(\d+)\s+(\S+)\s+(m_\S+)\s+(.+?)\s*$", re.M)
+
+
+def _field_offset(layout_text: str, field: str) -> int:
+    for plus, outer, offset, _kind, name, _type in _OWNER_FIELD.findall(layout_text):
+        if not plus and int(outer) == 0 and name == field:
+            value = int(offset)
+            if _MIN_OFFSET <= value <= _MAX_OFFSET:
+                return value
+            raise RuntimeError("%s is outside the reviewed offset range." % field)
+    raise RuntimeError("The game did not report %s; the player layer is unavailable." % field)
 
 
 def parse_owner_offset(layout_text: str) -> int:
@@ -45,29 +60,30 @@ def parse_owner_offset(layout_text: str) -> int:
     The offset is read from the game itself (``schema_detailed_class_layout
     CGameSceneNode``) so the capture never hardcodes a schema layout.
     """
-    for plus, outer, offset, _kind, name, _type in _OWNER_FIELD.findall(layout_text):
-        if not plus and int(outer) == 0 and name == OWNER_FIELD_NAME:
-            value = int(offset)
-            if _MIN_OFFSET <= value <= _MAX_OFFSET:
-                return value
-            raise RuntimeError("CGameSceneNode.m_pOwner is outside the reviewed offset range.")
-    raise RuntimeError("The game did not report CGameSceneNode.m_pOwner; the player layer is unavailable.")
+    return _field_offset(layout_text, OWNER_FIELD_NAME)
 
 
-def marker_text(owner_offset: int, frames: int) -> str:
+def parse_scene_node_offset(layout_text: str) -> int:
+    """Return C_BaseEntity.m_pGameSceneNode's byte offset (back-link check)."""
+    return _field_offset(layout_text, ENTITY_SCENE_NODE_FIELD)
+
+
+def marker_text(owner_offset: int, frames: int, back_offset: int = SCENE_NODE_FIELD_OFFSET) -> str:
     """Marker for a players-only capture: no fixed handles, class-discovered."""
-    if not _MIN_OFFSET <= owner_offset <= _MAX_OFFSET:
-        raise ValueError("Owner offset is outside the reviewed range.")
+    for value in (owner_offset, back_offset):
+        if not _MIN_OFFSET <= value <= _MAX_OFFSET:
+            raise ValueError("A schema offset is outside the reviewed range.")
     if not MIN_FRAMES <= frames <= MAX_FRAMES:
         raise ValueError("Player layer capture needs 2..%d frames." % MAX_FRAMES)
-    return "%s 0 %d players %d\n" % (CAPTURE_MODE, frames, owner_offset)
+    return "%s 0 %d players %d %d\n" % (CAPTURE_MODE, frames, owner_offset, back_offset)
 
 
-def begin_capture(deployment: Path, owner_offset: int, frames: int) -> Path:
+def begin_capture(deployment: Path, owner_offset: int, frames: int,
+                  back_offset: int = SCENE_NODE_FIELD_OFFSET) -> Path:
     """Write the capture marker beside the deployed native DLL."""
     marker = Path(deployment) / MARKER_NAME
     temporary = marker.with_name(marker.name + ".tmp")
-    temporary.write_text(marker_text(owner_offset, frames), encoding="ascii")
+    temporary.write_text(marker_text(owner_offset, frames, back_offset), encoding="ascii")
     os.replace(temporary, marker)
     return marker
 

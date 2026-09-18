@@ -33,7 +33,12 @@ class OwnerOffsetTests(unittest.TestCase):
 
 class MarkerTests(unittest.TestCase):
     def test_players_only_marker_has_no_fixed_handles(self):
-        self.assertEqual(player_layer.marker_text(408, 120), "color-sequence-v3 0 120 players 408\n")
+        self.assertEqual(player_layer.marker_text(408, 120), "color-sequence-v3 0 120 players 408 816\n")
+
+    def test_scene_node_back_link_offset_is_parsed(self):
+        layout = ("          0          816      C_BaseEntity                             "
+                  "m_pGameSceneNode                         CGameSceneNode*\n")
+        self.assertEqual(player_layer.parse_scene_node_offset(layout), 816)
 
     def test_marker_ranges_are_enforced(self):
         for offset, frames in ((0, 120), (0x8000, 120), (408, 1), (408, 999)):
@@ -41,12 +46,19 @@ class MarkerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     player_layer.marker_text(offset, frames)
 
+    def test_small_owner_offsets_are_legitimate(self):
+        # The September 17 update moved CGameSceneNode.m_pOwner to offset 48.
+        self.assertEqual(player_layer.marker_text(48, 120), "color-sequence-v3 0 120 players 48 816\n")
+        layout = ("          0          48       CGameSceneNode                           "
+                  "m_pOwner                                 CEntityInstance*\n")
+        self.assertEqual(player_layer.parse_owner_offset(layout), 48)
+
     def test_capture_protocol_round_trip(self):
         with tempfile.TemporaryDirectory() as folder:
             deployment = Path(folder)
             marker = player_layer.begin_capture(deployment, 408, 8)
             self.assertEqual(marker.read_text(encoding="ascii"),
-                             "color-sequence-v3 0 8 players 408\n")
+                             "color-sequence-v3 0 8 players 408 816\n")
             self.assertEqual(player_layer.capture_status(deployment), "")
             (deployment / player_layer.STATUS_NAME).write_text("complete\n", encoding="ascii")
             self.assertEqual(player_layer.wait_for_capture(deployment, timeout=1), "complete")

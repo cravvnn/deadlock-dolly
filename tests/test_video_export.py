@@ -566,12 +566,15 @@ class VideoGuiTests(unittest.TestCase):
         self.app.project = self.two_camera_project()
         self.app.controller = Mock()
         self.app.controller.deployment_directory.return_value = deploy
-        self.app.controller._request.return_value = layout
+        entity_layout = ("          0          816      C_BaseEntity                             "
+                         "m_pGameSceneNode                         CGameSceneNode*\n")
+        self.app.controller._request.side_effect = lambda command, timeout=5: (
+            entity_layout if "C_BaseEntity" in command else layout)
         self.app._snapshot = Mock(return_value=Mock())
         result = self.app._start_next_layer_take()
         self.app.controller.apply_layer_mode.assert_not_called()
         marker = (deploy / "dolly_owner_start.txt").read_text(encoding="ascii")
-        self.assertEqual(marker, "color-sequence-v3 0 60 players 408\n")
+        self.assertEqual(marker, "color-sequence-v3 0 60 players 408 816\n")
         options = self.app.video_export.start.call_args.args[0]
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "players" / "players.mp4")
         self.assertEqual(options.layers, ())
