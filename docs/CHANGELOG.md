@@ -16,9 +16,13 @@
 - A take that ends early (a replay returning to the hideout) or a stop request
   finishes the capture with the frames it already sealed instead of waiting out
   its whole budget.
-- Verified live on the current build: a 57-frame fixed-step take captured 16-22
+- Verified live on the current build: a 57-frame fixed-step take captured 16-24
   validated draws per frame, previews show both players with their equipment and
   no world, and the native and Python suites pass (16/16 and 1157 tests).
+- Re-verified against the September 18 client hotfix (Steam buildid 25379491):
+  the pinned client, engine and tier0 modules are unchanged, so the reviewed
+  17b profile still reports the build as supported and a fresh live take
+  captured and encoded cleanly.
 
 ## 0.5.20 alpha — September 17 game compatibility
 
