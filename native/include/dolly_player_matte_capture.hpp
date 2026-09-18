@@ -56,6 +56,29 @@ public:
         const FLOAT black[4]{};c->ClearRenderTargetView(view.Get(),black);
         complete=false;failure=S_OK;return true;
     }
+    // Diagnostic control: paint the target so a readback path can prove it is
+    // not blind before an empty capture is blamed on the redirected draw.
+    void clear(ID3D11DeviceContext* c,const FLOAT rgba[4]) noexcept {
+        if(context.Get()==c && view)c->ClearRenderTargetView(view.Get(),rgba);
+    }
+    // Bounded diagnostic read: copy a small centre region of the target and
+    // count non-zero bytes, so a redirect that writes nothing is visible draw
+    // by draw instead of only after the frame seals.
+    unsigned probe_content(ID3D11DeviceContext* c) noexcept {
+        if(!context || context.Get()!=c || !target || !staging || pending || width<256 || height<256)return 0;
+        D3D11_BOX box{};
+        box.left=width/2-128;box.right=width/2+128;box.top=height/2-128;box.bottom=height/2+128;box.front=0;box.back=1;
+        c->CopySubresourceRegion(staging.Get(),0,0,0,0,target.Get(),0,&box);
+        D3D11_MAPPED_SUBRESOURCE m{};
+        if(FAILED(c->Map(staging.Get(),0,D3D11_MAP_READ,0,&m)))return 0;
+        unsigned nonzero=0;
+        for(unsigned y=0;y<256;++y) {
+            const auto* row=static_cast<const unsigned char*>(m.pData)+std::size_t(y)*m.RowPitch;
+            for(unsigned i=0;i<256*bytesPerPixel;++i)if(row[i])++nonzero;
+        }
+        c->Unmap(staging.Get(),0);
+        return nonzero;
+    }
     // A recycled slot keeps its target; callers must not prepare it again.
     bool reusable_for(ID3D11DeviceContext* c,unsigned w,unsigned h) const noexcept {
         return context.Get()==c && width==w && height==h && !pending && !complete;

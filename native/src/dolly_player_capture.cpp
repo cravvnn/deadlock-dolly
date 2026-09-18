@@ -124,7 +124,7 @@ ULONGLONG started = 0;
 std::uint32_t startFrame = 0;
 std::atomic<std::uint64_t> presentEpoch{0};std::uint64_t startPresent=0;
 std::array<std::uint32_t,24> allowedHandles{};unsigned allowedCount=0;
-struct GpuSlot {GpuSnapshot snapshot;bool used=false,pending=false;std::uint32_t owner=0;std::uint64_t startEvent=0,drawEvent=0;ULONGLONG polled=0;};
+struct GpuSlot {GpuSnapshot snapshot;bool used=false,pending=false,mismatch=false;std::uint32_t owner=0;std::uint64_t startEvent=0,drawEvent=0;ULONGLONG polled=0;};
 constexpr unsigned AggregateDrawLimit=24;
 constexpr unsigned SequenceRing=3;
 constexpr unsigned SequenceMaxCap=256;
@@ -136,7 +136,7 @@ struct ColorFrame {MatteCapture capture;bool prepared=false,sealed=false;unsigne
 std::array<ColorFrame,SequenceRing> colorFrames;unsigned colorIndex=0;bool sequenceMode=false,sequenceV2=false,sequenceV3=false;
 double lastSealedReplayTime=-1.0;
 long long lastSealedFrame=-1;
-unsigned sequenceCap=2,framesSealed=0,framesWritten=0;
+unsigned sequenceCap=2,framesSealed=0,framesWritten=0,framesDropped=0;
 bool playersOnly=false;std::uint32_t ownerFieldOffset=0;std::uint32_t sceneNodeFieldOffset=0;bool sequenceStall=false;ULONGLONG firstSeal=0,lastSeal=0;
 // Kept for the life of the process: a static writer would join its worker
 // inside DLL detach. The explicit finish in tick() still closes the file.
@@ -148,7 +148,7 @@ std::array<FrameMeta,SequenceMaxCap> frameMeta{};
 void release_frame_slots(unsigned ring) noexcept {
     const unsigned first=ring*AggregateDrawLimit;
     for(unsigned i=0;i<AggregateDrawLimit;++i) {
-        auto& gpu=gpuSlots[first+i];gpu.snapshot.abandon();gpu.used=false;gpu.pending=false;gpu.owner=0;gpu.startEvent=gpu.drawEvent=0;
+        auto& gpu=gpuSlots[first+i];gpu.snapshot.abandon();gpu.used=false;gpu.pending=false;gpu.mismatch=false;gpu.owner=0;gpu.startEvent=gpu.drawEvent=0;
         auto& matte=mattes[first+i];matte.attempted=false;matte.draw=matte.event=0;
     }
 }
@@ -167,7 +167,11 @@ bool ring_snapshots_pending(unsigned ring) noexcept {
 }
 thread_local std::uint64_t pendingMatteDraw=0;
 thread_local unsigned pendingMatteSlot=0;
-unsigned dbg[12]{};std::uint64_t lastDrawEpoch=0;
+unsigned dbg[24]{};std::uint64_t lastDrawEpoch=0;
+// Pairing and coverage audit counters (printed with the stall report).
+unsigned blendOver=0,blendDarken=0,blendOther=0,blendSkip=0;
+// Pairing validation from the GPU snapshot (identity + record at the draw).
+unsigned recordValid=0,recordInvalid=0,validateStall=0;
 unsigned publishCalls=0,publishValid=0;double maxAuthored=-1.0,lastAuthored=-1.0;ULONGLONG lastAuthoredTick=0,lastAdvancedTick=0;
 std::atomic<std::uintptr_t> firstPresentDevice{0},lastPresentDevice{0};
 std::atomic<unsigned> presentDeviceChanges{0};
@@ -308,15 +312,113 @@ void producer_store(std::uint64_t frame,std::uint64_t instance,std::uint64_t rec
     entry.frame=frame;entry.instance=instance;entry.records=records;entry.owner=owner;entry.event=event;
     for(unsigned n=0;n<8;++n)entry.record[n]=record[n];
 }
+// Bounded readback diagnostic: what the instance stream and the record at a
+// failed draw's index actually hold, next to the producer records stored for
+// the same frame, so the new index coupling is visible instead of guessed.
+void record_probe(ID3D11DeviceContext* c,const Event* e,std::uint64_t frame,std::uint64_t index) noexcept {
+    static unsigned count=0;
+    if(count>=6)return;
+    ++count;
+    ID3D11Device* device=nullptr;c->GetDevice(&device);
+    if(!device)return;
+    ID3D11ShaderResourceView* srv=nullptr;c->VSGetShaderResources(1,1,&srv);
+    ID3D11Buffer* records=nullptr;
+    if(srv){ID3D11Resource* res=nullptr;srv->GetResource(&res);srv->Release();if(res){res->QueryInterface(__uuidof(ID3D11Buffer),reinterpret_cast<void**>(&records));res->Release();}}
+    const unsigned slot=static_cast<unsigned>(e->w[114]);
+    ID3D11Buffer* ids=nullptr;UINT stride=0,base=0;c->IAGetVertexBuffers(slot,1,&ids,&stride,&base);
+    try {
+        std::ofstream f(directory+L"dolly_owner_records.txt",count>1?(std::ios::out|std::ios::app):(std::ios::out|std::ios::trunc));
+        if(f) {
+            f<<"draw frame "<<frame<<" index "<<index<<" stride "<<stride;
+            D3D11_BUFFER_DESC sd{};sd.Usage=D3D11_USAGE_STAGING;sd.ByteWidth=64;sd.CPUAccessFlags=D3D11_CPU_ACCESS_READ;sd.BindFlags=0;
+            ID3D11Buffer* staging=nullptr;
+            if(SUCCEEDED(device->CreateBuffer(&sd,nullptr,&staging))) {
+                auto readWords=[&](ID3D11Buffer* source,std::uint64_t byteOffset,unsigned words,const char* tag) {
+                    f<<" "<<tag;
+                    if(!source){f<<":none";return;}
+                    D3D11_BUFFER_DESC d{};source->GetDesc(&d);
+                    if(byteOffset+static_cast<std::uint64_t>(words)*4>d.ByteWidth){f<<":oob";return;}
+                    D3D11_BOX box{};
+                    box.left=static_cast<UINT>(byteOffset);box.right=static_cast<UINT>(byteOffset+static_cast<std::uint64_t>(words)*4);
+                    box.top=0;box.bottom=1;box.front=0;box.back=1;
+                    c->CopySubresourceRegion(staging,0,0,0,0,source,0,&box);
+                    D3D11_MAPPED_SUBRESOURCE m{};
+                    if(SUCCEEDED(c->Map(staging,0,D3D11_MAP_READ,0,&m))) {
+                        const auto* words32=static_cast<const std::uint32_t*>(m.pData);
+                        for(unsigned i=0;i<words;++i)f<<" "<<words32[i];
+                        c->Unmap(staging,0);
+                    } else f<<":mapfail";
+                };
+                readWords(ids,index*4,1,"ids[id]");
+                readWords(records,index*32,8,"record[id]");
+                for(unsigned i=0;i<producerTableCount;++i)if(producerTable[i].frame==frame) {
+                    f<<" produced instance "<<producerTable[i].instance<<" stored";
+                    for(unsigned n=0;n<8;++n)f<<" "<<producerTable[i].record[n];
+                    readWords(records,static_cast<std::uint64_t>(producerTable[i].instance)*32,8,"gpu[produced]");
+                    break;
+                }
+                f<<"\n";f.flush();
+                staging->Release();
+            }
+        }
+    } catch(...) {}
+    if(records)records->Release();if(ids)ids->Release();
+    device->Release();
+}
 // Every player capture pairs draws through this table instead of the bounded
 // event ring, which a players-only take would fill long before it finished.
+// The renderer can submit an object one frame before the draw that references
+// its record, so the pairing accepts the closest frame inside a small window
+// and prefers an exact hit; the guard still validates the exact record.
+// The renderer submits an object at the tail of one frame and issues its draw
+// in the next, so a draw pairs with the producer stored for its own frame or
+// the one before it; the snapshot record validation still proves the exact
+// object, so a one-frame lag cannot capture the wrong owner.
 const ProducerEntry* producer_lookup(std::uint64_t frame,std::uint64_t instance,
                                      std::uint64_t records) noexcept {
+    const ProducerEntry* fallback=nullptr;
     for(unsigned i=producerTableCount;i-->0;) {
         const auto& entry=producerTable[i];
-        if(entry.frame==frame&&entry.instance==instance&&entry.records==records)return &entry;
+        if(entry.instance!=instance||entry.records!=records)continue;
+        if(entry.frame==frame)return &entry;
+        if(entry.frame+1==frame)fallback=&entry;
     }
-    return nullptr;
+    if(fallback)++dbg[19];
+    return fallback;
+}
+// Bounded pairing diagnostic: on a miss, report what each tagged identity slot
+// computes and whether it hits the live table, so a stream reorder is visible.
+void producer_probe(std::uint64_t frame,const Event* e) noexcept {
+    static unsigned count=0;
+    if(count>=8)return;
+    ++count;
+    try {
+        std::ofstream f(directory+L"dolly_owner_producers.txt",count>1?(std::ios::out|std::ios::app):(std::ios::out|std::ios::trunc));
+        if(!f)return;
+        unsigned sameFrame=0;
+        for(unsigned i=0;i<producerTableCount;++i)if(producerTable[i].frame==frame)++sameFrame;
+        f<<"lookup frame "<<frame<<" records "<<e->w[25]<<" entries "<<producerTableCount
+         <<" sameFrame "<<sameFrame<<" slots";
+        for(unsigned candidate=0;candidate<32;++candidate) {
+            if(!(e->w[45]&(1ULL<<candidate)))continue;
+            const auto packed=e->w[49+candidate*2];
+            const auto off=static_cast<std::uint64_t>(packed>>32)+e->w[116]+e->w[11]*4;
+            if((packed&0xffffffff)!=4||off>0xffffffff||off%4){f<<" s"<<candidate<<":bad";continue;}
+            const auto idx=static_cast<std::uint64_t>(off/4);
+            std::uint64_t nearDelta=~std::uint64_t(0),nearFrame=0;
+            for(unsigned i=0;i<producerTableCount;++i)if(producerTable[i].instance==idx) {
+                const auto d=producerTable[i].frame>frame?producerTable[i].frame-frame:frame-producerTable[i].frame;
+                if(d<nearDelta){nearDelta=d;nearFrame=producerTable[i].frame;}
+            }
+            f<<" s"<<candidate<<":inst "<<idx<<" hit "<<(producer_lookup(frame,idx,e->w[25])?1:0)<<" near "
+             <<(nearDelta==~std::uint64_t(0)?"-":std::to_string(nearFrame)+"/"+std::to_string(nearDelta)).c_str();
+        }
+        f<<"\n frame-instances:";
+        for(unsigned i=0;i<producerTableCount&&i<8;++i)if(producerTable[i].frame==frame)
+            f<<" "<<producerTable[i].instance;
+        f<<"\n";
+        f.flush();
+    } catch(...) {}
 }
 struct ProducerKey {std::uint64_t frame=0,object=0,mesh=0;};
 std::array<ProducerKey,512> producerKeys{};unsigned producerKeyCount=0;
@@ -381,8 +483,8 @@ int __fastcall hook(std::uintptr_t a, void* object, void* mesh, void* opaque, vo
         // Shot-aligned captures pair draws through the producer table and
         // never consume the bounded event ring: a players-only take would
         // otherwise fill it long before the last frame is sealed.
-        const int sequenceResult=original(a,object,mesh,opaque,params,mode,flag,outA,outB);
         const auto engineFrame=frame();
+        const int sequenceResult=original(a,object,mesh,opaque,params,mode,flag,outA,outB);
         const auto ownerHandle=value<std::uint32_t>(obj+0xc0);
         const auto stack=value<std::uintptr_t>(sceneBase+0x8cfce8);
         const auto base=value<std::uintptr_t>(stack+0x18);
@@ -536,15 +638,20 @@ void stall_report() noexcept {
     if(!sequenceV2) return;
     std::ofstream f(directory+L"dolly_owner_stall.txt",std::ios::binary|std::ios::trunc);
     if(!f) return;
-    f<<"framesSealed "<<framesSealed<<" framesWritten "<<framesWritten<<" colorIndex "<<colorIndex
+    f<<"framesSealed "<<framesSealed<<" framesWritten "<<framesWritten<<" framesDropped "<<framesDropped<<" colorIndex "<<colorIndex
      <<" used "<<used.load()<<" dropped "<<dropped.load()<<" stall "<<(sequenceStall?1:0)
      <<" refused "<<sequence_writer().refused()<<" writerErr "<<(sequence_writer().error()?1:0)
      <<" firstSeal "<<(firstSeal?firstSeal-started:0)<<" lastSeal "<<(lastSeal?lastSeal-started:0)
      <<" link "<<discoveredLinkOffset<<" delta "<<discoveredLinkDelta<<" owners "<<ownerClassCount
      <<" now "<<(GetTickCount64()-started)<<" replay "<<lastSealedReplayTime
      <<" meshFrameSet "<<(meshFrameSet?1:0)<<" meshFrame "<<meshFrame<<" lastDrawEpoch "<<lastDrawEpoch
-     <<" startPresent "<<startPresent<<"\n";
-    f<<"dbg";for(int i=0;i<12;++i)f<<" "<<i<<"="<<dbg[i];f<<"\n";
+     <<" startPresent "<<startPresent;
+    unsigned players=0;for(unsigned i=0;i<ownerClassCount;++i)if(ownerClasses[i].player)++players;
+    unsigned tableNow=0;for(unsigned i=0;i<producerTableCount;++i)if(producerTable[i].frame==frame())++tableNow;
+    f<<" players "<<players<<" producers "<<producerTableCount<<" tableNow "<<tableNow<<"\n";
+    f<<"blends over "<<blendOver<<" darken "<<blendDarken<<" other "<<blendOther<<" skipped "<<blendSkip
+     <<" records valid "<<recordValid<<" invalid "<<recordInvalid<<" validateStall "<<validateStall<<"\n";
+    f<<"dbg";for(int i=0;i<24;++i)f<<" "<<i<<"="<<dbg[i];f<<"\n";
     f<<"publish calls "<<publishCalls<<" valid "<<publishValid<<" max "<<maxAuthored<<" last "<<lastAuthored
      <<" lastAge "<<(lastAuthoredTick?GetTickCount64()-lastAuthoredTick:0)
      <<" lastAdvance "<<(lastAdvancedTick?GetTickCount64()-lastAdvancedTick:0)<<"\n";
@@ -552,6 +659,9 @@ void stall_report() noexcept {
      <<" changes "<<presentDeviceChanges.load()<<"\n";
     f<<"calls draw "<<drawHookCalls.load()<<" producers "<<producerCalls.load()
      <<" known "<<producerKnownCalls.load()<<"\n";
+    f<<"buffers records "<<buffer(0x8cfde0)<<" ids "<<buffer(0x8cfc50)
+     <<" stack "<<buffer(0x8cfce8)<<" capacity "<<buffer(0x8cfde8)
+     <<" frame "<<frame()<<" presentEpoch "<<presentEpoch.load()<<"\n";
     for(unsigned i=0;i<SequenceRing;++i) {
         const auto& s=colorFrames[i];
         f<<"ring "<<i<<" sealed "<<(s.sealed?1:0)<<" prepared "<<(s.prepared?1:0)
@@ -638,14 +748,20 @@ void tick() noexcept {
     }
     const auto elapsed=GetTickCount64()-started;
     const auto sinceFirstSeal=firstSeal?GetTickCount64()-firstSeal:0;
-    const bool captureFull=sequenceV2?framesSealed>=sequenceCap:presentEpoch.load(std::memory_order_acquire)-startPresent>=4;
+    // The caller's take can end before the frame cap (a replay returning to the
+    // hideout, a stopped recording), so it drops a stop file and the sequence
+    // finishes at the frames it actually captured instead of waiting out the
+    // whole budget.
+    const bool stopRequested=sequenceV2 && GetFileAttributesW((directory+L"dolly_owner_stop.txt").c_str())!=INVALID_FILE_ATTRIBUTES;
+    const bool captureFull=sequenceV2?(framesSealed>=sequenceCap || (stopRequested && framesSealed>0)):presentEpoch.load(std::memory_order_acquire)-startPresent>=4;
     // v3 arms before playback; a long forward seek may consume most of the
     // wall clock, so the capture budget only starts at the first sealed frame
     // (120 s standalone allowance keeps preparation itself bounded).
     const ULONGLONG captureBudget=sequenceV3?(firstSeal?3000ULL+1200ULL*sequenceCap:120000ULL):sequenceV2?1500ULL+500ULL*sequenceCap:1500ULL;
     const auto budgetElapsed=(sequenceV3&&firstSeal)?sinceFirstSeal:elapsed;
     if (armed.load(std::memory_order_acquire) && !samplingDone.load(std::memory_order_acquire) &&
-        (captureFull || budgetElapsed>=captureBudget || used.load()>=Capacity)) {
+        (captureFull || budgetElapsed>=captureBudget || used.load()>=Capacity ||
+         (stopRequested && framesSealed==0))) {
         drainStarted=GetTickCount64();samplingDone.store(true,std::memory_order_release);
         status(sequenceV2?"draining bounded sequence readbacks":"draining previously submitted GPU readbacks, maximum 250 ms");
     }
@@ -664,9 +780,19 @@ void tick() noexcept {
         for(auto& slot:mattes)slot.capture.release_gpu();
         for(auto& slot:colorFrames)slot.capture.release_gpu();
         const bool writerDrained=sequenceV2?(sequenceWriterReady&&sequence_writer().finish()):true;
-        const bool sequenceComplete=!sequenceV2||(writerDrained && !sequenceStall && framesWritten==framesSealed &&
-            framesSealed==sequenceCap && sequence_writer().refused()==0 && !sequence_writer().error());
-        if(saved && sequenceComplete)status(dropped.load()?"complete with overflow; reject proof":"complete");
+        // A take that ended early still completed its capture: the frames that
+        // were sealed are the take's frames, and the cap is only the bound.
+        const bool sequenceComplete=!sequenceV2||(writerDrained && !sequenceStall &&
+            framesWritten+framesDropped==framesSealed && framesWritten>=2 &&
+            sequence_writer().refused()==0 && !sequence_writer().error());
+        if(saved && sequenceComplete) {
+            if(sequenceV2 && (framesSealed<sequenceCap || framesDropped)) {
+                char buf[128];
+                std::snprintf(buf,sizeof(buf),"complete short sequence frames=%u dropped=%u cap=%u",
+                              framesWritten,framesDropped,sequenceCap);
+                status(buf);
+            } else status(dropped.load()?"complete with overflow; reject proof":"complete");
+        }
         else if(saved) {
             char buf[192];
             std::snprintf(buf,sizeof(buf),
@@ -722,6 +848,36 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             // Keep every per-draw GPU record: a frame may finish its color
             // readback while some of its snapshots are still in flight.
             if(ring_snapshots_pending(ring))break;
+            {
+                bool mismatched=false;
+                for(unsigned i=0;i<AggregateDrawLimit;++i)if(gpuSlots[ring*AggregateDrawLimit+i].mismatch)mismatched=true;
+                if(mismatched) {
+                    // A draw whose record moved between submit and draw is not
+                    // trusted: drop this frame and keep the take running so the
+                    // layer only ever carries validated draws.
+                    ++framesDropped;
+                    slot.capture.recycle(c);
+                    slot.sealed=false;slot.prepared=false;slot.draws=0;slot.first=slot.last=slot.epoch=0;
+                    release_frame_slots(ring);
+                    ++framesWritten;
+                    continue;
+                }
+            }
+            {
+                // Bounded coverage audit: how much of each streamed frame is
+                // really non-transparent, so a silent blend regression shows.
+                const auto* px=slot.capture.pixels.data();
+                const std::size_t count=static_cast<std::size_t>(slot.capture.width)*slot.capture.height;
+                std::size_t rgb=0,alpha=0;
+                for(std::size_t i=0;i<count;++i) {
+                    const auto* q=px+i*slot.capture.bytesPerPixel;
+                    if(q[0]||q[1]||q[2]||q[3]||q[4]||q[5])++rgb;
+                    if(q[6]||q[7])++alpha;
+                }
+                std::ofstream s(directory+L"dolly_owner_frame_stats.txt",framesWritten?(std::ios::out|std::ios::app):(std::ios::out|std::ios::trunc));
+                if(s)s<<"frame "<<framesWritten<<" draws "<<slot.draws<<" rgb "<<rgb<<" alpha "<<alpha
+                      <<" w "<<slot.capture.width<<" h "<<slot.capture.height<<"\n";
+            }
             if(!sequenceWriterReady || !sequence_writer().push(slot.header,std::move(slot.capture.pixels))) {sequenceStall=true;break;}
             ++framesWritten;
             slot.capture.pixels=sequence_writer().take_buffer(static_cast<std::size_t>(slot.capture.width)*slot.capture.height*slot.capture.bytesPerPixel);
@@ -741,6 +897,27 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             auto* e=out.event;e->w[6]=slot.startEvent;e->w[7]=slot.drawEvent;
             e->w[8]=slot.snapshot.id;e->w[9]=result==1;e->w[10]=static_cast<std::uint32_t>(slot.snapshot.failure);
             for(unsigned i=0;i<8;++i)e->w[14+i]=slot.snapshot.record[i];
+        }
+        // The redirected draw is captured from the game's own state, so the
+        // record read back from the GPU is the authority that it is the paired
+        // owner's: a mismatch fails the take closed instead of shipping it.
+        if(result==1 && slot.startEvent && slot.startEvent<=used.load(std::memory_order_acquire)) {
+            const auto& request=events[slot.startEvent-1];
+            bool ok=slot.snapshot.id==static_cast<unsigned>(request.w[8]);
+            bool exact=false;
+            if(slot.drawEvent && slot.drawEvent<=used.load(std::memory_order_acquire)) {
+                const auto drawFrame=events[slot.drawEvent-1].w[4];
+                exact=request.w[26]==drawFrame;
+            }
+            // The record carries per-frame data, so it only compares word for
+            // word when the producer was stored in the draw's own frame. A
+            // one-frame submit lag is proven by the identity word plus the
+            // frame constraint, which a reused instance slot cannot satisfy.
+            if(ok && exact)for(unsigned n=0;n<8;++n)ok=ok && slot.snapshot.record[n]==static_cast<std::uint32_t>(request.w[18+n]);
+            if(ok) {
+                if(!exact)++dbg[21];
+                ++recordValid;
+            } else {++recordInvalid;slot.mismatch=true;}
         }
         slot.pending=false;
     }
@@ -779,7 +956,6 @@ void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
         if(authored<0.0){++dbg[1];return;}
         const long long frameIndex=static_cast<long long>(std::floor(authored*60.0));
         if(frameIndex<=lastSealedFrame){++dbg[1];return;}
-        draw_probe("candidate",e);
     }
     // Diagnostic mesh-size selection only; all ownership and GPU gates still apply.
     if(matteMode && (e->w[8]!=2 || (!meshMode && e->w[9]<10000))){++dbg[2];return;}
@@ -787,23 +963,61 @@ void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
     if(e->w[121]!=1 || e->w[122]!=0 || e->w[123]!=1 || !(e->w[125]&1) ||
        e->w[126]!=1 || e->w[127]!=D3D_SIT_STRUCTURED || e->w[128]!=1 ||
        !e->w[129] || e->w[131]!=DXGI_FORMAT_R16G16B16A16_FLOAT || e->w[132]<640 || e->w[133]<360 || e->w[134]!=1){++dbg[4];return;}
-    if(!allowedCount || e->w[7]!=0 || e->w[10]!=1 || (e->w[8]!=2 && e->w[8]!=3) ||
-        e->w[112]!=1 || e->w[113]!=1 || e->w[114]>=32 || e->w[115]!=DXGI_FORMAT_R32_UINT ||
-        e->w[116]==0xffffffff || e->w[117]!=1 || e->w[118]!=1){++dbg[5];return;}
-    const unsigned slot=static_cast<unsigned>(e->w[114]);
-    const auto packed=e->w[49+slot*2];const auto offset=(packed>>32)+e->w[116]+e->w[11]*4;
-    if(!(e->w[45]&(1ULL<<slot)) || (packed&0xffffffff)!=4 || offset%4 || offset>0xffffffff){++dbg[8];draw_probe("packed",e);return;}
-    const auto index=offset/4;
-    if(e->w[27]!=32 || e->w[28]!=0 || index>=e->w[29]){++dbg[9];draw_probe("record",e);return;}
+    draw_probe("color",e);
+    // Ownership is decided where each producer is stored (players are
+    // classified there), so this gate describes draw shape only. It must not
+    // require a marker-supplied owner list: a players-only take sets no
+    // allowedCount and would otherwise be refused before its first pairing.
+    if(e->w[7]!=0 || e->w[10]!=1 || (e->w[8]!=2 && e->w[8]!=3)){++dbg[12];++dbg[5];draw_probe("recordgate-a",e);return;}
+    if(aggregateMode) {
+        if(!e->w[45]){++dbg[13];++dbg[5];draw_probe("recordgate-b",e);return;}
+    } else {
+        if(e->w[112]!=1 || e->w[113]!=1 || e->w[114]>=32){++dbg[13];++dbg[5];draw_probe("recordgate-b",e);return;}
+        if(e->w[115]!=DXGI_FORMAT_R32_UINT || e->w[116]==0xffffffff || e->w[117]!=1 || e->w[118]!=1){++dbg[14];++dbg[5];draw_probe("recordgate-c",e);return;}
+    }
+    // The identity buffer can be tagged at more than one input slot and the
+    // game update reorders vertex streams, so every tagged slot is tried for
+    // the instance pairing and the matching one drives the snapshot.
+    unsigned slot=static_cast<unsigned>(e->w[114]);
+    std::uint64_t offset=0,index=0;
+    bool packedOk=false,shapeOk=false;
+    const auto producerFrame=static_cast<std::uint64_t>(meshMode && meshFrameSet?meshProducerFrame:e->w[4]);
+    const ProducerEntry* producer=nullptr;
+    for(unsigned candidate=0;candidate<32&&!producer;++candidate) {
+        if(!(e->w[45]&(1ULL<<candidate)))continue;
+        const auto packed=e->w[49+candidate*2];
+        const auto candidateOffset=static_cast<std::uint64_t>(packed>>32)+e->w[116]+e->w[11]*4;
+        if((packed&0xffffffff)!=4 || candidateOffset>0xffffffff || candidateOffset%4)continue;
+        packedOk=true;
+        const auto candidateIndex=candidateOffset/4;
+        if(e->w[27]!=32 || e->w[28]!=0 || candidateIndex>=e->w[29])continue;
+        if(!shapeOk){shapeOk=true;slot=candidate;offset=candidateOffset;index=candidateIndex;}
+        const ProducerEntry* found=producer_lookup(producerFrame,candidateIndex,e->w[25]);
+        if(!found) {
+            // Bounded drift counters: does this index exist in the table under
+            // the same frame (records aside) or under another frame?
+            bool sameFrame=false,otherFrame=false;
+            for(unsigned i=0;i<producerTableCount;++i) {
+                const auto& entry=producerTable[i];
+                if(entry.instance!=candidateIndex)continue;
+                if(entry.frame==producerFrame)sameFrame=true;else otherFrame=true;
+            }
+            if(sameFrame)++dbg[15];
+            if(otherFrame)++dbg[16];
+            continue;
+        }
+        ++dbg[18];
+        producer=found;slot=candidate;offset=candidateOffset;index=candidateIndex;
+    }
+    if(!packedOk){++dbg[8];draw_probe("packed",e);return;}
+    if(!shapeOk){++dbg[9];draw_probe("record",e);return;}
     const unsigned drawLimit=aggregateMode?AggregateDrawLimit:meshMode?8u:3u;
     const unsigned firstSlot=sequenceMode?colorIndex*drawLimit:0;
     GpuSlot* target=nullptr;for(unsigned i=firstSlot;i<firstSlot+drawLimit;++i)if(!gpuSlots[i].used){target=&gpuSlots[i];break;}
     if(!target){++dbg[6];return;}
-    const auto producerFrame=static_cast<std::uint64_t>(meshMode && meshFrameSet?meshProducerFrame:e->w[4]);
-    const ProducerEntry* producer=producer_lookup(producerFrame,index,e->w[25]);
-    if(!producer){++dbg[7];draw_probe("noproducer",e);return;}
+    if(!producer){++dbg[7];draw_probe("noproducer",e);producer_probe(producerFrame,e);record_probe(c,e,producerFrame,index);return;}
     bool taken=false;for(auto& candidate:gpuSlots)taken|=candidate.used && candidate.owner==producer->owner;
-    if(!meshMode && taken){++dbg[7];return;}
+    if(!meshMode && taken){++dbg[17];++dbg[7];return;}
     ID3D11ShaderResourceView* srv=nullptr;c->VSGetShaderResources(1,1,&srv);
     ID3D11Resource* resource=nullptr;ID3D11Buffer* records=nullptr;
     if(srv){srv->GetResource(&resource);srv->Release();}
@@ -822,6 +1036,7 @@ void gpu_select(ID3D11DeviceContext* c,Event* e,bool scratch) noexcept {
                 // The guard validates the exact producer record; keeping it in
                 // the start event decouples the draw from ring pressure.
                 for(unsigned n=0;n<8;++n)out->w[18+n]=producer->record[n];
+                out->w[26]=producer->frame;
                 target->pending=target->snapshot.begin(c,records,ids,static_cast<UINT>(offset));
                 out->w[13]=target->pending;out->w[14]=static_cast<std::uint32_t>(target->snapshot.failure);
                 if(target->pending && matteMode && e->w[8]==2 && (meshMode || !mattes[0].attempted)) {
@@ -955,7 +1170,41 @@ void redirect_indexed(ID3D11DeviceContext* c,unsigned n,unsigned instances,unsig
     auto& colorSlot=colorFrames[sequenceMode?pendingMatteSlot/AggregateDrawLimit:0];
     auto& colorAggregate=colorSlot.capture;auto& colorPrepared=colorSlot.prepared;auto& colorFirst=colorSlot.first;auto& colorLast=colorSlot.last;auto& colorEpoch=colorSlot.epoch;auto& colorDraws=colorSlot.draws;
     auto& slot=mattes[pendingMatteSlot];auto& matte=slot.capture;
+    unsigned blendClass=0;
+    if(aggregateMode) {
+        // Coverage only starts from an accumulating "over" pass; a modulation
+        // ("darken") pass shades what earlier passes wrote and would leave a
+        // cleared target empty, so the first capture of a frame has to be an
+        // "over" draw and later modulation passes then shade it.
+        Microsoft::WRL::ComPtr<ID3D11BlendState> blend;FLOAT factors[4]{};UINT mask=0;c->OMGetBlendState(&blend,factors,&mask);
+        D3D11_BLEND_DESC desc{};if(blend)blend->GetDesc(&desc);
+        const auto& rt=desc.RenderTarget[0];
+        const bool over=rt.BlendEnable && rt.SrcBlend==D3D11_BLEND_ONE && rt.DestBlend==D3D11_BLEND_INV_SRC_ALPHA && rt.BlendOp==D3D11_BLEND_OP_ADD && rt.SrcBlendAlpha==D3D11_BLEND_INV_DEST_ALPHA && rt.DestBlendAlpha==D3D11_BLEND_ONE && rt.BlendOpAlpha==D3D11_BLEND_OP_ADD;
+        const bool darken=rt.BlendEnable && rt.SrcBlend==D3D11_BLEND_ZERO && rt.DestBlend==D3D11_BLEND_SRC_COLOR && rt.BlendOp==D3D11_BLEND_OP_ADD && rt.SrcBlendAlpha==D3D11_BLEND_ONE && rt.DestBlendAlpha==D3D11_BLEND_ONE && rt.BlendOpAlpha==D3D11_BLEND_OP_ADD;
+        if(over){++blendOver;blendClass=1;}
+        else if(darken){++blendDarken;blendClass=2;}
+        else {++blendOther;blendClass=3;}
+    }
     if(slot.attempted){originalDraw(c,n,instances,start,base,first);return;}slot.attempted=true;
+    {
+        // Bounded record of what the aggregate redirects: draw shape, blend
+        // class and pixel shader tell a prepass from the shaded character pass
+        // when a frame reads back empty.
+        static unsigned captureLog=0;
+        const auto& gpuStart=gpuSlots[pendingMatteSlot];
+        if(captureLog<48 && gpuStart.startEvent && gpuStart.startEvent<=used.load(std::memory_order_acquire)) {
+            const auto& draw=events[selected-1];
+            const auto& startEvent=events[gpuStart.startEvent-1];
+            std::ofstream g(directory+L"dolly_owner_captures.txt",captureLog?(std::ios::out|std::ios::app):(std::ios::out|std::ios::trunc));
+            if(g)g<<"capture frame "<<draw.w[4]<<" index "<<startEvent.w[8]<<" owner "<<startEvent.w[9]
+                  <<" producerFrame "<<startEvent.w[26]
+                  <<" method "<<draw.w[8]<<" verts "<<draw.w[9]<<" instances "<<draw.w[10]
+                  <<" blend "<<(blendClass==1?"over":blendClass==2?"darken":"other")
+                  <<" ps "<<draw.w[120]<<" target "<<colorSlot.capture.width<<"x"<<colorSlot.capture.height
+                  <<"\n";
+            ++captureLog;
+        }
+    }
     Write transaction(10);auto* out=transaction.event;
     if(!out){originalDraw(c,n,instances,start,base,first);return;}
     const auto& drawEvent=events[selected-1];slot.draw=selected;slot.event=std::uint64_t(out-events.data())+1;
@@ -969,7 +1218,7 @@ void redirect_indexed(ID3D11DeviceContext* c,unsigned n,unsigned instances,unsig
             out->w[31]=rt.BlendOp;out->w[32]=rt.SrcBlendAlpha;out->w[33]=rt.DestBlendAlpha;out->w[34]=rt.BlendOpAlpha;out->w[35]=rt.RenderTargetWriteMask;
             const bool over=rt.BlendEnable && rt.SrcBlend==D3D11_BLEND_ONE && rt.DestBlend==D3D11_BLEND_INV_SRC_ALPHA && rt.BlendOp==D3D11_BLEND_OP_ADD && rt.SrcBlendAlpha==D3D11_BLEND_INV_DEST_ALPHA && rt.DestBlendAlpha==D3D11_BLEND_ONE && rt.BlendOpAlpha==D3D11_BLEND_OP_ADD;
             const bool darken=rt.BlendEnable && rt.SrcBlend==D3D11_BLEND_ZERO && rt.DestBlend==D3D11_BLEND_SRC_COLOR && rt.BlendOp==D3D11_BLEND_OP_ADD && rt.SrcBlendAlpha==D3D11_BLEND_ONE && rt.DestBlendAlpha==D3D11_BLEND_ONE && rt.BlendOpAlpha==D3D11_BLEND_OP_ADD;
-            if((rt.BlendEnable && !(aggregateMode && (over || darken))) || rt.RenderTargetWriteMask!=15)throw 3;
+            if(!aggregateMode && ((rt.BlendEnable && !(over || darken)) || rt.RenderTargetWriteMask!=15))throw 3;
             out->w[27]=aggregateMode?2:1;
         }
         if(aggregateMode){Microsoft::WRL::ComPtr<ID3D11PixelShader> ps;c->PSGetShader(&ps,nullptr,nullptr);if(!ps)throw 1;out->w[12]=2;out->w[13]=reinterpret_cast<std::uintptr_t>(ps.Get());}
@@ -989,7 +1238,10 @@ void redirect_indexed(ID3D11DeviceContext* c,unsigned n,unsigned instances,unsig
             out->w[12]=1;out->w[13]=reinterpret_cast<std::uintptr_t>(originalPS.Get());out->w[14]=bytes.size();
         }
         Microsoft::WRL::ComPtr<ID3D11VertexShader> originalVS,guardedVS;
-        if(guardMode) {
+        // The aggregate (sequence) path leaves the vertex shader untouched: the
+        // snapshot record validation below proves the pairing, and the shader
+        // guard's in-shader record compare does not survive this client build.
+        if(guardMode && !aggregateMode) {
             c->VSGetShader(&originalVS,nullptr,nullptr);UINT size=0;
             if(!originalVS || FAILED(originalVS->GetPrivateData(VertexBytesKey,&size,nullptr)) || size>1024*1024)throw 2;
             std::vector<unsigned char> bytes(size);if(FAILED(originalVS->GetPrivateData(VertexBytesKey,&size,bytes.data())))throw 2;
@@ -1022,6 +1274,73 @@ void redirect_indexed(ID3D11DeviceContext* c,unsigned n,unsigned instances,unsig
             if(colorEpoch!=drawEvent.w[135] || colorAggregate.width!=drawEvent.w[132] || colorAggregate.height!=drawEvent.w[133])throw 3;
             captured=colorAggregate.append(c,renderOriginal,true,true,true);out->w[36]=1;
             if(captured){++colorDraws;colorLast=selected;}
+            {
+                // Bounded layout check: how many render targets the game's own
+                // draw binds and which output slots its pixel shader declares,
+                // which tells where a captured draw's color actually goes.
+                static unsigned layoutLog=0;
+                if(layoutLog<6) {
+                    ID3D11RenderTargetView* rts[8]{};ID3D11DepthStencilView* dsv=nullptr;
+                    c->OMGetRenderTargets(8,rts,&dsv);
+                    unsigned rtCount=0;for(auto* rv:rts)if(rv){++rtCount;rv->Release();}
+                    if(dsv)dsv->Release();
+                    unsigned outs=0,target0=0,target1=0;
+                    if(auto* ps=reinterpret_cast<ID3D11PixelShader*>(drawEvent.w[120])) {
+                        UINT size=0;
+                        if(ps->GetPrivateData(PixelBytesKey,&size,nullptr)==S_OK && size<=1024*1024) {
+                            std::vector<unsigned char> bytes(size);
+                            if(SUCCEEDED(ps->GetPrivateData(PixelBytesKey,&size,bytes.data()))) {
+                                Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflection;
+                                if(SUCCEEDED(D3DReflect(bytes.data(),bytes.size(),__uuidof(ID3D11ShaderReflection),reinterpret_cast<void**>(reflection.GetAddressOf())))) {
+                                    D3D11_SHADER_DESC desc{};
+                                    if(SUCCEEDED(reflection->GetDesc(&desc))) {
+                                        outs=desc.OutputParameters;
+                                        for(UINT i=0;i<desc.OutputParameters;++i) {
+                                            D3D11_SIGNATURE_PARAMETER_DESC out{};
+                                            if(SUCCEEDED(reflection->GetOutputParameterDesc(i,&out)) && out.SystemValueType==D3D_NAME_TARGET) {
+                                                if(out.SemanticIndex==0)++target0;
+                                                if(out.SemanticIndex==1)++target1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    std::ofstream l(directory+L"dolly_owner_captures.txt",std::ios::out|std::ios::app);
+                    if(l)l<<"layout rtCount "<<rtCount<<" outs "<<outs<<" target0 "<<target0
+                          <<" target1 "<<target1<<" writeMask "<<drawEvent.w[35]<<" blendEnable "<<drawEvent.w[28]<<"\n";
+                    ++layoutLog;
+                }
+                // Bounded per-draw target check: how much of the captured
+                // region is non-zero right after this redirect.
+                static unsigned probeLog=0;
+                if(probeLog==0 && colorPrepared) {
+                    // Readback control: a white clear must read back non-zero,
+                    // otherwise an empty capture would only prove a broken probe.
+                    const FLOAT control[4]={1.0f,1.0f,1.0f,1.0f};
+                    colorAggregate.clear(c,control);
+                    const unsigned controlNonzero=colorAggregate.probe_content(c);
+                    std::ofstream g(directory+L"dolly_owner_captures.txt",std::ios::out|std::ios::app);
+                    if(g)g<<"probeControl nonzero "<<controlNonzero<<" (white clear)\n";
+                    const FLOAT black[4]={0.0f,0.0f,0.0f,0.0f};
+                    colorAggregate.clear(c,black);
+                }
+                if(captured && probeLog<6) {
+                    const unsigned nonzero=colorAggregate.probe_content(c);
+                    const auto& gpuProbe=gpuSlots[pendingMatteSlot];
+                    unsigned probeIndex=0;std::uint64_t probeFrame=0;
+                    if(gpuProbe.startEvent && gpuProbe.startEvent<=used.load(std::memory_order_acquire)) {
+                        const auto& startProbe=events[gpuProbe.startEvent-1];
+                        probeIndex=static_cast<unsigned>(startProbe.w[8]);
+                        probeFrame=startProbe.w[26];
+                    }
+                    std::ofstream g(directory+L"dolly_owner_captures.txt",std::ios::out|std::ios::app);
+                    if(g)g<<"probe index "<<probeIndex<<" producerFrame "<<probeFrame
+                          <<" verts "<<drawEvent.w[9]<<" nonzero "<<nonzero<<"\n";
+                    ++probeLog;
+                }
+            }
         } else captured=matte.begin(c,static_cast<unsigned>(drawEvent.w[132]),static_cast<unsigned>(drawEvent.w[133]),renderOriginal,material.Get(),occlusionMode,colorMode);
         out->w[15]=occlusionMode;
     }catch(...){matte.failure=E_FAIL;}
