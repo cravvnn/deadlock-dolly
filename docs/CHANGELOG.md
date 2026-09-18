@@ -1,6 +1,6 @@
 # Changes
 
-## 0.5.19 alpha — September 17 game compatibility
+## 0.5.20 alpha — September 17 game compatibility
 
 - Adds the reviewed compatibility profile for the September 17 client builds
   (buildids 25376188 and the 25379260 hotfix, client `d1ee16fc…`). Engine modules
