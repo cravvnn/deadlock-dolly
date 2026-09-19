@@ -1,5 +1,16 @@
 # Changes
 
+## 0.5.22 alpha — Layer takes stay independent
+
+- Recording a World layer first hides the skinned objects, and the players
+  capture never reset those flags: it armed against a scene with no characters,
+  sealed no frames, and a failed take could leave the game showing only the
+  world. The players capture now restores every scene class before it arms, and
+  Stop / restore always shows the classes again; a failed restore raises instead
+  of passing silently.
+- Verified live by reproducing that order exactly: with the World hiding applied
+  first, the players capture sealed 57 frames and encoded its alpha master.
+
 ## 0.5.21 alpha — Players-only layer export
 
 - The **Players** layer records real players plus their weapons, attachments and
@@ -16,10 +27,6 @@
 - A take that ends early (a replay returning to the hideout) or a stop request
   finishes the capture with the frames it already sealed instead of waiting out
   its whole budget.
-- Layer takes no longer hide each other: the players capture restores every scene
-  class before it arms, so a World layer recorded first cannot leave the
-  characters hidden, and Stop / restore always shows the classes again (a failed
-  take used to be able to leave the game showing only the world).
 - Verified live on the current build: a 57-frame fixed-step take captured 16-24
   validated draws per frame, previews show both players with their equipment and
   no world, and the native and Python suites pass (16/16 and 1157 tests).
