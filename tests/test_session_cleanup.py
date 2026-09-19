@@ -107,6 +107,14 @@ class CleanupTests(unittest.TestCase):
         self.recover()
         self.assertFalse(self.session.overlay_dir.exists())
 
+    def test_attach_hide_report_is_removed_with_its_owned_session(self):
+        self.session.restore_gameinfo()
+        report = self.session.overlay_dir / "cvar_unlocker/bin/win64/dolly_hide_report.txt"
+        report.write_text("seen 100 skipped 20\n")
+        self.recover()
+        self.assertFalse(self.session.overlay_dir.exists())
+        self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO.encode())
+
     def test_unknown_user_content_preserves_the_whole_directory(self):
         self.session.restore_gameinfo()
         extra = self.session.overlay_dir / "notes.txt"

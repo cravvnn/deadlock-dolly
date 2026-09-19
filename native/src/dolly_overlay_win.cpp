@@ -1,6 +1,7 @@
 // DirectX 11 in-game editor. This is an overlay on the game's swapchain, not a
 // second window, console-command renderer, or replacement for path evaluation.
 #include "dolly_overlay.hpp"
+#include "dolly_attach.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_visualization.hpp"
 #include "dolly_visualization_runtime.hpp"
@@ -323,11 +324,11 @@ void style_panel() {
     ImGui::StyleColorsDark();
     auto& style = ImGui::GetStyle();
     // Keep the in-game editor on the launcher's slate/teal palette.
-    style.WindowPadding = ImVec2(20, 18);
-    style.FramePadding = ImVec2(12, 8);
-    style.ItemSpacing = ImVec2(10, 8);
+    style.WindowPadding = ImVec2(16, 14);
+    style.FramePadding = ImVec2(10, 5);
+    style.ItemSpacing = ImVec2(8, 6);
     style.ItemInnerSpacing = ImVec2(8, 6);
-    style.WindowRounding = 12;
+    style.WindowRounding = 8;
     style.ChildRounding = 6;
     style.FrameRounding = 5;
     style.PopupRounding = 6;
@@ -335,20 +336,20 @@ void style_panel() {
     style.ScrollbarRounding = 6;
     style.WindowBorderSize = 1;
     style.ChildBorderSize = 1;
-    style.FrameBorderSize = 1;
+    style.FrameBorderSize = 0;
     style.ScrollbarSize = 10;
     style.GrabMinSize = 14;
     style.DisabledAlpha = .45f;
-    style.Colors[ImGuiCol_WindowBg] = panel_color(0x192229, .985f);
-    style.Colors[ImGuiCol_ChildBg] = panel_color(0x11171c);
+    style.Colors[ImGuiCol_WindowBg] = panel_color(0x10171b, .985f);
+    style.Colors[ImGuiCol_ChildBg] = panel_color(0x192329);
     style.Colors[ImGuiCol_PopupBg] = panel_color(0x192229);
-    style.Colors[ImGuiCol_Border] = panel_color(0x35434c);
+    style.Colors[ImGuiCol_Border] = panel_color(0x26343b);
     style.Colors[ImGuiCol_Text] = panel_color(0xe1e8eb);
     style.Colors[ImGuiCol_TextDisabled] = panel_color(0xa6b7c0);
-    style.Colors[ImGuiCol_Button] = panel_color(0x192229);
+    style.Colors[ImGuiCol_Button] = panel_color(0x25313e);
     style.Colors[ImGuiCol_ButtonHovered] = panel_color(0x203039);
     style.Colors[ImGuiCol_ButtonActive] = panel_color(0x233c3b);
-    style.Colors[ImGuiCol_FrameBg] = panel_color(0x192229);
+    style.Colors[ImGuiCol_FrameBg] = panel_color(0x10171c);
     style.Colors[ImGuiCol_FrameBgHovered] = panel_color(0x25313e);
     style.Colors[ImGuiCol_FrameBgActive] = panel_color(0x2f4150);
     style.Colors[ImGuiCol_SliderGrab] = panel_color(0x95dbcb);
@@ -357,7 +358,7 @@ void style_panel() {
     style.Colors[ImGuiCol_Header] = panel_color(0x274e4b);
     style.Colors[ImGuiCol_HeaderHovered] = style.Colors[ImGuiCol_ButtonHovered];
     style.Colors[ImGuiCol_HeaderActive] = style.Colors[ImGuiCol_ButtonActive];
-    style.Colors[ImGuiCol_Separator] = panel_color(0x35434c);
+    style.Colors[ImGuiCol_Separator] = panel_color(0x2b3941);
     style.Colors[ImGuiCol_ScrollbarBg] = panel_color(0x11171c, 0);
     style.Colors[ImGuiCol_ScrollbarGrab] = panel_color(0x354150);
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = panel_color(0x526577);
@@ -562,6 +563,72 @@ void action_button(const char* label, EditorAction action, float width = 0, doub
         ImGui::PopStyleColor(5);
     }
 }
+void roster_label(const EditorRosterEntry& entry, char* out, std::size_t capacity) {
+    const char* hero = attach_hero_name(entry.model_path);
+    if (hero) {
+        std::snprintf(out, capacity, "%s (%u)", hero, entry.entity_index);
+        return;
+    }
+    const char* stem = entry.model_path;
+    for (const char* p = entry.model_path; *p; ++p)
+        if (*p == '/' || *p == '\\')
+            stem = p + 1;
+    char readable[64]{};
+    std::size_t length = 0;
+    while (stem[length] && stem[length] != '.' && length < sizeof(readable) - 1) {
+        readable[length] = stem[length] == '_' ? ' ' : stem[length];
+        ++length;
+    }
+    readable[length] = 0;
+    std::snprintf(out, capacity, "%s (%u)", readable[0] ? readable : "Unknown", entry.entity_index);
+}
+struct SliderRow {
+    bool committed = false, active = false;
+};
+// Label, ImGui slider and a right-aligned readout. Ctrl+click types an exact
+// value (ImGui built-in), which keeps numeric entry available in game.
+SliderRow slider_row(const char* id, const char* label, float* value, float minimum, float maximum,
+                     const char* format, float label_width = 58.0f) {
+    SliderRow result;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%s", label);
+    const float right = ImGui::GetWindowContentRegionMax().x;
+    const float value_width = 55 * panel_scale;
+    const float start = label_width * panel_scale;
+    ImGui::SameLine(start);
+    const float width = std::max(24.0f, right - start - value_width - 10 * panel_scale);
+    ImGui::SetNextItemWidth(width);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 2 * panel_scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 5 * panel_scale);
+    for (const auto color : {ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive,
+                             ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive})
+        ImGui::PushStyleColor(color, ImVec4(0, 0, 0, 0));
+    ImGui::SliderFloat(id, value, minimum, maximum, "", ImGuiSliderFlags_AlwaysClamp);
+    result.committed = ImGui::IsItemDeactivatedAfterEdit();
+    result.active = ImGui::IsItemActive();
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(2);
+    if (!(result.active && ImGui::GetIO().WantTextInput)) {
+        const auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
+        const float y = (lo.y + hi.y) * .5f;
+        const float x0 = lo.x + 4 * panel_scale, x1 = hi.x - 4 * panel_scale;
+        const float t = std::clamp((*value - minimum) / (maximum - minimum), 0.0f, 1.0f);
+        const float x = x0 + (x1 - x0) * t;
+        auto* draw = ImGui::GetWindowDrawList();
+        draw->AddLine(ImVec2(x0, y), ImVec2(x1, y), ImGui::GetColorU32(panel_color(0x0e171d)),
+                      6 * panel_scale);
+        draw->AddLine(ImVec2(x0, y), ImVec2(x, y), ImGui::GetColorU32(panel_color(0x385d59)),
+                      6 * panel_scale);
+        draw->AddRectFilled(ImVec2(x - 2.5f * panel_scale, y - 6 * panel_scale),
+                            ImVec2(x + 2.5f * panel_scale, y + 6 * panel_scale),
+                            ImGui::GetColorU32(panel_color(0x95dbcb)), 2.5f * panel_scale);
+    }
+    char readout[32]{};
+    std::snprintf(readout, sizeof(readout), format, *value);
+    ImGui::SameLine(right - ImGui::CalcTextSize(readout).x);
+    ImGui::TextDisabled("%s", readout);
+    return result;
+}
 void section_title(const char* title, const char* detail = nullptr) {
     ImGui::PushFont(heading_font);
     ImGui::TextUnformatted(title);
@@ -578,7 +645,7 @@ void section_title(const char* title, const char* detail = nullptr) {
 }
 bool begin_panel_card(const char* name) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14 * panel_scale, 12 * panel_scale));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, panel_color(0x11171c));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, panel_color(0x192329));
     return ImGui::BeginChild(name, ImVec2(0, 0),
                              ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY |
                                  ImGuiChildFlags_AlwaysUseWindowPadding,
@@ -700,7 +767,7 @@ void draw_panel(const EditorSnapshot& state) {
     // Open large enough for the fullest page (Export) so nothing needs a manual
     // resize; the window stays resizable and is clamped to the game window. The
     // width stays clear of the guide overlay's right-hand region.
-    ImGui::SetNextWindowSize(ImVec2(std::min(500.0f * panel_scale, maximum.x), maximum.y),
+    ImGui::SetNextWindowSize(ImVec2(std::min(420.0f * panel_scale, maximum.x), maximum.y),
                              ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(380.0f * panel_scale, maximum.x),
                                                std::min(360.0f * panel_scale, maximum.y)),
@@ -756,6 +823,57 @@ void draw_panel(const EditorSnapshot& state) {
         if (ImGui::BeginChild("##editor-content", ImVec2(0, -footer_height),
                               ImGuiChildFlags_None)) {
             ImGui::BeginTabBar("##dolly-pages", ImGuiTabBarFlags_None);
+            if (ImGui::BeginTabItem("Replay")) {
+                ImGui::BeginDisabled(!state.ready || state.busy);
+                if (begin_panel_card("##replay-card")) {
+                    char timing[64]{};
+                    if (state.duration > 0)
+                        std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
+                                      state.duration);
+                    section_title("Replay", timing[0] ? timing : nullptr);
+                    if (state.duration > 0) {
+                        ImGui::ProgressBar(
+                            std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
+                            ImVec2(-1, 4 * panel_scale), "");
+                        ImGui::Spacing();
+                    }
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    ImGui::BeginDisabled(state.camera_count < 2);
+                    action_button("Play shot", EditorAction::PlayPath, half);
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    action_button(state.paused ? "Play replay" : "Pause replay",
+                                  EditorAction::PlayPause, half);
+                    ImGui::Spacing();
+                    action_button("Back 1 second", EditorAction::SeekBack, half);
+                    ImGui::SameLine();
+                    action_button("Forward 1 second", EditorAction::SeekForward, half);
+                    ImGui::Spacing();
+                    ImGui::TextUnformatted("Playback speed");
+                    ImGui::SetNextItemWidth(-1);
+                    char playback_speed[32]{};
+                    std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
+                                  state.playback_speed);
+                    if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
+                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%.3g x", value);
+                            if (ImGui::Selectable(label, value == state.playback_speed))
+                                editor_enqueue(EditorAction::SetPlaybackSpeed, value);
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Replay speed. Applies immediately to a playing or paused replay and to the next Play shot. Stop / restore returns to 1x.");
+                }
+                end_panel_card();
+                ImGui::TextWrapped(
+                    "Choose replays and manage saved shots on the desktop Replay page.");
+                ImGui::EndDisabled();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Camera")) {
                 ImGui::BeginDisabled(!state.ready || state.busy);
                 if (begin_panel_card("##cameras-card")) {
@@ -819,48 +937,210 @@ void draw_panel(const EditorSnapshot& state) {
                                             unsigned(guides->camera_count()));
                 }
                 end_panel_card();
-                if (begin_panel_card("##replay-card")) {
-                    char timing[64]{};
-                    if (state.duration > 0)
-                        std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
-                                      state.duration);
-                    section_title("Replay", timing[0] ? timing : nullptr);
-                    if (state.duration > 0) {
-                        ImGui::ProgressBar(
-                            std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
-                            ImVec2(-1, 4 * panel_scale), "");
-                        ImGui::Spacing();
+                if (begin_panel_card("##shot-position-card")) {
+                    section_title("Between cameras");
+                    ImGui::BeginDisabled(!state.camera_count || state.playing);
+                    static float seek_time = 0;
+                    static double last_playhead = -1, last_duration = -1;
+                    if (last_playhead != state.playhead || last_duration != state.duration) {
+                        seek_time = float(std::clamp(state.playhead, 0.0, state.duration));
+                        last_playhead = state.playhead;
+                        last_duration = state.duration;
                     }
-                    const float half =
-                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                    ImGui::BeginDisabled(state.camera_count < 2);
-                    action_button("Play shot", EditorAction::PlayPath, half);
+                    slider_row("##shot-position", "Time", &seek_time, 0,
+                               float(std::max(state.duration, .001)), "%.3f s");
+                    seek_time = std::clamp(seek_time, 0.0f, float(state.duration));
+                    action_button("Seek here", EditorAction::SeekShot,
+                                  ImGui::GetContentRegionAvail().x, double(seek_time), true);
+                    ImGui::TextWrapped(
+                        "Choose a shot time, then Seek here to pause the replay at its camera position, rotation and framing.");
+                    ImGui::TextDisabled("Fly to adjust; Capture camera here to save.");
                     ImGui::EndDisabled();
-                    ImGui::SameLine();
-                    action_button(state.paused ? "Play replay" : "Pause replay",
-                                  EditorAction::PlayPause, half);
-                    ImGui::Spacing();
-                    action_button("Back 1 second", EditorAction::SeekBack, half);
-                    ImGui::SameLine();
-                    action_button("Forward 1 second", EditorAction::SeekForward, half);
-                    ImGui::Spacing();
-                    ImGui::TextUnformatted("Playback speed");
+                }
+                end_panel_card();
+                if (begin_panel_card("##attach-card")) {
+                    section_title("Attach camera");
+                    ImGui::TextDisabled("Player point of view or weapon camera");
+                    ImGui::BeginDisabled(!state.attach_available);
+                    EditorRoster roster{};
+                    const bool roster_ok = editor_roster_snapshot(roster);
+                    char player_label[112]{};
+                    if (roster_ok && roster.count && state.attach_target_index < roster.count) {
+                        roster_label(roster.players[state.attach_target_index], player_label,
+                                     sizeof(player_label));
+                    } else {
+                        std::snprintf(player_label, sizeof(player_label), "Select a player...");
+                    }
                     ImGui::SetNextItemWidth(-1);
-                    char playback_speed[32]{};
-                    std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
-                                  state.playback_speed);
-                    if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
-                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
-                            char label[32]{};
-                            std::snprintf(label, sizeof(label), "%.3g x", value);
-                            if (ImGui::Selectable(label, value == state.playback_speed))
-                                editor_enqueue(EditorAction::SetPlaybackSpeed, value);
+                    if (ImGui::BeginCombo("##attach-player", player_label)) {
+                        if (ImGui::Selectable("Free path", !state.attach_selected))
+                            editor_enqueue(EditorAction::AttachReset);
+                        ImGui::Separator();
+                        if (!roster_ok || !roster.count) {
+                            ImGui::TextDisabled("No players in the loaded replay");
+                        } else {
+                            const std::uint32_t count = std::min<std::uint32_t>(
+                                roster.count, std::uint32_t(kEditorRosterPlayers));
+                            for (std::uint32_t index = 0; index < count; ++index) {
+                                char name[112]{};
+                                roster_label(roster.players[index], name, sizeof(name));
+                                if (ImGui::Selectable(name, index == state.attach_target_index))
+                                    editor_enqueue(EditorAction::SetAttachTarget, double(index));
+                                if (index == state.attach_target_index)
+                                    ImGui::SetItemDefaultFocus();
+                            }
                         }
                         ImGui::EndCombo();
                     }
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::BeginCombo("##attach-point", state.attach_point == 2 ? "Point: Bone"
+                                                            : state.attach_point == 1
+                                                                ? "Point: Weapon"
+                                                                : "Point: Eyes")) {
+                        if (ImGui::Selectable("Eyes", state.attach_point == 0))
+                            editor_enqueue(EditorAction::SetAttachPoint, 0);
+                        if (ImGui::Selectable("Weapon", state.attach_point == 1))
+                            editor_enqueue(EditorAction::SetAttachPoint, 1);
+                        if (ImGui::Selectable("Bone", state.attach_point == 2))
+                            editor_enqueue(EditorAction::SetAttachPoint, 2);
+                        ImGui::EndCombo();
+                    }
+                    if (state.attach_point == 2) {
+                        EditorBones bones{};
+                        const bool available =
+                            editor_bones_snapshot(bones) && roster_ok &&
+                            state.attach_target_index < roster.count &&
+                            bones.handle == roster.players[state.attach_target_index].handle &&
+                            bones.model == roster.players[state.attach_target_index].model;
+                        ImGui::SetNextItemWidth(-1);
+                        if (ImGui::BeginCombo("Bone##attach-bone", state.attach_bone)) {
+                            if (available) {
+                                for (std::uint32_t index = 0; index < bones.count; ++index) {
+                                    char name[65]{};
+                                    std::memcpy(name, bones.names[index], 64);
+                                    if (ImGui::Selectable(
+                                            name, std::strcmp(name, state.attach_bone) == 0)) {
+                                        CameraPose version{};
+                                        version[0] = bones.sequence;
+                                        editor_enqueue(EditorAction::SetAttachBone, double(index),
+                                                       &version);
+                                    }
+                                }
+                            } else
+                                ImGui::TextDisabled("Resolving this player's bones...");
+                            ImGui::EndCombo();
+                        }
+                        if (available && bones.total > bones.count)
+                            ImGui::TextDisabled(
+                                "Showing %u of %u bones; type other names on desktop.", bones.count,
+                                bones.total);
+                    }
+                    ImGui::TextDisabled("Offsets");
+                    {
+                        // Slider rows commit at the end of an edit, not per frame.
+                        static float attach_draft[6]{};
+                        static bool attach_editing = false;
+                        if (!attach_editing) {
+                            for (int index = 0; index < 6; ++index)
+                                attach_draft[index] = float(state.attach_offsets[index]);
+                        }
+                        static const char* const kAttachAxis[6] = {"X",     "Y",   "Z",
+                                                                   "Pitch", "Yaw", "Roll"};
+                        bool attach_commit = false, attach_active = false;
+                        for (int index = 0; index < 4; ++index) {
+                            char id[32]{};
+                            std::snprintf(id, sizeof(id), "##attach-offset-%d", index);
+                            const bool position = index < 3;
+                            const SliderRow row =
+                                slider_row(id, kAttachAxis[index], &attach_draft[index],
+                                           position ? -10.0f : -180.0f, position ? 10.0f : 180.0f,
+                                           position ? "%.2f" : "%.1f");
+                            attach_active = attach_active || row.active;
+                            attach_commit = attach_commit || row.committed;
+                        }
+                        if (ImGui::CollapsingHeader("Rotation & transition")) {
+                            for (int index = 4; index < 6; ++index) {
+                                char id[32]{};
+                                std::snprintf(id, sizeof(id), "##attach-offset-%d", index);
+                                const auto row =
+                                    slider_row(id, kAttachAxis[index], &attach_draft[index], -180,
+                                               180, "%.1f");
+                                attach_active |= row.active;
+                                attach_commit |= row.committed;
+                            }
+                            static float source_blend = 0;
+                            static bool blend_editing = false;
+                            if (!blend_editing)
+                                source_blend = float(state.source_blend);
+                            const auto blend_row = slider_row("##source-blend", "Blend in",
+                                                              &source_blend, 0.0f, 10.0f, "%.2f s");
+                            blend_editing = blend_row.active;
+                            if (blend_row.committed)
+                                editor_enqueue(EditorAction::SetSourceBlend, source_blend);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip(
+                                    "0 keeps a cut. An eased blend finishes at this view's arrival time, starting no earlier than the previous view. Try 0.5 seconds.");
+                        }
+                        attach_editing = attach_active;
+                        if (attach_commit) {
+                            CameraPose offsets{};
+                            for (int index = 0; index < 6; ++index)
+                                offsets[index] = attach_draft[index];
+                            editor_enqueue(EditorAction::SetAttachOffsets, 0, &offsets);
+                        }
+                        static float attach_smoothing = 0.0f;
+                        static bool smoothing_editing = false;
+                        if (!smoothing_editing)
+                            attach_smoothing =
+                                std::clamp(float(state.attach_smoothing), 0.0f, 5.0f);
+                        const SliderRow smoothing_row =
+                            slider_row("##attach-smoothing", "Smooth", &attach_smoothing, 0.0f,
+                                       1.0f, "%.2f s");
+                        smoothing_editing = smoothing_row.active;
+                        if (smoothing_row.committed)
+                            editor_enqueue(EditorAction::SetAttachSmoothing,
+                                           double(attach_smoothing));
+                        ImGui::TextDisabled("Drag to adjust; Ctrl+click a slider to type.");
+                    }
+                    bool hide = state.attach_hide;
+                    if (compact_checkbox("Hide this hero", &hide, panel_scale))
+                        editor_enqueue(EditorAction::SetAttachHide, hide ? 1 : 0);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
-                            "Replay speed. Applies immediately to a playing or paused replay and to the next Play shot. Stop / restore returns to 1x.");
+                            "Hides this hero's identified body draws in preview and recordings.");
+                    ImGui::Separator();
+                    const float attach_half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    const bool attach_ready = state.attach_selected && state.manual_active &&
+                                              state.paused && !state.playing;
+                    ImGui::BeginDisabled(!attach_ready);
+                    action_button(state.attach_preview ? "Detach" : "Attach here",
+                                  EditorAction::AttachPreview, attach_half,
+                                  state.attach_preview ? 0 : 1, !state.attach_preview);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Live preview: the camera follows this player. Start Fly camera first; WASD and the mouse edit the offsets.");
+                    ImGui::SameLine();
+                    action_button("Snap", EditorAction::AttachSnap, attach_half);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Store offsets that reproduce the current free camera pose. Fly to frame, then Snap.");
+                    ImGui::EndDisabled();
+                    if (!state.attach_selected)
+                        ImGui::TextDisabled("Choose a player to preview or snap.");
+                    else if (!state.manual_active)
+                        ImGui::TextDisabled("Start Fly camera to preview or snap.");
+                    else if (state.attach_preview)
+                        ImGui::TextDisabled("Preview active; fly to edit the offsets live.");
+                    else
+                        ImGui::TextDisabled("Fly to frame, then Snap, then Attach here.");
+                    ImGui::Spacing();
+                    action_button("Cycle target", EditorAction::AttachCycleTarget, attach_half, 1);
+                    ImGui::SameLine();
+                    action_button("Reset", EditorAction::AttachReset, attach_half);
+                    ImGui::EndDisabled();
+                    if (!state.attach_available)
+                        ImGui::TextDisabled("Load a supported replay to choose a camera target.");
                 }
                 end_panel_card();
                 if (begin_panel_card("##flight-card")) {
@@ -914,43 +1194,48 @@ void draw_panel(const EditorSnapshot& state) {
                     ImGui::EndDisabled();
                 }
                 end_panel_card();
-                ImGui::Spacing();
-                ImGui::BeginDisabled(state.playing);
-                action_button("Clear ragdolls", EditorAction::DestroyRagdolls,
-                              ImGui::GetContentRegionAvail().x);
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Clear accumulated ragdolls after repeated shot playback.");
-                ImGui::Spacing();
-                ImGui::BeginDisabled(state.playing);
-                action_button("Toggle Citadel glow", EditorAction::ToggleCitadelGlow,
-                              ImGui::GetContentRegionAvail().x);
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Toggle hero, trooper, boss and health-bar glow together.");
-                ImGui::Spacing();
-                ImGui::BeginDisabled(state.playing);
-                action_button("Toggle health bars", EditorAction::ToggleHealthbars,
-                              ImGui::GetContentRegionAvail().x);
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Hide or restore the health bars. Bar glow stays with Toggle Citadel glow.");
-                ImGui::Spacing();
-                ImGui::BeginDisabled(state.playing);
-                action_button("Near player opacity fix", EditorAction::NearPlayerOpacityFix,
-                              ImGui::GetContentRegionAvail().x);
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "Force full opacity on the near-player camera fades used while editing.");
-                ImGui::Spacing();
                 ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Lens")) {
+            if (ImGui::BeginTabItem("Look")) {
                 ImGui::BeginDisabled(!state.ready || state.busy);
+                if (begin_panel_card("##appearance-card")) {
+                    section_title("Scene appearance", "Replay view");
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    action_button("Clear ragdolls", EditorAction::DestroyRagdolls,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Clear accumulated ragdolls after repeated shot playback.");
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    action_button("Toggle Citadel glow", EditorAction::ToggleCitadelGlow,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Toggle hero, trooper, boss and health-bar glow together.");
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    action_button("Toggle health bars", EditorAction::ToggleHealthbars,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Hide or restore the health bars. Bar glow stays with Toggle Citadel glow.");
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    action_button("Near player opacity fix", EditorAction::NearPlayerOpacityFix,
+                                  ImGui::GetContentRegionAvail().x);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Force full opacity on the near-player camera fades used while editing.");
+                    ImGui::Spacing();
+                }
+                end_panel_card();
                 if (begin_panel_card("##dof-card")) {
                     section_title("Native Depth of Field", "Dolly");
                     ImGui::BeginDisabled(!state.dof_available || !state.paused || state.playing ||
@@ -1016,8 +1301,7 @@ void draw_panel(const EditorSnapshot& state) {
                                          state.playing || !state.camera_count);
                     bool citadel_enabled = state.citadel_dof_enabled;
                     if (compact_checkbox("Enable DOF", &citadel_enabled, panel_scale))
-                        editor_enqueue(EditorAction::SetCitadelDofEnabled,
-                                       citadel_enabled ? 1 : 0);
+                        editor_enqueue(EditorAction::SetCitadelDofEnabled, citadel_enabled ? 1 : 0);
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                                         ImVec2(6 * panel_scale, 3 * panel_scale));
                     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
@@ -1043,7 +1327,8 @@ void draw_panel(const EditorSnapshot& state) {
                     };
                     const auto slider_to_focus = [kFocusMaximum](double value) {
                         return std::exp(std::clamp(value, 0.0, 1.0) *
-                                        std::log(1.0 + kFocusMaximum)) - 1.0;
+                                        std::log(1.0 + kFocusMaximum)) -
+                               1.0;
                     };
                     static float focus_draft = 0;
                     static bool focus_editing = false;
@@ -1086,6 +1371,33 @@ void draw_panel(const EditorSnapshot& state) {
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Export")) {
+                if (begin_panel_card("##export-camera")) {
+                    section_title("Camera source", "Saved shot");
+                    if (!state.camera_count) {
+                        ImGui::TextWrapped("Capture at least two camera views to record a shot.");
+                    } else if (state.attach_selected) {
+                        EditorRoster roster{};
+                        char target[112] = "Saved player";
+                        if (editor_roster_snapshot(roster) &&
+                            state.attach_target_index < roster.count)
+                            roster_label(roster.players[state.attach_target_index], target,
+                                         sizeof(target));
+                        ImGui::TextWrapped("View %u: Attach - %s", state.selected_camera + 1,
+                                           target);
+                        if (state.attach_point == 2)
+                            ImGui::TextWrapped("Bone: %s", state.attach_bone);
+                        else
+                            ImGui::TextUnformatted(state.attach_point == 1 ? "Point: Weapon"
+                                                                           : "Point: Eyes");
+                        ImGui::TextDisabled("%u of %u views use attachment", state.attach_keys,
+                                            state.shot_keys);
+                    } else {
+                        ImGui::TextWrapped("View %u: Free path", state.selected_camera + 1);
+                    }
+                    ImGui::TextWrapped(
+                        "Export uses saved sources and offsets, including edits made while previewing.");
+                }
+                end_panel_card();
                 // The in-game controls mirror the desktop values through a
                 // Python config round trip (~100 ms). Apply a clicked value
                 // immediately so a control cannot flicker back to the
@@ -1341,6 +1653,8 @@ void render_overlay(IDXGISwapChain* chain) {
         player_capture::install_layout_hook(device);
     if (player_capture::draw_hooks_requested())
         player_capture::draw_hooks_result(depth::install_scene_hooks(device, immediate));
+    if (player_capture::producer_hook_requested())
+        player_capture::install_producer_hook();
     // Scene depth is consumed once per Present here, outside ReShade's add-on
     // event callbacks: ReShade gates those events while it detects high
     // non-local network traffic (its online depth protection), but Dolly
@@ -1372,8 +1686,8 @@ void render_overlay(IDXGISwapChain* chain) {
             }
             if (depth_width && depth_height) {
                 depth_live.publish(reinterpret_cast<std::uintptr_t>(device),
-                                   reinterpret_cast<std::uintptr_t>(immediate),
-                                   depth_width, depth_height);
+                                   reinterpret_cast<std::uintptr_t>(immediate), depth_width,
+                                   depth_height);
                 // Depth observation also feeds ReShade's DEPTH semantic while
                 // its runtime is active, so depth-dependent effects work
                 // without ReShade's disabled automatic graphics hooks.
@@ -1386,8 +1700,8 @@ void render_overlay(IDXGISwapChain* chain) {
                     depth_live.note_hooks(true);
                 depth::scene_note_hooks(depth_live.hooks());
                 if (depth_live.needs_tracker()) {
-                    auto tracker = std::make_shared<depth::SceneTracker>(
-                        device, depth_live.width(), depth_live.height());
+                    auto tracker = std::make_shared<depth::SceneTracker>(device, depth_live.width(),
+                                                                         depth_live.height());
                     depth_tracker = tracker;
                     depth::set_scene_tracker(tracker);
                     depth_live.note_tracker(tracker != nullptr);

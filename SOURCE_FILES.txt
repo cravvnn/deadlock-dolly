@@ -346,3 +346,14 @@ docs/internal/UPDATING.md
 dolly/release_launcher.py
 dolly/gui_theme.py
 tests/test_release_launcher.py
+dolly/attach_camera.py
+tools/derive_attach_fields.py
+tests/test_attach_camera.py
+native/include/dolly_attach.hpp
+native/include/dolly_hide.hpp
+native/src/dolly_attach.cpp
+native/tests/attach_tests.cpp
+tests/test_attach_shot.py
+native/src/dolly_attach_runtime.hpp
+native/tests/fixtures/attach-shot.bin
+tests/test_rotation_curve.py

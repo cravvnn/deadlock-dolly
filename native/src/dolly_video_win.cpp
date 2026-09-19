@@ -408,19 +408,19 @@ void fail_text(Session& s, HRESULT hr, const std::wstring& message) noexcept {
 }
 std::wstring capture_diagnostic(const Session& s) {
     wchar_t text[448]{};
-    std::swprintf(text, 448,
-                  L"capture attempts=%llu no-lock=%llu calls=%llu not-ready=%llu preplay=%llu "
-                  L"scene-skip=%llu submitted=%llu dropped=%llu produced=%llu",
-                  static_cast<unsigned long long>(gCaptureAttempts.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(gCaptureNoLock.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(s.capture_calls.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(s.capture_not_ready.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(s.capture_preplay.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(
-                      s.capture_scene_skips.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(s.capture_submitted.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(s.capture_dropped.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long long>(s.capture_produced.load(std::memory_order_relaxed)));
+    std::swprintf(
+        text, 448,
+        L"capture attempts=%llu no-lock=%llu calls=%llu not-ready=%llu preplay=%llu "
+        L"scene-skip=%llu submitted=%llu dropped=%llu produced=%llu",
+        static_cast<unsigned long long>(gCaptureAttempts.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(gCaptureNoLock.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_calls.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_not_ready.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_preplay.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_scene_skips.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_submitted.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_dropped.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(s.capture_produced.load(std::memory_order_relaxed)));
     return text;
 }
 const wchar_t* codec_token(Codec codec) noexcept {
@@ -614,9 +614,12 @@ struct Child {
 enum class WriteStage { color_pipe, depth_sequence, depth_pipe };
 const wchar_t* write_stage_name(WriteStage stage) noexcept {
     switch (stage) {
-    case WriteStage::color_pipe: return L"the color FFmpeg pipe";
-    case WriteStage::depth_sequence: return L"the depth sequence writer";
-    case WriteStage::depth_pipe: return L"the depth FFmpeg pipe";
+    case WriteStage::color_pipe:
+        return L"the color FFmpeg pipe";
+    case WriteStage::depth_sequence:
+        return L"the depth sequence writer";
+    case WriteStage::depth_pipe:
+        return L"the depth FFmpeg pipe";
     }
     return L"the encoder";
 }
@@ -638,8 +641,8 @@ std::wstring write_failure_detail(WriteStage stage, HRESULT hr, const Child& col
     }
     return detail;
 }
-bool spawn_encoder(Session& s, Child& child, const std::wstring& command, const std::wstring& output,
-                   const wchar_t* label, std::wstring& error) {
+bool spawn_encoder(Session& s, Child& child, const std::wstring& command,
+                   const std::wstring& output, const wchar_t* label, std::wstring& error) {
     if (GetFileAttributesW(output.c_str()) != INVALID_FILE_ATTRIBUTES) {
         error = L"The output file already exists. Choose a new filename.";
         return false;
@@ -791,8 +794,8 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                             ? L"Paired depth output could not be written; recording stopped."
                             : L"FFmpeg stopped accepting frames. Check the encoder and "
                               L"output path.";
-                    message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) +
-                               L")";
+                    message +=
+                        L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
                     fail_text(*s, hr, message);
                     break;
                 }
@@ -822,11 +825,9 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             s->wake.notify_all();
             if (FAILED(hr)) {
                 std::wstring message =
-                    s->depth_enabled
-                        ? L"Paired depth output could not be written while finishing."
-                        : L"FFmpeg stopped accepting frames while finishing.";
-                message +=
-                    L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
+                    s->depth_enabled ? L"Paired depth output could not be written while finishing."
+                                     : L"FFmpeg stopped accepting frames while finishing.";
+                message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
                 fail_text(*s, hr, message);
                 break;
             }
@@ -839,8 +840,8 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
                 const auto detail = capture_diagnostic(*s);
-                fail_text(*s, E_FAIL, L"Recording ended before any game frame was captured. (" +
-                                          detail + L")");
+                fail_text(*s, E_FAIL,
+                          L"Recording ended before any game frame was captured. (" + detail + L")");
             } else {
                 const DWORD wait = WaitForSingleObject(child.process, 120000);
                 DWORD code = 1;
@@ -858,18 +859,18 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 }
             }
         }
-        if (finalized && depth_child.process && !s->cancel.load() &&
-            SUCCEEDED(s->error.load())) {
+        if (finalized && depth_child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             const DWORD wait = WaitForSingleObject(depth_child.process, 120000);
             DWORD code = 1;
             GetExitCodeProcess(depth_child.process, &code);
             if (wait != WAIT_OBJECT_0 || code != 0) {
                 const auto tail = read_log_tail(depth_child.log);
-                fail_text(*s, E_FAIL,
-                          tail.empty()
-                              ? std::wstring(
-                                    L"The depth master could not be encoded. This FFmpeg build must support ProRes 4444.")
-                              : tail);
+                fail_text(
+                    *s, E_FAIL,
+                    tail.empty()
+                        ? std::wstring(
+                              L"The depth master could not be encoded. This FFmpeg build must support ProRes 4444.")
+                        : tail);
                 finalized = false;
             }
         }
@@ -901,10 +902,11 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
-            std::swprintf(message, 256,
-                          L"Depth sequence could not be finalized with the encoded color frame count (color frames %llu, depth skips %llu).",
-                          static_cast<unsigned long long>(s->written.load()),
-                          static_cast<unsigned long long>(s->depth_skips.load()));
+            std::swprintf(
+                message, 256,
+                L"Depth sequence could not be finalized with the encoded color frame count (color frames %llu, depth skips %llu).",
+                static_cast<unsigned long long>(s->written.load()),
+                static_cast<unsigned long long>(s->depth_skips.load()));
             fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
@@ -1027,8 +1029,9 @@ void encode(std::shared_ptr<Session> s) noexcept {
             if (FAILED(hr))
                 fail(*s, hr, L"The MP4 file could not be finalized. Check available disk space.");
         } else if (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load())) {
-            fail_text(*s, E_FAIL, L"Recording ended before any game frame was captured. (" +
-                                      capture_diagnostic(*s) + L")");
+            fail_text(*s, E_FAIL,
+                      L"Recording ended before any game frame was captured. (" +
+                          capture_diagnostic(*s) + L")");
         }
     } catch (...) {
         fail(*s, E_OUTOFMEMORY,
@@ -1052,10 +1055,11 @@ void encode(std::shared_ptr<Session> s) noexcept {
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
-            std::swprintf(message, 256,
-                          L"Depth sequence could not be finalized with the encoded color frame count (color frames %llu, depth skips %llu).",
-                          static_cast<unsigned long long>(s->written.load()),
-                          static_cast<unsigned long long>(s->depth_skips.load()));
+            std::swprintf(
+                message, 256,
+                L"Depth sequence could not be finalized with the encoded color frame count (color frames %llu, depth skips %llu).",
+                static_cast<unsigned long long>(s->written.load()),
+                static_cast<unsigned long long>(s->depth_skips.load()));
             fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
@@ -1383,35 +1387,6 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         s.capture_not_ready.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    if ((s.depth_enabled || s.shot_only) && (!std::isfinite(replay_time) || replay_time < 0)) {
-        // A prepared recording starts before its shot plays. Pre-roll frames
-        // have no replay time and cannot be paired with depth or aligned with
-        // the other layer takes; skip them instead of failing the take. The
-        // first encoded frame is the first authored one.
-        s.capture_preplay.fetch_add(1, std::memory_order_relaxed);
-        const auto skips = s.depth_skips.fetch_add(1, std::memory_order_relaxed) + 1;
-        s.depth_last_replay.store(replay_time, std::memory_order_relaxed);
-        if (skips == 1)
-            s.depth_skip_since.store(GetTickCount64(), std::memory_order_relaxed);
-        const auto since = s.depth_skip_since.load(std::memory_order_relaxed);
-        if (since && GetTickCount64() - since > 10000 && !s.written.load(std::memory_order_relaxed)) {
-            wchar_t message[256]{};
-            std::swprintf(message, 256,
-                          L"The shot never started; %llu pre-play frames were skipped (last replay time %.3f).",
-                          static_cast<unsigned long long>(skips), double(replay_time));
-            fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT), message);
-        }
-        return;
-    }
-    if (s.depth_enabled || s.shot_only) {
-        // The authored path clamps at its end. Dropping repeated clamped
-        // frames keeps the color, depth and layer takes the same length.
-        const auto previous = s.shot_last_replay.load(std::memory_order_relaxed);
-        if (replay_time <= previous)
-            return;
-        s.shot_last_replay.store(replay_time, std::memory_order_relaxed);
-    }
-
     // Map only already-submitted copies, never the copy issued this Present.
     // In real time DO_NOT_WAIT makes a busy GPU a skipped opportunity, not a
     // render stall. In fixed-step export the producer instead applies
@@ -1518,6 +1493,39 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     }
     if (s.stopping.load(std::memory_order_acquire))
         return;
+    // Admission applies only to new copies. Even a paused/clamped endpoint
+    // must drain the copy submitted on the preceding Present before returning.
+    if ((s.depth_enabled || s.shot_only) && (!std::isfinite(replay_time) || replay_time < 0)) {
+        // A prepared recording starts before its shot plays. Pre-roll frames
+        // have no replay time and cannot be paired with depth or aligned with
+        // the other layer takes; skip them instead of failing the take. The
+        // first encoded frame is the first authored one.
+        s.capture_preplay.fetch_add(1, std::memory_order_relaxed);
+        const auto skips = s.depth_skips.fetch_add(1, std::memory_order_relaxed) + 1;
+        s.depth_last_replay.store(replay_time, std::memory_order_relaxed);
+        if (skips == 1)
+            s.depth_skip_since.store(GetTickCount64(), std::memory_order_relaxed);
+        const auto since = s.depth_skip_since.load(std::memory_order_relaxed);
+        if (since && GetTickCount64() - since > 10000 &&
+            !s.written.load(std::memory_order_relaxed)) {
+            wchar_t message[256]{};
+            std::swprintf(
+                message, 256,
+                L"The shot never started; %llu pre-play frames were skipped (last replay time %.3f).",
+                static_cast<unsigned long long>(skips), double(replay_time));
+            fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT), message);
+        }
+        return;
+    }
+    if (s.depth_enabled || s.shot_only) {
+        // The authored path clamps at its end. Dropping repeated clamped
+        // frames keeps the color, depth and layer takes the same length.
+        const auto previous = s.shot_last_replay.load(std::memory_order_relaxed);
+        if (replay_time <= previous)
+            return;
+        s.shot_last_replay.store(replay_time, std::memory_order_relaxed);
+    }
+
     const auto now = now_qpc();
     std::uint64_t pts = 0, missed = 0;
     if (s.fixed_step) {

@@ -26,7 +26,7 @@ from .media_transport import MediaTransport
 
 ABI = 3
 CONTROL_BYTES = 2 * 1024 * 1024
-MAPPING_BYTES = CONTROL_BYTES + 4096
+MAPPING_BYTES = CONTROL_BYTES + 24576
 PAYLOAD_OFFSET = 1024
 MAX_PAYLOAD_BYTES = CONTROL_BYTES - PAYLOAD_OFFSET
 CONTROL = struct.Struct("<8s6IQ2I2d512s")
@@ -577,6 +577,69 @@ class NativeBridge(MediaTransport):
             self._mapping[offset + 12:offset + len(data)] = data[12:]
             self._store(offset + 8, even)
             self._editor_citadel_dof_sequence = even
+
+    def configure_editor_attach(self, offsets, attach=None, preview=False, snap_request=0):
+        """Optional attach block: schema offsets plus the selected key's state."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            previous = getattr(self, "_editor_attach_sequence", 0)
+            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
+            data = wire.pack_attach(odd, offsets, attach, preview=bool(preview),
+                                    snap_request=snap_request)
+            offset = wire.ATTACH_OFFSET
+            self._store(offset + 8, odd)
+            self._mapping[offset:offset + 8] = data[:8]
+            self._mapping[offset + 12:offset + len(data)] = data[12:]
+            self._store(offset + 8, even)
+            self._editor_attach_sequence = even
+
+    def editor_roster(self):
+        """Optional native player roster for the attach target picker."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            for _ in range(4):
+                first = self._load_sequence(wire.ROSTER_OFFSET + 8)
+                if first & 1:
+                    continue
+                data = bytes(self._mapping[wire.ROSTER_OFFSET:wire.ROSTER_OFFSET + wire.ROSTER_BYTES])
+                if first != self._load_sequence(wire.ROSTER_OFFSET + 8):
+                    continue
+                return wire.unpack_roster(data)
+            raise NativeBridgeError("The native attach roster is busy; retry in a moment.")
+
+    def editor_bones(self):
+        """Bounded bone names for the natively resolved selected player."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            for _ in range(4):
+                first = self._load_sequence(wire.BONES_OFFSET + 8)
+                if first & 1:
+                    continue
+                data = bytes(self._mapping[wire.BONES_OFFSET:wire.BONES_OFFSET + wire.BONES_BYTES])
+                if first == self._load_sequence(wire.BONES_OFFSET + 8):
+                    return wire.unpack_bones(data) if any(data) else None
+            raise NativeBridgeError("The native bone picker is busy; retry in a moment.")
+
+    def editor_attach_result(self):
+        """Latest native snap / attached-fly offsets, or None while unwritten."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            for _ in range(4):
+                first = self._load_sequence(wire.ATTACH_RESULT_OFFSET + 8)
+                if first & 1:
+                    continue
+                data = bytes(self._mapping[wire.ATTACH_RESULT_OFFSET:
+                                           wire.ATTACH_RESULT_OFFSET + wire.ATTACH_RESULT.size])
+                if first != self._load_sequence(wire.ATTACH_RESULT_OFFSET + 8):
+                    continue
+                if not any(data):
+                    return None
+                return wire.unpack_attach_result(data)
+            raise NativeBridgeError("The native attach result is busy; retry in a moment.")
 
     def editor_status(self):
         from . import editor_wire as wire

@@ -1,5 +1,43 @@
 # Changes
 
+## 0.5.23 alpha — In-between shot editing and shared UI
+
+- In-game **Camera > Between cameras** adds a shot-time slider and **Seek here**.
+  Choose a time, then seek once to apply the replay time and complete shot view.
+- Desktop **Seek replay** and in-game **Seek here** use the native pose when
+  available, including rotation curves and framing, after the replay settles.
+  The console backend retains its existing guarded fallback. Native seeking
+  waits for fresh paused render frames before requesting console confirmation,
+  avoiding requests lost during replay reconstruction.
+- Both interfaces share dark cards, mint actions and compact attachment
+  controls, with extra rotation and transition settings available on demand.
+
+- Source transitions can ease into a saved camera over an adjustable duration,
+  ending at its key time. Zero keeps the existing cut behavior. Both desktop
+  and in-game Camera controls expose the setting.
+- Shot-only and fixed-step recording drain their last pending frame even when
+  the replay clock stops advancing at the shot endpoint.
+- Weapon and named-bone selection reject reduced skeletons and incomplete name
+  lists instead of silently treating their indices as render bones. Unverified
+  rigs can be unavailable; Eyes remains the fallback.
+- Body hiding rejects mixed instance batches and invalid identity offsets;
+  incomplete hero draw coverage remains under investigation.
+
+### Rotation framing curve and a scrollable inspector
+
+- The desktop **FRAMING CURVE** card is now **FRAMING CURVES**: an editable
+  **rotation** graph for **Pitch**, **Yaw** and **Roll** sits above the
+  aspect-ratio graph. Dragging a point writes a per-camera override for that
+  channel, the dashed line keeps the authored camera motion visible, hollow
+  points mark cameras without an override, and **Reset** clears the channel's
+  overrides. Saved shots keep the overrides, and preview, console playback and
+  native playback apply them exactly like authored angles.
+- Both graphs share one timeline: the mouse wheel zooms around the pointer,
+  a right-drag pans, and a double-click returns to the whole shot, so a
+  rotation move and the framing change at the same moment line up at any zoom.
+- The Cameras inspector scrolls, so the camera-source, DOF and path cards stay
+  reachable on smaller windows instead of falling below the bottom.
+
 ## 0.5.22 alpha — Layer takes stay independent
 
 - Recording a World layer first hides the skinned objects, and the players

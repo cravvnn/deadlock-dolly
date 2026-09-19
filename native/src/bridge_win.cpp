@@ -73,10 +73,14 @@ using Factory = void*(__cdecl*)(const char*, int*);
 Factory gOriginalFactory = nullptr;
 INIT_ONCE gLoaderOnce = INIT_ONCE_STATIC_INIT;
 INIT_ONCE gWorkerOnce = INIT_ONCE_STATIC_INIT;
+namespace attach_runtime {
+struct Cache;
+}
 struct Command {
     ControlHeader wire{};
     std::shared_ptr<const NativePath> path;
     std::shared_ptr<const NativeShot> shot;
+    std::vector<std::shared_ptr<const attach_runtime::Cache>> attach;
     bool manual = false, has_manual_pose = false;
     CameraPose manual_pose{};
 };
@@ -253,6 +257,53 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
 camera_view::Cache gCameraCache;
 #include "native_effects_win.hpp"
 #include "native_relief_win.hpp"
+#include "dolly_attach_runtime.hpp"
+
+// Attach preview state resolved by the worker from the published selection.
+// The render callback only reads this immutable snapshot: it never walks
+// entities, and authored offsets edited by attached fly stay local until the
+// result block publishes them back to the editor.
+struct AttachPreview {
+    std::uint32_t sequence = 0;
+    attach_runtime::Cache cache;
+    attach_runtime::Offsets schema;
+    std::array<double, 6> authored{};
+    AttachPoint point = AttachPoint::eyes;
+    double smoothing = 0.0;
+    std::uint32_t handle = 0, entity_index = 0;
+    std::uint64_t model = 0;
+    std::uint64_t bone_hash = 0;
+};
+std::shared_ptr<const AttachPreview> gAttachPreview;
+
+static void publish_attach_result(const AttachPreview& preview,
+                                  const std::array<double, 6>& offsets) noexcept {
+    if (!gMemory)
+        return;
+    EditorAttachResult result{};
+    std::memcpy(result.magic, "DLYATR01", 8);
+    result.abi = kEditorAttachResultAbi;
+    result.flags = 1;
+    result.reserved = preview.sequence;
+    result.handle = preview.handle;
+    result.entity_index = preview.entity_index;
+    result.point = std::uint32_t(preview.point);
+    result.model = preview.model;
+    for (int index = 0; index < 6; ++index)
+        result.offset[index] = offsets[index];
+    result.smoothing = preview.smoothing;
+    auto destination = gMemory + kEditorAttachResultOffset;
+    auto sequence = reinterpret_cast<volatile LONG*>(destination + 8);
+    const LONG current = InterlockedCompareExchange(sequence, 0, 0);
+    const LONG odd = (current & 1) ? current + 2 : current + 1;
+    InterlockedExchange(sequence, odd);
+    MemoryBarrier();
+    std::memcpy(destination, &result, 8);
+    std::memcpy(destination + 12, reinterpret_cast<unsigned char*>(&result) + 12,
+                sizeof(result) - 12);
+    MemoryBarrier();
+    InterlockedExchange(sequence, odd + 1);
+}
 CompatResolution gCompat;
 
 struct DemoState {
@@ -379,6 +430,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     static CameraPose manual_pose{}, displayed_pose{};
     static bool displayed_valid = false;
     static unsigned fault = 0;
+    static unsigned first_fault_code = 0;
+    static char first_fault_message[192]{};
     static std::uint32_t previous_mode = 0;
     auto command = std::atomic_load_explicit(&gCommand, std::memory_order_acquire);
     Status status{};
@@ -421,6 +474,23 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     status.ack_command = seen;
     status.phase = phase;
     auto finish = [&](State state, unsigned error, const char* message) {
+        // Keep the first specific fault message: the per-frame fallback on the
+        // next view would otherwise replace it before the editor reads it.
+        if (state == State::Fault && error) {
+            if (first_fault_code != error) {
+                first_fault_code = error;
+                std::snprintf(first_fault_message, sizeof(first_fault_message), "%s", message);
+            } else if (first_fault_message[0]) {
+                message = first_fault_message;
+            }
+        }
+        // The attach branches set the hidden handle every frame; only a
+        // terminal state may clear it, or per-frame status calls would wipe it
+        // before the render thread's draws.
+        // A completed path holds the final attached camera, so hiding stays
+        // until the shot is stopped, faulted or released.
+        if (state == State::Fault || state == State::Stopped || state == State::Unsupported)
+            player_capture::set_hidden_handle(0, 100 + unsigned(state));
         if ((state == State::Fault || state == State::Stopped) && !gEffects.restore()) {
             state = State::Fault;
             error = 36;
@@ -453,6 +523,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         write_status(status);
     };
     if (!command) {
+        player_capture::set_hidden_handle(0, 2);
         finish(State::Probe, 0, "Native view hook ready; load a local replay to test a camera.");
         return;
     }
@@ -464,9 +535,9 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // build, then let the probe's bounded state machine advance every view.
     static const bool player_capture_configured = [] {
         const auto module = GetModuleHandleW(L"scenesystem.dll");
-        player_capture::configure(
-            reinterpret_cast<std::uintptr_t>(module),
-            module != nullptr && hash_file(module_path(module)) == kPlayerCaptureScenesystemHash);
+        player_capture::configure(reinterpret_cast<std::uintptr_t>(module),
+                                  module != nullptr && hash_file(module_path(module)) ==
+                                                           kPlayerCaptureScenesystemHash);
         return true;
     }();
     (void)player_capture_configured;
@@ -479,6 +550,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         seen = c.command;
         status.ack_command = seen;
         fault = 0;
+        first_fault_code = 0;
+        first_fault_message[0] = 0;
         if (c.mode == std::uint32_t(Mode::Manual)) {
             manual_pose = command->has_manual_pose ? command->manual_pose
                                                    : (displayed_valid ? displayed_pose : original);
@@ -557,8 +630,97 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                    : "Waiting for the DirectX 11 editor panel.");
             return;
         }
-        if (c.mode == std::uint32_t(Mode::Manual))
+        // Attach preview: input edits the local offsets and the camera is
+        // composed from the live target. Snap (free camera only) stores offsets
+        // that reproduce the current pose; both publish through the result
+        // block for the editor to persist on the selected key.
+        EditorAttachConfig preview_config{};
+        const bool preview_flag =
+            editor_attach_config(preview_config) && (preview_config.flags & 4);
+        auto preview = std::atomic_load(&gAttachPreview);
+        static AttachSmoothing preview_smoothing;
+        static CameraPose preview_offsets;
+        static std::uint32_t preview_seed = 0;
+        static std::array<double, 6> preview_published{};
+        static std::uint32_t snap_seen = 0;
+        const bool snap_requested = preview_config.snap_request != snap_seen;
+        const bool manual_mode = c.mode == std::uint32_t(Mode::Manual);
+        const bool preview_current = preview && preview->sequence == preview_config.sequence;
+        if (preview_flag && manual_mode && (!preview_current || !preview->cache.ready)) {
+            player_capture::set_hidden_handle(0, 4);
+            if (!preview_current) {
+                finish(State::Starting, 0, "Resolving the selected attach camera.");
+            } else {
+                fault = 41;
+                finish(State::Fault, fault,
+                       preview->cache.error ? preview->cache.error
+                                            : "The selected attach camera could not be resolved.");
+            }
+            return;
+        }
+        const bool preview_active =
+            preview_current && preview->cache.ready && preview_flag && manual_mode;
+        if (snap_requested && !preview_active && preview_current && preview->cache.ready &&
+            manual_mode) {
+            snap_seen = preview_config.snap_request;
+            AttachSample snap_sample{};
+            const char* snap_error = nullptr;
+            AttachSegment snap_segment{};
+            snap_segment.point = preview->point;
+            if (attach_runtime::sample(preview->schema, preview->cache, snap_segment, snap_sample,
+                                       snap_error)) {
+                std::array<double, 6> snapped{};
+                if (attach_snap_offsets(snap_sample, manual_pose, snapped))
+                    publish_attach_result(*preview, snapped);
+            }
+        }
+        if (preview_active) {
+            bool preview_dirty = false;
+            if (preview_seed != preview->sequence) {
+                preview_seed = preview->sequence;
+                for (int index = 0; index < 6; ++index)
+                    preview_offsets[index] = preview->authored[index];
+                preview_offsets[6] = manual_pose[6];
+                preview_smoothing.reset();
+                preview_dirty = true;
+            }
+            editor_integrate_flight(preview_offsets, real_delta);
+            AttachSample preview_sample{};
+            const char* preview_error = nullptr;
+            AttachSegment segment{};
+            segment.point = preview->point;
+            for (int index = 0; index < 6; ++index)
+                segment.offset[index] = preview_offsets[index];
+            if (!attach_runtime::sample(preview->schema, preview->cache, segment, preview_sample,
+                                        preview_error)) {
+                fault = 41;
+                finish(State::Fault, fault,
+                       preview_error ? preview_error
+                                     : "The attach preview sample was unavailable.");
+                return;
+            }
+            CameraPose composed = manual_pose;
+            if (!resolve_attach_pose(preview_sample, segment, composed)) {
+                fault = 42;
+                finish(State::Fault, fault, "The attach preview pose check failed.");
+                return;
+            }
+            preview_smoothing.apply(composed, real_delta, preview->smoothing);
+            manual_pose = composed;
+            player_capture::set_hidden_handle(
+                preview_config.hide ? preview_sample.target.handle : 0, 3);
+            for (int index = 0; index < 6; ++index)
+                preview_dirty = preview_dirty ||
+                                std::abs(preview_offsets[index] - preview_published[index]) > 0.001;
+            if (preview_dirty) {
+                for (int index = 0; index < 6; ++index)
+                    preview_published[index] = preview_offsets[index];
+                publish_attach_result(*preview, preview_published);
+            }
+        } else if (manual_mode) {
+            player_capture::set_hidden_handle(0, 4);
             editor_integrate_flight(manual_pose, real_delta);
+        }
         if (!pose_valid(manual_pose)) {
             fault = 16;
             finish(State::Fault, fault,
@@ -653,6 +815,80 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         finish(State::Fault, fault, "Native path returned an invalid camera.");
         return;
     }
+    // Attach camera: an enabled segment replaces the evaluated pose. The worker
+    // resolved the target when the command arrived; a missing target, offset
+    // block or identity check faults instead of rendering a guessed camera.
+    // Each source keeps its own filter through the blend and arrival. Sharing
+    // one filter would jump when two keys use different offsets on one hero.
+    static std::array<AttachSmoothing, AttachTrack::max_segments> attach_smoothing;
+    static std::uint32_t smoothing_command = 0;
+    static double smoothing_phase = 0;
+    if (smoothing_command != c.command || phase < smoothing_phase) {
+        for (auto& filter : attach_smoothing)
+            filter.reset();
+        smoothing_command = c.command;
+    }
+    smoothing_phase = phase;
+    const AttachSegment* attach_segment = command->shot ? command->shot->attach.at(phase) : nullptr;
+    const CameraPose free_pose = applied;
+    std::uint32_t hidden_current = 0, hidden_arriving = 0;
+    if (attach_segment && (attach_segment->flags & 1)) {
+        EditorAttachConfig attach_config{};
+        const auto segment_index =
+            std::size_t(attach_segment - command->shot->attach.segments().data());
+        const auto cache =
+            segment_index < command->attach.size() ? command->attach[segment_index] : nullptr;
+        if (!cache || !editor_attach_config(attach_config)) {
+            fault = 40;
+            finish(State::Fault, fault,
+                   "Attach camera offsets are not available; reconnect the editor session.");
+            return;
+        }
+        AttachSample attach_sample{};
+        const char* attach_error = nullptr;
+        if (!attach_runtime::sample(attach_runtime::offsets_from(attach_config), *cache,
+                                    *attach_segment, attach_sample, attach_error)) {
+            fault = 41;
+            finish(State::Fault, fault,
+                   attach_error ? attach_error : "The attach camera sample was unavailable.");
+            return;
+        }
+        CameraPose resolved = applied;
+        if (!resolve_attach_pose(attach_sample, *attach_segment, resolved)) {
+            fault = 42;
+            finish(State::Fault, fault, "The attach camera identity or pose check failed.");
+            return;
+        }
+        attach_smoothing[segment_index].apply(resolved, real_delta, attach_segment->smoothing);
+        applied = resolved;
+        hidden_current = (attach_segment->flags & 2) ? attach_sample.target.handle : 0;
+    }
+    double blend_weight = 0;
+    const auto arriving =
+        command->shot ? command->shot->attach.arriving(phase, blend_weight) : nullptr;
+    if (arriving) {
+        CameraPose destination = free_pose;
+        if (arriving->flags & 1) {
+            EditorAttachConfig config{};
+            const auto index = std::size_t(arriving - command->shot->attach.segments().data());
+            const auto cache = index < command->attach.size() ? command->attach[index] : nullptr;
+            AttachSample sample{};
+            const char* error = nullptr;
+            if (!cache || !editor_attach_config(config) ||
+                !attach_runtime::sample(attach_runtime::offsets_from(config), *cache, *arriving,
+                                        sample, error) ||
+                !resolve_attach_pose(sample, *arriving, destination)) {
+                fault = 42;
+                finish(State::Fault, fault,
+                       error ? error : "The arriving camera source could not be resolved.");
+                return;
+            }
+            attach_smoothing[index].apply(destination, real_delta, arriving->smoothing);
+            hidden_arriving = (arriving->flags & 2) ? sample.target.handle : 0;
+        }
+        applied = blend_attach_poses(applied, destination, blend_weight);
+    }
+    player_capture::set_hidden_handles(hidden_current, hidden_arriving, 5);
     double fov = original_fov;
     if (c.flags & kAspect) {
         // SetUpView has already scaled the original camera FOV by current aspect.
@@ -907,9 +1143,53 @@ static DWORD WINAPI worker(void*) {
                     Sleep(10);
                     continue;
                 }
+                std::vector<std::shared_ptr<const attach_runtime::Cache>> attach_caches;
+                if (candidate)
+                    for (const auto& attach_segment : candidate->attach.segments()) {
+                        if (!(attach_segment.flags & 1)) {
+                            attach_caches.push_back(nullptr);
+                            continue;
+                        }
+                        // A shot may cut between players or bones. Resolve each distinct
+                        // source on the worker, never reuse the first source blindly.
+                        std::shared_ptr<const attach_runtime::Cache> reused;
+                        for (std::size_t index = 0; index < attach_caches.size(); ++index) {
+                            const auto& previous = candidate->attach.segments()[index];
+                            if (attach_caches[index] &&
+                                previous.target.handle == attach_segment.target.handle &&
+                                previous.target.entity_id == attach_segment.target.entity_id &&
+                                previous.target.model == attach_segment.target.model &&
+                                previous.point == attach_segment.point &&
+                                previous.bone_hash == attach_segment.bone_hash) {
+                                reused = attach_caches[index];
+                                break;
+                            }
+                        }
+                        if (reused) {
+                            attach_caches.push_back(reused);
+                            continue;
+                        }
+                        auto attach_cache = std::make_shared<attach_runtime::Cache>();
+                        EditorAttachConfig attach_config{};
+                        if (!editor_attach_config(attach_config)) {
+                            attach_cache->error =
+                                "Attach camera offsets are not available yet; reconnect "
+                                "the editor session or re-play the shot.";
+                        } else {
+                            const char* attach_error = nullptr;
+                            attach_runtime::resolve(reinterpret_cast<HMODULE>(gClient),
+                                                    attach_runtime::offsets_from(attach_config),
+                                                    attach_segment.target, attach_segment,
+                                                    *attach_cache, attach_error);
+                            if (!attach_cache->ready && attach_error)
+                                attach_cache->error = attach_error;
+                        }
+                        attach_caches.push_back(attach_cache);
+                    }
                 auto command = std::make_shared<Command>();
                 command->wire = control;
                 command->shot = candidate;
+                command->attach = std::move(attach_caches);
                 command->manual = next_manual;
                 command->has_manual_pose = has_seed;
                 command->manual_pose = seed;
@@ -922,6 +1202,72 @@ static DWORD WINAPI worker(void*) {
                 gWorkerError = 0;
                 std::atomic_store_explicit(&gCommand, std::shared_ptr<const Command>(command),
                                            std::memory_order_release);
+            }
+            static double last_roster_publish = 0;
+            const double roster_now = now_seconds();
+            if (gMemory && roster_now - last_roster_publish >= 2.0) {
+                last_roster_publish = roster_now;
+                attach_runtime::publish_roster(gMemory, reinterpret_cast<HMODULE>(gClient));
+            }
+            // Resolve the selected attach target whenever the editor publishes
+            // a different selection; used by both preview and snap.
+            static std::uint32_t attach_preview_sequence = 0;
+            EditorAttachConfig attach_config{};
+            if (editor_attach_config(attach_config)) {
+                if ((attach_config.flags & 3) == 3) {
+                    if (attach_config.sequence != attach_preview_sequence) {
+                        attach_preview_sequence = attach_config.sequence;
+                        auto preview = std::make_shared<AttachPreview>();
+                        preview->sequence = attach_config.sequence;
+                        preview->schema = attach_runtime::offsets_from(attach_config);
+                        for (int index = 0; index < 6; ++index)
+                            preview->authored[index] = attach_config.offset[index];
+                        preview->point = static_cast<AttachPoint>(attach_config.point);
+                        preview->smoothing = attach_config.smoothing;
+                        preview->handle = attach_config.handle;
+                        preview->entity_index = attach_config.entity_id;
+                        preview->model = attach_config.model;
+                        preview->bone_hash = attach_config.bone_hash;
+                        AttachTarget target;
+                        target.handle = attach_config.handle;
+                        target.entity_id = attach_config.entity_id;
+                        target.model = attach_config.model;
+                        const char* attach_error = nullptr;
+                        AttachSegment preview_segment{};
+                        preview_segment.point = preview->point;
+                        preview_segment.bone_hash = attach_config.bone_hash;
+                        auto previous = std::atomic_load(&gAttachPreview);
+                        AttachSample check{};
+                        const bool reuse =
+                            previous && previous->cache.ready &&
+                            previous->handle == preview->handle &&
+                            previous->entity_index == preview->entity_index &&
+                            previous->model == preview->model &&
+                            previous->point == preview->point &&
+                            previous->bone_hash == preview->bone_hash &&
+                            attach_runtime::sample(preview->schema, previous->cache,
+                                                   preview_segment, check, attach_error);
+                        if (reuse)
+                            preview->cache = previous->cache;
+                        else
+                            attach_runtime::resolve(reinterpret_cast<HMODULE>(gClient),
+                                                    preview->schema, target, preview_segment,
+                                                    preview->cache, attach_error);
+                        if (!preview->cache.ready && attach_error)
+                            preview->cache.error = attach_error;
+                        if (!reuse)
+                            attach_runtime::publish_bones(gMemory, &preview->cache);
+                        std::atomic_store_explicit(&gAttachPreview,
+                                                   std::shared_ptr<const AttachPreview>(preview),
+                                                   std::memory_order_release);
+                    }
+                } else if (attach_preview_sequence) {
+                    attach_preview_sequence = 0;
+                    attach_runtime::publish_bones(gMemory, nullptr);
+                    std::atomic_store_explicit(&gAttachPreview,
+                                               std::shared_ptr<const AttachPreview>(),
+                                               std::memory_order_release);
+                }
             }
             Sleep(5);
         }

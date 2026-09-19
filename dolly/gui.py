@@ -20,19 +20,19 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import editor_session, gui_layout, player_layer
+from dolly import attach_camera, editor_session, gui_layout, player_layer
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, EDITOR_KEY_CHOICES, EditorBinding, default_action_bindings, validate_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING, KEY_CHOICES
 from dolly.branding import apply_window_icon
 from dolly.controller import Controller, tick_rate_advice, tick_rates_match
-from dolly.curve import AspectCurve
+from dolly.curve import AspectCurve, RotationCurve, TimelineView
 from dolly.display import focus_window
 from dolly.hotkey import CaptureHotkey
 from dolly.launcher import discover_game, recover_pending
 from dolly.navigation import CameraMotion
 from dolly.navigation_input import CameraInput
-from dolly.path import CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value, format_cvar_value
+from dolly.path import AttachKey, CURVE_CHANNELS, CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value, format_cvar_value
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.smoothing import smoothing_window
 from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
@@ -43,9 +43,9 @@ from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CO
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
 FIELD_LABELS = ("Shot seconds", "X", "Y", "Height · Z", "Pitch °", "Yaw °", "Bank °", "Aspect ratio")
-BG = "#11171c"
-PANEL = "#192229"
-TEXT = "#e1e8eb"
+BG = "#10171b"
+PANEL = "#192329"
+TEXT = "#d5dfe3"
 MUTED = "#a6b7c0"
 ACCENT = "#95dbcb"
 LOG = logging.getLogger("dolly")
@@ -197,6 +197,10 @@ class DollyApp:
         self.startup_progress = tk.StringVar(value="Ready when you are.")
         self.startup_cancel = None
         self.native_editor_active = False
+        # Live schema offsets for the attach camera; queried once per session
+        # after startup and republished by editor_session.configure.
+        self.attach_fields = None
+        self.preview_attach = False
         self.replay_entries = []
         self.binding_action = tk.StringVar()
         self.binding_key = tk.StringVar()
@@ -355,8 +359,8 @@ class DollyApp:
         self.export_tab = ttk.Frame(self.notebook)
         self.replays_tab = self.setup_tab
         self.navigation = {}
-        for title, tab in (("Library", self.setup_tab), ("Cameras", self.camera_tab),
-                           ("Effects", self.cvar_tab), ("Export", self.export_tab),
+        for title, tab in (("Replay", self.setup_tab), ("Camera", self.camera_tab),
+                           ("Look", self.cvar_tab), ("Export", self.export_tab),
                            ("Settings", self.settings_tab)):
             self.notebook.add(tab, text=title)
             button = ttk.Button(self.sidebar, text=title, width=12,
@@ -1372,6 +1376,7 @@ class DollyApp:
             native = self.camera_driver.get() == "Native (experimental)"
             self._close_paused_camera(stop=False)
             self._disable_external_input()
+            self.attach_fields = None
             def start():
                 save_settings(settings)
                 return self.controller.start_editing(game, demo, protocol=protocol, native=native,
@@ -1393,8 +1398,24 @@ class DollyApp:
         self.startup_progress.set("Replay paused and ready. Return to Deadlock to frame your first camera.")
         self.status_text.set("Use your editor shortcut to open the in-game panel. F7 opens the console.")
         editor_session.configure(self)
+        self._submit("Preparing attach camera fields", self._query_attach_fields,
+                     self._attach_fields_complete)
         if not hasattr(self, "full_editor") or self.full_editor.get():
             self.notebook.select(self.camera_tab)
+
+    def _query_attach_fields(self):
+        """Worker: read the attach schema offsets once; failure only disables attach."""
+        try:
+            return attach_camera.query_field_offsets(self.controller)
+        except Exception as exc:
+            LOG.info("Attach camera fields unavailable: %s", exc)
+            return None
+
+    def _attach_fields_complete(self, fields):
+        self.attach_fields = fields
+        if fields:
+            LOG.info("Attach camera schema fields ready: %s", fields)
+        editor_session.configure(self)
 
     def _cancel_startup(self):
         if self.startup_cancel is not None:
@@ -1488,20 +1509,30 @@ class DollyApp:
         graph = ttk.Frame(left, style="Card.TFrame", padding=(10, 8, 10, 5))
         graph.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         graph.columnconfigure(0, weight=1)
-        graph.rowconfigure(1, weight=1)
+        graph.rowconfigure(1, weight=1, minsize=112)
+        graph.rowconfigure(2, weight=1, minsize=132)
         graph_header = ttk.Frame(graph, style="Card.TFrame")
         graph_header.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        ttk.Label(graph_header, text="FRAMING CURVE", style="CardTitle.TLabel").pack(side="left")
+        ttk.Label(graph_header, text="FRAMING CURVES", style="CardTitle.TLabel").pack(side="left")
         curve_mode = ttk.Combobox(graph_header, textvariable=self.lens_interpolation,
                                  values=("smooth", "linear", "step"), state="readonly", width=9)
         curve_mode.pack(side="right")
         curve_mode.bind("<<ComboboxSelected>>", lambda _event: self._apply_options())
-        self.aspect_curve = AspectCurve(graph, on_change=self._change_curve_key, on_select=self._select_curve_key)
-        self.aspect_curve.grid(row=1, column=0, sticky="nsew")
-        inspector = ttk.Frame(workspace)
-        inspector.grid(row=0, column=1, sticky="nsew")
+        self.timeline_view = TimelineView()
+        self.rotation_curve = RotationCurve(graph, on_change=self._change_rotation_curve,
+                                            on_select=self._select_curve_key,
+                                            on_reset=self._reset_rotation_curve,
+                                            view=self.timeline_view, on_view=self._redraw_curves)
+        self.rotation_curve.grid(row=1, column=0, sticky="nsew")
+        self.aspect_curve = AspectCurve(graph, on_change=self._change_curve_key,
+                                        on_select=self._select_curve_key,
+                                        view=self.timeline_view, on_view=self._redraw_curves)
+        self.aspect_curve.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
+        inspector_page = gui_layout.ScrollPage(workspace)
+        inspector_page.grid(row=0, column=1, sticky="nsew")
+        self.inspector_page = inspector_page
+        inspector = inspector_page.body
         inspector.columnconfigure(0, weight=1)
-        inspector.rowconfigure(1, weight=1)
         selected = ttk.Frame(inspector, style="Card.TFrame", padding=12)
         selected.grid(row=0, column=0, sticky="ew")
         selected.columnconfigure(1, weight=1)
@@ -1543,13 +1574,13 @@ class DollyApp:
         ttk.Button(buttons, text="Update camera", command=self._update_key).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ttk.Button(buttons, text="Preview", command=self._apply_selected).grid(row=0, column=1, sticky="ew", padx=(4, 0))
         view = ttk.Frame(inspector, style="Card.TFrame", padding=(10, 8))
-        view.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        view.grid(row=2, column=0, sticky="ew", pady=(10, 0))
         ttk.Label(view, text="PATH · TOP DOWN", style="CardMuted.TLabel").pack(anchor="w", pady=(0, 5))
         self.canvas = tk.Canvas(view, width=230, height=55, background=PANEL, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _event: self._draw_path())
         citadel = ttk.Frame(inspector, style="Card.TFrame", padding=(10, 8))
-        citadel.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        citadel.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         ttk.Label(citadel, text="CITADEL DEPTH OF FIELD", style="CardMuted.TLabel").pack(anchor="w", pady=(0, 5))
         self.citadel_enabled = tk.BooleanVar(value=False)
         self.citadel_dof_checkbox = ttk.Checkbutton(
@@ -1573,6 +1604,71 @@ class DollyApp:
         focus.bind("<ButtonRelease-1>", lambda _event: self._citadel_focus_commit())
         self.citadel_focus_scale = focus
         self._refresh_citadel_dof()
+        attach = ttk.Frame(inspector, style="Rounded.Card.TFrame", padding=(13, 12))
+        attach.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        ttk.Label(attach, text="Attach camera", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(attach, text="Player point of view or weapon camera",
+                  style="CardMuted.TLabel").pack(anchor="w", pady=(2, 8))
+        self.attach_enabled = tk.BooleanVar(value=False)
+        self.attach_checkbox = ttk.Checkbutton(attach, text="Attach to player", variable=self.attach_enabled,
+                                               style="Card.TCheckbutton")
+        self.attach_checkbox.pack(anchor="w", pady=(0, 6))
+        self.attach_player = tk.StringVar(value="")
+        self._attach_players = {}
+        self.attach_player_combo = ttk.Combobox(attach, textvariable=self.attach_player,
+                                                values=(), state="readonly")
+        self.attach_player_combo.pack(fill="x", pady=(0, 6))
+        self.attach_point = tk.StringVar(value="Eyes")
+        attach_point_combo = ttk.Combobox(attach, textvariable=self.attach_point,
+                                          values=("Eyes", "Weapon", "Bone"), state="readonly", width=10)
+        attach_point_combo.pack(fill="x", pady=(0, 6))
+        bone_row = ttk.Frame(attach, style="Card.TFrame")
+        ttk.Label(bone_row, text="Bone name", style="CardMuted.TLabel").pack(anchor="w")
+        self.attach_bone = tk.StringVar(value="head")
+        self.attach_bone_combo = ttk.Combobox(bone_row, textvariable=self.attach_bone, values=())
+        self.attach_bone_combo.pack(fill="x", pady=(0, 6))
+        def update_bone_field(*_):
+            if self.attach_point.get() == "Bone":
+                bone_row.pack(fill="x", after=attach_point_combo)
+            else:
+                bone_row.pack_forget()
+        self.attach_point.trace_add("write", update_bone_field)
+        update_bone_field()
+        from dolly.gui_theme import compact_slider
+        ttk.Label(attach, text="Offsets", style="Card.TLabel").pack(anchor="w", pady=(2, 2))
+        self.attach_vars = {}
+        for name, label in (("x", "X"), ("y", "Y"), ("z", "Z"),
+                            ("pitch", "Pitch")):
+            variable = tk.StringVar(value="0")
+            self.attach_vars[name] = variable
+            compact_slider(attach, label, variable, -10 if name in ("x", "y", "z") else -180,
+                           10 if name in ("x", "y", "z") else 180, PANEL, MUTED, ACCENT)
+        self.attach_smoothing = tk.StringVar(value="0")
+        compact_slider(attach, "Smooth", self.attach_smoothing, 0, 1, PANEL, MUTED, ACCENT)
+        self.attach_hide = tk.BooleanVar(value=True)
+        ttk.Checkbutton(attach, text="Hide this hero", variable=self.attach_hide,
+                        style="Card.TCheckbutton").pack(anchor="w", pady=(0, 6))
+        self.attach_note = ttk.Label(attach, text="Load a replay to list players.",
+                                     style="CardMuted.TLabel", wraplength=240)
+        self.attach_note.pack(anchor="w", pady=(0, 6))
+        advanced = gui_layout.disclosure(attach, "Rotation & transition")
+        for name, label in (("yaw", "Yaw"), ("roll", "Roll")):
+            variable = tk.StringVar(value="0")
+            self.attach_vars[name] = variable
+            compact_slider(advanced.body, label, variable, -180, 180, PANEL, MUTED, ACCENT)
+        self.source_blend = tk.StringVar(value="0")
+        compact_slider(advanced.body, "Blend in", self.source_blend, 0, 10, PANEL, MUTED, ACCENT)
+        ttk.Label(advanced.body, text="Seconds; zero keeps a cut.",
+                  style="CardMuted.TLabel").pack(anchor="w", pady=(2, 4))
+        attach_buttons = ttk.Frame(attach, style="Card.TFrame")
+        attach_buttons.pack(fill="x")
+        attach_buttons.columnconfigure(0, weight=1)
+        attach_buttons.columnconfigure(1, weight=1)
+        ttk.Button(attach_buttons, text="Apply to camera", style="Card.Primary.TButton",
+                   command=lambda: self._apply_attach(False)).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(attach_buttons, text="Apply to all",
+                   command=lambda: self._apply_attach(True)).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        self.attach_card = attach
 
     # Citadel DOF (the game's own depth of field) authors the same shot values
     # as the Effects tracks and applies them through the existing preview.
@@ -2302,6 +2398,8 @@ class DollyApp:
             else:
                 self.smoothing_row.pack(fill="x", pady=(0, 10))
             self.aspect_curve.set_enabled(available)
+            if hasattr(self, "rotation_curve"):
+                self.rotation_curve.set_enabled(available)
             startup_buttons = (
                 (self.launch_button, available),
                 (self.connect_button, available and not connected and stage not in ("not_launched", "game_closed")),
@@ -2500,9 +2598,17 @@ class DollyApp:
         return value
 
     def _refresh_curve(self):
+        if not (hasattr(self, "aspect_curve") or hasattr(self, "rotation_curve")):
+            return
+        selected_index = self._selection_index(self.camera_tree)
+        shot_time = getattr(self, "shot_time", None)
+        current_time = float(shot_time.get()) if shot_time is not None else 0.0
+        if hasattr(self, "rotation_curve"):
+            self.rotation_curve.set_project(self.project, selected_index=selected_index,
+                                            current_time=current_time)
         if hasattr(self, "aspect_curve"):
-            self.aspect_curve.set_project(self.project, selected_index=self._selection_index(self.camera_tree),
-                                          current_time=float(self.shot_time.get()))
+            self.aspect_curve.set_project(self.project, selected_index=selected_index,
+                                          current_time=current_time)
 
     def _select_curve_key(self, index):
         if self.busy or self.playing or not 0 <= index < len(self.project.keyframes):
@@ -2524,6 +2630,47 @@ class DollyApp:
             self.status_text.set(f"Camera {index + 1} framing set to {key.aspect_ratio:.4f}. Preview to check the view.")
         self._guard("Edit framing curve", operation)
         self._refresh_curve()
+
+    def _change_rotation_curve(self, index, channel, value):
+        if channel not in CURVE_CHANNELS:
+            return
+
+        def operation():
+            if not 0 <= index < len(self.project.keyframes):
+                raise ValueError("That camera is no longer present in this shot.")
+            keys = copy.deepcopy(self.project.keyframes)
+            key = keys[index]
+            degrees = _finite(str(value), f"Rotation curve {channel}")
+            setattr(key, "curve_" + channel, degrees)
+            self._commit_camera(keys, key.time)
+            self.status_text.set(f"Camera {index + 1} {channel} curve set to {degrees:.2f}°. "
+                                 "Preview to check the view.")
+
+        self._guard("Edit rotation curve", operation)
+        self._refresh_curve()
+
+    def _reset_rotation_curve(self, channel):
+        if channel not in CURVE_CHANNELS:
+            return
+
+        def operation():
+            keys = copy.deepcopy(self.project.keyframes)
+            changed = False
+            for key in keys:
+                if getattr(key, "curve_" + channel) is not None:
+                    setattr(key, "curve_" + channel, None)
+                    changed = True
+            if changed:
+                self._commit_camera(keys)
+                self.status_text.set(f"Reset the {channel} curve to the camera keys.")
+
+        self._guard("Reset rotation curve", operation)
+        self._refresh_curve()
+
+    def _redraw_curves(self):
+        for widget in (getattr(self, "rotation_curve", None), getattr(self, "aspect_curve", None)):
+            if widget is not None:
+                widget._redraw()
 
     def _reset_aspect(self):
         def operation():
@@ -2603,7 +2750,14 @@ class DollyApp:
             if index is None:
                 raise ValueError("Select a camera keyframe to update.")
             key = self._read_key()
-            key.fov = self.project.keyframes[index].fov  # Legacy metadata stays intact.
+            existing = self.project.keyframes[index]
+            key.fov = existing.fov  # Legacy metadata stays intact.
+            key.source = existing.source
+            key.source_blend = existing.source_blend
+            key.attach = copy.deepcopy(existing.attach)
+            key.curve_pitch = existing.curve_pitch
+            key.curve_yaw = existing.curve_yaw
+            key.curve_roll = existing.curve_roll
             keys = list(self.project.keyframes)
             if any(i != index and existing.time == key.time for i, existing in enumerate(keys)):
                 raise ValueError("Another keyframe already exists at that shot time.")
@@ -2626,6 +2780,145 @@ class DollyApp:
             if hasattr(self, "selected_text"):
                 self.selected_text.set(f"Camera {index + 1:02d}")
             self._refresh_curve()
+            self._refresh_attach_card(key)
+
+    def _refresh_attach_card(self, key):
+        if not hasattr(self, "attach_enabled"):
+            return
+        self.attach_enabled.set(key.source == "attach")
+        self.source_blend.set(_number(key.source_blend))
+        attach = key.attach if isinstance(key.attach, AttachKey) else None
+        if attach is None:
+            for variable in self.attach_vars.values():
+                variable.set("0")
+            self.attach_smoothing.set("0")
+            self.attach_hide.set(True)
+            self.attach_point.set("Eyes")
+            self.attach_bone.set("head")
+            self.attach_bone_combo.configure(state="disabled")
+            return
+        for variable, value in zip(self.attach_vars.values(), attach.offset):
+            variable.set(_number(value))
+        self.attach_smoothing.set(_number(attach.smoothing))
+        self.attach_hide.set(bool(attach.hide_body))
+        self.attach_point.set(attach.point.title())
+        self.attach_bone.set(attach.bone or "head")
+        self.attach_bone_combo.configure(state="normal" if attach.point == "bone" else "disabled")
+        for label, player in self._attach_players.items():
+            if (player.get("handle") == attach.handle
+                    and str(player.get("model_path") or "") == attach.model):
+                self.attach_player.set(label)
+                break
+
+    def _attach_roster_changed(self, roster):
+        """Update the live player picker from the native roster block."""
+        if not hasattr(self, "attach_player_combo"):
+            return
+        players = roster.get("players", []) if isinstance(roster, dict) else []
+        available = bool(roster.get("available")) if isinstance(roster, dict) else False
+        self._attach_players = {}
+        values = []
+        for player in players:
+            if not isinstance(player, dict):
+                continue
+            path = str(player.get("model_path") or "")
+            label = "%s · %d" % (attach_camera.hero_name(path),
+                                 int(player.get("entity_index", 0) or 0))
+            self._attach_players[label] = player
+            values.append(label)
+        if not available:
+            values = ["(live schema offsets unavailable)"]
+        elif not values:
+            values = ["(no players in the loaded replay)"]
+        if list(self.attach_player_combo.cget("values")) != values:
+            current = self.attach_player.get()
+            self.attach_player_combo.configure(values=values)
+            self.attach_player.set(current if current in values else values[0])
+        if not available:
+            self.attach_note.configure(text="The session has not published attach offsets yet.")
+        elif players:
+            self.attach_note.configure(text="Live roster: %d player(s)." % len(players))
+        else:
+            self.attach_note.configure(text="No players in the loaded replay yet.")
+
+    def _attach_bones_changed(self, bones):
+        if not hasattr(self, "attach_bone_combo"):
+            return
+        player = self._attach_players.get(self.attach_player.get())
+        from .native_effects import model_token
+        matches = (isinstance(bones, dict) and player and
+                   bones.get("handle") == player.get("handle") and
+                   bones.get("model") == model_token(player.get("model_path", "")))
+        self.attach_bone_combo.configure(values=bones.get("names", ()) if matches else ())
+
+    def _attach_result_changed(self, result):
+        """Apply native snap / attached-fly offsets to the selected attach key."""
+        if not (getattr(self, "preview_attach", False) or getattr(self, "_attach_snap_pending", False)):
+            return
+        index = self._selection_index(self.camera_tree)
+        if index is None or not 0 <= index < len(self.project.keyframes):
+            return
+        key = self.project.keyframes[index]
+        if key.source != "attach" or not isinstance(key.attach, AttachKey):
+            return
+        from .native_effects import model_token
+        bridge = self.controller._native_bridge()
+        if (not bridge or result.get("config_sequence") != bridge._editor_attach_sequence or
+                result.get("handle") != key.attach.handle or
+                result.get("model") != model_token(key.attach.model) or
+                result.get("point") != ("eyes", "weapon", "bone").index(key.attach.point)):
+            return
+        self._attach_snap_pending = False
+        offsets = tuple(float(value) for value in result.get("offset") or ())
+        if len(offsets) != 6 or offsets == tuple(key.attach.offset):
+            return
+        candidate = copy.deepcopy(self.project)
+        candidate.keyframes[index].attach.offset = offsets
+        candidate.validate()
+        self.project = candidate
+        self._mark_dirty()
+        self._refresh_attach_card(candidate.keyframes[index])
+
+    def _apply_attach(self, apply_all):
+        def operation():
+            index = self._selection_index(self.camera_tree)
+            if index is None:
+                raise ValueError("Select a camera keyframe first.")
+            candidate = copy.deepcopy(self.project)
+            targets = range(len(candidate.keyframes)) if apply_all else (index,)
+            attach = None
+            if self.attach_enabled.get():
+                player = self._attach_players.get(self.attach_player.get())
+                if player is None:
+                    raise ValueError("Choose a live player from the roster first.")
+                model_path = str(player.get("model_path") or "")
+                if not model_path:
+                    raise ValueError("The selected player has no readable model identity yet.")
+                offsets = tuple(_finite(self.attach_vars[name].get(), "Attach offset")
+                                for name in ("x", "y", "z", "pitch", "yaw", "roll"))
+                attach = AttachKey(handle=int(player.get("handle", 0)),
+                                   entity_id=int(player.get("entity_index", 0) or 0),
+                                   model=model_path,
+                                   point=self.attach_point.get().lower(),
+                                   bone=self.attach_bone.get().strip() if self.attach_point.get() == "Bone" else "",
+                                   offset=offsets,
+                                   smoothing=_finite(self.attach_smoothing.get(), "Attach smoothing"),
+                                   hide_body=bool(self.attach_hide.get()))
+            for target in targets:
+                candidate.keyframes[target].source_blend = float(self.source_blend.get())
+                candidate.keyframes[target].source = "attach" if attach else "free"
+                candidate.keyframes[target].attach = copy.deepcopy(attach)
+            candidate.validate()
+            self.project = candidate
+            self._mark_dirty()
+            self._refresh_keys(self.project.keyframes[index].time)
+        self._guard("Apply attach camera", operation)
+
+    def _update_export_camera_note(self):
+        label = getattr(self, "export_camera_note", None)
+        if label is None:
+            return
+        label.configure(text="Camera: " + attach_camera.camera_summary(self.project))
 
     def _load_app_settings(self):
         try:
@@ -3125,6 +3418,8 @@ class DollyApp:
         self._draw_path()
         if hasattr(self, "aspect_curve"):
             self.aspect_curve.set_current_time(float(value))
+        if hasattr(self, "rotation_curve"):
+            self.rotation_curve.set_current_time(float(value))
 
     def _set_time(self, time):
         self.slider.configure(to=max(10.0, float(self.project.duration), time))
@@ -3133,6 +3428,8 @@ class DollyApp:
         self._draw_path()
         if hasattr(self, "aspect_curve"):
             self.aspect_curve.set_current_time(float(time))
+        if hasattr(self, "rotation_curve"):
+            self.rotation_curve.set_current_time(float(time))
         if not getattr(self, "playing", False):
             self._refresh_citadel_dof()
 
@@ -3332,6 +3629,7 @@ class DollyApp:
             self.selected_text.set("No camera selected")
         self._draw_path()
         self._refresh_curve()
+        self._update_export_camera_note()
         if selected_time is not None:
             self._select_key()
 

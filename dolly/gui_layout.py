@@ -13,7 +13,7 @@ class ScrollPage(ttk.Frame):
     """One vertical scroll region; wheel events stay within this page."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.canvas = tk.Canvas(self, background="#11171c", highlightthickness=0)
+        self.canvas = tk.Canvas(self, background="#10171b", highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -297,6 +297,9 @@ def build_export(app):
     app.video_stop_button.configure(state="disabled")
     app.video_cancel_button.configure(state="disabled")
     ttk.Label(controls, textvariable=app.video_status_text, style="CardMuted.TLabel", wraplength=760).pack(fill="x")
+    app.export_camera_note = ttk.Label(controls, text="Camera: Free path", style="CardMuted.TLabel",
+                                       wraplength=760)
+    app.export_camera_note.pack(fill="x")
     ttk.Label(controls, text="With passes ticked: Record video records the color take. When it finishes, Dolly records each ticked pass in turn; you do not need to press Finish again.",
               style="CardMuted.TLabel", wraplength=760).pack(fill="x")
     runtime = disclosure(body, "FFmpeg runtime")

@@ -126,6 +126,16 @@ class EditorDofTests(unittest.TestCase):
         self.assertEqual(EXTRA_ACTIONS.index("set_citadel_dof_enabled") + 26, 60)
         self.assertEqual(EXTRA_ACTIONS.index("set_citadel_dof_sensor_size") + 26, 61)
         self.assertEqual(EXTRA_ACTIONS.index("set_citadel_dof_focus_distance") + 26, 62)
+        self.assertEqual(EXTRA_ACTIONS.index("set_attach_target") + 26, 63)
+        self.assertEqual(EXTRA_ACTIONS.index("set_attach_point") + 26, 64)
+        self.assertEqual(EXTRA_ACTIONS.index("set_attach_offsets") + 26, 65)
+        self.assertEqual(EXTRA_ACTIONS.index("set_attach_smoothing") + 26, 66)
+        self.assertEqual(EXTRA_ACTIONS.index("set_attach_hide") + 26, 67)
+        self.assertEqual(EXTRA_ACTIONS.index("attach_cycle_target") + 26, 68)
+        self.assertEqual(EXTRA_ACTIONS.index("attach_cycle_point") + 26, 69)
+        self.assertEqual(EXTRA_ACTIONS.index("attach_reset") + 26, 70)
+        self.assertEqual(EXTRA_ACTIONS.index("attach_preview") + 26, 71)
+        self.assertEqual(EXTRA_ACTIONS.index("attach_snap") + 26, 72)
 
     def test_citadel_wire_block_follows_the_native_dof_block(self):
         from dolly.editor_wire import CITADEL_DOF, CITADEL_DOF_OFFSET, pack_citadel_dof

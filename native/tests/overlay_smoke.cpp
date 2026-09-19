@@ -488,8 +488,27 @@ namespace dolly {
 EditorSnapshot editor_snapshot() noexcept {
     return snapshot;
 }
+bool editor_roster_snapshot(EditorRoster& out) noexcept {
+    out = EditorRoster{};
+    if (!snapshot.attach_available)
+        return false;
+    out.count = 1;
+    std::snprintf(out.players[0].model_path, sizeof(out.players[0].model_path),
+                  "models/heroes_staging/astro/astro.vmdl");
+    out.players[0].handle = 19464268;
+    out.players[0].entity_index = 76;
+    return true;
+}
 bool editor_enqueue(EditorAction, double, const CameraPose*) noexcept {
     return true;
+}
+bool editor_bones_snapshot(EditorBones& out) noexcept {
+    out = EditorBones{};
+    out.count = out.total = 3;
+    std::snprintf(out.names[0], 64, "head");
+    std::snprintf(out.names[1], 64, "hand_R");
+    std::snprintf(out.names[2], 64, "weapon_bone_R");
+    return snapshot.attach_available;
 }
 bool editor_panel_visible() noexcept {
     return snapshot.owner == EditorOwner::Panel;
@@ -604,6 +623,15 @@ int main(int argc, char** argv) {
         if (screenshot) {
             snapshot.dof_available = true;
             snapshot.dof = {1, 1, -100, 0, 180, 1490, -100, 0, 180, 2000, .5};
+            snapshot.attach_available = true;
+            snapshot.attach_selected = true;
+            snapshot.attach_keys = 2;
+            snapshot.shot_keys = 2;
+            snapshot.attach_target_index = 0;
+            snapshot.attach_point = 0;
+            snapshot.attach_offsets[2] = 6.0;
+            snapshot.attach_smoothing = .15;
+            snapshot.roster_count = 1;
         }
         snapshot.duration = 3;
         std::snprintf(snapshot.shot_name, sizeof(snapshot.shot_name), "Synthetic editor smoke");
@@ -628,7 +656,7 @@ int main(int argc, char** argv) {
             require(SUCCEEDED(chain->Present(0, 0)), "Synthetic Present failed");
             if (screenshot && i == 0) {
                 const char* page =
-                    lens_screenshot ? "Lens" : (export_screenshot ? "Export" : "Camera");
+                    lens_screenshot ? "Look" : (export_screenshot ? "Export" : "Camera");
                 require(screenshot_context != nullptr, "Overlay ImGui context missing");
                 auto& bars = screenshot_context->TabBars;
                 bool found = false;

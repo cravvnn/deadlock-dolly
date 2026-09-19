@@ -112,6 +112,11 @@ def build_native(root: Path = ROOT) -> dict:
     build = root / "build" / "native-msvc"
     checks = root / "build" / "checks"
     checks.mkdir(parents=True, exist_ok=True)
+    # Explicitly bound MSBuild workers. Bare --parallel can leave hundreds of
+    # reusable worker processes on machines reporting an inflated CPU count.
+    jobs = int(os.environ.get("DOLLY_BUILD_JOBS", "2"))
+    if not 1 <= jobs <= 32:
+        raise ValueError("DOLLY_BUILD_JOBS must be between 1 and 32")
     metadata = native / "build_info.json"
     metadata.unlink(missing_ok=True)
     # Force a relink. A shared library left from an earlier build can carry a
@@ -128,7 +133,8 @@ def build_native(root: Path = ROOT) -> dict:
     commands = [
         ["cmake", "-S", str(native), "-B", str(build), "-G", "Visual Studio 17 2022",
          "-A", "x64", "-DBUILD_TESTING=ON"],
-        ["cmake", "--build", str(build), "--config", "Release", "--parallel"],
+        ["cmake", "--build", str(build), "--config", "Release", "--parallel", str(jobs),
+         "--", "/nodeReuse:false"],
         ctest,
     ]
     print("Building and testing the native x64 camera bridge...", flush=True)
@@ -143,7 +149,8 @@ def build_native(root: Path = ROOT) -> dict:
             "runtime": "static", "native_path_tests_passed": True,
             "native_effect_tests_passed": True, "native_visualization_tests_passed": True,
             "native_callback_tests_passed": True,
-            "native_flight_tests_passed": True, "native_overlay_tests_passed": True,
+            "native_flight_tests_passed": True, "native_attach_tests_passed": True,
+            "native_overlay_tests_passed": True,
             "native_video_math_tests_passed": True, "native_video_encoder_tests_passed": True,
             "reshade_game_runtime_verified": False,
             "game_runtime_verified": False, "pe": report}

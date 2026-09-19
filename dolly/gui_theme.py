@@ -58,8 +58,8 @@ def apply(root, bg, panel, text, muted, accent):
     style = ttk.Style(root)
     images = []
     scale = max(1, root.winfo_fpixels("1i") / 96)
-    edge = "#35434c"
-    field = panel
+    edge = "#26343b"
+    field = "#10171c"
     control_radius, card_radius = round(5 * scale), round(6 * scale)
     def rounded(name, fill, outline, radius=control_radius, min_width=16, **states):
         normal = rounded_image(root, fill, outline, radius, line=scale)
@@ -75,7 +75,7 @@ def apply(root, bg, panel, text, muted, accent):
     rounded("Dolly.card", panel, edge, card_radius)
     style.layout("Rounded.Card.TFrame", [("Dolly.card", {"sticky": "nsew"})])
     style.configure("Rounded.Card.TFrame", background=bg)
-    rounded("Dolly.button", panel, edge, disabled=("#172027", "#29353d"),
+    rounded("Dolly.button", "#25313e", "#25313e", disabled=("#172027", "#29353d"),
             pressed=("#233c3b", accent), active=("#203039", accent), focus=(panel, accent))
     rounded("Dolly.primary", accent, accent, disabled=("#24433f", "#31564f"),
             pressed=("#77beaf", "#77beaf"), active=("#afe8dc", "#afe8dc"), focus=(accent, "#dcfff7"))
@@ -84,8 +84,8 @@ def apply(root, bg, panel, text, muted, accent):
             "sticky": "nsew", "children": [("Button.label", {"sticky": "nsew"})]})]})]
     style.layout("TButton", button_layout("Dolly.button"))
     style.layout("Primary.TButton", button_layout("Dolly.primary"))
-    style.configure("TButton", padding=(10, 8))
-    style.configure("Quiet.TButton", padding=(10, 8))
+    style.configure("TButton", padding=(10, 5))
+    style.configure("Quiet.TButton", padding=(10, 5))
     for name, surface in (("TButton", bg), ("Primary.TButton", bg), ("Quiet.TButton", bg),
                           ("Card.TButton", panel), ("Card.Primary.TButton", panel), ("Card.Quiet.TButton", panel)):
         style.configure(name, background=surface)
@@ -120,10 +120,12 @@ def apply(root, bg, panel, text, muted, accent):
             ("Combobox.textarea", {"sticky": "nsew"})]})]})])
     for name in ("TEntry", "TCombobox"):
         style.configure(name, fieldbackground=field, background=bg, foreground=text,
-                        borderwidth=0, padding=(10, 8))
+                        borderwidth=0, padding=(10, 5))
         style.map(name, fieldbackground=[("disabled", "#172027"), ("readonly", field)],
                   foreground=[("disabled", "#657780"), ("readonly", text)])
         style.configure("Card." + name, background=panel)
+
+    style.configure("Numeric.TEntry", padding=(4, 1), background=panel)
 
     size = round(14 * scale)
     indicator = rounded_image(root, field, edge, round(3 * scale), size=size, line=scale)
@@ -192,3 +194,60 @@ def install_wheel_guard(root):
     for cls in ("TCombobox", "TSpinbox", "Spinbox", "TScale", "Scale"):
         for event in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             root.bind_class(cls, event, wheel)
+
+
+def compact_slider(parent, label, variable, minimum, maximum, panel, muted, accent):
+    """Compact rail with keyboard/drag adjustment and an exact editable value."""
+    row = ttk.Frame(parent, style="Card.TFrame")
+    row.pack(fill="x", pady=1)
+    row.columnconfigure(1, weight=1)
+    ttk.Label(row, text=label, style="CardMuted.TLabel", width=7).grid(row=0, column=0, sticky="w")
+    rail = tk.Canvas(row, height=22, width=80, bg=panel, highlightthickness=0, takefocus=True)
+    rail.grid(row=0, column=1, sticky="ew", padx=(4, 10))
+    ttk.Entry(row, textvariable=variable, width=7, justify="right", style="Numeric.TEntry").grid(row=0, column=2)
+    def redraw(*_):
+        rail.delete("all")
+        width = max(12, rail.winfo_width())
+        try:
+            value = float(variable.get())
+        except (ValueError, tk.TclError):
+            return
+        if not math.isfinite(value):
+            return
+        x = 4 + (width - 8) * max(0, min(1, (value - minimum) / (maximum - minimum)))
+        rail.create_line(4, 11, width - 4, 11, fill="#0e171d", width=6, capstyle="round")
+        rail.create_line(4, 11, x, 11, fill="#385d59", width=6, capstyle="round")
+        rail.create_line(x, 7, x, 15, fill=accent, width=5, capstyle="round")
+        if rail.focus_get() == rail:
+            rail.create_rectangle(1, 1, width - 1, 21, outline=muted)
+    def set_value(value):
+        variable.set(f"{max(minimum, min(maximum, value)):.2f}".rstrip("0").rstrip("."))
+    def drag(event):
+        rail.focus_set()
+        set_value(minimum + (maximum - minimum) * (event.x - 4) / max(1, rail.winfo_width() - 8))
+    def key(event):
+        try:
+            value = float(variable.get())
+        except ValueError:
+            value = minimum
+        step = (maximum - minimum) / (1000 if event.state & 1 else 100)
+        if event.keysym in ("Left", "Down"):
+            set_value(value - step)
+        elif event.keysym in ("Right", "Up"):
+            set_value(value + step)
+        elif event.keysym == "Home":
+            set_value(minimum)
+        elif event.keysym == "End":
+            set_value(maximum)
+        else:
+            return
+        return "break"
+    token = variable.trace_add("write", redraw)
+    rail.bind("<Configure>", redraw)
+    rail.bind("<FocusIn>", redraw)
+    rail.bind("<FocusOut>", redraw)
+    rail.bind("<Button-1>", drag)
+    rail.bind("<B1-Motion>", drag)
+    rail.bind("<KeyPress>", key)
+    rail.bind("<Destroy>", lambda event: variable.trace_remove("write", token))
+    return row

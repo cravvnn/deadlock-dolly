@@ -1,4 +1,5 @@
 #pragma once
+#include "dolly_attach.hpp"
 #include "dolly_path.hpp"
 #include <array>
 #include <vector>
@@ -46,6 +47,7 @@ class NativeShot {
 public:
     NativePath camera;
     std::vector<EffectTrack> effects;
+    AttachTrack attach;
     bool load(const void* data, std::size_t size, std::string& error);
 };
 }

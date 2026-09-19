@@ -162,20 +162,26 @@ void observe_draw(ID3D11DeviceContext* context) noexcept {
 template <unsigned I>
 void STDMETHODCALLTYPE indexed(ID3D11DeviceContext* c, UINT n, UINT start, INT base) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, INT);
-    if (n)
+    const bool keep = !n || player_capture::allow_draw(c, 1, 0);
+    if (n && keep)
         player_capture::draw(c, 0, n, 1, 0);
-    if (n)
+    if (n && keep)
         classify::draw(c, 0);
+    if (!keep)
+        return;
     reinterpret_cast<Fn>(originals[I][0])(c, n, start, base);
     if (n)
         observe_draw(c);
 }
 template <unsigned I> void STDMETHODCALLTYPE draw(ID3D11DeviceContext* c, UINT n, UINT start) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT);
-    if (n)
+    const bool keep = !n || player_capture::allow_draw(c, 1, 0);
+    if (n && keep)
         player_capture::draw(c, 1, n, 1, 0);
-    if (n)
+    if (n && keep)
         classify::draw(c, 1);
+    if (!keep)
+        return;
     reinterpret_cast<Fn>(originals[I][1])(c, n, start);
     if (n)
         observe_draw(c);
@@ -184,6 +190,9 @@ template <unsigned I>
 void STDMETHODCALLTYPE indexed_instanced(ID3D11DeviceContext* c, UINT n, UINT instances, UINT start,
                                          INT base, UINT first) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT, INT, UINT);
+    const bool keep = !(n && instances) || player_capture::allow_draw(c, instances, first);
+    if (!keep)
+        return;
     if (n && instances)
         player_capture::draw(c, 2, n, instances, first);
     if (n && instances)
@@ -197,10 +206,13 @@ template <unsigned I>
 void STDMETHODCALLTYPE instanced(ID3D11DeviceContext* c, UINT n, UINT instances, UINT start,
                                  UINT first) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT, UINT);
-    if (n && instances)
+    const bool keep = !(n && instances) || player_capture::allow_draw(c, instances, first);
+    if (n && instances && keep)
         player_capture::draw(c, 3, n, instances, first);
-    if (n && instances)
+    if (n && instances && keep)
         classify::draw(c, 3);
+    if (!keep)
+        return;
     reinterpret_cast<Fn>(originals[I][3])(c, n, instances, start, first);
     if (n && instances)
         observe_draw(c);

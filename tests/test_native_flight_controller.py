@@ -2,7 +2,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from dolly.controller import Controller
 from dolly.navigation import CameraMotion
@@ -77,6 +77,81 @@ def configured_controller():
 class NativeFlightControllerTests(unittest.TestCase):
     def setUp(self):
         self.controller, self.console, self.bridge = configured_controller()
+
+    def test_seek_between_keys_holds_full_native_rotation_and_lens(self):
+        project = make_project()
+        project.keyframes[0].curve_pitch = -20
+        project.keyframes[-1].curve_yaw = 170
+        project.keyframes[-1].curve_roll = 35
+        saved = project.to_dict()
+        at = project.duration / 2
+        tick = round(project.start_tick + at * project.tick_rate)
+        def seek(*_):
+            self.console.tick = tick
+            self.console.paused = True
+            return {"tick": tick}
+        with patch.object(self.controller, "_seek", side_effect=seek), \
+             patch.object(self.controller, "_position_direct_frame") as legacy:
+            self.controller.seek(project, at)
+        expected = project.evaluate(at)
+        for index, name in enumerate(("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")):
+            self.assertAlmostEqual(self.bridge.pose[index], expected[name])
+        self.assertEqual(self.controller._paused_tick, tick)
+        self.assertEqual(self.controller.status()["time"], at)
+        self.assertEqual(self.bridge.owner, "panel")
+        self.assertTrue(self.controller._native_manual)
+        self.assertEqual(project.to_dict(), saved)
+        legacy.assert_not_called()
+        self.assertFalse(self.console.camera_writes)
+
+    def test_seek_waits_for_rendered_reconstruction_before_console_status(self):
+        request = self.controller._request
+        wait = self.controller._wait_paused_native_view
+        settled = []
+        def rendered(*args, **kwargs):
+            result = wait(*args, **kwargs)
+            settled.append(result["tick"])
+            return result
+        def checked(command, **kwargs):
+            if command == "demo_goto":
+                self.assertTrue(settled, "Console status was sent during reconstruction")
+            return request(command, **kwargs)
+        with patch.object(self.controller, "_request", side_effect=checked), \
+             patch.object(self.controller, "_wait_paused_native_view", side_effect=rendered):
+            self.controller._seek_tick(101)
+        self.assertEqual(settled, [101])
+
+    def test_seek_status_uses_remaining_reconstruction_budget(self):
+        request = self.controller._request
+        budgets = []
+        def timed(command, **kwargs):
+            if command == "demo_goto":
+                budgets.append(kwargs.get("timeout", 3))
+                if kwargs.get("timeout", 3) <= 3:
+                    raise AssertionError("Replay reconstruction needs more than a routine status timeout")
+            return request(command, **kwargs)
+        with patch.object(self.controller, "_request", side_effect=timed):
+            self.controller._seek_tick(101)
+        self.assertTrue(budgets)
+        self.assertTrue(all(3 < value <= 15 for value in budgets))
+
+    def test_failed_seek_never_publishes_a_native_view(self):
+        with patch.object(self.controller, "_seek", side_effect=RuntimeError("seek failed")):
+            with self.assertRaisesRegex(RuntimeError, "seek failed"):
+                self.controller.seek(make_project(), 5)
+        self.assertNotIn("native.prepare", self.console.events)
+
+    def test_seek_rejects_replay_motion_during_native_preparation(self):
+        prepare = self.bridge.prepare
+        def moving(*args):
+            prepare(*args)
+            self.console.tick += 1
+        self.bridge.prepare = moving
+        with patch.object(self.controller, "_seek", return_value={"tick": self.console.tick}):
+            with self.assertRaisesRegex(RuntimeError, "replay moved"):
+                self.controller.seek(make_project(), 5)
+        self.assertEqual(self.bridge.state, "stopped")
+        self.assertFalse(self.controller._native_active)
 
     def test_first_flight_hands_off_default_game_cursor_before_arming(self):
         original_values = dict(self.console.values)

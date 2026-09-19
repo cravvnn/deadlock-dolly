@@ -18,10 +18,10 @@ installation and current limits. Windows/Deadlock validation is recorded in
    Source users need Python 3.10+ with Tcl/Tk and a built native helper; see
    [BUILDING.md](BUILDING.md). Do not mix ABI 3 with earlier helper/editor files.
 3. Open Steam and sign in. Use **DirectX 11** in Deadlock's graphics settings.
-4. Open **Dolly.exe**. In **Library → Launch setup**, choose `game/bin/win64/deadlock.exe` and a
+4. Open **Dolly.exe**. In **Replay → Launch setup**, choose `game/bin/win64/deadlock.exe` and a
    local, decompressed `.dem`. Older `citadel.exe` installations and Steam
    libraries on another drive are accepted; do not rename game files.
-5. Alternatively, open **Library**, refresh the replay list and select
+5. Alternatively, open **Replay**, refresh the replay list and select
    a file. It lists local `.dem` files; it does not download or decompress demos.
    Review **Settings → Controls & keybinds** before launch if you want a mouse-button capture key.
 6. Click **Open replay in Dolly**. Dolly connects to the game process it launched,
@@ -29,7 +29,7 @@ installation and current limits. Windows/Deadlock validation is recorded in
    executes `cvar_unhide` once, and requires both completion summaries.
 7. Only after confirmation, Dolly loads the selected demo, checks its identity
    and camera support, pauses it, closes the console explicitly and enables
-   native flight. Startup progress appears in Library. Do not load a demo manually
+   native flight. Startup progress appears in Replay. Do not load a demo manually
    while waiting for this sequence.
 8. Frame a view with WASD and mouse look, then capture it. Fly to the next
    camera position and capture again. **F8** opens the in-game Dolly panel.
@@ -117,9 +117,9 @@ mode is active. It suspends editor shortcuts for console typing and ordinary
 game interaction. The external capture/keyboard listener remains only for the
 legacy Console workflow; it is disabled during native editing.
 
-The **In-game capture** switch is on the **Library** page beside
+The **In-game capture** switch is on the **Replay** page beside
 **Open replay in Dolly**, so it can be turned on without enabling the Full
-editor; the same switch is also on the Cameras toolbar. Set its shortcut in
+editor; the same switch is also on the Camera toolbar. Set its shortcut in
 **Settings → Controls & keybinds**.
 
 ## Switch and move cameras while paused
@@ -137,7 +137,7 @@ aspect and supported DOF at the **current replay moment**. This does not seek
 to that key's arrival time. F10 continues flight from the displayed view.
 
 While flying a paused camera, scroll up to zoom in and down to zoom out.
-This changes `r_aspectratio`, the **Framing Curve** on the desktop Cameras tab,
+This changes `r_aspectratio`, the **Framing Curve** on the desktop Camera tab,
 between 0.5 and 4. It immediately updates the selected camera's framing without
 changing its position or arrival time. Before the first camera is captured,
 scrolling changes the live framing that the next capture will save. The wheel
@@ -177,6 +177,21 @@ may briefly seek to an adjacent tick and return, then verifies XYZ movement.
 Release movement keys during preparation. It uses external keyboard input and
 arrow-key look, not native mouse look. Stop that legacy flight before typing
 in the game console. The native input behavior above does not apply to it.
+
+### Edit a view between saved cameras
+
+Open **Camera > Between cameras** in the in-game Dolly panel. Drag **Time**
+(or Ctrl+click its slider to type seconds), then press **Seek here**. Dolly
+pauses the replay at that part of the shot and applies its position, rotation
+and framing. Moving the slider alone does not seek. Pause shot playback first.
+A replay can reconstruct only recorded packet times; Dolly reports the actual
+shot time if it has to use the following packet.
+
+Use **Fly camera** to adjust the resulting view. With **Replay timing** selected
+on the desktop, **Capture camera here** (or your capture binding) inserts the
+new camera at that replay moment. An existing camera at the same time must be
+replaced instead. With **Timed shot**, capture uses the configured spacing.
+Desktop **Playback options > Seek replay** uses the same seek behavior.
 
 ## Make a first shot
 
@@ -237,10 +252,26 @@ fixed-step MP4 recording, the paired depth master, isolated layer takes and
 ReShade color effects (with the scene depth published to ReShade) are
 available; audio remains future work.
 
-## Framing curve
+## Framing and rotation curves
 
-Use **FRAMING CURVE** on **Cameras** for the zoom-like effect. Its horizontal axis
-is shot time and its vertical axis is the aspect-ratio framing value. Console preview/playback use `r_aspectratio`; native preview/playback apply the
+Use **FRAMING CURVES** on **Camera** to shape the zoom-like framing effect and
+to override camera rotation. Both graphs run along the same time axis; the
+upper graph edits **rotation** and the lower graph edits the aspect-ratio
+framing.
+
+**Rotation (upper graph).** Pick **Pitch**, **Yaw** or **Roll** next to
+**ROTATION**. Dragging a point writes a curve override for that camera and
+channel: the solid line is the curve that will play and the dashed line shows
+the camera's authored angle, so the two can be compared. A filled point has an
+override; a hollow point plays its authored angle. With the graph focused,
+Up/Down nudges the selected camera by 1 degree and Shift+Up/Down by 10.
+**Reset** removes every override for the selected channel, returning those
+cameras to their authored angles. Overrides never change a camera's arrival
+time, position or the other channels, and preview, playback and saved shots all
+apply them. Rotation follows the camera path's **Retiming** setting.
+
+**Framing (lower graph).** Its vertical axis is the aspect-ratio framing value.
+Console preview/playback use `r_aspectratio`; native preview/playback apply the
 framing directly to each main view. The graph
 shows the entire **0.5–4.0** editing range and a line for the shot's **Normal**
 aspect ratio. These are Dolly's editing limits, not verified native cvar bounds.
@@ -252,13 +283,15 @@ framing. Dolly does not convert between the two or claim an identical projection
    the saved camera value without changing its arrival time or position. With
    the graph focused, Up/Down changes it by 0.01; Shift+Up/Down changes it by 0.1.
    You can also enter an exact **Aspect ratio** and click **Update camera**.
-3. Leave the graph's interpolation on **smooth** for a continuous curve that
+3. Keep the header on **smooth** for a continuous curve that
    does not overshoot between values. **linear** connects values directly;
-   **step** holds each value until the next key. This selection is independent
-   of the camera's position spline.
+   **step** holds each value until the next key.
 4. Use **Preview** for the selected camera, or **Play shot** to run the curve
    with the moving camera and replay. Graph edits alone do not send commands
    to the game.
+
+Both graphs zoom together: the mouse wheel zooms around the pointer, a
+right-drag pans, and a double-click returns to the whole shot.
 
 **Normal** starts at 16:9 (about 1.77778), matching the supplied screenshots.
 Choose 16:10, 21:9 or 4:3, or type a custom ratio/decimal and press Enter for a different standard.
@@ -304,30 +337,56 @@ this version so you can distinguish the current window from an old one.
 
 ## Editor layout
 
-**Library** combines replay selection, one-click startup and shot file actions.
+**Replay** combines replay selection, one-click startup and shot file actions.
 **Export** contains destination, output passes, capture quality and recording.
 **Settings** contains saved paths, controls/keybinds, ReShade and troubleshooting.
 
-The prominent **Full editor** switch adds **Cameras**, **Effects** and the shot
+The prominent **Full editor** switch adds **Camera**, **Look** and the shot
 timeline. It remembers the layout without changing the shot or session. Cameras
 keeps the list, framing graph, selected-camera controls and XY path overview.
-Effects contains DOF and numeric camera-variable tracks. Coordinate entry and
+Look contains DOF and numeric camera-variable tracks. Coordinate entry and
 advanced timing remain in **More → Coordinates / timing…**. Playback options
 hold preview, seek, update rate and renderer relief; Console smoothing appears
 when using that backend. **Stop / restore** is always available in the footer.
 
-The in-game panel has **Camera**, **Lens** and **Export** tabs. It remains freely
-draggable and resizable. Camera includes Updates / s inside Free camera and a
-standalone Clear ragdolls button below it, followed by **Toggle Citadel glow**,
-**Toggle health bars** and **Near player opacity fix**. The glow button flips
-the glow switches; **Toggle health bars** is a master hide/restore for unit,
-HUD and objective bars that snapshots their exact current values and puts them
-back on the next press. Bar glow stays with the glow button. The opacity fix
-forces the near-player camera fades back to full. Lens contains the **Native
-Depth of Field** card, the **Citadel Depth of Field** card and the ReShade
-menu. Export includes independent World, Players and Effects switches alongside
-depth. Save/load and full graph editing remain on the desktop; both surfaces
-share the same project. **Log** opens a separate resizable activity window.
+The in-game panel uses **Replay**, **Camera**, **Look** and **Export**.
+Replay contains playback and seeking. Camera contains saved views, player/bone
+attachment and free-camera movement. Expand **Position, rotation & smoothing**
+when you need numeric offsets. Look groups scene visibility, both depth-of-field
+controls and ReShade. Export shows the selected saved camera source alongside
+capture settings and output passes. The panel remains draggable and resizable.
+Save/load and full graph editing stay on the desktop; both surfaces share one
+project. **Stop / restore** remains available in the footer.
+
+### Attach a camera to a player
+
+In the desktop Camera inspector, choose **Attach to player**, select the hero
+and choose **Eyes**, **Weapon** or **Bone**. Bone offers names from the selected
+player's live model; you can also type a valid name on desktop. Use **Apply to
+camera** to save that source, or **Apply to all** for every view in the shot.
+
+In-game, choose the player and point in **Camera → Attach camera**. Enter
+**Fly camera**, frame your view, then use **Snap** to calculate offsets that
+reproduce it. **Attach here** previews the source; moving while attached edits
+its offsets. **Detach** ends live preview. **Hide this hero** suppresses the
+identified body draws during preview and playback. Export follows the saved
+sources and offsets, including edits made in preview.
+
+Attachment uses replay character models; it does not create first-person arms.
+Weapon and named-bone points are experimental. Reduced rigs and incomplete
+name lists are refused; use **Eyes** when a complete render skeleton cannot
+be identified. Some earlier preview checks matched a wrong bone index, so
+broader hero support is still under review.
+Set **Blend into this view** on desktop or **Blend in** in-game to ease between
+camera sources. Start with **0.5 seconds**: the blend ends at the selected
+view's time and cannot begin before the previous view. **0** keeps a cut.
+The setting works when arriving at either an attached or free camera; existing
+shots keep their cuts. Position and shortest-turn angles ease in and out, while
+the authored lens curve continues independently. Try a short preview to check
+clearance from walls and character models. Saved blended shots require this
+build or newer.
+
+Complete hiding across every rendering pass is still being validated.
 
 The color video is always recorded first. Ticking **Depth master** or a layer
 adds extra takes: when the color take finishes (at the end of the shot, or when

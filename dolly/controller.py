@@ -358,10 +358,10 @@ class Controller:
             raise RuntimeError(error)
         return output
 
-    def _require_demo(self, require_tick=True):
+    def _require_demo(self, require_tick=True, *, timeout=3):
         # No arguments: demo_goto reports current playback position; it does
         # not seek. demo_info in the user's game prints file metadata instead.
-        output = self._request("demo_goto", allow_error=True)
+        output = self._request("demo_goto", allow_error=True, timeout=timeout)
         return self._resolve_demo(output, require_tick)
 
     def _resolve_demo(self, output, require_tick=True):
@@ -1093,7 +1093,7 @@ class Controller:
             self._message("Captured the current freecam view and aspect ratio; replay paused. Roll keeps Dolly's last applied value, or zero; edit Bank if needed.")
             return frame
 
-    def _wait_paused_native_view(self, bridge, after_frame, *, timeout=None, expected_tick=None):
+    def _wait_paused_native_view(self, bridge, after_frame, *, timeout=None, expected_tick=None, tick_tolerance=0):
         """Wait for fresh, settled render telemetry after a pause command."""
         deadline = time.perf_counter() + (NATIVE_PAUSE_TIMEOUT if timeout is None else timeout)
         previous_tick = None
@@ -1108,7 +1108,8 @@ class Controller:
             frame = int(current.get("frame_count", 0))
             if frame > previous_frame:
                 tick = int(current["tick"])
-                at_expected = expected_tick is None or tick == int(expected_tick)
+                at_expected = (expected_tick is None
+                               or int(expected_tick) <= tick <= int(expected_tick) + tick_tolerance)
                 if current.get("paused") and tick >= 0 and at_expected:
                     if previous_tick == tick:
                         return current
@@ -2409,6 +2410,8 @@ class Controller:
         self._check_position_cancelled()
         end = time.perf_counter() + 15
         samples = deque(maxlen=32)
+        native = self._native_bridge() if self._supports_native_flight() else None
+        wait_for_view = native is not None
         stable = 0
         overshoot_tick = None
         overshoot_samples = 0
@@ -2418,7 +2421,22 @@ class Controller:
                                    "corrections": corrections}
         while time.perf_counter() < end:
             self._check_position_cancelled()
-            info = self._require_demo()
+            if wait_for_view:
+                # Commands sent during replay reconstruction can lose their
+                # console echo delimiters, even after the renderer later settles.
+                # Observe fresh native paused frames before querying the console.
+                # The +2 window only admits the known overshoot for correction;
+                # the exact console tick verification below remains mandatory.
+                with self._paused_preparation(self._stop_event.is_set):
+                    self._wait_paused_native_view(native, native.status()["frame_count"],
+                        timeout=max(.001, end - time.perf_counter()),
+                        expected_tick=target, tick_tolerance=2)
+                wait_for_view = False
+                self._check_position_cancelled()
+            # Backward reconstruction can block console replies for more
+            # than the ordinary 3-second request timeout. Spend only the
+            # remaining existing seek budget, then still require settled ticks.
+            info = self._require_demo(timeout=max(.001, end - time.perf_counter()))
             self._check_position_cancelled()
             observed = int(info["tick"])
             samples.append({"at": time.perf_counter(), "tick": observed})
@@ -2461,7 +2479,7 @@ class Controller:
                 self._check_position_cancelled()
                 self._request("demo_pause")
                 self._check_position_cancelled()
-                confirmed = int(self._require_demo()["tick"])
+                confirmed = int(self._require_demo(timeout=max(.001, end - time.perf_counter()))["tick"])
                 self._check_position_cancelled()
                 if confirmed != observed:
                     if confirmed != target:
@@ -2476,6 +2494,7 @@ class Controller:
                     corrections.append({"from_tick": confirmed, "target_tick": target,
                                         "at": time.perf_counter(),
                                         "samples_before": list(samples)})
+                    wait_for_view = native is not None
                     correction_output = self._request(f"demo_gototick {target} 0 1", timeout=6)
                     boundary_reported = bool(boundary_reported and
                         re.search(boundary_pattern, correction_output, re.IGNORECASE))
@@ -2496,9 +2515,30 @@ class Controller:
             self._require_demo()
             self._snapshot(project)
             shot_time = self._shot_time(project, shot_time)
+            bridge = self._native_bridge() if self._supports_native_flight() else None
+            before_frame = int(bridge.status().get("frame_count", 0)) if bridge else 0
             positioned_demo = self._seek(project, shot_time)
             shot_time = self._seek_shot_time(project, shot_time, positioned_demo)
-            self._position_direct_frame(project.evaluate(shot_time), positioned_demo["tick"])
+            if bridge is None:
+                self._position_direct_frame(project.evaluate(shot_time), positioned_demo["tick"])
+            else:
+                # Seeking can leave the spectator console angle override stale.
+                # Wait for the reconstructed scene, then hold the complete authored
+                # native pose, including rotation curves, lens and source blending.
+                self._wait_paused_native_view(bridge, before_frame,
+                                              expected_tick=positioned_demo["tick"])
+                self._check_position_cancelled()
+                bridge.prepare(project, shot_time, 1.0, True, self._demo.name)
+                self._native_active = self._native_manual = True
+                status = bridge.status()
+                self._require_native_demo(status)
+                if not status.get("paused") or int(status["tick"]) != int(positioned_demo["tick"]):
+                    self._release_native_camera()
+                    raise RuntimeError("The replay moved while applying the shot view. Pause it and retry.")
+                frame = self._native_pose(status)
+                frame.update(time=shot_time, cvars=dict(project.evaluate(shot_time)["cvars"]))
+                self._set_paused_pose(frame, int(status["tick"]))
+                bridge.configure_editor(owner="panel")
             boundary = positioned_demo.get("seek_boundary")
             if boundary:
                 self._message(f"Replay paused at recorded tick {positioned_demo['tick']} "

@@ -86,7 +86,20 @@ enum class EditorAction : std::uint32_t {
     NearPlayerOpacityFix,
     SetCitadelDofEnabled,
     SetCitadelDofSensorSize,
-    SetCitadelDofFocusDistance
+    SetCitadelDofFocusDistance,
+    SetAttachTarget,
+    SetAttachPoint,
+    SetAttachOffsets,
+    SetAttachSmoothing,
+    SetAttachHide,
+    AttachCycleTarget,
+    AttachCyclePoint,
+    AttachReset,
+    AttachPreview,
+    AttachSnap,
+    SetAttachBone,
+    SetSourceBlend,
+    SeekShot
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
@@ -101,6 +114,11 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoDepthExr) == 53,
 static_assert(static_cast<std::uint32_t>(EditorAction::ToggleCitadelGlow) == 57 &&
                   static_cast<std::uint32_t>(EditorAction::SetCitadelDofFocusDistance) == 62,
               "Stable Citadel action IDs");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetAttachTarget) == 63 &&
+                  static_cast<std::uint32_t>(EditorAction::AttachSnap) == 72,
+              "Stable attach action IDs");
+static_assert(static_cast<std::uint32_t>(EditorAction::SeekShot) == 75,
+              "Stable shot seek action ID");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
@@ -171,9 +189,81 @@ struct EditorCitadelDofConfig {
     std::uint32_t sequence, abi, available, enabled;
     double sensor_size, focus_distance;
 };
+// Attach-camera runtime offsets follow the Citadel DOF block. The desktop
+// editor queries the live schema once per session and republishes it; the
+// native attach provider refuses attach keys while this block is absent.
+constexpr std::size_t kEditorAttachOffset =
+    kEditorCitadelDofOffset + sizeof(EditorCitadelDofConfig);
+struct EditorAttachConfig {
+    char magic[8];
+    std::uint32_t sequence, abi, flags, reserved;
+    std::uint64_t model;
+    // scene_node, owner, origin, angles, view_offset, eye_angles, child, sibling
+    std::uint32_t offsets[8];
+    // ABI 3 uses reserved2 for source blend milliseconds (0..10000).
+    std::uint32_t handle, entity_id, target_index, point, hide, reserved2;
+    double offset[6];
+    double smoothing;
+    std::uint32_t attached_keys, key_count;
+    // Monotonic snap requests from the editor; the preview callback consumes
+    // changes while the free camera is active.
+    std::uint32_t snap_request;
+    std::uint64_t bone_hash;
+    char bone_name[64]; // ASCII, full-width names need not have a terminator.
+};
+// Native -> editor live player roster for the attach target picker. The bridge
+// worker writes it with the same seqlock discipline as the status block; the
+// mapping is 4 KiB larger than the editor blocks it follows.
+constexpr std::size_t kEditorRosterOffset = 2 * 1024 * 1024 + 4096;
+constexpr std::uint32_t kEditorRosterAbi = 1;
+constexpr std::size_t kEditorRosterPlayers = 16;
+struct EditorRosterEntry {
+    std::uint32_t handle, entity_index;
+    std::uint64_t model;
+    char model_path[96];
+};
+struct EditorRoster {
+    char magic[8];
+    std::uint32_t sequence, abi, count, flags; // flags bit 0: offsets available
+    EditorRosterEntry players[kEditorRosterPlayers];
+};
+// Native -> editor attach result: authored offsets computed by the snap action
+// or edited by attached fly. Written by the bridge with the status seqlock.
+constexpr std::size_t kEditorAttachResultOffset = kEditorRosterOffset + sizeof(EditorRoster);
+constexpr std::uint32_t kEditorAttachResultAbi = 1;
+struct EditorAttachResult {
+    char magic[8];
+    std::uint32_t sequence, abi, flags, reserved; // flags bit 0: valid offsets
+    std::uint32_t handle, entity_index, point, reserved2;
+    std::uint64_t model;
+    double offset[6];
+    double smoothing;
+};
+constexpr std::size_t kEditorBonesOffset = kEditorAttachResultOffset + sizeof(EditorAttachResult);
+constexpr std::size_t kEditorBoneCount = 256;
+struct EditorBones {
+    char magic[8];
+    std::uint32_t sequence, abi, handle, entity_index;
+    std::uint64_t model;
+    std::uint32_t count, total;
+    char names[kEditorBoneCount][64];
+};
 #pragma pack(pop)
 static_assert(sizeof(EditorDofConfig) == 112, "Python optional DOF config layout");
 static_assert(sizeof(EditorCitadelDofConfig) == 40, "Python optional Citadel DOF config layout");
+static_assert(sizeof(EditorAttachConfig) == 228, "Python optional attach config layout");
+static_assert(kEditorAttachOffset + sizeof(EditorAttachConfig) <= 2 * 1024 * 1024 + 4096,
+              "Attach config fits the mapping");
+static_assert(sizeof(EditorRosterEntry) == 112, "Python attach roster entry layout");
+static_assert(sizeof(EditorRoster) == 1816, "Python attach roster layout");
+static_assert(sizeof(EditorAttachResult) == 104, "Python attach result layout");
+static_assert(sizeof(EditorBones) == 16424, "Python bone picker layout");
+static_assert(kEditorBonesOffset + sizeof(EditorBones) <= 2 * 1024 * 1024 + 24576,
+              "Bone picker fits the mapping");
+static_assert(kEditorRosterOffset + sizeof(EditorRoster) <= 2 * 1024 * 1024 + 8192,
+              "Attach roster fits the enlarged mapping");
+static_assert(kEditorAttachResultOffset + sizeof(EditorAttachResult) <= 2 * 1024 * 1024 + 8192,
+              "Attach result fits the enlarged mapping");
 static_assert(kEditorCitadelDofOffset + sizeof(EditorCitadelDofConfig) <= 2 * 1024 * 1024 + 4096,
               "Citadel DOF config fits the mapping");
 static_assert(kEditorInputDiagnosticsOffset + sizeof(EditorInputDiagnostics) == kEditorDofOffset,
@@ -205,7 +295,7 @@ struct EditorSnapshot {
     bool enabled = false, focused = false, manual_active = false, ready = false, paused = false,
          overlay_available = false, input_available = false;
     std::uint32_t selected_camera = 0, camera_count = 0, dropped_events = 0;
-    double speed = 400, sensitivity = .08, phase = 0, duration = 0;
+    double speed = 400, sensitivity = .08, phase = 0, duration = 0, playhead = 0;
     std::int32_t tick = 0;
     bool playing = false, busy = false;
     double playback_speed = 1;
@@ -225,9 +315,20 @@ struct EditorSnapshot {
     std::array<double, 11> dof{};
     bool citadel_dof_available = false, citadel_dof_enabled = false;
     double citadel_dof_sensor = 1.0, citadel_dof_focus = 200.0;
+    bool attach_available = false, attach_selected = false, attach_hide = true;
+    bool attach_preview = false;
+    std::uint32_t attach_point = 0, attach_target_index = 0, roster_count = 0;
+    char attach_bone[65]{};
+    double attach_offsets[6] = {}, attach_smoothing = 0, source_blend = 0;
+    std::uint32_t attach_keys = 0, shot_keys = 0;
     char shot_name[96]{}, message[128]{};
 };
 EditorSnapshot editor_snapshot() noexcept;
+// Published attach-camera schema offsets; false while no valid block arrived.
+bool editor_attach_config(EditorAttachConfig& out) noexcept;
+bool editor_bones_snapshot(EditorBones& out) noexcept;
+// Latest native player roster; false while no valid block arrived.
+bool editor_roster_snapshot(EditorRoster& out) noexcept;
 bool editor_enqueue(EditorAction action, double value = 0,
                     const CameraPose* pose_override = nullptr) noexcept;
 bool editor_panel_visible() noexcept;

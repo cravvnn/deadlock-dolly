@@ -8,6 +8,51 @@ from dolly.editor_actions import default_action_bindings, EditorBinding
 
 
 class EditorBridgeTests(unittest.TestCase):
+    def test_free_arrival_blend_does_not_enable_attachment_or_preview(self):
+        offsets = dict(zip(w.ATTACH_FIELDS, (816, 48, 200, 212, 2184, 4536, 64, 72)))
+        self.bridge.configure_editor_attach(offsets,
+            {"selected": False, "source_blend": 0.5, "attached_keys": 1, "key_count": 3}, preview=True)
+        fields = w.ATTACH_CONFIG.unpack_from(self.memory, w.ATTACH_OFFSET)
+        self.assertEqual(fields[2:4], (3, 1))
+        self.assertEqual(fields[19], 500)
+        before = bytes(self.memory)
+        for value in (-1, 11, float("nan"), True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.bridge.configure_editor_attach(offsets, {"source_blend": value})
+            self.assertEqual(bytes(self.memory), before)
+
+    def test_bone_preview_preserves_name_and_hash_and_rejects_invalid_names(self):
+        from dolly.native_effects import model_token
+        offsets = dict(zip(w.ATTACH_FIELDS, (816, 48, 200, 212, 2184, 4536, 64, 72)))
+        attach = {"handle": 5, "entity_id": 3, "model": 0x1234, "point": 2, "bone": "head"}
+        self.bridge.configure_editor_attach(offsets, attach, preview=True)
+        fields = w.ATTACH_CONFIG.unpack_from(self.memory, w.ATTACH_OFFSET)
+        self.assertEqual(fields[17], 2)
+        self.assertEqual(fields[-2], model_token("head"))
+        self.assertEqual(fields[-1].rstrip(b"\0"), b"head")
+        self.assertLessEqual(w.ATTACH_OFFSET + w.ATTACH_CONFIG.size, w.ROSTER_OFFSET)
+        before = bytes(self.memory)
+        for name in ("", "1head", "head/neck", "x" * 65, "héád"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.bridge.configure_editor_attach(offsets, {**attach, "bone": name})
+            self.assertEqual(bytes(self.memory), before)
+
+    def test_bone_catalog_bounds_identity_and_busy_publication(self):
+        header = w.BONES_HEADER.pack(b"DLYBONE1", 2, 1, 5, 3, 0x1234, 2, 2)
+        raw = header + b"head".ljust(64, b"\0") + b"hand_R".ljust(64, b"\0") + bytes(254 * 64)
+        self.memory[w.BONES_OFFSET:w.BONES_OFFSET + len(raw)] = raw
+        bones = self.bridge.editor_bones()
+        self.assertEqual(bones["names"], ["head", "hand_R"])
+        self.assertEqual((bones["handle"], bones["model"]), (5, 0x1234))
+        self.assertLessEqual(w.BONES_OFFSET + w.BONES_BYTES, len(self.memory))
+        bad = bytearray(raw)
+        struct.pack_into("<I", bad, 32, 257)
+        with self.assertRaises(ValueError):
+            w.unpack_bones(bad)
+        struct.pack_into("<I", self.memory, w.BONES_OFFSET + 8, 3)
+        with self.assertRaises(nb.NativeBridgeError):
+            self.bridge.editor_bones()
+
     def test_dof_publication_is_separate_atomic_and_validated_before_write(self):
         values = (1, 1, -100, 0, 180, 2000, -100, 0, 180, 2000, .5)
         before = bytes(self.memory[:w.DOF_OFFSET])
@@ -21,6 +66,71 @@ class EditorBridgeTests(unittest.TestCase):
         self.assertEqual(bytes(self.memory), before)
         self.bridge.configure_editor_dof(values, enabled=False)
         self.assertEqual(w.DOF_CONFIG.unpack_from(self.memory, w.DOF_OFFSET)[1:4], (4, 1, 0))
+
+    def test_attach_publication_is_separate_atomic_and_validated_before_write(self):
+        offsets = {"scene_node": 816, "owner": 48, "player_origin": 200, "player_angles": 212,
+                   "eye_offset": 2184, "eye_angles": 4536, "scene_child": 64, "scene_sibling": 72}
+        before = bytes(self.memory[:w.ATTACH_OFFSET])
+        self.bridge.configure_editor_attach(offsets)
+        self.assertEqual(bytes(self.memory[:w.ATTACH_OFFSET]), before)
+        fields = w.ATTACH_CONFIG.unpack_from(self.memory, w.ATTACH_OFFSET)
+        self.assertEqual(fields[:5], (b"DLYATTC1", 2, 2, 1, 0))
+        self.assertEqual(fields[6:14], (816, 48, 200, 212, 2184, 4536, 64, 72))
+        self.assertEqual(fields[14:20], (0, 0, 0, 0, 0, 0))
+        self.assertEqual(fields[20:27], (0.0,) * 7)
+        self.assertEqual(fields[27:29], (0, 0))
+        before = bytes(self.memory)
+        with self.assertRaises(ValueError):
+            self.bridge.configure_editor_attach({name: 0 for name in w.ATTACH_FIELDS})
+        self.assertEqual(bytes(self.memory), before)
+
+    def test_attach_publication_carries_the_selected_key(self):
+        offsets = {"scene_node": 816, "owner": 48, "player_origin": 200, "player_angles": 212,
+                   "eye_offset": 2184, "eye_angles": 4536, "scene_child": 64, "scene_sibling": 72}
+        attach = {"handle": 5, "entity_id": 3, "target_index": 2, "model": 0x1234,
+                  "point": 1, "hide_body": False, "offset": (1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+                  "smoothing": 0.25, "attached_keys": 2, "key_count": 5}
+        self.bridge.configure_editor_attach(offsets, attach, preview=True)
+        fields = w.ATTACH_CONFIG.unpack_from(self.memory, w.ATTACH_OFFSET)
+        self.assertEqual(fields[3], 7)
+        self.assertEqual(fields[5], 0x1234)
+        self.assertEqual(fields[14:20], (5, 3, 2, 1, 0, 0))
+        self.assertEqual(fields[20:27], (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.25))
+        self.assertEqual(fields[27:30], (2, 5, 0))
+
+    def test_attach_roster_round_trips_and_validates(self):
+        entries = ((19464268, 76, 0x4F5B17F42C61561D, b"models/heroes_staging/astro/astro.vmdl"),
+                   (1736781, 53, 0x1234, b"models/heroes_wip/abrams/abrams.vmdl"))
+        data = bytearray(w.ROSTER_BYTES)
+        w.ROSTER_HEADER.pack_into(data, 0, b"DLYROS01", 6, 1, len(entries), 1)
+        for index, (handle, entity_index, model, path) in enumerate(entries):
+            w.ROSTER_ENTRY.pack_into(data, w.ROSTER_HEADER.size + index * w.ROSTER_ENTRY.size,
+                                     handle, entity_index, model, path)
+        self.memory[w.ROSTER_OFFSET:w.ROSTER_OFFSET + len(data)] = data
+        roster = self.bridge.editor_roster()
+        self.assertTrue(roster["available"])
+        self.assertEqual([player["handle"] for player in roster["players"]], [19464268, 1736781])
+        self.assertEqual(roster["players"][0]["model_path"],
+                         "models/heroes_staging/astro/astro.vmdl")
+        bad = bytearray(data)
+        bad[0] = ord("X")
+        self.memory[w.ROSTER_OFFSET:w.ROSTER_OFFSET + len(bad)] = bad
+        with self.assertRaises(ValueError):
+            self.bridge.editor_roster()
+
+    def test_attach_result_round_trips_and_reads_empty(self):
+        data = w.ATTACH_RESULT.pack(b"DLYATR01", 4, w.ATTACH_RESULT_ABI, 1, 0, 19464268, 76, 0, 0,
+                                    0x4F5B17F42C61561D, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.25)
+        self.memory[w.ATTACH_RESULT_OFFSET:w.ATTACH_RESULT_OFFSET + len(data)] = data
+        result = self.bridge.editor_attach_result()
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["sequence"], 4)
+        self.assertEqual(result["handle"], 19464268)
+        self.assertEqual(result["offset"], (1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
+        self.assertEqual(result["smoothing"], 0.25)
+        empty = bytearray(w.ATTACH_RESULT.size)
+        self.memory[w.ATTACH_RESULT_OFFSET:w.ATTACH_RESULT_OFFSET + len(empty)] = empty
+        self.assertIsNone(self.bridge.editor_attach_result())
 
     def test_dof_preview_can_reenter_flight_without_closing_the_panel(self):
         with patch.object(self.bridge, "_wait_editor_input"), \
@@ -195,6 +305,11 @@ class EditorBridgeTests(unittest.TestCase):
         struct.pack_into("<I", self.memory, w.STATUS_OFFSET+12, 1)
         with self.assertRaisesRegex(nb.NativeBridgeError, "protocol"):
             self.bridge.editor_status()
+
+    def test_shot_seek_action_round_trips_without_reassigning_previous_ids(self):
+        self.publish([(1, 74, .5), (2, 75, 1.375)])
+        self.assertEqual([(event["action"], event["value"]) for event in self.bridge.editor_status()["events"]],
+                         [("set_source_blend", .5), ("seek_shot", 1.375)])
 
     def test_playback_action_ids_preserve_existing_action_order(self):
         self.publish([(1, 28, 1), (2, 29, .25), (3, 30, 120)])

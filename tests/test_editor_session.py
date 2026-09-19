@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import Mock
 
 from dolly import editor_session as session
+from dolly.native_bridge import NativeBridgeError
 from dolly.path import Project, Keyframe
 from dolly.settings import AppSettings
 
@@ -20,6 +21,38 @@ class Value:
 
 
 class EditorSessionTests(unittest.TestCase):
+    def test_bone_picker_cannot_apply_a_stale_or_other_players_catalog(self):
+        from dolly.path import AttachKey
+        from dolly.native_effects import model_token
+        model = "models/heroes_staging/astro/astro.vmdl"
+        key = Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+                       attach=AttachKey(handle=11, entity_id=4, model=model))
+        self.app.project.keyframes = [key]
+        self.app._selection_index = lambda _: 0
+        self.app._commit_camera = Mock()
+        catalog = {"sequence": 2, "handle": 11, "entity_id": 4,
+                   "model": model_token(model), "names": ["head", "hand_R"]}
+        self.bridge.editor_bones.return_value = catalog
+        event = {"action": "set_attach_bone", "value": 1, "pose": (2, 0, 0, 0, 0, 0, 0)}
+        session.dispatch(self.app, event, self.bridge)
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertEqual((keys[0].attach.point, keys[0].attach.bone), ("bone", "hand_R"))
+        self.assertEqual(key.attach.point, "eyes")
+        for changed in ({**catalog, "sequence": 4}, {**catalog, "handle": 12},
+                        {**catalog, "model": 999}):
+            self.bridge.editor_bones.return_value = changed
+            self.app._commit_camera.reset_mock()
+            with self.assertRaises(ValueError):
+                session.dispatch(self.app, event, self.bridge)
+            self.app._commit_camera.assert_not_called()
+
+    def test_selected_bone_key_is_not_published_as_weapon(self):
+        from dolly.path import AttachKey
+        self.app.project.keyframes = [Keyframe(0, 0, 0, 0, 0, 0, 0, source="attach",
+            attach=AttachKey(handle=11, model="astro.vmdl", point="bone", bone="head"))]
+        state = session._attach_state(self.app, 0, 1)
+        self.assertEqual((state["point"], state["bone"]), (2, "head"))
+
     def test_wheel_framing_updates_only_the_selected_camera_lens(self):
         from copy import deepcopy
         keys = [Keyframe(0, 1, 2, 3, 4, 5, 6), Keyframe(2, 7, 8, 9, 10, 11, 12)]
@@ -140,6 +173,28 @@ class EditorSessionTests(unittest.TestCase):
         self.app.speed = Value("1")
         self.app.rate = Value("60")
 
+    def test_shot_seek_dispatches_the_desktop_seek_at_exact_selected_time(self):
+        self.app.project.keyframes = [Keyframe(0, 0, 0, 0, 0, 0, 0),
+                                     Keyframe(4, 10, 20, 30, 40, 50, 60)]
+        self.app._set_time, self.app._seek = Mock(), Mock()
+        event = {"action": "seek_shot", "value": 1.375}
+        self.assertTrue(session.dispatch(self.app, event, self.bridge))
+        self.app._set_time.assert_called_once_with(1.375)
+        self.app._seek.assert_called_once_with()
+        self.app._set_time.reset_mock(); self.app._seek.reset_mock()
+        for value in (-1, 4.01, float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                session.dispatch(self.app, dict(event, value=value), self.bridge)
+        self.controller.status.return_value["playing"] = True
+        with self.assertRaisesRegex(ValueError, "Pause shot"):
+            session.dispatch(self.app, event, self.bridge)
+        self.app._set_time.assert_not_called()
+        self.app._seek.assert_not_called()
+        self.controller.status.return_value["playing"] = False
+        self.app.busy = True
+        self.assertFalse(session.dispatch(self.app, event, self.bridge))
+        self.app._seek.assert_not_called()
+
     def test_poll_during_startup_does_not_disable_the_arming_native_camera(self):
         self.app.busy = True
         session.poll(self.app)
@@ -177,6 +232,115 @@ class EditorSessionTests(unittest.TestCase):
         session.poll(self.app)
         self.assertFalse(self.app.native_editor_active)
         self.bridge.editor_status.assert_not_called()
+
+    def test_poll_refreshes_the_attach_roster_for_the_picker(self):
+        self.app.native_editor_active = True
+        self.app._attach_roster_changed = Mock()
+        roster = {"available": True, "players": [{"handle": 5, "entity_index": 3, "model": 7,
+                                                  "model_path": "models/heroes/x/x.vmdl"}]}
+        self.bridge.editor_roster.return_value = roster
+        session.poll(self.app)
+        self.bridge.editor_roster.assert_called_once_with()
+        self.app._attach_roster_changed.assert_called_once_with(roster)
+        self.assertEqual(self.app.attach_roster, roster)
+        session.poll(self.app)
+        self.bridge.editor_roster.assert_called_once_with()
+
+    def test_poll_tolerates_an_unavailable_roster(self):
+        self.app.native_editor_active = True
+        self.app._attach_roster_changed = Mock()
+        self.bridge.editor_roster.side_effect = NativeBridgeError("busy")
+        session.poll(self.app)
+        self.app._attach_roster_changed.assert_called_once_with(None)
+
+    def test_in_game_attach_target_edit_updates_the_selected_key(self):
+        from dolly.path import AttachKey  # noqa: F401  (kept for the round-trip check)
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6)]
+        self.app._selection_index = lambda _: 0
+        self.app.attach_roster = {"available": True, "players": [
+            {"handle": 11, "entity_index": 4, "model": 1,
+             "model_path": "models/heroes_staging/astro/astro.vmdl"}]}
+        self.app._commit_camera = Mock()
+        self.assertTrue(session.dispatch(self.app, {"action": "set_attach_target", "value": 0},
+                                         self.bridge))
+        keys, selected_time = self.app._commit_camera.call_args.args
+        self.assertEqual(keys[0].source, "attach")
+        self.assertEqual(keys[0].attach.handle, 11)
+        self.assertEqual(keys[0].attach.entity_id, 4)
+        self.assertEqual(selected_time, 0)
+
+    def test_in_game_attach_offsets_smoothing_hide_and_reset(self):
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6)]
+        self.app._selection_index = lambda _: 0
+        self.app.project.keyframes[0].source = "attach"
+        from dolly.path import AttachKey
+        self.app.project.keyframes[0].attach = AttachKey(handle=11, entity_id=4,
+                                                         model="models/x/x.vmdl")
+        self.app._commit_camera = Mock()
+        pose = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.0]
+        self.assertTrue(session.dispatch(self.app, {"action": "set_attach_offsets", "value": 0,
+                                                    "pose": pose}, self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertEqual(keys[0].attach.offset, (1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
+        self.app._commit_camera.reset_mock()
+        self.assertTrue(session.dispatch(self.app, {"action": "set_attach_smoothing", "value": .4},
+                                         self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertEqual(keys[0].attach.smoothing, 0.4)
+        self.app._commit_camera.reset_mock()
+        self.assertTrue(session.dispatch(self.app, {"action": "set_attach_hide", "value": 0},
+                                         self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertFalse(keys[0].attach.hide_body)
+        self.app._commit_camera.reset_mock()
+        self.app.preview_attach = True
+        self.app._attach_snap_pending = True
+        self.assertTrue(session.dispatch(self.app, {"action": "attach_reset", "value": 0},
+                                         self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertEqual(keys[0].source, "free")
+        self.assertIsNone(keys[0].attach)
+        self.assertFalse(self.app.preview_attach)
+        self.assertFalse(self.app._attach_snap_pending)
+
+    def test_source_blend_edits_free_key_without_enabling_attachment(self):
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6)]
+        self.app._selection_index = lambda _: 0
+        self.app._commit_camera = Mock()
+        self.assertTrue(session.dispatch(self.app, {"action": "set_source_blend", "value": .5},
+                                         self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertEqual(keys[0].source_blend, .5)
+        self.assertEqual(keys[0].source, "free")
+        self.assertIsNone(keys[0].attach)
+        for value in (-1, 11, float("nan")):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                session.dispatch(self.app, {"action": "set_source_blend", "value": value}, self.bridge)
+
+    def test_attach_preview_toggle_publishes_the_flag(self):
+        fields = {"scene_node": 816, "owner": 48, "player_origin": 200, "player_angles": 212,
+                  "eye_offset": 2184, "eye_angles": 4536, "scene_child": 64, "scene_sibling": 72}
+        self.app.native_editor_active = True
+        self.app.attach_fields = fields
+        self.assertTrue(session.dispatch(self.app, {"action": "attach_preview", "value": 1},
+                                         self.bridge))
+        self.assertTrue(self.app.preview_attach)
+        self.bridge.configure_editor_attach.assert_called_once()
+        self.assertTrue(self.bridge.configure_editor_attach.call_args.kwargs["preview"])
+
+    def test_attach_snap_marks_a_pending_request(self):
+        self.assertTrue(session.dispatch(self.app, {"action": "attach_snap", "value": 0},
+                                         self.bridge))
+        self.assertTrue(self.app._attach_snap_pending)
+        self.assertEqual(self.app._attach_snap_request, 1)
+
+    def test_poll_forwards_native_attach_results(self):
+        self.app.native_editor_active = True
+        self.app._attach_result_changed = Mock()
+        result = {"valid": True, "sequence": 7, "offset": (1, 2, 3, 4, 5, 6)}
+        self.bridge.editor_attach_result.return_value = result
+        session.poll(self.app)
+        self.app._attach_result_changed.assert_called_once_with(result)
 
     def test_busy_retains_event_then_acknowledges_the_exact_capture_once(self):
         event = {"sequence": 1, "action": "capture", "value": 0,
@@ -432,6 +596,23 @@ class EditorSessionTests(unittest.TestCase):
         session.configure(self.app)
         replacement.publish_visualization.assert_called_with(self.app.project, enabled=False, selected_camera=0)
         self.assertNotIn("owner", replacement.configure_editor.call_args.kwargs)
+
+    def test_attach_fields_are_published_once_per_bridge(self):
+        self.app.native_editor_active = True
+        self.app.attach_fields = {"scene_node": 816, "owner": 48, "player_origin": 200,
+                                  "player_angles": 212, "eye_offset": 2184, "eye_angles": 4536,
+                                  "scene_child": 64, "scene_sibling": 72}
+        session.configure(self.app)
+        self.bridge.configure_editor_attach.assert_called_once_with(
+            self.app.attach_fields, None, preview=False, snap_request=0)
+        session.configure(self.app)
+        self.assertEqual(self.bridge.configure_editor_attach.call_count, 1)
+
+    def test_attach_fields_are_not_published_before_the_schema_query(self):
+        self.app.native_editor_active = True
+        self.app.attach_fields = None
+        session.configure(self.app)
+        self.bridge.configure_editor_attach.assert_not_called()
 
     def test_bridge_failure_during_recovery_does_not_hide_original_error(self):
         self.controller.toggle_console.side_effect = RuntimeError("console command failed")

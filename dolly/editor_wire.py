@@ -30,12 +30,153 @@ EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "s
                  "set_video_layer_world", "set_video_layer_players", "set_video_layer_effects",
                  "toggle_citadel_glow", "toggle_healthbars", "near_player_opacity_fix",
                  "set_citadel_dof_enabled", "set_citadel_dof_sensor_size",
-                 "set_citadel_dof_focus_distance")
+                 "set_citadel_dof_focus_distance",
+                 "set_attach_target", "set_attach_point", "set_attach_offsets",
+                 "set_attach_smoothing", "set_attach_hide", "attach_cycle_target",
+                 "attach_cycle_point", "attach_reset",
+                 "attach_preview", "attach_snap", "set_attach_bone", "set_source_blend", "seek_shot")
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")
 CITADEL_DOF_OFFSET = DOF_OFFSET + DOF_CONFIG.size
 CITADEL_DOF = struct.Struct("<8s4I2d")
+ATTACH_OFFSET = CITADEL_DOF_OFFSET + CITADEL_DOF.size
+ATTACH_CONFIG = struct.Struct("<8s4IQ8I6I7d3IQ64s")
+ATTACH_FIELDS = ("scene_node", "owner", "player_origin", "player_angles",
+                 "eye_offset", "eye_angles", "scene_child", "scene_sibling")
+ATTACH_NO_TARGET = 0xFFFFFFFF
+ATTACH_OFFSET_LIMIT = 10000.0
+ROSTER_OFFSET = 2 * 1024 * 1024 + 4096
+ROSTER_ABI = 1
+ROSTER_PLAYERS = 16
+ROSTER_HEADER = struct.Struct("<8s4I")
+ROSTER_ENTRY = struct.Struct("<2IQ96s")
+ROSTER_BYTES = ROSTER_HEADER.size + ROSTER_ENTRY.size * ROSTER_PLAYERS
+ATTACH_RESULT_OFFSET = ROSTER_OFFSET + ROSTER_BYTES
+ATTACH_RESULT_ABI = 1
+ATTACH_RESULT = struct.Struct("<8s4I4IQ6dd")
+BONES_OFFSET = ATTACH_RESULT_OFFSET + ATTACH_RESULT.size
+BONES_HEADER = struct.Struct("<8s4IQ2I")
+BONES_COUNT = 256
+BONES_BYTES = BONES_HEADER.size + BONES_COUNT * 64
+
+
+def unpack_bones(data):
+    import re
+    if len(data) != BONES_BYTES:
+        raise ValueError("Native bone picker returned the wrong size")
+    magic, sequence, abi, handle, entity_id, model, count, total = BONES_HEADER.unpack_from(data)
+    if magic != b"DLYBONE1" or abi != 1 or sequence & 1 or not count <= BONES_COUNT or not count <= total <= 4096:
+        raise ValueError("Native bone picker protocol does not match this build")
+    names = []
+    for index in range(count):
+        raw = data[BONES_HEADER.size + index * 64:BONES_HEADER.size + (index + 1) * 64]
+        name = raw.split(b"\0", 1)[0].decode("ascii")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", name):
+            raise ValueError("Native bone picker returned an invalid name")
+        names.append(name)
+    return {"sequence": sequence, "handle": handle, "entity_id": entity_id,
+            "model": model, "names": names, "total": total}
+
+
+def unpack_attach_result(data):
+    """Parse the native attach result (snap / attached-fly offsets)."""
+    if len(data) != ATTACH_RESULT.size:
+        raise ValueError("Native attach result returned the wrong size")
+    (magic, sequence, abi, flags, _reserved, handle, entity_index, point, _reserved2, model,
+     *numbers) = ATTACH_RESULT.unpack(data)
+    if magic != b"DLYATR01" or abi != ATTACH_RESULT_ABI or flags & ~1:
+        raise ValueError("Native attach result protocol does not match this build")
+    if point > 2 or any(not math.isfinite(value) for value in numbers) or any(abs(value) > ATTACH_OFFSET_LIMIT for value in numbers[:6]) or not 0 <= numbers[6] <= 5:
+        raise ValueError("Native attach result contains an invalid pose")
+    return {"sequence": sequence, "valid": bool(flags & 1), "handle": handle,
+            "config_sequence": _reserved,
+            "entity_index": entity_index, "point": point, "model": model,
+            "offset": tuple(numbers[:6]), "smoothing": numbers[6]}
+
+
+def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0):
+    """Attach-camera block: schema offsets plus the selected key's attach state.
+
+    Every offset comes from the live schema query, so the provider never
+    hardcodes a layout. ``attach`` is the selected camera key's AttachKey data
+    (or None for a free key) and drives the in-game card display.
+    """
+    values = []
+    for name in ATTACH_FIELDS:
+        if name not in offsets:
+            raise ValueError("Missing attach camera field: " + name)
+        value = _uint(offsets[name], "attach " + name)
+        if not 8 <= value <= 0x8000:
+            raise ValueError("Attach camera field is outside the reviewed range: " + name)
+        values.append(value)
+    flags = 1
+    model = 0
+    bone_hash = 0
+    bone_name = b""
+    handle = entity_id = target_index = point = hide = 0
+    attached_keys = key_count = blend_ms = 0
+    numbers = [0.0] * 7
+    if attach is not None:
+        if attach.get("selected", True):
+            flags |= 2
+        if preview and flags & 2:
+            flags |= 4
+        blend_ms = round(_finite(attach.get("source_blend", 0), 0, 10, "source blend") * 1000)
+        handle = _uint(attach.get("handle", 0), "attach handle")
+        entity_id = _uint(attach.get("entity_id", 0), "attach entity id")
+        target_index = _uint(attach.get("target_index", ATTACH_NO_TARGET), "attach target index")
+        if target_index != ATTACH_NO_TARGET and target_index >= ROSTER_PLAYERS:
+            raise ValueError("Attach target index is out of range")
+        point = _uint(attach.get("point", 0), "attach point")
+        if point > 2:
+            raise ValueError("Unknown attach point")
+        bone = attach.get("bone", "")
+        if point == 2:
+            import re
+            from .native_effects import model_token
+            if not isinstance(bone, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", bone):
+                raise ValueError("Choose a valid bone name")
+            bone_name = bone.encode("ascii")
+            bone_hash = model_token(bone)
+        elif bone:
+            raise ValueError("A bone name requires the Bone attach point")
+        hide = 1 if attach.get("hide_body", True) else 0
+        model = attach.get("model", 0)
+        if (isinstance(model, bool) or not isinstance(model, int)
+                or not 0 <= model <= 0xFFFFFFFFFFFFFFFF):
+            raise ValueError("Invalid native editor attach model")
+        offsets_value = attach.get("offset") or (0.0,) * 6
+        if len(offsets_value) != 6:
+            raise ValueError("Attach offsets need six numbers")
+        for index, value in enumerate(offsets_value):
+            numbers[index] = _finite(value, -ATTACH_OFFSET_LIMIT, ATTACH_OFFSET_LIMIT,
+                                     "attach offset")
+        numbers[6] = _finite(attach.get("smoothing", 0.0), 0, 5, "attach smoothing")
+        attached_keys = _uint(attach.get("attached_keys", 0), "attach key count")
+        key_count = _uint(attach.get("key_count", 0), "shot key count")
+        if attached_keys > key_count or key_count > 100000:
+            raise ValueError("Attach key counts are inconsistent")
+    return ATTACH_CONFIG.pack(b"DLYATTC1", _uint(sequence, "sequence"), 3 if blend_ms else 2, flags, 0, model,
+                              *values, handle, entity_id, target_index, point, hide, blend_ms,
+                              *numbers, attached_keys, key_count,
+                              _uint(snap_request, "snap request"), bone_hash, bone_name)
+
+
+def unpack_roster(data):
+    """Parse the native live player roster for the attach target picker."""
+    if len(data) != ROSTER_BYTES:
+        raise ValueError("Native attach roster returned the wrong size")
+    magic, _sequence, abi, count, flags = ROSTER_HEADER.unpack_from(data)
+    if magic != b"DLYROS01" or abi != ROSTER_ABI or count > ROSTER_PLAYERS or flags & ~1:
+        raise ValueError("Native attach roster protocol does not match this build")
+    players = []
+    for index in range(count):
+        handle, entity_index, model, path = ROSTER_ENTRY.unpack_from(
+            data, ROSTER_HEADER.size + index * ROSTER_ENTRY.size)
+        players.append({"handle": handle, "entity_index": entity_index, "model": model,
+                        "model_path": path.split(b"\0", 1)[0].decode("utf-8", errors="replace")})
+    return {"available": bool(flags & 1), "players": players}
 
 
 def pack_dof(sequence, enabled, values):

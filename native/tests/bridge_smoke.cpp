@@ -39,6 +39,55 @@ template <typename T> void put(std::uintptr_t address, const T& value) {
     std::memcpy(reinterpret_cast<void*>(address), &value, sizeof(value));
 }
 
+void bone_vector_selection() {
+    Allocation object(0x1000), names(0x4000), vectors(0x1000);
+    const char* markers[] = {"pelvis", "spine_0", "neck_0",      "head",
+                             "hand_L", "hand_R",  "arm_upper_L", "leg_upper_L"};
+    for (unsigned i = 0; i < 40; ++i) {
+        const auto text = names.address() + i * 64;
+        std::snprintf(reinterpret_cast<char*>(text), 64, "%s",
+                      i == 0   ? "root_motion"
+                      : i <= 8 ? markers[i - 1]
+                               : "extra_bone");
+        put(vectors.address() + i * 8, text);
+        put(vectors.address() + 0x400 + i * 16, text);
+        put(vectors.address() + 0x408 + i * 16,
+            std::uint64_t(std::strlen(reinterpret_cast<char*>(text))));
+    }
+    // A small skeleton appears first; the longer equal-score skeleton must win.
+    put(object.address(), vectors.address());
+    put(object.address() + 8, std::uint64_t(19));
+    put(object.address() + 16, std::uint64_t(19));
+    put(object.address() + 0x80, vectors.address() + 0x400);
+    put(object.address() + 0x88, std::uint64_t(40));
+    put(object.address() + 0x90, std::uint64_t(40));
+    std::uintptr_t data = 0;
+    std::uint32_t count = 0, stride = 0;
+    require(attach_runtime::find_bone_vector(object.address(), data, count, stride),
+            "Synthetic skeleton was not resolved");
+    require(data == vectors.address() + 0x400 && count == 40 && stride == 16,
+            "Later skeleton and its real entry stride must be preserved");
+    require(attach_runtime::skeleton_name_score(data, count, stride) == 8,
+            "Skeleton score counts unique markers");
+    put(vectors.address() + 20 * 8, names.address() + 64); // duplicate pelvis cannot win ranking
+    require(attach_runtime::skeleton_name_score(vectors.address(), 40, 8) == 8,
+            "Repeated markers must not inflate the skeleton score");
+    put(object.address() + 0x88, std::uint64_t(505));
+    put(object.address() + 0x90, std::uint64_t(505));
+    require(attach_runtime::find_bone_vector(object.address(), data, count, stride) && count == 19,
+            "A valid prefix cannot authorize a bloated vector header");
+    put(object.address() + 0x88, std::uint64_t(40));
+    put(object.address() + 0x90, std::uint64_t(40));
+    // A partial prefix must not authorize a vector with invalid name entries.
+    put(vectors.address() + 0x400 + 20 * 16, std::uintptr_t(0));
+    require(attach_runtime::find_bone_vector(object.address(), data, count, stride) &&
+                count == 19 && stride == 8,
+            "Malformed larger vector must fall back to the intact smaller vector");
+    put(vectors.address(), names.address() + 64);
+    require(!attach_runtime::find_bone_vector(object.address(), data, count, stride),
+            "Reduced physics skeleton must not supply render bone indices");
+}
+
 bool playing = true, paused = true, seeking = false, active = true;
 int tick = 4096;
 char demo_name[512] = "replays/native-smoke.dem";
@@ -754,6 +803,7 @@ void editor_input_checks() {
     // camera. Changing only the input owner leaves every movement key dead.
     editor_update_view(true, true, false, saved_view.pose);
     editor_set_owner(EditorOwner::Panel);
+
     const auto before_return = event_count();
     dolly::key_event(VK_F8, true);
     require(dolly::gOwner == EditorOwner::Panel && event_count() == before_return + 1,
@@ -916,7 +966,7 @@ void editor_framing_checks() {
     CameraPose pose{1, 2, 3, 4, 5, 6, 16.0 / 9};
     editor_update_view(true, true, true, pose);
     // Optional desktop DOF publication is a separate bounded mapping block.
-    std::vector<unsigned char> dof_memory(2 * 1024 * 1024 + 4096);
+    std::vector<unsigned char> dof_memory(kMappingBytes);
     EditorDofConfig dof{};
     std::memcpy(dof.magic, "DLYDOF01", 8);
     dof.sequence = 2;
@@ -929,6 +979,39 @@ void editor_framing_checks() {
     require(editor_snapshot().dof_available && editor_snapshot().dof[4] == 180,
             "Desktop DOF settings did not reach the editor snapshot");
     editor_set_owner(EditorOwner::Panel);
+    {
+        EditorAttachConfig attach{};
+        std::memcpy(attach.magic, "DLYATTC1", 8);
+        attach.sequence = 2;
+        attach.abi = 2;
+        attach.flags = 3;
+        std::fill(std::begin(attach.offsets), std::end(attach.offsets), 8u);
+        attach.handle = 11;
+        attach.entity_id = 4;
+        attach.point = 2;
+        attach.model = 123;
+        attach.bone_hash = attach_runtime::model_token("head");
+        std::memcpy(attach.bone_name, "head", 4);
+        attach.attached_keys = attach.key_count = 1;
+        std::vector<unsigned char> attach_memory(kMappingBytes);
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        require(editor_snapshot().attach_point == 2 &&
+                    std::strcmp(editor_snapshot().attach_bone, "head") == 0,
+                "Bone preview publication lost the named source");
+        require(editor_enqueue(EditorAction::AttachPreview, 1) &&
+                    editor_enqueue(EditorAction::AttachSnap, 0),
+                "Attach preview or snap was rejected by the action range");
+        attach.sequence = 4;
+        attach.bone_hash ^= 1;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        EditorAttachConfig accepted{};
+        require(editor_attach_config(accepted) && accepted.sequence == 2,
+                "Mismatched bone name/hash replaced the valid preview");
+        std::atomic_store(&dolly::gAttachConfig, std::shared_ptr<const EditorAttachConfig>{});
+        dolly::gAcknowledged = dolly::gLastEvent;
+    }
     require(editor_enqueue(EditorAction::SetDofRangeFarCrisp, 350),
             "Valid native DOF edit could not enter the event queue");
     require(!editor_enqueue(EditorAction::SetDofOverride, .5) &&
@@ -1293,6 +1376,45 @@ void run() {
              "In-game playback speed differs from the desktop setting");
     require(editor_snapshot().playback_rate == 120,
             "In-game update rate differs from the desktop setting");
+    // A shot seek queues one bounded request; it cannot bypass UI ownership,
+    // the authored timeline, busy work or active path playback.
+    {
+        auto saved_config = config;
+        config.sequence += 2;
+        config.duration = 2;
+        config.playhead = .375;
+        config.camera_count = 2;
+        std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
+        editor_worker_tick(f.mapping.data(), true);
+        editor_set_owner(EditorOwner::Panel);
+        close_to(editor_snapshot().playhead, .375, "Shot cursor differs from desktop");
+        require(
+            !editor_enqueue(EditorAction::SeekShot, -1) &&
+                !editor_enqueue(EditorAction::SeekShot, 2.01) &&
+                !editor_enqueue(EditorAction::SeekShot, std::numeric_limits<double>::quiet_NaN()),
+            "Invalid shot time entered the event queue");
+        const auto seek_serial = dolly::gLastEvent;
+        require(editor_enqueue(EditorAction::SeekShot, .75), "Shot seek could not queue");
+        const auto& seek_event = dolly::gEvents[seek_serial % kEditorEventCount];
+        require(seek_event.action == 75 && seek_event.value == .75,
+                "Shot seek action differs from Python");
+        editor_set_owner(EditorOwner::Flight);
+        require(!editor_enqueue(EditorAction::SeekShot, .75), "Shot seek bypassed panel ownership");
+        editor_set_owner(EditorOwner::Panel);
+        for (auto flags : {1u, 2u}) {
+            config.sequence += 2;
+            config.playback_flags = flags;
+            std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
+            editor_worker_tick(f.mapping.data(), true);
+            require(!editor_enqueue(EditorAction::SeekShot, .75),
+                    "Busy/playing shot accepted a seek");
+        }
+        saved_config.sequence = config.sequence + 2;
+        config = saved_config;
+        std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
+        editor_worker_tick(f.mapping.data(), true);
+        editor_set_owner(EditorOwner::Flight);
+    }
     const auto before_settings = dolly::gLastEvent;
     require(editor_enqueue(EditorAction::DestroyRagdolls),
             "Ragdoll cleanup could not enter the editor event queue");
@@ -1375,6 +1497,7 @@ void run() {
 
 int main(int argc, char** argv) {
     try {
+        smoke::bone_vector_selection();
         if (argc == 4 && std::strcmp(argv[1], "--camera-layout") == 0) {
             // Static verification only: SEC_IMAGE_NO_EXECUTE never invokes
             // DllMain, resolves imports or executes the inspected game image.

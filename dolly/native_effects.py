@@ -1,7 +1,9 @@
-"""Compile the verified DOF controls into the same immutable native shot.
+"""Compile the verified DOF controls and attach keys into one native shot.
 
 No console text is shipped: IDs map to a fixed native allowlist. Camera path
 format and coefficients remain unchanged inside the versioned shot envelope.
+Shots without attach keys compile to the original DLYSHOT2 bytes; an attached
+key switches to DLYSHOT3 with one DLYATT01 segment per keyframe interval.
 """
 import math
 import struct
@@ -27,10 +29,96 @@ EFFECTS = {
     "r_dof_override_tilt_to_ground": (13, -FLOAT32_MAX, FLOAT32_MAX, False),
 }
 SHOT_HEADER = struct.Struct("<8s4I")
+SHOT_HEADER3 = struct.Struct("<8s5I")
 EFFECT_HEADER = struct.Struct("<8s2I")
 TRACK_HEADER = struct.Struct("<4I5d")
+ATTACH_HEADER = struct.Struct("<8s3I")
+ATTACH_SEGMENT = struct.Struct("<2d4IQ6dd")
+# Version 2 appends the bone-name hash; version 3 appends eased-arrival seconds.
+ATTACH_SEGMENT2 = struct.Struct("<2d4IQ6ddQ")
+ATTACH_SEGMENT3 = struct.Struct("<2d4IQ6ddQd")
 MAX_EFFECT_KEYS = 4096
+MAX_ATTACH_SEGMENTS = 256
 MAX_SHOT_BYTES = 2 * 1024 * 1024 - 1024
+ATTACH_POINTS = {"eyes": 0, "weapon": 1, "bone": 2}
+_FNV_OFFSET = 14695981039346656037
+_FNV_PRIME = 1099511628211
+_MASK64 = 0xFFFFFFFFFFFFFFFF
+
+
+def model_token(model: str) -> int:
+    """FNV-1a 64 identity token for a model path, shared with the native provider."""
+    value = _FNV_OFFSET
+    for byte in model.encode("utf-8"):
+        value ^= byte
+        value = (value * _FNV_PRIME) & _MASK64
+    return value
+
+
+def compile_attach(project):
+    """Compile one attach segment per keyframe interval, or ``b""`` when free.
+
+    Coverage starts at zero and is contiguous: the key governing each interval
+    decides whether the interval attaches and whether the target body hides.
+    Blended shots also carry a terminal source when the last camera ends the
+    shot, so an arrival into that final camera is retained. Versions 1/2 keep
+    their existing bytes when no blend is requested.
+    A zero-length shot (a single key at zero) has no renderable interval and
+    compiles to an empty block.
+    """
+    if not isinstance(project, Project):
+        raise ValueError("Native attach compilation requires a Project")
+    project.validate()
+    keys = project.keyframes
+    if not keys:
+        return b""
+    boundaries = sorted({0.0, *[float(key.time) for key in keys], float(project.duration)})
+    blended = any(key.source_blend for key in keys)
+    segments = []
+    for begin, end in zip(boundaries, boundaries[1:]):
+        if end <= begin:
+            continue
+        governing = None
+        for key in keys:
+            if float(key.time) <= begin + 1e-9:
+                governing = key
+            else:
+                break
+        if governing is not None and governing.source == "attach":
+            attach = governing.attach
+            segments.append((begin, end, 1 | (2 if attach.hide_body else 0), attach, governing.source_blend))
+        else:
+            segments.append((begin, end, 0, None, governing.source_blend if governing else 0))
+    if blended and project.duration > 0 and float(keys[-1].time) == float(project.duration):
+        last = keys[-1]
+        attach = last.attach if last.source == "attach" else None
+        segments.append((float(project.duration), float(project.duration),
+                         (1 | (2 if attach.hide_body else 0)) if attach else 0,
+                         attach, last.source_blend))
+    if not any(flags & 1 for _, _, flags, _, _ in segments):
+        return b""
+    if len(segments) > MAX_ATTACH_SEGMENTS:
+        raise ValueError(f"Attach keys support at most {MAX_ATTACH_SEGMENTS} native segments")
+    bones = any(attach is not None and attach.point == "bone" for _, _, _, attach, _ in segments)
+    result = bytearray(ATTACH_HEADER.pack(b"DLYATT01", 3 if blended else 2 if bones else 1, 0, len(segments)))
+    for begin, end, flags, attach, blend in segments:
+        point = 0 if attach is None else ATTACH_POINTS[attach.point]
+        handle = 0 if attach is None else attach.handle
+        entity_id = 0 if attach is None else attach.entity_id
+        identity = 0 if attach is None else model_token(attach.model)
+        offset = (0.0,) * 6 if attach is None else tuple(float(value) for value in attach.offset)
+        smoothing = 0.0 if attach is None else float(attach.smoothing)
+        bone_hash = model_token(attach.bone) if attach is not None and attach.point == "bone" else 0
+        if blended:
+            result.extend(ATTACH_SEGMENT3.pack(begin, end, flags, point, handle, entity_id,
+                                               identity, *offset, smoothing, bone_hash, blend))
+        elif bones:
+            result.extend(ATTACH_SEGMENT2.pack(begin, end, flags, point, handle, entity_id,
+                                               identity, *offset, smoothing, bone_hash))
+        else:
+            result.extend(ATTACH_SEGMENT.pack(begin, end, flags, point, handle, entity_id,
+                                              identity, *offset, smoothing))
+    return bytes(result)
 
 
 def compile_effects(project):
@@ -89,8 +177,13 @@ def compile_effects(project):
 
 
 def compile_shot(project):
-    camera, effects = compile_project(project), compile_effects(project)
-    result = SHOT_HEADER.pack(b"DLYSHOT2", 1, len(camera), len(effects), 0) + camera + effects
+    camera, effects, attach = (compile_project(project), compile_effects(project),
+                               compile_attach(project))
+    if attach:
+        result = (SHOT_HEADER3.pack(b"DLYSHOT3", 1, len(camera), len(effects), len(attach), 0)
+                  + camera + effects + attach)
+    else:
+        result = SHOT_HEADER.pack(b"DLYSHOT2", 1, len(camera), len(effects), 0) + camera + effects
     if len(result) > MAX_SHOT_BYTES:
         raise ValueError("Camera and effect curves exceed the native shot capacity; reduce the number of keys")
     return result

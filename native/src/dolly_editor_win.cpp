@@ -25,6 +25,9 @@ std::atomic<unsigned> gReShadeDeferred{0};
 std::shared_ptr<const EditorConfig> gConfig;
 std::shared_ptr<const EditorDofConfig> gDofConfig;
 std::shared_ptr<const EditorCitadelDofConfig> gCitadelDofConfig;
+std::shared_ptr<const EditorAttachConfig> gAttachConfig;
+std::shared_ptr<const EditorRoster> gRoster;
+std::shared_ptr<const EditorBones> gBones;
 std::atomic<double> gSpeed{400};
 std::atomic<long> gMouseX{0}, gMouseY{0}, gFramingWheel{0};
 // Live wheel-burst tracking; camera -2 means no burst has been applied yet.
@@ -472,6 +475,7 @@ EditorSnapshot editor_snapshot() noexcept {
         result.camera_count = c->camera_count;
         result.sensitivity = c->sensitivity;
         result.duration = c->duration;
+        result.playhead = c->playhead;
         result.playing = (c->playback_flags & 1) != 0;
         result.busy = (c->playback_flags & 2) != 0;
         std::memcpy(result.shot_name, c->shot_name, sizeof(result.shot_name));
@@ -519,6 +523,24 @@ EditorSnapshot editor_snapshot() noexcept {
         result.citadel_dof_sensor = citadel->sensor_size;
         result.citadel_dof_focus = citadel->focus_distance;
     }
+    auto attach = std::atomic_load(&gAttachConfig);
+    if (attach && (attach->flags & 1) && gConnected.load()) {
+        result.attach_available = true;
+        result.attach_selected = (attach->flags & 2) != 0;
+        result.attach_preview = (attach->flags & 4) != 0;
+        result.attach_hide = attach->hide != 0;
+        result.attach_point = attach->point;
+        std::memcpy(result.attach_bone, attach->bone_name, 64);
+        result.attach_target_index = attach->target_index;
+        std::copy(std::begin(attach->offset), std::end(attach->offset), result.attach_offsets);
+        result.attach_smoothing = attach->smoothing;
+        result.source_blend = attach->reserved2 / 1000.0;
+        result.attach_keys = attach->attached_keys;
+        result.shot_keys = attach->key_count;
+    }
+    auto roster = std::atomic_load(&gRoster);
+    if (roster && gConnected.load())
+        result.roster_count = roster->count;
     // Atomic field seqlock gives an internally coherent capture pose and tick.
     // Bounded retries never wait for the render callback.
     for (int attempt = 0; attempt < 4; ++attempt) {
@@ -542,14 +564,34 @@ EditorSnapshot editor_snapshot() noexcept {
     result.ready = false;
     return result;
 }
+bool editor_attach_config(EditorAttachConfig& out) noexcept {
+    auto attach = std::atomic_load(&gAttachConfig);
+    if (!attach || !gConnected.load())
+        return false;
+    out = *attach;
+    return true;
+}
+bool editor_roster_snapshot(EditorRoster& out) noexcept {
+    auto roster = std::atomic_load(&gRoster);
+    if (!roster || !gConnected.load())
+        return false;
+    out = *roster;
+    return true;
+}
+bool editor_bones_snapshot(EditorBones& out) noexcept {
+    auto bones = std::atomic_load(&gBones);
+    if (!bones || !gConnected.load())
+        return false;
+    out = *bones;
+    return true;
+}
 bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_override) noexcept {
     // Menu requests may originate from a render-thread button. They only queue
     // adapter work here; the worker changes input/cursor ownership afterwards.
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
-    if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetCitadelDofFocusDistance))
+    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::SeekShot))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -568,6 +610,50 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
          (action == EditorAction::SetCitadelDofSensorSize && (value < .5 || value > 3)) ||
          (action == EditorAction::SetCitadelDofFocusDistance && (value < 0 || value > 10000))))
         return false;
+    if (action >= EditorAction::SetAttachTarget && action <= EditorAction::SetSourceBlend &&
+        (!state.attach_available || !state.ready || state.playing || state.busy ||
+         !state.camera_count || state.owner != EditorOwner::Panel))
+        return false;
+    if (action == EditorAction::SetAttachTarget &&
+        (value != std::floor(value) || value < 0 || value >= state.roster_count))
+        return false;
+    if (action == EditorAction::SetAttachPoint && value != 0 && value != 1 && value != 2)
+        return false;
+    if (action == EditorAction::SetAttachSmoothing && (value < 0 || value > 5))
+        return false;
+    if (action == EditorAction::SetAttachHide && value != 0 && value != 1)
+        return false;
+    if (action == EditorAction::AttachPreview && value != 0 && value != 1)
+        return false;
+    if (action == EditorAction::AttachPreview && (!state.attach_selected || !state.manual_active))
+        return false;
+    if (action == EditorAction::AttachSnap && value != 0)
+        return false;
+    if (action == EditorAction::AttachSnap &&
+        (!state.attach_selected || !state.manual_active || !state.paused || state.playing))
+        return false;
+    if (action == EditorAction::SeekShot &&
+        (!state.ready || state.playing || state.busy || !state.camera_count ||
+         state.owner != EditorOwner::Panel || value < 0 || value > state.duration))
+        return false;
+    if (action == EditorAction::SetSourceBlend && (value < 0 || value > 10))
+        return false;
+    if (action == EditorAction::SetAttachBone) {
+        EditorBones bones{};
+        if (!pose_override || !editor_bones_snapshot(bones) || value != std::floor(value) ||
+            value < 0 || value >= bones.count || (*pose_override)[0] != bones.sequence)
+            return false;
+    } else if (action == EditorAction::SetAttachOffsets) {
+        if (!pose_override)
+            return false;
+        for (int index = 0; index < 6; ++index)
+            if (!std::isfinite((*pose_override)[index]) ||
+                std::abs((*pose_override)[index]) > 10000)
+                return false;
+    } else if (action >= EditorAction::SetAttachTarget && action <= EditorAction::SetSourceBlend &&
+               pose_override) {
+        return false;
+    }
     if (action == EditorAction::SetFraming) {
         // The pose override carries the wheel scale factor (Python owns the
         // target key and its base value), not an absolute aspect ratio.
@@ -579,14 +665,13 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         for (double component : *pose_override)
             if (!std::isfinite(component))
                 return false;
-    } else if (pose_override)
+    } else if (pose_override && action != EditorAction::SetAttachOffsets)
         return false;
     if (action == EditorAction::SetSpeed) {
         if (value < 1 || value > 10000)
             return false;
     }
-    if (action == EditorAction::SetPlaybackSpeed &&
-        (value < .05 || value > 4 || state.busy))
+    if (action == EditorAction::SetPlaybackSpeed && (value < .05 || value > 4 || state.busy))
         return false;
     if (action == EditorAction::SetPlaybackRate &&
         ((value != 30 && value != 60 && value != 120) || state.playing || state.busy))
@@ -958,6 +1043,96 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                 }
             }
         }
+        auto attach_source = memory + kEditorAttachOffset;
+        auto attach_sequence = reinterpret_cast<volatile LONG*>(attach_source + 8);
+        const auto attach_first = InterlockedCompareExchange(attach_sequence, 0, 0);
+        const auto attach_previous = std::atomic_load(&gAttachConfig);
+        if (!(attach_first & 1) &&
+            (!attach_previous || attach_previous->sequence != std::uint32_t(attach_first))) {
+            EditorAttachConfig attach{};
+            std::memcpy(&attach, attach_source, sizeof(attach));
+            MemoryBarrier();
+            bool valid =
+                attach_first == InterlockedCompareExchange(attach_sequence, 0, 0) &&
+                std::memcmp(attach.magic, "DLYATTC1", 8) == 0 &&
+                (attach.abi == 2 || attach.abi == 3) && attach.flags <= 7 && attach.reserved == 0 &&
+                (attach.reserved2 == 0 || (attach.abi == 3 && attach.reserved2 <= 10000)) &&
+                attach.point <= 2 && attach.hide <= 1 &&
+                (attach.point == 2 ? attach.bone_hash != 0 : attach.bone_hash == 0);
+            for (std::uint32_t offset : attach.offsets)
+                valid = valid && offset >= 8 && offset <= 0x8000;
+            std::uint64_t bone_token = 14695981039346656037ull;
+            bool ended = false;
+            for (std::size_t index = 0; index < sizeof(attach.bone_name); ++index) {
+                const unsigned char ch = static_cast<unsigned char>(attach.bone_name[index]);
+                if (!ch) {
+                    ended = true;
+                    continue;
+                }
+                const bool letter =
+                    (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
+                valid = valid && !ended &&
+                        (letter || (index > 0 && ((ch >= '0' && ch <= '9') || ch == '.')));
+                bone_token = (bone_token ^ ch) * 1099511628211ull;
+            }
+            valid =
+                valid && (attach.point == 2 ? attach.bone_name[0] && bone_token == attach.bone_hash
+                                            : attach.bone_name[0] == 0);
+            for (double value : attach.offset)
+                valid = valid && std::isfinite(value) && std::abs(value) <= 10000;
+            valid = valid && std::isfinite(attach.smoothing) && attach.smoothing >= 0 &&
+                    attach.smoothing <= 5 && attach.attached_keys <= attach.key_count &&
+                    attach.key_count <= 100000;
+            if (valid) {
+                try {
+                    std::atomic_store(&gAttachConfig,
+                                      std::make_shared<const EditorAttachConfig>(attach));
+                } catch (...) {
+                }
+            }
+        }
+        auto bones_source = memory + kEditorBonesOffset;
+        auto bones_sequence = reinterpret_cast<volatile LONG*>(bones_source + 8);
+        const auto bones_first = InterlockedCompareExchange(bones_sequence, 0, 0);
+        const auto bones_previous = std::atomic_load(&gBones);
+        if (!(bones_first & 1) &&
+            (!bones_previous || bones_previous->sequence != std::uint32_t(bones_first))) {
+            EditorBones bones{};
+            std::memcpy(&bones, bones_source, sizeof(bones));
+            MemoryBarrier();
+            if (bones_first == InterlockedCompareExchange(bones_sequence, 0, 0) &&
+                std::memcmp(bones.magic, "DLYBONE1", 8) == 0 && bones.abi == 1 &&
+                bones.count <= kEditorBoneCount && bones.count <= bones.total &&
+                bones.total <= 4096) {
+                try {
+                    std::atomic_store(&gBones, std::make_shared<const EditorBones>(bones));
+                } catch (...) {
+                }
+            }
+        }
+        auto roster_source = memory + kEditorRosterOffset;
+        auto roster_sequence = reinterpret_cast<volatile LONG*>(roster_source + 8);
+        const auto roster_first = InterlockedCompareExchange(roster_sequence, 0, 0);
+        const auto roster_previous = std::atomic_load(&gRoster);
+        if (!(roster_first & 1) &&
+            (!roster_previous || roster_previous->sequence != std::uint32_t(roster_first))) {
+            EditorRoster roster{};
+            std::memcpy(&roster, roster_source, sizeof(roster));
+            MemoryBarrier();
+            bool valid = roster_first == InterlockedCompareExchange(roster_sequence, 0, 0) &&
+                         std::memcmp(roster.magic, "DLYROS01", 8) == 0 &&
+                         roster.abi == kEditorRosterAbi && roster.count <= kEditorRosterPlayers &&
+                         (roster.flags & ~1u) == 0;
+            for (std::uint32_t index = 0; index < roster.count && valid; ++index)
+                valid = std::memchr(roster.players[index].model_path, 0,
+                                    sizeof(roster.players[index].model_path)) != nullptr;
+            if (valid) {
+                try {
+                    std::atomic_store(&gRoster, std::make_shared<const EditorRoster>(roster));
+                } catch (...) {
+                }
+            }
+        }
         auto src = memory + kEditorConfigOffset;
         auto seq = reinterpret_cast<volatile LONG*>(src + 8);
         LONG before = InterlockedCompareExchange(seq, 0, 0);
@@ -1030,6 +1205,9 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     if (!connected) {
         std::atomic_store(&gDofConfig, std::shared_ptr<const EditorDofConfig>{});
         std::atomic_store(&gCitadelDofConfig, std::shared_ptr<const EditorCitadelDofConfig>{});
+        std::atomic_store(&gAttachConfig, std::shared_ptr<const EditorAttachConfig>{});
+        std::atomic_store(&gRoster, std::shared_ptr<const EditorRoster>{});
+        std::atomic_store(&gBones, std::shared_ptr<const EditorBones>{});
         gOwner = EditorOwner::Disabled;
         reset_keys(true);
         cursor_mode(EditorOwner::Disabled);

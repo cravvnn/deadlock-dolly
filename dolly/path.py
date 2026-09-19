@@ -21,9 +21,20 @@ from typing import Any, Iterable
 FORMAT_NAME = "deadlock-dolly"
 FORMAT_VERSION = 2
 VECTOR_FORMAT_VERSION = 3
+ATTACH_FORMAT_VERSION = 4
+ROTATION_FORMAT_VERSION = 5
+BLEND_FORMAT_VERSION = 6
 MAX_PROJECT_BYTES = 8 * 1024 * 1024
 MAX_KEYS = 100_000
 STANDARD_ASPECT = 16.0 / 9.0
+# Deliberate editor limits, not a claim about native attach payload bounds.
+ATTACH_POINTS = ("eyes", "weapon", "bone")
+_BONE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
+ATTACH_BONE_LIMIT = 64
+CURVE_CHANNELS = ("pitch", "yaw", "roll")
+ATTACH_OFFSET_LIMIT = 10000.0
+ATTACH_SMOOTHING_MAX = 5.0
+ATTACH_MODEL_LIMIT = 260
 # Deliberate editor limits, not a claim about native r_aspectratio bounds.
 # Zero is the game's automatic-aspect sentinel and is never a curve value.
 ASPECT_MIN = 0.5
@@ -137,6 +148,69 @@ def _array(value: Any, label: str) -> list[Any]:
 
 
 @dataclass
+class AttachKey:
+    """Live attach target for one camera keyframe (project format version 4).
+
+    ``offset`` is local XYZ plus pitch/yaw/roll applied after the target pose
+    resolves, in the target's own frame. ``model`` is the model path captured
+    at authoring time and is hashed into the native identity token.
+    """
+
+    handle: int = 0
+    entity_id: int = 0
+    model: str = ""
+    point: str = "eyes"
+    # Bone name for ``point == "bone"``; empty otherwise. Hashed into the
+    # native payload and resolved against the model's bone-name vector.
+    bone: str = ""
+    offset: tuple[float, float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    smoothing: float = 0.0
+    hide_body: bool = True
+
+
+def _validate_attach(attach: Any, label: str) -> None:
+    for name in ("handle", "entity_id"):
+        value = getattr(attach, name)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
+            raise ValueError(f"{label}.{name} must be an unsigned 32-bit integer")
+    if not isinstance(attach.model, str) or len(attach.model) > ATTACH_MODEL_LIMIT \
+            or any(ord(character) < 32 for character in attach.model):
+        raise ValueError(f"{label}.model must be readable text no longer than {ATTACH_MODEL_LIMIT} characters")
+    if not attach.handle and not attach.model.strip():
+        raise ValueError(f"{label} needs a handle or a model identity")
+    _choice(attach.point, ATTACH_POINTS, f"{label}.point")
+    offset = attach.offset
+    if not isinstance(offset, (tuple, list)) or len(offset) != 6:
+        raise ValueError(f"{label}.offset needs six numbers (xyz and pitch/yaw/roll)")
+    for index, value in enumerate(offset):
+        number = _finite(value, f"{label}.offset[{index}]")
+        if abs(number) > ATTACH_OFFSET_LIMIT:
+            raise ValueError(f"{label}.offset[{index}] is outside the supported range")
+    smoothing = _finite(attach.smoothing, f"{label}.smoothing")
+    if not 0 <= smoothing <= ATTACH_SMOOTHING_MAX:
+        raise ValueError(f"{label}.smoothing must be between 0 and {ATTACH_SMOOTHING_MAX:g} seconds")
+    if type(attach.hide_body) is not bool:
+        raise ValueError(f"{label}.hide_body must be true or false")
+    if attach.point == "bone":
+        name = attach.bone
+        if not isinstance(name, str) or not 1 <= len(name) <= ATTACH_BONE_LIMIT \
+                or not _BONE_NAME.fullmatch(name):
+            raise ValueError(f"{label}.bone must be a bone name no longer than "
+                             f"{ATTACH_BONE_LIMIT} characters")
+    elif attach.bone:
+        raise ValueError(f"{label}.bone is only valid for a bone attach point")
+
+
+def _attach_dict(attach: AttachKey) -> dict[str, Any]:
+    data = {"handle": attach.handle, "entity_id": attach.entity_id, "model": attach.model,
+            "point": attach.point, "offset": list(attach.offset),
+            "smoothing": attach.smoothing, "hide_body": attach.hide_body}
+    if attach.bone:
+        data["bone"] = attach.bone
+    return data
+
+
+@dataclass
 class Keyframe:
     time: float
     x: float
@@ -147,6 +221,14 @@ class Keyframe:
     roll: float
     fov: float = 90.0
     aspect_ratio: float = STANDARD_ASPECT
+    source: str = "free"
+    attach: AttachKey | None = None
+    # Rotation framing curve overrides: when set, this channel is driven by the
+    # authored curve value at this key instead of the camera key's own angle.
+    curve_pitch: float | None = None
+    curve_yaw: float | None = None
+    curve_roll: float | None = None
+    source_blend: float = 0.0  # Seconds of eased arrival into this key's source.
 
 
 @dataclass
@@ -165,6 +247,29 @@ class CvarTrack:
 
 CAMERA_FIELDS = ("x", "y", "z", "pitch", "yaw", "roll", "fov", "aspect_ratio")
 _LEGACY_CAMERA_FIELDS = CAMERA_FIELDS[:-1]
+
+
+def _keyframe_dict(key: Keyframe) -> dict[str, Any]:
+    data: dict[str, Any] = {"time": key.time, **{name: getattr(key, name) for name in CAMERA_FIELDS}}
+    if key.source != "free":
+        data["source"] = key.source
+        data["attach"] = _attach_dict(key.attach)
+    if key.source_blend:
+        data["source_blend"] = key.source_blend
+    for channel in CURVE_CHANNELS:
+        override = getattr(key, "curve_" + channel)
+        if override is not None:
+            data["curve_" + channel] = override
+    return data
+
+
+def channel_value(key: Keyframe, name: str) -> float:
+    """Effective authored value: a rotation-curve override replaces the angle."""
+    if name in CURVE_CHANNELS:
+        override = getattr(key, "curve_" + name)
+        if override is not None:
+            return override
+    return getattr(key, name)
 
 
 def _validate_times(keys: list[Any], label: str) -> None:
@@ -314,6 +419,21 @@ class Project:
                 raise ValueError(
                     f"Camera keyframe {i}.aspect_ratio must be between {ASPECT_MIN:g} and {ASPECT_MAX:g}; "
                     "use the shot's standard aspect ratio instead of automatic 0")
+            _choice(key.source, ("free", "attach"), f"Camera keyframe {i} source")
+            _finite(key.source_blend, f"Camera keyframe {i} source blend")
+            if not 0 <= key.source_blend <= 10:
+                raise ValueError("Source blend must be between 0 and 10 seconds")
+            if key.source == "free":
+                if key.attach is not None:
+                    raise ValueError(f"Camera keyframe {i} has attach data but a free source")
+            else:
+                if not isinstance(key.attach, AttachKey):
+                    raise ValueError(f"Camera keyframe {i} needs an attach target")
+                _validate_attach(key.attach, f"Camera keyframe {i}")
+            for channel in CURVE_CHANNELS:
+                override = getattr(key, "curve_" + channel)
+                if override is not None:
+                    _finite(override, f"Camera keyframe {i}.curve_{channel}")
         _validate_times(self.keyframes, "Camera keyframes")
 
         _array(self.tracks, "Cvar tracks")
@@ -390,7 +510,7 @@ class Project:
         times = [float(key.time) for key in self.keyframes]
         result: dict[str, Any] = {}
         for name in CAMERA_FIELDS:
-            values = [float(getattr(key, name)) for key in self.keyframes]
+            values = [float(channel_value(key, name)) for key in self.keyframes]
             wrap = self.rotation_mode == "shortest" and name in ("yaw", "roll")
             if wrap:
                 values = _unwrap(values)
@@ -414,10 +534,22 @@ class Project:
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
+        if any(key.source_blend for key in self.keyframes):
+            version = BLEND_FORMAT_VERSION
+        elif any(getattr(key, "curve_" + channel) is not None
+               for key in self.keyframes for channel in CURVE_CHANNELS) or any(
+                   key.attach is not None and key.attach.bone for key in self.keyframes):
+            version = ROTATION_FORMAT_VERSION
+        elif any(key.source == "attach" for key in self.keyframes):
+            version = ATTACH_FORMAT_VERSION
+        elif (any(name in CVAR_COMPONENTS for name in self.setup_values)
+              or any(track.name in CVAR_COMPONENTS for track in self.tracks)):
+            version = VECTOR_FORMAT_VERSION
+        else:
+            version = FORMAT_VERSION
         return {
             "format": FORMAT_NAME,
-            "version": VECTOR_FORMAT_VERSION if (any(name in CVAR_COMPONENTS for name in self.setup_values)
-                         or any(track.name in CVAR_COMPONENTS for track in self.tracks)) else FORMAT_VERSION,
+            "version": version,
             "name": self.name,
             "interpolation": self.interpolation,
             "rotation_mode": self.rotation_mode,
@@ -426,8 +558,7 @@ class Project:
             "start_tick": self.start_tick,
             "tick_rate": self.tick_rate,
             "setup_values": {name: _json_cvar_value(value) for name, value in self.setup_values.items()},
-            "keyframes": [{"time": key.time, **{name: getattr(key, name) for name in CAMERA_FIELDS}}
-                          for key in self.keyframes],
+            "keyframes": [_keyframe_dict(key) for key in self.keyframes],
             "tracks": [{"name": track.name, "interpolation": track.interpolation,
                         "restore_value": _json_cvar_value(track.restore_value),
                         "keys": [{"time": key.time, "value": _json_cvar_value(key.value)} for key in track.keys]}
@@ -440,8 +571,12 @@ class Project:
         if obj.get("format", FORMAT_NAME) != FORMAT_NAME:
             raise ValueError("This is not a Deadlock Dolly project")
         version = obj.get("version")
-        if isinstance(version, bool) or not isinstance(version, int) or version not in (1, FORMAT_VERSION, VECTOR_FORMAT_VERSION):
-            raise ValueError(f"Unsupported project version: {version!r}; expected 1, {FORMAT_VERSION}, or {VECTOR_FORMAT_VERSION}")
+        if isinstance(version, bool) or not isinstance(version, int) \
+                or version not in (1, FORMAT_VERSION, VECTOR_FORMAT_VERSION, ATTACH_FORMAT_VERSION,
+                                   ROTATION_FORMAT_VERSION, BLEND_FORMAT_VERSION):
+            raise ValueError(f"Unsupported project version: {version!r}; expected 1, {FORMAT_VERSION}, "
+                             f"{VECTOR_FORMAT_VERSION}, {ATTACH_FORMAT_VERSION}, or "
+                             f"{ROTATION_FORMAT_VERSION}, or {BLEND_FORMAT_VERSION}")
         allowed = ("format", "version", "name", "interpolation", "rotation_mode",
                    "start_tick", "tick_rate", "setup_values", "keyframes", "tracks")
         if version >= FORMAT_VERSION:
@@ -454,17 +589,45 @@ class Project:
         for i, raw in enumerate(_array(obj.get("keyframes", []), "Camera keyframes")):
             key = _object(raw, f"Camera keyframe {i}")
             fields = CAMERA_FIELDS if version >= FORMAT_VERSION else _LEGACY_CAMERA_FIELDS
-            _members(key, ("time", *fields), "camera keyframe")
+            allowed = ("time", *fields)
+            if version >= ATTACH_FORMAT_VERSION:
+                allowed += ("source", "attach")
+            if version >= ROTATION_FORMAT_VERSION:
+                allowed += tuple("curve_" + channel for channel in CURVE_CHANNELS)
+            if version >= BLEND_FORMAT_VERSION:
+                allowed += ("source_blend",)
+            _members(key, allowed, "camera keyframe")
             # A corrupt v2 shot must never silently lose its authored zoom.
             if version >= FORMAT_VERSION and "aspect_ratio" not in key:
                 raise ValueError(f"Camera keyframe {i} is missing required field: aspect_ratio")
             if version == 1 and "fov" not in key:
                 raise ValueError(f"Camera keyframe {i} is missing required field: fov")
+            source = key.get("source", "free")
+            attach = None
+            raw_attach = key.get("attach")
+            if raw_attach is not None:
+                target = _object(raw_attach, f"Camera keyframe {i} attach")
+                _members(target, ("handle", "entity_id", "model", "point", "bone", "offset",
+                                  "smoothing", "hide_body"), "attach key")
+                offset = target.get("offset")
+                if isinstance(offset, list):
+                    offset = tuple(offset)
+                try:
+                    attach = AttachKey(**{**target, "offset": offset})
+                except TypeError as exc:
+                    raise ValueError(f"Camera keyframe {i} attach has invalid fields") from exc
             try:
                 # No FOV-to-aspect conversion is valid for the unreliable
                 # legacy free-camera FOV controls. Keep the old value as
                 # metadata and start migrated zoom keys at standard aspect.
-                keyframes.append(Keyframe(**key))
+                pose = {name: key[name] for name in fields if name in key}
+                if "source_blend" in key:
+                    pose["source_blend"] = key["source_blend"]
+                for channel in CURVE_CHANNELS:
+                    field_name = "curve_" + channel
+                    if field_name in key:
+                        pose[field_name] = key[field_name]
+                keyframes.append(Keyframe(time=key["time"], source=source, attach=attach, **pose))
             except TypeError as exc:
                 raise ValueError(f"Camera keyframe {i} is missing required fields") from exc
         tracks: list[CvarTrack] = []

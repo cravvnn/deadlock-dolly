@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 import struct
 
-from .path import Project, _monotone_tangents, _position_tangents, _unwrap
+from .path import Project, _monotone_tangents, _position_tangents, _unwrap, channel_value
 
 
 CHANNELS = ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -57,7 +57,7 @@ The callback consumes these coefficients rather than a sampled pose stream.
     times = [float(key.time) for key in keys]
     channels: list[tuple[list[float], int, int, list[float]]] = []
     for name in CHANNELS:
-        values = [float(getattr(key, name)) for key in keys]
+        values = [float(channel_value(key, name)) for key in keys]
         if name in ("yaw", "roll") and project.rotation_mode == "shortest":
             values = _unwrap(values)
         interpolation = project.lens_interpolation if name == "aspect_ratio" else project.interpolation

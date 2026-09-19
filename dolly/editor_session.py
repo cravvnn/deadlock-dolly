@@ -10,8 +10,11 @@ from dataclasses import replace
 import copy
 import logging
 import math
-
+import time
+from .editor_wire import ATTACH_NO_TARGET, ATTACH_OFFSET_LIMIT
 from .native_bridge import NativeBridgeError
+from .native_effects import model_token
+from .path import AttachKey
 from .settings import save_settings
 from .video_export import (BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES, CODEC_LABEL_TO_KEY,
                            DEFAULT_CODEC_KEY)
@@ -196,6 +199,48 @@ def configure(app):
                 or getattr(app, "_native_citadel_dof_cache", None) != citadel):
             publish_citadel(sensor, focus, available=active, enabled=active and enabled)
             app._native_citadel_dof_bridge, app._native_citadel_dof_cache = bridge, citadel
+    publish_attach = getattr(bridge, "configure_editor_attach", None)
+    fields = getattr(app, "attach_fields", None)
+    if callable(publish_attach) and fields and active:
+        preview = bool(getattr(app, "preview_attach", False))
+        snap_request = int(getattr(app, "_attach_snap_request", 0))
+        attach = (tuple(sorted(fields.items())), _attach_state(app, selected, count), preview,
+                  snap_request)
+        if (getattr(app, "_native_attach_bridge", None) is not bridge
+                or getattr(app, "_native_attach_cache", None) != attach):
+            publish_attach(dict(fields), attach[1], preview=preview, snap_request=snap_request)
+            app._native_attach_bridge, app._native_attach_cache = bridge, attach
+
+
+def _attach_state(app, selected, count):
+    """Selected key's attach data for the in-game card, or None for free keys."""
+    if not count or selected is None or not 0 <= selected < count:
+        return None
+    key = app.project.keyframes[selected]
+    attach = getattr(key, "attach", None)
+    if getattr(key, "source", "free") != "attach" or not isinstance(attach, AttachKey):
+        if key.source_blend:
+            return {"selected": False, "source_blend": key.source_blend,
+                    "attached_keys": sum(item.source == "attach" for item in app.project.keyframes),
+                    "key_count": count}
+        return None
+    roster = getattr(app, "attach_roster", None)
+    players = roster.get("players", []) if isinstance(roster, dict) else []
+    target_index = ATTACH_NO_TARGET
+    for position, player in enumerate(players):
+        if (isinstance(player, dict) and player.get("handle") == attach.handle
+                and str(player.get("model_path") or "") == attach.model):
+            target_index = position
+            break
+    return {"source_blend": key.source_blend, "handle": attach.handle, "entity_id": attach.entity_id,
+            "target_index": target_index, "model": model_token(attach.model),
+            "point": ("eyes", "weapon", "bone").index(attach.point),
+            "bone": attach.bone,
+            "hide_body": bool(attach.hide_body), "offset": tuple(attach.offset),
+            "smoothing": float(attach.smoothing),
+            "attached_keys": sum(1 for item in app.project.keyframes
+                                 if getattr(item, "source", "free") == "attach"),
+            "key_count": len(app.project.keyframes)}
 
 
 def _select(app, index):
@@ -321,6 +366,15 @@ def dispatch(app, event, bridge):
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":
         app._play()
+    elif action == "seek_shot":
+        value = event["value"]
+        if (not math.isfinite(value) or not app.project.keyframes
+                or not 0 <= value <= app.project.duration):
+            raise ValueError("Choose a time within the current shot.")
+        if app.controller.status().get("playing") or getattr(app, "playing", False):
+            raise ValueError("Pause shot playback before seeking an in-between view.")
+        app._set_time(value)
+        app._seek()
     elif action == "destroy_ragdolls":
         _native_operation(app, "Clearing ragdolls", app.controller.destroy_ragdolls, bridge)
     elif action == "toggle_citadel_glow":
@@ -456,9 +510,154 @@ def dispatch(app, event, bridge):
             raise ValueError("Export speed must be between 0.05 and 4.")
         app.video_export_speed.set(f"{value:g}")
         configure(app)
+    elif action in ("set_attach_target", "attach_cycle_target"):
+        roster = getattr(app, "attach_roster", None)
+        players = roster.get("players", []) if isinstance(roster, dict) else []
+        if not players:
+            app.status_text.set("No live players are available for the attach camera yet.")
+            return True
+        requested = int(event["value"]) if action == "set_attach_target" else -1
+
+        def mutate_target(key):
+            if action == "set_attach_target":
+                if not 0 <= requested < len(players):
+                    raise ValueError("The selected attach player is no longer in the roster.")
+                player = players[requested]
+            else:
+                current = -1
+                for position, candidate in enumerate(players):
+                    if (isinstance(key.attach, AttachKey)
+                            and candidate.get("handle") == key.attach.handle
+                            and str(candidate.get("model_path") or "") == key.attach.model):
+                        current = position
+                        break
+                player = players[(current + 1) % len(players)]
+            attach = key.attach if isinstance(key.attach, AttachKey) else AttachKey()
+            attach.handle = int(player.get("handle", 0))
+            attach.entity_id = int(player.get("entity_index", 0) or 0)
+            attach.model = str(player.get("model_path") or "")
+            key.attach = attach
+            key.source = "attach"
+
+        _attach_edit(app, mutate_target)
+        configure(app)
+    elif action in ("set_attach_point", "attach_cycle_point"):
+        requested = int(event["value"]) if action == "set_attach_point" else -1
+        if action == "set_attach_point" and requested not in (0, 1, 2):
+            raise ValueError("Unknown attach point.")
+
+        def mutate_point(key):
+            if not isinstance(key.attach, AttachKey):
+                raise ValueError("Choose a live player before changing the attach point.")
+            if action == "set_attach_point":
+                key.attach.point = ("eyes", "weapon", "bone")[requested]
+            else:
+                key.attach.point = "weapon" if key.attach.point == "eyes" else "eyes"
+            key.attach.bone = (key.attach.bone or "head") if key.attach.point == "bone" else ""
+
+        _attach_edit(app, mutate_point)
+        configure(app)
+    elif action == "set_attach_bone":
+        bones = bridge.editor_bones()
+        index = int(event["value"])
+        pose = event.get("pose") or ()
+        if (not bones or not pose or pose[0] != bones["sequence"] or
+                event["value"] != index or not 0 <= index < len(bones["names"])):
+            raise ValueError("The bone picker changed; select the bone again.")
+
+        def mutate_bone(key):
+            attach = key.attach
+            if (not isinstance(attach, AttachKey) or attach.handle != bones["handle"] or
+                    attach.entity_id != bones["entity_id"] or model_token(attach.model) != bones["model"]):
+                raise ValueError("The bone picker belongs to a different player.")
+            attach.point = "bone"
+            attach.bone = bones["names"][index]
+
+        _attach_edit(app, mutate_bone)
+
+    elif action == "set_attach_offsets":
+        pose = event.get("pose") or []
+        if len(pose) != 7 or any(not math.isfinite(component) for component in pose):
+            raise ValueError("Attach offsets must be finite numbers.")
+        offsets = tuple(float(component) for component in pose[:6])
+        if any(abs(component) > ATTACH_OFFSET_LIMIT for component in offsets):
+            raise ValueError("Attach offsets are outside the supported range.")
+
+        def mutate_offsets(key):
+            if not isinstance(key.attach, AttachKey):
+                raise ValueError("Choose a live player before editing offsets.")
+            key.attach.offset = offsets
+
+        _attach_edit(app, mutate_offsets)
+        configure(app)
+    elif action == "set_attach_smoothing":
+        smoothing = event["value"]
+        if (isinstance(smoothing, bool) or not isinstance(smoothing, (int, float))
+                or not math.isfinite(smoothing) or not 0 <= smoothing <= 5):
+            raise ValueError("Attach smoothing must be between 0 and 5 seconds.")
+
+        def mutate_smoothing(key):
+            if not isinstance(key.attach, AttachKey):
+                raise ValueError("Choose a live player before setting smoothing.")
+            key.attach.smoothing = float(smoothing)
+
+        _attach_edit(app, mutate_smoothing)
+        configure(app)
+    elif action == "set_attach_hide":
+        if event["value"] not in (0, 1):
+            raise ValueError("Hide this hero must be on or off.")
+        hide = bool(event["value"])
+
+        def mutate_hide(key):
+            if not isinstance(key.attach, AttachKey):
+                raise ValueError("Choose a live player before hiding the body.")
+            key.attach.hide_body = hide
+
+        _attach_edit(app, mutate_hide)
+        configure(app)
+    elif action == "set_source_blend":
+        value = float(event["value"])
+        if not math.isfinite(value) or not 0 <= value <= 10:
+            raise ValueError("Source blend must be between 0 and 10 seconds")
+        _attach_edit(app, lambda key: setattr(key, "source_blend", value))
+        configure(app)
+    elif action == "attach_reset":
+        app.preview_attach = False
+        app._attach_snap_pending = False
+
+        def mutate_reset(key):
+            key.source = "free"
+            key.attach = None
+
+        _attach_edit(app, mutate_reset)
+        configure(app)
+    elif action == "attach_preview":
+        if event["value"] not in (0, 1):
+            raise ValueError("Attach preview must be on or off.")
+        app.preview_attach = bool(event["value"])
+        app.status_text.set("Attach preview on. Fly with WASD/mouse to edit the offsets."
+                            if app.preview_attach else "Attach preview off.")
+        configure(app)
+    elif action == "attach_snap":
+        app._attach_snap_request = int(getattr(app, "_attach_snap_request", 0)) + 1
+        app._attach_snap_pending = True
+        app.status_text.set("Snap requested; the next free-camera frame stores its offsets.")
+        configure(app)
     else:
         raise ValueError("The native editor requested an unsupported UI action")
     return True
+
+
+def _attach_edit(app, mutate):
+    """Apply an in-game attach edit to the selected camera key."""
+    index = app._selection_index(app.camera_tree)
+    if index is None or not 0 <= index < len(app.project.keyframes):
+        app.status_text.set("Select a camera view before editing the attach camera.")
+        return
+    keys = copy.deepcopy(app.project.keyframes)
+    key = keys[index]
+    mutate(key)
+    app._commit_camera(keys, key.time)
 
 
 def poll(app):
@@ -486,6 +685,48 @@ def poll(app):
         configure(app)
         if not getattr(app, "native_editor_active", False):
             return
+        # The attach target picker refreshes from the native roster at a low
+        # rate; a stale or unavailable block must never break camera control.
+        roster_now = time.monotonic()
+        if roster_now - getattr(app, "_attach_roster_at", 0.0) >= 2.0:
+            app._attach_roster_at = roster_now
+            roster = None
+            reader = getattr(bridge, "editor_roster", None)
+            if callable(reader):
+                try:
+                    roster = reader()
+                except (NativeBridgeError, ValueError, OSError):
+                    roster = None
+            app.attach_roster = roster
+            handler = getattr(app, "_attach_roster_changed", None)
+            if callable(handler):
+                handler(roster)
+            bones = None
+            reader = getattr(bridge, "editor_bones", None)
+            if callable(reader):
+                try:
+                    bones = reader()
+                except (NativeBridgeError, ValueError, OSError):
+                    pass
+            app.attach_bones = bones
+            handler = getattr(app, "_attach_bones_changed", None)
+            if callable(handler):
+                handler(bones)
+        # Native snap / attached-fly offsets feed the selected attach key.
+        result_reader = getattr(bridge, "editor_attach_result", None)
+        if callable(result_reader):
+            attach_result = None
+            try:
+                attach_result = result_reader()
+            except (NativeBridgeError, ValueError, OSError):
+                attach_result = None
+            if attach_result and attach_result.get("valid"):
+                sequence = attach_result.get("sequence")
+                if sequence and sequence != getattr(app, "_attach_result_sequence", None):
+                    app._attach_result_sequence = sequence
+                    handler = getattr(app, "_attach_result_changed", None)
+                    if callable(handler):
+                        handler(attach_result)
         status = bridge.editor_status()
         app._native_editor_status = status
         if status.get("dropped_events", 0) > getattr(app, "_native_editor_dropped", 0):

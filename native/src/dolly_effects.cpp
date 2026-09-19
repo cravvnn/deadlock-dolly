@@ -71,48 +71,59 @@ bool NativeShot::load(const void* data, std::size_t size, std::string& error) {
     if (!data || size < 40 || size > 2 * 1024 * 1024 - 1024)
         return fail("Invalid native shot length");
     auto p = static_cast<const unsigned char*>(data);
-    if (std::memcmp(p, "DLYSHOT2", 8))
+    // DLYSHOT3 appends an attach block after the effect tracks; DLYSHOT2 stays
+    // accepted for shots authored before attach keys existed.
+    const bool attach_capable = !std::memcmp(p, "DLYSHOT3", 8);
+    if (!attach_capable && std::memcmp(p, "DLYSHOT2", 8))
         return fail("Native shot protocol differs");
     Reader r{p + 8, size - 8};
-    auto version = r.u32(), camera_bytes = r.u32(), effect_bytes = r.u32(), reserved = r.u32();
-    if (version != 1 || reserved || std::size_t(camera_bytes) + effect_bytes != r.remaining ||
-        effect_bytes < 16)
+    auto version = r.u32(), camera_bytes = r.u32(), effect_bytes = r.u32();
+    std::uint32_t attach_bytes = 0;
+    if (attach_capable)
+        attach_bytes = r.u32();
+    auto reserved = r.u32();
+    if (version != 1 || reserved ||
+        std::size_t(camera_bytes) + effect_bytes + attach_bytes != r.remaining ||
+        effect_bytes < 16 || attach_bytes > AttachTrack::max_bytes3)
         return fail("Invalid native shot envelope");
     NativeShot candidate;
     if (!candidate.camera.load(r.p, camera_bytes, error))
         return false;
     r.p += camera_bytes;
     r.remaining -= camera_bytes;
-    const bool vector_format = !std::memcmp(r.p, "DLYEFX02", 8);
-    if (!vector_format && std::memcmp(r.p, "DLYEFX01", 8))
+    // Effect parsing is bounded to its own length so a trailing attach block
+    // cannot be mistaken for effect bytes.
+    Reader effects{r.p, effect_bytes};
+    const bool vector_format = !std::memcmp(effects.p, "DLYEFX02", 8);
+    if (!vector_format && std::memcmp(effects.p, "DLYEFX01", 8))
         return fail("Invalid effect format");
-    r.p += 8;
-    r.remaining -= 8;
-    auto count = r.u32();
-    reserved = r.u32();
+    effects.p += 8;
+    effects.remaining -= 8;
+    auto count = effects.u32();
+    reserved = effects.u32();
     if (count > kEffects.size() + 3 || reserved)
         return fail("Invalid effect count");
     std::array<unsigned, kEffects.size()> used{}, restore_mask{};
     for (unsigned i = 0; i < count; ++i) {
-        if (r.remaining < 56)
+        if (effects.remaining < 56)
             return fail("Truncated effect header");
         EffectTrack t;
-        t.id = r.u32();
-        auto n = r.u32(), override_value = r.u32();
-        t.component = r.u32();
+        t.id = effects.u32();
+        auto n = effects.u32(), override_value = effects.u32();
+        t.component = effects.u32();
         if (t.id >= kEffects.size() || t.component >= kEffects[t.id].components ||
             (!vector_format && t.component) || used[t.id] & (1u << t.component) || n >= 4096 ||
-            override_value > 1 || r.remaining < 40 + std::size_t(n) * 56)
+            override_value > 1 || effects.remaining < 40 + std::size_t(n) * 56)
             return fail("Invalid effect track header");
         used[t.id] |= 1u << t.component;
         t.restore_override = override_value != 0;
         if (t.restore_override)
             restore_mask[t.id] |= 1u << t.component;
-        t.first_time = r.number();
-        t.last_time = r.number();
-        t.first = r.number();
-        t.last = r.number();
-        t.restore = r.number();
+        t.first_time = effects.number();
+        t.last_time = effects.number();
+        t.first = effects.number();
+        t.last = effects.number();
+        t.restore = effects.number();
         if (!std::isfinite(t.first_time) || !std::isfinite(t.last_time) || t.first_time < 0 ||
             t.last_time < t.first_time || t.last_time > candidate.camera.duration() ||
             !valid(t.id, t.first) || !valid(t.id, t.last) || !std::isfinite(t.restore) ||
@@ -121,14 +132,14 @@ bool NativeShot::load(const void* data, std::size_t size, std::string& error) {
         double previous_time = t.first_time, previous = t.first;
         for (unsigned j = 0; j < n; ++j) {
             EffectSegment s;
-            s.begin = r.number();
-            s.end = r.number();
-            s.kind = r.u32();
-            s.flags = r.u32();
-            s.left = r.number();
-            s.right = r.number();
-            s.left_derivative = r.number();
-            s.right_derivative = r.number();
+            s.begin = effects.number();
+            s.end = effects.number();
+            s.kind = effects.u32();
+            s.flags = effects.u32();
+            s.left = effects.number();
+            s.right = effects.number();
+            s.left_derivative = effects.number();
+            s.right_derivative = effects.number();
             if (!std::isfinite(s.begin) || !std::isfinite(s.end) || s.begin != previous_time ||
                 s.end <= s.begin || s.end > t.last_time || s.kind > 2 || s.flags != 1 ||
                 (kEffects[t.id].discrete && s.kind != 0) || s.left != previous ||
@@ -150,8 +161,18 @@ bool NativeShot::load(const void* data, std::size_t size, std::string& error) {
         if (restore_mask[id] && restore_mask[id] != full)
             return fail("Incomplete vector restore");
     }
-    if (r.remaining)
+    if (effects.remaining)
         return fail("Trailing native effect bytes");
+    r.p += effect_bytes;
+    r.remaining -= effect_bytes;
+    if (attach_bytes) {
+        if (!candidate.attach.load(r.p, attach_bytes, candidate.camera.duration(), error))
+            return false;
+        r.p += attach_bytes;
+        r.remaining -= attach_bytes;
+    }
+    if (r.remaining)
+        return fail("Trailing native shot bytes");
     *this = std::move(candidate);
     return true;
 }
