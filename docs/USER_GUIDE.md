@@ -143,7 +143,7 @@ changing its position or arrival time. Before the first camera is captured,
 scrolling changes the live framing that the next capture will save. The wheel
 scrolls menus normally while a panel or ReShade has input focus.
 
-The in-game Editor's **Depth of field** card sits between Cameras and Replay.
+The in-game **Look** tab contains the depth-of-field controls.
 After capturing a camera, **Enable DOF** turns on both native switches and
 initializes **Focus ranges** like the desktop **+ Range DOF** button. Existing
 range edits are preserved when switching off and back on. The four controls
@@ -180,7 +180,7 @@ in the game console. The native input behavior above does not apply to it.
 
 ### Edit a view between saved cameras
 
-Open **Camera > Between cameras** in the in-game Dolly panel. Drag **Time**
+Open **Camera** in the in-game Dolly panel. Drag the **Shot** timeline
 (or Ctrl+click its slider to type seconds), then press **Seek here**. Dolly
 pauses the replay at that part of the shot and applies its position, rotation
 and framing. Moving the slider alone does not seek. Pause shot playback first.
@@ -192,6 +192,16 @@ on the desktop, **Capture camera here** (or your capture binding) inserts the
 new camera at that replay moment. An existing camera at the same time must be
 replaced instead. With **Timed shot**, capture uses the configured spacing.
 Desktop **Playback options > Seek replay** uses the same seek behavior.
+
+Replay playback and camera editing share this Camera card in-game. Timeline
+marks show saved camera times and match the path-guide camera data. Choose a
+step size of **1, 2, 5, 10 or 25 ticks**, then press **Back** or **Forward** to
+inspect an animation while keeping the current camera fixed. The panel stays
+open and shows the actual replay tick. Some recordings omit intermediate ticks;
+Dolly chooses the nearest recorded tick in the requested direction and reports
+the actual movement. Seek here follows the shot camera; tick steps hold your
+current view. Detach an active player-camera preview before fixed-camera tick
+stepping. Desktop replay library and launch controls remain under Replay.
 
 ## Make a first shot
 
@@ -349,10 +359,10 @@ advanced timing remain in **More → Coordinates / timing…**. Playback options
 hold preview, seek, update rate and renderer relief; Console smoothing appears
 when using that backend. **Stop / restore** is always available in the footer.
 
-The in-game panel uses **Replay**, **Camera**, **Look** and **Export**.
-Replay contains playback and seeking. Camera contains saved views, player/bone
-attachment and free-camera movement. Expand **Position, rotation & smoothing**
-when you need numeric offsets. Look groups scene visibility, both depth-of-field
+The in-game panel uses **Camera**, **Look** and **Export**.
+Camera combines playback, the marked shot timeline, tick stepping, saved views,
+player/bone attachment and free-camera movement. Expand **Rotation & transition**
+for additional attachment rotation and blend settings. Look groups scene visibility, both depth-of-field
 controls and ReShade. Export shows the selected saved camera source alongside
 capture settings and output passes. The panel remains draggable and resizable.
 Save/load and full graph editing stay on the desktop; both surfaces share one

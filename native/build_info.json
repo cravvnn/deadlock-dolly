@@ -1,8 +1,8 @@
 {
   "abi": 3,
-  "version": "0.5.23-alpha",
-  "sha256": "236d6be36d3194927ddff7522ce4ce7ffdec9640fdbbf8230c9539f398976cfe",
-  "built_utc": "2026-09-19T20:32:19.643610+00:00",
+  "version": "0.5.24-alpha",
+  "sha256": "9d3f5ab32c69c06242317c61f061f5a95f13ab91d58a5523bd7d97ebcc48cfa9",
+  "built_utc": "2026-09-19T21:04:03.234460+00:00",
   "compiler": "Visual Studio 17 2022",
   "configuration": "Release",
   "runtime": "static",

@@ -306,6 +306,11 @@ class EditorBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(nb.NativeBridgeError, "protocol"):
             self.bridge.editor_status()
 
+    def test_tick_step_action_preserves_signed_integer_steps(self):
+        self.publish([(1, 76, -25), (2, 76, 1)])
+        self.assertEqual([(e["action"], e["value"]) for e in self.bridge.editor_status()["events"]],
+                         [("step_replay_ticks", -25), ("step_replay_ticks", 1)])
+
     def test_shot_seek_action_round_trips_without_reassigning_previous_ids(self):
         self.publish([(1, 74, .5), (2, 75, 1.375)])
         self.assertEqual([(event["action"], event["value"]) for event in self.bridge.editor_status()["events"]],

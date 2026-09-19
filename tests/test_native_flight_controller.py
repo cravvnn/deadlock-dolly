@@ -29,7 +29,7 @@ class FlightBridge:
                 "phase": self.phase, "applied_pose": list(self.pose), "original_pose": list(self.original),
                 "effect_count": 0}
 
-    def start_flight(self, demo_name, pose=None, timeout=3, *, cancelled=None, playback=None):
+    def start_flight(self, demo_name, pose=None, timeout=3, *, cancelled=None, playback=None, owner="flight"):
         self.events.append("native.flight")
         self.playback = playback
         if pose is not None:
@@ -37,7 +37,8 @@ class FlightBridge:
         elif self.state in ("stopped", "probe"):
             self.pose = list(self.original)
         self.state = "armed"
-        self.owner = "flight"
+        self.owner = owner
+        self.last_start_owner = owner
         return self.status()
 
     def hold(self):
@@ -152,6 +153,39 @@ class NativeFlightControllerTests(unittest.TestCase):
                 self.controller.seek(make_project(), 5)
         self.assertEqual(self.bridge.state, "stopped")
         self.assertFalse(self.controller._native_active)
+
+    def test_tick_steps_keep_pose_and_panel_for_every_increment_and_direction(self):
+        self.controller.begin_paused_camera()
+        original = list(self.bridge.pose)
+        for step in (1, -1, 2, -2, 5, -5, 10, -10, 25, -25):
+            before = self.console.tick
+            with patch("dolly.controller.packet_index", return_value=None):
+                result = self.controller.step_replay_ticks(step)
+            self.assertEqual(result["tick"], before + step)
+            self.assertEqual(result["moved_ticks"], step)
+            self.assertEqual(self.bridge.pose, original)
+            self.assertEqual(self.bridge.owner, "panel")
+            self.assertEqual(self.bridge.last_start_owner, "panel")
+            self.assertTrue(self.console.paused)
+
+    def test_sparse_tick_steps_choose_packet_in_requested_direction(self):
+        from array import array
+        from dolly.demo_packets import PacketIndex
+        self.controller.begin_paused_camera()
+        total = self.controller._require_demo().get("total_ticks", 10000)
+        packets = PacketIndex(array("I", [1, 97, 100, 103, 106]), total)
+        for step, expected in ((1, 103), (-1, 100), (-2, 97)):
+            with patch("dolly.controller.packet_index", return_value=packets):
+                result = self.controller.step_replay_ticks(step)
+            self.assertEqual(result["tick"], expected)
+            self.assertIn("nearest recorded tick", self.controller.status()["message"])
+
+    def test_invalid_tick_steps_do_not_touch_the_game(self):
+        before = list(self.console.events)
+        for step in (0, 3, 1.5, True, float("nan"), float("inf"), "1"):
+            with self.assertRaises(ValueError):
+                self.controller.step_replay_ticks(step)
+        self.assertEqual(before, self.console.events)
 
     def test_first_flight_hands_off_default_game_cursor_before_arming(self):
         original_values = dict(self.console.values)

@@ -588,7 +588,8 @@ struct SliderRow {
 // Label, ImGui slider and a right-aligned readout. Ctrl+click types an exact
 // value (ImGui built-in), which keeps numeric entry available in game.
 SliderRow slider_row(const char* id, const char* label, float* value, float minimum, float maximum,
-                     const char* format, float label_width = 58.0f) {
+                     const char* format, float label_width = 58.0f,
+                     const VisualizationPath* timeline = nullptr) {
     SliderRow result;
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("%s", label);
@@ -619,6 +620,19 @@ SliderRow slider_row(const char* id, const char* label, float* value, float mini
                       6 * panel_scale);
         draw->AddLine(ImVec2(x0, y), ImVec2(x, y), ImGui::GetColorU32(panel_color(0x385d59)),
                       6 * panel_scale);
+        if (timeline && maximum > minimum) {
+            for (const auto& camera : timeline->cameras()) {
+                const float marker =
+                    x0 +
+                    (x1 - x0) * std::clamp(float((camera.time - minimum) / (maximum - minimum)),
+                                           0.0f, 1.0f);
+                const auto color =
+                    camera.index == timeline->selected_camera() ? 0xe8c879 : 0x9caeb8;
+                draw->AddLine(ImVec2(marker, y - 8 * panel_scale),
+                              ImVec2(marker, y + 8 * panel_scale),
+                              ImGui::GetColorU32(panel_color(color)), panel_scale);
+            }
+        }
         draw->AddRectFilled(ImVec2(x - 2.5f * panel_scale, y - 6 * panel_scale),
                             ImVec2(x + 2.5f * panel_scale, y + 6 * panel_scale),
                             ImGui::GetColorU32(panel_color(0x95dbcb)), 2.5f * panel_scale);
@@ -823,63 +837,87 @@ void draw_panel(const EditorSnapshot& state) {
         if (ImGui::BeginChild("##editor-content", ImVec2(0, -footer_height),
                               ImGuiChildFlags_None)) {
             ImGui::BeginTabBar("##dolly-pages", ImGuiTabBarFlags_None);
-            if (ImGui::BeginTabItem("Replay")) {
-                ImGui::BeginDisabled(!state.ready || state.busy);
-                if (begin_panel_card("##replay-card")) {
-                    char timing[64]{};
-                    if (state.duration > 0)
-                        std::snprintf(timing, sizeof(timing), "%.2f / %.2f s", state.phase,
-                                      state.duration);
-                    section_title("Replay", timing[0] ? timing : nullptr);
-                    if (state.duration > 0) {
-                        ImGui::ProgressBar(
-                            std::clamp(float(state.phase / state.duration), 0.0f, 1.0f),
-                            ImVec2(-1, 4 * panel_scale), "");
-                        ImGui::Spacing();
-                    }
-                    const float half =
-                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                    ImGui::BeginDisabled(state.camera_count < 2);
-                    action_button("Play shot", EditorAction::PlayPath, half);
-                    ImGui::EndDisabled();
-                    ImGui::SameLine();
-                    action_button(state.paused ? "Play replay" : "Pause replay",
-                                  EditorAction::PlayPause, half);
-                    ImGui::Spacing();
-                    action_button("Back 1 second", EditorAction::SeekBack, half);
-                    ImGui::SameLine();
-                    action_button("Forward 1 second", EditorAction::SeekForward, half);
-                    ImGui::Spacing();
-                    ImGui::TextUnformatted("Playback speed");
-                    ImGui::SetNextItemWidth(-1);
-                    char playback_speed[32]{};
-                    std::snprintf(playback_speed, sizeof(playback_speed), "%.3g x",
-                                  state.playback_speed);
-                    if (ImGui::BeginCombo("##playback-speed", playback_speed)) {
-                        for (double value : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
-                            char label[32]{};
-                            std::snprintf(label, sizeof(label), "%.3g x", value);
-                            if (ImGui::Selectable(label, value == state.playback_speed))
-                                editor_enqueue(EditorAction::SetPlaybackSpeed, value);
-                        }
-                        ImGui::EndCombo();
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Replay speed. Applies immediately to a playing or paused replay and to the next Play shot. Stop / restore returns to 1x.");
-                }
-                end_panel_card();
-                ImGui::TextWrapped(
-                    "Choose replays and manage saved shots on the desktop Replay page.");
-                ImGui::EndDisabled();
-                ImGui::EndTabItem();
-            }
             if (ImGui::BeginTabItem("Camera")) {
                 ImGui::BeginDisabled(!state.ready || state.busy);
                 if (begin_panel_card("##cameras-card")) {
                     char count[32]{};
                     std::snprintf(count, sizeof(count), "%u saved", state.camera_count);
                     section_title("Cameras", count);
+                    const float transport_half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    action_button(state.paused ? "Play replay" : "Pause replay",
+                                  EditorAction::PlayPause, transport_half);
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(state.camera_count < 2);
+                    action_button("Play shot", EditorAction::PlayPath, transport_half);
+                    ImGui::EndDisabled();
+                    const auto guides = visualization_snapshot();
+                    ImGui::BeginDisabled(!state.camera_count || state.playing);
+                    static float seek_time = 0;
+                    static double last_playhead = -1, last_duration = -1;
+                    if (last_playhead != state.playhead || last_duration != state.duration) {
+                        seek_time = float(std::clamp(state.playhead, 0.0, state.duration));
+                        last_playhead = state.playhead;
+                        last_duration = state.duration;
+                    }
+                    slider_row("##shot-position", "Shot", &seek_time, 0,
+                               float(std::max(state.duration, .001)), "%.3f s", 58, guides.get());
+                    seek_time = std::clamp(seek_time, 0.0f, float(state.duration));
+                    action_button("Seek here", EditorAction::SeekShot,
+                                  ImGui::GetContentRegionAvail().x, double(seek_time));
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Seek the replay and apply this point on the camera path. Timeline marks match the saved camera guides. Dragging alone does not seek.");
+                    ImGui::EndDisabled();
+                    ImGui::Separator();
+                    char tick_label[64]{};
+                    std::snprintf(tick_label, sizeof(tick_label), "Replay tick %d", state.tick);
+                    ImGui::TextDisabled("%s", tick_label);
+                    ImGui::BeginDisabled(state.playing || state.attach_preview);
+                    static int tick_step = 1;
+                    const float step_width = 88 * panel_scale;
+                    const float arrow_width =
+                        std::max(1.0f, (ImGui::GetContentRegionAvail().x - step_width -
+                                        2 * ImGui::GetStyle().ItemSpacing.x) /
+                                           2);
+                    action_button("< Back", EditorAction::StepReplayTicks, arrow_width, -tick_step);
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(step_width);
+                    char step_label[24]{};
+                    std::snprintf(step_label, sizeof(step_label), "%d tick%s", tick_step,
+                                  tick_step == 1 ? "" : "s");
+                    if (ImGui::BeginCombo("##tick-step", step_label)) {
+                        for (int step : {1, 2, 5, 10, 25}) {
+                            char label[24]{};
+                            std::snprintf(label, sizeof(label), "%d tick%s", step,
+                                          step == 1 ? "" : "s");
+                            if (ImGui::Selectable(label, step == tick_step))
+                                tick_step = step;
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::SameLine();
+                    action_button("Forward >", EditorAction::StepReplayTicks, arrow_width,
+                                  tick_step);
+                    ImGui::TextDisabled(state.attach_preview ? "Detach to step with a fixed camera."
+                                                             : "Tick steps keep the camera fixed.");
+                    ImGui::EndDisabled();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("Speed");
+                    ImGui::SameLine(58 * panel_scale);
+                    ImGui::SetNextItemWidth(-1);
+                    char speed_label[24]{};
+                    std::snprintf(speed_label, sizeof(speed_label), "%.3g x", state.playback_speed);
+                    if (ImGui::BeginCombo("##playback-speed", speed_label)) {
+                        for (double speed : {.05, .1, .25, .5, 1.0, 2.0, 4.0}) {
+                            char label[24]{};
+                            std::snprintf(label, sizeof(label), "%.3g x", speed);
+                            if (ImGui::Selectable(label, speed == state.playback_speed))
+                                editor_enqueue(EditorAction::SetPlaybackSpeed, speed);
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::Separator();
                     action_button(state.camera_count ? "Capture camera here" : "Start path here",
                                   EditorAction::Capture, ImGui::GetContentRegionAvail().x, 0, true);
                     ImGui::BeginDisabled(!state.camera_count);
@@ -922,7 +960,6 @@ void draw_panel(const EditorSnapshot& state) {
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Camera positions and spline while editing a paused replay. The selected camera is gold. Guides show through walls and hide during playback.");
-                    const auto guides = visualization_snapshot();
                     if (show_path_guides && state.camera_count && !guides) {
                         const auto viewer_state = visualization_runtime_state();
                         if (viewer_state == VisualizationRuntimeState::Invalid ||
@@ -935,27 +972,6 @@ void draw_panel(const EditorSnapshot& state) {
                         ImGui::TextDisabled("%u of %u camera markers; selected included",
                                             unsigned(guides->cameras().size()),
                                             unsigned(guides->camera_count()));
-                }
-                end_panel_card();
-                if (begin_panel_card("##shot-position-card")) {
-                    section_title("Between cameras");
-                    ImGui::BeginDisabled(!state.camera_count || state.playing);
-                    static float seek_time = 0;
-                    static double last_playhead = -1, last_duration = -1;
-                    if (last_playhead != state.playhead || last_duration != state.duration) {
-                        seek_time = float(std::clamp(state.playhead, 0.0, state.duration));
-                        last_playhead = state.playhead;
-                        last_duration = state.duration;
-                    }
-                    slider_row("##shot-position", "Time", &seek_time, 0,
-                               float(std::max(state.duration, .001)), "%.3f s");
-                    seek_time = std::clamp(seek_time, 0.0f, float(state.duration));
-                    action_button("Seek here", EditorAction::SeekShot,
-                                  ImGui::GetContentRegionAvail().x, double(seek_time), true);
-                    ImGui::TextWrapped(
-                        "Choose a shot time, then Seek here to pause the replay at its camera position, rotation and framing.");
-                    ImGui::TextDisabled("Fly to adjust; Capture camera here to save.");
-                    ImGui::EndDisabled();
                 }
                 end_panel_card();
                 if (begin_panel_card("##attach-card")) {

@@ -1398,7 +1398,18 @@ void run() {
         const auto& seek_event = dolly::gEvents[seek_serial % kEditorEventCount];
         require(seek_event.action == 75 && seek_event.value == .75,
                 "Shot seek action differs from Python");
+        const auto step_serial = dolly::gLastEvent;
+        require(editor_enqueue(EditorAction::StepReplayTicks, -25), "Tick step could not queue");
+        require(dolly::gEvents[step_serial % kEditorEventCount].action == 76 &&
+                    dolly::gEvents[step_serial % kEditorEventCount].value == -25,
+                "Tick step action differs from Python");
+        require(!editor_enqueue(EditorAction::StepReplayTicks, 0) &&
+                    !editor_enqueue(EditorAction::StepReplayTicks, 3) &&
+                    !editor_enqueue(EditorAction::StepReplayTicks, 1.5),
+                "Invalid tick step entered event queue");
         editor_set_owner(EditorOwner::Flight);
+        require(!editor_enqueue(EditorAction::StepReplayTicks, 1),
+                "Tick step bypassed panel ownership");
         require(!editor_enqueue(EditorAction::SeekShot, .75), "Shot seek bypassed panel ownership");
         editor_set_owner(EditorOwner::Panel);
         for (auto flags : {1u, 2u}) {
@@ -1408,6 +1419,8 @@ void run() {
             editor_worker_tick(f.mapping.data(), true);
             require(!editor_enqueue(EditorAction::SeekShot, .75),
                     "Busy/playing shot accepted a seek");
+            require(!editor_enqueue(EditorAction::StepReplayTicks, 1),
+                    "Busy/playing shot accepted a tick step");
         }
         saved_config.sequence = config.sequence + 2;
         config = saved_config;

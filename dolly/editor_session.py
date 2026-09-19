@@ -400,6 +400,17 @@ def dispatch(app, event, bridge):
         else:
             selected = (selected if selected is not None else 0) + (-1 if action == "previous_view" else 1)
         _select(app, selected)
+    elif action == "step_replay_ticks":
+        if getattr(app, "preview_attach", False):
+            raise ValueError("Detach the camera before stepping with a fixed view.")
+        value = event["value"]
+        if isinstance(value, bool) or value not in (-25, -10, -5, -2, -1, 1, 2, 5, 10, 25):
+            raise ValueError("Choose a tick step of 1, 2, 5, 10 or 25.")
+        project = app.project
+        def complete(result):
+            if app.project is project and project.keyframes:
+                app._set_time(max(0, (result["tick"] - project.start_tick) / project.tick_rate))
+        app._submit("Stepping replay ticks", lambda: app.controller.step_replay_ticks(int(value)), complete)
     elif action in ("seek_back", "seek_forward"):
         delta = -1.0 if action == "seek_back" else 1.0
         _native_operation(app, "Seeking replay", lambda: app.controller.seek_relative(delta, tick_rate=app.project.tick_rate), bridge)

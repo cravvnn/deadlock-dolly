@@ -1,5 +1,15 @@
 # Changes
 
+## 0.5.24 alpha — One camera workspace and precise replay stepping
+
+- In-game Camera combines replay playback, camera selection, a marked shot
+  timeline, Seek here and path guides. The separate Replay tab and Between
+  cameras card are removed; desktop replay management remains unchanged.
+- Choose 1, 2, 5, 10 or 25 ticks, then step backward or forward while the
+  current camera stays fixed and the panel stays open. The actual replay tick
+  is shown. If a requested tick is absent from the recording, stepping uses
+  the nearest recorded tick in that direction and reports the actual movement.
+
 ## 0.5.23 alpha — In-between shot editing and shared UI
 
 - In-game **Camera > Between cameras** adds a shot-time slider and **Seek here**.

@@ -173,6 +173,24 @@ class EditorSessionTests(unittest.TestCase):
         self.app.speed = Value("1")
         self.app.rate = Value("60")
 
+    def test_tick_step_completion_updates_shot_cursor_without_seeking_the_path(self):
+        self.app.project = Project(start_tick=100, tick_rate=64,
+                                   keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0)])
+        self.app._set_time = Mock()
+        self.controller.step_replay_ticks.return_value = {"tick": 125}
+        session.dispatch(self.app, {"action": "step_replay_ticks", "value": 25}, self.bridge)
+        _, run, complete = self.app._submit.call_args.args
+        complete(run())
+        self.controller.step_replay_ticks.assert_called_once_with(25)
+        self.app._set_time.assert_called_once_with(25 / 64)
+        self.app.preview_attach = True
+        with self.assertRaisesRegex(ValueError, "Detach"):
+            session.dispatch(self.app, {"action": "step_replay_ticks", "value": 1}, self.bridge)
+        self.app.preview_attach = False
+        for value in (0, 3, 1.5, True, float("nan")):
+            with self.assertRaises(ValueError):
+                session.dispatch(self.app, {"action": "step_replay_ticks", "value": value}, self.bridge)
+
     def test_shot_seek_dispatches_the_desktop_seek_at_exact_selected_time(self):
         self.app.project.keyframes = [Keyframe(0, 0, 0, 0, 0, 0, 0),
                                      Keyframe(4, 10, 20, 30, 40, 50, 60)]

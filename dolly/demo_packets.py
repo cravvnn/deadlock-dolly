@@ -6,7 +6,7 @@ executed. An unavailable/unsupported index leaves normal exact seeking intact.
 from __future__ import annotations
 
 from array import array
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections import OrderedDict
 from dataclasses import dataclass
 import math
@@ -59,6 +59,13 @@ class PacketIndex:
             return None
         position = bisect_left(self.ticks, tick)
         return int(self.ticks[position]) if position < len(self.ticks) else None
+
+    def preceding(self, tick: int) -> int | None:
+        """Recorded packet at or before tick, without reversing seek direction."""
+        if not self.ticks or tick <= 0:
+            return None
+        position = bisect_right(self.ticks, tick) - 1
+        return int(self.ticks[position]) if position >= 0 else None
 
 
 def _identity(info):

@@ -1799,7 +1799,7 @@ class Controller:
         bridge = self._native_bridge()
         return bridge is not None and callable(getattr(bridge, "start_flight", None))
 
-    def enter_native_flight(self, pose=None, *, cancelled=None):
+    def enter_native_flight(self, pose=None, *, cancelled=None, owner="flight"):
         """Let the in-game view callback own input and manual camera movement.
 
         The replay keeps its current pause state: a paused replay gives the
@@ -1831,8 +1831,9 @@ class Controller:
             # paused player-eye calibration can move that seed vertically.
             if isinstance(pose, dict):
                 pose = tuple(pose[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"))
+            options = {"owner": owner} if owner != "flight" else {}
             armed = bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled,
-                                        playback=None)
+                                        playback=None, **options)
             self._native_active = True
             self._native_manual = True
             playback = not bool(armed.get("paused"))
@@ -1852,7 +1853,7 @@ class Controller:
             self._game_ui_visible = False
             self._message("Free camera ready. Use the in-game movement controls; F7 opens the console." if playback
                           else "Paused camera ready. Use the in-game movement controls; F7 opens the console.",
-                          playing=False, paused_flight=True, replay_paused=not playback)
+                          playing=False, paused_flight=owner == "flight", replay_paused=not playback)
             return deepcopy(frame)
 
     def toggle_console(self, enabled=None):
@@ -2137,6 +2138,56 @@ class Controller:
             self._request("demo_resume" if paused else "demo_pause")
             self._message("Replay playing." if paused else "Replay paused.", replay_paused=not paused)
             return self.status()
+
+    def step_replay_ticks(self, ticks):
+        """Step replay time while retaining the visible camera and open panel."""
+        if isinstance(ticks, bool) or not isinstance(ticks, (int, float)) or ticks not in (-25, -10, -5, -2, -1, 1, 2, 5, 10, 25):
+            raise ValueError("Choose a tick step of 1, 2, 5, 10 or 25 in either direction.")
+        with self._op_lock:
+            if self.status().get("playing"):
+                raise RuntimeError("Pause shot playback before stepping the replay.")
+            bridge = self._native_bridge()
+            if not self._supports_native_flight():
+                raise RuntimeError("Tick stepping requires the native editor.")
+            self._stop_event.clear()
+            self._require_probe()
+            self._require_demo()
+            before = bridge.status()
+            self._require_native_demo(before, allow_idle=True)
+            self._request("demo_pause")
+            with self._paused_preparation(self._stop_event.is_set):
+                view = self._wait_paused_native_view(bridge, before["frame_count"])
+            info = self._require_demo()
+            current = int(view["tick"])
+            if int(info["tick"]) != current:
+                raise RuntimeError("The replay moved before the tick step. Pause and retry.")
+            pose = self._native_pose(view, "applied_pose" if self._native_active else "original_pose")
+            target = max(0, current + int(ticks))
+            if info.get("total_ticks") is not None:
+                target = min(target, max(0, int(info["total_ticks"]) - 1))
+            requested = target
+            index = packet_index(self._demo, check_cancelled=self._check_position_cancelled)
+            if index is not None:
+                if info.get("total_ticks") not in (None, index.total_ticks):
+                    raise RuntimeError("The replay file differs from the loaded replay. Reopen it through Dolly.")
+                recorded = index.following(target) if ticks > 0 else index.preceding(target)
+                if recorded is not None:
+                    target = recorded
+                elif ticks > 0 and index.ticks and target > index.ticks[-1]:
+                    target = max(current, int(index.ticks[-1]))
+            self._check_position_cancelled()
+            if target != current:
+                self._halt(native_action="release")
+                self._invalidate_paused_camera()
+                self._stop_event.clear()
+                settled = self._seek_tick(target, allow_start_boundary=True)
+                target = int(settled["tick"])
+                self.enter_native_flight(pose=pose, owner="panel")
+            bridge.configure_editor(owner="panel")
+            moved = target - current
+            detail = " (nearest recorded tick)" if target != requested else ""
+            self._message(f"Replay tick {target}: moved {moved:+d} ticks{detail}. Camera held fixed.")
+            return {"tick": target, "requested_tick": requested, "moved_ticks": moved}
 
     def seek_relative(self, seconds, tick_rate=None):
         """Seek from the observed demo tick, then retain the displayed camera."""

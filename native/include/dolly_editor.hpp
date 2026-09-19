@@ -99,7 +99,8 @@ enum class EditorAction : std::uint32_t {
     AttachSnap,
     SetAttachBone,
     SetSourceBlend,
-    SeekShot
+    SeekShot,
+    StepReplayTicks
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
@@ -119,6 +120,8 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetAttachTarget) == 63 &&
               "Stable attach action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekShot) == 75,
               "Stable shot seek action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::StepReplayTicks) == 76,
+              "Stable tick-step action ID");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
