@@ -21,10 +21,15 @@ import time
 import uuid
 
 from .native_effects import compile_shot, EFFECTS
+from .path import (CONFETTI_SPAWN_HEIGHT_DEFAULT, CONFETTI_SPAWN_HEIGHT_MAX,
+                   CONFETTI_SPAWN_HEIGHT_MIN)
 from .runtime import resource_root
 from .media_transport import MediaTransport
 
-ABI = 3
+ABI = 4
+CONFETTI_FLAG = 8
+CONFETTI_DESPAWN_FLAG = 32
+CONFETTI_HEIGHT_SHIFT = 16
 CONTROL_BYTES = 2 * 1024 * 1024
 MAPPING_BYTES = CONTROL_BYTES + 24576
 PAYLOAD_OFFSET = 1024
@@ -152,6 +157,9 @@ class NativeBridge(MediaTransport):
         self._flags = 0
         self._frozen = False
         self._relief = True
+        self._confetti_enabled = False
+        self._confetti_spawn_height = round(CONFETTI_SPAWN_HEIGHT_DEFAULT)
+        self._confetti_despawn_on_ground = False
         self._start = 0.0
         self._speed = 1.0
         self._demo = b""
@@ -377,6 +385,9 @@ class NativeBridge(MediaTransport):
             self._manual = False
             self._start, self._speed, self._demo = start, speed, demo
             self._frozen = bool(frozen)
+            self._confetti_enabled = project.confetti_enabled
+            self._confetti_spawn_height = round(project.confetti_spawn_height)
+            self._confetti_despawn_on_ground = project.confetti_despawn_on_ground
             self._flags = self._compose_flags()
             command = self._publish(1, payload)
             try:
@@ -388,7 +399,12 @@ class NativeBridge(MediaTransport):
             return result
 
     def _compose_flags(self):
-        return (1 if self._frozen else 0) | 2 | (0 if self._relief else 4)
+        confetti = 0
+        if self._confetti_enabled:
+            confetti = (CONFETTI_FLAG |
+                        (CONFETTI_DESPAWN_FLAG if self._confetti_despawn_on_ground else 0) |
+                        (self._confetti_spawn_height << CONFETTI_HEIGHT_SHIFT))
+        return (1 if self._frozen else 0) | 2 | (0 if self._relief else 4) | confetti
 
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking.
@@ -399,6 +415,24 @@ class NativeBridge(MediaTransport):
         with self._operations, self._lock:
             self._check_open()
             self._relief = bool(enabled)
+            self._flags = self._compose_flags()
+            self._publish(self._mode, increment=False)
+
+    def set_confetti(self, enabled, spawn_height=CONFETTI_SPAWN_HEIGHT_DEFAULT,
+                     despawn_on_ground=False):
+        """Apply confetti controls immediately to the active native view."""
+        if not isinstance(enabled, bool) or not isinstance(despawn_on_ground, bool):
+            raise ValueError("Confetti switches must be booleans")
+        height = _number(spawn_height, "Confetti spawn height", positive=True)
+        if not CONFETTI_SPAWN_HEIGHT_MIN <= height <= CONFETTI_SPAWN_HEIGHT_MAX:
+            raise ValueError(
+                f"Confetti spawn height must be between {CONFETTI_SPAWN_HEIGHT_MIN:g} "
+                f"and {CONFETTI_SPAWN_HEIGHT_MAX:g}")
+        with self._operations, self._lock:
+            self._check_open()
+            self._confetti_enabled = enabled
+            self._confetti_spawn_height = round(height)
+            self._confetti_despawn_on_ground = despawn_on_ground
             self._flags = self._compose_flags()
             self._publish(self._mode, increment=False)
 

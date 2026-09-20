@@ -125,7 +125,8 @@ if(WIN32)
         IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
     target_link_libraries(dolly_overlay PUBLIC dolly_path dolly_depth_scene minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32)
 
-    add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp)
+    add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp
+        src/dolly_confetti.cpp)
     target_include_directories(DollyNative PRIVATE include)
     target_link_libraries(DollyNative PRIVATE dolly_path dolly_overlay minhook bcrypt shell32)
     target_compile_definitions(DollyNative PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

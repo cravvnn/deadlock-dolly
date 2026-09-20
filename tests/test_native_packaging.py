@@ -88,6 +88,9 @@ class NativePackagingTests(unittest.TestCase):
         info = {"abi": build_native.BRIDGE_ABI, "sha256": sha256(dll)}
         metadata = native / "build_info.json"
         metadata.write_text(json.dumps(info))
+        confetti = native / "assets/confetti/pak01_dir.vpk"
+        confetti.parent.mkdir(parents=True)
+        confetti.write_bytes(b"Dolly native particle fixture")
         profiles = native / "profiles"
         profiles.mkdir()
         (profiles / "supported-build.json").write_text('{"profile": "fixture"}')
@@ -131,7 +134,8 @@ class NativePackagingTests(unittest.TestCase):
         with patch.object(build_native, "verify_native_dll", return_value={"machine": "x64"}):
             build_native.copy_native_runtime(self.root, output)
         self.assertEqual({p.relative_to(output).as_posix() for p in output.rglob("*") if p.is_file()},
-                         {"bin/win64/DollyNative.dll", "build_info.json", "profiles/supported-build.json"})
+                         {"bin/win64/DollyNative.dll", "build_info.json",
+                          "assets/confetti/pak01_dir.vpk", "profiles/supported-build.json"})
         self.assertEqual(sha256(output / build_native.DLL_RELATIVE), sha256(dll))
 
     def test_pe_gate_requires_every_atomic_export(self):

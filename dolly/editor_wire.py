@@ -35,6 +35,8 @@ EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "s
                  "set_attach_smoothing", "set_attach_hide", "attach_cycle_target",
                  "attach_cycle_point", "attach_reset",
                  "attach_preview", "attach_snap", "set_attach_bone", "set_source_blend", "seek_shot", "step_replay_ticks")
+EXTRA_ACTIONS += ("set_confetti_enabled", "set_confetti_spawn_height",
+                  "set_confetti_despawn_on_ground")
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")
@@ -266,10 +268,18 @@ def pack_config(sequence, owner_sequence, ack_event, values):
                    | (16 if values.get("video_layer_players") else 0)
                    | (32 if values.get("video_layer_effects") else 0))
     video_speed = _finite(values.get("video_speed", 1.0), .05, 4, "video export speed")
+    confetti_enabled = values.get("confetti_enabled", False)
+    confetti_despawn = values.get("confetti_despawn_on_ground", False)
+    if type(confetti_enabled) is not bool or type(confetti_despawn) is not bool:
+        raise ValueError("Confetti switches must be booleans")
+    confetti_height = round(_finite(values.get("confetti_spawn_height", 250.0),
+                                    100, 1500, "confetti spawn height"))
+    confetti = (confetti_height | int(confetti_enabled) << 16 |
+                int(confetti_despawn) << 17)
     return CONFIG.pack(
         CONFIG_MAGIC, _uint(sequence, "sequence"), EDITOR_ABI, int(enabled), OWNERS.index(owner),
         _uint(owner_sequence, "owner sequence"), selected, count, _uint(ack_event, "event acknowledgement"),
-        int(bool(values.get("invert_y", False))), 0,
+        int(bool(values.get("invert_y", False))), confetti,
         _finite(values.get("speed", 320.0), 1, 10000, "movement speed"),
         _finite(values.get("sensitivity", .12), .001, 10, "mouse sensitivity"),
         *wire, _text(values.get("shot_name", "Untitled shot"), 96), _text(values.get("message", ""), 128),

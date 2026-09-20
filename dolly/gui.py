@@ -32,7 +32,9 @@ from dolly.hotkey import CaptureHotkey
 from dolly.launcher import discover_game, recover_pending
 from dolly.navigation import CameraMotion
 from dolly.navigation_input import CameraInput
-from dolly.path import AttachKey, CURVE_CHANNELS, CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value, format_cvar_value
+from dolly.path import (AttachKey, CONFETTI_SPAWN_HEIGHT_DEFAULT, CURVE_CHANNELS,
+                        CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value,
+                        format_cvar_value)
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.smoothing import smoothing_window
 from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
@@ -132,6 +134,9 @@ class DollyApp:
         self.rotation = tk.StringVar(value="shortest")
         self.standard_aspect = tk.StringVar(value="16:9")
         self.lens_interpolation = tk.StringVar(value="smooth")
+        self.confetti_enabled = tk.BooleanVar(value=False)
+        self.confetti_spawn_height = tk.StringVar(value=_number(CONFETTI_SPAWN_HEIGHT_DEFAULT))
+        self.confetti_despawn_on_ground = tk.BooleanVar(value=False)
         self.selected_text = tk.StringVar(value="No camera selected")
         self.path_summary = tk.StringVar(value="0 cameras · 0.00 s")
         self.coordinates_dialog = None
@@ -2136,15 +2141,29 @@ class DollyApp:
     def _build_cvars(self):
         tab = self.cvar_tab
         tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(1, weight=1)
+        tab.rowconfigure(2, weight=1)
         intro = ttk.Frame(tab)
         intro.grid(row=0, column=0, sticky="ew", pady=(2, 10))
         ttk.Label(intro, text="CAMERA VARIABLES", style="Section.TLabel").pack(side="left")
         ttk.Button(intro, text="Fixed values…", command=self._show_fixed_values).pack(side="right", padx=(8, 0))
         ttk.Button(intro, text="+ Citadel DOF", command=self._dof_preset).pack(side="right", padx=(8, 0))
         ttk.Button(intro, text="+ Range DOF", command=self._range_dof_preset).pack(side="right")
+        confetti = ttk.Frame(tab, style="Card.TFrame", padding=(10, 8))
+        confetti.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        ttk.Label(confetti, text="CONFETTI", style="CardMuted.TLabel").pack(side="left")
+        ttk.Checkbutton(confetti, text="Enable rain", variable=self.confetti_enabled,
+                        command=self._confetti_changed).pack(side="left", padx=(18, 0))
+        ttk.Label(confetti, text="Spawn height", style="CardMuted.TLabel").pack(side="left", padx=(18, 5))
+        height = ttk.Entry(confetti, textvariable=self.confetti_spawn_height, width=7)
+        height.pack(side="left")
+        height.bind("<Return>", lambda _event: self._confetti_changed())
+        height.bind("<FocusOut>", lambda _event: self._confetti_changed())
+        ttk.Label(confetti, text="units (100–1500)", style="CardMuted.TLabel").pack(side="left", padx=(4, 14))
+        ttk.Checkbutton(confetti, text="Despawn on ground",
+                        variable=self.confetti_despawn_on_ground,
+                        command=self._confetti_changed).pack(side="left")
         body = ttk.Frame(tab)
-        body.grid(row=1, column=0, sticky="nsew")
+        body.grid(row=2, column=0, sticky="nsew")
         body.columnconfigure(0, weight=2, minsize=255)
         body.columnconfigure(1, weight=4, minsize=485)
         body.rowconfigure(0, weight=1)
@@ -2215,6 +2234,21 @@ class DollyApp:
         ttk.Button(fixed_form, text="Remove", style="Quiet.TButton", command=self._remove_fixed).grid(row=2, column=1, pady=(7, 0))
         self.setup_tree.bind("<<TreeviewSelect>>", self._select_fixed)
         self.fixed_dialog.withdraw()
+
+    def _confetti_changed(self):
+        def operation():
+            self._sync_options()
+            self.controller.set_native_confetti(
+                self.project.confetti_enabled,
+                self.project.confetti_spawn_height,
+                self.project.confetti_despawn_on_ground,
+            )
+            self.status_text.set(
+                (f"Confetti rain enabled at {self.project.confetti_spawn_height:g} units; "
+                 + ("despawns on ground." if self.project.confetti_despawn_on_ground
+                    else "remains on the ground."))
+                if self.project.confetti_enabled else "Confetti rain disabled for this shot.")
+        self._guard("Confetti", operation)
 
     def _show_fixed_values(self):
         self.fixed_dialog.deiconify()
@@ -2696,9 +2730,18 @@ class DollyApp:
             raise ValueError("Shot start tick must be a non-negative whole number.")
         if rate <= 0:
             raise ValueError("Ticks per second must be greater than zero.")
+        confetti_enabled = getattr(self, "confetti_enabled", None)
+        confetti_height = getattr(self, "confetti_spawn_height", None)
+        confetti_despawn = getattr(self, "confetti_despawn_on_ground", None)
         values = dict(start_tick=int(tick), tick_rate=rate, interpolation=self.interpolation.get(),
                       rotation_mode=self.rotation.get(), standard_aspect=self._read_standard_aspect(),
-                      lens_interpolation=self.lens_interpolation.get())
+                      lens_interpolation=self.lens_interpolation.get(),
+                      confetti_enabled=(bool(confetti_enabled.get()) if confetti_enabled is not None
+                                        else self.project.confetti_enabled),
+                      confetti_spawn_height=(_finite(confetti_height.get(), "Confetti spawn height")
+                                             if confetti_height is not None else self.project.confetti_spawn_height),
+                      confetti_despawn_on_ground=(bool(confetti_despawn.get()) if confetti_despawn is not None
+                                                  else self.project.confetti_despawn_on_ground))
         changed = any(getattr(self.project, name) != value for name, value in values.items())
         if changed:
             candidate = copy.deepcopy(self.project)
@@ -3609,6 +3652,10 @@ class DollyApp:
                                if abs(value - self.project.standard_aspect) < 1e-7), _number(self.project.standard_aspect))
         self.standard_aspect.set(standard_label)
         self.lens_interpolation.set(self.project.lens_interpolation)
+        if hasattr(self, "confetti_enabled"):
+            self.confetti_enabled.set(self.project.confetti_enabled)
+            self.confetti_spawn_height.set(_number(self.project.confetti_spawn_height))
+            self.confetti_despawn_on_ground.set(self.project.confetti_despawn_on_ground)
         self.controller.standard_aspect = self.project.standard_aspect
         self._refresh_keys()
         self._refresh_tracks()

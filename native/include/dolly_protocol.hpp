@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace dolly {
-constexpr std::uint32_t kBridgeAbi = 3;
+constexpr std::uint32_t kBridgeAbi = 4;
 constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 // The editor blocks occupy the first +4096 tail; the attach roster
 // (native -> editor) follows at +4096 inside a second 4 KiB page. Keep this
@@ -29,6 +29,13 @@ constexpr std::uint32_t kAspect = 2;
 // Optional per-command opt-out of the seek render relief. Absent means the
 // relief is allowed, so older editors keep the safer default.
 constexpr std::uint32_t kNoSeekRelief = 4;
+// Confetti controls occupy previously unused flag bits.
+constexpr std::uint32_t kConfetti = 8;
+constexpr std::uint32_t kConfettiDespawnOnGround = 32;
+constexpr std::uint32_t kConfettiHeightShift = 16;
+constexpr std::uint32_t kConfettiHeightMask = 0xffff;
+constexpr std::uint32_t kConfettiControlMask =
+    kConfetti | kConfettiDespawnOnGround | (kConfettiHeightMask << kConfettiHeightShift);
 #pragma pack(push, 1)
 struct ControlHeader {
     char magic[8];

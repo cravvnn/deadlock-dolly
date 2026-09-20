@@ -1,9 +1,9 @@
 {
-  "abi": 3,
+  "abi": 4,
   "version": "0.5.26-alpha",
-  "sha256": "1345b5dbe4c2de44e4de4a5de09c3f02cf48915120784741aa7f64287172ae4e",
-  "built_utc": "2026-09-20T04:42:57.188818+00:00",
-  "compiler": "Visual Studio 17 2022",
+  "sha256": "7e4ce747d98f6123f55a18c3be71f64e1beb106f5300438e60e13884936e47ff",
+  "built_utc": "2026-09-21T01:34:05.670021+00:00",
+  "compiler": "clang-cl with pinned xwin SDK",
   "configuration": "Release",
   "runtime": "static",
   "native_path_tests_passed": true,

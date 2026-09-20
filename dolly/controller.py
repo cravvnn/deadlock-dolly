@@ -1795,6 +1795,15 @@ class Controller:
             self._message("Native DOF updated at the current camera.", time=shot_time, paused_flight=True)
             return deepcopy(frame)
 
+    def set_native_confetti(self, enabled, spawn_height, despawn_on_ground):
+        """Update confetti without restarting or moving the active camera."""
+        bridge = self._native_bridge()
+        setter = getattr(bridge, "set_confetti", None)
+        if callable(setter):
+            setter(enabled, spawn_height, despawn_on_ground)
+            return True
+        return False
+
     def _supports_native_flight(self):
         bridge = self._native_bridge()
         return bridge is not None and callable(getattr(bridge, "start_flight", None))

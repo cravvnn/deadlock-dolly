@@ -28,6 +28,7 @@
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_media.hpp"
 #include "dolly_video.hpp"
+#include "dolly_confetti.hpp"
 // Pulled in again (as a no-op) by dolly_compat_runtime.hpp from inside the
 // anonymous namespace below. Declaring it here first keeps `#pragma once` from
 // introducing a `dolly` namespace in that anonymous namespace, which would
@@ -506,6 +507,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     status.ack_command = seen;
     status.phase = phase;
     auto finish = [&](State state, unsigned error, const char* message) {
+        if (state == State::Fault || state == State::Stopped || state == State::Unsupported)
+            confetti::disable();
         // Keep the first specific fault message: the per-frame fallback on the
         // next view would otherwise replace it before the editor reads it.
         if (state == State::Fault && error) {
@@ -551,10 +554,15 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         status.state = std::uint32_t(state);
         status.error = error;
         status.phase = phase;
-        std::snprintf(status.message, sizeof(status.message), "%s", message);
+        const char* reported = message;
+        if (!error && command && (command->wire.flags & kConfetti) &&
+            state != State::Stopped && state != State::Probe)
+            reported = confetti::status();
+        std::snprintf(status.message, sizeof(status.message), "%s", reported);
         write_status(status);
     };
     if (!command) {
+        confetti::disable();
         player_capture::set_hidden_handle(0, 2);
         finish(State::Probe, 0, "Native view hook ready; load a local replay to test a camera.");
         return;
@@ -608,6 +616,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         last_game = demo.time;
         last_tick = demo.tick;
     }
+    const bool confetti_enabled = (c.flags & kConfetti) != 0;
+    const auto confetti_height = float(
+        (c.flags >> kConfettiHeightShift) & kConfettiHeightMask);
+    const bool confetti_despawn = (c.flags & kConfettiDespawnOnGround) != 0;
     if (c.mode == std::uint32_t(Mode::Release)) {
         finish(State::Stopped, 0, "Native camera released; the game owns the view.");
         return;
@@ -785,6 +797,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         for (int i = 0; i < 7; ++i)
             status.applied_pose[i] = manual_pose[i];
         status.applied_fov = fov;
+        confetti::Camera confetti_camera{{xyz[0], xyz[1], xyz[2]},
+                                         {angles[0], angles[1], angles[2]}, float(fov)};
+        confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera,
+                           confetti_enabled, confetti_height, confetti_despawn);
         finish(State::Armed, 0,
                c.mode == std::uint32_t(Mode::Manual)
                    ? "Native free camera updates each rendered main view."
@@ -950,6 +966,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     for (int i = 0; i < 7; ++i)
         status.applied_pose[i] = applied[i];
     status.applied_fov = fov;
+    confetti::Camera confetti_camera{{xyz[0], xyz[1], xyz[2]},
+                                     {angles[0], angles[1], angles[2]}, float(fov)};
+    confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera,
+                       confetti_enabled, confetti_height, confetti_despawn);
     if (c.mode == std::uint32_t(Mode::Play)) {
         video::publish_path_replay_time(true, phase);
         player_capture::publish_replay_time(phase);
@@ -1015,6 +1035,7 @@ static DWORD WINAPI worker(void*) {
                 "Installed game modules do not match this native build. Use Console camera and provide updated DLLs.");
             return 0;
         }
+        confetti::initialize(gClient);
         if (!init_cvar_interface()) {
             startup_status(
                 State::Unsupported, 26,
@@ -1122,7 +1143,12 @@ static DWORD WINAPI worker(void*) {
                     continue;
                 }
                 if (control.editor_pid != editor_pid || control.game_pid != GetCurrentProcessId() ||
-                    control.mode > 4 || control.flags & ~(kFrozen | kAspect | kNoSeekRelief) ||
+                    control.mode > 4 ||
+                    control.flags & ~(kFrozen | kAspect | kNoSeekRelief |
+                                      kConfettiControlMask) ||
+                    ((control.flags & kConfetti) &&
+                     (((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) < 100 ||
+                      ((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) > 1500)) ||
                     !std::isfinite(control.start_phase) || control.start_phase < 0 ||
                     !std::isfinite(control.speed) || control.speed < .05 || control.speed > 4 ||
                     !std::memchr(control.demo_name, 0, sizeof(control.demo_name))) {

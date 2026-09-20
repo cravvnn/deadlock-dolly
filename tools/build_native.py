@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 from dolly import __version__
 from release_files import sha256
 
-BRIDGE_ABI = 3
+BRIDGE_ABI = 4
 DLL_RELATIVE = Path("bin/win64/DollyNative.dll")
 REQUIRED_EXPORTS = {
     "CreateInterface", "DollyNativeProtocolVersion",
@@ -59,7 +59,8 @@ def runtime_files(root: Path) -> tuple[list[tuple[Path, Path]], dict]:
     native = Path(root) / "native"
     dll = native / DLL_RELATIVE
     metadata = native / "build_info.json"
-    for path in (dll, metadata):
+    confetti_pack = native / "assets/confetti/pak01_dir.vpk"
+    for path in (dll, metadata, confetti_pack):
         if not path.is_file() or path.is_symlink():
             raise ValueError(f"Missing or unsafe native runtime file: {path.name}")
     info = json.loads(metadata.read_text(encoding="utf-8"))
@@ -69,7 +70,8 @@ def runtime_files(root: Path) -> tuple[list[tuple[Path, Path]], dict]:
     if info.get("sha256") != sha256(dll):
         raise ValueError("Native bridge does not match its build metadata hash")
     report = verify_native_dll(dll)
-    files = [(dll, DLL_RELATIVE), (metadata, Path("build_info.json"))]
+    files = [(dll, DLL_RELATIVE), (metadata, Path("build_info.json")),
+             (confetti_pack, Path("assets/confetti/pak01_dir.vpk"))]
     for profile in sorted((native / "profiles").glob("*.json")):
         if not profile.is_file() or profile.is_symlink():
             raise ValueError("Unsafe native build profile")
@@ -80,7 +82,7 @@ def runtime_files(root: Path) -> tuple[list[tuple[Path, Path]], dict]:
 
 
 def copy_native_runtime(root: Path, destination: Path) -> dict:
-    """Copy only Dolly's DLL, metadata and build profiles into the frozen app."""
+    """Copy Dolly's verified DLL, particle pack, metadata and profiles."""
     files, report = runtime_files(root)
     destination = Path(destination)
     for source, relative in files:

@@ -12,6 +12,22 @@ def key(time, x=0, y=0, z=0, pitch=0, yaw=0, roll=0, fov=90):
 
 
 class PathTests(unittest.TestCase):
+    def test_confetti_is_an_opt_in_versioned_shot_setting(self):
+        project = Project(keyframes=[key(0)], confetti_enabled=True,
+                          confetti_spawn_height=1200,
+                          confetti_despawn_on_ground=True)
+        encoded = project.to_dict()
+        self.assertEqual(encoded["version"], 7)
+        self.assertIs(encoded["confetti_enabled"], True)
+        self.assertEqual(encoded["confetti_spawn_height"], 1200)
+        self.assertIs(encoded["confetti_despawn_on_ground"], True)
+        self.assertEqual(Project.from_dict(encoded), project)
+        self.assertNotIn("confetti_enabled", Project(keyframes=[key(0)]).to_dict())
+        with self.assertRaisesRegex(ValueError, "true or false"):
+            Project(confetti_enabled=1).validate()
+        with self.assertRaisesRegex(ValueError, "between 100 and 1500"):
+            Project(confetti_spawn_height=50).validate()
+
     def test_vector_dof_text_and_project_roundtrip(self):
         name = "r_dof_override_ranges"
         self.assertEqual(parse_cvar_value(name, "-100 0 180 2000"), (-100, 0, 180, 2000))

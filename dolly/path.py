@@ -21,6 +21,10 @@ from typing import Any, Iterable
 FORMAT_NAME = "deadlock-dolly"
 FORMAT_VERSION = 2
 VECTOR_FORMAT_VERSION = 3
+CONFETTI_FORMAT_VERSION = 7
+CONFETTI_SPAWN_HEIGHT_DEFAULT = 250.0
+CONFETTI_SPAWN_HEIGHT_MIN = 100.0
+CONFETTI_SPAWN_HEIGHT_MAX = 1500.0
 ATTACH_FORMAT_VERSION = 4
 ROTATION_FORMAT_VERSION = 5
 BLEND_FORMAT_VERSION = 6
@@ -393,6 +397,9 @@ class Project:
     setup_values: dict[str, CvarValue] = field(default_factory=dict)
     standard_aspect: float = STANDARD_ASPECT
     lens_interpolation: str = "smooth"
+    confetti_enabled: bool = False
+    confetti_spawn_height: float = CONFETTI_SPAWN_HEIGHT_DEFAULT
+    confetti_despawn_on_ground: bool = False
 
     def validate(self) -> None:
         if not isinstance(self.name, str) or len(self.name) > 256:
@@ -400,6 +407,15 @@ class Project:
         _choice(self.interpolation, ("linear", "smooth"), "Camera interpolation")
         _choice(self.rotation_mode, ("shortest", "unwrapped"), "Rotation mode")
         _choice(self.lens_interpolation, ("linear", "smooth", "step"), "Zoom interpolation")
+        if not isinstance(self.confetti_enabled, bool):
+            raise ValueError("Confetti enabled must be true or false")
+        spawn_height = _finite(self.confetti_spawn_height, "Confetti spawn height")
+        if not CONFETTI_SPAWN_HEIGHT_MIN <= spawn_height <= CONFETTI_SPAWN_HEIGHT_MAX:
+            raise ValueError(
+                f"Confetti spawn height must be between {CONFETTI_SPAWN_HEIGHT_MIN:g} "
+                f"and {CONFETTI_SPAWN_HEIGHT_MAX:g} units")
+        if not isinstance(self.confetti_despawn_on_ground, bool):
+            raise ValueError("Confetti despawn on ground must be true or false")
         standard_aspect = _finite(self.standard_aspect, "Standard aspect ratio")
         if not ASPECT_MIN <= standard_aspect <= ASPECT_MAX:
             raise ValueError(f"Standard aspect ratio must be between {ASPECT_MIN:g} and {ASPECT_MAX:g}")
@@ -547,6 +563,9 @@ class Project:
             version = VECTOR_FORMAT_VERSION
         else:
             version = FORMAT_VERSION
+        if (self.confetti_enabled or self.confetti_spawn_height != CONFETTI_SPAWN_HEIGHT_DEFAULT or
+                self.confetti_despawn_on_ground):
+            version = CONFETTI_FORMAT_VERSION
         return {
             "format": FORMAT_NAME,
             "version": version,
@@ -555,6 +574,11 @@ class Project:
             "rotation_mode": self.rotation_mode,
             "standard_aspect": self.standard_aspect,
             "lens_interpolation": self.lens_interpolation,
+            **({"confetti_enabled": self.confetti_enabled,
+                "confetti_spawn_height": self.confetti_spawn_height,
+                "confetti_despawn_on_ground": self.confetti_despawn_on_ground}
+               if (self.confetti_enabled or self.confetti_spawn_height != CONFETTI_SPAWN_HEIGHT_DEFAULT or
+                   self.confetti_despawn_on_ground) else {}),
             "start_tick": self.start_tick,
             "tick_rate": self.tick_rate,
             "setup_values": {name: _json_cvar_value(value) for name, value in self.setup_values.items()},
@@ -573,15 +597,22 @@ class Project:
         version = obj.get("version")
         if isinstance(version, bool) or not isinstance(version, int) \
                 or version not in (1, FORMAT_VERSION, VECTOR_FORMAT_VERSION, ATTACH_FORMAT_VERSION,
-                                   ROTATION_FORMAT_VERSION, BLEND_FORMAT_VERSION):
-            raise ValueError(f"Unsupported project version: {version!r}; expected 1, {FORMAT_VERSION}, "
-                             f"{VECTOR_FORMAT_VERSION}, {ATTACH_FORMAT_VERSION}, or "
-                             f"{ROTATION_FORMAT_VERSION}, or {BLEND_FORMAT_VERSION}")
+                                   ROTATION_FORMAT_VERSION, BLEND_FORMAT_VERSION,
+                                   CONFETTI_FORMAT_VERSION):
+            raise ValueError(f"Unsupported project version: {version!r}; expected 1 through "
+                             f"{CONFETTI_FORMAT_VERSION}")
         allowed = ("format", "version", "name", "interpolation", "rotation_mode",
                    "start_tick", "tick_rate", "setup_values", "keyframes", "tracks")
         if version >= FORMAT_VERSION:
             allowed += ("standard_aspect", "lens_interpolation")
             for required in ("standard_aspect", "lens_interpolation"):
+                if required not in obj:
+                    raise ValueError(f"Project version {version} is missing required field: {required}")
+        if version == CONFETTI_FORMAT_VERSION:
+            allowed += ("confetti_enabled", "confetti_spawn_height",
+                        "confetti_despawn_on_ground")
+            for required in ("confetti_enabled", "confetti_spawn_height",
+                             "confetti_despawn_on_ground"):
                 if required not in obj:
                     raise ValueError(f"Project version {version} is missing required field: {required}")
         _members(obj, allowed, "project")
@@ -653,7 +684,11 @@ class Project:
                       start_tick=obj.get("start_tick", 0), tick_rate=obj.get("tick_rate", 64.0),
                       setup_values=obj.get("setup_values", {}),
                       standard_aspect=obj.get("standard_aspect", STANDARD_ASPECT),
-                      lens_interpolation=obj.get("lens_interpolation", "smooth"))
+                      lens_interpolation=obj.get("lens_interpolation", "smooth"),
+                      confetti_enabled=obj.get("confetti_enabled", False),
+                      confetti_spawn_height=obj.get("confetti_spawn_height",
+                                                    CONFETTI_SPAWN_HEIGHT_DEFAULT),
+                      confetti_despawn_on_ground=obj.get("confetti_despawn_on_ground", False))
         project.validate()
         if version < VECTOR_FORMAT_VERSION and (
                 any(name in CVAR_COMPONENTS for name in project.setup_values)

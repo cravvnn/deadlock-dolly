@@ -110,6 +110,31 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertEqual(bytes(self.memory[nb.PAYLOAD_OFFSET:nb.PAYLOAD_OFFSET + len(payload)]), payload)
         self.assertEqual(self.project.to_dict(), before)
 
+    def test_prepare_marks_an_opt_in_confetti_shot(self):
+        self.project.confetti_enabled = True
+        self.project.confetti_spawn_height = 1250
+        self.project.confetti_despawn_on_ground = True
+        self.prepare()
+        flags = self.header()[8]
+        self.assertEqual(flags & nb.CONFETTI_FLAG, nb.CONFETTI_FLAG)
+        self.assertEqual(flags & nb.CONFETTI_DESPAWN_FLAG, nb.CONFETTI_DESPAWN_FLAG)
+        self.assertEqual(flags >> nb.CONFETTI_HEIGHT_SHIFT, 1250)
+        self.bridge.release()
+
+    def test_confetti_controls_update_live_flags_without_changing_command(self):
+        sequence = self.header()[2]
+        command = self.header()[3]
+        mode = self.header()[4]
+        self.bridge.set_confetti(True, 1400, True)
+        flags = self.header()[8]
+        self.assertNotEqual(self.header()[2], sequence)
+        self.assertEqual(self.header()[3], command)
+        self.assertEqual(self.header()[4], mode)
+        self.assertEqual(flags & nb.CONFETTI_FLAG, nb.CONFETTI_FLAG)
+        self.assertEqual(flags & nb.CONFETTI_DESPAWN_FLAG, nb.CONFETTI_DESPAWN_FLAG)
+        self.assertEqual(flags >> nb.CONFETTI_HEIGHT_SHIFT, 1400)
+
+
     def test_hold_preserves_native_phase_without_uploading_python_pose(self):
         self.prepare()
         self.bridge.play()
