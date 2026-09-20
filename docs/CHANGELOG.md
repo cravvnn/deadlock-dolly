@@ -1,6 +1,6 @@
 # Changes
 
-## 0.5.26 — More complete player-layer exports
+## 0.5.26 alpha — More complete player-layer exports
 
 - Player-layer capture matches character parts to the data actually submitted
   for rendering, rather than data being prepared for a later frame. Recycled
