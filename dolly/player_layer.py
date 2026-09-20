@@ -17,11 +17,17 @@ matches the verified research proofs.
 from __future__ import annotations
 
 import os
+import json
+import math
 import re
 import struct
+import shutil
 import subprocess
 import time
 import zlib
+import uuid
+import tempfile
+import threading
 from pathlib import Path
 
 CAPTURE_MODE = "color-sequence-v3"
@@ -37,7 +43,7 @@ STOP_NAME = "dolly_owner_stop.txt"
 BUNDLE_NAME = "dolly_owner_color_frame.bin"
 META_NAME = "dolly_owner_frame_meta.bin"
 BUNDLE_MAGIC = 0x314641524c4f4344
-MIN_FRAMES, MAX_FRAMES = 2, 256
+MIN_FRAMES, MAX_FRAMES = 2, 2_000_000
 # Keep small capture reports through deployment cleanup. Never include image
 # bundles, raw process/GPU events, or arbitrary files from the game directory.
 DIAGNOSTIC_NAMES = (STATUS_NAME, MARKER_NAME, "dolly_owner_stall.txt",
@@ -91,28 +97,83 @@ def parse_scene_node_offset(layout_text: str) -> int:
     return _field_offset(layout_text, ENTITY_SCENE_NODE_FIELD)
 
 
-def marker_text(owner_offset: int, frames: int, back_offset: int = SCENE_NODE_FIELD_OFFSET) -> str:
+def marker_text(owner_offset: int, frames: int, back_offset: int = SCENE_NODE_FIELD_OFFSET,
+                *, fps: int = 60, request_id: str = "", speed: float = 1.0) -> str:
     """Marker for a players-only capture: no fixed handles, class-discovered."""
     for value in (owner_offset, back_offset):
         if not _MIN_OFFSET <= value <= _MAX_OFFSET:
             raise ValueError("A schema offset is outside the reviewed range.")
     if not MIN_FRAMES <= frames <= MAX_FRAMES:
         raise ValueError("Player layer capture needs 2..%d frames." % MAX_FRAMES)
-    return "%s 0 %d players %d %d\n" % (CAPTURE_MODE, frames, owner_offset, back_offset)
+    if fps not in (30, 60, 120, 300, 600):
+        raise ValueError("Unsupported player layer FPS.")
+    if not math.isfinite(speed) or not .05 <= speed <= 4:
+        raise ValueError("Player layer export speed must be between 0.05 and 4.")
+    if not request_id and (fps != 60 or speed != 1):
+        raise ValueError("A custom capture clock requires a capture request ID.")
+    if request_id and not re.fullmatch(r"[0-9a-f]{32}", request_id):
+        raise ValueError("Invalid capture request ID.")
+    suffix = (" fps %d request %s" % (fps, request_id)) if request_id else ""
+    if speed != 1:
+        suffix += " speed %.9g" % speed
+    return "%s 0 %d players %d %d%s\n" % (CAPTURE_MODE, frames, owner_offset, back_offset, suffix)
+
+
+def reference_frame_count(color_path: Path, fps: int) -> int:
+    """Require the completed color take's measured length before arming Players."""
+    color_path = Path(color_path)
+    sidecar = color_path.parent / "shot.json"
+    try:
+        if not color_path.is_file() or not 0 < sidecar.stat().st_size <= 128 * 1024:
+            raise ValueError("missing color take or invalid metadata size")
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("invalid metadata")
+        frames = data.get("frames_written")
+        if (data.get("format") != "deadlock-dolly-shot" or data.get("version") != 1
+                or data.get("video_file") != color_path.name or data.get("fps") != fps
+                or data.get("fixed_step") is not True or type(frames) is not int
+                or not MIN_FRAMES <= frames <= MAX_FRAMES
+                or data.get("first_frame") != 0 or data.get("last_frame") != frames - 1):
+            raise ValueError("color take metadata does not match this export")
+        return frames
+    except (OSError, ValueError, TypeError) as exc:
+        raise RuntimeError("The players layer needs the completed color take's frame metadata. "
+                           "Record a new color take before exporting Players.") from exc
+
+
+def check_capture_space(deployment: Path, width: int, height: int, frames: int) -> int:
+    """Preflight the known raw bundle size on the game deployment's volume."""
+    if (type(width) is not int or type(height) is not int or
+            not 1 <= width <= 16384 or not 1 <= height <= 16384 or
+            type(frames) is not int or not MIN_FRAMES <= frames <= MAX_FRAMES):
+        raise RuntimeError("The Players layer needs the completed color take's capture dimensions.")
+    required = frames * (64 + width * height * 8)
+    # Keep room for diagnostics and the filesystem; output MOV may be elsewhere.
+    reserve = 1024 ** 3
+    free = shutil.disk_usage(deployment).free
+    if free < required + reserve:
+        raise RuntimeError(
+            "Players capture needs approximately %.1f GiB of temporary space on the game drive "
+            "plus 1 GiB free; only %.1f GiB is available. Shorten the path, lower FPS or "
+            "resolution, or free space before exporting. The MOV also needs output-drive space."
+            % (required / 1024 ** 3, free / 1024 ** 3))
+    return required
 
 
 def begin_capture(deployment: Path, owner_offset: int, frames: int,
-                  back_offset: int = SCENE_NODE_FIELD_OFFSET) -> Path:
+                  back_offset: int = SCENE_NODE_FIELD_OFFSET, *, fps: int = 60, speed: float = 1.0) -> Path:
     """Write the capture marker beside the deployed native DLL."""
     marker = Path(deployment) / MARKER_NAME
     temporary = marker.with_name(marker.name + ".tmp")
-    temporary.write_text(marker_text(owner_offset, frames, back_offset), encoding="ascii")
-    os.replace(temporary, marker)
+    request_id = uuid.uuid4().hex
+    temporary.write_text(marker_text(owner_offset, frames, back_offset, fps=fps, request_id=request_id, speed=speed), encoding="ascii")
     stop = Path(deployment) / STOP_NAME
     try:
         stop.unlink()
     except FileNotFoundError:
         pass
+    os.replace(temporary, marker)
     return marker
 
 
@@ -121,7 +182,8 @@ def request_stop(deployment: Path) -> Path:
 
     The take can end before the frame cap (a replay returning to the hideout,
     a stopped recording), so the recorder drops this file and the capture
-    completes with its captured frames instead of waiting out its budget.
+    drains its captured frames instead of waiting out its budget. Incomplete
+    shot captures are reported as failed rather than encoded at a shorter duration.
     """
     stop = Path(deployment) / STOP_NAME
     temporary = stop.with_name(stop.name + ".tmp")
@@ -134,7 +196,13 @@ def capture_status(deployment: Path) -> str:
     path = Path(deployment) / STATUS_NAME
     if not path.is_file():
         return ""
-    return path.read_text(encoding="ascii", errors="replace").strip()
+    text = path.read_text(encoding="ascii", errors="replace").strip()
+    marker = Path(deployment) / MARKER_NAME
+    if marker.is_file():
+        match = re.search(r" request ([0-9a-f]{32})", marker.read_text(encoding="ascii"))
+        if match and "request " + match[1] not in text.splitlines():
+            return ""  # Never accept another take's status/bundle.
+    return text
 
 
 def wait_for_capture(deployment: Path, *, timeout: float = 240.0) -> str:
@@ -150,17 +218,22 @@ def wait_for_capture(deployment: Path, *, timeout: float = 240.0) -> str:
 
 def iter_frames(bundle: Path):
     """Yield (width, height, premultiplied RGBA half-float bytes) per frame."""
-    raw = Path(bundle).read_bytes()
-    offset = 0
-    while offset + 64 <= len(raw):
-        magic, width, height, draws = struct.unpack_from("<4Q", raw, offset)
-        if magic != BUNDLE_MAGIC or not 0 < width <= 3840 or not 0 < height <= 2160:
-            raise RuntimeError("The player layer bundle is not a reviewed capture.")
-        size = 64 + width * height * 8
-        if offset + size > len(raw):
-            raise RuntimeError("The player layer bundle is truncated.")
-        yield width, height, raw[offset + 64:offset + size]
-        offset += size
+    with Path(bundle).open("rb") as source:
+        while True:
+            header = source.read(64)
+            if not header:
+                return
+            if len(header) != 64:
+                raise RuntimeError("The player layer bundle is truncated.")
+            magic, width, height, draws, _, _, _, bpp = struct.unpack("<8Q", header)
+            if (magic != BUNDLE_MAGIC or not 0 < width <= 3840 or not 0 < height <= 2160
+                    or not draws or bpp != 8):
+                raise RuntimeError("The player layer bundle is not a reviewed capture.")
+            size = width * height * 8
+            pixels = source.read(size)
+            if len(pixels) != size:
+                raise RuntimeError("The player layer bundle is truncated.")
+            yield width, height, pixels
 
 
 def _preview_channel(value: float) -> int:
@@ -224,3 +297,100 @@ def encode_layer(ffmpeg: Path, previews: list[Path], output: Path, *, fps: int =
         raise RuntimeError("Could not encode the player layer video: " +
                            result.stderr.decode(errors="replace")[:400])
     return output
+
+
+def wait_until_armed(deployment: Path, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        text = capture_status(deployment)
+        if text.startswith("armed"):
+            return
+        if text.startswith(("failed", "rejected", "complete")):
+            raise RuntimeError("Player capture could not start: " + text)
+        time.sleep(.05)
+    raise RuntimeError("Player capture did not acknowledge this take. Use a matching updated Dolly build.")
+
+
+def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60) -> Path:
+    """Stream one frame at a time to an atomic alpha MOV; no PNG/MP4 intermediates."""
+    if fps not in (30, 60, 120, 300, 600):
+        raise ValueError("Unsupported player layer FPS.")
+    frames = iter(iter_frames(bundle))
+    first = next(frames, None)
+    if first is None:
+        raise RuntimeError("The player layer captured no frames.")
+    output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(output.stem + "." + uuid.uuid4().hex + ".partial.mov")
+    width, height, _ = first
+    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-threads", "2",
+               "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{width}x{height}",
+               "-framerate", str(fps), "-i", "pipe:0", "-an", "-c:v", "prores_ks",
+               "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-vendor", "apl0",
+               "-threads", "2", str(temporary)]
+    import itertools
+    process = None; timer = None
+    try:
+        with tempfile.TemporaryFile() as errors:
+            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                       stderr=errors)
+            estimated_frames = max(1, Path(bundle).stat().st_size // (64 + width * height * 8))
+            timer = threading.Timer(max(120, 30 * estimated_frames), process.kill)
+            timer.daemon = True; timer.start()
+            try:
+                for w, h, pixels in itertools.chain((first,), frames):
+                    if (w, h) != (width, height):
+                        raise RuntimeError("Player layer dimensions changed during capture.")
+                    preview = bytearray(w * h * 4)
+                    for i, rgba in enumerate(struct.iter_unpack("<4e", pixels)):
+                        alpha = rgba[3]
+                        if alpha:
+                            preview[i*4:i*4+4] = bytes([*(_preview_channel(x / alpha) for x in rgba[:3]),
+                                                       round(alpha * 255)])
+                    process.stdin.write(preview)
+                process.stdin.close()
+                code = process.wait(timeout=120)
+            except (BrokenPipeError, OSError) as exc:
+                process.kill(); process.wait()
+                errors.seek(0)
+                raise RuntimeError("Could not encode the players MOV: " + errors.read(1000).decode(errors="replace")) from exc
+            if code or not temporary.is_file() or not temporary.stat().st_size:
+                errors.seek(0)
+                raise RuntimeError("Could not encode the players MOV: " + errors.read(1000).decode(errors="replace"))
+        os.replace(temporary, output)
+        return output
+    finally:
+        if timer: timer.cancel()
+        if process and process.poll() is None:
+            process.kill(); process.wait()
+        if process and process.stdin:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        frames.close()
+        temporary.unlink(missing_ok=True)
+
+
+def cleanup_capture(deployment: Path, layer_dir: Path) -> list[str]:
+    """Delete only known completed-take intermediates, never folders recursively."""
+    failures = []
+    for parent, names in ((Path(deployment), (BUNDLE_NAME, META_NAME, "dolly_owner_events.bin")),
+                          (Path(layer_dir), ("players.mp4", "players.mp4.shot.json")),
+                          (Path(layer_dir)/"capture", ())):
+        if not parent.exists(): continue
+        if parent.is_symlink() or getattr(parent, "is_junction", lambda: False)():
+            failures.append(str(parent)); continue
+        candidates = [parent / n for n in names]
+        if parent.name == "capture":
+            candidates = [p for p in parent.iterdir() if re.fullmatch(r"native-player-layer-\d+\.png", p.name)]
+        for path in candidates:
+            try:
+                if path.is_symlink() or path.resolve().parent != parent.resolve():
+                    raise OSError("Unexpected capture path")
+                path.unlink(missing_ok=True)
+            except OSError:
+                failures.append(str(path))
+        if parent.name == "capture":
+            try: parent.rmdir()
+            except OSError: pass
+    return failures

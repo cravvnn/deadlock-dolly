@@ -1770,9 +1770,11 @@ void render_overlay(IDXGISwapChain* chain) {
         // authored frame time and not gated by the editor config round trip,
         // so separate layer takes start on the same frame.
         double replay_time = -1.0;
-        if (!video::path_replay_time(replay_time))
+        const bool native_clock = video::path_replay_time(replay_time);
+        if (!native_clock)
             replay_time = editor.playing ? editor.phase : -1.0;
-        video::capture(capture_chain, capture_device, capture_context, sample, replay_time);
+        video::capture(capture_chain, capture_device, capture_context, sample, replay_time,
+                       native_clock);
     };
     auto* frame_user = const_cast<depth::SceneFrame*>(scene_sample);
     bool effects_handled = false;

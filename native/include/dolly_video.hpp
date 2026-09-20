@@ -101,7 +101,8 @@ bool wants_shot_only() noexcept;
 // does not wait for GPU/encoder readiness; fixed-step uses bounded backpressure.
 // The render callback never writes an output file.
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
-             const depth::SceneFrame* scene = nullptr, double replay_time = -1) noexcept;
+             const depth::SceneFrame* scene = nullptr, double replay_time = -1,
+             bool native_clock = false) noexcept;
 // Latest authored-path replay time from the native view callback. Returns false
 // when no native path evaluated a playing frame on the current view. Layer
 // takes use it so every take starts at the same authored frame.

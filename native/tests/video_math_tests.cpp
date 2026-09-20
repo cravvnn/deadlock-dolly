@@ -13,6 +13,17 @@ void require(bool value) {
 
 int main() {
     using namespace dolly::video;
+    ShotClockTrace trace;
+    trace.observe(0, -1, false);
+    trace.observe(0, std::numeric_limits<double>::quiet_NaN(), true);
+    require(trace.count == 0);
+    for (unsigned i = 0; i < 1000; ++i)
+        trace.observe(i, i / 60.0, i % 2 == 0);
+    require(trace.count == 256 && trace.native_frames == 500 && trace.fallback_frames == 500);
+    require(trace.samples[0].frame == 0 && trace.samples[0].native);
+    require(trace.samples[255].frame == 255 && !trace.samples[255].native);
+    require(trace.samples[255].phase == 255 / 60.0);
+
     Cadence cadence;
     cadence.frequency = 10000000;
     cadence.fps = 60;
@@ -102,5 +113,6 @@ int main() {
     require(depth_gray16(std::numeric_limits<float>::infinity(), kDepthUnitMax) == 65535);
     require(depth_gray16(std::numeric_limits<float>::quiet_NaN(), kDepthUnitMax) == 65535);
     require(depth_gray16(0.25f, 1.0) == 16384);
-    std::puts("Video cadence, timestamps, color conversion, depth mapping and row orientation passed.");
+    std::puts(
+        "Video cadence, timestamps, color conversion, depth mapping and row orientation passed.");
 }

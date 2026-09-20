@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -58,6 +59,29 @@ struct Cadence {
         last_slot = slot;
         pts = clock_units(elapsed, frequency, 10000000);
         return true;
+    }
+};
+
+// Bounded provenance for submitted shot frames. No allocation or I/O occurs on
+// the render thread. The sidecar retains the first samples and whole-take counts.
+struct ShotClockTrace {
+    struct Sample {
+        std::uint64_t frame = 0;
+        double phase = 0;
+        bool native = false;
+    };
+    std::array<Sample, 256> samples{};
+    std::size_t count = 0;
+    std::uint64_t native_frames = 0, fallback_frames = 0;
+    void observe(std::uint64_t frame, double phase, bool native) noexcept {
+        if (!std::isfinite(phase) || phase < 0)
+            return;
+        if (native)
+            ++native_frames;
+        else
+            ++fallback_frames;
+        if (count < samples.size())
+            samples[count++] = {frame, phase, native};
     }
 };
 

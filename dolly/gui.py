@@ -706,15 +706,16 @@ class DollyApp:
         layer, pass_name = self._layer_queue.pop(0)
         if pass_name == "capture":
             return self._start_player_capture(layer)
-        applied = self.controller.apply_layer_mode(layer)
-        LOG.info("Layer take %s (%s pass) hidden classes: %s", layer, pass_name,
-                 ", ".join(applied.get("hidden", ())))
         base = self._base_capture
         folder = base.path.with_suffix("")
         white = pass_name == "white"
-        if not white and layer in ("players", "effects"):
-            # Bloom/eye adaptation would wash the layer out of the white pass.
-            self.controller.begin_matte_layer()
+        def configure_layer():
+            # Preparation calls Stop/restore, so apply filtering afterwards.
+            applied = self.controller.apply_layer_mode(layer)
+            LOG.info("Layer take %s (%s pass) hidden classes: %s", layer, pass_name,
+                     ", ".join(applied.get("hidden", ())))
+            if layer in ("players", "effects"):
+                self.controller.begin_matte_layer()
         if white:
             # The black pass created the layer folder; this pass writes the
             # white matte beside it and skips frames like every layer take.
@@ -733,14 +734,14 @@ class DollyApp:
         self._pending_auto_play = True
         self._auto_finish_layered = True
         self._take_playing_seen = False
-        return self.video_export.start(options, project=self._snapshot())
+        return self.video_export.start(options, project=self._snapshot(), before_record=configure_layer)
 
     def _player_layer_frames(self, base):
-        """Frames the players capture must cover: the color take's own length."""
+        """Preflight estimate; actual capture uses the completed color take's count."""
         project = self.project
         if project is None or len(project.keyframes) < 2:
             raise RuntimeError("The players layer needs a camera path so its frames match the color take.")
-        frames = int(round(project.duration * base.fps))
+        frames = int(math.ceil(project.duration * base.fps / base.speed - 1e-6))
         if not player_layer.MIN_FRAMES <= frames <= player_layer.MAX_FRAMES:
             raise RuntimeError("The players layer supports %d..%d frames at %d FPS."
                                % (player_layer.MIN_FRAMES, player_layer.MAX_FRAMES, base.fps))
@@ -767,8 +768,15 @@ class DollyApp:
         entity_layout = self.controller._request(
             "schema_detailed_class_layout " + player_layer.ENTITY_LAYOUT_CLASS, timeout=5)
         back_offset = player_layer.parse_scene_node_offset(str(entity_layout))
-        frames = self._player_layer_frames(base)
-        player_layer.begin_capture(deployment, owner_offset, frames, back_offset)
+        frames = player_layer.reference_frame_count(
+            base.path.with_suffix("") / base.path.name, base.fps)
+        dimensions = self.video_export.status()
+        required_bytes = player_layer.check_capture_space(
+            deployment, dimensions.get("width"), dimensions.get("height"), frames)
+        LOG.info("Players capture raw storage estimate: %d bytes", required_bytes)
+        def arm_capture():
+            player_layer.begin_capture(deployment, owner_offset, frames, back_offset, fps=base.fps, speed=base.speed)
+            player_layer.wait_until_armed(deployment)
         LOG.info("Players layer capture armed: %d frames, owner offset %d, back link %d",
                  frames, owner_offset, back_offset)
         folder = base.path.with_suffix("")
@@ -781,7 +789,8 @@ class DollyApp:
         self._pending_auto_play = True
         self._auto_finish_layered = True
         self._take_playing_seen = False
-        return self.video_export.start(options, project=self._snapshot())
+        return self.video_export.start(options, project=self._snapshot(),
+                                       before_record=arm_capture, capture_only=True)
 
     def _finish_player_capture(self, layer):
         """Worker step: wait for the capture, then write the alpha layer master."""
@@ -800,14 +809,16 @@ class DollyApp:
             raise RuntimeError("The players layer capture did not finish cleanly: "
                                + (status or "no status was reported"))
         layer_dir = base.path.with_suffix("") / layer
-        previews = player_layer.write_previews(deployment / player_layer.BUNDLE_NAME,
-                                               layer_dir / "capture")
         ffmpeg = resolve_ffmpeg(base.ffmpeg_path) or bundled_ffmpeg_path()
         if ffmpeg is None:
             raise RuntimeError("The players layer needs ffmpeg for its alpha master.")
-        master = player_layer.encode_layer(Path(ffmpeg), previews, layer_dir / (layer + ".mov"),
-                                           fps=base.fps)
+        master = player_layer.encode_bundle(Path(ffmpeg), deployment / player_layer.BUNDLE_NAME,
+                                            layer_dir / (layer + ".mov"), fps=base.fps)
+        leftovers = player_layer.cleanup_capture(deployment, layer_dir)
+        if leftovers:
+            LOG.warning("Players MOV saved; could not remove intermediates: %s", ", ".join(leftovers))
         LOG.info("Players layer alpha master saved to %s", master)
+        return {"state": "completed", "layer": layer, "master": str(master)}
 
     def _combine_layer(self, layer):
         """Build the RGBA layer master from its black and white passes.

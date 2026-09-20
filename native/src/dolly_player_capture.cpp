@@ -14,8 +14,10 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <sstream>
 #include "dolly_player_capture.hpp"
 #include "dolly_player_producers.hpp"
+#include "dolly_capture_timing.hpp"
 #include "dolly_hide.hpp"
 #include "dolly_player_snapshot.hpp"
 #include "dolly_player_matte_capture.hpp"
@@ -31,6 +33,7 @@ struct Event {
 };
 static_assert(sizeof(Event) == 1088);
 std::array<Event, Capacity> events;
+CaptureEventSlots<Capacity> eventSlots;
 std::array<std::atomic<bool>, Capacity> completed{};
 constexpr std::uint64_t Closed = std::uint64_t(1) << 63;
 std::atomic<unsigned> used{0}, dropped{0};
@@ -185,6 +188,9 @@ std::atomic<std::uint64_t> presentEpoch{0};
 std::uint64_t startPresent = 0;
 std::array<std::uint32_t, 24> allowedHandles{};
 unsigned allowedCount = 0;
+std::string lastMarker, captureRequest;
+unsigned captureFps = 60;
+double captureSpeed = 1.0;
 struct GpuSlot {
     GpuSnapshot snapshot;
     bool used = false, pending = false, mismatch = false;
@@ -196,7 +202,7 @@ struct GpuSlot {
 // 64 original draws (6912 staging bytes total); image-buffer count is unchanged.
 constexpr unsigned AggregateDrawLimit = 64;
 constexpr unsigned SequenceRing = 3;
-constexpr unsigned SequenceMaxCap = 256;
+constexpr unsigned SequenceMaxCap = 2000000;
 std::array<GpuSlot, SequenceRing * AggregateDrawLimit> gpuSlots;
 struct MatteSlot {
     MatteCapture capture;
@@ -211,6 +217,7 @@ std::uint64_t meshFrame = 0, meshProducerFrame = 0;
 bool meshFrameSet = false;
 struct ColorFrame {
     MatteCapture capture;
+    CaptureImageClock clock;
     bool prepared = false, sealed = false, truncated = false;
     unsigned draws = 0;
     std::uint64_t first = 0, last = 0, epoch = 0;
@@ -221,12 +228,12 @@ std::array<ColorFrame, SequenceRing> colorFrames;
 unsigned colorIndex = 0;
 bool sequenceMode = false, sequenceV2 = false, sequenceV3 = false;
 double lastSealedReplayTime = -1.0;
-long long lastSealedFrame = -1;
 unsigned sequenceCap = 2, framesSealed = 0, framesWritten = 0, framesDropped = 0;
 bool playersOnly = false;
 std::uint32_t ownerFieldOffset = 0;
 std::uint32_t sceneNodeFieldOffset = 0;
-bool sequenceStall = false;
+std::atomic<bool> sequenceStall{false};
+bool sequenceCadenceLost = false;
 ULONGLONG firstSeal = 0, lastSeal = 0;
 // Kept for the life of the process: a static writer would join its worker
 // inside DLL detach. The explicit finish in tick() still closes the file.
@@ -241,11 +248,17 @@ struct FrameMeta {
     double replay_time = -1.0;
     std::uint64_t epoch = 0, draws = 0, first = 0, last = 0, wall_ms = 0, delta_ms = 0;
 };
-std::array<FrameMeta, SequenceMaxCap> frameMeta{};
+std::vector<FrameMeta> frameMeta;
 void release_frame_slots(unsigned ring) noexcept {
     const unsigned first = ring * AggregateDrawLimit;
     for (unsigned i = 0; i < AggregateDrawLimit; ++i) {
         auto& gpu = gpuSlots[first + i];
+        if (sequenceV3 && gpu.used) {
+            if (gpu.startEvent)
+                eventSlots.release(static_cast<unsigned>(gpu.startEvent - 1));
+            if (gpu.drawEvent)
+                eventSlots.release(static_cast<unsigned>(gpu.drawEvent - 1));
+        }
         gpu.snapshot.abandon();
         gpu.used = false;
         gpu.pending = false;
@@ -539,8 +552,8 @@ std::uintptr_t cpu(std::uintptr_t global) noexcept {
 std::uintptr_t buffer(std::uintptr_t global) noexcept {
     return sceneBase ? value<std::uintptr_t>(value<std::uintptr_t>(sceneBase + global) + 0x60) : 0;
 }
-// One capture only. Every writer owns a unique slot. The worker reads after
-// closing admission and observing the closed admission word has no writers; slots are never recycled.
+// Diagnostics keep a chronological log. Shot exports recycle only unreferenced
+// slots; GPU evidence stays pinned until its frame has been verified and written.
 struct Write {
     Event* event = nullptr;
     bool admitted = false;
@@ -556,7 +569,23 @@ struct Write {
                 return;
         } while (!admission.compare_exchange_weak(state, state + 1, std::memory_order_acq_rel));
         admitted = true;
-        const auto index = used.fetch_add(1, std::memory_order_relaxed);
+        unsigned index = 0;
+        if (sequenceV3) {
+            const auto allocated = eventSlots.acquire();
+            if (!allocated) {
+                dropped.fetch_add(1);
+                sequenceStall = true;
+                return;
+            }
+            index = *allocated;
+            auto high = used.load();
+            while (high < index + 1 && !used.compare_exchange_weak(high, index + 1)) {
+            }
+            events[index] = Event{};
+            completed[index].store(false, std::memory_order_relaxed);
+        } else {
+            index = used.fetch_add(1, std::memory_order_relaxed);
+        }
         if (index >= Capacity) {
             dropped.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -572,6 +601,8 @@ struct Write {
             event->w[5] = frame();
             event->w[3] = stamp();
             completed[event - events.data()].store(true, std::memory_order_release);
+            if (sequenceV3)
+                eventSlots.release(static_cast<unsigned>(event - events.data()));
         }
         if (admitted)
             admission.fetch_sub(1, std::memory_order_acq_rel);
@@ -725,6 +756,8 @@ void status(const char* text) noexcept {
     try {
         std::ofstream f(directory + L"dolly_owner_status.txt", std::ios::trunc);
         f << text << '\n';
+        if (!captureRequest.empty())
+            f << "request " << captureRequest << '\n';
     } catch (...) {
     }
 }
@@ -732,9 +765,14 @@ bool dump(const wchar_t* path) noexcept {
     if (admission.load(std::memory_order_acquire) != Closed)
         return false;
     try {
-        const std::uint64_t header[8] = {
-            0x31564f52504c4c44ULL, 13,         sizeof(Event), std::min(used.load(), Capacity),
-            dropped.load(),        startFrame, frame(),       sceneBase};
+        const std::uint64_t header[8] = {0x31564f52504c4c44ULL,
+                                         sequenceV3 ? 14ULL : 13ULL,
+                                         sizeof(Event),
+                                         std::min(used.load(), Capacity),
+                                         dropped.load(),
+                                         startFrame,
+                                         frame(),
+                                         sceneBase};
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
         f.write(reinterpret_cast<const char*>(header), sizeof(header));
         f.write(reinterpret_cast<const char*>(events.data()), header[3] * sizeof(Event));
@@ -967,9 +1005,76 @@ void arm_capture() noexcept {
     status(sequenceV2 ? "armed bounded player sequence capture"
                       : "armed four main-window presentation intervals, maximum 1500 ms");
 }
+// Called only after capture admission is closed and all writers have drained.
+void reset_capture() noexcept {
+    submittedOwners.invalidate();
+    producers.clear();
+    for (auto& slot : gpuSlots) {
+        slot.snapshot.release();
+        slot = GpuSlot{};
+    }
+    for (auto& slot : mattes) {
+        slot.capture.release_gpu();
+        slot = MatteSlot{};
+    }
+    for (auto& slot : colorFrames) {
+        slot.capture.release_gpu();
+        slot = ColorFrame{};
+    }
+    for (unsigned i = 0; i < std::min(used.load(), Capacity); ++i) {
+        events[i] = Event{};
+        completed[i].store(false, std::memory_order_relaxed);
+    }
+    used.store(0);
+    dropped.store(0);
+    samplingDone.store(false);
+    attempted = captured = false;
+    sequenceWriterReady = false;
+    colorIndex = framesSealed = framesWritten = framesDropped = 0;
+    sequenceStall = false;
+    sequenceCadenceLost = false;
+    firstSeal = lastSeal = drainStarted = 0;
+    lastSealedReplayTime = -1.0;
+    meshFrameSet = false;
+    meshFrame = meshProducerFrame = 0;
+    allowedCount = 0;
+    playersOnly = false;
+    captureFps = 60;
+    captureSpeed = 1.0;
+    captureRequest.clear();
+    ownerFieldOffset = sceneNodeFieldOffset = 0;
+    recordValid = recordInvalid = validateStall = 0;
+    blendOver = blendDarken = blendOther = blendSkip = 0;
+    for (auto& x : dbg)
+        x = 0;
+    {
+        std::lock_guard<std::mutex> lock(ownerClassMutex);
+        ownerClassCount = ownerClassRotate = discoveredLinkOffset = discoveredLinkDelta = 0;
+    }
+    frameMeta.clear();
+    eventSlots.reset();
+}
 void tick() noexcept {
-    if (!configured || directory.empty() || captured)
+    if (!configured || directory.empty())
         return;
+    std::string requestText;
+    if (captured || !attempted) {
+        static ULONGLONG lastRequestPoll = 0;
+        const auto now = GetTickCount64();
+        if (now - lastRequestPoll < 100)
+            return;
+        lastRequestPoll = now;
+        std::ifstream requestFile(directory + L"dolly_owner_start.txt");
+        std::getline(requestFile, requestText);
+    }
+    if (requestText.size() > 2048)
+        return;
+    if (captured) {
+        if (requestText.empty() || requestText == lastMarker || armed.load() ||
+            captureActive.load() || admission.load() != Closed)
+            return;
+        reset_capture();
+    }
     if (!attempted) {
         if (GetFileAttributesW((directory + L"dolly_owner_start.txt").c_str()) ==
             INVALID_FILE_ATTRIBUTES)
@@ -982,7 +1087,8 @@ void tick() noexcept {
             return;
         }
         try {
-            std::ifstream marker(directory + L"dolly_owner_start.txt");
+            lastMarker = requestText;
+            std::istringstream marker(requestText);
             std::string mode;
             marker >> mode >> allowedCount;
             sequenceV3 = mode == "color-sequence-v3";
@@ -1021,6 +1127,7 @@ void tick() noexcept {
                     return;
                 }
                 sequenceCap = cap;
+                frameMeta.resize(cap);
             }
             std::string option;
             if (marker >> option) {
@@ -1034,6 +1141,29 @@ void tick() noexcept {
                 playersOnly = true;
                 ownerFieldOffset = offset;
                 sceneNodeFieldOffset = back;
+            }
+            std::string clockOption;
+            if (marker >> clockOption) {
+                std::string requestOption;
+                if (clockOption != "fps" ||
+                    !(marker >> captureFps >> requestOption >> captureRequest) ||
+                    (captureFps != 30 && captureFps != 60 && captureFps != 120 &&
+                     captureFps != 300 && captureFps != 600) ||
+                    requestOption != "request" || captureRequest.size() != 32 ||
+                    captureRequest.find_first_not_of("0123456789abcdef") != std::string::npos) {
+                    status("rejected capture clock/request");
+                    captured = true;
+                    return;
+                }
+            }
+            std::string speedOption;
+            if (marker >> speedOption) {
+                if (speedOption != "speed" || !(marker >> captureSpeed) ||
+                    !std::isfinite(captureSpeed) || captureSpeed < .05 || captureSpeed > 4) {
+                    status("rejected capture speed");
+                    captured = true;
+                    return;
+                }
             }
             if (!playersOnly && allowedCount < 1) {
                 status("rejected GPU marker format/count");
@@ -1064,8 +1194,11 @@ void tick() noexcept {
             return;
         }
         producerInstalled = true;
-        arm_capture();
     }
+    if (!armed.load() && !samplingDone.load())
+        arm_capture();
+    if (captured)
+        return;
     const auto elapsed = GetTickCount64() - started;
     const auto sinceFirstSeal = firstSeal ? GetTickCount64() - firstSeal : 0;
     // The caller's take can end before the frame cap (a replay returning to the
@@ -1088,8 +1221,8 @@ void tick() noexcept {
                                                  : 1500ULL;
     const auto budgetElapsed = (sequenceV3 && firstSeal) ? sinceFirstSeal : elapsed;
     if (armed.load(std::memory_order_acquire) && !samplingDone.load(std::memory_order_acquire) &&
-        (captureFull || budgetElapsed >= captureBudget || used.load() >= Capacity ||
-         (stopRequested && framesSealed == 0))) {
+        (captureFull || budgetElapsed >= captureBudget ||
+         (!sequenceV3 && used.load() >= Capacity) || (stopRequested && framesSealed == 0))) {
         drainStarted = GetTickCount64();
         samplingDone.store(true, std::memory_order_release);
         status(sequenceV2 ? "draining bounded sequence readbacks"
@@ -1100,7 +1233,7 @@ void tick() noexcept {
                                  !any_snapshot_pending();
     if (armed.load(std::memory_order_acquire) && samplingDone.load(std::memory_order_acquire) &&
         (sequenceDrained || GetTickCount64() - drainStarted >= (sequenceV2 ? 3000 : 250) ||
-         used.load() >= Capacity)) {
+         (!sequenceV3 && used.load() >= Capacity))) {
         armed.store(false, std::memory_order_release);
         captureActive.store(false, std::memory_order_release);
         submittedOwners.invalidate();
@@ -1133,7 +1266,9 @@ void tick() noexcept {
         const bool sequenceComplete =
             (!sequenceV2 && (!sequenceMode || (colorIndex == 2 && snapshotsVerified))) ||
             (writerDrained && !sequenceStall && framesWritten + framesDropped == framesSealed &&
-             framesWritten >= 2 && sequence_writer().refused() == 0 && !sequence_writer().error());
+             framesWritten >= 2 && sequence_writer().refused() == 0 && !sequence_writer().error() &&
+             (!sequenceV3 ||
+              (!sequenceCadenceLost && framesDropped == 0 && framesWritten == sequenceCap)));
         if (saved && sequenceComplete) {
             if (sequenceV2 && (framesSealed < sequenceCap || framesDropped)) {
                 char buf[128];
@@ -1143,6 +1278,9 @@ void tick() noexcept {
                 status(buf);
             } else
                 status(dropped.load() ? "complete with overflow; reject proof" : "complete");
+        } else if (saved && sequenceV3 && (sequenceCadenceLost || framesWritten != sequenceCap)) {
+            status(
+                "failed player capture missed shot frames; keep capture data and retry at a lower FPS or slower recording speed");
         } else if (saved && dbg[6]) {
             char buf[192];
             std::snprintf(
@@ -1449,6 +1587,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     slot.draws = 0;
                     slot.truncated = false;
                     slot.first = slot.last = slot.epoch = 0;
+                    slot.clock = CaptureImageClock{};
                     release_frame_slots(ring);
                     continue;
                 }
@@ -1490,6 +1629,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             slot.draws = 0;
             slot.truncated = false;
             slot.first = slot.last = slot.epoch = 0;
+            slot.clock = CaptureImageClock{};
             release_frame_slots(ring);
         }
     }
@@ -1593,16 +1733,10 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
         return;
     }
     if (sequenceV3) {
-        // Shot-aligned capture: one frame per authored replay frame. The
-        // published clock is continuous with jitter, so quantize it to the
-        // replay's 60 Hz frame index; a frame is captured exactly once.
+        // Match color admission: one image per advancing authored view. Keep
+        // real sub-tick timestamps; FPS quantization discards valid images.
         const double authored = authoredReplayTime.load(std::memory_order_acquire);
-        if (authored < 0.0) {
-            ++dbg[1];
-            return;
-        }
-        const long long frameIndex = static_cast<long long>(std::floor(authored * 60.0));
-        if (frameIndex <= lastSealedFrame) {
+        if (!capture_phase_advances(lastSealedReplayTime, authored)) {
             ++dbg[1];
             return;
         }
@@ -1765,6 +1899,10 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
                 target->owner = producer->owner;
                 target->startEvent = std::uint64_t(out - events.data()) + 1;
                 target->drawEvent = std::uint64_t(e - events.data()) + 1;
+                if (sequenceV3) {
+                    eventSlots.retain(static_cast<unsigned>(target->startEvent - 1));
+                    eventSlots.retain(static_cast<unsigned>(target->drawEvent - 1));
+                }
                 out->w[6] = target->drawEvent;
                 out->w[7] = producer->event;
                 out->w[8] = index;
@@ -2215,6 +2353,12 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
             originalDraw(c, n, instances, start, base, first);
         };
         if (aggregateMode) {
+            if (sequenceV3 &&
+                !colorSlot.clock.accept(drawEvent.w[135],
+                                        authoredReplayTime.load(std::memory_order_acquire))) {
+                sequenceCadenceLost = true;
+                throw 3;
+            }
             if (!colorPrepared) {
                 if (colorAggregate.reusable_for(c, static_cast<unsigned>(drawEvent.w[132]),
                                                 static_cast<unsigned>(drawEvent.w[133]))) {
@@ -2366,6 +2510,16 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
     }
     if (aggregateMode && (sequenceV2 ? framesSealed < sequenceCap : colorIndex < 2)) {
         auto& slot = colorFrames[colorIndex];
+        if (sequenceV3) {
+            const auto admission = capture_image_admission(
+                lastSealedReplayTime, authoredReplayTime.load(std::memory_order_acquire),
+                slot.prepared && !slot.sealed);
+            if (admission == CaptureImageAdmission::missing ||
+                admission == CaptureImageAdmission::inconsistent) {
+                sequenceCadenceLost = true;
+                sequenceStall = true;
+            }
+        }
         if (slot.prepared && !slot.sealed) {
             Write seal(14);
             if (seal.event) {
@@ -2386,7 +2540,10 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
                 if (sequenceV2 && framesSealed < SequenceMaxCap) {
                     auto& meta = frameMeta[framesSealed];
                     const auto sealNow = GetTickCount64();
-                    meta.replay_time = authoredReplayTime.load(std::memory_order_acquire);
+                    const double sealPhase = authoredReplayTime.load(std::memory_order_acquire);
+                    if (sequenceV3 && !slot.clock.matches(slot.epoch, sealPhase))
+                        sequenceCadenceLost = true;
+                    meta.replay_time = sequenceV3 ? slot.clock.phase : sealPhase;
                     meta.epoch = slot.epoch;
                     meta.draws = slot.draws;
                     meta.first = slot.first;
@@ -2397,11 +2554,8 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
                         firstSeal = sealNow;
                     lastSeal = sealNow;
                     if (sequenceV3) {
-                        const long long frameIndex =
-                            static_cast<long long>(std::floor(meta.replay_time * 60.0));
-                        if (frameIndex >= 0)
-                            meta.replay_time = frameIndex / 60.0;
-                        lastSealedFrame = frameIndex;
+                        if (!capture_phase_advances(lastSealedReplayTime, meta.replay_time))
+                            sequenceCadenceLost = true;
                         lastSealedReplayTime = meta.replay_time;
                     }
                 }

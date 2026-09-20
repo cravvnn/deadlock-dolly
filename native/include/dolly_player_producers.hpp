@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <cstdint>
@@ -7,6 +9,54 @@
 #include <optional>
 
 namespace dolly::player_capture {
+// Fixed-capacity event storage. Writers and asynchronous readbacks retain slots;
+// only unreferenced slots may be reused, regardless of total shot length.
+template <unsigned Capacity> class CaptureEventSlots {
+    std::array<std::atomic<unsigned>, Capacity> references{};
+    std::atomic<unsigned> cursor{0};
+
+public:
+    std::optional<unsigned> acquire() {
+        const auto first = cursor.fetch_add(1, std::memory_order_relaxed) % Capacity;
+        for (unsigned n = 0; n < Capacity; ++n) {
+            const auto index = (first + n) % Capacity;
+            unsigned free = 0;
+            if (references[index].compare_exchange_strong(free, 1, std::memory_order_acq_rel))
+                return index;
+        }
+        return std::nullopt;
+    }
+    void retain(unsigned index) { references[index].fetch_add(1, std::memory_order_acq_rel); }
+    void release(unsigned index) { references[index].fetch_sub(1, std::memory_order_release); }
+    // Only after capture admission is closed and every writer has left.
+    void reset() {
+        for (auto& r : references)
+            r.store(0);
+        cursor.store(0);
+    }
+};
+// Bind an image to the clock of its first selected draw. A later draw/seal
+// cannot silently relabel those pixels with a different view's timestamp.
+struct CaptureImageClock {
+    std::uint64_t epoch = 0;
+    double phase = -1;
+    bool matches(std::uint64_t image_epoch, double time) const noexcept {
+        return std::isfinite(time) && time >= 0 && phase == time && epoch == image_epoch;
+    }
+    bool accept(std::uint64_t image_epoch, double time) noexcept {
+        if (!std::isfinite(time) || time < 0)
+            return false;
+        if (phase < 0) {
+            epoch = image_epoch;
+            phase = time;
+        }
+        return matches(image_epoch, time);
+    }
+};
+inline long long capture_frame_index(double time, double fps) {
+    return static_cast<long long>(std::floor(time * fps + 1e-6));
+}
+
 struct ProducerEntry {
     std::uint64_t frame = 0, instance = 0, records = 0, event = 0;
     std::uint32_t owner = 0;
@@ -21,6 +71,10 @@ public:
         std::array<ProducerEntry, Capacity> entries{};
         unsigned count = 0;
     };
+    void clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.count = rotate_ = 0;
+    }
     void store(const ProducerEntry& entry) {
         std::lock_guard<std::mutex> lock(mutex_);
         for (unsigned i = 0; i < state_.count; ++i) {

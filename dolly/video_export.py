@@ -254,6 +254,7 @@ class VideoExport:
         self._last = {"state": "idle"}
         self._start_pending = False
         self._start_ack = None
+        self._capture_only = False
         self._depth_options: VideoOptions | None = None
         self.output_path: Path | None = None
         # The folder that receives new takes (the take folder's parent when a
@@ -267,6 +268,11 @@ class VideoExport:
             last = dict(self._last)
             pending, start_ack = self._start_pending, self._start_ack
         if bridge is None:
+            if self._capture_only and self.controller.status().get("game_running") is False:
+                self._capture_only = False
+                self.controller.mark_recording_pending(False)
+                self._last = {"state": "failed", "error": "Deadlock closed during player capture."}
+                return dict(self._last)
             return last
         try:
             current = dict(bridge.video_status())
@@ -324,7 +330,8 @@ class VideoExport:
             except (RuntimeError, ValueError, OSError):
                 pass
 
-    def start(self, options: VideoOptions, project=None, *, frozen=False) -> dict:
+    def start(self, options: VideoOptions, project=None, *, frozen=False,
+              before_record=None, capture_only=False) -> dict:
         options = options.validated()
         if self.status().get("state") in ACTIVE_STATES:
             raise RuntimeError("Finish the current recording before starting another.")
@@ -351,6 +358,23 @@ class VideoExport:
             color_path = folder / options.path.name
         if options.fixed_step:
             self._set_export_timing(options.fps, options.speed)
+        try:
+            if before_record is not None:
+                before_record()
+        except Exception:
+            self._clear_export_timing()
+            raise
+        if capture_only:
+            with self._lock:
+                self._capture_only = True
+                self._bridge = None
+                self._last = {"state": "recording", "fps": options.fps}
+                self.output_path = options.path.with_suffix(".mov")
+                self.output_directory = options.path.parent
+                self._layer_folder = None
+            self.controller.mark_recording_pending(True, player_layer=True)
+            return self.status()
+        self._capture_only = False
         initial_ack = bridge.video_status().get("ack")
         with self._lock:
             self._bridge = bridge
@@ -394,6 +418,16 @@ class VideoExport:
         try:
             with self._lock:
                 bridge = self._bridge
+            if self._capture_only:
+                from . import player_layer
+                deployment = self.controller.deployment_directory()
+                if deployment is not None:
+                    player_layer.request_stop(deployment)
+                with self._lock:
+                    self._capture_only = False
+                    self._last = {"state": "cancelled" if cancel else "completed"}
+                self.controller.mark_recording_pending(False)
+                return self.status()
             if bridge is None or self.status().get("state") not in ACTIVE_STATES:
                 return self.status()
             bridge.stop_video(cancel=cancel)

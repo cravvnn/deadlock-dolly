@@ -22,6 +22,7 @@
 #include <vector>
 #include "dolly_video.hpp"
 #include "dolly_video_math.hpp"
+#include "dolly_capture_timing.hpp"
 #include "dolly_depth_scene.hpp"
 #include "dolly_depth_sequence.hpp"
 #include <cmath>
@@ -110,6 +111,7 @@ struct Session {
     // parent when depth is enabled: <color parent>\depth\depth.mov.
     std::wstring depth_directory, depth_video_path;
     ShotRange shot;
+    ShotClockTrace shot_clock;
     depth::Sequence depth_output; // Touched only by the encoder thread.
     std::wstring ffmpeg;
     // Published once by the render callback before configured=true.
@@ -269,9 +271,22 @@ bool write_shot_sidecar(const Session& s) noexcept {
                  "  \"video_file\": \"%s\",\n  \"fps\": %u,\n  \"fixed_step\": %s,\n"
                  "  \"frames_written\": %llu,\n  \"duration_seconds\": %.7f,\n"
                  "  \"first_frame\": %llu,\n  \"last_frame\": %llu,\n"
-                 "  \"first_replay_time\": %.9f,\n  \"last_replay_time\": %.9f\n}\n",
+                 "  \"first_replay_time\": %.9f,\n  \"last_replay_time\": %.9f,\n",
                  leaf.c_str(), s.fps, s.fixed_step ? "true" : "false", frames, duration, first,
                  last, s.shot.first_time, s.shot.last_time);
+    std::fprintf(file,
+                 "  \"clock_native_frames\": %llu,\n  \"clock_fallback_frames\": %llu,\n"
+                 "  \"clock_samples_limit\": %zu,\n  \"clock_samples\": [",
+                 static_cast<unsigned long long>(s.shot_clock.native_frames),
+                 static_cast<unsigned long long>(s.shot_clock.fallback_frames),
+                 s.shot_clock.samples.size());
+    for (std::size_t i = 0; i < s.shot_clock.count; ++i) {
+        const auto& sample = s.shot_clock.samples[i];
+        std::fprintf(file, "%s\n    {\"frame\": %llu, \"phase\": %.9f, \"source\": \"%s\"}",
+                     i ? "," : "", static_cast<unsigned long long>(sample.frame), sample.phase,
+                     sample.native ? "native" : "editor");
+    }
+    std::fprintf(file, "\n  ]\n}\n");
     std::fclose(file);
     return true;
 }
@@ -1326,7 +1341,7 @@ bool path_replay_time(double& seconds) noexcept {
     return true;
 }
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
-             const depth::SceneFrame* scene, double replay_time) noexcept {
+             const depth::SceneFrame* scene, double replay_time, bool native_clock) noexcept {
     gCaptureAttempts.fetch_add(1, std::memory_order_relaxed);
     if (!swapchain || !device || !context)
         return;
@@ -1521,7 +1536,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         // The authored path clamps at its end. Dropping repeated clamped
         // frames keeps the color, depth and layer takes the same length.
         const auto previous = s.shot_last_replay.load(std::memory_order_relaxed);
-        if (replay_time <= previous)
+        if (!capture_phase_advances(previous, replay_time))
             return;
         s.shot_last_replay.store(replay_time, std::memory_order_relaxed);
     }
@@ -1613,6 +1628,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     }
     if (std::isfinite(replay_time) && replay_time >= 0)
         s.shot.observe(gpu.submitted, replay_time);
+    s.shot_clock.observe(gpu.submitted, replay_time, native_clock);
     slot.pts = pts;
     ++gpu.submitted;
     s.capture_submitted.fetch_add(1, std::memory_order_relaxed);

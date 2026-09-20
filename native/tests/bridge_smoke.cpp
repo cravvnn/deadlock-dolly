@@ -1102,6 +1102,35 @@ void editor_framing_checks() {
         require(editor_enqueue(EditorAction::AttachPreview, 1) &&
                     editor_enqueue(EditorAction::AttachSnap, 0),
                 "Attach preview or snap was rejected by the action range");
+        // Exercise the exact versioned payload emitted by the in-game bone combo.
+        EditorBones bones{};
+        std::memcpy(bones.magic, "DLYBONE1", 8);
+        bones.abi = 1;
+        bones.sequence = 2;
+        bones.handle = attach.handle;
+        bones.entity_index = attach.entity_id;
+        bones.model = attach.model;
+        bones.count = bones.total = 2;
+        std::memcpy(bones.names[0], "head", 4);
+        std::memcpy(bones.names[1], "hand_R", 6);
+        std::memcpy(attach_memory.data() + kEditorBonesOffset, &bones, sizeof(bones));
+        editor_worker_tick(attach_memory.data(), true);
+        CameraPose bone_version{};
+        bone_version[0] = bones.sequence;
+        require(editor_enqueue(EditorAction::SetAttachBone, 1, &bone_version),
+                "In-game bone picker rejected a current versioned selection");
+        const auto& bone_event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+        require(bone_event.action == std::uint32_t(EditorAction::SetAttachBone) &&
+                    bone_event.value == 1 && bone_event.pose[0] == bones.sequence,
+                "Bone selection payload was not preserved");
+        bone_version[0] = 4;
+        require(!editor_enqueue(EditorAction::SetAttachBone, 1, &bone_version),
+                "Stale bone selection was accepted");
+        bone_version[0] = bones.sequence;
+        require(!editor_enqueue(EditorAction::SetAttachBone, 2, &bone_version) &&
+                    !editor_enqueue(EditorAction::SetAttachBone, .5, &bone_version) &&
+                    !editor_enqueue(EditorAction::SetAttachBone, 1),
+                "Invalid or unversioned bone selection was accepted");
         attach.sequence = 4;
         attach.bone_hash ^= 1;
         std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));

@@ -672,7 +672,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         for (double component : *pose_override)
             if (!std::isfinite(component))
                 return false;
-    } else if (pose_override && action != EditorAction::SetAttachOffsets)
+    } else if (pose_override && action != EditorAction::SetAttachOffsets &&
+               action != EditorAction::SetAttachBone)
         return false;
     if (action == EditorAction::SetSpeed) {
         if (value < 1 || value > 10000)

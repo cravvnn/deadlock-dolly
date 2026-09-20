@@ -799,7 +799,8 @@ class Controller:
         self._stop_event.set()
         return True
 
-    def mark_recording_pending(self, pending):
+    def mark_recording_pending(self, pending, *, player_layer=False):
+        self._player_capture_pending = bool(pending and player_layer)
         was_pending = self._recording_pending
         self._recording_pending = bool(pending)
         if was_pending and not pending:
@@ -942,6 +943,9 @@ class Controller:
         Starting the shot first would lose its opening frames, so wait for the
         confirmed recording state instead of consuming the prepared take early.
         """
+        if getattr(self, "_player_capture_pending", False):
+            # The capture marker was acknowledged before reserving this take.
+            return {"state": "recording"}
         bridge = self._native_bridge()
         read = getattr(bridge, "video_status", None)
         if not callable(read):
@@ -2613,7 +2617,10 @@ class Controller:
         if self._native_bridge() is not None:
             compile_effects(project)  # Reject unsupported tracks before stopping a working shot.
         with self._op_lock:
-            self.stop()
+            if self._recorder_active():
+                self.stop(preserve_layers=True)
+            else:
+                self.stop()
             if self._playback_restore or self._restore or self._game_ui_restore or self._demo_speed_changed:
                 raise RuntimeError("Previous settings still need restoration. Reconnect and use Stop / restore before playing again.")
             self._stop_event.clear()
@@ -3280,7 +3287,7 @@ class Controller:
             self._request("demo_pause")
         self._message(restoration_error or "Paused. HUD restored; the current camera and lens values are held.", playing=False)
 
-    def stop(self):
+    def stop(self, *, preserve_layers=False):
         self._halt(native_action="release")
         bridge = self._native_bridge()
         if bridge is not None and callable(getattr(bridge, "editor_status", None)) and self._alive():
@@ -3317,7 +3324,7 @@ class Controller:
                 return
         with self._state_lock:
             self._state["playing"] = False
-        if self._console and self._console.is_connected and self._alive():
+        if not preserve_layers and self._console and self._console.is_connected and self._alive():
             try:
                 self.reset_layer_modes()
             except (RuntimeError, ValueError, OSError) as exc:

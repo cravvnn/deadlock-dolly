@@ -71,6 +71,7 @@ native/include/dolly_overlay.hpp
 native/include/dolly_path.hpp
 native/include/dolly_player_capture.hpp
 native/include/dolly_player_producers.hpp
+native/include/dolly_capture_timing.hpp
 native/include/dolly_player_material_matte.hpp
 native/include/dolly_player_matte_capture.hpp
 native/include/dolly_player_matte_pass.hpp

@@ -76,6 +76,31 @@ class VideoExportTests(unittest.TestCase):
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
 
+    def test_filter_is_applied_after_preparation_before_encoder(self):
+        calls = []
+        self.controller.prepare_native_recording.side_effect = lambda *a, **k: calls.append("prepare")
+        original = self.bridge.start_video.side_effect
+        def start(*a, **k):
+            calls.append("encode"); return original(*a, **k)
+        self.bridge.start_video.side_effect = start
+        self.export.start(VideoOptions(self.path), before_record=lambda: calls.append("filter"))
+        self.assertEqual(calls, ["prepare", "filter", "encode"])
+
+    def test_capture_only_reserves_playback_without_an_mp4_encoder(self):
+        self.controller.deployment_directory.return_value = Path(self.folder.name)
+        armed = Mock()
+        result = self.export.start(VideoOptions(self.path, fps=600, fixed_step=True),
+                                   before_record=armed, capture_only=True)
+        self.assertEqual(result["state"], "recording")
+        armed.assert_called_once_with()
+        self.bridge.start_video.assert_not_called()
+        self.controller.mark_recording_pending.assert_called_once_with(True, player_layer=True)
+        self.assertEqual(self.export.output_path, self.path.with_suffix(".mov"))
+        self.assertEqual(self.export.stop()["state"], "completed")
+        self.bridge.stop_video.assert_not_called()
+        self.assertTrue((Path(self.folder.name)/"dolly_owner_stop.txt").is_file())
+        self.controller.mark_recording_pending.assert_called_with(False)
+
     def test_existing_output_is_not_sent_to_native(self):
         self.path.write_bytes(b"existing video")
         with self.assertRaisesRegex(ValueError, "already exists"):
@@ -433,10 +458,17 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_layer_players.set(True)
         self.app.video_fixed_step.set(True)
         self.app.video_fps.set("300")
-        self.app._start_video_recording()
+        with patch("dolly.gui.player_layer.MAX_FRAMES", 256):
+            self.app._start_video_recording()
         self.app._submit.assert_not_called()
         self.app.video_export.start.assert_not_called()
         self.assertIn("256 frames", str(self.app._error.call_args.args[1]))
+
+    def test_player_frame_budget_follows_long_camera_path_at_600fps(self):
+        self.app.project = self.two_camera_project()
+        self.app.project.keyframes[-1].time = 10.0
+        options = VideoOptions(Path(self.folder.name)/"long.mp4", fps=600)
+        self.assertEqual(self.app._player_layer_frames(options), 6000)
 
     def test_players_without_path_is_checked_before_color_recording(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
@@ -574,13 +606,32 @@ class VideoGuiTests(unittest.TestCase):
         self.app._start_video_recording()
         self.assertEqual(self.app._layer_queue, [("players", "capture")])
 
+    def test_players_frame_count_matches_export_speed(self):
+        self.app.project = self.two_camera_project()
+        for speed, expected in ((.5, 1200), (1, 600), (2, 300)):
+            with self.subTest(speed=speed):
+                base = VideoOptions(Path(self.folder.name)/"shot.mp4", fps=600, speed=speed)
+                self.assertEqual(self.app._player_layer_frames(base), expected)
+
+    def test_players_capture_keeps_a_partial_final_frame_interval(self):
+        self.app.project = self.two_camera_project()
+        self.app.project.keyframes[-1].time = 2.5 / 600
+        base = VideoOptions(Path(self.folder.name)/"shot.mp4", fps=600)
+        self.assertEqual(self.app._player_layer_frames(base), 3)
+
     def test_next_layer_take_arms_the_players_capture(self):
+        self.app.video_export.status.return_value = {"state": "completed", "width": 64, "height": 64}
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")
         base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
                             fixed_step=True, speed=1.0, layers=("players",),
                             ffmpeg_path=exe).validated()
         (Path(self.folder.name) / "shot").mkdir()
+        (Path(self.folder.name) / "shot" / "shot.mp4").write_bytes(b"color output")
+        (Path(self.folder.name) / "shot" / "shot.json").write_text(json.dumps({
+            "format": "deadlock-dolly-shot", "version": 1, "video_file": "shot.mp4",
+            "fps": 60, "fixed_step": True, "frames_written": 62,
+            "first_frame": 0, "last_frame": 61}), encoding="utf-8")
         deploy = Path(self.folder.name) / "deploy"
         deploy.mkdir()
         layout = ("          0          408      CGameSceneNode                           "
@@ -597,8 +648,12 @@ class VideoGuiTests(unittest.TestCase):
         self.app._snapshot = Mock(return_value=Mock())
         result = self.app._start_next_layer_take()
         self.app.controller.apply_layer_mode.assert_not_called()
+        self.assertFalse((deploy / "dolly_owner_start.txt").exists())
+        self.assertTrue(self.app.video_export.start.call_args.kwargs["capture_only"])
+        with patch("dolly.gui.player_layer.wait_until_armed"):
+            self.app.video_export.start.call_args.kwargs["before_record"]()
         marker = (deploy / "dolly_owner_start.txt").read_text(encoding="ascii")
-        self.assertEqual(marker, "color-sequence-v3 0 60 players 408 816\n")
+        self.assertRegex(marker, r"^color-sequence-v3 0 62 players 408 816 fps 60 request [0-9a-f]{32}\n$")
         options = self.app.video_export.start.call_args.args[0]
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "players" / "players.mp4")
         self.assertEqual(options.layers, ())
@@ -606,6 +661,27 @@ class VideoGuiTests(unittest.TestCase):
         self.assertTrue(options.fixed_step)
         self.assertEqual(result, self.app.video_export.start.return_value)
         self.assertEqual(self.app._active_layer_take, ("players", "capture"))
+
+    def test_player_completion_returns_master_and_cleans_only_after_encode(self):
+        base = VideoOptions(Path(self.folder.name)/"shot.mp4", fps=600)
+        self.app._base_capture = base
+        self.app.controller = Mock()
+        deploy = Path(self.folder.name)/"deploy"; deploy.mkdir()
+        self.app.controller.deployment_directory.return_value = deploy
+        master = Path(self.folder.name)/"shot/players/players.mov"
+        with patch("dolly.gui.player_layer.wait_for_capture", return_value="complete"), \
+             patch("dolly.gui.resolve_ffmpeg", return_value=Path("ffmpeg.exe")), \
+             patch("dolly.gui.player_layer.encode_bundle", return_value=master) as encode, \
+             patch("dolly.gui.player_layer.cleanup_capture", return_value=[]) as cleanup:
+            result = self.app._finish_player_capture("players")
+            self.assertEqual(result, {"state":"completed", "layer":"players", "master":str(master)})
+            self.assertEqual(encode.call_args.kwargs["fps"], 600)
+            cleanup.assert_called_once()
+            encode.side_effect = RuntimeError("encoder failed")
+            cleanup.reset_mock()
+            with self.assertRaisesRegex(RuntimeError, "encoder failed"):
+                self.app._finish_player_capture("players")
+            cleanup.assert_not_called()
 
     def test_next_layer_take_hides_the_layer_and_starts_a_fixed_step_take(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
@@ -620,6 +696,8 @@ class VideoGuiTests(unittest.TestCase):
         self.app.controller.apply_layer_mode.return_value = {"hidden": ["SkinnedObject"]}
         self.app._snapshot = Mock(return_value=Mock())
         result = self.app._start_next_layer_take()
+        self.app.controller.apply_layer_mode.assert_not_called()
+        self.app.video_export.start.call_args.kwargs["before_record"]()
         self.app.controller.apply_layer_mode.assert_called_once_with("world")
         options = self.app.video_export.start.call_args.args[0]
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "world.mp4")
@@ -645,6 +723,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app.controller.apply_layer_mode.return_value = {"hidden": ["SkinnedObject"]}
         self.app._snapshot = Mock(return_value=Mock())
         self.app._start_next_layer_take()
+        self.app.video_export.start.call_args.kwargs["before_record"]()
         self.app.controller.begin_matte_layer.assert_called_once_with()
 
     def test_white_matte_pass_writes_beside_the_black_pass(self):
