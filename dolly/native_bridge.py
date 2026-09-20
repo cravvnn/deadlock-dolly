@@ -593,6 +593,8 @@ class NativeBridge(MediaTransport):
             self._mapping[offset + 12:offset + len(data)] = data[12:]
             self._store(offset + 8, even)
             self._editor_attach_sequence = even
+            self._editor_attach_diagnostics = {"sequence": even, "offsets": dict(offsets),
+                "selection": deepcopy(attach), "preview": bool(preview), "snap_request": snap_request}
 
     def editor_roster(self):
         """Optional native player roster for the attach target picker."""
@@ -877,6 +879,15 @@ class NativeBridge(MediaTransport):
                 result["editor"] = {"message": str(exc)}
         except (NativeBridgeError, OSError, ValueError) as exc:
             result = {"state": "unavailable", "message": str(exc)}
+        with self._lock:
+            result["attach_config"] = deepcopy(getattr(self, "_editor_attach_diagnostics", None))
+        for key, reader in (("attach_roster", self.editor_roster),
+                            ("attach_bones", self.editor_bones),
+                            ("attach_result", self.editor_attach_result)):
+            try:
+                result[key] = reader()
+            except (NativeBridgeError, OSError, ValueError) as exc:
+                result[key] = {"error": str(exc)}
         result["graphics"] = self.graphics_diagnostics()
         result["input"] = self.input_diagnostics()
         result["visualization"] = self.visualization_diagnostics()

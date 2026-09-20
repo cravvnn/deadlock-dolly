@@ -346,6 +346,19 @@ class EditorSessionTests(unittest.TestCase):
         self.bridge.configure_editor_attach.assert_called_once()
         self.assertTrue(self.bridge.configure_editor_attach.call_args.kwargs["preview"])
 
+    def test_detach_rearms_free_camera_without_changing_authored_keys(self):
+        from copy import deepcopy
+        from dolly.path import AttachKey
+        self.app.preview_attach = True
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+            attach=AttachKey(handle=11, model="models/hero.vmdl", point="bone", bone="head"))]
+        before = deepcopy(self.app.project.keyframes)
+        session.dispatch(self.app, {"action": "attach_preview", "value": 0}, self.bridge)
+        self.assertFalse(self.app.preview_attach)
+        self.app._submit.call_args.args[1]()
+        self.app.controller.enter_native_flight.assert_called_once_with(owner="panel")
+        self.assertEqual(self.app.project.keyframes, before)
+
     def test_attach_snap_marks_a_pending_request(self):
         self.assertTrue(session.dispatch(self.app, {"action": "attach_snap", "value": 0},
                                          self.bridge))

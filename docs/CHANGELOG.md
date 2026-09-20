@@ -1,5 +1,24 @@
 # Changes
 
+## 0.5.25 alpha — Hero bone cameras and attachment recovery
+
+- Head and right-hand camera selection, replay playback and detach were checked
+  on Holliday, Abrams, Rem, Yamato, Mo and Krill, Drifter, Lash, Graves, Wraith,
+  Calico, Vindicta and Warden. Other heroes and bones remain experimental.
+- Bone cameras resolve skeleton names from the selected hero's own model resource,
+  including models with generated cloth joints. Other models' nearby name tables
+  can no longer be selected by the old pointer walk. Model and pose-buffer changes
+  are checked before applying the camera. Entity handles are rechecked so a
+  recycled entity cannot silently replace the selected target.
+- Eyes attachment no longer performs optional bone discovery. Native heartbeat
+  monitoring remains responsive independently of model discovery work.
+- Detach restores a usable free camera after an attachment failure. Failed camera
+  entry clears stale ownership, and an explicit retry refreshes target resolution.
+- Read skeleton count fields at their actual 32-bit width so adjacent bytes no
+  longer cause intermittent valid-model rejection.
+- Fixed a buffer overread in bone-name decoding. Diagnostic exports now include
+  attachment selection, roster and bone catalog details.
+
 ## 0.5.24 alpha — One camera workspace and precise replay stepping
 
 - In-game Camera combines replay playback, camera selection, a marked shot

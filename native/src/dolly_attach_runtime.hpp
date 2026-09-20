@@ -20,11 +20,13 @@ struct Offsets {
 
 struct Cache {
     bool ready = false;
-    std::uintptr_t pawn = 0, node = 0, name_pointer = 0;
+    std::uintptr_t pawn = 0, identity = 0, node = 0, name_pointer = 0;
     std::uint32_t name_offset = 0, handle = 0, entity_index = 0;
     std::uint64_t model = 0;
     // Weapon point: resolved bone index and its per-frame transform array.
     std::uintptr_t bone_array = 0;
+    std::uintptr_t model_handle_slot = 0, model_handle = 0, model_object = 0, model_state = 0;
+    std::uint32_t bone_count = 0;
     std::uint32_t bone_index = 0;
     bool bone_ready = false;
     dolly::EditorBones bones{};
@@ -206,34 +208,57 @@ inline bool discover_model_name(std::uintptr_t node, std::uint32_t& offset, std:
 
 // ---------------------------------------------------------------------------
 // Weapon point: resolve a bone name (weapon_bone_R and fallbacks) to the
-// model's pose transform index. The model exposes a bone-name vector
-// {pointer, count, capacity} of ASCII string pointers; the vector order is the
-// pose order (verified live: head/hand/weapon positions match anatomy). All of
-// this runs on the worker when a command arrives; the render callback only
+// selected model's pose transform index. Resolve the resource through that
+// model's own binding and verify its name before reading its complete skeleton.
+// The current pose buffer can include merged bones beyond the base skeleton.
+// Resolution runs on the worker; the callback validates cached identities and
 // reads one 32-byte transform per frame.
 // ---------------------------------------------------------------------------
 
 inline bool read_c_string(std::uintptr_t address, char* out, std::size_t capacity) noexcept {
-    if (!address || capacity < 8)
+    if (!out || capacity < 2)
         return false;
-    unsigned char raw[48]{};
-    if (!read_memory(address, raw, sizeof(raw) - 1))
+    out[0] = 0;
+    // Bone wire names hold at most 63 characters plus NUL. Never copy a
+    // caller-sized range from a smaller stack buffer, or accept a truncated
+    // valid-looking prefix of an invalid string.
+    unsigned char raw[64]{};
+    const auto size = (std::min)(capacity, sizeof(raw));
+    if (!address)
         return false;
-    std::memcpy(out, raw, capacity - 1);
-    out[capacity - 1] = 0;
-    for (std::size_t i = 0; out[i]; ++i) {
-        const unsigned char c = static_cast<unsigned char>(out[i]);
-        if (c < 32 || c > 126) {
-            out[i] = 0;
-            break;
+    const bool block_read = read_memory(address, raw, size);
+    for (std::size_t length = 0; length < size; ++length) {
+        // A short NUL-terminated string may end immediately before an
+        // inaccessible page. Do not require readable padding past its NUL.
+        if (!block_read && !read_value(address + length, raw[length]))
+            return false;
+        if (raw[length] == 0) {
+            if (!length)
+                return false;
+            std::memcpy(out, raw, length + 1);
+            return true;
         }
+        if (raw[length] < 32 || raw[length] > 126)
+            return false;
     }
-    return out[0] != 0;
+    return false;
 }
 
 inline bool valid_bone_name(const char* text) noexcept {
     if (!text || !text[0])
         return false;
+    if (std::strncmp(text, "$cloth_m", 8) == 0) {
+        const char* p = text + 8;
+        if (*p < '0' || *p > '9')
+            return false;
+        while (*p >= '0' && *p <= '9')
+            ++p;
+        if (*p++ != 'p' || *p < '0' || *p > '9')
+            return false;
+        while (*p >= '0' && *p <= '9')
+            ++p;
+        return *p == 0;
+    }
     for (const char* p = text; *p; ++p) {
         const char c = *p;
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
@@ -257,7 +282,10 @@ inline bool find_bone_vector(std::uintptr_t object, std::uintptr_t& data, std::u
         const std::uint32_t stride = pass == 0 ? 8 : 16;
         for (std::uint32_t offset = 0; offset + 0x18 <= 0x600; offset += 8) {
             std::uintptr_t pointer = 0;
-            std::uint64_t count = 0, capacity = 0;
+            // Count fields are 32-bit. Adjacent bytes can be nonzero in
+            // live resource objects; reading QWORDs made valid models fail
+            // depending on those unrelated bytes.
+            std::uint32_t count = 0, capacity = 0;
             if (!read_value(object + offset, pointer) || !read_value(object + offset + 8, count) ||
                 !read_value(object + offset + 0x10, capacity))
                 continue;
@@ -306,75 +334,6 @@ struct VectorHit {
     std::uintptr_t object = 0, data = 0;
     std::uint32_t entries = 0, stride = 8;
 };
-
-// Three bounded pointer levels from a model handle; every object that carries
-// a bone-name vector is recorded (the caller ranks candidates and prefers the
-// largest vector that names the best-ranked weapon bone).
-inline unsigned find_bone_vectors(std::uintptr_t handle, VectorHit* out,
-                                  unsigned capacity) noexcept {
-    std::uintptr_t roots[2] = {handle, 0};
-    if (!read_value(handle, roots[1]))
-        roots[1] = 0;
-    std::uintptr_t current[256]{};
-    unsigned current_count = 0;
-    for (std::uintptr_t root : roots) {
-        if (!root)
-            continue;
-        for (std::uint32_t base_offset = 0; base_offset < 0x8000; base_offset += 0x1000) {
-            unsigned char head[0x1000]{};
-            if (!read_memory(root + base_offset, head, sizeof(head)))
-                continue;
-            for (unsigned offset = 0; offset + 8 <= sizeof(head); offset += 8) {
-                std::uintptr_t pointer = 0;
-                std::memcpy(&pointer, head + offset, 8);
-                if (pointer < 0x10000 || pointer > 0x7fffffffffff || (pointer & 7))
-                    continue;
-                bool duplicate = false;
-                for (unsigned i = 0; i < current_count; ++i)
-                    duplicate |= current[i] == pointer;
-                if (!duplicate && current_count < 256)
-                    current[current_count++] = pointer;
-            }
-        }
-    }
-    unsigned found = 0;
-    for (int level = 0; level < 3 && found < capacity; ++level) {
-        std::uintptr_t next[256]{};
-        unsigned next_count = 0;
-        for (unsigned index = 0; index < current_count && found < capacity; ++index) {
-            std::uintptr_t data = 0;
-            std::uint32_t entries = 0, stride = 0;
-            if (find_bone_vector(current[index], data, entries, stride)) {
-                bool duplicate = false;
-                for (unsigned hit = 0; hit < found; ++hit)
-                    duplicate |= out[hit].data == data && out[hit].stride == stride;
-                if (!duplicate)
-                    out[found++] = VectorHit{current[index], data, entries, stride};
-                continue;
-            }
-            unsigned char nested[0x200]{};
-            if (!read_memory(current[index], nested, sizeof(nested)))
-                continue;
-            for (unsigned offset = 0; offset + 8 <= sizeof(nested); offset += 8) {
-                std::uintptr_t pointer = 0;
-                std::memcpy(&pointer, nested + offset, 8);
-                if (pointer < 0x10000 || pointer > 0x7fffffffffff || (pointer & 7))
-                    continue;
-                bool duplicate = false;
-                for (unsigned i = 0; i < current_count; ++i)
-                    duplicate |= current[i] == pointer;
-                for (unsigned i = 0; i < next_count; ++i)
-                    duplicate |= next[i] == pointer;
-                if (!duplicate && next_count < 256)
-                    next[next_count++] = pointer;
-            }
-        }
-        for (unsigned index = 0; index < next_count; ++index)
-            current[index] = next[index];
-        current_count = next_count;
-    }
-    return found;
-}
 
 inline const char* const* weapon_bone_candidates(unsigned& count) noexcept {
     static const char* const kNames[] = {"weapon_bone_R", "weapon_bone_L", "weaponHand_R",
@@ -465,53 +424,35 @@ inline bool locate_bone_array(const Offsets& offsets, std::uintptr_t node,
 inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
                          const dolly::AttachSegment& segment, Cache& cache,
                          const char*& error) noexcept {
-    // CSkeletonInstance.m_modelState: the schema fallback (304/0x130) and the
-    // installed client registration (336/0x150) both appear, and the model
-    // handle registration lists 160 and 86. Try the reviewed combinations and
-    // accept the first that carries a bone-name vector.
-    const std::uintptr_t state_offsets[] = {0x150, 0x130, 0x140, 0x160};
-    const std::uintptr_t handle_offsets[] = {160, 86, 24, 32, 40, 16, 176};
-    std::uintptr_t model_state = 0;
-    VectorHit hits[16]{};
-    unsigned hit_count = 0;
-    for (std::uintptr_t state_offset : state_offsets) {
-        const std::uintptr_t candidate_state = node + state_offset;
-        for (std::uintptr_t handle_offset : handle_offsets) {
-            std::uintptr_t handle = 0;
-            if (!read_value(candidate_state + handle_offset, handle) || !handle)
-                continue;
-            hit_count = find_bone_vectors(handle, hits, 16);
-            if (hit_count) {
-                model_state = candidate_state;
-                break;
-            }
-        }
-        if (hit_count)
-            break;
+    // The reviewed CModelState stores the resource binding immediately before
+    // its model-name field (0xa0/0xa8). The binding's first pointer is CModel;
+    // CModel's name at +8 must identify the SAME model before inspecting its
+    // skeleton. Never walk neighboring bindings or arbitrary nested pointers.
+    if (cache.name_offset < 0xa8) {
+        error = "The selected model resource layout is unavailable. Choose Eyes.";
+        return false;
     }
-    if (!hit_count) {
+    const std::uintptr_t model_state = node + cache.name_offset - 0xa8;
+    std::uintptr_t binding = 0, object = 0, resource_name = 0;
+    char resource_path[256]{};
+    if (!read_value(model_state + 0xa0, binding) || !binding || !read_value(binding, object) ||
+        !object || !read_value(object + 8, resource_name) ||
+        !read_memory(resource_name, resource_path, sizeof(resource_path) - 1) ||
+        !text_looks_like_model(resource_path) || model_token(resource_path) != cache.model) {
+        error = "The selected model resource could not be verified. Choose Eyes.";
+        return false;
+    }
+    VectorHit hit{};
+    if (!find_bone_vector(object, hit.data, hit.entries, hit.stride)) {
         error = "No complete render skeleton was found for this model. Choose Eyes.";
         return false;
     }
+    cache.model_handle_slot = model_state + 0xa0;
+    cache.model_handle = binding;
+    cache.model_object = object;
+    cache.model_state = model_state;
     unsigned candidate_count = 0;
     const char* const* candidates = weapon_bone_candidates(candidate_count);
-    unsigned best_hit = hit_count, best_score = 0;
-    for (unsigned hit_index = 0; hit_index < hit_count; ++hit_index) {
-        const unsigned score = skeleton_name_score(hits[hit_index].data, hits[hit_index].entries,
-                                                   hits[hit_index].stride);
-        if (score == 0)
-            continue;
-        if (best_hit == hit_count || score > best_score ||
-            (score == best_score && hits[hit_index].entries > hits[best_hit].entries)) {
-            best_hit = hit_index;
-            best_score = score;
-        }
-    }
-    if (best_hit == hit_count) {
-        error = "The render skeleton could not be identified for this model. Choose Eyes.";
-        return false;
-    }
-    const VectorHit& hit = hits[best_hit];
     cache.bones.total = hit.entries;
     for (std::uint32_t entry = 0; entry < hit.entries && cache.bones.count < kEditorBoneCount;
          ++entry) {
@@ -569,6 +510,15 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
         error = "The attach weapon point could not locate the target pose transforms.";
         return false;
     }
+    std::uintptr_t current_array = 0;
+    std::uint32_t pose_count = 0;
+    if (!read_value(model_state + 0x80, current_array) || current_array != bone_array ||
+        !read_value(model_state + 0x90, pose_count) || pose_count < hit.entries ||
+        pose_count > 4096) {
+        error = "The model skeleton does not match its current pose buffer. Choose Eyes.";
+        return false;
+    }
+    cache.bone_count = pose_count;
     cache.bone_array = bone_array;
     cache.bone_index = index;
     cache.bone_ready = true;
@@ -636,6 +586,7 @@ inline bool resolve(HMODULE client, const Offsets& offsets, const dolly::AttachT
     }
     out.ready = true;
     out.pawn = selected->entity.instance;
+    out.identity = selected->entity.identity;
     out.node = selected->node;
     out.handle = selected->entity.handle;
     out.entity_index = selected->entity_index;
@@ -645,13 +596,8 @@ inline bool resolve(HMODULE client, const Offsets& offsets, const dolly::AttachT
     out.bones.handle = out.handle;
     out.bones.entity_index = out.entity_index;
     out.bones.model = out.model;
-    if (segment.point == dolly::AttachPoint::eyes) {
-        // Optional picker discovery cannot make a valid eye camera fail.
-        const char* ignored = nullptr;
-        dolly::AttachSegment weapon{};
-        weapon.point = dolly::AttachPoint::weapon;
-        resolve_bone(offsets, out.node, weapon, out, ignored);
-    }
+    // Eyes needs only the validated player fields. Discover a skeleton only
+    // when Weapon/Bone is requested; optional picker work must not stall Eyes.
     if ((segment.point == dolly::AttachPoint::weapon ||
          segment.point == dolly::AttachPoint::bone) &&
         !resolve_bone(offsets, out.node, segment, out, error)) {
@@ -669,6 +615,14 @@ inline bool sample(const Offsets& offsets, const Cache& cache, const dolly::Atta
                             : "The attach target was not resolved for this shot; re-play the shot.";
         return false;
     }
+    std::uintptr_t identity = 0, instance = 0;
+    std::uint32_t handle = 0;
+    if (!read_value(cache.pawn + 0x10, identity) || identity != cache.identity ||
+        !read_value(identity, instance) || instance != cache.pawn ||
+        !read_value(identity + 0x10, handle) || handle != cache.handle) {
+        error = "The attach target is no longer the same entity; retry the attach camera.";
+        return false;
+    }
     std::uintptr_t node = 0, owner = 0, name_pointer = 0;
     if (!read_value(cache.pawn + offsets.scene_node, node) || node != cache.node ||
         !read_value(node + offsets.owner, owner) || owner != cache.pawn ||
@@ -679,6 +633,16 @@ inline bool sample(const Offsets& offsets, const Cache& cache, const dolly::Atta
     if (segment.point == dolly::AttachPoint::weapon || segment.point == dolly::AttachPoint::bone) {
         if (!cache.bone_ready) {
             error = "The attach bone was not resolved for this shot; re-play the shot.";
+            return false;
+        }
+        std::uintptr_t binding = 0, object = 0, array = 0;
+        std::uint32_t count = 0;
+        if (!read_value(cache.model_handle_slot, binding) || binding != cache.model_handle ||
+            !read_value(binding, object) || object != cache.model_object ||
+            !read_value(cache.model_state + 0x80, array) || array != cache.bone_array ||
+            !read_value(cache.model_state + 0x90, count) || count != cache.bone_count ||
+            cache.bone_index >= count) {
+            error = "The model or bone pose buffer changed; retry the attach camera.";
             return false;
         }
         float transform[8]{};

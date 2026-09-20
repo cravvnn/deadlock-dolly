@@ -204,6 +204,19 @@ class NativeFlightControllerTests(unittest.TestCase):
         self.controller.stop()
         self.assertEqual(self.console.values, original_values)
 
+    def test_failed_attach_arm_clears_ownership_before_free_camera_retry(self):
+        self.controller.enter_native_flight()
+        with patch.object(self.bridge, "start_flight", side_effect=RuntimeError("Attach target unavailable")):
+            with self.assertRaisesRegex(RuntimeError, "Attach target unavailable"):
+                self.controller.enter_native_flight()
+        self.assertFalse(self.controller._native_active)
+        self.assertFalse(self.controller._native_manual)
+        self.assertIsNone(self.controller._paused_pose)
+        with patch.object(self.bridge, "hold", side_effect=AssertionError("No path to hold")):
+            self.controller.enter_native_flight(owner="panel")
+        self.assertTrue(self.controller._native_manual)
+        self.assertEqual(self.bridge.owner, "panel")
+
     def test_first_flight_rejects_unapplied_cursor_before_camera_arm(self):
         request = self.console.request
 

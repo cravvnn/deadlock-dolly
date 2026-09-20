@@ -39,6 +39,106 @@ template <typename T> void put(std::uintptr_t address, const T& value) {
     std::memcpy(reinterpret_cast<void*>(address), &value, sizeof(value));
 }
 
+void bone_string_bounds() {
+    Allocation text(0x1000);
+    char name[65];
+    std::memset(name, '!', sizeof(name));
+    std::memset(text.pointer, 'a', 64);
+    require(!attach_runtime::read_c_string(text.address(), name, sizeof(name)) && name[0] == 0,
+            "Unterminated bone name was accepted");
+    reinterpret_cast<char*>(text.pointer)[63] = 0;
+    require(attach_runtime::read_c_string(text.address(), name, sizeof(name)) &&
+                std::strlen(name) == 63 && name[64] == '!',
+            "Maximum bone name did not preserve output bounds");
+    reinterpret_cast<char*>(text.pointer)[4] = '\x01';
+    require(!attach_runtime::read_c_string(text.address(), name, sizeof(name)) && name[0] == 0,
+            "Invalid name prefix was silently accepted");
+    Allocation guarded(0x2000);
+    std::memcpy(reinterpret_cast<void*>(guarded.address() + 0x1000 - 5), "head", 5);
+    DWORD previous = 0;
+    require(VirtualProtect(reinterpret_cast<void*>(guarded.address() + 0x1000), 0x1000,
+                           PAGE_NOACCESS, &previous) != 0,
+            "Could not guard string test page");
+    require(attach_runtime::read_c_string(guarded.address() + 0x1000 - 5, name, sizeof(name)) &&
+                std::strcmp(name, "head") == 0,
+            "Valid bone name at a readable page boundary was rejected");
+}
+
+void owned_model_bones() {
+    Allocation node(0x1000), pawn(0x1000), identity(0x1000), binding(0x1000), model(0x1000),
+        path(0x1000), names(0x2000), vector(0x1000), poses(0x1000);
+    const char* model_name = "models/heroes_staging/yamato_v2/yamato.vmdl";
+    std::strcpy(static_cast<char*>(path.pointer), model_name);
+    put(node.address() + 0x150 + 0xa0, binding.address());
+    put(binding.address(), model.address());
+    put(model.address() + 8, path.address());
+    put(model.address() + 0x168, vector.address());
+    put(model.address() + 0x170, std::uint64_t(20));
+    put(model.address() + 0x178, std::uint64_t(20));
+    put(model.address() + 0x174, std::uint32_t(0x61d09e00));
+    put(model.address() + 0x17c, std::uint32_t(0x68a0b8e0));
+    for (unsigned i = 0; i < 20; ++i) {
+        const auto name = names.address() + i * 64;
+        std::strcpy(reinterpret_cast<char*>(name), i == 0    ? "root_motion"
+                                                   : i == 1  ? "head"
+                                                   : i == 19 ? "$cloth_m0p266"
+                                                             : "extra_bone");
+        put(vector.address() + i * 8, name);
+    }
+    put(node.address() + 0x150 + 0x80, poses.address());
+    put(node.address() + 0x150 + 0x90, std::uint32_t(20));
+    const float pose[8] = {0, 0, 0, 1, 0, 0, 0, 1};
+    std::memcpy(poses.pointer, pose, sizeof(pose));
+    attach_runtime::Offsets offsets{};
+    offsets.origin = 200;
+    attach_runtime::Cache cache{};
+    cache.name_offset = 0x150 + 0xa8;
+    cache.model = attach_runtime::model_token(model_name);
+    AttachSegment segment{};
+    segment.point = AttachPoint::bone;
+    segment.bone_hash = attach_runtime::model_token("head");
+    const char* error = nullptr;
+    require(attach_runtime::resolve_bone(offsets, node.address(), segment, cache, error) &&
+                cache.bone_index == 1 && cache.model_object == model.address(),
+            "Owned complete skeleton with cloth joints was rejected");
+    offsets.scene_node = 816;
+    offsets.owner = 48;
+    put(pawn.address() + offsets.scene_node, node.address());
+    put(node.address() + offsets.owner, pawn.address());
+    put(node.address() + cache.name_offset, path.address());
+    cache.ready = true;
+    cache.pawn = pawn.address();
+    cache.identity = identity.address();
+    cache.handle = 1234;
+    put(pawn.address() + 0x10, identity.address());
+    put(identity.address(), pawn.address());
+    put(identity.address() + 0x10, cache.handle);
+    cache.node = node.address();
+    cache.name_pointer = path.address();
+    AttachSample sample{};
+    require(attach_runtime::sample(offsets, cache, segment, sample, error),
+            "Owned bone sample was rejected");
+    put(identity.address() + 0x10, std::uint32_t(1235));
+    require(!attach_runtime::sample(offsets, cache, segment, sample, error),
+            "A recycled entity handle was accepted as the original target");
+    put(identity.address() + 0x10, cache.handle);
+    put(node.address() + 0x150 + 0x80, poses.address() + 0x100);
+    require(!attach_runtime::sample(offsets, cache, segment, sample, error),
+            "A replaced pose buffer was sampled through a stale cache");
+    put(node.address() + 0x150 + 0x80, poses.address());
+
+    std::strcpy(static_cast<char*>(path.pointer), "models/other.vmdl");
+    require(!attach_runtime::resolve_bone(offsets, node.address(), segment, cache, error),
+            "A different model's skeleton was accepted");
+    std::strcpy(static_cast<char*>(path.pointer), model_name);
+    put(node.address() + 0x150 + 0x90, std::uint32_t(19));
+    require(!attach_runtime::resolve_bone(offsets, node.address(), segment, cache, error),
+            "An undersized pose buffer was accepted");
+    for (const char* invalid :
+         {"$cloth_m", "$cloth_mp1", "$cloth_m0p", "$cloth_m0p1/path", "$other"})
+        require(!attach_runtime::valid_bone_name(invalid), "Malformed generated joint accepted");
+}
+
 void bone_vector_selection() {
     Allocation object(0x1000), names(0x4000), vectors(0x1000);
     const char* markers[] = {"pelvis", "spine_0", "neck_0",      "head",
@@ -1100,9 +1200,37 @@ void editor_framing_checks() {
     dolly::gAcknowledged = dolly::gLastEvent;
 }
 
+void independent_heartbeat() {
+    alignas(8) unsigned char memory[64]{};
+    auto* beat = reinterpret_cast<volatile LONG64*>(memory + 32);
+    gWorkerError = 0;
+    gHeartbeatTime = now_seconds() - 3;
+    {
+        HeartbeatMonitor monitor(memory, GetCurrentProcess());
+        InterlockedExchange64(beat, 1);
+        const double deadline = now_seconds() + 1;
+        while (now_seconds() - gHeartbeatTime.load() > 2 && now_seconds() < deadline)
+            Sleep(5);
+        require(now_seconds() - gHeartbeatTime.load() < 2,
+                "Heartbeat depended on the busy discovery worker");
+        // A still-open process with an unchanged beat must not renew its lease.
+        Sleep(50);
+        const double observed = gHeartbeatTime.load();
+        Sleep(75);
+        require(gHeartbeatTime.load() == observed, "An unchanged heartbeat renewed its lease");
+    }
+    const double stopped = gHeartbeatTime.load();
+    InterlockedExchange64(beat, 2);
+    Sleep(50);
+    require(gHeartbeatTime.load() == stopped, "Heartbeat monitor outlived its scope");
+}
+
 void run() {
+    bone_string_bounds();
+    owned_model_bones();
     camera_cache_decoder();
     atomic_exports();
+    independent_heartbeat();
     replay_identity();
     Fixture f;
     auto status = f.frame();

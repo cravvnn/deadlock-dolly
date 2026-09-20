@@ -419,6 +419,10 @@ def dispatch(app, event, bridge):
     elif action == "game_ui":
         _native_operation(app, "Switching replay UI", lambda: app.controller.toggle_game_ui(enabled=bool(event["value"])), bridge)
     elif action == "flight":
+        # A failed target lookup must not remain cached across an explicit retry
+        # (for example after returning from the game UI or seeking).
+        app._native_attach_cache = None
+        configure(app)
         _native_operation(app, "Entering free camera", app.controller.enter_native_flight, bridge)
     elif action == "panel":
         # Normal F8 is handled locally. From the game's own UI, first return
@@ -649,6 +653,11 @@ def dispatch(app, event, bridge):
         app.status_text.set("Attach preview on. Fly with WASD/mouse to edit the offsets."
                             if app.preview_attach else "Attach preview off.")
         configure(app)
+        if not app.preview_attach:
+            # Clearing preview alone cannot clear the native command's latched
+            # fault. Re-arm a free view, keeping the editor panel available.
+            _native_operation(app, "Detaching camera",
+                              lambda: app.controller.enter_native_flight(owner="panel"), bridge)
     elif action == "attach_snap":
         app._attach_snap_request = int(getattr(app, "_attach_snap_request", 0)) + 1
         app._attach_snap_pending = True

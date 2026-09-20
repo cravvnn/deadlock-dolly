@@ -32,6 +32,19 @@ class Memory(bytearray):
 
 
 class NativeBridgeTests(unittest.TestCase):
+    def test_diagnostics_preserve_attach_selection_without_aliasing(self):
+        fields = {"scene_node": 816, "owner": 48, "player_origin": 200, "player_angles": 212,
+                  "eye_offset": 2184, "eye_angles": 4536, "scene_child": 64, "scene_sibling": 72}
+        self.bridge.configure_editor_attach(fields, preview=False)
+        fields["scene_node"] = 1
+        result = self.bridge.diagnostics()
+        self.assertEqual(result["attach_config"]["offsets"]["scene_node"], 816)
+        self.assertFalse(result["attach_config"]["preview"])
+        result["attach_config"]["offsets"]["scene_node"] = 2
+        self.assertEqual(self.bridge.diagnostics()["attach_config"]["offsets"]["scene_node"], 816)
+        self.assertIn("attach_roster", result)
+        self.assertIn("attach_bones", result)
+
     def setUp(self):
         self.memory = Memory(nb.MAPPING_BYTES)
         self.now = 0.0

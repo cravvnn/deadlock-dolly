@@ -14,6 +14,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 #include "MinHook.h"
 #include "dolly_path.hpp"
@@ -91,6 +92,37 @@ static double now_seconds() noexcept {
     QueryPerformanceCounter(&n);
     return gFrequency.QuadPart ? double(n.QuadPart) / double(gFrequency.QuadPart) : 0;
 }
+// Keep editor liveness independent of bounded-but-expensive model discovery.
+// This thread only observes our mapping/process; it never touches game memory.
+class HeartbeatMonitor {
+    std::atomic<bool> stopped_{false};
+    std::thread thread_;
+
+public:
+    HeartbeatMonitor(unsigned char* memory, HANDLE editor)
+        : thread_([this, memory, editor] {
+              std::uint64_t previous = 0;
+              while (!stopped_.load()) {
+                  if (WaitForSingleObject(editor, 0) != WAIT_TIMEOUT) {
+                      gWorkerError = 30;
+                      break;
+                  }
+                  const auto beat = static_cast<std::uint64_t>(InterlockedCompareExchange64(
+                      reinterpret_cast<volatile LONG64*>(memory + 32), 0, 0));
+                  if (beat != previous) {
+                      previous = beat;
+                      gHeartbeatTime = now_seconds();
+                  }
+                  Sleep(25);
+              }
+          }) {}
+    ~HeartbeatMonitor() {
+        stopped_ = true;
+        thread_.join();
+    }
+    HeartbeatMonitor(const HeartbeatMonitor&) = delete;
+    HeartbeatMonitor& operator=(const HeartbeatMonitor&) = delete;
+};
 static std::wstring module_path(HMODULE module) {
     std::vector<wchar_t> p(32768);
     DWORD n = GetModuleFileNameW(module, p.data(), DWORD(p.size()));
@@ -1027,6 +1059,7 @@ static DWORD WINAPI worker(void*) {
             return 0;
         }
         gHeartbeatTime = now_seconds();
+        HeartbeatMonitor heartbeat_monitor(gMemory, gEditor);
         if (MH_EnableHook(reinterpret_cast<void*>(gClient + gCompat.setup)) != MH_OK) {
             startup_status(State::Fault, 24, "Could not enable the native view hook.");
             return 0;
@@ -1040,7 +1073,6 @@ static DWORD WINAPI worker(void*) {
         // the editor only releases ownership, avoiding code-unload races in a view.
         std::shared_ptr<const NativeShot> shot;
         std::uint32_t accepted = 0;
-        std::uint64_t heartbeat = 0;
         bool manual = false;
         std::vector<unsigned char> payload;
         HMODULE diagnostic_renderer = nullptr;
@@ -1054,12 +1086,6 @@ static DWORD WINAPI worker(void*) {
                 media_worker_tick(nullptr, false);
                 video::shutdown();
                 break;
-            }
-            auto hb = static_cast<std::uint64_t>(InterlockedCompareExchange64(
-                reinterpret_cast<volatile LONG64*>(gMemory + 32), 0, 0));
-            if (hb != heartbeat) {
-                heartbeat = hb;
-                gHeartbeatTime = now_seconds();
             }
             editor_worker_tick(gMemory, now_seconds() - gHeartbeatTime.load() < 2.0);
             visualization_worker_tick(mapping.c_str(), now_seconds() - gHeartbeatTime.load() < 2.0);

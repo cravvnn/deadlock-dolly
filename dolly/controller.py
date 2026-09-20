@@ -1832,8 +1832,16 @@ class Controller:
             if isinstance(pose, dict):
                 pose = tuple(pose[name] for name in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"))
             options = {"owner": owner} if owner != "flight" else {}
-            armed = bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled,
-                                        playback=None, **options)
+            try:
+                armed = bridge.start_flight(self._demo.name, pose=pose, cancelled=cancelled,
+                                            playback=None, **options)
+            except Exception:
+                # start_flight releases its command on failure. Do not leave
+                # stale ownership that would make the next retry hold a path
+                # the bridge no longer has (notably after attach faults).
+                self._native_active = self._native_manual = False
+                self._invalidate_paused_camera()
+                raise
             self._native_active = True
             self._native_manual = True
             playback = not bool(armed.get("paused"))

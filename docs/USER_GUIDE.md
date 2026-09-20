@@ -383,10 +383,27 @@ identified body draws during preview and playback. Export follows the saved
 sources and offsets, including edits made in preview.
 
 Attachment uses replay character models; it does not create first-person arms.
-Weapon and named-bone points are experimental. Reduced rigs and incomplete
-name lists are refused; use **Eyes** when a complete render skeleton cannot
-be identified. Some earlier preview checks matched a wrong bone index, so
-broader hero support is still under review.
+For a head camera, select **Point: Bone**, choose **head**, then **Attach here**.
+For a hand camera, choose **hand_R** or **hand_L**. Bone names belong to the
+selected hero; use the picker rather than copying a name from another hero.
+The in-game list is bounded; desktop also accepts a typed name.
+
+Bone position follows the animated joint. Camera orientation follows the
+player's aim, with your rotation offsets applied; it does not use the bone's
+own twisting axes. Move the camera back with offsets if the hero's body
+obstructs the view. **Hide this hero** does not yet hide every rendering pass.
+
+Head and right-hand selection, replay playback and detach were checked on
+Holliday, Abrams, Rem, Yamato, Mo and Krill, Drifter, Lash, Graves, Wraith,
+Calico, Vindicta and Warden. Motion varies with the selected replay interval;
+this is not a guarantee for every animation, cosmetic, bone or game update.
+Other heroes and Weapon remain experimental. Unsupported or incomplete
+skeletons are refused; use **Eyes** as the fallback.
+
+If a target disappears or its model changes, Dolly stops the attachment.
+Use **Detach** to restore free-camera control, select a present hero, then
+retry **Attach here**. Saved camera keys are preserved when detaching.
+
 Set **Blend into this view** on desktop or **Blend in** in-game to ease between
 camera sources. Start with **0.5 seconds**: the blend ends at the selected
 view's time and cannot begin before the previous view. **0** keeps a cut.
