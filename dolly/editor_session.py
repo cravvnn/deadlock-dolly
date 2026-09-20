@@ -298,7 +298,12 @@ def dispatch(app, event, bridge):
     if app.busy:
         return False
     action = event["action"]
-    if action in ("capture", "replace"):
+    if action == "reset_camera_path":
+        if app.playing:
+            raise ValueError("Stop path playback before resetting the camera path.")
+        # The native panel confirms replacement before sending this snapshot.
+        app._capture_view("start", native_snapshot=event, replacement_confirmed=True)
+    elif action in ("capture", "replace"):
         operation = "replace" if action == "replace" else ("append" if app.project.keyframes else "start")
         app._capture_view(operation, native_snapshot=event)
     elif action == "set_framing":

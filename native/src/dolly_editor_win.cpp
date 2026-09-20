@@ -592,10 +592,14 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::StepReplayTicks))
+        std::uint32_t(action) > std::uint32_t(EditorAction::ResetCameraPath))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
+        return false;
+    if (action == EditorAction::ResetCameraPath &&
+        (!state.ready || state.playing || state.busy || !state.camera_count ||
+         state.owner != EditorOwner::Panel || value != 0))
         return false;
     if (action >= EditorAction::SetDofEnabled && action <= EditorAction::SetDofTilt &&
         (!state.dof_available || !state.ready || !state.paused || state.playing || state.busy ||

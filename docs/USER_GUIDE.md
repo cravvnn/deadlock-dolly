@@ -38,6 +38,15 @@ installation and current limits. Windows/Deadlock validation is recorded in
 The launched process remains open. Close it before launching another session.
 A timeout or failed unlocker confirmation does not automatically load the demo.
 
+Dolly starts with its reviewed editing `gameinfo.gi`, so competitive presets do
+not carry their framing and rendering overrides into the editing session. Your
+original file is backed up byte-for-byte and restored on disk after unlocker
+initialization, while the game keeps its loaded settings. Exit and failed-launch
+recovery use the same backup. Newer external changes are left untouched for manual
+recovery. The editing configuration is checked against the installed game build;
+if it no longer matches after a game update, update Dolly before launching.
+This does not reset separate autoexec files or saved video settings.
+
 **Settings → Troubleshooting & recovery → Startup controls…** retains manual Launch hideout, Connect, Initialize
 unlocker, Load replay and Check camera support. Use the manual initialization
 only when the hideout has finished loading. Probe does not rerun the unlocker
@@ -202,6 +211,12 @@ Dolly chooses the nearest recorded tick in the requested direction and reports
 the actual movement. Seek here follows the shot camera; tick steps hold your
 current view. Detach an active player-camera preview before fixed-camera tick
 stepping. Desktop replay library and launch controls remain under Replay.
+
+To replace the current camera path without leaving the game, choose **Reset
+camera path** in the Camera card, then **Reset here**. Dolly captures the current
+view as the first camera and updates the shot's replay start tick. Lens and
+depth-of-field tracks are kept. **Cancel** keeps the existing path. Stop shot
+playback before resetting.
 
 ## Make a first shot
 

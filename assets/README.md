@@ -17,3 +17,13 @@ The editor needs no Pillow dependency; icons are ready to use.
 
 The artwork is separate from the source-code license. No ownership or
 additional redistribution rights are asserted here.
+
+## Editing game configuration
+
+`editing/gameinfo.gi` is Andrew's supplied editing baseline, byte-identical to
+the installed configuration used for the September 20, 2026 review. It is game
+configuration data, not Dolly source code; the Dolly license does not confer
+rights to Valve content. `editing/profile.json` pins its exact bytes and the
+three installed module hashes. Refresh the configuration and pins together
+after checking a game update. Do not copy the native manifest's entire accepted
+hash list: that list does not establish compatibility with this configuration.

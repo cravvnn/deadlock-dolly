@@ -13,6 +13,49 @@ from test_gui_capture import CaptureHarness, Var
 
 
 class Stage1GuiTests(unittest.TestCase):
+    def test_confirmed_native_reset_replaces_path_without_desktop_dialog(self):
+        from copy import deepcopy
+        from dolly.editor_session import dispatch
+        from dolly.path import CvarTrack, TrackKey
+        h = CaptureHarness()
+        app = h.app
+        app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6),
+                                 Keyframe(3, 7, 8, 9, 10, 11, 12)]
+        app.project.tracks = [CvarTrack('r_depth_of_field', [TrackKey(0, 1)], 'step')]
+        old_tracks = deepcopy(app.project.tracks)
+        event = {'action': 'reset_camera_path', 'value': 0,
+                 'pose': [10, 20, 30, 4, 5, 6, 1.5], 'tick': 512, 'paused': True}
+        key = Keyframe(0, 10, 20, 30, 4, 5, 6, aspect_ratio=1.5)
+        app.controller.capture_native_snapshot = Mock(return_value=(key, 512))
+        with patch('dolly.gui.messagebox.askyesno') as confirm:
+            dispatch(app, event, Mock())
+            h.finish()
+            confirm.assert_not_called()
+        self.assertEqual(app.project.keyframes, [key])
+        self.assertEqual(app.project.start_tick, 512)
+        self.assertEqual(app.project.tracks, old_tracks)
+        self.assertEqual(h.errors, [])
+
+    def test_failed_native_reset_preserves_existing_path(self):
+        from dolly.editor_session import dispatch
+        h = CaptureHarness()
+        app = h.app
+        app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6)]
+        original = app.project
+        app.controller.capture_native_snapshot = Mock(side_effect=ValueError('Capture unavailable'))
+        dispatch(app, {'action': 'reset_camera_path', 'value': 0}, Mock())
+        h.finish()
+        self.assertIs(app.project, original)
+        self.assertEqual(len(h.errors), 1)
+
+    def test_native_reset_is_blocked_during_path_playback(self):
+        from dolly.editor_session import dispatch
+        h = CaptureHarness()
+        h.app.playing = True
+        with self.assertRaisesRegex(ValueError, 'Stop path playback'):
+            dispatch(h.app, {'action': 'reset_camera_path'}, Mock())
+        self.assertIsNone(h.pending)
+
     def harness(self):
         h = CaptureHarness()
         app = h.app

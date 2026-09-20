@@ -3,8 +3,9 @@
 ``game_path`` may be the Deadlock installation root, its ``game`` or ``citadel``
 directory, or ``game/bin/win64/deadlock.exe`` (legacy ``citadel.exe`` is also
 supported). Steam launch settings are not edited.
-The current gameinfo is backed up, temporarily mounted, and restored byte-for-byte
-after unlocker initialization or game exit; recovery also runs before next launch.
+The current gameinfo is backed up and temporarily replaced with a reviewed editing
+configuration and plugin mount. Original bytes are restored after unlocker
+initialization or game exit; recovery also runs before the next launch.
 """
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ from .compatibility import (
 PACKAGE_ROOT = application_root(Path(__file__).resolve().parent.parent)
 UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_party" / "cvar_unlocker"
 NATIVE_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "native"
+EDITING_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "assets" / "editing"
 UNLOCKER_SHA256 = "74047120e79245d479e61142a878f3311c8384a1f5f33e3f1cb8f3e87749e42a"
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.
@@ -178,6 +180,35 @@ def _named(entries: list[_Entry], name: str) -> list[_Entry]:
 
 def _quote(value: str) -> str:
     return '"' + value.replace("\\", "/").replace('"', '\\"') + '"'
+
+
+def _editing_gameinfo(paths: GamePaths) -> str:
+    """Load the editing baseline only for its reviewed game-module versions.
+
+    Competitive gameinfo files can alter much more than ConVars. Never guess
+    which entries are stock, or mount an old full gameinfo after a game update.
+    This check is separate from, and does not authorize, native injection.
+    """
+    from .compatibility import MODULE_RELATIVES, hash_file
+    try:
+        profile = json.loads((EDITING_ROOT / "profile.json").read_text(encoding="utf-8"))
+        data = (EDITING_ROOT / "gameinfo.gi").read_bytes()
+        if (profile.get("format") != 1
+                or set(profile.get("modules", {})) != set(MODULE_RELATIVES)
+                or hashlib.sha256(data).hexdigest() != profile.get("gameinfo_sha256")):
+            raise ValueError("Editing configuration failed its integrity check")
+        for relative in MODULE_RELATIVES:
+            if hash_file(paths.game_dir / relative) != profile["modules"][relative]:
+                raise LaunchError("Dolly's editing configuration has not been reviewed for this game build. "
+                                  "Update Dolly before launching. Your gameinfo.gi was not changed.")
+        text = data.decode("utf-8")
+        roots = _named(_parse(text), "GameInfo")
+        if len(roots) != 1 or roots[0].children is None:
+            raise ValueError("Invalid editing GameInfo block")
+        return text
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        raise LaunchError(f"Could not verify Dolly's editing configuration: {exc}. "
+                          "Reinstall or update Dolly. Your gameinfo.gi was not changed.") from exc
 
 
 def make_gameinfo(original: str, overlay_name: str) -> str:
@@ -803,12 +834,13 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
     bridge = None
     try:
         original_data = paths.gameinfo.read_bytes()
-        original = original_data.decode("utf-8")
+        original_data.decode("utf-8")  # Validate before preparing any replacement.
     except (OSError, UnicodeError) as exc:
         raise LaunchError("Could not read the installed UTF-8 gameinfo.gi; no game files were changed.") from exc
     ident = time.strftime("%Y%m%d_%H%M%S", time.gmtime()) + "_" + uuid.uuid4().hex[:10]
     overlay = paths.game_dir / ("citadel_dolly_" + ident)
-    patched_data = make_gameinfo(original, overlay.name).encode("utf-8")
+    editing = _editing_gameinfo(paths)
+    patched_data = make_gameinfo(editing, overlay.name).encode("utf-8")
     session_dir = PACKAGE_ROOT / "logs" / ident
     log_path = session_dir / "launch.log"
     try:
@@ -830,6 +862,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 encoding="ascii", newline="\n")
         command = build_command(paths, overlay, port, demo, protocol, launch_options)
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2-dolly-shutdown-fix", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
+        metadata["editing_gameinfo_sha256"] = hashlib.sha256(editing.encode("utf-8")).hexdigest()
         if native:
             metadata["native_camera"] = {"abi": NATIVE_ABI, "game_sha256": NATIVE_GAME_SHA256,
                                          "dll_sha256": hashlib.sha256(native_dll.read_bytes()).hexdigest()}
@@ -863,6 +896,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             bridge.bind_game(process.pid)
         try:
             session.log(f"Created development process PID {session.pid}; -dev and -insecure are mandatory.")
+            session.log("Loaded Dolly's verified editing gameinfo; the user's exact original is backed up for restoration.")
             session.log("Replay loading deferred until the controller confirms cvar_unhide in the pre-lobby/hideout.")
             metadata["pid"] = session.pid
             _save_record(session_dir, metadata)

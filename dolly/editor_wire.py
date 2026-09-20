@@ -34,7 +34,8 @@ EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "s
                  "set_attach_target", "set_attach_point", "set_attach_offsets",
                  "set_attach_smoothing", "set_attach_hide", "attach_cycle_target",
                  "attach_cycle_point", "attach_reset",
-                 "attach_preview", "attach_snap", "set_attach_bone", "set_source_blend", "seek_shot", "step_replay_ticks")
+                 "attach_preview", "attach_snap", "set_attach_bone", "set_source_blend", "seek_shot", "step_replay_ticks",
+                 "reset_camera_path")
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")

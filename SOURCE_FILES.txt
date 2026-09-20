@@ -10,6 +10,8 @@ Recover_Game_Config.bat
 SOURCE_FILES.txt
 Start_Here.txt
 assets/README.md
+assets/editing/gameinfo.gi
+assets/editing/profile.json
 assets/dolly.ico
 assets/dolly.png
 assets/logo-original.png

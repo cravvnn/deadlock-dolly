@@ -7,3 +7,5 @@
 *.png binary
 *.ico binary
 *.dll binary
+# Preserve the supplied configuration bytes, including original whitespace.
+assets/editing/gameinfo.gi -text -whitespace

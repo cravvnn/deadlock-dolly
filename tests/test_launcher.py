@@ -44,7 +44,35 @@ def fake_game(root: Path, executable_name: str = "citadel.exe") -> launcher.Game
     return launcher.validate_game(root)
 
 
+def editing_fixture(paths, folder):
+    from dolly.compatibility import MODULE_RELATIVES
+    root = folder / "editing-resources"
+    root.mkdir(exist_ok=True)
+    (root / "gameinfo.gi").write_bytes(GAMEINFO.encode("utf-8"))
+    modules = {}
+    for relative in MODULE_RELATIVES:
+        path = paths.game_dir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_bytes(("editing test " + relative).encode("ascii"))
+        modules[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (root / "profile.json").write_text(json.dumps({"format": 1,
+        "gameinfo_sha256": hashlib.sha256(GAMEINFO.encode("utf-8")).hexdigest(),
+        "modules": modules}), encoding="utf-8")
+    return root
+
+
 class GameInfoTests(unittest.TestCase):
+    def test_bundled_editing_configuration_integrity_and_mount_shape(self):
+        root = Path(__file__).resolve().parents[1]
+        profile = json.loads((root / 'assets/editing/profile.json').read_text(encoding='utf-8'))
+        data = (root / 'assets/editing/gameinfo.gi').read_bytes()
+        self.assertEqual(hashlib.sha256(data).hexdigest(), profile['gameinfo_sha256'])
+        self.assertEqual(profile['format'], 1)
+        result = launcher.make_gameinfo(data.decode('utf-8'), 'citadel_dolly_test')
+        self.assertIn('citadel_dolly_test/cvar_unlocker', result)
+        self.assertNotIn('Game                citadel/cvar_unlocker', result)
+
     def test_changes_only_real_searchpath_and_preserves_comments_and_conditions(self):
         result = launcher.make_gameinfo(GAMEINFO, "citadel_dolly_test")
         self.assertIn('Hidden { SearchPaths { Game "untouched" } }', result)
@@ -102,6 +130,40 @@ class LauncherTests(unittest.TestCase):
         self.folder = Path(self.temp.name)
         self.paths = fake_game(self.folder / "Steam Library with spaces/Deadlock")
         self.package = self.folder / "Dolly with spaces"
+        self.editing = editing_fixture(self.paths, self.folder)
+        editing_patch = patch.object(launcher, "EDITING_ROOT", self.editing)
+        editing_patch.start()
+        self.addCleanup(editing_patch.stop)
+
+    def test_competitive_settings_are_replaced_then_restored_exactly(self):
+        original = GAMEINFO.replace('game "citadel"',
+            'game "citadel" ConVars { r_aspectratio "2.5" } RenderSystem { setting "competitive" }')
+        original = original.replace("\n", "\r\n").encode("utf-8")
+        self.paths.gameinfo.write_bytes(original)
+        session = self._launched_session()
+        mounted = self.paths.gameinfo.read_text(encoding="utf-8")
+        self.assertNotIn('r_aspectratio', mounted)
+        self.assertNotIn('competitive', mounted)
+        self.assertIn(session.overlay_dir.name, mounted)
+        self.assertEqual((session.session_dir / 'original.gameinfo.gi').read_bytes(), original)
+        session.restore_gameinfo()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), original)
+
+    def test_editing_profile_mismatch_refuses_before_mount(self):
+        before = self.paths.gameinfo.read_bytes()
+        (self.paths.game_dir / 'citadel/bin/win64/client.dll').write_bytes(b'game update')
+        with self.assertRaisesRegex(launcher.LaunchError, 'not been reviewed'):
+            self._launched_session()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+        self.assertFalse(list(self.paths.game_dir.glob('citadel_dolly_*')))
+
+    def test_damaged_editing_template_refuses_before_mount(self):
+        before = self.paths.gameinfo.read_bytes()
+        (self.editing / 'gameinfo.gi').write_bytes(b'corrupt')
+        with self.assertRaisesRegex(launcher.LaunchError, 'integrity'):
+            self._launched_session()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+        self.assertFalse(list(self.paths.game_dir.glob('citadel_dolly_*')))
 
     def test_accepts_common_user_selected_install_paths(self):
         for path in (self.paths.root, self.paths.game_dir, self.paths.citadel_dir, self.paths.executable):
@@ -480,6 +542,7 @@ class LauncherTests(unittest.TestCase):
         dll.write_bytes(binary)
         (native_root / "build_info.json").write_text(json.dumps({
             "abi": 3, "sha256": hashlib.sha256(binary).hexdigest()}))
+        editing_fixture(self.paths, self.folder)
         return native_root, pins, dll
 
     def test_native_game_hash_mismatch_is_refused_before_any_recovery_or_mount(self):

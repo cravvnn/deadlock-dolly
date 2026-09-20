@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from dolly import launcher, session_cleanup as cleanup
 from dolly.controller import Controller
-from test_launcher import fake_game, GAMEINFO
+from test_launcher import fake_game, GAMEINFO, editing_fixture
 
 
 class CleanupTests(unittest.TestCase):
@@ -21,6 +21,9 @@ class CleanupTests(unittest.TestCase):
         self.folder = Path(self.temp.name)
         self.paths = fake_game(self.folder / "Deadlock")
         self.package = self.folder / "Dolly"
+        editing_patch = patch.object(launcher, "EDITING_ROOT", editing_fixture(self.paths, self.folder))
+        editing_patch.start()
+        self.addCleanup(editing_patch.stop)
         process = MagicMock()
         process.pid = 9876
         process._handle = 1234

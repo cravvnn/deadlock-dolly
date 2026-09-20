@@ -918,8 +918,28 @@ void draw_panel(const EditorSnapshot& state) {
                         ImGui::EndCombo();
                     }
                     ImGui::Separator();
-                    action_button(state.camera_count ? "Capture camera here" : "Start path here",
+                    action_button("Capture camera here",
                                   EditorAction::Capture, ImGui::GetContentRegionAvail().x, 0, true);
+                    ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
+                                         !state.camera_count);
+                    if (ImGui::Button("Reset camera path", ImVec2(ImGui::GetContentRegionAvail().x, 0)))
+                        ImGui::OpenPopup("Reset camera path?");
+                    ImGui::EndDisabled();
+                    if (ImGui::BeginPopupModal("Reset camera path?", nullptr,
+                                              ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ImGui::TextUnformatted("Replace all camera views with the current view?");
+                        ImGui::TextUnformatted("Lens and depth-of-field tracks will be kept.");
+                        ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
+                                             !state.camera_count);
+                        if (ImGui::Button("Reset here") &&
+                            editor_enqueue(EditorAction::ResetCameraPath))
+                            ImGui::CloseCurrentPopup();
+                        ImGui::EndDisabled();
+                        ImGui::SameLine();
+                        if (ImGui::Button("Cancel"))
+                            ImGui::CloseCurrentPopup();
+                        ImGui::EndPopup();
+                    }
                     ImGui::BeginDisabled(!state.camera_count);
                     char selected[64]{};
                     if (state.camera_count)

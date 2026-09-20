@@ -100,8 +100,11 @@ enum class EditorAction : std::uint32_t {
     SetAttachBone,
     SetSourceBlend,
     SeekShot,
-    StepReplayTicks
+    StepReplayTicks,
+    ResetCameraPath
 };
+static_assert(static_cast<std::uint32_t>(EditorAction::ResetCameraPath) == 77,
+              "Stable camera reset action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ReShade) == 31, "Stable editor action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::StopVideo) == 33, "Stable media action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoSpeed) == 38,

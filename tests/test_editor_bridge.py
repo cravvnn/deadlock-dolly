@@ -311,6 +311,11 @@ class EditorBridgeTests(unittest.TestCase):
         self.assertEqual([(e["action"], e["value"]) for e in self.bridge.editor_status()["events"]],
                          [("step_replay_ticks", -25), ("step_replay_ticks", 1)])
 
+    def test_camera_reset_action_has_its_own_appended_id(self):
+        self.publish([(1, 77, 0)])
+        self.assertEqual([e["action"] for e in self.bridge.editor_status()["events"]],
+                         ["reset_camera_path"])
+
     def test_shot_seek_action_round_trips_without_reassigning_previous_ids(self):
         self.publish([(1, 74, .5), (2, 75, 1.375)])
         self.assertEqual([(event["action"], event["value"]) for event in self.bridge.editor_status()["events"]],

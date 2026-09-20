@@ -3225,7 +3225,7 @@ class DollyApp:
         self.status_text.set(f"Shot retimed to this replay's {float(candidate.tick_rate):.3g} ticks/second. "
                              "Camera and effect times now match the replay.")
 
-    def _capture_view(self, action, native_snapshot=None):
+    def _capture_view(self, action, native_snapshot=None, *, replacement_confirmed=False):
         if action == "append" and not self.project.keyframes:
             action = "start"
         def operation():
@@ -3270,7 +3270,7 @@ class DollyApp:
                 if self.project is not original:
                     raise ValueError("The shot changed during capture. Capture again to add this view to the current shot.")
                 if action == "start":
-                    if candidate.keyframes and not messagebox.askyesno(
+                    if candidate.keyframes and not replacement_confirmed and not messagebox.askyesno(
                             "Start a new camera path?",
                             "Replace the current camera path with this captured view? Existing lens and depth-of-field tracks will be kept.",
                             parent=self.root):

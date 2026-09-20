@@ -1560,6 +1560,12 @@ void run() {
         require(dolly::gEvents[step_serial % kEditorEventCount].action == 76 &&
                     dolly::gEvents[step_serial % kEditorEventCount].value == -25,
                 "Tick step action differs from Python");
+        const auto reset_serial = dolly::gLastEvent;
+        require(editor_enqueue(EditorAction::ResetCameraPath), "Camera reset could not queue");
+        require(dolly::gEvents[reset_serial % kEditorEventCount].action == 77,
+                "Camera reset action differs from Python");
+        require(!editor_enqueue(EditorAction::ResetCameraPath, 1),
+                "Invalid camera reset value entered event queue");
         require(!editor_enqueue(EditorAction::StepReplayTicks, 0) &&
                     !editor_enqueue(EditorAction::StepReplayTicks, 3) &&
                     !editor_enqueue(EditorAction::StepReplayTicks, 1.5),
@@ -1567,6 +1573,8 @@ void run() {
         editor_set_owner(EditorOwner::Flight);
         require(!editor_enqueue(EditorAction::StepReplayTicks, 1),
                 "Tick step bypassed panel ownership");
+        require(!editor_enqueue(EditorAction::ResetCameraPath),
+                "Camera reset bypassed panel ownership");
         require(!editor_enqueue(EditorAction::SeekShot, .75), "Shot seek bypassed panel ownership");
         editor_set_owner(EditorOwner::Panel);
         for (auto flags : {1u, 2u}) {
@@ -1578,6 +1586,8 @@ void run() {
                     "Busy/playing shot accepted a seek");
             require(!editor_enqueue(EditorAction::StepReplayTicks, 1),
                     "Busy/playing shot accepted a tick step");
+            require(!editor_enqueue(EditorAction::ResetCameraPath),
+                    "Busy/playing shot accepted a camera reset");
         }
         saved_config.sequence = config.sequence + 2;
         config = saved_config;

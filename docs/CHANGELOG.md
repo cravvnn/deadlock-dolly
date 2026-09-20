@@ -1,5 +1,22 @@
 # Changes
 
+## 0.5.28 alpha — Editing configuration and in-game camera reset
+
+- Launch with Dolly's reviewed editing gameinfo so competitive framing and
+  rendering overrides do not carry into replay editing. Back up the user's
+  original bytes and restore them after unlocker initialization, with existing
+  exit/crash recovery and external-change protection retained.
+- Verify the editing configuration against the installed game build. After a
+  game update, Dolly needs a matching reviewed editing configuration before
+  launching; separate autoexec and saved video settings remain unchanged.
+- Add **Reset camera path** to the in-game Camera card. Confirm **Reset here**
+  to replace the camera views with the current view and replay start tick while
+  keeping lens and depth-of-field tracks. The confirmation stays inside the game.
+- Verified one local replay session with the supplied competitive configuration:
+  aspect and model-detail overrides reset, the user-triggered native reset event
+  preserved the current pose and DOF track, and exact configuration/preferences
+  restoration and temporary deployment cleanup passed.
+
 ## 0.5.26 alpha — More complete player-layer exports
 
 - Player-layer capture matches character parts to the data actually submitted
