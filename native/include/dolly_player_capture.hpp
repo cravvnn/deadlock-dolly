@@ -16,6 +16,9 @@ bool layout_hook_requested() noexcept;
 bool install_layout_hook(ID3D11Device*) noexcept;
 bool draw_hooks_requested() noexcept;
 void draw_hooks_result(bool installed) noexcept;
+// Invalidate submitted ownership when an unsupported writable Map succeeds.
+void mapped_upload(ID3D11DeviceContext*, ID3D11Resource*, unsigned sub, unsigned map_type,
+                   void* data) noexcept;
 // Body hiding (attach POV): while a handle is set, player-owned draws whose
 // owner matches are skipped. `allow_draw` is consulted before the original
 // draw (false = skip); `producer_hook_requested`/`install_producer_hook` let

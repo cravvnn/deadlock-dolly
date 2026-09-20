@@ -184,8 +184,54 @@ struct Surface {
                 "Create depth view failed");
     }
 };
+void check_upload_forwarding(Test& t) {
+    Com<ID3D11Buffer> dynamic, staging, destination;
+    D3D11_BUFFER_DESC desc{};
+    desc.ByteWidth = 64;
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    require(SUCCEEDED(t.device.p->CreateBuffer(&desc, nullptr, &dynamic.p)), "Dynamic buffer");
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.CPUAccessFlags = 0;
+    require(SUCCEEDED(t.device.p->CreateBuffer(&desc, nullptr, &destination.p)), "Default buffer");
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    require(SUCCEEDED(t.device.p->CreateBuffer(&desc, nullptr, &staging.p)), "Staging buffer");
+    const auto verify = [&](ID3D11Buffer* source, unsigned char expected) {
+        t.context.p->CopyResource(staging.p, source);
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        require(SUCCEEDED(t.context.p->Map(staging.p, 0, D3D11_MAP_READ, 0, &mapped)),
+                "Read upload");
+        bool same = true;
+        for (unsigned i = 0; i < 64; ++i)
+            same &= static_cast<const unsigned char*>(mapped.pData)[i] == expected;
+        t.context.p->Unmap(staging.p, 0);
+        require(same, "Upload hooks changed data or lost the original call");
+    };
+    for (auto* context : {t.context.p, t.deferred.p}) {
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        require(SUCCEEDED(context->Map(dynamic.p, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)),
+                "Map upload");
+        const unsigned char value = context == t.context.p ? 0x37 : 0xa5;
+        std::memset(mapped.pData, value, 64);
+        context->Unmap(dynamic.p, 0);
+        std::array<unsigned char, 64> bytes{};
+        bytes.fill(value);
+        context->UpdateSubresource(destination.p, 0, nullptr, bytes.data(), 0, 0);
+        if (context == t.deferred.p) {
+            Com<ID3D11CommandList> list;
+            require(SUCCEEDED(context->FinishCommandList(FALSE, &list.p)), "Finish upload");
+            t.context.p->ExecuteCommandList(list.p, TRUE);
+        }
+        verify(dynamic.p, value);
+        verify(destination.p, value);
+    }
+}
 void check(D3D_DRIVER_TYPE driver) {
     Test t(driver);
+    check_upload_forwarding(t);
     require(scene_target_name("scratchrendertarget_1118301577_17x3_17_1.vtex", 17, 3),
             "Reviewed scene target name no longer matches");
     require(scene_target_name("scratchrendertarget_222_17x3_3_9.vtex", 17, 3),

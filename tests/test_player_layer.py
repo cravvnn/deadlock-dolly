@@ -95,5 +95,27 @@ class BundleTests(unittest.TestCase):
             list(player_layer.iter_frames(path))
 
 
+class CaptureDiagnosticsTests(unittest.TestCase):
+    def test_preserves_bounded_reports_without_images_or_raw_events(self):
+        with tempfile.TemporaryDirectory() as folder:
+            deployment = Path(folder) / "deployment"
+            session = Path(folder) / "session"
+            deployment.mkdir()
+            session.mkdir()
+            (deployment / player_layer.STATUS_NAME).write_text("complete")
+            (deployment / "dolly_owner_draws.txt").write_bytes(b"x" * 100_000)
+            for name in (player_layer.BUNDLE_NAME, "dolly_owner_events.bin", "private.txt"):
+                (deployment / name).write_bytes(b"not included")
+            player_layer.preserve_diagnostics(deployment, session)
+            self.assertEqual({p.name for p in session.iterdir()},
+                             {player_layer.STATUS_NAME, "dolly_owner_draws.txt"})
+            self.assertEqual((session / "dolly_owner_draws.txt").stat().st_size,
+                             player_layer.DIAGNOSTIC_LIMIT)
+            # A subsequent cleanup/report after removal keeps the saved evidence.
+            (deployment / player_layer.STATUS_NAME).unlink()
+            player_layer.preserve_diagnostics(deployment, session)
+            self.assertEqual((session / player_layer.STATUS_NAME).read_text(), "complete")
+
+
 if __name__ == "__main__":
     unittest.main()

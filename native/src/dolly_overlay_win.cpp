@@ -1662,9 +1662,8 @@ void render_overlay(IDXGISwapChain* chain) {
     if (!target && !create_target(chain))
         return;
     player_capture::present_boundary(immediate);
-    // The player capture requests the existing scene hooks and the layout
-    // hooks only after its exact gates and marker; nothing is installed for a
-    // normal session.
+    // Metadata hooks start after verified startup, before replay shaders are
+    // created. Scene capture still requires its separately bounded request.
     if (player_capture::layout_hook_requested())
         player_capture::install_layout_hook(device);
     if (player_capture::draw_hooks_requested())

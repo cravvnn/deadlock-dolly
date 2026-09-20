@@ -741,6 +741,9 @@ class Session:
         return True
 
     def record_native_diagnostics(self) -> None:
+        from .player_layer import preserve_diagnostics
+        preserve_diagnostics(self.overlay_dir / "cvar_unlocker" / "bin" / "win64",
+                             self.session_dir)
         if self.native is None:
             return
         try:

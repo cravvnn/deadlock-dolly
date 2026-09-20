@@ -425,6 +425,29 @@ class VideoGuiTests(unittest.TestCase):
         self.app._video_operation_done({"state": "recording"})
         self.app._play.assert_not_called()
 
+    def test_players_frame_limit_is_checked_before_color_recording(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.app.ffmpeg_path.set(str(exe))
+        self.app.project = self.two_camera_project()
+        self.app.video_layer_players.set(True)
+        self.app.video_fixed_step.set(True)
+        self.app.video_fps.set("300")
+        self.app._start_video_recording()
+        self.app._submit.assert_not_called()
+        self.app.video_export.start.assert_not_called()
+        self.assertIn("256 frames", str(self.app._error.call_args.args[1]))
+
+    def test_players_without_path_is_checked_before_color_recording(self):
+        exe = Path(self.folder.name) / "ffmpeg.exe"
+        exe.write_bytes(b"MZ")
+        self.app.ffmpeg_path.set(str(exe))
+        self.app.video_layer_players.set(True)
+        self.app.video_fixed_step.set(True)
+        self.app._start_video_recording()
+        self.app._submit.assert_not_called()
+        self.assertIn("camera path", str(self.app._error.call_args.args[1]))
+
     def test_failed_recorder_start_clears_auto_play_without_playing(self):
         self.app.project = self.two_camera_project()
         self.app._play = Mock()
@@ -542,6 +565,7 @@ class VideoGuiTests(unittest.TestCase):
         self.assertTrue(self.app.video_fixed_step.get())
 
     def test_players_layer_queues_a_native_capture(self):
+        self.app.project = self.two_camera_project()
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")
         self.app.ffmpeg_path.set(str(exe))

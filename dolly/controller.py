@@ -3585,6 +3585,13 @@ class Controller:
             return []
 
     def export_diagnostics(self, destination):
+        from .player_layer import DIAGNOSTIC_NAMES, preserve_diagnostics
+        if self._session:
+            deployment = self.deployment_directory()
+            if deployment is not None:
+                preserve_diagnostics(deployment, self._session.session_dir)
+        session_files = ("session.json", "launch.log", "game_stdout.log",
+                         "native_diagnostics.json") + DIAGNOSTIC_NAMES
         destination = Path(destination)
         if destination.suffix.lower() != ".zip":
             destination = destination / ("Dolly_diagnostics_" + time.strftime("%Y%m%d_%H%M%S") + ".zip")
@@ -3644,7 +3651,7 @@ class Controller:
                 if path.is_file():
                     archive.writestr("logs/" + path.name, _tail_file(path))
             if self._session:
-                for name in ("session.json", "launch.log", "game_stdout.log", "native_diagnostics.json"):
+                for name in session_files:
                     file = self._session.session_dir / name
                     if file.is_file():
                         archive.writestr("session/" + name, _tail_file(file))
@@ -3654,7 +3661,7 @@ class Controller:
                 folder = journal.parent
                 if self._session and folder.resolve() == self._session.session_dir.resolve():
                     continue
-                for name in ("session.json", "launch.log", "game_stdout.log", "native_diagnostics.json"):
+                for name in session_files:
                     file = folder / name
                     if file.is_file():
                         archive.writestr("previous_sessions/" + folder.name + "/" + name, _tail_file(file, 512_000))

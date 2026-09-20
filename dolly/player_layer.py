@@ -38,6 +38,28 @@ BUNDLE_NAME = "dolly_owner_color_frame.bin"
 META_NAME = "dolly_owner_frame_meta.bin"
 BUNDLE_MAGIC = 0x314641524c4f4344
 MIN_FRAMES, MAX_FRAMES = 2, 256
+# Keep small capture reports through deployment cleanup. Never include image
+# bundles, raw process/GPU events, or arbitrary files from the game directory.
+DIAGNOSTIC_NAMES = (STATUS_NAME, MARKER_NAME, "dolly_owner_stall.txt",
+                    "dolly_owner_draws.txt", "dolly_owner_captures.txt",
+                    "dolly_owner_producers.txt")
+DIAGNOSTIC_LIMIT = 64 * 1024
+
+
+def preserve_diagnostics(deployment: Path, session: Path) -> None:
+    """Best-effort bounded reports; failure must never block game cleanup."""
+    for name in DIAGNOSTIC_NAMES:
+        try:
+            with (Path(deployment) / name).open("rb") as source:
+                data = source.read(DIAGNOSTIC_LIMIT)
+            destination = Path(session) / name
+            temporary = destination.with_name(name + ".tmp")
+            temporary.write_bytes(data)
+            os.replace(temporary, destination)
+        except OSError:
+            pass
+
+
 # The owner offset is read from the game's schema each run, so it may be small
 # or move after a game update; only an implausible value is refused.
 _MIN_OFFSET, _MAX_OFFSET = 8, 0x4000

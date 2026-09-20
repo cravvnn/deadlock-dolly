@@ -563,16 +563,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // below turns the native path clock back on.
     video::publish_path_replay_time(false, 0);
     player_capture::publish_replay_time(-1.0);
-    // Player layer capture: configure once against the reviewed scenesystem
-    // build, then let the probe's bounded state machine advance every view.
-    static const bool player_capture_configured = [] {
-        const auto module = GetModuleHandleW(L"scenesystem.dll");
-        player_capture::configure(reinterpret_cast<std::uintptr_t>(module),
-                                  module != nullptr && hash_file(module_path(module)) ==
-                                                           kPlayerCaptureScenesystemHash);
-        return true;
-    }();
-    (void)player_capture_configured;
+    // Configuration and shader discovery start on the verified startup worker,
+    // before a camera command can arrive. Capture still requires its marker.
     player_capture::tick();
     const auto& c = command->wire;
     if (c.command != seen) {
@@ -1058,6 +1050,13 @@ static DWORD WINAPI worker(void*) {
             startup_status(State::Fault, 23, "Could not prepare the native view hook.");
             return 0;
         }
+        // Collect shader metadata during hideout/replay loading, not only after
+        // the first camera command (when character shaders may already exist).
+        // Keep disk hashing off the render callback and retain the exact gate.
+        const auto scene_module = GetModuleHandleW(L"scenesystem.dll");
+        player_capture::configure(reinterpret_cast<std::uintptr_t>(scene_module),
+                                  scene_module != nullptr && hash_file(module_path(scene_module)) ==
+                                                                 kPlayerCaptureScenesystemHash);
         gHeartbeatTime = now_seconds();
         HeartbeatMonitor heartbeat_monitor(gMemory, gEditor);
         if (MH_EnableHook(reinterpret_cast<void*>(gClient + gCompat.setup)) != MH_OK) {

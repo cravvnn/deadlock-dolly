@@ -1,5 +1,24 @@
 # Changes
 
+## 0.5.26 — More complete player-layer exports
+
+- Player-layer capture matches character parts to the data actually submitted
+  for rendering, rather than data being prepared for a later frame. Recycled
+  instance slots and mismatched ownership are rejected instead of silently
+  producing missing or incorrect parts.
+- Preserve the first selected character pass and supported material passes
+  without a depth attachment. Start shader discovery before replay loading.
+- Increase the shared player capture limit from 24 to 64 rendering passes per
+  image. All detected player heroes remain eligible; exceeding the limit now
+  rejects the incomplete output with an explicit error.
+- Ownership checks copy 36 bytes per pass instead of entire multi-megabyte
+  buffers. Captures retain exact identity and record validation.
+- Check player-layer length limits before starting the color recording, and
+  retain small capture reports in diagnostic ZIPs after game cleanup.
+- Verified bounded local Rem and Seven captures, including automatic player
+  detection and Seven alpha MOV encoding. Full moving-shot validation, the
+  original user replays, and Rem's summoned companions remain follow-up work.
+
 ## 0.5.25 alpha — Hero bone cameras and attachment recovery
 
 - Head and right-hand camera selection, replay playback and detach were checked

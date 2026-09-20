@@ -15,6 +15,7 @@
 #include <fstream>
 #include <string>
 #include "dolly_player_capture.hpp"
+#include "dolly_player_producers.hpp"
 #include "dolly_hide.hpp"
 #include "dolly_player_snapshot.hpp"
 #include "dolly_player_matte_capture.hpp"
@@ -191,7 +192,9 @@ struct GpuSlot {
     std::uint64_t startEvent = 0, drawEvent = 0;
     ULONGLONG polled = 0;
 };
-constexpr unsigned AggregateDrawLimit = 24;
+// Ownership staging is 36 bytes/draw. Bound each of the three frame slots to
+// 64 original draws (6912 staging bytes total); image-buffer count is unchanged.
+constexpr unsigned AggregateDrawLimit = 64;
 constexpr unsigned SequenceRing = 3;
 constexpr unsigned SequenceMaxCap = 256;
 std::array<GpuSlot, SequenceRing * AggregateDrawLimit> gpuSlots;
@@ -208,7 +211,7 @@ std::uint64_t meshFrame = 0, meshProducerFrame = 0;
 bool meshFrameSet = false;
 struct ColorFrame {
     MatteCapture capture;
-    bool prepared = false, sealed = false;
+    bool prepared = false, sealed = false, truncated = false;
     unsigned draws = 0;
     std::uint64_t first = 0, last = 0, epoch = 0;
     std::uint64_t header[8]{};
@@ -367,6 +370,7 @@ struct OwnerClass {
     bool player = false;
 };
 std::array<OwnerClass, 256> ownerClasses{};
+std::mutex ownerClassMutex;
 unsigned ownerClassCount = 0, ownerClassRotate = 0;
 // The scene -> node link and the node's embedded scene-object member move with
 // engine updates, so the first classification discovers them inside a bounded
@@ -399,6 +403,7 @@ bool owner_is_player(std::uint32_t handle, std::uintptr_t scene) noexcept {
                 return true;
         return false;
     }
+    std::lock_guard<std::mutex> ownerLock(ownerClassMutex);
     for (unsigned i = 0; i < ownerClassCount; ++i)
         if (ownerClasses[i].handle == handle)
             return ownerClasses[i].player;
@@ -447,172 +452,31 @@ bool owner_is_player(std::uint32_t handle, std::uintptr_t scene) noexcept {
 // re-submitted many times inside one renderer frame. Exact duplicates are
 // forwarded once but recorded once: the bounded event ring must survive the
 // whole take.
-struct ProducerEntry {
-    std::uint64_t frame = 0, instance = 0, records = 0, event = 0;
-    std::uint32_t owner = 0;
-    std::uint32_t record[8]{};
-};
-std::array<ProducerEntry, 4096> producerTable{};
-unsigned producerTableCount = 0, producerTableRotate = 0;
+ProducerTable<4096> producers;
+SubmittedOwners<512, Microsoft::WRL::ComPtr<ID3D11Buffer>> submittedOwners;
 void producer_store(std::uint64_t frame, std::uint64_t instance, std::uint64_t records,
                     std::uint32_t owner, const std::uint32_t* record,
                     std::uint64_t event) noexcept {
-    for (unsigned i = 0; i < producerTableCount; ++i) {
-        auto& entry = producerTable[i];
-        if (entry.frame == frame && entry.instance == instance && entry.records == records) {
-            entry.owner = owner;
-            entry.event = event;
-            for (unsigned n = 0; n < 8; ++n)
-                entry.record[n] = record[n];
-            return;
-        }
-    }
-    unsigned slot = producerTableCount;
-    if (slot < producerTable.size())
-        ++producerTableCount;
-    else {
-        slot = producerTableRotate;
-        producerTableRotate = (producerTableRotate + 1) % producerTable.size();
-    }
-    auto& entry = producerTable[slot];
-    entry.frame = frame;
-    entry.instance = instance;
-    entry.records = records;
-    entry.owner = owner;
-    entry.event = event;
-    for (unsigned n = 0; n < 8; ++n)
-        entry.record[n] = record[n];
+    ProducerEntry entry{frame, instance, records, event, owner, {}};
+    std::copy(record, record + 8, entry.record);
+    producers.store(entry);
 }
-// Bounded readback diagnostic: what the instance stream and the record at a
-// failed draw's index actually hold, next to the producer records stored for
-// the same frame, so the new index coupling is visible instead of guessed.
-void record_probe(ID3D11DeviceContext* c, const Event* e, std::uint64_t frame,
-                  std::uint64_t index) noexcept {
-    static unsigned count = 0;
-    if (count >= 6)
-        return;
-    ++count;
-    ID3D11Device* device = nullptr;
-    c->GetDevice(&device);
-    if (!device)
-        return;
-    ID3D11ShaderResourceView* srv = nullptr;
-    c->VSGetShaderResources(1, 1, &srv);
-    ID3D11Buffer* records = nullptr;
-    if (srv) {
-        ID3D11Resource* res = nullptr;
-        srv->GetResource(&res);
-        srv->Release();
-        if (res) {
-            res->QueryInterface(__uuidof(ID3D11Buffer), reinterpret_cast<void**>(&records));
-            res->Release();
-        }
-    }
-    const unsigned slot = static_cast<unsigned>(e->w[114]);
-    ID3D11Buffer* ids = nullptr;
-    UINT stride = 0, base = 0;
-    c->IAGetVertexBuffers(slot, 1, &ids, &stride, &base);
-    try {
-        std::ofstream f(directory + L"dolly_owner_records.txt",
-                        count > 1 ? (std::ios::out | std::ios::app)
-                                  : (std::ios::out | std::ios::trunc));
-        if (f) {
-            f << "draw frame " << frame << " index " << index << " stride " << stride;
-            D3D11_BUFFER_DESC sd{};
-            sd.Usage = D3D11_USAGE_STAGING;
-            sd.ByteWidth = 64;
-            sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-            sd.BindFlags = 0;
-            ID3D11Buffer* staging = nullptr;
-            if (SUCCEEDED(device->CreateBuffer(&sd, nullptr, &staging))) {
-                auto readWords = [&](ID3D11Buffer* source, std::uint64_t byteOffset, unsigned words,
-                                     const char* tag) {
-                    f << " " << tag;
-                    if (!source) {
-                        f << ":none";
-                        return;
-                    }
-                    D3D11_BUFFER_DESC d{};
-                    source->GetDesc(&d);
-                    if (byteOffset + static_cast<std::uint64_t>(words) * 4 > d.ByteWidth) {
-                        f << ":oob";
-                        return;
-                    }
-                    D3D11_BOX box{};
-                    box.left = static_cast<UINT>(byteOffset);
-                    box.right =
-                        static_cast<UINT>(byteOffset + static_cast<std::uint64_t>(words) * 4);
-                    box.top = 0;
-                    box.bottom = 1;
-                    box.front = 0;
-                    box.back = 1;
-                    c->CopySubresourceRegion(staging, 0, 0, 0, 0, source, 0, &box);
-                    D3D11_MAPPED_SUBRESOURCE m{};
-                    if (SUCCEEDED(c->Map(staging, 0, D3D11_MAP_READ, 0, &m))) {
-                        const auto* words32 = static_cast<const std::uint32_t*>(m.pData);
-                        for (unsigned i = 0; i < words; ++i)
-                            f << " " << words32[i];
-                        c->Unmap(staging, 0);
-                    } else
-                        f << ":mapfail";
-                };
-                readWords(ids, index * 4, 1, "ids[id]");
-                readWords(records, index * 32, 8, "record[id]");
-                for (unsigned i = 0; i < producerTableCount; ++i)
-                    if (producerTable[i].frame == frame) {
-                        f << " produced instance " << producerTable[i].instance << " stored";
-                        for (unsigned n = 0; n < 8; ++n)
-                            f << " " << producerTable[i].record[n];
-                        readWords(records,
-                                  static_cast<std::uint64_t>(producerTable[i].instance) * 32, 8,
-                                  "gpu[produced]");
-                        break;
-                    }
-                f << "\n";
-                f.flush();
-                staging->Release();
-            }
-        }
-    } catch (...) {
-    }
-    if (records)
-        records->Release();
-    if (ids)
-        ids->Release();
-    device->Release();
-}
-// Every player capture pairs draws through this table instead of the bounded
-// event ring, which a players-only take would fill long before it finished.
-// The renderer can submit an object one frame before the draw that references
-// its record, so the pairing accepts the closest frame inside a small window
-// and prefers an exact hit; the guard still validates the exact record.
-// The renderer submits an object at the tail of one frame and issues its draw
-// in the next, so a draw pairs with the producer stored for its own frame or
-// the one before it; the snapshot record validation still proves the exact
-// object, so a one-frame lag cannot capture the wrong owner.
-const ProducerEntry* producer_lookup(std::uint64_t frame, std::uint64_t instance,
-                                     std::uint64_t records) noexcept {
-    const ProducerEntry* fallback = nullptr;
-    for (unsigned i = producerTableCount; i-- > 0;) {
-        const auto& entry = producerTable[i];
-        if (entry.instance != instance || entry.records != records)
-            continue;
-        if (entry.frame == frame)
-            return &entry;
-        if (entry.frame + 1 == frame)
-            fallback = &entry;
-    }
-    if (fallback)
-        ++dbg[19];
-    return fallback;
+// Return a stable value, never a pointer into concurrently updated storage.
+std::optional<ProducerEntry> producer_lookup(std::uint64_t frame, std::uint64_t instance,
+                                             std::uint64_t records) noexcept {
+    return producers.lookup(frame, instance, records);
 }
 // Bounded pairing diagnostic: on a miss, report what each tagged identity slot
 // computes and whether it hits the live table, so a stream reorder is visible.
 void producer_probe(std::uint64_t frame, const Event* e) noexcept {
+
     static unsigned count = 0;
     if (count >= 8)
         return;
     ++count;
+    const auto producerSnapshot = producers.snapshot();
+    const auto& producerTable = producerSnapshot.entries;
+    const auto producerTableCount = producerSnapshot.count;
     try {
         std::ofstream f(directory + L"dolly_owner_producers.txt",
                         count > 1 ? (std::ios::out | std::ios::app)
@@ -660,22 +524,6 @@ void producer_probe(std::uint64_t frame, const Event* e) noexcept {
         f.flush();
     } catch (...) {
     }
-}
-struct ProducerKey {
-    std::uint64_t frame = 0, object = 0, mesh = 0;
-};
-std::array<ProducerKey, 512> producerKeys{};
-unsigned producerKeyCount = 0;
-bool producer_seen(std::uint64_t frame, std::uint64_t object, std::uint64_t mesh) noexcept {
-    for (unsigned i = 0; i < producerKeyCount; ++i)
-        if (producerKeys[i].frame == frame && producerKeys[i].object == object &&
-            producerKeys[i].mesh == mesh)
-            return true;
-    if (producerKeyCount >= producerKeys.size())
-        producerKeyCount = 0;
-    producerKeys[producerKeyCount] = {frame, object, mesh};
-    ++producerKeyCount;
-    return false;
 }
 std::uint64_t stamp() noexcept {
     LARGE_INTEGER t{};
@@ -748,18 +596,29 @@ int __fastcall hook(std::uintptr_t a, void* object, void* mesh, void* opaque, vo
     }
     // Bounded sequences record only reviewed-player producers; every other
     // producer is forwarded exactly once without consuming the event buffer.
-    if (sequenceV2) {
+    if (captureActive.load(std::memory_order_acquire)) {
         const auto owner = value<std::uint32_t>(obj + 0xc0);
-        if (!owner_is_player(owner, obj))
-            return original(a, object, mesh, opaque, params, mode, flag, outA, outB);
+        if (!owner_is_player(owner, obj)) {
+            const int result = original(a, object, mesh, opaque, params, mode, flag, outA, outB);
+            // Instance indices are recycled, including within one frame. A
+            // non-selected owner must replace any old selected-owner entry.
+            // Otherwise equal GPU record words can validate a stale identity.
+            if (result >= 0 &&
+                static_cast<unsigned>(result) < value<std::uint32_t>(sceneBase + 0x8cfde8)) {
+                const std::uint32_t empty[8]{};
+                producer_store(frame(), static_cast<unsigned>(result), buffer(0x8cfde0), 0, empty,
+                               0);
+            }
+            return result;
+        }
+    }
+    if (sequenceV2) {
         // Shot-aligned captures only ever record during the authored take;
         // preparation frames would otherwise fill the bounded event buffer
         // before the first frame can be sealed.
         if (sequenceV3 && authoredReplayTime.load(std::memory_order_acquire) < 0.0)
             return original(a, object, mesh, opaque, params, mode, flag, outA, outB);
         ++producerKnownCalls;
-        if (producer_seen(frame(), obj, reinterpret_cast<std::uintptr_t>(mesh)))
-            return original(a, object, mesh, opaque, params, mode, flag, outA, outB);
     }
     if (sequenceV2) {
         // Shot-aligned captures pair draws through the producer table and
@@ -874,7 +733,7 @@ bool dump(const wchar_t* path) noexcept {
         return false;
     try {
         const std::uint64_t header[8] = {
-            0x31564f52504c4c44ULL, 12,         sizeof(Event), std::min(used.load(), Capacity),
+            0x31564f52504c4c44ULL, 13,         sizeof(Event), std::min(used.load(), Capacity),
             dropped.load(),        startFrame, frame(),       sceneBase};
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
         f.write(reinterpret_cast<const char*>(header), sizeof(header));
@@ -983,6 +842,19 @@ void publish_replay_time(double seconds) noexcept {
 double current_replay_time() noexcept {
     return authoredReplayTime.load(std::memory_order_acquire);
 }
+namespace {
+std::atomic<unsigned> uploadUpdates{0};
+}
+void mapped_upload(ID3D11DeviceContext* context, ID3D11Resource* resource, unsigned sub,
+                   unsigned map_type, void* data) noexcept {
+    if (!captureActive.load(std::memory_order_acquire) || !context || !resource || !data || sub ||
+        map_type == D3D11_MAP_READ)
+        return;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> mappedBuffer;
+    if (SUCCEEDED(resource->QueryInterface(IID_PPV_ARGS(&mappedBuffer))) &&
+        reinterpret_cast<std::uintptr_t>(mappedBuffer.Get()) == buffer(0x8cfde0))
+        submittedOwners.invalidate(); // Unsupported writer: no stale ownership.
+}
 void configure(std::uintptr_t base, bool hashes_ok) noexcept {
     if (configured)
         return;
@@ -1003,8 +875,22 @@ void configure(std::uintptr_t base, bool hashes_ok) noexcept {
     }
 }
 void stall_report() noexcept {
+    const auto producerSnapshot = producers.snapshot();
+    const auto& producerTable = producerSnapshot.entries;
+    const auto producerTableCount = producerSnapshot.count;
+
     if (!sequenceV2)
         return;
+    // Classification is updated by producer workers, not the render thread.
+    std::array<OwnerClass, 256> ownerSnapshot;
+    unsigned ownerCount = 0, linkOffset = 0, linkDelta = 0;
+    {
+        std::lock_guard<std::mutex> lock(ownerClassMutex);
+        ownerSnapshot = ownerClasses;
+        ownerCount = ownerClassCount;
+        linkOffset = discoveredLinkOffset;
+        linkDelta = discoveredLinkDelta;
+    }
     std::ofstream f(directory + L"dolly_owner_stall.txt", std::ios::binary | std::ios::trunc);
     if (!f)
         return;
@@ -1013,14 +899,13 @@ void stall_report() noexcept {
       << dropped.load() << " stall " << (sequenceStall ? 1 : 0) << " refused "
       << sequence_writer().refused() << " writerErr " << (sequence_writer().error() ? 1 : 0)
       << " firstSeal " << (firstSeal ? firstSeal - started : 0) << " lastSeal "
-      << (lastSeal ? lastSeal - started : 0) << " link " << discoveredLinkOffset << " delta "
-      << discoveredLinkDelta << " owners " << ownerClassCount << " now "
-      << (GetTickCount64() - started) << " replay " << lastSealedReplayTime << " meshFrameSet "
-      << (meshFrameSet ? 1 : 0) << " meshFrame " << meshFrame << " lastDrawEpoch " << lastDrawEpoch
-      << " startPresent " << startPresent;
+      << (lastSeal ? lastSeal - started : 0) << " link " << linkOffset << " delta " << linkDelta
+      << " owners " << ownerCount << " now " << (GetTickCount64() - started) << " replay "
+      << lastSealedReplayTime << " meshFrameSet " << (meshFrameSet ? 1 : 0) << " meshFrame "
+      << meshFrame << " lastDrawEpoch " << lastDrawEpoch << " startPresent " << startPresent;
     unsigned players = 0;
-    for (unsigned i = 0; i < ownerClassCount; ++i)
-        if (ownerClasses[i].player)
+    for (unsigned i = 0; i < ownerCount; ++i)
+        if (ownerSnapshot[i].player)
             ++players;
     unsigned tableNow = 0;
     for (unsigned i = 0; i < producerTableCount; ++i)
@@ -1191,8 +1076,9 @@ void tick() noexcept {
         sequenceV2 && GetFileAttributesW((directory + L"dolly_owner_stop.txt").c_str()) !=
                           INVALID_FILE_ATTRIBUTES;
     const bool captureFull =
-        sequenceV2 ? (framesSealed >= sequenceCap || (stopRequested && framesSealed > 0))
-                   : presentEpoch.load(std::memory_order_acquire) - startPresent >= 4;
+        sequenceV2
+            ? (sequenceStall || framesSealed >= sequenceCap || (stopRequested && framesSealed > 0))
+            : presentEpoch.load(std::memory_order_acquire) - startPresent >= 4;
     // v3 arms before playback; a long forward seek may consume most of the
     // wall clock, so the capture budget only starts at the first sealed frame
     // (120 s standalone allowance keeps preparation itself bounded).
@@ -1217,12 +1103,20 @@ void tick() noexcept {
          used.load() >= Capacity)) {
         armed.store(false, std::memory_order_release);
         captureActive.store(false, std::memory_order_release);
+        submittedOwners.invalidate();
         admission.fetch_or(Closed, std::memory_order_acq_rel);
     }
     if (!armed.load(std::memory_order_acquire) &&
         admission.load(std::memory_order_acquire) == Closed) {
         const bool saved = dump((directory + L"dolly_owner_events.bin").c_str());
         stall_report();
+        bool snapshotsVerified = recordValid > 0 && recordInvalid == 0;
+        for (const auto& slot : gpuSlots)
+            if (slot.used && (slot.pending || slot.mismatch))
+                snapshotsVerified = false;
+        for (const auto& slot : colorFrames)
+            if (slot.truncated)
+                snapshotsVerified = false;
         // No writer may use a capture object here. Avoid COM releases in DLL teardown.
         for (auto& slot : gpuSlots) {
             slot.snapshot.release();
@@ -1237,7 +1131,7 @@ void tick() noexcept {
         // A take that ended early still completed its capture: the frames that
         // were sealed are the take's frames, and the cap is only the bound.
         const bool sequenceComplete =
-            !sequenceV2 ||
+            (!sequenceV2 && (!sequenceMode || (colorIndex == 2 && snapshotsVerified))) ||
             (writerDrained && !sequenceStall && framesWritten + framesDropped == framesSealed &&
              framesWritten >= 2 && sequence_writer().refused() == 0 && !sequence_writer().error());
         if (saved && sequenceComplete) {
@@ -1249,6 +1143,13 @@ void tick() noexcept {
                 status(buf);
             } else
                 status(dropped.load() ? "complete with overflow; reject proof" : "complete");
+        } else if (saved && dbg[6]) {
+            char buf[192];
+            std::snprintf(
+                buf, sizeof(buf),
+                "failed player layer exceeded %u draws per image; incomplete output rejected",
+                AggregateDrawLimit);
+            status(buf);
         } else if (saved) {
             char buf[192];
             std::snprintf(
@@ -1532,7 +1433,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             if (ring_snapshots_pending(ring))
                 break;
             {
-                bool mismatched = false;
+                bool mismatched = slot.truncated;
                 for (unsigned i = 0; i < AggregateDrawLimit; ++i)
                     if (gpuSlots[ring * AggregateDrawLimit + i].mismatch)
                         mismatched = true;
@@ -1541,13 +1442,14 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     // trusted: drop this frame and keep the take running so the
                     // layer only ever carries validated draws.
                     ++framesDropped;
+                    sequenceStall = true;
                     slot.capture.recycle(c);
                     slot.sealed = false;
                     slot.prepared = false;
                     slot.draws = 0;
+                    slot.truncated = false;
                     slot.first = slot.last = slot.epoch = 0;
                     release_frame_slots(ring);
-                    ++framesWritten;
                     continue;
                 }
             }
@@ -1586,6 +1488,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             slot.sealed = false;
             slot.prepared = false;
             slot.draws = 0;
+            slot.truncated = false;
             slot.first = slot.last = slot.epoch = 0;
             release_frame_slots(ring);
         }
@@ -1609,6 +1512,10 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             const int result = slot.snapshot.poll(c);
             if (!result)
                 continue;
+            if (result != 1) {
+                ++recordInvalid;
+                slot.mismatch = true;
+            }
             Write out(9);
             if (out.event) {
                 auto* e = out.event;
@@ -1626,23 +1533,13 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             if (result == 1 && slot.startEvent &&
                 slot.startEvent <= used.load(std::memory_order_acquire)) {
                 const auto& request = events[slot.startEvent - 1];
-                bool ok = slot.snapshot.id == static_cast<unsigned>(request.w[8]);
-                bool exact = false;
-                if (slot.drawEvent && slot.drawEvent <= used.load(std::memory_order_acquire)) {
-                    const auto drawFrame = events[slot.drawEvent - 1].w[4];
-                    exact = request.w[26] == drawFrame;
-                }
-                // The record carries per-frame data, so it only compares word for
-                // word when the producer was stored in the draw's own frame. A
-                // one-frame submit lag is proven by the identity word plus the
-                // frame constraint, which a reused instance slot cannot satisfy.
-                if (ok && exact)
-                    for (unsigned n = 0; n < 8; ++n)
-                        ok = ok && slot.snapshot.record[n] ==
-                                       static_cast<std::uint32_t>(request.w[18 + n]);
+                std::uint32_t expected[8]{};
+                for (unsigned n = 0; n < 8; ++n)
+                    expected[n] = static_cast<std::uint32_t>(request.w[18 + n]);
+                const bool ok =
+                    record_matches(slot.snapshot.id, static_cast<unsigned>(request.w[8]),
+                                   slot.snapshot.record, expected);
                 if (ok) {
-                    if (!exact)
-                        ++dbg[21];
                     ++recordValid;
                 } else {
                     ++recordInvalid;
@@ -1657,7 +1554,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
 // fields, so a game update's layout drift is visible instead of silent.
 void draw_probe(const char* reason, const Event* e) noexcept {
     static unsigned count = 0;
-    if (!sequenceV2 || count >= 48)
+    if (!aggregateMode || count >= 48)
         return;
     try {
         std::ofstream f(directory + L"dolly_owner_draws.txt",
@@ -1668,7 +1565,9 @@ void draw_probe(const char* reason, const Event* e) noexcept {
         if (!count)
             f << "reason frame epoch type method vertices instances first records ids mask packed w112 w113 w114 w115 w116 w121 w122 w123 w125 w126 w127 w128 w129 w131 w132 w133 w134 w27 w28 w29\n";
         const auto slot = static_cast<unsigned>(e->w[114]);
-        const auto packed = e->w[49 + slot * 2];
+        // Rejected layouts can carry an invalid slot. Diagnostic logging must
+        // not index outside the event while reporting that rejection.
+        const auto packed = slot < 32 ? e->w[49 + slot * 2] : 0;
         f << reason << ' ' << e->w[4] << ' ' << e->w[135] << ' ' << e->w[7] << ' ' << e->w[8] << ' '
           << e->w[9] << ' ' << e->w[10] << ' ' << e->w[11] << ' ' << e->w[25] << ' ' << e->w[46]
           << ' ' << e->w[45] << ' ' << packed << ' ' << e->w[112] << ' ' << e->w[113] << ' '
@@ -1722,6 +1621,8 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
         e->w[131] != DXGI_FORMAT_R16G16B16A16_FLOAT || e->w[132] < 640 || e->w[133] < 360 ||
         e->w[134] != 1) {
         ++dbg[4];
+        if (e->w[45])
+            draw_probe("shape", e);
         return;
     }
     draw_probe("color", e);
@@ -1735,14 +1636,7 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
         draw_probe("recordgate-a", e);
         return;
     }
-    if (aggregateMode) {
-        if (!e->w[45]) {
-            ++dbg[13];
-            ++dbg[5];
-            draw_probe("recordgate-b", e);
-            return;
-        }
-    } else {
+    {
         if (e->w[112] != 1 || e->w[113] != 1 || e->w[114] >= 32) {
             ++dbg[13];
             ++dbg[5];
@@ -1757,16 +1651,17 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
             return;
         }
     }
-    // The identity buffer can be tagged at more than one input slot and the
-    // game update reorders vertex streams, so every tagged slot is tried for
-    // the instance pairing and the matching one drives the snapshot.
+    // An identity buffer may occur at several slots. Only the declaration's
+    // actual TEXCOORD13 slot identifies the instance consumed by this shader.
     unsigned slot = static_cast<unsigned>(e->w[114]);
     std::uint64_t offset = 0, index = 0;
     bool packedOk = false, shapeOk = false;
-    const auto producerFrame =
-        static_cast<std::uint64_t>(meshMode && meshFrameSet ? meshProducerFrame : e->w[4]);
-    const ProducerEntry* producer = nullptr;
+    // Resolve against the actual submitted upload; CPU preparation can run
+    // ahead of the draw even within a single presentation.
+    std::optional<ProducerEntry> producer;
     for (unsigned candidate = 0; candidate < 32 && !producer; ++candidate) {
+        if (candidate != e->w[114])
+            continue;
         if (!(e->w[45] & (1ULL << candidate)))
             continue;
         const auto packed = e->w[49 + candidate * 2];
@@ -1784,26 +1679,11 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
             offset = candidateOffset;
             index = candidateIndex;
         }
-        const ProducerEntry* found = producer_lookup(producerFrame, candidateIndex, e->w[25]);
-        if (!found) {
-            // Bounded drift counters: does this index exist in the table under
-            // the same frame (records aside) or under another frame?
-            bool sameFrame = false, otherFrame = false;
-            for (unsigned i = 0; i < producerTableCount; ++i) {
-                const auto& entry = producerTable[i];
-                if (entry.instance != candidateIndex)
-                    continue;
-                if (entry.frame == producerFrame)
-                    sameFrame = true;
-                else
-                    otherFrame = true;
-            }
-            if (sameFrame)
-                ++dbg[15];
-            if (otherFrame)
-                ++dbg[16];
+        const auto found = submittedOwners.lookup(e->w[6], e->w[25], candidateIndex);
+        if (!found)
             continue;
-        }
+        if (!found->owner)
+            continue;
         ++dbg[18];
         producer = found;
         slot = candidate;
@@ -1820,23 +1700,27 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
         draw_probe("record", e);
         return;
     }
+    // Two-frame diagnostics exercise the same bounded per-image queue as export.
     const unsigned drawLimit = aggregateMode ? AggregateDrawLimit : meshMode ? 8u : 3u;
-    const unsigned firstSlot = sequenceMode ? colorIndex * drawLimit : 0;
+    const unsigned firstSlot = sequenceMode ? colorIndex * AggregateDrawLimit : 0;
     GpuSlot* target = nullptr;
     for (unsigned i = firstSlot; i < firstSlot + drawLimit; ++i)
         if (!gpuSlots[i].used) {
             target = &gpuSlots[i];
             break;
         }
-    if (!target) {
-        ++dbg[6];
-        return;
-    }
     if (!producer) {
         ++dbg[7];
         draw_probe("noproducer", e);
-        producer_probe(producerFrame, e);
-        record_probe(c, e, producerFrame, index);
+        producer_probe(e->w[4], e);
+        return;
+    }
+    if (!target) {
+        ++dbg[6];
+        if (aggregateMode) {
+            colorFrames[sequenceMode ? colorIndex : 0].truncated = true;
+            sequenceStall = true;
+        }
         return;
     }
     bool taken = false;
@@ -1893,8 +1777,11 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
                 for (unsigned n = 0; n < 8; ++n)
                     out->w[18 + n] = producer->record[n];
                 out->w[26] = producer->frame;
-                target->pending =
-                    target->snapshot.begin(c, records, ids, static_cast<UINT>(offset));
+                target->pending = target->snapshot.begin(c, records, ids, static_cast<UINT>(offset),
+                                                         static_cast<UINT>(index));
+                target->mismatch = !target->pending;
+                if (!target->pending && sequenceV2)
+                    sequenceStall = true;
                 out->w[13] = target->pending;
                 out->w[14] = static_cast<std::uint32_t>(target->snapshot.failure);
                 if (target->pending && matteMode && e->w[8] == 2 &&
@@ -2267,10 +2154,8 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
             out->w[14] = bytes.size();
         }
         Microsoft::WRL::ComPtr<ID3D11VertexShader> originalVS, guardedVS;
-        // The aggregate (sequence) path leaves the vertex shader untouched: the
-        // snapshot record validation below proves the pairing, and the shader
-        // guard's in-shader record compare does not survive this client build.
-        if (guardMode && !aggregateMode) {
+        // Every selected draw must pass the same exact identity/record guard.
+        if (guardMode) {
             c->VSGetShader(&originalVS, nullptr, nullptr);
             UINT size = 0;
             if (!originalVS || FAILED(originalVS->GetPrivateData(VertexBytesKey, &size, nullptr)) ||
@@ -2351,97 +2236,7 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
                 ++colorDraws;
                 colorLast = selected;
             }
-            {
-                // Bounded layout check: how many render targets the game's own
-                // draw binds and which output slots its pixel shader declares,
-                // which tells where a captured draw's color actually goes.
-                static unsigned layoutLog = 0;
-                if (layoutLog < 6) {
-                    ID3D11RenderTargetView* rts[8]{};
-                    ID3D11DepthStencilView* dsv = nullptr;
-                    c->OMGetRenderTargets(8, rts, &dsv);
-                    unsigned rtCount = 0;
-                    for (auto* rv : rts)
-                        if (rv) {
-                            ++rtCount;
-                            rv->Release();
-                        }
-                    if (dsv)
-                        dsv->Release();
-                    unsigned outs = 0, target0 = 0, target1 = 0;
-                    if (auto* ps = reinterpret_cast<ID3D11PixelShader*>(drawEvent.w[120])) {
-                        UINT size = 0;
-                        if (ps->GetPrivateData(PixelBytesKey, &size, nullptr) == S_OK &&
-                            size <= 1024 * 1024) {
-                            std::vector<unsigned char> bytes(size);
-                            if (SUCCEEDED(ps->GetPrivateData(PixelBytesKey, &size, bytes.data()))) {
-                                Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflection;
-                                if (SUCCEEDED(D3DReflect(
-                                        bytes.data(), bytes.size(),
-                                        __uuidof(ID3D11ShaderReflection),
-                                        reinterpret_cast<void**>(reflection.GetAddressOf())))) {
-                                    D3D11_SHADER_DESC desc{};
-                                    if (SUCCEEDED(reflection->GetDesc(&desc))) {
-                                        outs = desc.OutputParameters;
-                                        for (UINT i = 0; i < desc.OutputParameters; ++i) {
-                                            D3D11_SIGNATURE_PARAMETER_DESC out{};
-                                            if (SUCCEEDED(
-                                                    reflection->GetOutputParameterDesc(i, &out)) &&
-                                                out.SystemValueType == D3D_NAME_TARGET) {
-                                                if (out.SemanticIndex == 0)
-                                                    ++target0;
-                                                if (out.SemanticIndex == 1)
-                                                    ++target1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    std::ofstream l(directory + L"dolly_owner_captures.txt",
-                                    std::ios::out | std::ios::app);
-                    if (l)
-                        l << "layout rtCount " << rtCount << " outs " << outs << " target0 "
-                          << target0 << " target1 " << target1 << " writeMask " << drawEvent.w[35]
-                          << " blendEnable " << drawEvent.w[28] << "\n";
-                    ++layoutLog;
-                }
-                // Bounded per-draw target check: how much of the captured
-                // region is non-zero right after this redirect.
-                static unsigned probeLog = 0;
-                if (probeLog == 0 && colorPrepared) {
-                    // Readback control: a white clear must read back non-zero,
-                    // otherwise an empty capture would only prove a broken probe.
-                    const FLOAT control[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-                    colorAggregate.clear(c, control);
-                    const unsigned controlNonzero = colorAggregate.probe_content(c);
-                    std::ofstream g(directory + L"dolly_owner_captures.txt",
-                                    std::ios::out | std::ios::app);
-                    if (g)
-                        g << "probeControl nonzero " << controlNonzero << " (white clear)\n";
-                    const FLOAT black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-                    colorAggregate.clear(c, black);
-                }
-                if (captured && probeLog < 6) {
-                    const unsigned nonzero = colorAggregate.probe_content(c);
-                    const auto& gpuProbe = gpuSlots[pendingMatteSlot];
-                    unsigned probeIndex = 0;
-                    std::uint64_t probeFrame = 0;
-                    if (gpuProbe.startEvent &&
-                        gpuProbe.startEvent <= used.load(std::memory_order_acquire)) {
-                        const auto& startProbe = events[gpuProbe.startEvent - 1];
-                        probeIndex = static_cast<unsigned>(startProbe.w[8]);
-                        probeFrame = startProbe.w[26];
-                    }
-                    std::ofstream g(directory + L"dolly_owner_captures.txt",
-                                    std::ios::out | std::ios::app);
-                    if (g)
-                        g << "probe index " << probeIndex << " producerFrame " << probeFrame
-                          << " verts " << drawEvent.w[9] << " nonzero " << nonzero << "\n";
-                    ++probeLog;
-                }
-            }
+
         } else
             captured = matte.begin(c, static_cast<unsigned>(drawEvent.w[132]),
                                    static_cast<unsigned>(drawEvent.w[133]), renderOriginal,
@@ -2454,6 +2249,11 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
         originalDraw(c, n, instances, start, base, first);
         called = true;
     }
+    if (!captured) {
+        gpuSlots[pendingMatteSlot].mismatch = true;
+        if (sequenceV2)
+            sequenceStall = true;
+    }
     out->w[7] = called;
     out->w[8] = captured;
     out->w[9] = static_cast<std::uint32_t>(matte.failure);
@@ -2463,89 +2263,76 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
 void update(ID3D11DeviceContext* c, ID3D11Resource* destination, unsigned sub, const D3D11_BOX* box,
             const void* source, unsigned row, unsigned depth,
             UpdateOriginal originalUpdate) noexcept {
-    // Bounded sequences skip upload diagnostics: the color path never reads
-    // them and their samples would exhaust the bounded event capacity first.
-    if (sequenceV2) {
+    if (!captureActive.load(std::memory_order_acquire)) {
         originalUpdate(c, destination, sub, box, source, row, depth);
         return;
     }
-    Write write(6);
-    auto* e = write.event;
-    if (e && c && destination) {
-        e->w[6] = reinterpret_cast<std::uintptr_t>(c);
-        e->w[7] = c->GetType();
-        e->w[8] = reinterpret_cast<std::uintptr_t>(destination);
-        D3D11_RESOURCE_DIMENSION dimension{};
-        destination->GetType(&dimension);
-        e->w[9] = dimension;
-        e->w[14] = sub;
-        e->w[15] = reinterpret_cast<std::uintptr_t>(source);
-        e->w[18] = row;
-        e->w[19] = depth;
-        e->w[23] = box != nullptr;
-        ID3D11Buffer* b = nullptr;
-        if (dimension == D3D11_RESOURCE_DIMENSION_BUFFER &&
-            SUCCEEDED(destination->QueryInterface(__uuidof(ID3D11Buffer),
-                                                  reinterpret_cast<void**>(&b)))) {
-            D3D11_BUFFER_DESC desc{};
-            b->GetDesc(&desc);
-            e->w[10] = reinterpret_cast<std::uintptr_t>(b);
-            e->w[11] = desc.ByteWidth;
-            e->w[12] = desc.StructureByteStride;
-            e->w[13] = desc.Usage;
-            const std::uint64_t left = box ? box->left : 0,
-                                right = box ? box->right : desc.ByteWidth;
-            e->w[16] = left;
-            e->w[17] = right;
-            const bool valid =
-                source && sub == 0 && left < right && right <= desc.ByteWidth &&
-                (!box || (box->top == 0 && box->front == 0 && box->bottom == 1 && box->back == 1));
-            e->w[20] = valid;
-            if (valid && desc.StructureByteStride == 32) {
-                const unsigned limit = std::min(used.load(std::memory_order_acquire), Capacity);
-                for (unsigned i = 0; i < limit; ++i) {
-                    if (!completed[i].load(std::memory_order_acquire))
-                        continue;
-                    const auto& prior = events[i];
-                    if (prior.w[0] != 1 || !prior.w[13] || prior.w[24] != e->w[10] ||
-                        prior.w[10] >= 262144)
-                        continue;
-                    const auto offset = prior.w[10] * 32;
-                    if (offset < left || offset + 32 > right)
-                        continue;
-                    if (e->w[21] >= 4096) {
-                        e->w[22] = 1;
-                        break;
-                    }
-                    Write sample(7);
-                    auto* out = sample.event;
-                    if (!out) {
-                        e->w[22] = 1;
-                        break;
-                    }
-                    out->w[6] = std::uint64_t(e - events.data()) + 1;
-                    out->w[7] = i + 1;
-                    out->w[8] = e->w[10];
-                    out->w[9] = prior.w[10];
-                    out->w[10] = offset;
-                    std::uint32_t record[8]{};
-                    const auto address = reinterpret_cast<std::uintptr_t>(source) + offset - left;
-                    if (address >= reinterpret_cast<std::uintptr_t>(source) &&
-                        read(address, record)) {
-                        out->w[11] = 1;
-                        for (unsigned n = 0; n < 8; ++n)
-                            out->w[14 + n] = record[n];
-                    }
-                    ++e->w[21];
-                }
-            }
-            b->Release();
+    Microsoft::WRL::ComPtr<ID3D11Buffer> candidate;
+    if (!c || !destination || FAILED(destination->QueryInterface(IID_PPV_ARGS(&candidate))) ||
+        reinterpret_cast<std::uintptr_t>(candidate.Get()) != buffer(0x8cfde0)) {
+        originalUpdate(c, destination, sub, box, source, row, depth);
+        return;
+    }
+    const auto revision = submittedOwners.invalidate();
+    D3D11_BUFFER_DESC desc{};
+    candidate->GetDesc(&desc);
+    // The upload usually covers active records, not the whole allocation.
+    // Keep only wholly covered records; never merge older ownership entries.
+    const std::uint64_t left = box ? box->left : 0;
+    const std::uint64_t right = box ? box->right : desc.ByteWidth;
+    const bool validRange =
+        left < right && right <= desc.ByteWidth &&
+        (!box || (box->top == 0 && box->front == 0 && box->bottom == 1 && box->back == 1));
+    if (!source || sub || !validRange || desc.StructureByteStride != 32 ||
+        desc.ByteWidth > 16 * 1024 * 1024 || c->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE) {
+        originalUpdate(c, destination, sub, box, source, row, depth);
+        return;
+    }
+    const auto generation = frame();
+    const auto resource = reinterpret_cast<std::uintptr_t>(candidate.Get());
+    const auto snapshot = producers.snapshot();
+    std::array<ProducerEntry, 512> selected{};
+    unsigned count = 0;
+    bool overflow = false;
+    for (unsigned i = 0; i < snapshot.count; ++i) {
+        const auto& entry = snapshot.entries[i];
+        if (!entry.owner || entry.frame != generation || entry.records != resource ||
+            entry.instance >= desc.ByteWidth / 32)
+            continue;
+        std::uint32_t actual[8]{};
+        const auto base = reinterpret_cast<std::uintptr_t>(source);
+        const auto offset = entry.instance * 32;
+        if (offset < left || offset + 32 > right)
+            continue;
+        const auto address = base + offset - left;
+        if (address < base || !read(address, actual) ||
+            !record_matches(static_cast<std::uint32_t>(entry.instance),
+                            static_cast<std::uint32_t>(entry.instance), actual, entry.record))
+            continue;
+        if (count == selected.size()) {
+            overflow = true;
+            break;
+        }
+        selected[count++] = entry;
+    }
+    // Publish only after the original submission, never while it is pending.
+    // The resource is retained by the table to exclude COM pointer reuse.
+    originalUpdate(c, destination, sub, box, source, row, depth);
+    const bool published =
+        !overflow && submittedOwners.publish(revision, reinterpret_cast<std::uintptr_t>(c),
+                                             resource, selected.data(), count, candidate);
+    // Small diagnostic summary; no source contents or extra GPU operations.
+    if (!sequenceV2 && uploadUpdates.fetch_add(1) < 16) {
+        Write write(18);
+        if (auto* e = write.event) {
+            e->w[6] = reinterpret_cast<std::uintptr_t>(c);
+            e->w[7] = resource;
+            e->w[8] = generation;
+            e->w[9] = count;
+            e->w[10] = published;
+            e->w[11] = revision;
         }
     }
-    // Submission is forwarded exactly once, even outside capture or on unknown resources.
-    originalUpdate(c, destination, sub, box, source, row, depth);
-    if (e)
-        e->w[25] = 1;
 }
 void present_boundary(ID3D11DeviceContext* c) noexcept {
     if (!captureActive.load(std::memory_order_acquire))

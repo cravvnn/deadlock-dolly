@@ -14,8 +14,8 @@ std::shared_ptr<SceneTracker> active;
 std::mutex install_mutex;
 // Public ID3D11DeviceContext ABI, shared by Context1/2/3/4. Both immediate
 // and deferred implementations are installed; their entry points may differ.
-constexpr std::array<unsigned, 11> slots{12, 13, 20, 21, 38, 39, 40, 50, 53, 58, 114};
-std::array<std::array<void*, 11>, 2> originals{}, targets{};
+constexpr std::array<unsigned, 13> slots{12, 13, 20, 21, 38, 39, 40, 50, 53, 58, 114, 14, 48};
+std::array<std::array<void*, 13>, 2> originals{}, targets{};
 bool installed = false;
 // Matte passes force the scene's color clear to white so the black/white pair
 // can be turned into a real alpha channel after the take. Clears of the
@@ -45,11 +45,21 @@ bool preferred_target_format(unsigned format) noexcept {
 }
 bool fallback_target_format(unsigned format) noexcept {
     switch (format) {
-    case 1: case 2: case 3: case 4:  // R32G32B32A32 family
-    case 5: case 6: case 7: case 8:  // R32G32B32 family
-    case 26:                         // R11G11B10_FLOAT
-    case 27: case 28: case 29: case 30:
-    case 31: case 32:                // R8G8B8A8 family
+    case 1:
+    case 2:
+    case 3:
+    case 4: // R32G32B32A32 family
+    case 5:
+    case 6:
+    case 7:
+    case 8:  // R32G32B32 family
+    case 26: // R11G11B10_FLOAT
+    case 27:
+    case 28:
+    case 29:
+    case 30:
+    case 31:
+    case 32: // R8G8B8A8 family
         return true;
     default:
         return false;
@@ -76,7 +86,8 @@ void note_scene_color_target(ID3D11DeviceContext* context) noexcept {
         texture->GetDesc(&desc);
         char name[160]{};
         UINT size = sizeof(name) - 1;
-        const bool named = SUCCEEDED(texture->GetPrivateData(WKPDID_D3DDebugObjectName, &size, name));
+        const bool named =
+            SUCCEEDED(texture->GetPrivateData(WKPDID_D3DDebugObjectName, &size, name));
         texture->Release();
         name[159] = 0;
         if (!named || !scene_target_name(name, desc.Width, desc.Height))
@@ -136,7 +147,8 @@ void select_white_target() noexcept {
         best = 31;
         for (auto& slot : gSceneTargets) {
             const auto count = slot.draws.load(std::memory_order_relaxed);
-            if (count <= best || !fallback_target_format(slot.format.load(std::memory_order_relaxed)))
+            if (count <= best ||
+                !fallback_target_format(slot.format.load(std::memory_order_relaxed)))
                 continue;
             best = count;
             chosen = slot.view.load(std::memory_order_relaxed);
@@ -198,7 +210,7 @@ void STDMETHODCALLTYPE indexed_instanced(ID3D11DeviceContext* c, UINT n, UINT in
     if (n && instances)
         classify::draw(c, 2);
     player_capture::redirect_indexed(c, n, instances, start, base, first,
-                                 reinterpret_cast<Fn>(originals[I][2]));
+                                     reinterpret_cast<Fn>(originals[I][2]));
     if (n && instances)
         observe_draw(c);
 }
@@ -235,7 +247,8 @@ void STDMETHODCALLTYPE indirect(ID3D11DeviceContext* c, ID3D11Buffer* args, UINT
 template <unsigned I>
 void STDMETHODCALLTYPE clear_rt(ID3D11DeviceContext* c, ID3D11RenderTargetView* view,
                                 const FLOAT color[4]) {
-    using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11RenderTargetView*, const FLOAT*);
+    using Fn =
+        void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11RenderTargetView*, const FLOAT*);
     static const FLOAT white[4] = {1, 1, 1, 1};
     const FLOAT* use = color;
     if (gWhiteClear.load(std::memory_order_relaxed) &&
@@ -272,14 +285,38 @@ HRESULT STDMETHODCALLTYPE finish(ID3D11DeviceContext* c, BOOL restore, ID3D11Com
             tracker->finish(c, *list);
     return result;
 }
-template <unsigned I> std::array<void*, 11> detours() {
-    return {
-        reinterpret_cast<void*>(&indexed<I>),           reinterpret_cast<void*>(&draw<I>),
-        reinterpret_cast<void*>(&indexed_instanced<I>), reinterpret_cast<void*>(&instanced<I>),
-        reinterpret_cast<void*>(&automatic<I>),         reinterpret_cast<void*>(&indirect<I, 5>),
-        reinterpret_cast<void*>(&indirect<I, 6>),       reinterpret_cast<void*>(&clear_rt<I>),
-        reinterpret_cast<void*>(&clear<I>),             reinterpret_cast<void*>(&execute<I>),
-        reinterpret_cast<void*>(&finish<I>)};
+template <unsigned I>
+HRESULT STDMETHODCALLTYPE map_upload(ID3D11DeviceContext* c, ID3D11Resource* resource, UINT sub,
+                                     D3D11_MAP kind, UINT flags, D3D11_MAPPED_SUBRESOURCE* result) {
+    using Fn = HRESULT(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11Resource*, UINT, D3D11_MAP,
+                                           UINT, D3D11_MAPPED_SUBRESOURCE*);
+    const auto hr = reinterpret_cast<Fn>(originals[I][11])(c, resource, sub, kind, flags, result);
+    if (SUCCEEDED(hr) && result)
+        player_capture::mapped_upload(c, resource, sub, kind, result->pData);
+    return hr;
+}
+template <unsigned I>
+void STDMETHODCALLTYPE update_upload(ID3D11DeviceContext* c, ID3D11Resource* resource, UINT sub,
+                                     const D3D11_BOX* box, const void* source, UINT row,
+                                     UINT depth) {
+    player_capture::update(c, resource, sub, box, source, row, depth,
+                           reinterpret_cast<player_capture::UpdateOriginal>(originals[I][12]));
+}
+template <unsigned I> std::array<void*, 13> detours() {
+    return {reinterpret_cast<void*>(&indexed<I>),
+            reinterpret_cast<void*>(&draw<I>),
+            reinterpret_cast<void*>(&indexed_instanced<I>),
+            reinterpret_cast<void*>(&instanced<I>),
+            reinterpret_cast<void*>(&automatic<I>),
+            reinterpret_cast<void*>(&indirect<I, 5>),
+            reinterpret_cast<void*>(&indirect<I, 6>),
+            reinterpret_cast<void*>(&clear_rt<I>),
+            reinterpret_cast<void*>(&clear<I>),
+            reinterpret_cast<void*>(&execute<I>),
+            reinterpret_cast<void*>(&finish<I>),
+            reinterpret_cast<void*>(&map_upload<I>),
+
+            reinterpret_cast<void*>(&update_upload<I>)};
 }
 }
 void set_white_clear(bool enabled) noexcept {
@@ -315,7 +352,7 @@ bool install_scene_hooks(ID3D11Device* device, ID3D11DeviceContext* immediate) n
     ID3D11DeviceContext* deferred = nullptr;
     if (FAILED(device->CreateDeferredContext(0, &deferred)))
         return false;
-    std::array<std::array<void*, 11>, 2> found{};
+    std::array<std::array<void*, 13>, 2> found{};
     auto** a = *reinterpret_cast<void***>(immediate);
     auto** b = *reinterpret_cast<void***>(deferred);
     for (unsigned m = 0; m < slots.size(); ++m) {
@@ -330,9 +367,9 @@ bool install_scene_hooks(ID3D11Device* device, ID3D11DeviceContext* immediate) n
         const auto init = MH_Initialize();
         if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED)
             return false;
-        const std::array<std::array<void*, 11>, 2> callbacks{detours<0>(), detours<1>()};
+        const std::array<std::array<void*, 13>, 2> callbacks{detours<0>(), detours<1>()};
         std::vector<void*> created;
-        created.reserve(22);
+        created.reserve(26);
         const auto rollback = [&created]() {
             for (auto* target : created) {
                 MH_DisableHook(target);

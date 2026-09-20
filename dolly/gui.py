@@ -550,7 +550,9 @@ class DollyApp:
                                    depth=bool(self.video_depth.get()),
                                    depth_exr=bool(self.video_depth_exr.get()),
                                    layers=layers).validated()
-        except (ValueError, KeyError, OSError) as exc:
+            if "players" in options.layers:
+                self._player_layer_frames(options)
+        except (ValueError, KeyError, OSError, RuntimeError) as exc:
             self._error("Record video", exc)
             return
         project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
