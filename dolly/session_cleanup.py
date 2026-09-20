@@ -4,6 +4,7 @@ from __future__ import annotations
 import ctypes
 import fnmatch
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -114,6 +115,7 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
     # not follow a replaced cvar_unlocker directory or remove extra user files.
     files: list[Path] = []
     directories: list[Path] = []
+    preserved_artifact: Path | None = None
     pending = [overlay]
     while pending:
         directory = pending.pop()
@@ -129,7 +131,13 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
                 continue
             if not plain:
                 raise LaunchError(f"Temporary plugin directory contains a link; left untouched: {child}")
-            if child.is_dir() and relative in GENERATED_DIRS:
+            if ((child.is_dir() and relative == "cvar_unlocker/replays") or
+                    (child.is_file() and relative == "cvar_unlocker/panorama_debugger.cfg")):
+                # Sessions can leave replay/settings data in the temporary mount.
+                # It is not ours to delete or traverse. Ownership and actual
+                # SearchPaths were verified above. Inspect other entries too.
+                preserved_artifact = child
+            elif child.is_dir() and relative in GENERATED_DIRS:
                 directories.append(child)
                 pending.append(child)
             elif child.is_file() and relative in GENERATED_FILES:
@@ -138,6 +146,11 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
                 continue
             else:
                 raise LaunchError(f"Temporary plugin directory contains an extra file or folder; left untouched: {child}")
+    if preserved_artifact is not None:
+        logging.getLogger(__name__).warning(
+            "Preserved an unmounted Dolly session containing replay/settings data: %s. "
+            "No files were deleted; this old session does not block a new launch.", overlay)
+        return False
     # Retain the ownership marker until all binaries have been removed so a
     # locked DLL can be retried on the next launch.
     marker = overlay / ".dolly-session.json"

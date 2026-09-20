@@ -62,7 +62,7 @@ struct Cadence {
     }
 };
 
-// Bounded provenance for submitted shot frames. No allocation or I/O occurs on
+// Bounded provenance for written shot frames. No allocation or I/O occurs on
 // the render thread. The sidecar retains the first samples and whole-take counts.
 struct ShotClockTrace {
     struct Sample {

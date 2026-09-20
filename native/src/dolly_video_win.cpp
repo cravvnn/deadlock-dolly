@@ -91,7 +91,12 @@ struct MediaApi {
     }
     ~MediaApi() { unload(); }
 };
+struct FrameStamp {
+    double phase = -1;
+    bool native = false;
+};
 struct CpuFrame {
+    FrameStamp stamp;
     std::vector<std::uint8_t> pixels;
     std::uint64_t pts = 0;
     depth::RawFrame depth;
@@ -146,6 +151,7 @@ struct Session {
     std::condition_variable wake;
 };
 struct GpuSlot {
+    FrameStamp stamp;
     Com<ID3D11Texture2D> staging;
     std::uint64_t pts = 0;
     depth::RawFrame depth;
@@ -380,20 +386,28 @@ HRESULT make_sample(MediaApi& api, const Session& s, const CpuFrame& frame,
         hr = sample->SetSampleTime(LONGLONG(frame.pts));
     return hr;
 }
+// Metadata follows successful output writes, not GPU submissions that may still
+// be pending at stop. Only the encoder worker mutates the written-frame range.
+void observe_written_frame(Session& s, const FrameStamp& stamp) noexcept {
+    const auto index = s.written.fetch_add(1, std::memory_order_relaxed);
+    s.shot.observe(index, stamp.phase);
+    s.shot_clock.observe(index, stamp.phase, stamp.native);
+}
 HRESULT write_sample(Session& s, IMFSinkWriter* writer, DWORD stream, IMFSample* sample,
-                     std::uint64_t start_pts, std::uint64_t end_pts) {
+                     std::uint64_t start_pts, std::uint64_t end_pts, const FrameStamp& stamp) {
     const auto duration = std::max<std::uint64_t>(1, end_pts > start_pts ? end_pts - start_pts : 1);
     HRESULT hr = sample->SetSampleDuration(LONGLONG(duration));
     if (SUCCEEDED(hr))
         hr = writer->WriteSample(stream, sample);
     if (SUCCEEDED(hr)) {
-        s.written.fetch_add(1, std::memory_order_relaxed);
+        observe_written_frame(s, stamp);
         s.duration.store(start_pts + duration, std::memory_order_release);
     }
     return hr;
 }
 HRESULT consume_frame(MediaApi& api, Session& s, IMFSinkWriter* writer, DWORD stream,
-                      Com<IMFSample>& previous, std::uint64_t& previous_pts) {
+                      Com<IMFSample>& previous, std::uint64_t& previous_pts,
+                      FrameStamp& previous_stamp) {
     const auto read = s.consumed.load(std::memory_order_relaxed);
     auto& frame = s.cpu[read % kSlots];
     Com<IMFSample> next;
@@ -403,16 +417,18 @@ HRESULT consume_frame(MediaApi& api, Session& s, IMFSinkWriter* writer, DWORD st
         fail(s, hr, L"Depth frame could not be written; paired recording stopped.");
     }
     const auto pts = frame.pts;
+    const auto stamp = frame.stamp;
     s.consumed.store(read + 1, std::memory_order_release);
     s.wake.notify_all();
     if (SUCCEEDED(hr) && previous.p)
-        hr = write_sample(s, writer, stream, previous.p, previous_pts, pts);
+        hr = write_sample(s, writer, stream, previous.p, previous_pts, pts, previous_stamp);
     if (FAILED(hr))
         return hr;
     previous.reset();
     previous.p = next.p;
     next.p = nullptr;
     previous_pts = pts;
+    previous_stamp = stamp;
     return S_OK;
 }
 // ---- FFmpeg external-encoder backend -------------------------------------
@@ -800,6 +816,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             const auto read = s->consumed.load(std::memory_order_relaxed);
             if (read != s->produced.load(std::memory_order_acquire)) {
                 const auto& frame = s->cpu[read % kSlots];
+                const auto stamp = frame.stamp;
                 const HRESULT hr = write_frame(frame);
                 s->consumed.store(read + 1, std::memory_order_release);
                 s->wake.notify_all();
@@ -816,7 +833,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 }
                 wrote_any = true;
                 ++frames;
-                s->written.fetch_add(1, std::memory_order_relaxed);
+                observe_written_frame(*s, stamp);
                 s->duration.store(frames * 10000000ull / std::max<std::uint32_t>(1, s->fps),
                                   std::memory_order_release);
                 continue;
@@ -835,6 +852,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
             const auto read = s->consumed.load(std::memory_order_relaxed);
             const auto& frame = s->cpu[read % kSlots];
+            const auto stamp = frame.stamp;
             const HRESULT hr = write_frame(frame);
             s->consumed.store(read + 1, std::memory_order_release);
             s->wake.notify_all();
@@ -848,7 +866,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             }
             wrote_any = true;
             ++frames;
-            s->written.fetch_add(1, std::memory_order_relaxed);
+            observe_written_frame(*s, stamp);
         }
         child.close_input();
         depth_child.close_input();
@@ -951,6 +969,7 @@ void encode(std::shared_ptr<Session> s) noexcept {
     Com<IMFSample> previous;
     DWORD stream = 0;
     std::uint64_t previous_pts = 0;
+    FrameStamp previous_stamp;
     try {
         const auto deadline = GetTickCount64() + 10000;
         while (!s->configured.load(std::memory_order_acquire) &&
@@ -1001,7 +1020,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
             }
             const auto read = s->consumed.load(std::memory_order_relaxed);
             if (read != s->produced.load(std::memory_order_acquire)) {
-                const HRESULT hr = consume_frame(api, *s, writer.p, stream, previous, previous_pts);
+                const HRESULT hr = consume_frame(api, *s, writer.p, stream, previous, previous_pts,
+                                                 previous_stamp);
                 if (FAILED(hr)) {
                     fail(*s, hr,
                          L"Video encoding failed. Check available disk space and encoder support.");
@@ -1027,7 +1047,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
         // the bounded CPU queue before finalizing instead of silently losing it.
         while (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load()) &&
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
-            const HRESULT hr = consume_frame(api, *s, writer.p, stream, previous, previous_pts);
+            const HRESULT hr =
+                consume_frame(api, *s, writer.p, stream, previous, previous_pts, previous_stamp);
             if (FAILED(hr))
                 fail(*s, hr, L"Video encoding failed while finishing the last frames.");
         }
@@ -1037,7 +1058,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
             const auto elapsed =
                 last > first ? clock_units(last - first, s->frequency, 10000000) : 0;
             const auto end = final_sample_end(previous_pts, s->fixed_step ? s->fps : 0, elapsed);
-            HRESULT hr = write_sample(*s, writer.p, stream, previous.p, previous_pts, end);
+            HRESULT hr =
+                write_sample(*s, writer.p, stream, previous.p, previous_pts, end, previous_stamp);
             if (SUCCEEDED(hr))
                 hr = writer->Finalize();
             finalized = SUCCEEDED(hr);
@@ -1496,6 +1518,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                         row_bytes);
         context->Unmap(slot.staging.p, 0);
         frame.pts = slot.pts;
+        frame.stamp = slot.stamp;
         if (s.depth_enabled) {
             frame.depth = std::move(slot.depth);
             slot.depth_ready = false;
@@ -1626,9 +1649,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     } else {
         context->CopyResource(slot.staging.p, backbuffer.p);
     }
-    if (std::isfinite(replay_time) && replay_time >= 0)
-        s.shot.observe(gpu.submitted, replay_time);
-    s.shot_clock.observe(gpu.submitted, replay_time, native_clock);
+    slot.stamp = {replay_time, native_clock};
     slot.pts = pts;
     ++gpu.submitted;
     s.capture_submitted.fetch_add(1, std::memory_order_relaxed);

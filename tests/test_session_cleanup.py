@@ -115,6 +115,56 @@ class CleanupTests(unittest.TestCase):
         self.assertFalse(self.session.overlay_dir.exists())
         self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO.encode())
 
+    def test_unmounted_replay_folder_is_preserved_without_blocking_next_launch(self):
+        self.session.restore_gameinfo()
+        replay_dir = self.session.overlay_dir / "cvar_unlocker" / "replays"
+        replay_dir.mkdir()
+        demo = replay_dir / "user.dem"
+        demo.write_bytes(b"preserve unknown replay bytes")
+        # Both journal-based and orphan discovery revisit this mount. Neither
+        # may delete user data or block the next launch once it is unmounted.
+        self.assertEqual(self.recover(), [])
+        self.assertEqual(self.recover(), [])
+        self.assertEqual(demo.read_bytes(), b"preserve unknown replay bytes")
+        process = MagicMock()
+        process.pid = 9877
+        with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.subprocess, "Popen", return_value=process), patch.object(launcher.threading, "Thread"):
+            next_session = launcher.launch(self.paths.root)
+        self.assertNotEqual(next_session.overlay_dir, self.session.overlay_dir)
+        self.assertIn("-dev", next_session.command)
+        self.assertIn("-insecure", next_session.command)
+        next_session.restore_gameinfo()
+        self.assertEqual(demo.read_bytes(), b"preserve unknown replay bytes")
+        self.assertTrue((self.session.overlay_dir / "cvar_unlocker/bin/win64/server.dll").is_file())
+        self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO.encode())
+
+    def test_panorama_debugger_config_is_preserved_without_blocking_recovery(self):
+        self.session.restore_gameinfo()
+        settings = self.session.overlay_dir / "cvar_unlocker" / "panorama_debugger.cfg"
+        settings.write_bytes(b"unknown user settings\r\n")
+        self.assertEqual(self.recover(), [])
+        # Both reported artifacts can coexist, and repeated cleanup stays safe.
+        (self.session.overlay_dir / "cvar_unlocker" / "replays").mkdir()
+        self.assertEqual(self.recover(), [])
+        self.assertEqual(settings.read_bytes(), b"unknown user settings\r\n")
+        self.assertTrue((self.session.overlay_dir / "cvar_unlocker/bin/win64/server.dll").is_file())
+        self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO.encode())
+
+    def test_replay_folder_does_not_bypass_other_cleanup_safety_checks(self):
+        self.session.restore_gameinfo()
+        (self.session.overlay_dir / "cvar_unlocker" / "replays").mkdir()
+        extra = self.session.overlay_dir / "notes.txt"
+        extra.write_text("keep me")
+        with self.assertRaisesRegex(launcher.LaunchError, "extra file"):
+            self.recover()
+        self.assertEqual(extra.read_text(), "keep me")
+        extra.unlink()
+        self.paths.gameinfo.write_text(
+            GAMEINFO.replace('Game "core"', 'Game "citadel_dolly_*/cvar_unlocker"'),
+            encoding="utf-8")
+        with self.assertRaisesRegex(launcher.LaunchError, "still references"):
+            self.recover()
+
     def test_unknown_user_content_preserves_the_whole_directory(self):
         self.session.restore_gameinfo()
         extra = self.session.overlay_dir / "notes.txt"

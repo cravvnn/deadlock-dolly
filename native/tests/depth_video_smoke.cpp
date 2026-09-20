@@ -216,6 +216,17 @@ int wmain(int argc, wchar_t** argv) {
             if (expected == video::State::completed) {
                 require(fs::exists(path) && fs::exists(mode_root / L"depth" / L"manifest.json"),
                         "Completed pair missing output");
+                // This test stops with a GPU copy still pending. Sidecar range
+                // must describe encoded output, excluding that unwritten tail.
+                std::ifstream metadata(path.wstring() + L".shot.json");
+                const std::string text((std::istreambuf_iterator<char>(metadata)), {});
+                const auto last =
+                    "\"last_frame\": " + std::to_string(status.frames_written - 1) + ",";
+                require(text.find(last) != std::string::npos,
+                        "Shot metadata included an unwritten tail frame");
+                require(text.find("\"clock_fallback_frames\": " +
+                                  std::to_string(status.frames_written) + ",") != std::string::npos,
+                        "Clock metadata did not match the written frames");
                 std::ofstream report(root / (std::to_wstring(mode) + L".status"));
                 report << status.frames_written << " " << status.frames_dropped << "\n";
             } else
