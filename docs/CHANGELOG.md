@@ -1,5 +1,26 @@
 # Changes
 
+## 0.5.29 alpha — Confetti rain and player POV export
+
+- Add **confetti rain** to shots. Enable it in the Export tab or the in-game
+  card, choose a spawn height between 100 and 1500 units, and optionally have
+  pieces despawn when they touch the ground. The rain volume follows the
+  camera, ships its own effect assets, and leaves the game's files unchanged.
+- Add **Player POV** export. Choose the game's spectator view, pause at the
+  desired start, then record a bounded POV take with the shared export settings
+  without replacing the shot's authored camera path. Color and paired depth
+  takes are both supported.
+- Fix the rain vanishing on longer shots. The replay clock's sub-frame wobble
+  no longer resets the effects, so the rain stays continuous through pauses,
+  seeks, and long camera moves.
+- Double the close rain coverage (depth and width) at the same particle
+  density, and widen the high-altitude volume so long camera paths stay filled
+  with rain. All effects are released when a take ends or Stop is pressed.
+- Verified in local replays: continuous rain across three stationary cycles
+  and a long moving path, pause/resume, ground-contact mode, and one bounded
+  5-second color+depth camera-path export with no lingering particles.
+- Thanks to s34532 for the native confetti rain implementation.
+
 ## 0.5.28 alpha — Editing configuration and in-game camera reset
 
 - Launch with Dolly's reviewed editing gameinfo so competitive framing and
