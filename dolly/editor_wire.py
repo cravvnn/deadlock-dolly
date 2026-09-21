@@ -35,7 +35,7 @@ EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "s
                  "set_attach_smoothing", "set_attach_hide", "attach_cycle_target",
                  "attach_cycle_point", "attach_reset",
                  "attach_preview", "attach_snap", "set_attach_bone", "set_source_blend", "seek_shot", "step_replay_ticks",
-                 "reset_camera_path")
+                 "reset_camera_path", "set_video_source", "set_pov_duration")
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")
@@ -265,7 +265,8 @@ def pack_config(sequence, owner_sequence, ack_event, values):
                    | (4 if values.get("video_depth_exr") else 0)
                    | (8 if values.get("video_layer_world") else 0)
                    | (16 if values.get("video_layer_players") else 0)
-                   | (32 if values.get("video_layer_effects") else 0))
+                   | (32 if values.get("video_layer_effects") else 0)
+                   | (64 if values.get("video_pov") else 0))
     video_speed = _finite(values.get("video_speed", 1.0), .05, 4, "video export speed")
     return CONFIG.pack(
         CONFIG_MAGIC, _uint(sequence, "sequence"), EDITOR_ABI, int(enabled), OWNERS.index(owner),
@@ -280,7 +281,9 @@ def pack_config(sequence, owner_sequence, ack_event, values):
         _finite(values.get("playback_speed", 1.0), .05, 4, "playback speed"),
         playback_rate, 0 if reshade is None else reshade.vk,
         0 if reshade is None else reshade.modifiers,
-        video_fps, video_bitrate, video_encoder, video_flags, video_speed, b"\0" * 6)
+        video_fps, video_bitrate, video_encoder, video_flags, video_speed,
+        struct.pack("<f2x", _finite(values.get("pov_duration", 10), .1, 120, "POV duration"))
+        if values.get("video_pov") else b"\0" * 6)
 
 
 def unpack_status(data, ack_event=0):

@@ -918,15 +918,16 @@ void draw_panel(const EditorSnapshot& state) {
                         ImGui::EndCombo();
                     }
                     ImGui::Separator();
-                    action_button("Capture camera here",
-                                  EditorAction::Capture, ImGui::GetContentRegionAvail().x, 0, true);
+                    action_button("Capture camera here", EditorAction::Capture,
+                                  ImGui::GetContentRegionAvail().x, 0, true);
                     ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
                                          !state.camera_count);
-                    if (ImGui::Button("Reset camera path", ImVec2(ImGui::GetContentRegionAvail().x, 0)))
+                    if (ImGui::Button("Reset camera path",
+                                      ImVec2(ImGui::GetContentRegionAvail().x, 0)))
                         ImGui::OpenPopup("Reset camera path?");
                     ImGui::EndDisabled();
                     if (ImGui::BeginPopupModal("Reset camera path?", nullptr,
-                                              ImGuiWindowFlags_AlwaysAutoResize)) {
+                                               ImGuiWindowFlags_AlwaysAutoResize)) {
                         ImGui::TextUnformatted("Replace all camera views with the current view?");
                         ImGui::TextUnformatted("Lens and depth-of-field tracks will be kept.");
                         ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
@@ -1408,10 +1409,35 @@ void draw_panel(const EditorSnapshot& state) {
             }
             if (ImGui::BeginTabItem("Export")) {
                 if (begin_panel_card("##export-camera")) {
-                    section_title("Camera source", "Saved shot");
-                    if (!state.camera_count) {
+                    section_title("Camera source", "Export");
+                    const auto capture_state = video::status().state;
+                    ImGui::BeginDisabled(state.busy || state.playing ||
+                                         capture_state == video::State::starting ||
+                                         capture_state == video::State::recording ||
+                                         capture_state == video::State::finalizing);
+                    int source = state.video_pov ? 1 : 0;
+                    if (ImGui::Combo("Source", &source, "Camera path\0Player POV\0"))
+                        editor_enqueue(EditorAction::SetVideoSource, source);
+                    if (state.video_pov) {
+                        char duration_label[32];
+                        std::snprintf(duration_label, sizeof(duration_label), "%.3g seconds",
+                                      state.pov_duration);
+                        if (ImGui::BeginCombo("Replay duration", duration_label)) {
+                            for (const double seconds : {1., 2., 5., 10., 15., 30., 60., 120.}) {
+                                char label[32];
+                                std::snprintf(label, sizeof(label), "%.0f seconds", seconds);
+                                if (ImGui::Selectable(label, seconds == state.pov_duration))
+                                    editor_enqueue(EditorAction::SetPovDuration, seconds);
+                            }
+                            ImGui::EndCombo();
+                        }
+                        ImGui::TextWrapped(
+                            "F9: select a hero and pause at the start. F8: return here. Record POV hides the HUD and stops after this segment.");
+                    }
+                    ImGui::EndDisabled();
+                    if (!state.video_pov && !state.camera_count) {
                         ImGui::TextWrapped("Capture at least two camera views to record a shot.");
-                    } else if (state.attach_selected) {
+                    } else if (!state.video_pov && state.attach_selected) {
                         EditorRoster roster{};
                         char target[112] = "Saved player";
                         if (editor_roster_snapshot(roster) &&
@@ -1427,11 +1453,12 @@ void draw_panel(const EditorSnapshot& state) {
                                                                            : "Point: Eyes");
                         ImGui::TextDisabled("%u of %u views use attachment", state.attach_keys,
                                             state.shot_keys);
-                    } else {
+                    } else if (!state.video_pov) {
                         ImGui::TextWrapped("View %u: Free path", state.selected_camera + 1);
                     }
-                    ImGui::TextWrapped(
-                        "Export uses saved sources and offsets, including edits made while previewing.");
+                    if (!state.video_pov)
+                        ImGui::TextWrapped(
+                            "Export uses saved sources and offsets, including edits made while previewing.");
                 }
                 end_panel_card();
                 // The in-game controls mirror the desktop values through a
@@ -1566,7 +1593,8 @@ void draw_panel(const EditorSnapshot& state) {
                                         recording.state == video::State::recording;
                     ImGui::BeginDisabled(!state.ready || state.busy);
                     ImGui::BeginDisabled(active || recording.state == video::State::finalizing ||
-                                         state.camera_count < 2 || state.playing);
+                                         state.camera_count < 2 || state.playing ||
+                                         state.video_pov);
                     action_button("Play shot", EditorAction::PlayPath,
                                   ImGui::GetContentRegionAvail().x);
                     ImGui::EndDisabled();
@@ -1580,7 +1608,7 @@ void draw_panel(const EditorSnapshot& state) {
                         ImGui::BeginDisabled(recording.state == video::State::finalizing);
                         action_button(recording.state == video::State::finalizing
                                           ? "Finalizing video..."
-                                          : "Record video",
+                                          : (state.video_pov ? "Record POV" : "Record video"),
                                       EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
                         ImGui::EndDisabled();
                     }

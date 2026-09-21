@@ -161,6 +161,7 @@ tests/test_camera_position.py
 tests/test_compatibility.py
 tests/test_console.py
 tests/test_controller.py
+tests/test_pov_export.py
 tests/test_curve.py
 tests/test_editor_bridge.py
 tests/test_editor_session.py

@@ -355,7 +355,7 @@ class NativeBridge(MediaTransport):
                 raise NativeBridgeError("Native camera did not acknowledge the command in time: " + snapshot.get("message", snapshot["state"]))
             self._sleep(min(0.01, remaining))
 
-    def prepare(self, project, start, speed, frozen, demo_name, timeout=5):
+    def prepare(self, project, start, speed, frozen, demo_name, timeout=5, *, pov=False):
         start = _number(start, "Start time")
         speed = _number(speed, "Playback speed", positive=True)
         timeout = _number(timeout, "Native acknowledgment timeout")
@@ -367,6 +367,9 @@ class NativeBridge(MediaTransport):
         if len(demo) >= 512:
             raise ValueError("Replay name is too long for the native camera protocol")
         payload = compile_shot(project)
+        if type(pov) is not bool or (pov and (frozen or project.tracks or project.setup_values
+                                             or any(key.source != "free" for key in project.keyframes))):
+            raise ValueError("POV segments cannot override the game's camera or effects")
         if start > project.duration:
             raise ValueError("Native start time exceeds the shot duration")
         with self._operations:
@@ -377,6 +380,7 @@ class NativeBridge(MediaTransport):
             self._manual = False
             self._start, self._speed, self._demo = start, speed, demo
             self._frozen = bool(frozen)
+            self._pov = pov
             self._flags = self._compose_flags()
             command = self._publish(1, payload)
             try:
@@ -388,7 +392,7 @@ class NativeBridge(MediaTransport):
             return result
 
     def _compose_flags(self):
-        return (1 if self._frozen else 0) | 2 | (0 if self._relief else 4)
+        return (1 if self._frozen else 0) | (16 if getattr(self, "_pov", False) else 2) | (0 if self._relief else 4)
 
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking.
@@ -511,6 +515,7 @@ class NativeBridge(MediaTransport):
             self._manual = False
             self._demo, self._start, self._speed = demo, 0.0, 1.0
             self._frozen = playback is not True
+            self._pov = False
             self._flags = self._compose_flags()
             self.configure_editor(enabled=True, owner="panel")
             try:

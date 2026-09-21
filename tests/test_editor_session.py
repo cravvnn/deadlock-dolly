@@ -21,6 +21,14 @@ class Value:
 
 
 class EditorSessionTests(unittest.TestCase):
+    def test_pov_panel_preserves_game_camera(self):
+        self.app.video_source = Value("Player POV")
+        session.dispatch(self.app, {"action": "panel", "value": 1}, self.bridge)
+        operation = self.app._submit.call_args.args[1]
+        operation()
+        self.controller.open_pov_panel.assert_called_once()
+        self.controller.toggle_game_ui.assert_not_called()
+
     def test_bone_picker_cannot_apply_a_stale_or_other_players_catalog(self):
         from dolly.path import AttachKey
         from dolly.native_effects import model_token

@@ -101,7 +101,9 @@ enum class EditorAction : std::uint32_t {
     SetSourceBlend,
     SeekShot,
     StepReplayTicks,
-    ResetCameraPath
+    ResetCameraPath,
+    SetVideoSource,
+    SetPovDuration
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ResetCameraPath) == 77,
               "Stable camera reset action ID");
@@ -148,7 +150,8 @@ struct EditorConfig {
     std::uint16_t video_fps, video_bitrate_mbps;
     std::uint8_t video_encoder, video_flags; // flags bit 0: fixed-step export
     float video_speed;
-    unsigned char padding[6];
+    float pov_duration;
+    unsigned char padding[2];
 };
 struct EditorEvent {
     std::uint32_t sequence, action;
@@ -309,6 +312,8 @@ struct EditorSnapshot {
     std::uint32_t video_fps = 60, video_bitrate_mbps = 20, video_codec = 0;
     bool video_fixed_step = false;
     bool video_depth = false;
+    bool video_pov = false;
+    double pov_duration = 10;
     bool video_depth_exr = false;
     bool video_layer_world = false;
     bool video_layer_players = false;

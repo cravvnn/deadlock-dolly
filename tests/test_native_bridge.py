@@ -32,6 +32,15 @@ class Memory(bytearray):
 
 
 class NativeBridgeTests(unittest.TestCase):
+    def test_pov_uses_segment_clock_without_camera_or_aspect_flags(self):
+        self.after_sleep = self.respond
+        self.bridge.prepare(self.project, 0, 1, False, "example.dem", pov=True)
+        self.assertEqual(self.bridge._flags, 16)
+        self.bridge.set_seek_relief(False)
+        self.assertEqual(self.bridge._flags, 20)
+        self.bridge.prepare(self.project, 0, 1, False, "example.dem")
+        self.assertEqual(self.bridge._flags, 6)
+
     def test_diagnostics_preserve_attach_selection_without_aliasing(self):
         fields = {"scene_node": 816, "owner": 48, "player_origin": 200, "player_angles": 212,
                   "eye_offset": 2184, "eye_angles": 4536, "scene_child": 64, "scene_sibling": 72}

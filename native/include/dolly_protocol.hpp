@@ -26,6 +26,8 @@ enum class State : std::uint32_t {
 };
 constexpr std::uint32_t kFrozen = 1;
 constexpr std::uint32_t kAspect = 2;
+// Time a segment without replacing the game's spectator view or lens.
+constexpr std::uint32_t kGamePov = 16;
 // Optional per-command opt-out of the seek render relief. Absent means the
 // relief is allowed, so older editors keep the safer default.
 constexpr std::uint32_t kNoSeekRelief = 4;

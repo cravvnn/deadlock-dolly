@@ -158,6 +158,9 @@ class DollyApp:
         self.app_settings = self._load_app_settings()
         self.full_editor = tk.BooleanVar(value=self.app_settings.full_editor)
         self.video_path = tk.StringVar(value=str(default_video_path(self.project.name)))
+        self.video_source = tk.StringVar(value="Camera path")
+        self.video_pov_duration = tk.StringVar(value="10")
+        self._pov_project = None
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
@@ -463,6 +466,15 @@ class DollyApp:
     def _build_export(self):
         gui_layout.build_export(self)
 
+    def _video_source_changed(self, _event=None):
+        pov = self.video_source.get() == "Player POV"
+        if pov:
+            self.video_pov_controls.pack(fill="x")
+        else:
+            self.video_pov_controls.pack_forget()
+        self.video_start_button.configure(text="Record POV" if pov else "Record video")
+        self._update_export_camera_note()
+
     def _browse_video(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
             return
@@ -537,6 +549,19 @@ class DollyApp:
             self.status_text.set("Finish the current operation before starting a recording.")
             return
         try:
+            pov = hasattr(self, "video_source") and self.video_source.get() == "Player POV"
+            self._pov_project = None
+            if pov:
+                duration = float(self.video_pov_duration.get())
+                if not math.isfinite(duration) or not .1 <= duration <= 120:
+                    raise ValueError("Choose a POV duration between 0.1 and 120 replay seconds.")
+                state = self.controller.status()
+                tick = state.get("tick")
+                if tick is None or not state.get("game_ui_visible"):
+                    raise ValueError("Choose Player POV, press F9 to select a hero, then F8 to open Export.")
+                self._pov_project = Project(name="Player POV", start_tick=int(tick),
+                    tick_rate=self.project.tick_rate,
+                    keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0), Keyframe(duration, 0, 0, 0, 0, 0, 0)])
             codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
             layers = tuple(name for name, var in (("world", self.video_layer_world),
                                                   ("players", self.video_layer_players),
@@ -549,18 +574,18 @@ class DollyApp:
                                    speed=float(self.video_export_speed.get()),
                                    depth=bool(self.video_depth.get()),
                                    depth_exr=bool(self.video_depth_exr.get()),
-                                   layers=layers).validated()
+                                   layers=layers, shot_only=pov).validated()
             if "players" in options.layers:
                 self._player_layer_frames(options)
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             self._error("Record video", exc)
             return
-        project = Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None
-        frozen = self.frozen.get()
+        project = self._pov_project or (Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None)
+        frozen = False if pov else self.frozen.get()
         self._pending_auto_play = project is not None
         # A layered take ends with its authored path; the queue records one
         # isolated take per selected layer after the color take completes.
-        self._auto_finish_layered = bool(options.depth or options.layers) and project is not None
+        self._auto_finish_layered = bool(pov or options.depth or options.layers) and project is not None
         self._base_capture = options if options.layers else None
         # Players need a real alpha channel: their layer is recorded by the
         # native ownership capture (players plus their equipment, no NPCs).
@@ -582,13 +607,17 @@ class DollyApp:
             # The recorder's first frame is focus-gated. A desktop Start would
             # otherwise leave focus on Dolly and time out with no game frame.
             focus_window(game_pid())
-        self._submit("Preparing replay and recording", lambda: self.video_export.start(options, project=project, frozen=frozen), self._video_operation_done)
+        self._submit("Preparing replay and recording", lambda: self.video_export.start(options, project=project, frozen=frozen, pov=pov), self._video_operation_done)
 
     def _stop_video_recording(self, cancel=False):
         if self.busy:
             self.status_text.set("Finish the current operation before stopping the recording.")
             return
         self._auto_finish_layered = False
+        if getattr(self, "_pov_project", None) is not None and self.controller.status().get("playing"):
+            # An early Finish ends this take, including its queued passes.
+            # Do not silently export longer layer takes than the color video.
+            self._layer_queue = []
         self._submit("Discarding recording" if cancel else "Finishing video recording",
                      lambda: self.video_export.stop(cancel=cancel), self._video_operation_done)
 
@@ -652,7 +681,18 @@ class DollyApp:
         if self._pending_auto_play:
             if state in ("starting", "recording"):
                 self._pending_auto_play = False
-                self._play()
+                if getattr(self, "_pov_project", None) is not None:
+                    project = self._pov_project
+                    speed = float(self.video_export_speed.get())
+                    def start_pov():
+                        try:
+                            self.controller.play_pov(project, speed)
+                        except Exception:
+                            self.video_export.stop(cancel=True)
+                            raise
+                    self._submit("Starting POV segment", start_pov)
+                else:
+                    self._play()
             elif state in ("failed", "cancelled", "completed", "idle"):
                 self._pending_auto_play = False
         self._advance_layer_pipeline()
@@ -734,11 +774,13 @@ class DollyApp:
         self._pending_auto_play = True
         self._auto_finish_layered = True
         self._take_playing_seen = False
-        return self.video_export.start(options, project=self._snapshot(), before_record=configure_layer)
+        pov_project = getattr(self, "_pov_project", None)
+        return self.video_export.start(options, project=pov_project or self._snapshot(),
+                                       before_record=configure_layer, pov=pov_project is not None)
 
     def _player_layer_frames(self, base):
         """Preflight estimate; actual capture uses the completed color take's count."""
-        project = self.project
+        project = getattr(self, "_pov_project", None) or self.project
         if project is None or len(project.keyframes) < 2:
             raise RuntimeError("The players layer needs a camera path so its frames match the color take.")
         frames = int(math.ceil(project.duration * base.fps / base.speed - 1e-6))
@@ -789,8 +831,9 @@ class DollyApp:
         self._pending_auto_play = True
         self._auto_finish_layered = True
         self._take_playing_seen = False
-        return self.video_export.start(options, project=self._snapshot(),
-                                       before_record=arm_capture, capture_only=True)
+        pov_project = getattr(self, "_pov_project", None)
+        return self.video_export.start(options, project=pov_project or self._snapshot(),
+                                       before_record=arm_capture, capture_only=True, pov=pov_project is not None)
 
     def _finish_player_capture(self, layer):
         """Worker step: wait for the capture, then write the alpha layer master."""
@@ -896,6 +939,12 @@ class DollyApp:
                 self._error("Recording", RuntimeError(status.get("error") or message))
             self._last_video_state = state
         active = state in ACTIVE_STATES
+        if (getattr(self, "_pov_project", None) is not None
+                and state in ("failed", "cancelled")
+                and getattr(self.controller, "_pov_active", False) and not self.busy):
+            self._layer_queue = []
+            self._auto_finish_layered = False
+            self._submit("Restoring POV replay", self.video_export.stop)
         ready = recording_ready(controller_status)
         controller_message = str(controller_status.get("message") or "")
         if controller_status.get("playing") or "Playing native camera path" in controller_message:
@@ -919,6 +968,8 @@ class DollyApp:
             if widget is not None:
                 widget.configure(state="disabled" if active or self.busy else "normal")
         for widget in (self.video_fps_combo, self.video_bitrate_combo,
+                       getattr(self, "video_source_combo", None),
+                       getattr(self, "video_pov_duration_combo", None),
                        getattr(self, "video_codec_combo", None),
                        getattr(self, "video_speed_combo", None)):
             if widget is not None:
@@ -2931,7 +2982,10 @@ class DollyApp:
         label = getattr(self, "export_camera_note", None)
         if label is None:
             return
-        label.configure(text="Camera: " + attach_camera.camera_summary(self.project))
+        if hasattr(self, "video_source") and self.video_source.get() == "Player POV":
+            label.configure(text="Camera: Deadlock's selected spectator view. The saved camera path is unchanged.")
+        else:
+            label.configure(text="Camera: " + attach_camera.camera_summary(self.project))
 
     def _load_app_settings(self):
         try:

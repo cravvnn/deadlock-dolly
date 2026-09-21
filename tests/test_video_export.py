@@ -86,6 +86,23 @@ class VideoExportTests(unittest.TestCase):
         self.export.start(VideoOptions(self.path), before_record=lambda: calls.append("filter"))
         self.assertEqual(calls, ["prepare", "filter", "encode"])
 
+    def test_pov_prepares_game_view_and_restores_after_capture_stops(self):
+        project = object()
+        self.export.start(VideoOptions(self.path, shot_only=True), project=project, pov=True)
+        self.controller.prepare_pov_recording.assert_called_once_with(project)
+        self.controller.prepare_native_recording.assert_not_called()
+        self.assertTrue(self.bridge.start_video.call_args.kwargs["shot_only"])
+        self.export.stop()
+        self.controller.finish_pov_recording.assert_called_once()
+
+    def test_pov_start_failure_restores_hud_and_timing(self):
+        self.controller.set_export_timing.side_effect = RuntimeError("Timing rejected")
+        with self.assertRaisesRegex(RuntimeError, "Timing rejected"):
+            self.export.start(VideoOptions(self.path, fixed_step=True), project=object(), pov=True)
+        self.controller.finish_pov_recording.assert_called_once()
+        self.controller.clear_export_timing.assert_called()
+        self.bridge.start_video.assert_not_called()
+
     def test_capture_only_reserves_playback_without_an_mp4_encoder(self):
         self.controller.deployment_directory.return_value = Path(self.folder.name)
         armed = Mock()

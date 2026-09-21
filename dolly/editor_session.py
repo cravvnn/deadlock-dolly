@@ -105,6 +105,16 @@ def _video_values(app):
     return fps, bitrate, codec, fixed, speed, depth, depth_exr
 
 
+def _pov_duration(app):
+    try:
+        value = float(_value(app, "video_pov_duration", 10))
+        if math.isfinite(value) and .1 <= value <= 120:
+            return value
+    except (ValueError, TypeError):
+        pass
+    return (getattr(app, "_native_editor_config_cache", None) or {}).get("pov_duration", 10)
+
+
 def _configure_visualization(app, bridge, active, selected):
     publish = getattr(bridge, "publish_visualization", None)
     if publish is None:
@@ -173,6 +183,8 @@ def configure(app):
                   video_depth=video_depth,
                   video_depth_exr=video_depth_exr,
                   video_speed=video_speed,
+                  video_pov=_value(app, "video_source", "Camera path") == "Player POV",
+                  pov_duration=_pov_duration(app),
                   **{"video_layer_" + layer: bool(_value(app, "video_layer_" + layer, False))
                      for layer in ("world", "players", "effects")})
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
@@ -438,9 +450,22 @@ def dispatch(app, event, bridge):
                 # the console back to the underlying game UI when it was open.
                 if getattr(app.controller, "_console_open", False) is True:
                     app.controller.toggle_console(enabled=False)
-                app.controller.toggle_game_ui(enabled=False)
+                if _value(app, "video_source", "Camera path") == "Player POV":
+                    app.controller.open_pov_panel()
+                else:
+                    app.controller.toggle_game_ui(enabled=False)
                 bridge.configure_editor(owner="panel")
             _native_operation(app, "Opening in-game editor", return_to_editor, bridge)
+    elif action == "set_video_source":
+        if event["value"] not in (0, 1):
+            raise ValueError("Unknown video camera source")
+        app.video_source.set("Player POV" if event["value"] else "Camera path")
+        app._video_source_changed()
+    elif action == "set_pov_duration":
+        value = event["value"]
+        if not math.isfinite(value) or not .1 <= value <= 120:
+            raise ValueError("POV duration must be between 0.1 and 120 seconds")
+        app.video_pov_duration.set(str(value))
     elif action == "set_speed":
         value = event["value"]
         if not math.isfinite(value) or not 1 <= value <= 10000:

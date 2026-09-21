@@ -254,6 +254,15 @@ def build_export(app):
     recording_holder.configure(padding=(16, GAP, 16 + page.scrollbar.winfo_reqwidth(), 0))
     body = page.body
     ttk.Label(body, text="Export", style="Section.TLabel").pack(anchor="w", pady=(0, GAP))
+    source = card(body, "Camera source")
+    app.video_source_combo = field(source, "Source", app.video_source, values=("Camera path", "Player POV"))
+    app.video_source_combo.bind("<<ComboboxSelected>>", app._video_source_changed)
+    app.video_pov_controls = ttk.Frame(source)
+    app.video_pov_duration_combo = field(app.video_pov_controls, "Replay seconds", app.video_pov_duration,
+                                       values=("1", "2", "5", "10", "15", "30", "60", "120"))
+    ttk.Label(app.video_pov_controls,
+              text="F9: select a hero and pause at the start. F8: return to Export. HUD hides automatically.",
+              style="CardMuted.TLabel", wraplength=760).pack(fill="x")
     destination = card(body, "Destination")
     app.video_path_entry = field(destination, "Output file", app.video_path)
     app.video_browse_button = actions(destination, (("Browse...", app._browse_video),

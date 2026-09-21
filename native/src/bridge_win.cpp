@@ -833,6 +833,17 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             completed = true;
         }
     }
+    if (c.flags & kGamePov) {
+        player_capture::set_hidden_handles(0, 0, 5);
+        if (c.mode == std::uint32_t(Mode::Play)) {
+            video::publish_path_replay_time(true, phase);
+            player_capture::publish_replay_time(phase);
+        }
+        finish(completed ? State::Completed
+                         : (c.mode == std::uint32_t(Mode::Play) ? State::Playing : State::Armed),
+               0, completed ? "POV segment finished." : "Game spectator owns the POV camera.");
+        return;
+    }
     CameraPose applied{};
     if (!command->path->evaluate(phase, applied) || !pose_valid(applied)) {
         fault = 16;
@@ -1122,7 +1133,10 @@ static DWORD WINAPI worker(void*) {
                     continue;
                 }
                 if (control.editor_pid != editor_pid || control.game_pid != GetCurrentProcessId() ||
-                    control.mode > 4 || control.flags & ~(kFrozen | kAspect | kNoSeekRelief) ||
+                    control.mode > 4 ||
+                    control.flags & ~(kFrozen | kAspect | kNoSeekRelief | kGamePov) ||
+                    ((control.flags & kGamePov) && ((control.flags & (kFrozen | kAspect)) ||
+                                                    control.mode == std::uint32_t(Mode::Manual))) ||
                     !std::isfinite(control.start_phase) || control.start_phase < 0 ||
                     !std::isfinite(control.speed) || control.speed < .05 || control.speed > 4 ||
                     !std::memchr(control.demo_name, 0, sizeof(control.demo_name))) {
@@ -1169,6 +1183,15 @@ static DWORD WINAPI worker(void*) {
                     continue;
                 }
                 std::vector<std::shared_ptr<const attach_runtime::Cache>> attach_caches;
+                if ((control.flags & kGamePov) && candidate &&
+                    (!candidate->effects.empty() ||
+                     std::any_of(candidate->attach.segments().begin(),
+                                 candidate->attach.segments().end(),
+                                 [](const auto& segment) { return (segment.flags & 1) != 0; }))) {
+                    gWorkerError = 32;
+                    Sleep(10);
+                    continue;
+                }
                 if (candidate)
                     for (const auto& attach_segment : candidate->attach.segments()) {
                         if (!(attach_segment.flags & 1)) {

@@ -910,6 +910,87 @@ class Controller:
         finally:
             self._replay_recovery_active = False
 
+    def open_pov_panel(self):
+        """Show Dolly controls without replacing the selected spectator view."""
+        with self._op_lock:
+            self._require_demo(require_tick=False)
+            if self._console_open:
+                self.toggle_console(enabled=False)
+            self._native_bridge().configure_editor(owner="panel")
+
+    def prepare_pov_recording(self, project):
+        """Prepare a segment clock; never calibrate or write a spectator pose."""
+        with self._op_lock:
+            project.validate()
+            if project.tracks or project.setup_values or any(k.source != "free" for k in project.keyframes):
+                raise ValueError("POV export requires a segment without camera/effect overrides.")
+            if self._recorder_active():
+                raise RuntimeError("Finish the current recording before preparing another.")
+            self._require_probe()
+            self._require_demo()
+            bridge = self._native_bridge()
+            if bridge is None:
+                raise RuntimeError("POV recording requires the native recorder.")
+            if not bridge.status().get("paused"):
+                raise RuntimeError("Pause the replay at the POV segment's start before recording.")
+            if not self._game_ui_visible:
+                raise RuntimeError("Choose Player POV, press F9 to select the hero, then F8 to open Export.")
+            self.stop()
+            self._stop_event.clear()
+            self._game_ui_visible = True
+            self._pov_active = True
+            try:
+                self._request("demo_pause")
+                current = self._require_demo()
+                before = bridge.status()["frame_count"]
+                positioned = current if current["tick"] == project.start_tick else self._seek(project, 0)
+                if positioned["tick"] != project.start_tick:
+                    raise RuntimeError("The replay did not reach the POV segment's start tick.")
+                self._wait_paused_native_view(bridge, before, expected_tick=project.start_tick)
+                self._remember_game_ui_settings()
+                self._hide_game_ui()
+                self._recording_replay = (self._session, str(self._demo), project.start_tick)
+            except Exception:
+                self.finish_pov_recording()
+                raise
+
+    def play_pov(self, project, speed=1.0):
+        with self._op_lock:
+            bridge = self._native_bridge()
+            if not getattr(self, "_pov_active", False) or bridge is None:
+                raise RuntimeError("Prepare a POV recording before starting the segment.")
+            try:
+                self._prepare_native_shot_replay()
+                self._wait_for_recorder_ready()
+                self._native_active = True
+                self._native_manual = False
+                bridge.prepare(project, 0, speed, False, self._demo.name, pov=True)
+                bridge.play()
+                self._demo_speed_changed = True
+                self._request("demo_timescale " + numeric(speed) + "; demo_resume")
+                self._playback_details = {"project": project.to_dict(), "camera_source": "player_pov", "speed": speed}
+                self._message("Playing POV segment.", playing=True, time=0)
+                self._thread = threading.Thread(target=self._run_native,
+                    args=(project, 0, speed, 60, False), daemon=True, name="DollyPOVPlayback")
+                self._thread.start()
+            except Exception:
+                self.finish_pov_recording()
+                raise
+
+    def finish_pov_recording(self):
+        if not getattr(self, "_pov_active", False):
+            return
+        self._halt(native_action="release")
+        self._pov_active = False
+        self._finish_playback()
+        error = self._restore_game_ui_settings()
+        self._game_ui_visible = True
+        bridge = self._native_bridge()
+        if bridge is not None and self._alive():
+            bridge.configure_editor(owner="panel")
+        if error:
+            raise RuntimeError(error)
+
     def prepare_native_recording(self, project=None, *, frozen=False):
         """Recover before opening a video file; reserve one paused shot start."""
         with self._op_lock:
@@ -2941,6 +3022,16 @@ class Controller:
 
 
     def _finish_native_playback(self):
+        if getattr(self, "_pov_active", False):
+            # Keep the segment clock clamped until capture has drained. Do not
+            # perform a spec_goto handoff or expose HUD in the recorded frames.
+            try:
+                self._request("demo_pause")
+            except Exception as exc:
+                return str(exc)
+            with self._state_lock:
+                self._state["playing"] = False
+            return None
         errors = []
         bridge = self._native_bridge()
         if bridge is not None and self._native_active:
@@ -3058,7 +3149,8 @@ class Controller:
             if failure or restoration:
                 self._message(" ".join(part for part in (failure, restoration) if part), playing=False)
             elif finished:
-                self._message("Native shot finished. Replay paused and final camera held. Play shot restarts; Stop / restore returns control to the game." if self._native_active else "Native shot finished. Replay paused, free-camera handoff verified and HUD restored.", playing=False)
+                self._message("Native shot finished. POV segment paused; finishing recording." if getattr(self, "_pov_active", False)
+                              else ("Native shot finished. Replay paused and final camera held. Play shot restarts; Stop / restore returns control to the game." if self._native_active else "Native shot finished. Replay paused, free-camera handoff verified and HUD restored."), playing=False)
 
     def _finish_playback(self):
         # Camera/cvar framing remains available for inspection until Stop.

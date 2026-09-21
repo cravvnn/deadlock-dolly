@@ -331,7 +331,20 @@ class VideoExport:
                 pass
 
     def start(self, options: VideoOptions, project=None, *, frozen=False,
-              before_record=None, capture_only=False) -> dict:
+              before_record=None, capture_only=False, pov=False) -> dict:
+        if pov and self.status().get("state") in ACTIVE_STATES:
+            raise RuntimeError("Finish the current recording before starting another.")
+        try:
+            return self._start(options, project, frozen=frozen, before_record=before_record,
+                               capture_only=capture_only, pov=pov)
+        except Exception:
+            if pov:
+                self._clear_export_timing()
+                self.controller.finish_pov_recording()
+            raise
+
+    def _start(self, options: VideoOptions, project=None, *, frozen=False,
+               before_record=None, capture_only=False, pov=False) -> dict:
         options = options.validated()
         if self.status().get("state") in ACTIVE_STATES:
             raise RuntimeError("Finish the current recording before starting another.")
@@ -341,7 +354,10 @@ class VideoExport:
         if bridge is None:
             raise RuntimeError("The native recorder is not connected.")
         prepare = getattr(self.controller, "prepare_native_recording", None)
-        if callable(prepare):
+        self._pov = bool(pov)
+        if pov:
+            self.controller.prepare_pov_recording(project)
+        elif callable(prepare):
             prepare(project, frozen=frozen)
         # A take with any side layer records into its own folder: the full
         # color video at the root plus one subfolder per layer. Color-only
@@ -454,6 +470,8 @@ class VideoExport:
                 time.sleep(0.05)
         finally:
             self._clear_export_timing()
+            if getattr(self, "_pov", False):
+                self.controller.finish_pov_recording()
 
     def _discard_empty_layer_folder(self):
         """Remove only a take folder this session created and left empty."""
