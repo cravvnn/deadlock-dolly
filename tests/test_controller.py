@@ -1282,6 +1282,18 @@ class ControllerTests(unittest.TestCase):
                 report = json.loads(archive.read("diagnostics.json"))
             self.assertEqual(report["crash_dumps"], [{"name": crash.name, "bytes": 12}])
 
+    def test_crash_dump_search_resolves_executable_and_install_folder_selections(self):
+        from test_launcher import fake_game
+        with tempfile.TemporaryDirectory() as directory:
+            paths = fake_game(Path(directory) / 'Deadlock')
+            crash = paths.game_dir / 'deadlock_2026_0920_172914_0_accessviolation.mdmp'
+            crash.write_bytes(b'MDMP fixture')
+            for selected in (paths.root, paths.game_dir, paths.citadel_dir,
+                             paths.executable.parent, paths.executable):
+                with self.subTest(selected=selected):
+                    self.controller._launch_attempt = {'game_path': str(selected)}
+                    self.assertIn(crash.resolve(), [p.resolve() for p in self.controller._crash_dumps()])
+
     def test_diagnostics_keep_previous_launch_and_raw_console_after_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

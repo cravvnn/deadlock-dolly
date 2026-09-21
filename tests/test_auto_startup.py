@@ -18,6 +18,7 @@ class AutoStartupTests(unittest.TestCase):
         self.controller._unlocker_pid = None
         self.console.demo_output = "Error - Not currently playing back a demo."
         self.console.complete_replay_on_send = True
+        self.console.values['status'] = 'Server: Active\nClient: Connected'
         self.session.restore_gameinfo.side_effect = lambda: self.console.events.append("restore_gameinfo")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -138,6 +139,26 @@ class AutoStartupTests(unittest.TestCase):
         self.bridge.frames = 0
         self.assertIsNone(self.controller._automatic_hideout_check(0))
         self.assertNotIn("cvar_unhide", self.console.events)
+
+    def test_native_rendered_frames_wait_for_pending_hideout_prerequisites(self):
+        self.controller._session = self.session
+        self.controller._console = self.console
+        request = self.console.request
+        for status in ('Server: Inactive\nClient: Disconnected\n@ Current : levelload',
+                       'map : dl_hideout\nCL: prerequisite : CWaitForGameServerStartupPrerequisite',
+                       ''):
+            with self.subTest(status=status):
+                self.console.request = lambda cmd, *a, **kw: status if cmd == 'status' else request(cmd, *a, **kw)
+                self.assertIsNone(self.controller._automatic_hideout_check(0))
+                self.assertEqual(self.console.sent, [])
+                self.assertNotIn('cvar_unhide', self.console.events)
+        self.console.request = lambda cmd, *a, **kw: 'Client: Connected' if cmd == 'status' else request(cmd, *a, **kw)
+        evidence = self.controller._automatic_hideout_check(0)
+        self.assertEqual(evidence['settled_status']['method'], 'settled_status')
+
+    def test_named_hideout_does_not_override_loading_status(self):
+        self.assertIsNone(Controller._console_hideout_evidence(
+            'map : dl_hideout\n@ Current : levelload', {'playing': False}))
 
     def test_rendered_scene_without_registered_unlocker_is_not_ready(self):
         self.controller._session = self.session

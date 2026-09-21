@@ -559,10 +559,9 @@ class Controller:
     def _automatic_hideout_check(self, initial_frame):
         """Require a rendered pre-replay scene and loaded command registration.
 
-        Native frame progression proves that view setup is running, not merely
-        that the console socket opened. The launcher forbids replay/map startup
-        commands; an explicit no-demo response therefore bounds this to its
-        initial pre-replay scene. Console-only mode needs named hideout evidence.
+        Native view callbacks can start while hideout prerequisites are still
+        loading. Require settled engine status as well as rendered frames;
+        neither an open socket nor an early view callback proves readiness.
         """
         output = self._request("demo_info", allow_error=True)
         try:
@@ -586,12 +585,15 @@ class Controller:
                 return None
             evidence = {"method": "rendered_pre_replay_scene", "initial_frame": initial_frame,
                         "rendered_frame": rendered, "demo": demo}
+        status = self._request("status", allow_error=True)
+        self._startup_evidence["console_status"] = str(status or "")[:4000]
+        settled = self._console_hideout_evidence(status, demo)
+        if settled is None:
+            return None
+        if bridge is None:
+            evidence = settled
         else:
-            status = self._request("status", allow_error=True)
-            self._startup_evidence["console_status"] = str(status or "")[:4000]
-            evidence = self._console_hideout_evidence(status, demo)
-            if evidence is None:
-                return None
+            evidence["settled_status"] = settled
         if not self._console.supports("cvar_unhide"):
             return None
         evidence["unlocker_command_registered"] = True
@@ -608,10 +610,6 @@ class Controller:
         bounded to the pre-replay scene.
         """
         text = str(status or "")
-        maps = re.findall(r"(?im)^\s*(?:\[[^]\r\n]+\]\s*)*(?:map|mapname)\s*[:=]\s*[\"']?([^\s\"']+)", text)
-        hideouts = [name for name in maps if "hideout" in re.split(r"[/\\_.-]", name.casefold())]
-        if hideouts:
-            return {"method": "named_hideout_status", "map": hideouts[0], "demo": demo}
         folded = text.casefold()
         # Still loading a level: the engine queues the map and reports startup
         # prerequisites. Any of these means the hideout is not ready yet.
@@ -621,6 +619,10 @@ class Controller:
             return None
         if not folded.strip():
             return None
+        maps = re.findall(r"(?im)^\s*(?:\[[^]\r\n]+\]\s*)*(?:map|mapname)\s*[:=]\s*[\"']?([^\s\"']+)", text)
+        hideouts = [name for name in maps if "hideout" in re.split(r"[/\\_.-]", name.casefold())]
+        if hideouts:
+            return {"method": "named_hideout_status", "map": hideouts[0], "demo": demo}
         return {"method": "settled_status", "demo": demo}
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
@@ -3573,7 +3575,12 @@ class Controller:
             base = Path(game_path)
             # The launcher starts the game with its `game` folder as the
             # working directory, which is where breakpad writes the dump.
-            roots.append(base if base.name.lower() == "game" else base / "game")
+            try:
+                roots.append(launcher.validate_game(base).game_dir)
+            except (launcher.LaunchError, OSError):
+                # Retain collection from an installation-root selection even
+                # if installation files disappeared after the crash.
+                roots.append(base if base.name.lower() == "game" else base / "game")
         roots.append(ROOT)
         if self._session:
             roots.append(self._session.session_dir)
