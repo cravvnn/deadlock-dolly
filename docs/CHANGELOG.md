@@ -2,10 +2,11 @@
 
 ## 0.5.29 alpha — Confetti rain and player POV export
 
-- Add **confetti rain** to shots. Enable it in the Export tab or the in-game
-  card, choose a spawn height between 100 and 1500 units, and optionally have
-  pieces despawn when they touch the ground. The rain volume follows the
-  camera, ships its own effect assets, and leaves the game's files unchanged.
+- Add **confetti rain driven by the game's native particle engine**. Enable it
+  in the Export tab or the in-game card, choose a spawn height between 100 and
+  1500 units, and optionally have pieces despawn when they touch the ground.
+  The camera-following volume uses Dolly's own packaged effect assets and
+  leaves the game's files unchanged.
 - Add **Player POV** export. Choose the game's spectator view, pause at the
   desired start, then record a bounded POV take with the shared export settings
   without replacing the shot's authored camera path. Color and paired depth
