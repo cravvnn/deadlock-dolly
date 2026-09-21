@@ -1032,10 +1032,15 @@ class DollyApp:
 
     def _configure_reshade(self, automatic=False):
         def operation():
+            from dolly.reshade_setup import runtime_issue
+            from dolly.runtime import application_root
             from dolly.settings import reshade_config_path
             selected = self.app_settings.reshade_runtime_path if automatic else self.reshade_runtime_path.get().strip()
+            issue = runtime_issue(selected, application_root=application_root()) if selected else None
+            if issue:
+                raise ValueError(issue)
             path = Path(selected).expanduser().absolute()
-            if path.suffix.lower() != ".dll" or not path.is_file():
+            if path.suffix.lower() != ".dll":
                 raise ValueError("Choose the 64-bit ReShade runtime DLL.")
             settings = replace(self.app_settings, reshade_runtime_path=str(path))
             config = reshade_config_path()

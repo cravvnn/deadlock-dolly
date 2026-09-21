@@ -54,6 +54,30 @@ def _normalize_path(value: str) -> str:
     return ntpath.normcase(ntpath.normpath(text))
 
 
+def runtime_issue(selected, *, application_root: Path | None = None) -> str | None:
+    """Explain why a selected ReShade runtime cannot be used yet, or None.
+
+    Dolly never bundles, copies or deletes the user's ReShade runtime: it stays
+    wherever the user put it. The two failures reported after an update are a
+    path that no longer exists (moved, cleaned or replaced) and a DLL kept
+    inside the Dolly folder, which a portable update can replace wholesale.
+    """
+    candidate = Path(str(selected)).expanduser()
+    if not candidate.is_file():
+        return (f"ReShade runtime missing: {candidate}. Choose the DLL again; Dolly never "
+                "moves or deletes it.")
+    if application_root is not None:
+        try:
+            inside = candidate.resolve().is_relative_to(Path(application_root).resolve())
+        except (OSError, ValueError):
+            inside = False
+        if inside:
+            return ("ReShade runtime is inside the Dolly folder, which an update replaces. "
+                    "Move the DLL to its own folder (for example Documents\\Dolly-ReShade) "
+                    "and select it again.")
+    return None
+
+
 def _bundled_family(value: str):
     """Name a bundled library folder (Shaders/Textures), or None."""
     text = value.strip().strip('"')

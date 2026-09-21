@@ -7,6 +7,36 @@ from unittest.mock import patch
 from dolly import reshade_setup
 
 
+class RuntimeIssueTests(unittest.TestCase):
+    def test_missing_runtime_names_the_path_and_the_fact_dolly_never_deletes_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            missing = Path(folder) / "Dolly-ReShade" / "ReShade64.dll"
+            issue = reshade_setup.runtime_issue(missing)
+        self.assertIsNotNone(issue)
+        self.assertIn("missing", issue)
+        self.assertIn(str(missing), issue)
+        self.assertIn("never", issue)
+
+    def test_runtime_inside_the_dolly_folder_warns_about_updates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "DeadlockDolly"
+            runtime = root / "_internal" / "ReShade64.dll"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_bytes(b"MZ")
+            issue = reshade_setup.runtime_issue(runtime, application_root=root)
+        self.assertIsNotNone(issue)
+        self.assertIn("inside the Dolly folder", issue)
+        self.assertIn("Dolly-ReShade", issue)
+
+    def test_runtime_in_its_own_folder_is_accepted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "DeadlockDolly"
+            runtime = Path(folder) / "Dolly-ReShade" / "ReShade64.dll"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_bytes(b"MZ")
+            self.assertIsNone(reshade_setup.runtime_issue(runtime, application_root=root))
+
+
 class PrepareConfigTests(unittest.TestCase):
     def _paths(self, temp: Path):
         base = temp / "bundle" / "third_party" / "reshade_shaders"
