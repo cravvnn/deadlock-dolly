@@ -1,5 +1,27 @@
 # Changes
 
+## 0.5.31 alpha — Play a shot that starts at a recorded-packet boundary
+
+- **Play shot no longer fails when the first camera tick sits one tick after
+  the replay's recorded packet.** Reported with a 45-minute replay: a camera
+  captured at tick 52121 (one past the paused position) made Play wait 15
+  seconds and abort with "the renderer has not confirmed a paused replay view",
+  on both attempts. The engine's paused skip had reported "Demo Skipping ...
+  from full packet 49921" and settled at tick 52120, one tick short of the
+  request, while Dolly's renderer gate demanded a tick at or after the target
+  and could never confirm.
+- A skipped seek now nudges playback across the recorded-packet boundary once
+  (resume then pause) and re-requires the exact tick. If the tick is still
+  unreachable, Dolly starts at the recorded tick one frame earlier, holds the
+  first camera over that instant and says so, instead of failing the whole
+  playback. The renderer gate now only proves a fresh paused rendered view; the
+  exact tick stays enforced by the console settle policy, and transport
+  hiccups during reconstruction are retried inside the existing 15-second
+  budget without swallowing identity errors.
+- A seek that still cannot settle now names the tick the replay reached before
+  reporting the renderer detail, so a stuck replay is distinguishable from a
+  window that is not rendering.
+
 ## 0.5.30 alpha — Depth and layer exports at 4K
 
 - Depth exports now work when the game renders the scene below the window size.
