@@ -185,6 +185,9 @@ def configure(app):
                   video_speed=video_speed,
                   video_pov=_value(app, "video_source", "Camera path") == "Player POV",
                   pov_duration=_pov_duration(app),
+                  confetti_enabled=bool(app.project.confetti_enabled),
+                  confetti_spawn_height=float(app.project.confetti_spawn_height),
+                  confetti_despawn_on_ground=bool(app.project.confetti_despawn_on_ground),
                   **{"video_layer_" + layer: bool(_value(app, "video_layer_" + layer, False))
                      for layer in ("world", "players", "effects")})
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
@@ -379,6 +382,34 @@ def dispatch(app, event, bridge):
             app._refresh_fixed()
             configure(app)
         app._submit("Applying Citadel DOF", lambda: app.controller.preview_native_effects(candidate, at), complete)
+    elif action.startswith("set_confetti_"):
+        value = event["value"]
+        if action == "set_confetti_spawn_height":
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not 100 <= value <= 1500):
+                raise ValueError("Confetti spawn height must be between 100 and 1500 units.")
+            changes = {"confetti_spawn_height": float(round(value))}
+        else:
+            if value not in (0, 1):
+                raise ValueError("Confetti switch must be on or off.")
+            field = ("confetti_enabled" if action == "set_confetti_enabled"
+                     else "confetti_despawn_on_ground")
+            changes = {field: bool(value)}
+        app.project = replace(app.project, **changes)
+        if hasattr(app, "confetti_enabled"):
+            app.confetti_enabled.set(app.project.confetti_enabled)
+            app.confetti_spawn_height.set(f"{app.project.confetti_spawn_height:g}")
+            app.confetti_despawn_on_ground.set(app.project.confetti_despawn_on_ground)
+        app._mark_dirty()
+        app.controller.set_native_confetti(
+            app.project.confetti_enabled, app.project.confetti_spawn_height,
+            app.project.confetti_despawn_on_ground)
+        app.status_text.set(
+            (f"Confetti rain enabled at {app.project.confetti_spawn_height:g} units; "
+             + ("despawns on ground." if app.project.confetti_despawn_on_ground
+                else "remains on the ground."))
+            if app.project.confetti_enabled else "Confetti rain disabled for this shot.")
+        configure(app)
     elif action == "play_pause":
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":

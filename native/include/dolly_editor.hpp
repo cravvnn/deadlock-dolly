@@ -103,7 +103,10 @@ enum class EditorAction : std::uint32_t {
     StepReplayTicks,
     ResetCameraPath,
     SetVideoSource,
-    SetPovDuration
+    SetPovDuration,
+    SetConfettiEnabled,
+    SetConfettiSpawnHeight,
+    SetConfettiDespawnOnGround
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ResetCameraPath) == 77,
               "Stable camera reset action ID");
@@ -127,6 +130,8 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SeekShot) == 75,
               "Stable shot seek action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::StepReplayTicks) == 76,
               "Stable tick-step action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetConfettiDespawnOnGround) == 82,
+              "Stable confetti action IDs");
 #pragma pack(push, 1)
 struct EditorBinding {
     std::uint16_t vk, modifiers;
@@ -326,6 +331,8 @@ struct EditorSnapshot {
     std::array<double, 11> dof{};
     bool citadel_dof_available = false, citadel_dof_enabled = false;
     double citadel_dof_sensor = 1.0, citadel_dof_focus = 200.0;
+    bool confetti_enabled = false, confetti_despawn_on_ground = false;
+    double confetti_spawn_height = 250.0;
     bool attach_available = false, attach_selected = false, attach_hide = true;
     bool attach_preview = false;
     std::uint32_t attach_point = 0, attach_target_index = 0, roster_count = 0;

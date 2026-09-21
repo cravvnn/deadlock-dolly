@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace dolly {
-constexpr std::uint32_t kBridgeAbi = 3;
+constexpr std::uint32_t kBridgeAbi = 4;
 constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 // The editor blocks occupy the first +4096 tail; the attach roster
 // (native -> editor) follows at +4096 inside a second 4 KiB page. Keep this
@@ -31,6 +31,13 @@ constexpr std::uint32_t kGamePov = 16;
 // Optional per-command opt-out of the seek render relief. Absent means the
 // relief is allowed, so older editors keep the safer default.
 constexpr std::uint32_t kNoSeekRelief = 4;
+// Confetti controls occupy previously unused flag bits.
+constexpr std::uint32_t kConfetti = 8;
+constexpr std::uint32_t kConfettiDespawnOnGround = 32;
+constexpr std::uint32_t kConfettiHeightShift = 16;
+constexpr std::uint32_t kConfettiHeightMask = 0xffff;
+constexpr std::uint32_t kConfettiControlMask =
+    kConfetti | kConfettiDespawnOnGround | (kConfettiHeightMask << kConfettiHeightShift);
 #pragma pack(push, 1)
 struct ControlHeader {
     char magic[8];
@@ -75,7 +82,28 @@ struct Status {
     std::uint64_t effect_frames;
     double effect_phase;
 };
+// Optional confetti diagnostics, published after the editor bone picker. The
+// block reports Dolly-side control flow only, so a visually missing rain can
+// be separated from an engine-side effect retirement. Older helpers leave it
+// zeroed and every reader must treat that as "not published".
+constexpr std::size_t kConfettiDiagnosticsOffset = kControlBytes + 22440;
+constexpr std::uint32_t kConfettiDiagnosticsAbi = 1;
+constexpr char kConfettiDiagnosticsMagic[8] = {'D', 'L', 'Y', 'C', 'F', 'T', '0', '1'};
+struct ConfettiDiagnostics {
+    char magic[8];
+    std::uint32_t sequence, abi;
+    std::uint32_t state, handles;
+    std::uint32_t starts, start_failures;
+    std::uint32_t frames, running_frames, resets;
+    std::uint32_t stop_disabled, stop_reconfigured, stop_seek, stop_backward;
+    std::uint32_t stop_invalid, stop_shutdown, stop_create_failed;
+    std::uint32_t state_changes;
+    double max_backward_delta;
+};
 #pragma pack(pop)
+static_assert(sizeof(ConfettiDiagnostics) == 84, "Python confetti diagnostic layout");
+static_assert(kConfettiDiagnosticsOffset + sizeof(ConfettiDiagnostics) <= kMappingBytes,
+              "Confetti diagnostics fit the mapping");
 static_assert(sizeof(ControlHeader) == 576, "Python control layout must match");
 static_assert(offsetof(ControlHeader, heartbeat) == 32, "Heartbeat requires aligned atomic access");
 static_assert(offsetof(Status, original_pose) == 72, "Python status layout must match");

@@ -503,6 +503,12 @@ EditorSnapshot editor_snapshot() noexcept {
         result.video_layer_world = (c->video_flags & 8) != 0;
         result.video_layer_players = (c->video_flags & 16) != 0;
         result.video_layer_effects = (c->video_flags & 32) != 0;
+        const auto confetti = c->reserved;
+        const auto confetti_height = confetti & 0xffffu;
+        result.confetti_enabled = (confetti & (1u << 16)) != 0;
+        result.confetti_despawn_on_ground = (confetti & (1u << 17)) != 0;
+        if (confetti_height >= 100 && confetti_height <= 1500)
+            result.confetti_spawn_height = double(confetti_height);
         if (std::isfinite(c->video_speed) && c->video_speed >= .05f && c->video_speed <= 4.0f)
             result.video_speed = c->video_speed;
     }
@@ -595,7 +601,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetPovDuration))
+        std::uint32_t(action) > std::uint32_t(EditorAction::SetConfettiDespawnOnGround))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -651,6 +657,12 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
          state.owner != EditorOwner::Panel || value < 0 || value > state.duration))
         return false;
     if (action == EditorAction::SetSourceBlend && (value < 0 || value > 10))
+        return false;
+    if ((action == EditorAction::SetConfettiEnabled ||
+         action == EditorAction::SetConfettiDespawnOnGround) &&
+        value != 0 && value != 1)
+        return false;
+    if (action == EditorAction::SetConfettiSpawnHeight && (value < 100 || value > 1500))
         return false;
     if (action == EditorAction::SetAttachBone) {
         EditorBones bones{};

@@ -28,6 +28,7 @@
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_media.hpp"
 #include "dolly_video.hpp"
+#include "dolly_confetti.hpp"
 // Pulled in again (as a no-op) by dolly_compat_runtime.hpp from inside the
 // anonymous namespace below. Declaring it here first keeps `#pragma once` from
 // introducing a `dolly` namespace in that anonymous namespace, which would
@@ -216,6 +217,38 @@ static void write_status(Status status, bool may_wait = false) noexcept {
     status.real_time = now_seconds();
     std::memcpy(out, &status, 8);
     std::memcpy(out + 12, reinterpret_cast<unsigned char*>(&status) + 12, sizeof(Status) - 12);
+    // Optional confetti diagnostics share the status lock and publish with the
+    // same seqlock discipline. They never carry engine liveness information.
+    const auto confetti_counts = confetti::diagnostics();
+    auto* diag = gMemory + kConfettiDiagnosticsOffset;
+    auto diag_sequence = reinterpret_cast<volatile LONG*>(diag + 8);
+    LONG old_diag = InterlockedCompareExchange(diag_sequence, 0, 0);
+    LONG even_diag = (old_diag & 1) ? old_diag + 1 : old_diag;
+    InterlockedExchange(diag_sequence, even_diag + 1);
+    ConfettiDiagnostics confetti_wire{};
+    std::memcpy(confetti_wire.magic, kConfettiDiagnosticsMagic, 8);
+    confetti_wire.abi = kConfettiDiagnosticsAbi;
+    confetti_wire.state = confetti_counts.state;
+    confetti_wire.handles = confetti_counts.handles;
+    confetti_wire.starts = confetti_counts.starts;
+    confetti_wire.start_failures = confetti_counts.start_failures;
+    confetti_wire.frames = confetti_counts.frames;
+    confetti_wire.running_frames = confetti_counts.running_frames;
+    confetti_wire.resets = confetti_counts.resets;
+    confetti_wire.stop_disabled = confetti_counts.stop_disabled;
+    confetti_wire.stop_reconfigured = confetti_counts.stop_reconfigured;
+    confetti_wire.stop_seek = confetti_counts.stop_seek;
+    confetti_wire.stop_backward = confetti_counts.stop_backward;
+    confetti_wire.stop_invalid = confetti_counts.stop_invalid;
+    confetti_wire.stop_shutdown = confetti_counts.stop_shutdown;
+    confetti_wire.stop_create_failed = confetti_counts.stop_create_failed;
+    confetti_wire.state_changes = confetti_counts.state_changes;
+    confetti_wire.max_backward_delta = confetti_counts.max_backward_delta;
+    std::memcpy(diag, &confetti_wire, 8);
+    std::memcpy(diag + 12, reinterpret_cast<unsigned char*>(&confetti_wire) + 12,
+                sizeof(ConfettiDiagnostics) - 12);
+    MemoryBarrier();
+    InterlockedExchange(diag_sequence, even_diag + 2);
     MemoryBarrier();
     InterlockedExchange(sequence, even + 2);
     gStatusLock.clear(std::memory_order_release);
@@ -234,8 +267,6 @@ static bool read_control(ControlHeader& h, std::vector<unsigned char>& payload,
     if (before & 1)
         return false;
     std::memcpy(&h, gMemory, sizeof(h));
-    if (h.command == accepted)
-        return false;
     if (h.payload_bytes > kMaxPayloadBytes)
         return false;
     payload.resize(h.payload_bytes);
@@ -243,8 +274,23 @@ static bool read_control(ControlHeader& h, std::vector<unsigned char>& payload,
         std::memcpy(payload.data(), gMemory + kPayloadOffset, h.payload_bytes);
     MemoryBarrier();
     LONG after = InterlockedCompareExchange(sequence, 0, 0);
-    return before == after && !(after & 1) && std::memcmp(h.magic, kControlMagic, 8) == 0 &&
-           h.abi == kBridgeAbi;
+    if (before != after || (after & 1) || std::memcmp(h.magic, kControlMagic, 8) != 0 ||
+        h.abi != kBridgeAbi)
+        return false;
+    if (h.command == accepted) {
+        const auto current = std::atomic_load(&gCommand);
+        if (!current || h.payload_bytes)
+            return false;
+        const auto& previous = current->wire;
+        const auto changed = h.flags ^ previous.flags;
+        // Confetti settings do not restart the camera's command/clock. Only
+        // these flags may change under an already acknowledged command ID.
+        return changed && !(changed & ~kConfettiControlMask) && h.mode == previous.mode &&
+               h.editor_pid == previous.editor_pid && h.game_pid == previous.game_pid &&
+               h.start_phase == previous.start_phase && h.speed == previous.speed &&
+               std::memcmp(h.demo_name, previous.demo_name, sizeof(h.demo_name)) == 0;
+    }
+    return true;
 }
 static bool read_config(std::wstring& mapping, DWORD& editor_pid) {
     auto p = beside_module(L"dolly_native.cfg");
@@ -506,6 +552,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     status.ack_command = seen;
     status.phase = phase;
     auto finish = [&](State state, unsigned error, const char* message) {
+        if (state == State::Fault || state == State::Stopped || state == State::Unsupported)
+            confetti::disable();
         // Keep the first specific fault message: the per-frame fallback on the
         // next view would otherwise replace it before the editor reads it.
         if (state == State::Fault && error) {
@@ -551,10 +599,15 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         status.state = std::uint32_t(state);
         status.error = error;
         status.phase = phase;
-        std::snprintf(status.message, sizeof(status.message), "%s", message);
+        const char* reported = message;
+        if (!error && command && (command->wire.flags & kConfetti) && state != State::Stopped &&
+            state != State::Probe)
+            reported = confetti::status();
+        std::snprintf(status.message, sizeof(status.message), "%s", reported);
         write_status(status);
     };
     if (!command) {
+        confetti::disable();
         player_capture::set_hidden_handle(0, 2);
         finish(State::Probe, 0, "Native view hook ready; load a local replay to test a camera.");
         return;
@@ -608,6 +661,9 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         last_game = demo.time;
         last_tick = demo.tick;
     }
+    const bool confetti_enabled = (c.flags & kConfetti) != 0;
+    const auto confetti_height = float((c.flags >> kConfettiHeightShift) & kConfettiHeightMask);
+    const bool confetti_despawn = (c.flags & kConfettiDespawnOnGround) != 0;
     if (c.mode == std::uint32_t(Mode::Release)) {
         finish(State::Stopped, 0, "Native camera released; the game owns the view.");
         return;
@@ -785,6 +841,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         for (int i = 0; i < 7; ++i)
             status.applied_pose[i] = manual_pose[i];
         status.applied_fov = fov;
+        confetti::Camera confetti_camera{
+            {xyz[0], xyz[1], xyz[2]}, {angles[0], angles[1], angles[2]}, float(fov)};
+        confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera,
+                           confetti_enabled, confetti_height, confetti_despawn);
         finish(State::Armed, 0,
                c.mode == std::uint32_t(Mode::Manual)
                    ? "Native free camera updates each rendered main view."
@@ -834,6 +894,11 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         }
     }
     if (c.flags & kGamePov) {
+        confetti::Camera camera{{original_xyz[0], original_xyz[1], original_xyz[2]},
+                                {original_angles[0], original_angles[1], original_angles[2]},
+                                original_fov};
+        confetti::on_frame(demo.time, demo.playing, demo.seeking, &camera, confetti_enabled,
+                           confetti_height, confetti_despawn);
         player_capture::set_hidden_handles(0, 0, 5);
         if (c.mode == std::uint32_t(Mode::Play)) {
             video::publish_path_replay_time(true, phase);
@@ -961,6 +1026,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     for (int i = 0; i < 7; ++i)
         status.applied_pose[i] = applied[i];
     status.applied_fov = fov;
+    confetti::Camera confetti_camera{
+        {xyz[0], xyz[1], xyz[2]}, {angles[0], angles[1], angles[2]}, float(fov)};
+    confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera, confetti_enabled,
+                       confetti_height, confetti_despawn);
     if (c.mode == std::uint32_t(Mode::Play)) {
         video::publish_path_replay_time(true, phase);
         player_capture::publish_replay_time(phase);
@@ -1026,6 +1095,7 @@ static DWORD WINAPI worker(void*) {
                 "Installed game modules do not match this native build. Use Console camera and provide updated DLLs.");
             return 0;
         }
+        confetti::initialize(gClient);
         if (!init_cvar_interface()) {
             startup_status(
                 State::Unsupported, 26,
@@ -1134,9 +1204,13 @@ static DWORD WINAPI worker(void*) {
                 }
                 if (control.editor_pid != editor_pid || control.game_pid != GetCurrentProcessId() ||
                     control.mode > 4 ||
-                    control.flags & ~(kFrozen | kAspect | kNoSeekRelief | kGamePov) ||
+                    control.flags &
+                        ~(kFrozen | kAspect | kNoSeekRelief | kGamePov | kConfettiControlMask) ||
                     ((control.flags & kGamePov) && ((control.flags & (kFrozen | kAspect)) ||
                                                     control.mode == std::uint32_t(Mode::Manual))) ||
+                    ((control.flags & kConfetti) &&
+                     (((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) < 100 ||
+                      ((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) > 1500)) ||
                     !std::isfinite(control.start_phase) || control.start_phase < 0 ||
                     !std::isfinite(control.speed) || control.speed < .05 || control.speed > 4 ||
                     !std::memchr(control.demo_name, 0, sizeof(control.demo_name))) {
@@ -1145,6 +1219,15 @@ static DWORD WINAPI worker(void*) {
                     continue;
                 }
                 gReliefAllowed.store(!(control.flags & kNoSeekRelief), std::memory_order_relaxed);
+                if (control.command == accepted) {
+                    auto current = std::atomic_load(&gCommand);
+                    if (current) {
+                        auto refreshed = std::make_shared<Command>(*current);
+                        refreshed->wire.flags = control.flags;
+                        std::atomic_store(&gCommand, std::shared_ptr<const Command>(refreshed));
+                    }
+                    continue;
+                }
                 auto candidate = shot;
                 bool next_manual = control.mode == std::uint32_t(Mode::Manual) ||
                                    (manual && control.mode == std::uint32_t(Mode::HoldCurrent));

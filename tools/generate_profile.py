@@ -33,7 +33,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 MANIFEST_FORMAT = 1
-NATIVE_ABI = 3
+NATIVE_ABI = 4
 MODULE_RELATIVES = {
     "client": "citadel/bin/win64/client.dll",
     "engine": "bin/win64/engine2.dll",

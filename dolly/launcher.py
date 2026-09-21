@@ -41,6 +41,8 @@ PACKAGE_ROOT = application_root(Path(__file__).resolve().parent.parent)
 UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_party" / "cvar_unlocker"
 NATIVE_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "native"
 EDITING_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "assets" / "editing"
+CONFETTI_PACK = NATIVE_ROOT / "assets" / "confetti" / "pak01_dir.vpk"
+CONFETTI_PACK_SHA256 = "d4b30c85a4deceb558215e65fb4772d1c036f28fb6d05e472782c799146c8c5f"
 UNLOCKER_SHA256 = "74047120e79245d479e61142a878f3311c8384a1f5f33e3f1cb8f3e87749e42a"
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.
@@ -559,6 +561,18 @@ def _verified_native(paths: GamePaths) -> Path:
     return dll
 
 
+def _verified_confetti_pack() -> Path:
+    try:
+        data = CONFETTI_PACK.read_bytes()
+    except OSError as exc:
+        raise LaunchError("The native confetti particle pack is missing. Extract the complete Dolly build again.") from exc
+    if hashlib.sha256(data).hexdigest() != CONFETTI_PACK_SHA256:
+        raise LaunchError("The native confetti particle pack failed its SHA-256 check.")
+    if len(data) < 32 or data[:4] != struct.pack("<I", 0x55AA1234):
+        raise LaunchError("The native confetti particle pack is not a Source 2 VPK.")
+    return CONFETTI_PACK
+
+
 def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
     """Replace one file atomically after flushing its new contents to disk."""
     descriptor, name = tempfile.mkstemp(prefix=".dolly-write-", suffix=".tmp", dir=path.parent)
@@ -857,6 +871,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         else:
             shutil.copyfile(native_dll, target / "server.dll")
             shutil.copyfile(dll, target / "dolly_cvar_unlocker.dll")
+            # This mounted game search path exists before Deadlock starts, so
+            # Source 2 resolves the custom particle systems as native assets.
+            shutil.copyfile(_verified_confetti_pack(), target.parents[1] / "pak01_dir.vpk")
             (target / "dolly_native.cfg").write_text(
                 f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
                 encoding="ascii", newline="\n")

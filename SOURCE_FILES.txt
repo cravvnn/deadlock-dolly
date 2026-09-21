@@ -64,8 +64,10 @@ dolly/smoothing.py
 dolly/visualization_wire.py
 examples/demo_shot.dolly.json
 native/CMakeLists.txt
+native/assets/confetti/pak01_dir.vpk
 native/bin/win64/DollyNative.dll
 native/build_info.json
+native/include/dolly_confetti.hpp
 native/include/dolly_editor.hpp
 native/include/dolly_effects.hpp
 native/include/dolly_flight.hpp
@@ -95,6 +97,7 @@ native/profiles/deadlock-2026-09-17-complete.json
 native/profiles/deadlock-2026-09-17b-complete.json
 native/profiles/manifest.json
 native/src/bridge_win.cpp
+native/src/dolly_confetti.cpp
 native/src/dolly_compat_generated.hpp
 native/src/dolly_compat_runtime.hpp
 native/src/dolly_editor_win.cpp

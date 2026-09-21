@@ -21,10 +21,15 @@ import time
 import uuid
 
 from .native_effects import compile_shot, EFFECTS
+from .path import (CONFETTI_SPAWN_HEIGHT_DEFAULT, CONFETTI_SPAWN_HEIGHT_MAX,
+                   CONFETTI_SPAWN_HEIGHT_MIN)
 from .runtime import resource_root
 from .media_transport import MediaTransport
 
-ABI = 3
+ABI = 4
+CONFETTI_FLAG = 8
+CONFETTI_DESPAWN_FLAG = 32
+CONFETTI_HEIGHT_SHIFT = 16
 CONTROL_BYTES = 2 * 1024 * 1024
 MAPPING_BYTES = CONTROL_BYTES + 24576
 PAYLOAD_OFFSET = 1024
@@ -34,6 +39,16 @@ STATUS = struct.Struct("<8s6IQ3diI14d2dQ256s512s2d2IQd")
 CONTROL_MAGIC = b"DLYCAM01"
 STATUS_MAGIC = b"DLYSTAT1"
 STATES = ("starting", "probe", "armed", "playing", "completed", "stopped", "fault", "unsupported")
+CONFETTI_DIAGNOSTICS_OFFSET = CONTROL_BYTES + 22440
+CONFETTI_DIAGNOSTICS = struct.Struct("<8s2I15Id")
+CONFETTI_DIAGNOSTICS_MAGIC = b"DLYCFT01"
+CONFETTI_DIAGNOSTICS_ABI = 1
+CONFETTI_STATES = ("unavailable", "ready", "configured", "running", "waiting", "seeking",
+                   "manager_unavailable", "create_failed")
+CONFETTI_DIAGNOSTIC_FIELDS = ("state", "handles", "starts", "start_failures", "frames",
+                              "running_frames", "resets", "stop_disabled", "stop_reconfigured",
+                              "stop_seek", "stop_backward", "stop_invalid", "stop_shutdown",
+                              "stop_create_failed", "state_changes", "max_backward_delta")
 
 
 class NativeBridgeError(RuntimeError):
@@ -152,6 +167,9 @@ class NativeBridge(MediaTransport):
         self._flags = 0
         self._frozen = False
         self._relief = True
+        self._confetti_enabled = False
+        self._confetti_spawn_height = round(CONFETTI_SPAWN_HEIGHT_DEFAULT)
+        self._confetti_despawn_on_ground = False
         self._start = 0.0
         self._speed = 1.0
         self._demo = b""
@@ -274,6 +292,31 @@ class NativeBridge(MediaTransport):
             self.game_pid = pid
             self._publish(self._mode, increment=False)
 
+    def _confetti_diagnostics(self):
+        """Optional bounded Dolly-side confetti counters, or None when unwritten."""
+        for _ in range(4):
+            first = self._load_sequence(CONFETTI_DIAGNOSTICS_OFFSET + 8)
+            if first & 1:
+                continue
+            data = bytes(self._mapping[CONFETTI_DIAGNOSTICS_OFFSET:
+                                       CONFETTI_DIAGNOSTICS_OFFSET + CONFETTI_DIAGNOSTICS.size])
+            if first != self._load_sequence(CONFETTI_DIAGNOSTICS_OFFSET + 8):
+                continue
+            if not any(data):
+                return None  # Older helpers never publish this optional block.
+            values = CONFETTI_DIAGNOSTICS.unpack(data)
+            magic, sequence, abi = values[:3]
+            if (magic != CONFETTI_DIAGNOSTICS_MAGIC or sequence != first
+                    or abi != CONFETTI_DIAGNOSTICS_ABI):
+                raise NativeBridgeError(
+                    "Native confetti diagnostics do not match this editor build")
+            if values[3] >= len(CONFETTI_STATES) or values[4] > 6:
+                raise NativeBridgeError("Native confetti diagnostics are invalid")
+            result = dict(zip(CONFETTI_DIAGNOSTIC_FIELDS, values[3:]))
+            result["state_name"] = CONFETTI_STATES[result["state"]]
+            return result
+        return None
+
     def status(self):
         """Return one coherent, validated native status snapshot."""
         with self._lock:
@@ -295,7 +338,9 @@ class NativeBridge(MediaTransport):
             if data == b"\0" * STATUS.size:
                 return {"state": "starting", "state_code": 0, "abi": ABI,
                         "game_pid": self.game_pid, "ack_command": 0, "complete": False,
-                        "frame_count": 0, "phase": 0.0, "message": "Waiting for the native camera plugin"}
+                        "frame_count": 0, "phase": 0.0,
+                        "message": "Waiting for the native camera plugin",
+                        "confetti_diagnostics": None}
             values = STATUS.unpack(data)
             magic, sequence, abi, state, pid, ack, error = values[:7]
             if magic != STATUS_MAGIC or abi != ABI:
@@ -326,7 +371,8 @@ class NativeBridge(MediaTransport):
                     "effect_frames": effect_frames, "effect_phase": effect_phase,
                     "message": message.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
                     "demo_name": demo.split(b"\0", 1)[0].decode("utf-8", errors="replace"),
-                    "max_frame_interval_ms": maximum_ms, "frame_interval_ms": interval_ms}
+                    "max_frame_interval_ms": maximum_ms, "frame_interval_ms": interval_ms,
+                    "confetti_diagnostics": self._confetti_diagnostics()}
             now = self._clock()
             if now - self._view_sample_at >= 1:
                 # Reuse this validated read, including outside path playback.
@@ -381,6 +427,9 @@ class NativeBridge(MediaTransport):
             self._start, self._speed, self._demo = start, speed, demo
             self._frozen = bool(frozen)
             self._pov = pov
+            self._confetti_enabled = project.confetti_enabled
+            self._confetti_spawn_height = round(project.confetti_spawn_height)
+            self._confetti_despawn_on_ground = project.confetti_despawn_on_ground
             self._flags = self._compose_flags()
             command = self._publish(1, payload)
             try:
@@ -392,7 +441,12 @@ class NativeBridge(MediaTransport):
             return result
 
     def _compose_flags(self):
-        return (1 if self._frozen else 0) | (16 if getattr(self, "_pov", False) else 2) | (0 if self._relief else 4)
+        confetti = 0
+        if self._confetti_enabled:
+            confetti = (CONFETTI_FLAG |
+                        (CONFETTI_DESPAWN_FLAG if self._confetti_despawn_on_ground else 0) |
+                        (self._confetti_spawn_height << CONFETTI_HEIGHT_SHIFT))
+        return (1 if self._frozen else 0) | (16 if getattr(self, "_pov", False) else 2) | (0 if self._relief else 4) | confetti
 
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking.
@@ -403,6 +457,24 @@ class NativeBridge(MediaTransport):
         with self._operations, self._lock:
             self._check_open()
             self._relief = bool(enabled)
+            self._flags = self._compose_flags()
+            self._publish(self._mode, increment=False)
+
+    def set_confetti(self, enabled, spawn_height=CONFETTI_SPAWN_HEIGHT_DEFAULT,
+                     despawn_on_ground=False):
+        """Apply confetti controls immediately to the active native view."""
+        if not isinstance(enabled, bool) or not isinstance(despawn_on_ground, bool):
+            raise ValueError("Confetti switches must be booleans")
+        height = _number(spawn_height, "Confetti spawn height", positive=True)
+        if not CONFETTI_SPAWN_HEIGHT_MIN <= height <= CONFETTI_SPAWN_HEIGHT_MAX:
+            raise ValueError(
+                f"Confetti spawn height must be between {CONFETTI_SPAWN_HEIGHT_MIN:g} "
+                f"and {CONFETTI_SPAWN_HEIGHT_MAX:g}")
+        with self._operations, self._lock:
+            self._check_open()
+            self._confetti_enabled = enabled
+            self._confetti_spawn_height = round(height)
+            self._confetti_despawn_on_ground = despawn_on_ground
             self._flags = self._compose_flags()
             self._publish(self._mode, increment=False)
 

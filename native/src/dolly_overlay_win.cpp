@@ -1273,6 +1273,28 @@ void draw_panel(const EditorSnapshot& state) {
                     ImGui::Spacing();
                 }
                 end_panel_card();
+                if (begin_panel_card("##confetti-card")) {
+                    section_title("Confetti rain", "Native effect");
+                    bool enabled = state.confetti_enabled;
+                    if (compact_checkbox("Enable rain", &enabled, panel_scale))
+                        editor_enqueue(EditorAction::SetConfettiEnabled, enabled ? 1 : 0);
+                    static float height_draft = 250.0f;
+                    static bool height_editing = false;
+                    if (!height_editing)
+                        height_draft = float(state.confetti_spawn_height);
+                    const auto height_row =
+                        slider_row("##confetti-height", "Spawn height", &height_draft, 100.0f,
+                                   1500.0f, "%.0f", 92.0f);
+                    height_editing = height_row.active;
+                    if (height_row.committed)
+                        editor_enqueue(EditorAction::SetConfettiSpawnHeight,
+                                       double(std::round(height_draft)));
+                    bool despawn = state.confetti_despawn_on_ground;
+                    if (compact_checkbox("Despawn on ground", &despawn, panel_scale))
+                        editor_enqueue(EditorAction::SetConfettiDespawnOnGround, despawn ? 1 : 0);
+                    ImGui::TextDisabled("Rain follows the rendered camera and uses game time.");
+                }
+                end_panel_card();
                 if (begin_panel_card("##dof-card")) {
                     section_title("Native Depth of Field", "Dolly");
                     ImGui::BeginDisabled(!state.dof_available || !state.paused || state.playing ||

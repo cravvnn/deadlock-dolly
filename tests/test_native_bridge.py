@@ -85,6 +85,19 @@ class NativeBridgeTests(unittest.TestCase):
             message, b"replays/example.dem", 16.8, 8.3, 0, 0, 0, phase)
         self.memory[nb.CONTROL_BYTES:nb.CONTROL_BYTES + len(data)] = data
 
+    def publish_confetti_diagnostics(self, *, state=3, handles=6, starts=1, sequence=2,
+                                     magic=nb.CONFETTI_DIAGNOSTICS_MAGIC, abi=1, **fields):
+        values = [state, handles, starts, fields.get("start_failures", 0),
+                  fields.get("frames", 0), fields.get("running_frames", 0),
+                  fields.get("resets", 0), fields.get("stop_disabled", 0),
+                  fields.get("stop_reconfigured", 0), fields.get("stop_seek", 0),
+                  fields.get("stop_backward", 0), fields.get("stop_invalid", 0),
+                  fields.get("stop_shutdown", 0), fields.get("stop_create_failed", 0),
+                  fields.get("state_changes", 0), fields.get("max_backward_delta", 0.0)]
+        data = nb.CONFETTI_DIAGNOSTICS.pack(magic, sequence, abi, *values)
+        self.memory[nb.CONFETTI_DIAGNOSTICS_OFFSET:
+                    nb.CONFETTI_DIAGNOSTICS_OFFSET + len(data)] = data
+
     def respond(self):
         mode = self.header()[4]
         self.publish_status(state={0: 5, 1: 2, 2: 3, 3: 2, 4: 2}[mode])
@@ -96,6 +109,8 @@ class NativeBridgeTests(unittest.TestCase):
     def test_layout_matches_native_header_and_private_mapping_name(self):
         self.assertEqual(nb.CONTROL.size, 576)
         self.assertEqual(nb.STATUS.size, 1016)
+        self.assertEqual(nb.CONFETTI_DIAGNOSTICS.size, 84)
+        self.assertEqual(nb.CONFETTI_DIAGNOSTICS_OFFSET, nb.CONTROL_BYTES + 22440)
         self.assertEqual(self.header()[:2], (nb.CONTROL_MAGIC, nb.ABI))
         self.assertEqual(self.header()[5:7], (1001, 2002))
         factory = unittest.mock.Mock(return_value=Memory(nb.MAPPING_BYTES))
@@ -118,6 +133,31 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertEqual(self.header()[9], 0)
         self.assertEqual(bytes(self.memory[nb.PAYLOAD_OFFSET:nb.PAYLOAD_OFFSET + len(payload)]), payload)
         self.assertEqual(self.project.to_dict(), before)
+
+    def test_prepare_marks_an_opt_in_confetti_shot(self):
+        self.project.confetti_enabled = True
+        self.project.confetti_spawn_height = 1250
+        self.project.confetti_despawn_on_ground = True
+        self.prepare()
+        flags = self.header()[8]
+        self.assertEqual(flags & nb.CONFETTI_FLAG, nb.CONFETTI_FLAG)
+        self.assertEqual(flags & nb.CONFETTI_DESPAWN_FLAG, nb.CONFETTI_DESPAWN_FLAG)
+        self.assertEqual(flags >> nb.CONFETTI_HEIGHT_SHIFT, 1250)
+        self.bridge.release()
+
+    def test_confetti_controls_update_live_flags_without_changing_command(self):
+        sequence = self.header()[2]
+        command = self.header()[3]
+        mode = self.header()[4]
+        self.bridge.set_confetti(True, 1400, True)
+        flags = self.header()[8]
+        self.assertNotEqual(self.header()[2], sequence)
+        self.assertEqual(self.header()[3], command)
+        self.assertEqual(self.header()[4], mode)
+        self.assertEqual(flags & nb.CONFETTI_FLAG, nb.CONFETTI_FLAG)
+        self.assertEqual(flags & nb.CONFETTI_DESPAWN_FLAG, nb.CONFETTI_DESPAWN_FLAG)
+        self.assertEqual(flags >> nb.CONFETTI_HEIGHT_SHIFT, 1400)
+
 
     def test_hold_preserves_native_phase_without_uploading_python_pose(self):
         self.prepare()
@@ -168,6 +208,30 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertEqual(self.bridge.status()["phase"], 1.5)
         self.publish_status(sequence=5)
         with self.assertRaisesRegex(nb.NativeBridgeError, "busy"):
+            self.bridge.status()
+
+    def test_confetti_diagnostics_publish_dolly_side_counters_or_none(self):
+        self.assertIsNone(self.bridge.status()["confetti_diagnostics"])
+        self.publish_status()
+        self.assertIsNone(self.bridge.status()["confetti_diagnostics"])
+        self.publish_confetti_diagnostics(state=3, handles=6, starts=2, resets=1,
+                                          stop_seek=1, stop_reconfigured=2, frames=500,
+                                          running_frames=480, state_changes=7,
+                                          max_backward_delta=0.031)
+        result = self.bridge.status()["confetti_diagnostics"]
+        self.assertEqual(result["state_name"], "running")
+        self.assertEqual(result["handles"], 6)
+        self.assertEqual(result["starts"], 2)
+        self.assertEqual(result["stop_seek"], 1)
+        self.assertEqual(result["stop_reconfigured"], 2)
+        self.assertEqual(result["running_frames"], 480)
+        self.assertEqual(result["state_changes"], 7)
+        self.assertAlmostEqual(result["max_backward_delta"], 0.031)
+        self.publish_confetti_diagnostics(state=99)
+        with self.assertRaisesRegex(nb.NativeBridgeError, "invalid"):
+            self.bridge.status()
+        self.publish_confetti_diagnostics(magic=b"DLYCFT99")
+        with self.assertRaisesRegex(nb.NativeBridgeError, "editor build"):
             self.bridge.status()
 
     def test_view_history_is_bounded_rate_limited_and_independent_of_returned_pose(self):

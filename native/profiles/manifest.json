@@ -1,6 +1,6 @@
 {
   "manifest_format": 1,
-  "native_abi": 3,
+  "native_abi": 4,
   "generated_utc": "2026-09-17b",
   "generator": "tools/generate_profile.py",
   "reviewed_client_utc": "2026-09-11",

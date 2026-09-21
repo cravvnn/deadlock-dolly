@@ -457,6 +457,17 @@ struct Fixture {
         return result;
     }
 
+    ConfettiDiagnostics confetti() const {
+        ConfettiDiagnostics result{};
+        std::memcpy(&result, mapping.data() + kConfettiDiagnosticsOffset, sizeof(result));
+        require(std::memcmp(result.magic, kConfettiDiagnosticsMagic, 8) == 0 &&
+                    result.abi == kConfettiDiagnosticsAbi,
+                "Actual callback did not publish valid confetti diagnostics");
+        require(!(result.sequence & 1),
+                "Published confetti diagnostics must have a complete even sequence");
+        return result;
+    }
+
     Status frame(unsigned char projection_flags = 0, bool renew_lease = true) {
         original_view(projection_flags);
         if (renew_lease)
@@ -1254,7 +1265,51 @@ void independent_heartbeat() {
     require(gHeartbeatTime.load() == stopped, "Heartbeat monitor outlived its scope");
 }
 
+void confetti_control_updates() {
+    Fixture f;
+    f.command(Mode::Hold, .25);
+    auto current = std::make_shared<Command>(*std::atomic_load(&gCommand));
+    auto& original = current->wire;
+    std::memcpy(original.magic, kControlMagic, 8);
+    original.abi = kBridgeAbi;
+    original.sequence = 2;
+    std::atomic_store(&gCommand, std::shared_ptr<const Command>(current));
+    ControlHeader incoming{}, observed{};
+    std::vector<unsigned char> payload;
+    const auto read = [&] {
+        std::memcpy(gMemory, &incoming, sizeof(incoming));
+        return read_control(observed, payload, original.command);
+    };
+    incoming = original;
+    require(!read(), "Unchanged command should not be reprocessed");
+    incoming.flags |= kConfetti | (250u << kConfettiHeightShift);
+    require(read(), "Immediate confetti settings were ignored under the active command");
+    incoming.mode = std::uint32_t(Mode::Play);
+    require(!read(), "Same-ID flag refresh must not change playback mode");
+    incoming.mode = original.mode;
+    incoming.flags |= kGamePov;
+    require(!read(), "Same-ID flag refresh must not change camera ownership");
+    incoming.flags &= ~kGamePov;
+    incoming.start_phase += 1;
+    require(!read(), "Same-ID flag refresh must not change the playback clock");
+}
+
+void confetti_diagnostics_publish() {
+    dolly::confetti::Camera camera{};
+    dolly::confetti::on_frame(10.0, true, false, &camera, true, 250.0f, false);
+    Fixture f;
+    f.frame();
+    const auto diag = f.confetti();
+    require(diag.frames >= 1, "Confetti frame calls were not counted");
+    require(diag.state == 0, "Unsupported synthetic builds must report confetti unavailable");
+    require(diag.handles == 0, "No particle handles may exist without a real client build");
+    require(diag.starts == 0 && diag.start_failures == 0,
+            "The synthetic client must not create real particle effects");
+}
+
 void run() {
+    confetti_control_updates();
+    confetti_diagnostics_publish();
     bone_string_bounds();
     owned_model_bones();
     camera_cache_decoder();
