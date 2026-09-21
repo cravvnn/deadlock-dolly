@@ -1,5 +1,33 @@
 # Changes
 
+## 0.5.30 alpha — Depth and layer exports at 4K
+
+- Depth exports now work when the game renders the scene below the window size.
+  With upscaling or resolution scaling enabled, the game's scene target is
+  smaller than the recording (for example 2560x1440 for a 3840x2160 window);
+  the scene selector used to require the recording size, skipped every frame
+  and ended the take with `Recording ended before any game frame was captured`.
+  The selector now verifies the reviewed scene target at its own resolution and
+  captures the paired depth data at that size.
+- The depth manifest records both sizes: `width`/`height` are the depth
+  master's own resolution, and the new `color_width`/`color_height` fields are
+  the paired color video's, so a compositor knows to scale. The depth preview
+  keeps its matching half-resolution stream.
+- The depth encoder starts with the first verified depth frame, so its raw
+  input size follows the scene target instead of assuming the color size.
+- A depth take that still captures nothing says so and names the scene it
+  observed: the error reports the recording size, the verified scene size and
+  the reason a reviewed target was rejected (for example multisampling or an
+  unusable depth view).
+- The scene selector keeps its failure-closed rules: within one frame the
+  largest reviewed target wins, a smaller reviewed target cannot replace the
+  chosen scene, and two different targets of the same size stay ambiguous.
+- Reported case: a 3840x2160 depth take skipped every rendered frame
+  (`scene-skip=256`). Every verified depth take so far ran at 2560x1440; the
+  4K take now captures depth at the game's internal scene resolution with the
+  color recording unchanged. Live 4K verification in the game remains
+  outstanding.
+
 ## 0.5.29 alpha — Confetti rain and player POV export
 
 - Add **confetti rain driven by the game's native particle engine**. Enable it
