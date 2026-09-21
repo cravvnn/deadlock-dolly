@@ -2531,6 +2531,14 @@ class Controller:
             if actual_time > project.duration:
                 raise RuntimeError(f"The next recorded replay packet is tick {info['tick']}, after this shot ends. "
                                    "Extend the shot or preview its camera without seeking.")
+            if actual_time < 0:
+                # The engine cannot reconstruct the requested packet-start tick
+                # and settled one tick earlier. Hold the first camera over that
+                # instant instead of failing the whole shot.
+                self._message(f"The replay does not include a reconstructible packet at tick "
+                              f"{boundary['requested_tick']}; starting one frame earlier at tick "
+                              f"{info['tick']} with the first camera held for that instant.")
+                return 0.0
             skipped = (info["tick"] - boundary["requested_tick"]) / project.tick_rate
             self._message(f"Replay tick {boundary['requested_tick']} falls between recorded packets. "
                           f"Starting at tick {info['tick']}; skipping the first {skipped:.6f} shot seconds of this playback. "
@@ -2560,6 +2568,11 @@ class Controller:
                             r"\(game tick \d+\)\s+from full packet 1\s+\(")
         boundary_reported = bool(allow_start_boundary and target == 0 and
                                  re.search(boundary_pattern, seek_output, re.IGNORECASE))
+        # The engine reports the packet it reconstructs from when a paused skip
+        # crosses full-packet boundaries. Only that explicit report allows the
+        # one-tick floor policy below; a stuck tick after an overshoot never is.
+        packet_floor_reported = bool(re.search(r"Demo Skipping:[^\n]*from full packet\s+\d+",
+                                               seek_output, re.IGNORECASE))
         boundary_samples = 0
         boundary_pause_confirmed = False
         self._check_position_cancelled()
@@ -2570,6 +2583,10 @@ class Controller:
         stable = 0
         overshoot_tick = None
         overshoot_samples = 0
+        undershoot_tick = None
+        undershoot_samples = 0
+        undershoot_nudged = False
+        renderer_error = None
         pause_confirmed = False
         corrections = []
         self._last_seek_details = {"target_tick": target, "verified": False,
@@ -2580,18 +2597,33 @@ class Controller:
                 # Commands sent during replay reconstruction can lose their
                 # console echo delimiters, even after the renderer later settles.
                 # Observe fresh native paused frames before querying the console.
-                # The +2 window only admits the known overshoot for correction;
-                # the exact console tick verification below remains mandatory.
+                # The wait only proves the renderer is alive and paused: a target
+                # the engine cannot reconstruct can settle one tick below it, so
+                # the exact tick is enforced by the console settle policy below.
                 with self._paused_preparation(self._stop_event.is_set):
-                    self._wait_paused_native_view(native, native.status()["frame_count"],
-                        timeout=max(.001, end - time.perf_counter()),
-                        expected_tick=target, tick_tolerance=2)
+                    try:
+                        self._wait_paused_native_view(
+                            native, native.status()["frame_count"],
+                            timeout=min(NATIVE_PAUSE_TIMEOUT,
+                                        max(.001, end - time.perf_counter())),
+                            expected_tick=None)
+                    except RuntimeError as exc:
+                        renderer_error = str(exc)
                 wait_for_view = False
                 self._check_position_cancelled()
             # Backward reconstruction can block console replies for more
             # than the ordinary 3-second request timeout. Spend only the
             # remaining existing seek budget, then still require settled ticks.
-            info = self._require_demo(timeout=max(.001, end - time.perf_counter()))
+            # A transport failure is retried inside that budget; an identity or
+            # policy error still propagates immediately.
+            try:
+                info = self._require_demo(timeout=max(.001, end - time.perf_counter()))
+            except ConsoleError:
+                if time.perf_counter() >= end:
+                    raise
+                if self._stop_event.wait(SEEK_SETTLE_INTERVAL):
+                    raise RuntimeError("Seek cancelled.")
+                continue
             self._check_position_cancelled()
             observed = int(info["tick"])
             samples.append({"at": time.perf_counter(), "tick": observed})
@@ -2627,6 +2659,39 @@ class Controller:
             else:
                 overshoot_tick = None
                 overshoot_samples = 0
+            if target - 2 <= observed < target:
+                undershoot_samples = undershoot_samples + 1 if observed == undershoot_tick else 1
+                undershoot_tick = observed
+            else:
+                undershoot_tick = None
+                undershoot_samples = 0
+            if undershoot_tick == target - 1 and undershoot_samples >= SEEK_SETTLE_SAMPLES \
+                    and packet_floor_reported:
+                if not undershoot_nudged and time.perf_counter() < end:
+                    # A paused skip can stop one tick before a packet-start
+                    # target without loading that packet. Nudge playback across
+                    # the boundary once, then demand the exact tick again.
+                    undershoot_nudged = True
+                    undershoot_samples = 0
+                    self._check_position_cancelled()
+                    self._request("demo_resume", allow_error=True)
+                    self._stop_event.wait(min(.05, max(.001, end - time.perf_counter())))
+                    self._check_position_cancelled()
+                    self._request("demo_pause")
+                    stable = 0
+                    pause_confirmed = False
+                    wait_for_view = False
+                    continue
+                # The engine cannot reconstruct the requested tick. Start at
+                # the recorded tick just before it instead of failing the shot;
+                # the caller holds the first camera over the short pre-roll.
+                self._last_seek_details.update(verified=True, actual_tick=undershoot_tick,
+                                               boundary="recorded_packet",
+                                               boundary_delta_ticks=undershoot_tick - target)
+                return dict(self._require_demo(require_tick=False),
+                            seek_boundary={"requested_tick": target,
+                                           "actual_tick": undershoot_tick,
+                                           "reason": "recorded_packet"})
             if overshoot_samples >= SEEK_SETTLE_SAMPLES and not corrections:
                 # Native forward seeks can stop two ticks late. Reissuing the
                 # SAME target from there takes the backward-seek route. Do not
@@ -2653,6 +2718,9 @@ class Controller:
                     correction_output = self._request(f"demo_gototick {target} 0 1", timeout=6)
                     boundary_reported = bool(boundary_reported and
                         re.search(boundary_pattern, correction_output, re.IGNORECASE))
+                    packet_floor_reported = bool(re.search(
+                        r"Demo Skipping:[^\n]*from full packet\s+\d+", correction_output,
+                        re.IGNORECASE))
                     self._check_position_cancelled()
                     stable = 0
                     overshoot_tick = None
@@ -2660,6 +2728,14 @@ class Controller:
                     pause_confirmed = False
             if self._stop_event.wait(SEEK_SETTLE_INTERVAL):
                 raise RuntimeError("Seek cancelled.")
+        last_tick = samples[-1]["tick"] if samples else None
+        if renderer_error and last_tick is not None and last_tick != target:
+            raise RuntimeError(
+                f"The replay stayed at tick {last_tick} while seeking to {target}; the engine may "
+                "not be able to reconstruct that tick. Try a start time a moment later, or restart "
+                "the replay. Renderer detail: " + renderer_error)
+        if renderer_error:
+            raise RuntimeError(renderer_error)
         raise RuntimeError(f"Replay did not reach tick {target}. Export diagnostics; the demo may have ended or seeking may differ in this build.")
 
     def seek(self, project, shot_time):

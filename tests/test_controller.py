@@ -67,6 +67,7 @@ class FakeConsole:
         self.demo_output = None
         self.goto_outputs = deque()
         self.goto_output = None
+        self.goto_seek_output = ""
         self.requests = []
         self.sent = []
         self.events = []
@@ -154,6 +155,9 @@ class FakeConsole:
         return "\n".join(outputs)
 
     def _request_item(self, command):
+        if command.startswith("demo_gototick "):
+            self._execute(command)
+            return self.goto_seek_output
         if command == "demo_goto":
             if self.goto_outputs:
                 self.goto_output = self.goto_outputs.popleft()
@@ -823,6 +827,51 @@ class ControllerTests(unittest.TestCase):
         self.controller.seek(make_project(), 99)
         self.assertIn("demo_gototick 200 0 1", self.console.requests)
         self.assertEqual(self.controller.status()["time"], 10)
+
+    def test_seek_accepts_a_packet_floor_one_tick_below_the_target(self):
+        self.controller._stop_event.clear()
+        self.console.goto_seek_output = (
+            "Demo Skipping: skipping to demo tick 125 (game tick 1000) from full packet 12 (900)."
+            "  Current playback is 22 (100)")
+        self.console.goto_outputs.extend([124] * 12)
+        result = self.controller._seek_tick(125)
+        boundary = result["seek_boundary"]
+        self.assertEqual((boundary["requested_tick"], boundary["actual_tick"],
+                          boundary["reason"]), (125, 124, "recorded_packet"))
+        self.assertTrue(self.controller._last_seek_details["verified"])
+        # The paused skip is nudged across the boundary once before the floor
+        # is accepted; the shot still starts instead of failing.
+        self.assertEqual(self.console.requests.count("demo_resume"), 1)
+        self.assertIn("demo_pause", self.console.requests)
+
+    def test_seek_nudge_recovers_the_exact_packet_tick(self):
+        self.controller._stop_event.clear()
+        self.console.goto_seek_output = (
+            "Demo Skipping: skipping to demo tick 125 (game tick 1000) from full packet 12 (900)."
+            "  Current playback is 22 (100)")
+        self.console.goto_outputs.extend([124] * 3 + [125] * 8)
+        result = self.controller._seek_tick(125)
+        self.assertNotIn("seek_boundary", result)
+        self.assertEqual(int(result["tick"]), 125)
+        self.assertEqual(self.console.requests.count("demo_resume"), 1)
+
+    def test_seek_shot_time_holds_the_first_camera_at_a_floor_tick(self):
+        project = make_project()
+        info = {"tick": 99, "seek_boundary": {"requested_tick": 100, "actual_tick": 99,
+                                              "reason": "recorded_packet"}}
+        self.assertEqual(self.controller._seek_shot_time(project, 0.0, info), 0.0)
+        self.assertTrue(any("one frame earlier" in message for message in self.messages))
+
+    def test_seek_keeps_console_verification_when_the_renderer_never_confirms(self):
+        self.controller._stop_event.clear()
+        bridge = MagicMock()
+        with patch.object(self.controller, "_supports_native_flight", return_value=True), \
+                patch.object(self.controller, "_native_bridge", return_value=bridge), \
+                patch.object(self.controller, "_wait_paused_native_view",
+                             side_effect=RuntimeError("renderer unavailable")):
+            self.console.goto_outputs.extend([125] * 10)
+            result = self.controller._seek_tick(125)
+        self.assertEqual(int(result["tick"]), 125)
 
     def test_nonfinite_shot_time_rejected_before_any_camera_or_seek_write(self):
         for method in (self.controller.apply, self.controller.seek, self.controller.play):
