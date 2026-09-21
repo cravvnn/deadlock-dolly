@@ -1,5 +1,18 @@
 # Changes
 
+## 0.5.32 alpha — ReShade runtime diagnostics
+
+- The ReShade card now says why a selected runtime cannot be used. When the
+  saved DLL is gone — moved, cleaned, quarantined, or replaced with the folder
+  it lived in — Dolly names the missing path and states that it never moves or
+  deletes the runtime. Before, the card only said "Choose the 64-bit ReShade
+  runtime DLL", which read as if Dolly had removed it.
+- A runtime kept inside the Dolly folder is refused with instructions to move
+  it somewhere of its own (for example `Documents\Dolly-ReShade`) and select it
+  again: a portable update replaces the Dolly folder, so a DLL inside it can
+  disappear between versions even though Dolly itself never touches it.
+- Reported by a user whose runtime stopped being recognized after updating.
+
 ## 0.5.31 alpha — Play a shot that starts at a recorded-packet boundary
 
 - **Play shot no longer fails when the first camera tick sits one tick after

@@ -1,2 +1,2 @@
 """Deadlock Dolly: local replay camera authoring."""
-__version__ = "0.5.31-alpha"
+__version__ = "0.5.32-alpha"
