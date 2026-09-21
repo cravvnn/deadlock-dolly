@@ -72,6 +72,7 @@ struct Sequence::Impl {
     std::wstring exr_directory;
     std::uint64_t written = 0, last_sample = 0, last_pts = 0;
     std::uint32_t width = 0, height = 0;
+    std::uint32_t color_width = 0, color_height = 0;
     bool owned = false, complete = false, write_exr = false, write_mov = false;
     long failure = 0;
     std::vector<float> linear;
@@ -163,30 +164,38 @@ struct Sequence::Impl {
     template <class Write> bool file(const std::wstring& name, Write write, bool replace = false) {
         return file(directory, name, write, replace);
     }
-    // Version 2 manifest. begin() publishes a provisional copy so an
+    // Version 3 manifest. begin() publishes a provisional copy so an
     // interrupted take still documents its encoding; finish() replaces it
-    // with the verified frame count and dimensions.
+    // with the verified frame count and dimensions. width/height are the depth
+    // master's own size; color_width/color_height document the paired color
+    // recording when the scene was rendered at an internal resolution.
     bool manifest(bool complete) noexcept {
-        return file(L"manifest.json", [&](std::ostream& out) {            out << "{\n  \"version\": 2,\n  \"frames\": " << (complete ? written : 0)
-                << ",\n  \"width\": " << (complete ? width : 0)
-                << ",\n  \"height\": " << (complete ? height : 0)
-                << ",\n  \"complete\": " << (complete ? "true" : "false");
-            if (write_mov)
-                out << ",\n  \"master\": \"depth.mov\","
-                       "\n  \"master_codec\": \"prores_ks 4444 yuv444p10le (10-bit)\","
-                       "\n  \"encoding\": \"0..8192 positive camera-axis game units map to "
-                       "0..65535; +inf sky maps to 65535\"";
-            else
-                out << ",\n  \"master\": null";
-            if (write_exr)
-                out << ",\n  \"exr\": \"exr/NNNNNNNN.exr single-channel Z FLOAT (+inf sky)\"";
-            else
-                out << ",\n  \"exr\": null";
-            out << ",\n  \"order\": \"zero-based encoded color frame index\","
-                   "\n  \"capture_pts\": \"dollyCapturePTS100ns records capture time; "
-                   "encoded video timing may differ\"\n}\n";
-            return out.good();
-        }, true);
+        return file(
+            L"manifest.json",
+            [&](std::ostream& out) {
+                out << "{\n  \"version\": 3,\n  \"frames\": " << (complete ? written : 0)
+                    << ",\n  \"width\": " << (complete ? width : 0)
+                    << ",\n  \"height\": " << (complete ? height : 0)
+                    << ",\n  \"color_width\": " << color_width
+                    << ",\n  \"color_height\": " << color_height
+                    << ",\n  \"complete\": " << (complete ? "true" : "false");
+                if (write_mov)
+                    out << ",\n  \"master\": \"depth.mov\","
+                           "\n  \"master_codec\": \"prores_ks 4444 yuv444p10le (10-bit)\","
+                           "\n  \"encoding\": \"0..8192 positive camera-axis game units map to "
+                           "0..65535; +inf sky maps to 65535\"";
+                else
+                    out << ",\n  \"master\": null";
+                if (write_exr)
+                    out << ",\n  \"exr\": \"exr/NNNNNNNN.exr single-channel Z FLOAT (+inf sky)\"";
+                else
+                    out << ",\n  \"exr\": null";
+                out << ",\n  \"order\": \"zero-based encoded color frame index\","
+                       "\n  \"capture_pts\": \"dollyCapturePTS100ns records capture time; "
+                       "encoded video timing may differ\"\n}\n";
+                return out.good();
+            },
+            true);
     }
 };
 Sequence::Sequence() : impl(std::make_unique<Impl>()) {}
@@ -194,7 +203,8 @@ Sequence::~Sequence() {
     if (!impl->complete)
         discard();
 }
-bool Sequence::begin(const wchar_t* directory, bool write_exr, bool write_mov) noexcept {
+bool Sequence::begin(const wchar_t* directory, bool write_exr, bool write_mov,
+                     std::uint32_t color_width, std::uint32_t color_height) noexcept {
     try {
         if (!directory || !*directory || !impl->directory.empty())
             return impl->fail(ERROR_INVALID_PARAMETER);
@@ -209,6 +219,8 @@ bool Sequence::begin(const wchar_t* directory, bool write_exr, bool write_mov) n
         impl->owned = true;
         impl->write_exr = write_exr;
         impl->write_mov = write_mov;
+        impl->color_width = color_width;
+        impl->color_height = color_height;
         if (write_exr) {
             impl->exr_directory = impl->directory + L"\\exr";
             if (!CreateDirectoryW(impl->exr_directory.c_str(), nullptr))

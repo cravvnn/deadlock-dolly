@@ -19,12 +19,20 @@ enum class SceneResult {
 struct SceneFrame {
     SceneResult result = SceneResult::missing;
     std::shared_ptr<SceneResources> resources;
+    // Size of the verified scene target. It can be below the recording size
+    // when the game renders the scene at an internal resolution (upscaling or
+    // resolution scaling) and is what the paired depth data is captured at.
+    std::uint32_t width = 0, height = 0;
     ID3D11Texture2D* texture() const noexcept;
     std::size_t calibration(ProjectionBuffer* output, std::size_t capacity) const noexcept;
 };
 // Construct only for a verified Dolly game device/profile. The selector uses
-// the reviewed scene texture name, full viewport and reversed depth writes.
-// Constant-buffer contents are separately validated after GPU readback.
+// the reviewed scene texture name family, a full-target viewport and reversed
+// depth writes. The target may be smaller than the recording (the game can
+// render the scene at an internal resolution with upscaling enabled); the
+// largest reviewed target in a frame wins, and the verified size is reported
+// through SceneFrame. Constant-buffer contents are separately validated after
+// GPU readback.
 class SceneTracker {
 public:
     SceneTracker(ID3D11Device* device, std::uint32_t width, std::uint32_t height);

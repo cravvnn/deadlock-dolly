@@ -97,6 +97,15 @@ unrelated files are preserved. Resource reset can finish a matching prefix,
 with pending GPU pairs counted as dropped. Paired fixed-step export fails on
 backpressure timeout instead of continuing with an unreported missing sample.
 
+The paired depth master is captured at the verified scene target's own size.
+Upscaling or resolution scaling renders the scene below the window size, so the
+scene target can be smaller than the color recording; the depth data then keeps
+that resolution and the manifest (format 3) records both sizes (`width` and
+`height` for the depth master, `color_width` and `color_height` for the paired
+color video). A reviewed target is matched against the resolution in its own
+name, and within one frame the largest reviewed target wins, so a
+half-resolution effects buffer cannot replace the scene.
+
 Native tests create actual paired recordings through both encoders and check
 cancellation, missing depth, output collisions and resource reset. Independent
 FFmpeg/OpenEXR decoding checks frame counts and every fixture pixel against its

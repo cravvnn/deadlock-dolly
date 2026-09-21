@@ -37,13 +37,18 @@ afterward. A clamped or unavailable timing setting prevents capture from startin
 **Depth master (EXR)** is a default-off option on the Export tab. When enabled,
 the recorder requires a verified main-view scene depth and the exact replay time
 for every color frame; each accepted frame writes a float OpenEXR into the
-`<video filename>.depth` folder with a manifest when the counts match. The same
-folder receives a normalized grayscale preview video (`preview.mp4`, or `.mkv`
-for lossless) encoded with the chosen encoder and bitrate after the take
-finishes; depths at or beyond 8192 camera-axis units map to white. Unsupported
-or ambiguous depth stops the recording with an error instead of writing an
-unpaired frame. The depth values are camera-axis world units, not metres, and
-the EXR sequence remains the numerical master.
+`<video filename>.depth` folder with a manifest when the counts match. The depth
+layer is captured at the game's own scene resolution: when upscaling or
+resolution scaling renders the scene below the window size, `depth.mov` and the
+EXR sequence keep that scene size while the manifest records both it and the
+color recording's size (`width`/`height` are the depth master's,
+`color_width`/`color_height` the paired video's). The same folder receives a
+normalized grayscale preview video (`preview.mp4`, or `.mkv` for lossless)
+encoded with the chosen encoder and bitrate after the take finishes; depths at
+or beyond 8192 camera-axis units map to white. Unsupported or ambiguous depth
+stops the recording with an error instead of writing an unpaired frame. The
+depth values are camera-axis world units, not metres, and the EXR sequence
+remains the numerical master.
 
 Dolly's panel and path guides are excluded from the file. ReShade color effects
 are included, while its menu, splash and FPS display are excluded. Deadlock's

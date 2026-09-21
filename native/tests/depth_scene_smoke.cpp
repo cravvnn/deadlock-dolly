@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 namespace {
@@ -118,7 +119,8 @@ struct Test {
         put(456, -1);
         context.p->UpdateSubresource(cb.p, 0, nullptr, bytes.data(), 0, 0);
     }
-    void bind(ID3D11DeviceContext* c, ID3D11DepthStencilView* dsv, unsigned slot = 1) {
+    void bind(ID3D11DeviceContext* c, ID3D11DepthStencilView* dsv, unsigned slot = 1,
+              UINT width = 17, UINT height = 3) {
         const std::array<ID3D11Buffer*, 14> empty{};
         c->VSSetConstantBuffers(0, 14, empty.data());
         c->VSSetConstantBuffers(slot, 1, &cb.p);
@@ -129,7 +131,7 @@ struct Test {
         c->OMSetRenderTargets(0, nullptr, dsv);
         c->OMSetDepthStencilState(state.p, 0);
         c->RSSetState(raster.p);
-        const D3D11_VIEWPORT viewport{0, 0, 17, 3, 0, 1};
+        const D3D11_VIEWPORT viewport{0, 0, float(width), float(height), 0, 1};
         c->RSSetViewports(1, &viewport);
     }
     void read(const SceneFrame& scene, float expected) {
@@ -164,10 +166,10 @@ struct Test {
 struct Surface {
     Com<ID3D11Texture2D> texture;
     Com<ID3D11DepthStencilView> view;
-    Surface(ID3D11Device* device, const char* name) {
+    Surface(ID3D11Device* device, const char* name, UINT width = 17, UINT height = 3) {
         D3D11_TEXTURE2D_DESC desc{};
-        desc.Width = 17;
-        desc.Height = 3;
+        desc.Width = width;
+        desc.Height = height;
         desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
         desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
         desc.Usage = D3D11_USAGE_DEFAULT;
@@ -260,6 +262,43 @@ void check(D3D_DRIVER_TYPE driver) {
     require(still_bound.p == ui.view.p, "Observation changed the game's render target");
     require(t.tracker->consume(t.context.p).result == SceneResult::missing,
             "Consumed frame reused stale depth");
+    // Upscaling or resolution scaling renders the scene below the recording
+    // size: a reviewed target at its own resolution with a full-target viewport
+    // is verified, and its size is what the paired depth is captured at.
+    Surface scaled(t.device.p, "scratchrendertarget_1118301577_19x5_1_1.vtex", 19, 5);
+    t.calibration(7);
+    t.bind(t.context.p, scaled.view.p, 1, 19, 5);
+    t.context.p->ClearDepthStencilView(scaled.view.p, D3D11_CLEAR_DEPTH, 0, 0);
+    t.context.p->Draw(3, 0);
+    auto scaled_frame = t.tracker->consume(t.context.p);
+    require(scaled_frame.result == SceneResult::ready, "A scaled scene target was rejected");
+    require(scaled_frame.width == 19 && scaled_frame.height == 5,
+            "Verified scene target size was not reported");
+    require(std::strstr(scene_diagnostic(), "scene=19x5") != nullptr,
+            "Verified scene size missing from the diagnostic");
+    // The largest reviewed target wins within a frame whatever the draw order;
+    // a smaller reviewed target never replaces the chosen scene.
+    t.bind(t.context.p, other.view.p);
+    t.context.p->Draw(3, 0);
+    t.bind(t.context.p, scaled.view.p, 1, 19, 5);
+    t.context.p->Draw(3, 0);
+    auto upgraded = t.tracker->consume(t.context.p);
+    require(upgraded.result == SceneResult::ready && upgraded.width == 19 && upgraded.height == 5,
+            "A larger reviewed scene target did not supersede a smaller one");
+    t.bind(t.context.p, scaled.view.p, 1, 19, 5);
+    t.context.p->Draw(3, 0);
+    t.bind(t.context.p, other.view.p);
+    t.context.p->Draw(3, 0);
+    auto kept = t.tracker->consume(t.context.p);
+    require(kept.result == SceneResult::ready && kept.width == 19 && kept.height == 5,
+            "A smaller reviewed target replaced the chosen scene");
+    // A reviewed name whose resolution does not describe its texture stays
+    // rejected instead of being trusted by family alone.
+    Surface misnamed(t.device.p, "scratchrendertarget_1118301577_19x5_1_1.vtex", 17, 3);
+    t.bind(t.context.p, misnamed.view.p);
+    t.context.p->Draw(3, 0);
+    require(t.tracker->consume(t.context.p).result == SceneResult::missing,
+            "A scene target with a mismatched name resolution was accepted");
     // Exercise all explicit/indirect triangle entry points with slot zero.
     for (unsigned method = 0; method < 6; ++method) {
         t.calibration(7 + static_cast<float>(method));

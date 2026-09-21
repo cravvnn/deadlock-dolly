@@ -17,8 +17,12 @@ public:
     Sequence(const Sequence&) = delete;
     Sequence& operator=(const Sequence&) = delete;
     // Creates a new depth directory. write_exr adds the float EXR sequence
-    // under exr/; write_mov records that the caller supplies depth.mov.
-    bool begin(const wchar_t* directory, bool write_exr, bool write_mov) noexcept;
+    // under exr/; write_mov records that the caller supplies depth.mov. The
+    // optional color size documents the paired color recording when it differs
+    // from the depth master's size (the game rendered the scene at an internal
+    // resolution with upscaling or resolution scaling).
+    bool begin(const wchar_t* directory, bool write_exr, bool write_mov,
+               std::uint32_t color_width = 0, std::uint32_t color_height = 0) noexcept;
     bool write(const RawFrame& frame, std::uint64_t capture_pts_100ns) noexcept;
     bool finish(std::uint64_t encoded_color_frames) noexcept;
     void discard() noexcept;

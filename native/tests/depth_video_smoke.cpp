@@ -32,9 +32,9 @@ struct Test {
     Com<IDXGISwapChain> chain;
     Com<ID3D11Device> device;
     Com<ID3D11DeviceContext> context;
-    Com<ID3D11Texture2D> color, depth;
+    Com<ID3D11Texture2D> color, depth, scaled_depth;
     Com<ID3D11RenderTargetView> rtv;
-    Com<ID3D11DepthStencilView> dsv;
+    Com<ID3D11DepthStencilView> dsv, scaled_dsv;
     Com<ID3D11DepthStencilState> state;
     Com<ID3D11Buffer> cb;
     std::unique_ptr<depth::SceneTracker> tracker;
@@ -77,6 +77,19 @@ struct Test {
         vd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
         require(SUCCEEDED(device.p->CreateDepthStencilView(depth.p, &vd, &dsv.p)),
                 "Create depth view failed");
+        // Upscaling or resolution scaling renders the scene below the color
+        // swapchain size; the paired depth is captured at the scene's own size.
+        td.Width = 160;
+        td.Height = 120;
+        require(SUCCEEDED(device.p->CreateTexture2D(&td, nullptr, &scaled_depth.p)),
+                "Create scaled depth failed");
+        const char* scaled_name = "scratchrendertarget_1118301577_160x120_17_1.vtex";
+        require(SUCCEEDED(scaled_depth.p->SetPrivateData(
+                    WKPDID_D3DDebugObjectName, static_cast<UINT>(std::strlen(scaled_name)),
+                    scaled_name)),
+                "Name scaled depth failed");
+        require(SUCCEEDED(device.p->CreateDepthStencilView(scaled_depth.p, &vd, &scaled_dsv.p)),
+                "Create scaled depth view failed");
         D3D11_DEPTH_STENCIL_DESC ds{};
         ds.DepthEnable = true;
         ds.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
@@ -96,7 +109,7 @@ struct Test {
         if (window)
             DestroyWindow(window);
     }
-    void present(unsigned id, bool missing = false) {
+    void present(unsigned id, bool missing = false, bool scaled = false) {
         std::array<unsigned char, 640> bytes{};
         const auto put = [&bytes](unsigned offset, float value) {
             std::memcpy(bytes.data() + offset, &value, 4);
@@ -108,22 +121,30 @@ struct Test {
         put(248, -1);
         put(260, -1);
         put(264, 1 / near_clip);
-        put(328, 320);
-        put(332, 240);
-        put(336, 1.0f / 320);
-        put(340, 1.0f / 240);
+        // The per-view viewport must describe the target the depth frame is
+        // captured at, or the readback calibration is rejected.
+        const float scene_width = scaled ? 160.0f : 320.0f;
+        const float scene_height = scaled ? 120.0f : 240.0f;
+        put(328, scene_width);
+        put(332, scene_height);
+        put(336, 1.0f / scene_width);
+        put(340, 1.0f / scene_height);
         put(376, near_clip);
         put(380, std::numeric_limits<float>::infinity());
         put(456, -1);
         context.p->UpdateSubresource(cb.p, 0, nullptr, bytes.data(), 0, 0);
         context.p->VSSetConstantBuffers(id % 2, 1, &cb.p);
         context.p->OMSetDepthStencilState(state.p, 0);
-        context.p->OMSetRenderTargets(1, &rtv.p, dsv.p);
-        const D3D11_VIEWPORT viewport{0, 0, 320, 240, 0, 1};
+        // The scene pass renders into its own (possibly smaller) color target;
+        // binding the swapchain view beside a smaller depth view is invalid in
+        // D3D11, so only the depth view is bound for the scaled fixture.
+        context.p->OMSetRenderTargets(scaled ? 0 : 1, scaled ? nullptr : &rtv.p,
+                                      scaled ? scaled_dsv.p : dsv.p);
+        const D3D11_VIEWPORT viewport{0, 0, scene_width, scene_height, 0, 1};
         context.p->RSSetViewports(1, &viewport);
         const float rgba[]{float(id) / 255, 32.0f / 255, 64.0f / 255, 1};
         context.p->ClearRenderTargetView(rtv.p, rgba);
-        context.p->ClearDepthStencilView(dsv.p, D3D11_CLEAR_DEPTH, .5f, 0);
+        context.p->ClearDepthStencilView(scaled ? scaled_dsv.p : dsv.p, D3D11_CLEAR_DEPTH, .5f, 0);
         // This test supplies a calibrated GPU fixture directly to the observer;
         // depth_scene_smoke separately verifies the real draw detours.
         tracker->draw(context.p);
@@ -152,7 +173,7 @@ int wmain(int argc, wchar_t** argv) {
             fs::path(argv[2]) / (L"depth-video-" + std::to_wstring(GetCurrentProcessId()));
         require(fs::create_directory(root), "Could not create unique output directory");
         Test t;
-        for (unsigned mode = 0; mode < 7; ++mode) {
+        for (unsigned mode = 0; mode < 8; ++mode) {
             // Each take gets its own folder: the depth layer lives beside the
             // color file as <parent>\depth and is never overwritten.
             const fs::path mode_root = root / std::to_wstring(mode);
@@ -182,11 +203,10 @@ int wmain(int argc, wchar_t** argv) {
             bool enough = false;
             for (unsigned frame = 0; GetTickCount64() < end; ++frame) {
                 // Mode 6 starts with transition frames that have no verified
-                // scene; they must be skipped, not fail the take.
-                if (mode == 6 && frame < 3)
-                    t.present(frame % 100 + 1, true);
-                else
-                    t.present(frame % 100 + 1);
+                // scene; they must be skipped, not fail the take. Mode 7
+                // renders the scene below the color size (upscaling), so the
+                // paired depth is captured at the scene's own resolution.
+                t.present(frame % 100 + 1, mode == 6 && frame < 3, mode == 7);
                 const auto status = video::status();
                 if (status.state == video::State::failed) {
                     std::fwprintf(stderr, L"%ls\n", status.error);
@@ -197,6 +217,16 @@ int wmain(int argc, wchar_t** argv) {
                     break;
                 }
                 Sleep(8);
+            }
+            if (!enough) {
+                const auto status = video::status();
+                std::fwprintf(stderr,
+                              L"mode %u state %u %ux%u frames %llu dropped %llu error %ls\n"
+                              L"scene %hs\n",
+                              mode, static_cast<unsigned>(status.state), status.width,
+                              status.height, static_cast<unsigned long long>(status.frames_written),
+                              static_cast<unsigned long long>(status.frames_dropped), status.error,
+                              depth::scene_diagnostic());
             }
             require(enough, "Paired recording did not produce frames");
             if (mode == 3)
@@ -227,6 +257,20 @@ int wmain(int argc, wchar_t** argv) {
                 require(text.find("\"clock_fallback_frames\": " +
                                   std::to_string(status.frames_written) + ",") != std::string::npos,
                         "Clock metadata did not match the written frames");
+                if (mode == 7) {
+                    // The paired depth keeps the scene target's size and names
+                    // the color recording it belongs to.
+                    std::ifstream manifest(mode_root / L"depth" / L"manifest.json");
+                    const std::string pair((std::istreambuf_iterator<char>(manifest)), {});
+                    require(pair.find("\"width\": 160") != std::string::npos &&
+                                pair.find("\"height\": 120") != std::string::npos,
+                            "Scaled scene depth manifest size missing");
+                    require(pair.find("\"color_width\": 320") != std::string::npos &&
+                                pair.find("\"color_height\": 240") != std::string::npos,
+                            "Color recording size missing from the scaled depth manifest");
+                    require(fs::exists(mode_root / L"depth" / L"preview_80x60.raw"),
+                            "Scaled depth preview size missing");
+                }
                 std::ofstream report(root / (std::to_wstring(mode) + L".status"));
                 report << status.frames_written << " " << status.frames_dropped << "\n";
             } else

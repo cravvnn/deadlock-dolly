@@ -33,7 +33,7 @@ int main() {
         const fs::path directory = root / "good_depth";
         {
             Sequence sequence;
-            require(sequence.begin(directory.c_str(), true, true) && sequence.write(raw, 0),
+            require(sequence.begin(directory.c_str(), true, true, 33, 19) && sequence.write(raw, 0),
                     "First EXR failed");
             require(sequence.exr() && sequence.mov() && sequence.linear_count() == 4,
                     "Depth sequence accessors failed");
@@ -54,6 +54,12 @@ int main() {
                 "Manifest frame count missing");
         require(manifest.find("depth.mov") != std::string::npos && manifest.find("8192") != std::string::npos,
                 "Depth master mapping missing");
+        require(manifest.find("\"width\": 2") != std::string::npos &&
+                    manifest.find("\"height\": 2") != std::string::npos,
+                "Depth master size missing from the manifest");
+        require(manifest.find("\"color_width\": 33") != std::string::npos &&
+                    manifest.find("\"color_height\": 19") != std::string::npos,
+                "Paired color size missing from the manifest");
         require(contents(directory / "preview_1x1.raw").size() == 2,
                 "Normalized preview stream missing or mis-sized");
         {

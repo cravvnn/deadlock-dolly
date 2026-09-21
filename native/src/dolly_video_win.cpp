@@ -454,6 +454,35 @@ std::wstring capture_diagnostic(const Session& s) {
         static_cast<unsigned long long>(s.capture_produced.load(std::memory_order_relaxed)));
     return text;
 }
+std::wstring narrow_to_wide(const char* text) {
+    if (!text || !*text)
+        return L"";
+    const int wide = MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
+    if (wide <= 1)
+        return L"";
+    std::wstring converted(static_cast<std::size_t>(wide), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, text, -1, converted.data(), wide) != wide)
+        return L"";
+    converted.resize(static_cast<std::size_t>(wide) - 1);
+    return converted;
+}
+// A depth take never opens without a verified scene frame. When the whole
+// take was skipped by the scene gate, lead with that and the scene observer's
+// last reason (observed target, size, recording size): the published error is
+// capped, so the cause must come before any counters.
+std::wstring zero_frame_message(const Session& s) {
+    const auto skips = s.capture_scene_skips.load(std::memory_order_relaxed);
+    if (s.depth_enabled && skips) {
+        wchar_t lead[192]{};
+        std::swprintf(
+            lead, 192,
+            L"No depth frame could be verified after %llu rendered frames, so the take was "
+            L"discarded. ",
+            static_cast<unsigned long long>(skips));
+        return std::wstring(lead) + narrow_to_wide(depth::scene_diagnostic());
+    }
+    return L"Recording ended before any game frame was captured. (" + capture_diagnostic(s) + L")";
+}
 const wchar_t* codec_token(Codec codec) noexcept {
     switch (codec) {
     case Codec::h264_nvenc:
@@ -570,11 +599,13 @@ std::wstring build_ffmpeg_command(const Session& s) {
 // The paired depth master is a 10-bit ProRes 4444 .mov fed with linear
 // gray16 samples. The 0..kDepthUnitMax mapping is documented in the layer's
 // manifest.json; the float EXR sequence stays an optional precision master.
-std::wstring build_depth_command(const Session& s) {
+// The stream size is the verified scene target's size, which can be below the
+// color recording when the game renders the scene at an internal resolution.
+std::wstring build_depth_command(const Session& s, std::uint32_t width, std::uint32_t height) {
     std::wstring cmd = quote_arg(s.ffmpeg);
     cmd += L" -hide_banner -loglevel error -nostdin -n";
     cmd += L" -f rawvideo -pixel_format gray16le";
-    cmd += L" -video_size " + std::to_wstring(s.width) + L"x" + std::to_wstring(s.height);
+    cmd += L" -video_size " + std::to_wstring(width) + L"x" + std::to_wstring(height);
     cmd += L" -framerate " + std::to_wstring(s.fps);
     cmd += L" -i pipe:0 -an -c:v prores_ks -profile:v 4444 -pix_fmt yuv444p10le";
     cmd += L" ";
@@ -732,8 +763,10 @@ bool spawn_encoder(Session& s, Child& child, const std::wstring& command,
 bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
     return spawn_encoder(s, child, build_ffmpeg_command(s), s.path, L"color", error);
 }
-bool spawn_depth_ffmpeg(Session& s, Child& child, std::wstring& error) {
-    return spawn_encoder(s, child, build_depth_command(s), s.depth_video_path, L"depth", error);
+bool spawn_depth_ffmpeg(Session& s, Child& child, std::uint32_t width, std::uint32_t height,
+                        std::wstring& error) {
+    return spawn_encoder(s, child, build_depth_command(s, width, height), s.depth_video_path,
+                         L"depth", error);
 }
 void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     bool created = false, finalized = false, wrote_any = false;
@@ -758,22 +791,21 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                           error.empty() ? std::wstring(L"FFmpeg is unavailable.") : error);
             } else {
                 created = true;
-                if (s->depth_enabled && !spawn_depth_ffmpeg(*s, depth_child, error)) {
-                    fail_text(*s, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),
-                              error.empty() ? std::wstring(L"The depth encoder could not start.")
-                                            : error);
-                } else {
-                    if (s->depth_enabled &&
-                        !s->depth_output.begin(s->depth_directory.c_str(), s->depth_exr, true))
-                        fail(
-                            *s, s->depth_output.error(),
-                            L"Could not create a new depth layer folder. Existing folders are never overwritten.");
-                    for (auto& frame : s->cpu)
-                        frame.pixels.resize(std::size_t(s->width) * s->height * 4);
-                    if (SUCCEEDED(s->error.load())) {
-                        s->state.store(State::recording, std::memory_order_release);
-                        s->ready.store(true, std::memory_order_release);
-                    }
+                // The depth encoder starts with the first verified depth frame:
+                // only then is the scene target's size (and therefore the raw
+                // stream size) known, which can be below the color size when
+                // the game renders the scene at an internal resolution.
+                if (s->depth_enabled &&
+                    !s->depth_output.begin(s->depth_directory.c_str(), s->depth_exr, true, s->width,
+                                           s->height))
+                    fail(
+                        *s, s->depth_output.error(),
+                        L"Could not create a new depth layer folder. Existing folders are never overwritten.");
+                for (auto& frame : s->cpu)
+                    frame.pixels.resize(std::size_t(s->width) * s->height * 4);
+                if (SUCCEEDED(s->error.load())) {
+                    s->state.store(State::recording, std::memory_order_release);
+                    s->ready.store(true, std::memory_order_release);
                 }
             }
         }
@@ -793,6 +825,19 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             write_stage = WriteStage::depth_sequence;
             if (!s->depth_output.write(frame.depth, frame.pts))
                 return s->depth_output.error();
+            if (!depth_child.process) {
+                // The raw stream size is the verified scene target's size,
+                // known once the first depth frame exists.
+                write_stage = WriteStage::depth_pipe;
+                std::wstring error;
+                if (!spawn_depth_ffmpeg(*s, depth_child, frame.depth.frame.width,
+                                        frame.depth.frame.height, error)) {
+                    fail_text(*s, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),
+                              error.empty() ? std::wstring(L"The depth encoder could not start.")
+                                            : error);
+                    return E_FAIL;
+                }
+            }
             if (depth_child.process && depth_child.input) {
                 write_stage = WriteStage::depth_pipe;
                 const auto* linear = s->depth_output.linear_data();
@@ -872,9 +917,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         depth_child.close_input();
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
-                const auto detail = capture_diagnostic(*s);
-                fail_text(*s, E_FAIL,
-                          L"Recording ended before any game frame was captured. (" + detail + L")");
+                fail_text(*s, E_FAIL, zero_frame_message(*s));
             } else {
                 const DWORD wait = WaitForSingleObject(child.process, 120000);
                 DWORD code = 1;
@@ -1066,9 +1109,7 @@ void encode(std::shared_ptr<Session> s) noexcept {
             if (FAILED(hr))
                 fail(*s, hr, L"The MP4 file could not be finalized. Check available disk space.");
         } else if (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load())) {
-            fail_text(*s, E_FAIL,
-                      L"Recording ended before any game frame was captured. (" +
-                          capture_diagnostic(*s) + L")");
+            fail_text(*s, E_FAIL, zero_frame_message(*s));
         }
     } catch (...) {
         fail(*s, E_OUTOFMEMORY,
@@ -1592,10 +1633,12 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     if (s.depth_enabled) {
         depth::ProjectionBuffer calibration[14]{};
         const auto count = scene ? scene->calibration(calibration, 14) : 0;
-        const bool scene_ready = scene && scene->result == depth::SceneResult::ready && count > 0;
+        const bool scene_ready = scene && scene->result == depth::SceneResult::ready && count > 0 &&
+                                 scene->width && scene->height;
         const auto fail_scene = [&]() {
-            wchar_t detail[352]{};
-            MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail, 351);
+            wchar_t detail[560]{};
+            if (MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail, 559) <= 0)
+                detail[0] = 0;
             std::wstring message =
                 L"A verified scene depth and replay time were not available for this color frame. (";
             message += detail;
@@ -1616,12 +1659,14 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                     s.scene_skip_since.store(GetTickCount64(), std::memory_order_relaxed);
                 const auto since = s.scene_skip_since.load(std::memory_order_relaxed);
                 if (since && GetTickCount64() - since > 10000) {
-                    wchar_t detail[352]{};
-                    MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail, 351);
-                    wchar_t message[512]{};
+                    wchar_t detail[560]{};
+                    if (MultiByteToWideChar(CP_UTF8, 0, depth::scene_diagnostic(), -1, detail,
+                                            559) <= 0)
+                        detail[0] = 0;
+                    wchar_t message[768]{};
                     std::swprintf(
-                        message, 512,
-                        L"The shot never produced a verified scene frame; %llu transition frames were skipped. (%s)",
+                        message, 768,
+                        L"The shot never produced a verified scene frame; %llu rendered frames were skipped. (%s)",
                         static_cast<unsigned long long>(skips), detail);
                     fail_text(s, E_FAIL, message);
                 }
@@ -1636,7 +1681,10 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
             fail_scene();
             return;
         }
-        const depth::Frame metadata{s.width, s.height, gpu.submitted, replay_time, {}};
+        // The depth data is captured at the scene target's own size. It can be
+        // below the color recording when the game renders the scene at an
+        // internal resolution with upscaling or resolution scaling.
+        const depth::Frame metadata{scene->width, scene->height, gpu.submitted, replay_time, {}};
         if (gpu.depth_queue.enqueue(device, context, scene->texture(), metadata, calibration,
                                     count) != depth::ReadbackResult::ready) {
             fail(s, E_FAIL, L"Could not queue depth with the current color frame.");
