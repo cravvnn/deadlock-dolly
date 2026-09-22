@@ -955,10 +955,60 @@ class ReShadeGuiTests(unittest.TestCase):
         self.app.controller._native_bridge.return_value = bridge
         self.app.reshade_status_text = Var("")
         self.app.reshade_disable_button = Mock()
+        self.app.reshade_configure_button = Mock()
         self.app._configure_reshade = Mock()
         self.app._refresh_reshade(READY)
         self.app._refresh_reshade(READY)
         self.app._configure_reshade.assert_called_once_with(automatic=True)
+
+    def test_selecting_a_runtime_persists_it_and_explains_the_next_step(self):
+        self.app.controller = Mock()
+        self.app.controller.status.return_value = {}
+        self.app.controller._native_bridge.return_value = None
+        self.app.reshade_runtime_path = Var("")
+        self.app.reshade_status_text = Var("")
+        self.app._log = Mock()
+        self.app._configure_reshade = Mock()
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Path(folder) / "ReShade64.dll"
+            runtime.write_bytes(b"selected runtime")
+            with patch("dolly.gui.save_settings") as save:
+                accepted = self.app._select_reshade_runtime(str(runtime))
+        self.assertTrue(accepted)
+        self.assertEqual(save.call_args.args[0].reshade_runtime_path, str(runtime))
+        self.assertEqual(self.app.app_settings.reshade_runtime_path, str(runtime))
+        self.assertIn("Launch a replay", self.app.reshade_status_text.get())
+        self.app._configure_reshade.assert_not_called()
+
+    def test_selecting_a_missing_runtime_is_refused_and_not_saved(self):
+        self.app.reshade_runtime_path = Var("")
+        self.app.reshade_status_text = Var("")
+        self.app._log = Mock()
+        with patch("dolly.gui.save_settings") as save:
+            accepted = self.app._select_reshade_runtime(r"C:\none\ReShade64.dll")
+        self.assertFalse(accepted)
+        save.assert_not_called()
+        self.assertIn("missing", self.app.reshade_status_text.get().lower())
+
+    def test_enable_button_unlocks_once_a_runtime_is_selected(self):
+        bridge = Mock()
+        bridge.media_status.return_value = {"reshade": {"state": 0}}
+        self.app.controller = Mock()
+        self.app.controller._native_bridge.return_value = bridge
+        self.app.reshade_status_text = Var("")
+        self.app.reshade_disable_button = Mock()
+        self.app.reshade_configure_button = Mock()
+        self.app._configure_reshade = Mock()
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Path(folder) / "ReShade64.dll"
+            runtime.write_bytes(b"selected runtime")
+            self.app.reshade_runtime_path = Var(str(runtime))
+            self.app._refresh_reshade({})
+            self.app.reshade_configure_button.configure.assert_called_with(state="normal")
+            self.assertIn("Launch a replay", self.app.reshade_status_text.get())
+        self.app.reshade_runtime_path = Var("C:/none/ReShade64.dll")
+        self.app._refresh_reshade({})
+        self.app.reshade_configure_button.configure.assert_called_with(state="disabled")
 
     def test_reshade_status_failure_is_contained_and_logged_once(self):
         bridge = Mock()

@@ -230,6 +230,8 @@ def build_settings(app):
     app._build_keybinds()
     app.reshade_card = shade = card(body, "ReShade")
     app.reshade_path_entry = field(shade, "Runtime DLL", app.reshade_runtime_path)
+    app.reshade_path_entry.bind(
+        "<Return>", lambda _event: app._select_reshade_runtime(app.reshade_runtime_path.get()))
     app.reshade_browse_button = actions(shade, (("Browse runtime...", app._browse_reshade),), 1)[0]
     buttons = actions(shade, (("Enable ReShade", app._configure_reshade),
                     ("Disable for this session", app._disable_reshade), ("Forget runtime", app._forget_reshade)))

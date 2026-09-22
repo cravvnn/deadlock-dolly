@@ -982,7 +982,6 @@ class DollyApp:
                        getattr(self, "video_speed_combo", None)):
             if widget is not None:
                 widget.configure(state="disabled" if active or self.busy else "readonly")
-        self.reshade_configure_button.configure(state="normal" if ready and not active and not self.busy and not self.playing else "disabled")
         self.reshade_forget_button.configure(state="normal" if not active and not self.busy and not self.playing else "disabled")
         self._refresh_reshade(controller_status, active)
         self._advance_layer_pipeline()
@@ -1006,6 +1005,17 @@ class DollyApp:
                 self._log(message)
             return
         self._last_reshade_status_error = None
+        from dolly.reshade_setup import runtime_issue
+        from dolly.runtime import application_root
+        widget = getattr(self, "reshade_runtime_path", None)
+        selection = (widget.get() if widget is not None
+                     else self.app_settings.reshade_runtime_path).strip()
+        issue = runtime_issue(selection, application_root=application_root()) if selection else None
+        # Selecting a runtime must be possible without a live session; the
+        # worker explains that a DirectX 11 replay is still required if pressed.
+        self.reshade_configure_button.configure(
+            state="normal" if selection and issue is None and not video_active and not self.busy
+            and not self.playing else "disabled")
         if state == 3:
             self.reshade_status_text.set("ReShade unavailable: " + str(shade.get("message") or "Runtime loading failed."))
         elif state == 2:
@@ -1015,7 +1025,15 @@ class DollyApp:
         elif state == 1:
             self.reshade_status_text.set("Loading ReShade…")
         elif not self.busy:
-            self.reshade_status_text.set("ReShade disabled. Choose a runtime DLL to enable its in-game menu.")
+            if issue:
+                self.reshade_status_text.set("ReShade unavailable: " + issue)
+            elif selection and ready:
+                self.reshade_status_text.set("ReShade runtime selected. Press Enable ReShade to load it.")
+            elif selection:
+                self.reshade_status_text.set("ReShade runtime selected. Launch a replay through Dolly, "
+                                             "then press Enable ReShade (a live session enables it automatically).")
+            else:
+                self.reshade_status_text.set("ReShade disabled. Choose a runtime DLL to enable its in-game menu.")
         self.reshade_disable_button.configure(state="normal" if ready and state in (1, 2) and not self.busy and not video_active else "disabled")
         # A selected runtime is opt-in and remembered across launches. Make one
         # attempt per bridge; a bad DLL must never create a retry/modal loop.
@@ -1028,7 +1046,39 @@ class DollyApp:
     def _browse_reshade(self):
         path = filedialog.askopenfilename(parent=self.root, title="Choose the ReShade runtime", filetypes=(("ReShade runtime", "*.dll"),))
         if path:
-            self.reshade_runtime_path.set(path)
+            self._select_reshade_runtime(path)
+
+    def _select_reshade_runtime(self, selected):
+        """Remember a chosen runtime immediately and explain the next step.
+
+        Browsing used to fill only the entry: the path was never saved, the
+        status text never changed, and a user could reasonably conclude the DLL
+        was rejected. Persisting here also lets the next session auto-enable it.
+        """
+        from dolly.reshade_setup import runtime_issue
+        from dolly.runtime import application_root
+        text = str(selected).strip()
+        self.reshade_runtime_path.set(text)
+        issue = runtime_issue(text, application_root=application_root()) if text else None
+        if issue:
+            self.reshade_status_text.set("ReShade unavailable: " + issue)
+            self._log("ReShade: " + issue)
+            return False
+        settings = replace(self.app_settings, reshade_runtime_path=text)
+        try:
+            save_settings(settings)
+        except OSError as exc:
+            self.reshade_status_text.set("Could not save the ReShade runtime selection: " + str(exc))
+            return False
+        self.app_settings = settings
+        bridge = self.controller._native_bridge()
+        if recording_ready(self.controller.status()) and bridge is not None:
+            self.reshade_status_text.set("ReShade runtime selected. Enabling it now…")
+            self._configure_reshade(automatic=True)
+        else:
+            self.reshade_status_text.set("ReShade runtime selected. Launch a replay through Dolly, "
+                                         "then press Enable ReShade (a live session enables it automatically).")
+        return True
 
     def _configure_reshade(self, automatic=False):
         def operation():
