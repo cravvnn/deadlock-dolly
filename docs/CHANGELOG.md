@@ -1,6 +1,6 @@
 # Changes
 
-## 0.5.32 alpha — ReShade runtime diagnostics
+## 0.5.33 alpha — Selecting a ReShade runtime works immediately
 
 - Selecting a runtime DLL now takes effect immediately: the card remembers the
   path, so the next session can enable it automatically, and the status names
@@ -11,6 +11,12 @@
 - **Enable ReShade** is pressable as soon as a valid runtime is selected, even
   before launching; pressing it without a session explains that a DirectX 11
   replay is required.
+- Reported by a user whose runtime was not recognized: 0.5.32 shipped the
+  diagnostics below, but the path was still only remembered after a successful
+  enable, so the card never acknowledged the selection.
+
+## 0.5.32 alpha — ReShade runtime diagnostics
+
 - The ReShade card now says why a selected runtime cannot be used. When the
   saved DLL is gone — moved, cleaned, quarantined, or replaced with the folder
   it lived in — Dolly names the missing path and states that it never moves or
