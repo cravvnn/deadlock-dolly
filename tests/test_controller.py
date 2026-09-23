@@ -1343,6 +1343,21 @@ class ControllerTests(unittest.TestCase):
                     self.controller._launch_attempt = {'game_path': str(selected)}
                     self.assertIn(crash.resolve(), [p.resolve() for p in self.controller._crash_dumps()])
 
+    def test_crash_dump_search_finds_dumps_written_beside_the_executable(self):
+        # Breakpad writes ".\deadlock_...mdmp" into the executable folder, not
+        # the launcher's working directory: real sessions lost the dump when
+        # only the game folder was searched.
+        from test_launcher import fake_game
+        with tempfile.TemporaryDirectory() as directory:
+            paths = fake_game(Path(directory) / 'Deadlock')
+            crash = paths.executable.parent / 'deadlock_2026_0922_145118_0_accessviolation.mdmp'
+            crash.write_bytes(b'MDMP fixture')
+            for selected in (paths.root, paths.game_dir, paths.citadel_dir,
+                             paths.executable.parent, paths.executable):
+                with self.subTest(selected=selected):
+                    self.controller._launch_attempt = {'game_path': str(selected)}
+                    self.assertIn(crash.resolve(), [p.resolve() for p in self.controller._crash_dumps()])
+
     def test_diagnostics_keep_previous_launch_and_raw_console_after_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

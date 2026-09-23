@@ -1,5 +1,21 @@
 # Changes
 
+## 0.5.34 alpha — Crash reports that explain themselves
+
+- Deadlock crash dumps are now included with diagnostics. Before, a crash wrote
+  its dump beside the game executable, but the support ZIP searched only the
+  game folder, so reports arrived without the dump. The newest dumps are now
+  found and attached automatically.
+- A crash while a replay is loading now reports the exit code in decimal and
+  hex and explains that the replay may be one this game build cannot
+  reconstruct, instead of only saying the game closed. The selected replay's
+  map and recorded build are named when its header could be read.
+- Diagnostics include the selected replay's header: recorded map, game build,
+  patch version, demo version, and server/client names.
+- Known limit: moving player-layer takes at 120 FPS with 1x export speed can
+  miss shot frames on a busy machine. Dolly refuses the take instead of writing
+  a bad layer; retry at a lower FPS or at 0.5x export speed.
+
 ## 0.5.33 alpha — Selecting a ReShade runtime works immediately
 
 - Selecting a runtime DLL now takes effect immediately: the card remembers the

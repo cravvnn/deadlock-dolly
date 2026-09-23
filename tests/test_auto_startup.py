@@ -2,6 +2,7 @@
 from pathlib import Path
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -60,6 +61,25 @@ class AutoStartupTests(unittest.TestCase):
                 self.controller.start_editing("installation", self.demo, cancel_event=event)
         launch.assert_not_called()
         self.assertEqual(self.console.sent, [])
+
+    def test_crashed_game_during_startup_reports_exit_code_and_replay_identity(self):
+        self.controller._session = self.session
+        self.session.process = SimpleNamespace(poll=lambda: 3221225477)
+        self.controller._replay_header = {"name": "9-21Routers2.dem", "build_num": 10725,
+                                          "map_name": "dl_midtown"}
+        with self.assertRaises(RuntimeError) as caught:
+            self.controller._startup_wait(lambda: None, "waiting for the selected replay", None)
+        message = str(caught.exception)
+        self.assertIn("0xC0000005", message)
+        self.assertIn("cannot reconstruct", message)
+        self.assertIn("9-21Routers2.dem", message)
+        self.assertIn("game build 10725", message)
+
+    def test_clean_close_during_startup_keeps_the_short_message(self):
+        self.controller._session = self.session
+        self.session.process = SimpleNamespace(poll=lambda: 0)
+        with self.assertRaisesRegex(RuntimeError, "Deadlock closed while waiting for the selected replay"):
+            self.controller._startup_wait(lambda: None, "waiting for the selected replay", None)
 
     def test_native_rendered_tick_zero_does_not_allow_early_pause(self):
         self.console.goto_outputs.extend([0, 0, 1, 2])

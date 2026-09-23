@@ -22,9 +22,20 @@ def record(command, tick, payload=b""):
     return varint(command) + varint(tick) + varint(len(payload)) + payload
 
 
+def string_field(field, text):
+    encoded = text.encode("utf-8")
+    return bytes([(field << 3) | 2]) + varint(len(encoded)) + encoded
+
+
+def int_field(field, value):
+    return bytes([field << 3]) + varint(value)
+
+
 def synthetic_demo(ticks=(1, 22631, 22634, 22637, 48391, 48394, 48397), *, compressed=True,
-                   playback_time=None):
-    body = record(1, 0xffffffff, b"\x0a\x08PBDEMS2\0\x10\x30")
+                   playback_time=None, header=None):
+    if header is None:
+        header = b"\x0a\x08PBDEMS2\0\x10\x30"
+    body = record(1, 0xffffffff, header)
     body += record(8, 0xffffffff, b"signon")
     body += record(13 | (64 if compressed else 0), ticks[0], b"full snapshot")
     for tick in ticks:
@@ -73,6 +84,38 @@ class DemoPacketTests(unittest.TestCase):
     def test_negative_signon_is_excluded_and_snapshot_does_not_duplicate_packet(self):
         index = demo_packets.packet_index(self.file)
         self.assertEqual(list(index.ticks), [1, 22631, 22634, 22637, 48391, 48394, 48397])
+
+    def test_replay_header_reports_recorded_identity_and_build(self):
+        # Shape mirrors the user's 9-21Routers2.dem: SourceTV client recording
+        # for dl_midtown on the older game build that later fataled Deadlock.
+        payload = (string_field(1, "PBDEMS2\0") + int_field(2, 48)
+                   + string_field(3, "woahsnake") + string_field(4, "SourceTV Demo")
+                   + string_field(5, "dl_midtown") + string_field(6, "C:\\Deadlock\\game\\citadel")
+                   + string_field(11, "valve_demo_2") + int_field(13, 10725))
+        self.file.write_bytes(synthetic_demo(header=payload))
+        header = demo_packets.replay_header(self.file)
+        self.assertEqual(header, {
+            "name": "custom.recording.dem", "patch_version": 48, "server_name": "woahsnake",
+            "client_name": "SourceTV Demo", "map_name": "dl_midtown",
+            "game_directory": "C:\\Deadlock\\game\\citadel", "demo_version_name": "valve_demo_2",
+            "build_num": 10725})
+
+    def test_replay_header_never_blocks_on_malformed_or_missing_files(self):
+        self.assertIsNone(demo_packets.replay_header(self.file.parent / "missing.dem"))
+        self.assertIsNone(demo_packets.replay_header(self.file.parent))
+        complete = synthetic_demo()
+        header_only = b"PBDEMS2\0" + struct.pack("<II", 16, 16) + record(
+            1, 0xffffffff, b"\x0a\x08PBDEMS2\0\x10\x30")
+        oversized = record(1, 0xffffffff, b"\x0a\x08PBDEMS2\0" + b"\x00" * demo_packets._MAX_HEADER)
+        for data in (b"", b"HL2DEMO\0" + complete[8:], complete[:12],
+                     header_only, oversized, complete + record(19, 48397)):
+            with self.subTest(prefix=data[:16], length=len(data)):
+                self.file.write_bytes(data)
+                header = demo_packets.replay_header(self.file)
+                if data in (header_only, complete + record(19, 48397)):
+                    self.assertEqual(header, {"name": "custom.recording.dem", "patch_version": 48})
+                else:
+                    self.assertIsNone(header)
 
     def test_file_info_duration_supplies_the_replay_tick_rate(self):
         # A 32 ticks/second SourceTV replay, matching the user's 105060804.dem.

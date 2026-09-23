@@ -24,7 +24,7 @@ from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPEC
                    CVAR_COMPONENTS, validate_cvar_value, parse_cvar_value, format_cvar_value)
 from .console import ConsoleClient, ConsoleError, ConsoleTimeout, error_text, parse_demo_info, parse_demo_tick
 from .replays import same_replay_name
-from .demo_packets import packet_index
+from .demo_packets import packet_index, replay_header
 from .playback import ReplayClock
 from .smoothing import PhaseSmoother, smoothing_window
 from .display import client_aspect_ratio
@@ -253,6 +253,7 @@ class Controller:
         self._replay_requested = False
         self._replay_recovery_active = False
         self._replay_recovery = {}
+        self._replay_header = {}
         self._recording_replay = None
         self._recording_pending = False
         self._stop_event = threading.Event()
@@ -314,13 +315,14 @@ class Controller:
         if not self._console or not self._console.is_connected:
             raise RuntimeError("The console is disconnected. Use Connect after Deadlock finishes loading.")
 
-    def _game_exit_message(self, command, detail):
-        """Explain a console failure that was really the game process dying.
+    def _game_death_message(self, context):
+        """Reason and likely cause for a game process that is no longer alive.
 
         The console socket is closed by the operating system when Deadlock
         crashes, so a raw WinError 10054 hides the real event. A replay that
         cannot be reconstructed by the installed build fatals the game during
-        demo load; report the crash and the likely cause instead.
+        demo load; report the crash and the likely cause instead. The recorded
+        map/build from the replay header is included when it was read.
         """
         exit_code = self._session.process.poll() if self._session else None
         if exit_code is None:
@@ -328,12 +330,22 @@ class Controller:
         elif exit_code == 0:
             reason = "Deadlock closed"
         else:
-            reason = f"Deadlock crashed (exit code {exit_code})"
+            reason = f"Deadlock crashed (exit code {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X})"
+        message = (f"{reason} while {context}. A replay that this game build cannot "
+                   "reconstruct (for example an incompatible or incomplete .dem) can fatal Deadlock as soon as "
+                   "it starts playing. Try the latest replay recorded on this build, then launch again through Dolly.")
+        header = self._replay_header
+        details = ", ".join(str(part) for part in (
+            header.get("name"),
+            f"recorded on game build {header['build_num']}" if header.get("build_num") is not None else None,
+            f"map {header['map_name']}" if header.get("map_name") else None) if part)
+        if details:
+            message += f" Selected replay: {details}."
+        return message
+
+    def _game_exit_message(self, command, detail):
         cleaned = str(command).strip().splitlines()[0][:80] if str(command).strip() else "a console command"
-        return (f"{reason} while Dolly was running '{cleaned}'. A replay that this game build cannot "
-                "reconstruct (for example an incompatible or incomplete .dem) can fatal Deadlock as soon as "
-                "it starts playing. Try the latest replay recorded on this build, then launch again through "
-                f"Dolly. Console reported: {detail}")
+        return self._game_death_message(f"Dolly was running '{cleaned}'") + f" Console reported: {detail}"
 
     def _request(self, command, timeout=3.0, allow_error=False, completion_patterns=None):
         self._require_connection()
@@ -504,6 +516,7 @@ class Controller:
             self._unlocker_pid = None
             self._startup_evidence = {}
             self._replay_requested = False
+            self._replay_header = {}
             with self._state_lock:
                 self._state.update(time=0.0, tick=None)
             self._message("Deadlock launched with -dev -insecure. Wait until the hideout is fully loaded, then Connect and Initialize unlocker. The replay has not been loaded.", startup_stage="waiting_hideout")
@@ -547,6 +560,9 @@ class Controller:
         while True:
             self._check_startup_cancelled(cancel_event)
             if not self._alive():
+                exit_code = self._session.process.poll() if self._session else None
+                if exit_code not in (None, 0):
+                    raise RuntimeError(self._game_death_message(label) + " Export diagnostics to inspect startup.")
                 raise RuntimeError("Deadlock closed while " + label + ". Export diagnostics to inspect startup.")
             result = check()
             self._check_startup_cancelled(cancel_event)
@@ -768,6 +784,15 @@ class Controller:
         if self._unlocker_pid != self._session.pid:
             raise RuntimeError("Initialize the unlocker in the hideout before loading a replay or checking camera support.")
 
+    def _remember_replay_header(self, path):
+        """Record the selected replay's recorded map/build for support context."""
+        header = replay_header(path)
+        if header:
+            self._replay_header = header
+            self._startup_evidence["replay_header"] = header
+            LOG.info("Replay header: %s", header)
+        return header
+
     def load_replay(self):
         with self._op_lock:
             self._require_unlocker()
@@ -776,6 +801,7 @@ class Controller:
             path = launcher._validate_demo(self._demo)
             if path is None:
                 raise RuntimeError("No replay was selected for this launch.")
+            self._remember_replay_header(path)
             # Source commands use forward slashes; _validate_demo rejects quotes,
             # separators and line breaks before this trusted quoted argument.
             command = 'playdemo "' + path.as_posix() + '"'
@@ -833,6 +859,7 @@ class Controller:
         path = launcher._validate_demo(self._demo)
         if path is None:
             raise RuntimeError("No replay was selected for this launch.")
+        self._remember_replay_header(path)
         if self._recorder_active():
             raise RuntimeError("Finish recording before reloading the replay.")
         if self._playback_restore or self._restore or self._game_ui_restore or self._demo_speed_changed:
@@ -3745,19 +3772,30 @@ class Controller:
         self._message("Disconnected.", connected=False, playing=False)
 
     def _crash_dumps(self, limit: int = 3) -> list:
-        """Newest Deadlock breakpad minidumps, newest first. Never raises."""
+        """Newest Deadlock breakpad minidumps, newest first. Never raises.
+
+        Breakpad writes the dump beside the game executable (its ``.\\`` is the
+        executable folder, not the launcher's working directory), so the
+        executable folder is searched as well as the game folder used by
+        older/side-by-side launches.
+        """
         roots = []
         game_path = str((self._launch_attempt or {}).get("game_path") or "").strip()
         if game_path:
             base = Path(game_path)
-            # The launcher starts the game with its `game` folder as the
-            # working directory, which is where breakpad writes the dump.
             try:
-                roots.append(launcher.validate_game(base).game_dir)
+                paths = launcher.validate_game(base)
             except (launcher.LaunchError, OSError):
                 # Retain collection from an installation-root selection even
                 # if installation files disappeared after the crash.
                 roots.append(base if base.name.lower() == "game" else base / "game")
+                if base.suffix.casefold() == ".exe":
+                    roots.append(base.parent)
+                elif base.name.casefold() == "win64" and base.parent.name.casefold() == "bin":
+                    roots.append(base)
+            else:
+                roots.append(paths.game_dir)
+                roots.append(paths.executable.parent)
         roots.append(ROOT)
         if self._session:
             roots.append(self._session.session_dir)
@@ -3810,6 +3848,7 @@ class Controller:
                   "camera_calibration": self._camera_calibration,
                   "paused_camera": deepcopy(self._paused_details),
                   "local_demo_name": self._demo.name if self._demo else None,
+                  "replay_header": dict(self._replay_header),
                   "replay_tick_rate": self.replay_tick_rate(),
                   "runtime_verified_in_Deadlock": False}
         bridge = self._native_bridge()

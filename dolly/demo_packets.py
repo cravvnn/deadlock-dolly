@@ -18,6 +18,11 @@ import threading
 from typing import Callable
 
 _MAGIC = b"PBDEMS2\0"
+_HEADER_FIELDS = {
+    2: "patch_version", 3: "server_name", 4: "client_name", 5: "map_name",
+    6: "game_directory", 7: "fullpackets_version", 11: "demo_version_name",
+    12: "demo_version_guid", 13: "build_num", 14: "game_build_num",
+}
 _MAX_BYTES = (1 << 32) - 1  # This header stores 32-bit file offsets.
 _MAX_RECORDS = 2_000_000
 _MAX_PAYLOAD = 128 * 1024 * 1024
@@ -205,6 +210,49 @@ def _scan(stream, size, check_cancelled):
             stop_tick != info_tick or ticks[-1] > info_tick):
         raise _InvalidIndex("Incomplete replay packet index")
     return PacketIndex(ticks, info_tick, playback_time)
+
+
+def replay_header(path) -> dict | None:
+    """Bounded ``CDemoFileHeader`` metadata for diagnostics, or None.
+
+    A replay this installed build cannot reconstruct can fatal Deadlock while
+    it loads, so the recorded map, game build and demo version are what a
+    support report needs. Only the first record is read; packet payloads are
+    never decoded or executed, and every malformed shape returns None.
+    """
+    try:
+        selected = Path(path).resolve(strict=True)
+        size = selected.stat().st_size
+        if not 16 <= size <= _MAX_BYTES:
+            return None
+        with selected.open("rb") as stream:
+            header = stream.read(16)
+            if len(header) != 16 or header[:8] != _MAGIC:
+                return None
+            info_offset, spawn_offset = struct.unpack_from("<II", header, 8)
+            if not 16 <= info_offset < size or not 16 <= spawn_offset < size:
+                return None
+            command, tick, payload_size = _varint(stream), _varint(stream), _varint(stream)
+            if command != 1 or tick != 0xffffffff or not 0 < payload_size <= _MAX_HEADER:
+                return None
+            fields = _fields(stream.read(payload_size))
+    except (OSError, TypeError, ValueError):
+        return None
+    if fields.get(1) != (2, _MAGIC):
+        return None
+    result = {"name": selected.name}
+    for field, label in _HEADER_FIELDS.items():
+        entry = fields.get(field)
+        if entry is None:
+            continue
+        wire, value = entry
+        if wire == 2:
+            text = value.decode("utf-8", "replace")
+            if text:
+                result[label] = text
+        elif wire == 0:
+            result[label] = value
+    return result
 
 
 def packet_index(path, *, check_cancelled: Callable[[], None] | None = None) -> PacketIndex | None:
