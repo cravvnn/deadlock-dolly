@@ -382,3 +382,4 @@ native/src/dolly_hero_portrait.cpp
 native/tests/hero_portrait_tests.cpp
 docs/RELEASE_NOTES_0.5.36-alpha.md
 docs/RELEASE_NOTES_0.5.37-alpha.md
+docs/RELEASE_NOTES_0.5.38-alpha.md

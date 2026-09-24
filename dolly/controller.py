@@ -3546,6 +3546,38 @@ class Controller:
         if restoration_error:
             self._message(restoration_error, playing=False)
 
+    def set_export_resolution(self):
+        """Use a verified full-target depth pass, independent of render scaling.
+
+        Reduced viewport rendering is later overwritten by an unverified upscale
+        pass. Keep this snapshot separate from playback: Play calls Stop before
+        dispatching the take, and must not undo the recording's resolution.
+        """
+        if self._console is None or not self._console.is_connected or not self._alive():
+            raise RuntimeError("Connect to the game before depth export.")
+        if getattr(self, "_export_resolution", None) is None:
+            original = float(read_cvar_value("mat_viewportscale", self._request("mat_viewportscale")))
+            if not math.isfinite(original) or original <= 0:
+                raise RuntimeError("Could not read the game's render scale before depth export.")
+            self._export_resolution = original
+        self._request("mat_viewportscale 1")
+        if read_cvar_value("mat_viewportscale", self._request("mat_viewportscale")) != 1:
+            raise RuntimeError("Depth export needs 100% render scale, but the game did not accept it.")
+        self._message("Depth export and its layers use 100% render scale; the previous scale is restored after each take.")
+
+    def clear_export_resolution(self):
+        original = getattr(self, "_export_resolution", None)
+        if original is None:
+            return
+        if self._alive():
+            if self._console is None or not self._console.is_connected:
+                raise RuntimeError("Reconnect and finish the recording to restore the game render scale.")
+            self._request("mat_viewportscale " + numeric(original))
+            actual = read_cvar_value("mat_viewportscale", self._request("mat_viewportscale"))
+            if not math.isclose(actual, original, rel_tol=1e-6):
+                raise RuntimeError("Could not restore the game's render scale. Reconnect and finish the recording to retry.")
+        self._export_resolution = None
+
     def set_export_timing(self, fps, speed=1.0):
         """Enter deterministic fixed-step engine timing for an export.
 
@@ -3772,6 +3804,7 @@ class Controller:
         if callable(close_media):
             close_media()
         self.stop()
+        self.clear_export_resolution()
         if self._console:
             self._console.close()
         self._console = None

@@ -101,7 +101,10 @@ sequence) beside the color video. **World**, **Players** and **Effects** record
 isolated layer takes; players and effects also get an alpha master built from
 black and white matte passes. Depth and layer takes need a verified scene
 sample for every frame and stop with an error instead of writing unpaired
-data. See [Layer export](docs/internal/LAYER_EXPORT.md) for details.
+data. Depth exports temporarily use 100% render scale for the color/depth take
+and its selected extra passes, then restore the previous scale. This avoids
+unverified depth from the game's spatial upscaling pass and can make exports
+slower on GPUs that normally use reduced render scale. See [Layer export](docs/internal/LAYER_EXPORT.md) for details.
 
 Select a compatible ReShade64.dll in **Settings → ReShade** to enable ReShade color effects.
 **F11** opens its own menu; **Settings → Controls & keybinds** changes that shortcut. ReShade is an

@@ -61,6 +61,36 @@ class VideoExportTests(unittest.TestCase):
         self.assertFalse(self.path.exists())  # Only native creates the actual file.
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
+        self.controller.set_export_resolution.assert_not_called()
+
+    def test_depth_resolution_is_set_after_preparation_and_restored_on_finish(self):
+        ffmpeg = self.path.parent / "ffmpeg.exe"
+        ffmpeg.write_bytes(b"MZ")
+        calls = []
+        self.controller.prepare_native_recording.side_effect = lambda *a, **k: calls.append("prepare")
+        self.controller.set_export_resolution.side_effect = lambda: calls.append("resolution")
+        options = VideoOptions(self.path, depth=True, ffmpeg_path=ffmpeg).validated()
+        self.assertTrue(options.full_resolution)
+        self.export.start(options, before_record=lambda: calls.append("capture"))
+        self.assertEqual(calls, ["prepare", "resolution", "capture"])
+        with patch.object(self.export, "_encode_depth_preview", side_effect=lambda status: status):
+            self.export.stop()
+        self.controller.clear_export_resolution.assert_called_once()
+
+    def test_resolution_rejection_restores_without_starting_encoder(self):
+        self.controller.set_export_resolution.side_effect = RuntimeError("render scale rejected")
+        with self.assertRaisesRegex(RuntimeError, "render scale rejected"):
+            self.export.start(VideoOptions(self.path, full_resolution=True))
+        self.bridge.start_video.assert_not_called()
+        self.controller.clear_export_resolution.assert_called_once()
+
+    def test_discard_restores_resolution_but_rejected_second_start_does_not(self):
+        self.export.start(VideoOptions(self.path, full_resolution=True))
+        with self.assertRaisesRegex(RuntimeError, "current recording"):
+            self.export.start(VideoOptions(self.path.parent / "next.mp4"))
+        self.controller.clear_export_resolution.assert_not_called()
+        self.export.stop(cancel=True)
+        self.controller.clear_export_resolution.assert_called_once()
 
     def test_high_frame_rates_are_accepted(self):
         for fps in (300, 600):
@@ -578,6 +608,24 @@ class VideoGuiTests(unittest.TestCase):
             setattr(self.app, name, Mock())
         self.app._refresh_reshade = Mock()
 
+    def test_async_depth_failure_restores_on_worker_after_current_operation(self):
+        self._video_widgets()
+        self.app.controller = SimpleNamespace(_export_resolution=.6667)
+        self.app._log = Mock()
+        self.app.video_export.status.return_value = {"state": "failed", "error": "Depth rejected"}
+        self.app.busy = True
+        self.app._refresh_video(READY)
+        self.app._submit.assert_not_called()
+        self.app.busy = False
+        self.app._refresh_video(READY)
+        self.app._submit.assert_called_once_with("Restoring recording settings", self.app.video_export.stop)
+        self.assertEqual(self.app._layer_queue, [])
+        self.assertFalse(self.app._auto_finish_layered)
+        self.app.controller._export_resolution = None
+        self.app._submit.reset_mock()
+        self.app._refresh_video(READY)
+        self.app._submit.assert_not_called()
+
     def test_layered_take_finishes_itself_when_the_shot_completes(self):
         self._video_widgets()
         self.app.video_export.status.return_value = {"state": "recording"}
@@ -675,7 +723,7 @@ class VideoGuiTests(unittest.TestCase):
         exe.write_bytes(b"MZ")
         base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
                             fixed_step=True, speed=1.0, layers=("players",),
-                            ffmpeg_path=exe).validated()
+                            ffmpeg_path=exe, depth=True).validated()
         (Path(self.folder.name) / "shot").mkdir()
         (Path(self.folder.name) / "shot" / "shot.mp4").write_bytes(b"color output")
         (Path(self.folder.name) / "shot" / "shot.json").write_text(json.dumps({
@@ -705,6 +753,7 @@ class VideoGuiTests(unittest.TestCase):
         marker = (deploy / "dolly_owner_start.txt").read_text(encoding="ascii")
         self.assertRegex(marker, r"^color-sequence-v3 0 62 players 408 816 fps 60 request [0-9a-f]{32}\n$")
         options = self.app.video_export.start.call_args.args[0]
+        self.assertTrue(options.full_resolution)
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "players" / "players.mp4")
         self.assertEqual(options.layers, ())
         self.assertFalse(options.white_clear)
@@ -738,7 +787,7 @@ class VideoGuiTests(unittest.TestCase):
         exe.write_bytes(b"MZ")
         base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
                             fixed_step=True, speed=1.0, layers=("world",),
-                            ffmpeg_path=exe).validated()
+                            ffmpeg_path=exe, depth=True).validated()
         (Path(self.folder.name) / "shot").mkdir()
         self.app._base_capture = base
         self.app._layer_queue = [("world", "black")]
@@ -750,6 +799,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app.video_export.start.call_args.kwargs["before_record"]()
         self.app.controller.apply_layer_mode.assert_called_once_with("world")
         options = self.app.video_export.start.call_args.args[0]
+        self.assertTrue(options.full_resolution)
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "world.mp4")
         self.assertFalse(options.depth)
         self.assertEqual(options.layers, ("world",))
@@ -781,7 +831,7 @@ class VideoGuiTests(unittest.TestCase):
         exe.write_bytes(b"MZ")
         base = VideoOptions(Path(self.folder.name) / "shot.mp4", 60, 20_000_000,
                             fixed_step=True, speed=1.0, layers=("players",),
-                            ffmpeg_path=exe).validated()
+                            ffmpeg_path=exe, depth=True).validated()
         (Path(self.folder.name) / "shot" / "players").mkdir(parents=True)
         self.app._base_capture = base
         self.app._layer_queue = [("players", "white")]
@@ -790,6 +840,7 @@ class VideoGuiTests(unittest.TestCase):
         self.app._snapshot = Mock(return_value=Mock())
         self.app._start_next_layer_take()
         options = self.app.video_export.start.call_args.args[0]
+        self.assertTrue(options.full_resolution)
         self.assertEqual(options.path,
                          Path(self.folder.name) / "shot" / "players" / "players_white.mp4")
         self.assertTrue(options.white_clear)

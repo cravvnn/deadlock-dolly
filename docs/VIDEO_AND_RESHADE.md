@@ -34,21 +34,25 @@ smooth slow motion at a high FPS). The engine time step is `Export speed / Video
 Dolly verifies it before recording starts and restores the previous settings
 afterward. A clamped or unavailable timing setting prevents capture from starting.
 
-**Depth master (EXR)** is a default-off option on the Export tab. When enabled,
-the recorder requires a verified main-view scene depth and the exact replay time
-for every color frame; each accepted frame writes a float OpenEXR into the
-`<video filename>.depth` folder with a manifest when the counts match. The depth
-layer is captured at the game's own scene resolution: when upscaling or
-resolution scaling renders the scene below the window size, `depth.mov` and the
-EXR sequence keep that scene size while the manifest records both it and the
-color recording's size (`width`/`height` are the depth master's,
-`color_width`/`color_height` the paired video's). The same folder receives a
-normalized grayscale preview video (`preview.mp4`, or `.mkv` for lossless)
-encoded with the chosen encoder and bitrate after the take finishes; depths at
-or beyond 8192 camera-axis units map to white. Unsupported or ambiguous depth
-stops the recording with an error instead of writing an unpaired frame. The
-depth values are camera-axis world units, not metres, and the EXR sequence
-remains the numerical master.
+**Depth master (.mov)** is a default-off option on the Export tab. It writes a
+paired 10-bit ProRes depth master and a normalized preview beside the color
+video; **EXR sequence (float)** optionally adds the numerical master.
+
+Depth export temporarily uses 100% render scale for both the color/depth take
+and its selected extra passes. The game can overwrite reduced-scale scene
+depth during spatial upscaling, leaving no verified depth sample. Dolly reads
+and verifies the temporary setting before capture and restores the previous
+scale after finish, discard or a failed start. Window resolution, anti-aliasing
+and the selected upscaling mode stay as configured. Full render scale can make
+export slower, particularly on GPUs normally using reduced render scale.
+
+Every color frame requires verified scene depth and the same replay time.
+The manifest records depth dimensions (`width`/`height`) and color dimensions
+(`color_width`/`color_height`). The depth layer's normalized preview maps depths
+at or beyond 8192 camera-axis game units to white. Unsupported or ambiguous
+depth stops recording instead of writing an unpaired frame. Depth values are
+camera-axis game units, not metres; the optional EXR sequence preserves float
+precision.
 
 Dolly's panel and path guides are excluded from the file. ReShade color effects
 are included, while its menu, splash and FPS display are excluded. Deadlock's

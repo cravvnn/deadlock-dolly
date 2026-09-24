@@ -282,6 +282,8 @@ def build_export(app):
               style="CardMuted.TLabel", wraplength=320).pack(anchor="w", pady=(0, GAP))
     app.video_depth_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="Depth master (.mov)", variable=app.video_depth, command=app._depth_toggled)
     app.video_depth_checkbox.pack(anchor="w", pady=(0, GAP))
+    ttk.Label(passes, text="Depth and its extra passes use 100% render scale; your scale is restored afterward. This can make export slower.",
+              style="CardMuted.TLabel", wraplength=320).pack(anchor="w", pady=(0, GAP))
     app.video_depth_exr_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="EXR sequence (float)", variable=app.video_depth_exr)
     app.video_depth_exr_checkbox.pack(anchor="w", pady=(0, GAP))
     app.video_layer_checkboxes = []

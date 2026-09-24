@@ -780,14 +780,14 @@ class DollyApp:
             target = folder / layer / (layer + "_white.mp4")
             options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
                                    base.preset, base.ffmpeg_path, True, base.speed,
-                                   False, False, (), True, True).validated()
+                                   False, False, (), True, True, full_resolution=base.full_resolution).validated()
         else:
             # The layer selection gives the take its own subfolder; the native
             # recorder captures the filtered color into it.
             target = folder / (layer + ".mp4")
             options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
                                    base.preset, base.ffmpeg_path, True, base.speed,
-                                   False, False, (layer,)).validated()
+                                   False, False, (layer,), full_resolution=base.full_resolution).validated()
         self._active_layer_take = (layer, pass_name)
         self._pending_auto_play = True
         self._auto_finish_layered = True
@@ -844,7 +844,7 @@ class DollyApp:
         target.parent.mkdir(parents=True, exist_ok=True)
         options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
                                base.preset, base.ffmpeg_path, True, base.speed,
-                               False, False, (), False, True).validated()
+                               False, False, (), False, True, full_resolution=base.full_resolution).validated()
         self._active_layer_take = (layer, "capture")
         self._pending_auto_play = True
         self._auto_finish_layered = True
@@ -957,12 +957,13 @@ class DollyApp:
                 self._error("Recording", RuntimeError(status.get("error") or message))
             self._last_video_state = state
         active = state in ACTIVE_STATES
-        if (getattr(self, "_pov_project", None) is not None
-                and state in ("failed", "cancelled")
-                and getattr(self.controller, "_pov_active", False) and not self.busy):
+        if (state in ("failed", "cancelled") and not self.busy
+                and ((getattr(self, "_pov_project", None) is not None
+                      and getattr(self.controller, "_pov_active", False))
+                     or getattr(self.controller, "_export_resolution", None) is not None)):
             self._layer_queue = []
             self._auto_finish_layered = False
-            self._submit("Restoring POV replay", self.video_export.stop)
+            self._submit("Restoring recording settings", self.video_export.stop)
         ready = recording_ready(controller_status)
         controller_message = str(controller_status.get("message") or "")
         if controller_status.get("playing") or "Playing native camera path" in controller_message:

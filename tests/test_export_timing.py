@@ -79,3 +79,62 @@ class ExportTimingTests(unittest.TestCase):
         with self.assertRaises((ValueError, RuntimeError)):
             self.controller.set_export_timing(60)
         self.assertEqual(self.writes, [])
+
+
+class ExportResolutionTests(unittest.TestCase):
+    setUp = ExportTimingTests.setUp
+    request = ExportTimingTests.request
+    def test_depth_resolution_restores_original_after_repeated_setup(self):
+        self.values["mat_viewportscale"] = .6667
+        self.controller.set_export_resolution()
+        self.controller.set_export_resolution()
+        self.assertEqual(self.values["mat_viewportscale"], 1)
+        self.controller.clear_export_resolution()
+        self.assertEqual(self.values["mat_viewportscale"], .6667)
+        self.assertIsNone(self.controller._export_resolution)
+
+    def test_unreadable_scale_never_writes(self):
+        self.values["mat_viewportscale"] = "unavailable"
+        with self.assertRaises(ValueError):
+            self.controller.set_export_resolution()
+        self.assertEqual(self.writes, [])
+
+    def test_failed_restore_keeps_original_for_retry(self):
+        self.values["mat_viewportscale"] = .6667
+        self.controller.set_export_resolution()
+        request = self.controller._request
+        self.controller._request = Mock(side_effect=RuntimeError("connection lost"))
+        with self.assertRaisesRegex(RuntimeError, "connection lost"):
+            self.controller.clear_export_resolution()
+        self.assertEqual(self.controller._export_resolution, .6667)
+        self.controller._request = request
+        self.controller.clear_export_resolution()
+        self.assertEqual(self.values["mat_viewportscale"], .6667)
+
+    def test_dead_process_discards_snapshot_without_writes(self):
+        self.values["mat_viewportscale"] = .6667
+        self.controller.set_export_resolution()
+        self.writes.clear()
+        self.controller._alive.return_value = False
+        self.controller.clear_export_resolution()
+        self.assertEqual(self.writes, [])
+        self.assertIsNone(self.controller._export_resolution)
+
+    def test_rejected_full_scale_keeps_snapshot_for_start_failure_cleanup(self):
+        self.values["mat_viewportscale"] = .6667
+        request = self.controller._request
+        self.controller._request = Mock(side_effect=["mat_viewportscale = 0.6667", "", "mat_viewportscale = 0.7"])
+        with self.assertRaisesRegex(RuntimeError, "did not accept"):
+            self.controller.set_export_resolution()
+        self.assertEqual(self.controller._export_resolution, .6667)
+        self.controller._request = request
+        self.controller.clear_export_resolution()
+        self.assertIsNone(self.controller._export_resolution)
+
+    def test_disconnected_live_game_retains_restore_snapshot(self):
+        self.values["mat_viewportscale"] = .6667
+        self.controller.set_export_resolution()
+        self.controller._console.is_connected = False
+        with self.assertRaisesRegex(RuntimeError, "Reconnect"):
+            self.controller.clear_export_resolution()
+        self.assertEqual(self.controller._export_resolution, .6667)

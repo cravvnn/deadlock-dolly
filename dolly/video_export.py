@@ -136,6 +136,8 @@ class VideoOptions:
     # Capture only frames that carry a replay time (set automatically for
     # depth/layer takes; the white matte pass sets it explicitly).
     shot_only: bool = False
+    # Inherited by the extra passes of a depth take so their geometry matches.
+    full_resolution: bool = False
 
     def validated(self) -> VideoOptions:
         if type(self.fps) is not int or self.fps not in (30, 60, 120, 300, 600):
@@ -180,6 +182,8 @@ class VideoOptions:
             raise ValueError("Layer exports need Fixed-step export so every take stays aligned.")
         if type(self.white_clear) is not bool:
             raise ValueError("The white matte background must be on or off.")
+        if type(self.full_resolution) is not bool:
+            raise ValueError("Full-resolution export must be on or off.")
         if type(self.shot_only) is not bool:
             raise ValueError("Shot-only capture must be on or off.")
         if isinstance(self.speed, bool) or not isinstance(self.speed, (int, float)):
@@ -194,7 +198,7 @@ class VideoOptions:
         # check gives a useful error; it is not the overwrite safety boundary.
         result = VideoOptions(path, self.fps, self.bitrate, self.codec, self.quality, self.preset,
                               ffmpeg, self.fixed_step, speed, self.depth, self.depth_exr,
-                              self.layers, self.white_clear, self.shot_only)
+                              self.layers, self.white_clear, self.shot_only, self.full_resolution or self.depth)
         if self.depth:
             encoder, _codec_id = resolve_backend(result)
             if encoder != 1:
@@ -330,17 +334,25 @@ class VideoExport:
             except (RuntimeError, ValueError, OSError):
                 pass
 
+    def _clear_export_resolution(self):
+        clear = getattr(self.controller, "clear_export_resolution", None)
+        if callable(clear):
+            clear()
+
     def start(self, options: VideoOptions, project=None, *, frozen=False,
               before_record=None, capture_only=False, pov=False) -> dict:
-        if pov and self.status().get("state") in ACTIVE_STATES:
+        if self.status().get("state") in ACTIVE_STATES:
             raise RuntimeError("Finish the current recording before starting another.")
         try:
             return self._start(options, project, frozen=frozen, before_record=before_record,
                                capture_only=capture_only, pov=pov)
         except Exception:
-            if pov:
-                self._clear_export_timing()
-                self.controller.finish_pov_recording()
+            try:
+                self._clear_export_resolution()
+            finally:
+                if pov:
+                    self._clear_export_timing()
+                    self.controller.finish_pov_recording()
             raise
 
     def _start(self, options: VideoOptions, project=None, *, frozen=False,
@@ -359,6 +371,8 @@ class VideoExport:
             self.controller.prepare_pov_recording(project)
         elif callable(prepare):
             prepare(project, frozen=frozen)
+        if options.full_resolution:
+            self.controller.set_export_resolution()
         # A take with any side layer records into its own folder: the full
         # color video at the root plus one subfolder per layer. Color-only
         # takes keep the flat layout beside the chosen path.
@@ -470,8 +484,11 @@ class VideoExport:
                 time.sleep(0.05)
         finally:
             self._clear_export_timing()
-            if getattr(self, "_pov", False):
-                self.controller.finish_pov_recording()
+            try:
+                self._clear_export_resolution()
+            finally:
+                if getattr(self, "_pov", False):
+                    self.controller.finish_pov_recording()
 
     def _discard_empty_layer_folder(self):
         """Remove only a take folder this session created and left empty."""
