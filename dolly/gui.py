@@ -725,6 +725,28 @@ class DollyApp:
         except (RuntimeError, ValueError, OSError) as exc:
             LOG.warning("Scene classes could not all be restored: %s", exc)
 
+    def _clear_layer_pipeline(self):
+        """UI-thread reset after an interrupted export, including prep errors."""
+        self._pending_auto_play = False
+        self._auto_finish_layered = False
+        self._take_playing_seen = False
+        self._pending_combine = None
+        self._pending_capture = None
+        self._pipeline_advance = False
+        self._base_capture = None
+        self._layer_queue = []
+        self._active_layer_take = None
+
+    def _recover_export_failure(self):
+        """Worker cleanup before presenting an error; retain completed outputs."""
+        for label, restore in (("recording", self.video_export.stop),
+                               ("camera control", self.controller.stop),
+                               ("scene layers", self._restore_scene_state)):
+            try:
+                restore()
+            except Exception:
+                LOG.exception("Could not restore %s after export failure", label)
+
     def _advance_layer_pipeline(self):
         """Poll-driven layer queue: alpha combine, next take, then restore.
 
@@ -2463,7 +2485,11 @@ class DollyApp:
                 result = function()
             except Exception as exc:
                 LOG.exception("Operation failed: %s", label)
-                self.events.put(("error", label, exc))
+                kind = "error"
+                if getattr(self, "_base_capture", None) is not None:
+                    self._recover_export_failure()
+                    kind = "export_error"
+                self.events.put((kind, label, exc))
             else:
                 self.events.put(("done", label, (result, callback)))
 
@@ -2513,9 +2539,11 @@ class DollyApp:
                 self._handle_capture_hotkey(payload)
             elif kind == "log":
                 self._log(payload)
-            elif kind == "error":
+            elif kind in ("error", "export_error"):
                 self.busy = False
                 self.busy_text.set("")
+                if kind == "export_error":
+                    self._clear_layer_pipeline()
                 cancelled = self.startup_cancel is not None and self.startup_cancel.is_set()
                 if self.startup_cancel is not None:
                     self.startup_cancel = None

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
+import threading
 import tkinter as tk
 from tkinter import messagebox
 
@@ -165,6 +166,55 @@ def _measure(user32, gdi32, dc, message, text_width):
 
 
 def _native_dialog(parent, title: str, message: str, details: str) -> bool:
+    if parent is None:
+        return _run_native_dialog(None, title, message, details)
+    # A ctypes GetMessage/DispatchMessage loop on Tk's thread can dispatch a
+    # Tcl callback without _tkinter's saved Python thread state. That is a
+    # fatal PyEval_RestoreThread error, not a catchable Python exception.
+    # Keep every native dialog operation on its own thread; Tk owns the main
+    # thread's modal wait and continues servicing timers and worker results.
+    owner = parent.winfo_id()
+    finished = threading.Event()
+    result = []
+    thread_id = []
+    ready = tk.BooleanVar(master=parent, value=False)
+
+    def run():
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        thread_id.append(kernel32.GetCurrentThreadId())
+        try:
+            result.append(_run_native_dialog(owner, title, message, details))
+        except Exception as exc:
+            result.append(exc)
+        finally:
+            finished.set()
+
+    timer = None
+
+    def poll():
+        nonlocal timer
+        if finished.is_set():
+            ready.set(True)
+        else:
+            timer = parent.after(25, poll)
+
+    threading.Thread(target=run, name="DollyErrorDialog", daemon=True).start()
+    try:
+        timer = parent.after(25, poll)
+        parent.wait_variable(ready)
+    finally:
+        if timer is not None:
+            parent.after_cancel(timer)
+        if not finished.is_set() and thread_id:
+            # If Tk is shutting down, wake the native pump so its finally
+            # block destroys the dialog and releases its callback and font.
+            ctypes.WinDLL("user32").PostThreadMessageW(thread_id[0], 0x0012, 0, 0)
+    if result and isinstance(result[0], Exception):
+        raise result[0]
+    return bool(result and result[0])
+
+
+def _run_native_dialog(owner, title: str, message: str, details: str) -> bool:
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -206,7 +256,10 @@ def _native_dialog(parent, title: str, message: str, details: str) -> bool:
     comctl32.DefSubclassProc.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
     comctl32.DefSubclassProc.restype = ctypes.c_ssize_t
 
-    owner = parent.winfo_id() if parent is not None else None
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    if owner:
+        owner = user32.GetAncestor(owner, 2) or owner  # GA_ROOT: disable the whole Tk window.
     scale = 1.0
     try:
         dpi = user32.GetDpiForWindow(owner) if owner else user32.GetDpiForSystem()
@@ -334,6 +387,8 @@ def _native_dialog(parent, title: str, message: str, details: str) -> bool:
                 user32.TranslateMessage(ctypes.byref(message_struct))
                 user32.DispatchMessageW(ctypes.byref(message_struct))
     finally:
+        if user32.IsWindow(window):
+            user32.DestroyWindow(window)
         if owner:
             user32.EnableWindow(owner, True)
             user32.SetForegroundWindow(owner)

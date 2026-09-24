@@ -63,6 +63,38 @@ class VideoExportTests(unittest.TestCase):
         self.controller._request.assert_not_called()
         self.controller.set_export_resolution.assert_not_called()
 
+    def test_players_low_space_rejected_before_any_take_or_replay_preparation(self):
+        ffmpeg = self.path.parent / "ffmpeg.exe"
+        ffmpeg.write_bytes(b"MZ")
+        self.controller.deployment_directory.return_value = self.path.parent
+        project = Project(keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0),
+                                     Keyframe(2.734, 0, 0, 0, 0, 0, 0)])
+        options = VideoOptions(self.path, fps=600, speed=.5, fixed_step=True,
+                               depth=True, layers=("world", "players"), ffmpeg_path=ffmpeg)
+        with patch("dolly.video_export.client_size", return_value=(2560, 1440)), \
+             patch("dolly.player_layer.shutil.disk_usage",
+                   return_value=SimpleNamespace(free=int(38.4 * 1024**3))):
+            with self.assertRaisesRegex(RuntimeError, "temporary space"):
+                self.export.start(options, project)
+        self.controller.prepare_native_recording.assert_not_called()
+        self.controller.set_export_timing.assert_not_called()
+        self.bridge.start_video.assert_not_called()
+        self.assertFalse(self.path.with_suffix("").exists())
+
+    def test_players_preflight_includes_slow_motion_and_endpoint_margin(self):
+        ffmpeg = self.path.parent / "ffmpeg.exe"
+        ffmpeg.write_bytes(b"MZ")
+        self.controller.deployment_directory.return_value = self.path.parent
+        project = Project(keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0),
+                                     Keyframe(2, 0, 0, 0, 0, 0, 0)])
+        options = VideoOptions(self.path, fps=600, speed=.5, fixed_step=True,
+                               layers=("world", "players"), ffmpeg_path=ffmpeg)
+        with patch("dolly.video_export.client_size", return_value=(2560, 1440)), \
+             patch("dolly.player_layer.check_capture_space") as check:
+            self.export.start(options, project)
+        check.assert_called_once_with(self.path.parent, 2560, 1440, 2402)
+        self.bridge.start_video.assert_called_once()
+
     def test_depth_resolution_is_set_after_preparation_and_restored_on_finish(self):
         ffmpeg = self.path.parent / "ffmpeg.exe"
         ffmpeg.write_bytes(b"MZ")
@@ -971,6 +1003,54 @@ class VideoGuiTests(unittest.TestCase):
         self.assertIsNone(self.app._base_capture)
         self.assertIsNone(self.app._active_layer_take)
         self.app._submit.assert_called_once()
+
+    def test_layer_prep_exception_restores_before_delivering_error(self):
+        self.app._base_capture = Mock()
+        self.app.controller = Mock()
+        self.app.events = queue.Queue()
+        self.app.jobs = queue.Queue()
+        problem = RuntimeError("Players capture needs approximately 45.1 GiB")
+        self.app.jobs.put(("Recording layer take", Mock(side_effect=problem), None))
+        self.app.jobs.put(None)
+        order = []
+        self.app.video_export.stop.side_effect = lambda: order.append("recording")
+        self.app.controller.stop.side_effect = lambda: order.append("control")
+        self.app._restore_scene_state = Mock(side_effect=lambda: order.append("layers"))
+        self.app._worker_loop()
+        self.assertEqual(order, ["recording", "control", "layers"])
+        self.assertEqual(self.app.events.get_nowait(), ("export_error", "Recording layer take", problem))
+        # Cleanup finalizes rather than discarding completed Color/Depth/World.
+        self.app.video_export.stop.assert_called_once_with()
+
+    def test_export_cleanup_attempts_control_restoration_if_recorder_stop_fails(self):
+        self.app.controller = Mock()
+        self.app.video_export.stop.side_effect = RuntimeError("bridge unavailable")
+        self.app._recover_export_failure()
+        self.app.controller.stop.assert_called_once_with()
+        self.app.controller.reset_layer_modes.assert_called_once_with()
+
+    def test_export_error_event_clears_queue_before_showing_dialog(self):
+        self.app.closed = False
+        self.app.busy = True
+        self.app.busy_text = Var("Recording layer take")
+        self.app.startup_cancel = None
+        self.app._base_capture = Mock()
+        self.app._layer_queue = [("effects", "black")]
+        self.app._pending_auto_play = True
+        self.app._pipeline_advance = True
+        self.app._active_layer_take = ("world", "black")
+        self.app.events = queue.Queue()
+        self.app.events.put(("export_error", "Recording layer take", RuntimeError("Disk space")))
+        # Stop the poll at the dialog boundary, where all UI state must be safe.
+        self.app._error.side_effect = LookupError("dialog reached")
+        with self.assertRaisesRegex(LookupError, "dialog reached"):
+            self.app._poll()
+        self.assertFalse(self.app.busy)
+        self.assertEqual(self.app._layer_queue, [])
+        self.assertIsNone(self.app._base_capture)
+        self.assertIsNone(self.app._active_layer_take)
+        self.assertFalse(self.app._pending_auto_play)
+        self.assertFalse(self.app._pipeline_advance)
 
 
 class ReShadeGuiTests(unittest.TestCase):

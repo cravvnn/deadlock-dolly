@@ -9,12 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import math
 import os
 from pathlib import Path
 import re
 import subprocess
 import threading
 import time
+
+from . import player_layer
+from .display import client_size
 
 
 ACTIVE_STATES = frozenset(("starting", "recording", "finalizing"))
@@ -365,6 +369,17 @@ class VideoExport:
         bridge = self.controller._native_bridge()
         if bridge is None:
             raise RuntimeError("The native recorder is not connected.")
+        if "players" in options.layers:
+            # Reject an impossible Players pass before spending time on Color,
+            # Depth and World. Recheck measured dimensions/frame count at the
+            # actual handoff: this estimate cannot reserve future disk space.
+            deployment = self.controller.deployment_directory()
+            dimensions = client_size(self.controller.game_pid())
+            if deployment is None or dimensions is None or project is None:
+                raise RuntimeError("Could not check Players temporary space. Show the game window "
+                                   "and choose a camera path before exporting.")
+            frames = math.ceil(project.duration * options.fps / options.speed - 1e-6) + 2
+            player_layer.check_capture_space(deployment, *dimensions, frames)
         prepare = getattr(self.controller, "prepare_native_recording", None)
         self._pov = bool(pov)
         if pov:

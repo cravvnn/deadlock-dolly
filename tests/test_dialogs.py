@@ -1,6 +1,10 @@
 """Clipboard text and dispatch for the error dialog's copy button."""
 
 import unittest
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 from unittest import mock
 
 from dolly import __version__
@@ -70,6 +74,74 @@ class ShowErrorDispatchTests(unittest.TestCase):
             dialogs.show_error(None, "Play shot", "Camera failed.")
         native.assert_not_called()
         fallback.assert_called_once()
+
+
+@unittest.skipUnless(sys.platform == "win32", "native Windows/Tk regression")
+class NativeDialogLifecycleTests(unittest.TestCase):
+    def test_modal_dialog_survives_tk_events_and_copy_then_ok(self):
+        # A separate process bounds a native abort/regression and its windows.
+        # Copy is intercepted so this check never changes the user's clipboard.
+        code = textwrap.dedent('''
+            import ctypes
+            import threading
+            import time
+            import tkinter as tk
+            from dolly import dialogs
+            root = tk.Tk()
+            root.withdraw()
+            owner = root.winfo_id()
+            ticks = []
+            copied = []
+            errors = []
+            dialogs._copy_text = lambda text: copied.append((text, threading.get_ident())) or True
+            main_thread = threading.get_ident()
+            user32 = ctypes.WinDLL("user32")
+            user32.GetParent.argtypes = [ctypes.c_void_p]
+            user32.GetParent.restype = ctypes.c_void_p
+            user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+            def external_events():
+                deadline = time.monotonic() + 5
+                while not dialogs._ACTIVE and time.monotonic() < deadline:
+                    time.sleep(.01)
+                if not dialogs._ACTIVE:
+                    return
+                hwnd = next(iter(dialogs._ACTIVE))
+                time.sleep(.2)
+                # Tk enables event servicing during a window move. The old
+                # ctypes pump dispatches this with no saved Tk thread state.
+                user32.PostMessageW(user32.GetParent(owner) or owner, 0x0231, 0, 0)
+                user32.PostMessageW(owner, 0x000F, 0, 0)
+                time.sleep(.1)
+                user32.PostMessageW(hwnd, 0x0111, 1001, 0)
+                time.sleep(.1)
+                user32.PostMessageW(hwnd, 0x0111, 1, 0)
+            def tick():
+                ticks.append(1)
+                root.after(20, tick)
+            def show():
+                root.after(20, tick)
+                threading.Thread(target=external_events, daemon=True).start()
+                try:
+                    assert dialogs._native_dialog(root, "Dolly dialog regression", "Insufficient temporary space.", "expected details")
+                    assert len(ticks) > 2, ticks
+                    assert copied == [("expected details", copied[0][1])], copied
+                    assert copied[0][1] != main_thread
+                    assert not dialogs._ACTIVE
+                except Exception as exc:
+                    errors.append(exc)
+                finally:
+                    root.destroy()
+            root.after(20, show)
+            root.mainloop()
+            if errors:
+                raise errors[0]
+            print("native dialog lifecycle passed")
+        ''')
+        result = subprocess.run([sys.executable, "-c", code],
+                                cwd=Path(__file__).resolve().parents[1],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("native dialog lifecycle passed", result.stdout)
 
 
 if __name__ == "__main__":

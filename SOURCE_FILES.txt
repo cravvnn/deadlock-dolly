@@ -390,3 +390,4 @@ docs/RELEASE_NOTES_0.5.37-alpha.md
 docs/RELEASE_NOTES_0.5.38-alpha.md
 docs/RELEASE_NOTES_0.5.39-alpha.md
 docs/RELEASE_NOTES_0.5.40-alpha.md
+docs/RELEASE_NOTES_0.5.41-alpha.md

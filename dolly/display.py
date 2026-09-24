@@ -65,6 +65,12 @@ def client_aspect_ratio(pid):
     Window coordinates are used only as a fallback for r_aspectratio's automatic
     mode. This does not infer a custom internal render viewport or letterboxing.
     """
+    size = client_size(pid)
+    return size[0] / size[1] if size is not None else None
+
+
+def client_size(pid):
+    """Largest visible client area's dimensions, for capture-space estimates."""
     if os.name != "nt" or not pid or int(pid) <= 0:
         return None
     try:
@@ -91,11 +97,11 @@ def client_aspect_ratio(pid):
                 if user32.GetClientRect(hwnd, ctypes.byref(rect)):
                     width, height = rect.right - rect.left, rect.bottom - rect.top
                     if width > 0 and height > 0:
-                        candidates.append((width * height, width / height))
+                        candidates.append((width * height, width, height))
             return True
 
         if not user32.EnumWindows(visit, 0) or not candidates:
             return None
-        return max(candidates)[1]
+        return max(candidates)[1:]
     except (OSError, AttributeError, TypeError, ValueError):
         return None
