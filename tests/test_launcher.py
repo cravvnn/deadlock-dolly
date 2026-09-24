@@ -243,6 +243,23 @@ class LauncherTests(unittest.TestCase):
         self.assertNotIn("-vconsole", command)
         self.assertEqual(launcher.Session.__dataclass_fields__["protocol"].default, "netcon")
 
+    def test_native_renderer_is_explicit_for_both_console_transports(self):
+        overlay = self.paths.game_dir / "citadel_dolly_test"
+        for protocol in ("netcon", "vconsole"):
+            for native in (False, True):
+                with self.subTest(protocol=protocol, native=native):
+                    command = launcher.build_command(
+                        self.paths, overlay, 29090, protocol=protocol,
+                        launch_options="-windowed -w 1920 -h 1080", native=native)
+                    self.assertEqual(command.count("-dx11"), int(native))
+                    self.assertNotIn("-vulkan", command)
+                    self.assertIn("-dev", command)
+                    self.assertIn("-insecure", command)
+                    self.assertEqual(command[command.index("-w") + 1], "1920")
+        with self.assertRaises(ValueError):
+            launcher.build_command(self.paths, overlay, 29090,
+                                   launch_options="-vulkan", native=True)
+
     def test_deferred_demo_still_must_exist(self):
         with self.assertRaisesRegex(launcher.LaunchError, "existing, extracted"):
             launcher.build_command(self.paths, self.paths.game_dir / "citadel_dolly_test", 29090, self.folder / "missing.dem")
@@ -637,6 +654,7 @@ class LauncherTests(unittest.TestCase):
         args = popen.call_args.args[0]
         self.assertIn("-dev", args)
         self.assertIn("-insecure", args)
+        self.assertEqual(args.count("-dx11"), 1)
         self.assertFalse(any("playdemo" in arg for arg in args))
         self.assertEqual((self.paths.citadel_dir / "bin/win64/server.dll").read_bytes(), b"original server")
         self.assertFalse(session.close())

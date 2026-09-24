@@ -497,7 +497,7 @@ def _validate_port(port: int) -> int:
     return port
 
 
-def build_command(paths: GamePaths, overlay_dir: Path, port: int, demo_path: Path | None = None, protocol: str = "netcon", launch_options: str = "") -> list[str]:
+def build_command(paths: GamePaths, overlay_dir: Path, port: int, demo_path: Path | None = None, protocol: str = "netcon", launch_options: str = "", *, native: bool = False) -> list[str]:
     """Start the development lobby; replay loading waits for unlocker readiness.
 
     The selected replay is still validated here, but neither it nor an unlocker
@@ -516,6 +516,12 @@ def build_command(paths: GamePaths, overlay_dir: Path, port: int, demo_path: Pat
     _validate_demo(demo_path)
     from .replays import parse_launch_options
     args.extend(parse_launch_options(launch_options))
+    if native:
+        # The native editor and recorder consume DX11 Present callbacks. Without
+        # an explicit renderer the game's saved Vulkan preference can load the
+        # replay successfully but leave those callbacks permanently idle.
+        # Scope this override to our process; do not rewrite the user's settings.
+        args.append("-dx11")
     return args
 
 
@@ -877,7 +883,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             (target / "dolly_native.cfg").write_text(
                 f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
                 encoding="ascii", newline="\n")
-        command = build_command(paths, overlay, port, demo, protocol, launch_options)
+        command = build_command(paths, overlay, port, demo, protocol, launch_options, native=native)
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2-dolly-shutdown-fix", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
         metadata["editing_gameinfo_sha256"] = hashlib.sha256(editing.encode("utf-8")).hexdigest()
         if native:

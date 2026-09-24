@@ -49,7 +49,8 @@ Download the **Windows x64** ZIP from [Releases](https://github.com/cravvnn/dead
 Extract it completely and double-click **Dolly.exe**. Keep `_internal` beside
 the EXE; a desktop shortcut can point to it.
 
-Open Steam, close any running Deadlock, and use **DirectX 11**. In Dolly,
+Open Steam and close any running Deadlock. Dolly selects **DirectX 11** for
+Native sessions without changing your saved graphics settings. In Dolly,
 choose the game executable and a local `.dem` replay, or select a file from
 **Library**. Click **Open replay in Dolly** to open the game, initialize the unlocker
 in the hideout, load the replay and pause it for editing.

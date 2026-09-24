@@ -1,5 +1,15 @@
 # Changes
 
+## 0.5.37 alpha — Select DirectX 11 for the Native editor
+
+- Native replay launches now explicitly select DirectX 11. Previously a game
+  using Vulkan could load the replay but time out waiting for the DX11 panel.
+  The renderer flag applies to Dolly's local replay process; saved graphics
+  settings are not edited. Console-backend launch behavior is unchanged.
+- Verified locally: a Vulkan launch reproduced the reported panel timeout;
+  the fixed launcher selected DX11 and opened the paused editor with input ready.
+  This does not address unrelated memory-exhaustion or depth-export failures.
+
 ## 0.5.34 alpha — Crash reports that explain themselves
 
 - Deadlock crash dumps are now included with diagnostics. Before, a crash wrote
