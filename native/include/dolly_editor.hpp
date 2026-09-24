@@ -106,7 +106,10 @@ enum class EditorAction : std::uint32_t {
     SetPovDuration,
     SetConfettiEnabled,
     SetConfettiSpawnHeight,
-    SetConfettiDespawnOnGround
+    SetConfettiDespawnOnGround,
+    OpenBonePicker,
+    CancelBonePicker,
+    FinishBonePicker
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::ResetCameraPath) == 77,
               "Stable camera reset action ID");
@@ -216,6 +219,7 @@ struct EditorAttachConfig {
     std::uint32_t offsets[8];
     // ABI 3 uses reserved2 for source blend milliseconds (0..10000).
     std::uint32_t handle, entity_id, target_index, point, hide, reserved2;
+    // ABI 5: hide bit 0 hides the model; bit 1 enables approximate clearance.
     double offset[6];
     double smoothing;
     std::uint32_t attached_keys, key_count;
@@ -334,7 +338,8 @@ struct EditorSnapshot {
     bool confetti_enabled = false, confetti_despawn_on_ground = false;
     double confetti_spawn_height = 250.0;
     bool attach_available = false, attach_selected = false, attach_hide = true;
-    bool attach_preview = false;
+    bool attach_auto_clearance = false;
+    bool attach_preview = false, bone_picker = false;
     std::uint32_t attach_point = 0, attach_target_index = 0, roster_count = 0;
     char attach_bone[65]{};
     double attach_offsets[6] = {}, attach_smoothing = 0, source_blend = 0;

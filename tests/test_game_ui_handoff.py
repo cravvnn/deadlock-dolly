@@ -1,7 +1,7 @@
 """Replay HUD/cursor handoffs using the readable Deadlock cvars."""
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from dolly.console import ConsoleClient, error_text
 from dolly import editor_session
@@ -143,6 +143,39 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertEqual(self.console.values["citadel_hide_replay_hud"], 1)
         self.assertEqual(self.console.values["citadel_hud_visible"], 0)
         self.assertEqual(self.bridge.owner, "flight")
+
+    def test_failed_bone_arm_restores_visible_replay_controls_and_can_retry(self):
+        self.controller.toggle_game_ui(True)
+        self.bridge.editor_status = lambda: {"enabled": True}
+        app = SimpleNamespace(controller=self.controller, busy=False,
+                              _submit=lambda _label, function: function())
+        originals = dict(self.controller._game_ui_restore)
+        with patch.object(self.bridge, "start_flight", side_effect=RuntimeError("Bone pose unavailable")):
+            with self.assertRaisesRegex(RuntimeError, "Bone pose unavailable"):
+                editor_session.dispatch(app, {"action": "game_ui", "value": 0}, self.bridge)
+        self.assertFalse(self.controller._native_active)
+        self.assertFalse(self.controller._native_manual)
+        self.assertIsNone(self.controller._paused_pose)
+        self.assertTrue(self.controller.status()["game_ui_visible"])
+        self.assertEqual(self.bridge.owner, "game_ui")
+        self.assertEqual(self.console.values["citadel_hud_visible"], 1)
+        self.assertEqual(self.console.values["citadel_hide_replay_hud"], 0)
+        self.assertEqual(self.console.values["hud_free_cursor"], 1)
+        self.assertEqual(self.controller._game_ui_restore, originals)
+        self.controller.toggle_game_ui(False)
+        self.assertTrue(self.controller._native_manual)
+        self.assertFalse(self.controller._game_ui_visible)
+        self.assertEqual(self.bridge.owner, "flight")
+
+    def test_failed_replay_ui_recovery_preserves_original_bone_error(self):
+        self.controller.toggle_game_ui(True)
+        self.console.fail_commands.add("hud_free_cursor 1")
+        with patch.object(self.bridge, "start_flight", side_effect=RuntimeError("Bone pose unavailable")):
+            with self.assertLogs("dolly", level="ERROR"):
+                with self.assertRaisesRegex(RuntimeError, "Bone pose unavailable"):
+                    self.controller.toggle_game_ui(False)
+        self.assertFalse(self.controller._native_manual)
+        self.assertTrue(self.controller._game_ui_restore)
 
     def test_f9_round_trip_hides_character_hud_and_writes_it_only_once(self):
         self.controller.toggle_game_ui(True)

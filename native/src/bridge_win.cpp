@@ -22,6 +22,7 @@
 #include "dolly_protocol.hpp"
 #include "dolly_replay_clock.hpp"
 #include "dolly_editor.hpp"
+#include "dolly_bone_picker.hpp"
 #include "dolly_overlay.hpp"
 #include "dolly_player_capture.hpp"
 #include "dolly_renderer_diagnostics.hpp"
@@ -343,6 +344,7 @@ camera_view::Cache gCameraCache;
 // result block publishes them back to the editor.
 struct AttachPreview {
     std::uint32_t sequence = 0;
+    std::uint32_t camera_command = 0;
     attach_runtime::Cache cache;
     attach_runtime::Offsets schema;
     std::array<double, 6> authored{};
@@ -353,6 +355,139 @@ struct AttachPreview {
     std::uint64_t bone_hash = 0;
 };
 std::shared_ptr<const AttachPreview> gAttachPreview;
+
+// Two slots cover the active source and a blended arrival. A try-lock only
+// copies small descriptors/history; game memory reads run outside it. Keeping
+// the immutable owner alive prevents cache retirement during a producer read.
+struct RenderAttachSource {
+    std::shared_ptr<const void> owner;
+    const attach_runtime::Cache* cache = nullptr;
+    attach_runtime::Offsets schema;
+    AttachSegment segment;
+    double time = 0;
+    std::uint64_t view = 0;
+    std::uint32_t scene = 0;
+    int tick = 0;
+    bool paused = false;
+};
+struct RenderAttachSlot {
+    std::atomic_flag lock = ATOMIC_FLAG_INIT;
+    std::atomic<std::uint32_t> handle{0};
+    RenderAttachSource source;
+    AttachRenderHistory history;
+    std::uint64_t recorded = 0;
+};
+static std::array<RenderAttachSlot, 2> gRenderAttach;
+static void observe_attach_pose(std::uint32_t handle, std::uint32_t scene) noexcept {
+    for (auto& slot : gRenderAttach) {
+        if (slot.handle.load(std::memory_order_relaxed) != handle ||
+            slot.lock.test_and_set(std::memory_order_acquire))
+            continue;
+        auto source = slot.source;
+        const bool wanted =
+            source.cache && source.scene + 1 == scene && slot.recorded != source.view;
+        slot.lock.clear(std::memory_order_release);
+        if (!wanted)
+            continue;
+        AttachSample sample{};
+        const char* error = nullptr;
+        if (!attach_runtime::sample(source.schema, *source.cache, source.segment, sample, error))
+            continue;
+        if (slot.lock.test_and_set(std::memory_order_acquire))
+            continue;
+        if (slot.source.view == source.view && slot.source.cache == source.cache &&
+            slot.recorded != source.view) {
+            slot.history.record(sample, source.time, source.view);
+            slot.recorded = source.view;
+        }
+        slot.lock.clear(std::memory_order_release);
+    }
+}
+static void rendered_attach_sample(unsigned index, std::shared_ptr<const void> owner,
+                                   const attach_runtime::Cache* cache,
+                                   const attach_runtime::Offsets& schema,
+                                   const AttachSegment& segment, AttachSample& sample, double time,
+                                   std::uint64_t view, int tick, bool paused) noexcept {
+    if (segment.point == AttachPoint::eyes || !sample.valid)
+        return;
+    static bool requested = false; // Only the main-view thread calls this.
+    if (!requested) {
+        player_capture::set_pose_observer(observe_attach_pose);
+        requested = true;
+    }
+    auto& slot = gRenderAttach[index];
+    if (slot.lock.test_and_set(std::memory_order_acquire))
+        return;
+    if (slot.source.cache != cache || slot.source.segment.point != segment.point ||
+        slot.source.segment.bone_hash != segment.bone_hash || slot.source.view + 1 != view ||
+        slot.source.paused != paused || tick < slot.source.tick ||
+        (paused && tick != slot.source.tick)) {
+        slot.history.reset();
+        slot.recorded = 0;
+    }
+    slot.history.apply(sample, time, view);
+    slot.source = {std::move(owner),
+                   cache,
+                   schema,
+                   segment,
+                   time,
+                   view,
+                   player_capture::pose_scene_frame(),
+                   tick,
+                   paused};
+    slot.handle.store(cache->handle, std::memory_order_relaxed);
+    slot.lock.clear(std::memory_order_release);
+}
+
+static bool sample_picker(void* context, PickerSample& out, const char*& error) noexcept {
+    const auto* preview = static_cast<const AttachPreview*>(context);
+    if (!preview || !preview->cache.ready || !preview->cache.picker) {
+        error = preview && preview->cache.error ? preview->cache.error
+                                                : "The full skeleton is not ready.";
+        return false;
+    }
+    const auto& cache = preview->cache;
+    AttachSample check{};
+    AttachSegment segment{};
+    segment.point = AttachPoint::bone;
+    if (!attach_runtime::sample(preview->schema, cache, segment, check, error))
+        return false;
+    float angles[3]{};
+    if (cache.bone_count > kPickerMaxBones ||
+        !read_memory(cache.bone_array, out.transforms.data(), std::size_t(cache.bone_count) * 32) ||
+        !read_memory(cache.node + preview->schema.angles, angles, sizeof(angles)) ||
+        !attach_runtime::sample(preview->schema, cache, segment, check, error)) {
+        error = "The player's pose buffer changed. Cancel and reopen Bone Picker.";
+        return false;
+    }
+    // Keep marker positions and attached previews in the same current frame.
+    const auto root = out.transforms[0];
+    for (unsigned index = 0; index < cache.bone_count; ++index)
+        for (unsigned axis = 0; axis < 3; ++axis)
+            out.transforms[index][axis] =
+                float(double(out.transforms[index][axis]) - root[axis] + check.motion_anchor[axis]);
+    out.count = cache.bone_count;
+    out.aim = check.aim;
+    out.facing_yaw = angles[1];
+    return std::isfinite(out.facing_yaw);
+}
+
+static void publish_picker_result() noexcept {
+    if (!gMemory)
+        return;
+    PickerResult result{};
+    picker_result(result);
+    auto* destination = gMemory + kPickerResultOffset;
+    auto* sequence = reinterpret_cast<volatile LONG*>(destination + 8);
+    LONG current = InterlockedCompareExchange(sequence, 0, 0);
+    const LONG odd = (current & ~1L) + 1;
+    InterlockedExchange(sequence, odd);
+    std::memcpy(destination, &result, 8);
+    std::memcpy(destination + 12, reinterpret_cast<const unsigned char*>(&result) + 12,
+                sizeof(result) - 12);
+    MemoryBarrier();
+    InterlockedExchange(sequence, odd + 1);
+}
 
 static void publish_attach_result(const AttachPreview& preview,
                                   const std::array<double, 6>& offsets) noexcept {
@@ -481,6 +616,7 @@ static bool pose_valid(const CameraPose& p) noexcept {
             return false;
     return p[6] >= .25 && p[6] <= 8;
 }
+
 // Called only after the game's complete SetUpView and before its matrices.
 // No IPC reads, disk work, parser, sleeps or blocking request is allowed here.
 static void on_view(void* self, std::uintptr_t caller) noexcept {
@@ -715,17 +851,50 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         // that reproduce the current pose; both publish through the result
         // block for the editor to persist on the selected key.
         EditorAttachConfig preview_config{};
+        const bool have_preview_config = editor_attach_config(preview_config);
+        const bool picker_requested = have_preview_config && (preview_config.flags & 8);
         const bool preview_flag =
-            editor_attach_config(preview_config) && (preview_config.flags & 4);
+            have_preview_config && (preview_config.flags & 4) && !picker_requested;
         auto preview = std::atomic_load(&gAttachPreview);
         static AttachSmoothing preview_smoothing;
+        static PausedAttachSample<AttachSample> preview_paused_sample;
         static CameraPose preview_offsets;
         static std::uint32_t preview_seed = 0;
         static std::array<double, 6> preview_published{};
         static std::uint32_t snap_seen = 0;
         const bool snap_requested = preview_config.snap_request != snap_seen;
         const bool manual_mode = c.mode == std::uint32_t(Mode::Manual);
-        const bool preview_current = preview && preview->sequence == preview_config.sequence;
+        const bool preview_current = preview && preview->sequence == preview_config.sequence &&
+                                     preview->camera_command == c.command;
+        // Returning from the game's UI may have reconstructed the replay pawn.
+        // Wait for the worker to revalidate this command's target rather than
+        // faulting on the old cache (or permanently rejecting the picker).
+        if (picker_requested && !preview_current) {
+            finish(State::Starting, 0, "Refreshing the selected player's skeleton.");
+            return;
+        }
+        const auto picker_editor = editor_snapshot();
+        double picker_fov = original_fov;
+        if (c.flags & kAspect)
+            picker_fov = 360 / 3.14159265358979323846 *
+                         std::atan(std::tan(original_fov * 3.14159265358979323846 / 360) *
+                                   manual_pose[6] / original_aspect);
+        std::array<double, 6> picker_offsets{};
+        bool picker_attached_preview = false;
+        std::copy(std::begin(preview_config.offset), std::end(preview_config.offset),
+                  picker_offsets.begin());
+        const bool picker_active =
+            picker_camera(preview_config.sequence, c.command, picker_requested,
+                          manual_mode && demo.paused && !demo.seeking && picker_editor.enabled &&
+                              picker_editor.ready && picker_editor.owner == EditorOwner::Panel &&
+                              !picker_editor.playing && !picker_editor.busy,
+                          manual_pose, picker_fov, picker_offsets, sample_picker,
+                          preview_current ? const_cast<AttachPreview*>(preview.get()) : nullptr,
+                          &picker_attached_preview, (preview_config.hide & 2) != 0, demo.tick);
+        if (picker_active)
+            player_capture::set_hidden_handle(
+                picker_attached_preview && (preview_config.hide & 1) ? preview_config.handle : 0,
+                4);
         if (preview_flag && manual_mode && (!preview_current || !preview->cache.ready)) {
             player_capture::set_hidden_handle(0, 4);
             if (!preview_current) {
@@ -740,8 +909,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         }
         const bool preview_active =
             preview_current && preview->cache.ready && preview_flag && manual_mode;
-        if (snap_requested && !preview_active && preview_current && preview->cache.ready &&
-            manual_mode) {
+        if (!preview_active)
+            preview_paused_sample.reset();
+        if (snap_requested && !picker_active && !preview_active && preview_current &&
+            preview->cache.ready && manual_mode) {
             snap_seen = preview_config.snap_request;
             AttachSample snap_sample{};
             const char* snap_error = nullptr;
@@ -762,6 +933,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                     preview_offsets[index] = preview->authored[index];
                 preview_offsets[6] = manual_pose[6];
                 preview_smoothing.reset();
+                preview_paused_sample.reset();
                 preview_dirty = true;
             }
             editor_integrate_flight(preview_offsets, real_delta);
@@ -769,6 +941,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             const char* preview_error = nullptr;
             AttachSegment segment{};
             segment.point = preview->point;
+            segment.bone_hash = preview->bone_hash;
+            segment.flags = (preview_config.hide & 2) ? 4u : 0u;
             for (int index = 0; index < 6; ++index)
                 segment.offset[index] = preview_offsets[index];
             if (!attach_runtime::sample(preview->schema, preview->cache, segment, preview_sample,
@@ -779,16 +953,22 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                      : "The attach preview sample was unavailable.");
                 return;
             }
+            rendered_attach_sample(0, preview, &preview->cache, preview->schema, segment,
+                                   preview_sample, now, status.frame_count, demo.tick, demo.paused);
+            preview_paused_sample.apply(preview_sample, demo.paused, demo.tick);
             CameraPose composed = manual_pose;
             if (!resolve_attach_pose(preview_sample, segment, composed)) {
                 fault = 42;
                 finish(State::Fault, fault, "The attach preview pose check failed.");
                 return;
             }
-            preview_smoothing.apply(composed, real_delta, preview->smoothing);
+            preview_smoothing.apply_anchored(composed, preview_sample.motion_anchor, real_delta,
+                                             preview->smoothing,
+                                             attach_smoothing_error_limit(segment));
+            enforce_attach_clearance(preview_sample, segment, composed);
             manual_pose = composed;
             player_capture::set_hidden_handle(
-                preview_config.hide ? preview_sample.target.handle : 0, 3);
+                (preview_config.hide & 1) ? preview_sample.target.handle : 0, 3);
             for (int index = 0; index < 6; ++index)
                 preview_dirty = preview_dirty ||
                                 std::abs(preview_offsets[index] - preview_published[index]) > 0.001;
@@ -797,7 +977,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                     preview_published[index] = preview_offsets[index];
                 publish_attach_result(*preview, preview_published);
             }
-        } else if (manual_mode) {
+        } else if (manual_mode && !picker_active) {
             player_capture::set_hidden_handle(0, 4);
             editor_integrate_flight(manual_pose, real_delta);
         }
@@ -921,11 +1101,14 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // Each source keeps its own filter through the blend and arrival. Sharing
     // one filter would jump when two keys use different offsets on one hero.
     static std::array<AttachSmoothing, AttachTrack::max_segments> attach_smoothing;
+    static std::array<PausedAttachSample<AttachSample>, AttachTrack::max_segments> paused_samples;
     static std::uint32_t smoothing_command = 0;
     static double smoothing_phase = 0;
     if (smoothing_command != c.command || phase < smoothing_phase) {
         for (auto& filter : attach_smoothing)
             filter.reset();
+        for (auto& sample : paused_samples)
+            sample.reset();
         smoothing_command = c.command;
     }
     smoothing_phase = phase;
@@ -953,13 +1136,20 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                    attach_error ? attach_error : "The attach camera sample was unavailable.");
             return;
         }
+        rendered_attach_sample(0, command, cache.get(), attach_runtime::offsets_from(attach_config),
+                               *attach_segment, attach_sample, now, status.frame_count, demo.tick,
+                               demo.paused);
+        paused_samples[segment_index].apply(attach_sample, demo.paused, demo.tick);
         CameraPose resolved = applied;
         if (!resolve_attach_pose(attach_sample, *attach_segment, resolved)) {
             fault = 42;
             finish(State::Fault, fault, "The attach camera identity or pose check failed.");
             return;
         }
-        attach_smoothing[segment_index].apply(resolved, real_delta, attach_segment->smoothing);
+        attach_smoothing[segment_index].apply_anchored(
+            resolved, attach_sample.motion_anchor, real_delta, attach_segment->smoothing,
+            attach_smoothing_error_limit(*attach_segment));
+        enforce_attach_clearance(attach_sample, *attach_segment, resolved);
         applied = resolved;
         hidden_current = (attach_segment->flags & 2) ? attach_sample.target.handle : 0;
     }
@@ -976,14 +1166,25 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             const char* error = nullptr;
             if (!cache || !editor_attach_config(config) ||
                 !attach_runtime::sample(attach_runtime::offsets_from(config), *cache, *arriving,
-                                        sample, error) ||
-                !resolve_attach_pose(sample, *arriving, destination)) {
+                                        sample, error)) {
                 fault = 42;
                 finish(State::Fault, fault,
                        error ? error : "The arriving camera source could not be resolved.");
                 return;
             }
-            attach_smoothing[index].apply(destination, real_delta, arriving->smoothing);
+            rendered_attach_sample(1, command, cache.get(), attach_runtime::offsets_from(config),
+                                   *arriving, sample, now, status.frame_count, demo.tick,
+                                   demo.paused);
+            paused_samples[index].apply(sample, demo.paused, demo.tick);
+            if (!resolve_attach_pose(sample, *arriving, destination)) {
+                fault = 42;
+                finish(State::Fault, fault, "The arriving camera pose check failed.");
+                return;
+            }
+            attach_smoothing[index].apply_anchored(destination, sample.motion_anchor, real_delta,
+                                                   arriving->smoothing,
+                                                   attach_smoothing_error_limit(*arriving));
+            enforce_attach_clearance(sample, *arriving, destination);
             hidden_arriving = (arriving->flags & 2) ? sample.target.handle : 0;
         }
         applied = blend_attach_poses(applied, destination, blend_weight);
@@ -1343,13 +1544,19 @@ static DWORD WINAPI worker(void*) {
             // Resolve the selected attach target whenever the editor publishes
             // a different selection; used by both preview and snap.
             static std::uint32_t attach_preview_sequence = 0;
+            static std::uint32_t attach_preview_command = 0;
             EditorAttachConfig attach_config{};
             if (editor_attach_config(attach_config)) {
                 if ((attach_config.flags & 3) == 3) {
-                    if (attach_config.sequence != attach_preview_sequence) {
+                    const auto active_camera = std::atomic_load(&gCommand);
+                    const auto camera_command = active_camera ? active_camera->wire.command : 0;
+                    if (attach_config.sequence != attach_preview_sequence ||
+                        camera_command != attach_preview_command) {
                         attach_preview_sequence = attach_config.sequence;
+                        attach_preview_command = camera_command;
                         auto preview = std::make_shared<AttachPreview>();
                         preview->sequence = attach_config.sequence;
+                        preview->camera_command = camera_command;
                         preview->schema = attach_runtime::offsets_from(attach_config);
                         for (int index = 0; index < 6; ++index)
                             preview->authored[index] = attach_config.offset[index];
@@ -1365,25 +1572,41 @@ static DWORD WINAPI worker(void*) {
                         target.model = attach_config.model;
                         const char* attach_error = nullptr;
                         AttachSegment preview_segment{};
-                        preview_segment.point = preview->point;
+                        const bool collecting_picker = (attach_config.flags & 8) != 0;
+                        preview_segment.point =
+                            collecting_picker ? AttachPoint::eyes : preview->point;
                         preview_segment.bone_hash = attach_config.bone_hash;
                         auto previous = std::atomic_load(&gAttachPreview);
                         AttachSample check{};
                         const bool reuse =
-                            previous && previous->cache.ready &&
+                            !collecting_picker && previous && previous->cache.ready &&
                             previous->handle == preview->handle &&
                             previous->entity_index == preview->entity_index &&
                             previous->model == preview->model &&
                             previous->point == preview->point &&
                             previous->bone_hash == preview->bone_hash &&
+                            previous->cache.resolution.matches(preview_segment) &&
                             attach_runtime::sample(preview->schema, previous->cache,
                                                    preview_segment, check, attach_error);
                         if (reuse)
                             preview->cache = previous->cache;
                         else
-                            attach_runtime::resolve(reinterpret_cast<HMODULE>(gClient),
-                                                    preview->schema, target, preview_segment,
-                                                    preview->cache, attach_error);
+                            attach_runtime::resolve(
+                                reinterpret_cast<HMODULE>(gClient), preview->schema, target,
+                                preview_segment, preview->cache, attach_error, collecting_picker);
+                        if (collecting_picker && preview->cache.ready &&
+                            (preview->cache.handle != attach_config.handle ||
+                             preview->cache.entity_index != attach_config.entity_id ||
+                             preview->cache.model != attach_config.model)) {
+                            preview->cache.ready = false;
+                            attach_error = "The selected player changed. Reopen Bone Picker.";
+                        }
+                        if (collecting_picker) {
+                            if (!preview->cache.picker)
+                                preview->cache.picker = std::make_shared<PickerCatalog>();
+                            preview->cache.picker->sequence = attach_config.sequence;
+                            picker_publish(preview->cache.picker);
+                        }
                         if (!preview->cache.ready && attach_error)
                             preview->cache.error = attach_error;
                         if (!reuse)
@@ -1394,12 +1617,14 @@ static DWORD WINAPI worker(void*) {
                     }
                 } else if (attach_preview_sequence) {
                     attach_preview_sequence = 0;
+                    attach_preview_command = 0;
                     attach_runtime::publish_bones(gMemory, nullptr);
                     std::atomic_store_explicit(&gAttachPreview,
                                                std::shared_ptr<const AttachPreview>(),
                                                std::memory_order_release);
                 }
             }
+            publish_picker_result();
             Sleep(5);
         }
     } catch (...) {

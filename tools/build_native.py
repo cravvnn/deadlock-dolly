@@ -130,8 +130,15 @@ def build_native(root: Path = ROOT) -> dict:
     # The H.264 encoder smoke test needs a machine that can sustain 120 FPS
     # Media Foundation encoding. CI skips it (see native/CMakeLists.txt); a local
     # builder can opt out the same way for machines that cannot.
+    skipped_tests = []
     if os.environ.get("DOLLY_SKIP_VIDEO_SMOKE") == "1":
-        ctest += ["-E", "native_video_encoder_smoke"]
+        skipped_tests.append("native_video_encoder_smoke")
+    # Explicit local exception after a machine watchdog fault. Never report a
+    # skipped graphics check as passing; preserve the omission in the bundle.
+    if os.environ.get("DOLLY_SKIP_DEPTH_SCENE_SMOKE") == "1":
+        skipped_tests.append("native_depth_scene_smoke")
+    if skipped_tests:
+        ctest += ["-E", "^(" + "|".join(skipped_tests) + ")$"]
     commands = [
         ["cmake", "-S", str(native), "-B", str(build), "-G", "Visual Studio 17 2022",
          "-A", "x64", "-DBUILD_TESTING=ON"],
@@ -153,7 +160,10 @@ def build_native(root: Path = ROOT) -> dict:
             "native_callback_tests_passed": True,
             "native_flight_tests_passed": True, "native_attach_tests_passed": True,
             "native_overlay_tests_passed": True,
-            "native_video_math_tests_passed": True, "native_video_encoder_tests_passed": True,
+            "native_video_math_tests_passed": True,
+            "native_video_encoder_tests_passed": "native_video_encoder_smoke" not in skipped_tests,
+            "native_depth_scene_tests_passed": "native_depth_scene_smoke" not in skipped_tests,
+            "skipped_tests": skipped_tests, "full_suite_complete": not skipped_tests,
             "reshade_game_runtime_verified": False,
             "game_runtime_verified": False, "pe": report}
     metadata.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

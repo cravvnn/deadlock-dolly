@@ -200,7 +200,9 @@ class NativePackagingTests(unittest.TestCase):
             dll.write_bytes(contents)
             return subprocess.CompletedProcess(args[0], 0)
 
-        with patch.object(sys, "platform", "win32"), \
+        with patch.dict(build_native.os.environ, {"DOLLY_SKIP_VIDEO_SMOKE": "1",
+                                                "DOLLY_SKIP_DEPTH_SCENE_SMOKE": "1"}), \
+                patch.object(sys, "platform", "win32"), \
                 patch.object(build_native.platform, "machine", return_value="AMD64"), \
                 patch.object(build_native.struct, "calcsize", return_value=8), \
                 patch.object(build_native, "verify_native_dll", return_value={"machine": "x64"}), \
@@ -214,6 +216,12 @@ class NativePackagingTests(unittest.TestCase):
         self.assertEqual(info["sha256"], sha256(dll))
         self.assertEqual(info["abi"], build_native.BRIDGE_ABI)
         self.assertFalse(info["game_runtime_verified"])
+        self.assertFalse(info["full_suite_complete"])
+        self.assertFalse(info["native_video_encoder_tests_passed"])
+        self.assertFalse(info["native_depth_scene_tests_passed"])
+        ctest = run.call_args_list[-1].args[0]
+        self.assertEqual(ctest[ctest.index("-E") + 1],
+                         "^(native_video_encoder_smoke|native_depth_scene_smoke)$")
         self.assertEqual(json.loads(metadata.read_text()), info)
 
     def test_failed_native_build_invalidates_old_metadata(self):

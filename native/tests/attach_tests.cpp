@@ -307,6 +307,53 @@ void offset_application() {
             "A position offset follows the resolved frame");
 }
 
+void clearance_behavior() {
+    dolly::AttachSample sample{};
+    sample.valid = true;
+    sample.point = dolly::AttachPoint::bone;
+    sample.origin = {100, 200, 300};
+    sample.angles = sample.aim = {0, 0, 0};
+    dolly::AttachSegment segment{};
+    segment.point = dolly::AttachPoint::bone;
+    segment.offset = {0, 0, 6, 0, 180, 0};
+    dolly::CameraPose pose{};
+    require(dolly::resolve_attach_pose(sample, segment, pose), "Bone pose resolves");
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(near(pose[0], 100) && near(pose[2], 306), "Exact offset remains exact");
+    segment.flags = 4;
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(pose[0] > 147 && near(pose[2], 306) && near(pose[4], 180),
+            "Auto clearance moves forward without changing height or look");
+    segment.offset[0] = -6;
+    require(dolly::resolve_attach_pose(sample, segment, pose), "Back-facing bone pose resolves");
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(pose[0] < 53, "Negative forward offset clears behind the point");
+
+    segment.bone_hash = dolly::attach_bone_hash("head");
+    require(segment.bone_hash == 0x0a8f12cc5f9a0c03ull,
+            "Native head hash matches the Python attach compiler");
+    segment.offset[0] = 0;
+    require(dolly::resolve_attach_pose(sample, segment, pose), "Head pose resolves");
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(near(pose[0], 104) && near(pose[2], 306),
+            "Automatic head clearance stays near the first-person pose");
+    segment.offset[0] = 6;
+    require(dolly::resolve_attach_pose(sample, segment, pose), "Forward head pose resolves");
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(near(pose[0], 106), "Automatic head clearance preserves a larger exact offset");
+    segment.offset = {0, 0, 24, 0, 0, 0};
+    require(dolly::resolve_attach_pose(sample, segment, pose), "Head clearance boundary resolves");
+    pose[2] += 0.1;
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(near(pose[0], 104),
+            "Small smoothing drift cannot switch close head clearance to the wide sphere");
+    segment.offset = {-6, 0, 6, 0, 180, 0};
+    segment.offset[0] = -6;
+    require(dolly::resolve_attach_pose(sample, segment, pose), "Rear head pose resolves");
+    dolly::enforce_attach_clearance(sample, segment, pose);
+    require(pose[0] < 53, "Rear-facing head shot retains wide automatic clearance");
+}
+
 void identity_gates() {
     dolly::AttachSample sample;
     sample.valid = true;
@@ -330,6 +377,43 @@ void identity_gates() {
 }
 
 void smoothing_behavior() {
+    // Picker overview may retain Head in the editor while resolving Eyes and
+    // collecting a skeleton whose default index is root_motion (zero). Cancel
+    // and Use Bone must resolve Head again instead of reusing that root index.
+    dolly::AttachSegment head_request{};
+    head_request.point = dolly::AttachPoint::bone;
+    head_request.bone_hash = dolly::attach_bone_hash("head");
+    dolly::AttachResolution overview{dolly::AttachPoint::eyes, head_request.bone_hash};
+    require(!overview.matches(head_request),
+            "Leaving picker cannot reuse overview root as the highlighted Head bone");
+    dolly::AttachResolution resolved_head{head_request.point, head_request.bone_hash};
+    head_request.offset[0] = 6;
+    require(resolved_head.matches(head_request),
+            "Offset edits can reuse an actually resolved Head bone");
+    auto hand_request = head_request;
+    hand_request.bone_hash = dolly::attach_bone_hash("hand_R");
+    require(!resolved_head.matches(hand_request), "Changing bone requires a new resolution");
+    hand_request.point = dolly::AttachPoint::weapon;
+    require(!overview.matches(hand_request), "Picker overview cannot stand in for Weapon either");
+    dolly::PausedAttachSample<dolly::AttachSample> paused;
+    dolly::AttachSample sampled{};
+    sampled.origin = {10, 20, 30};
+    paused.apply(sampled, true, 42);
+    sampled.origin = {12, 23, 34};
+    paused.apply(sampled, true, 42);
+    require(sampled.origin == std::array<double, 3>{10, 20, 30},
+            "Repeated paused tick holds the validated bone pose");
+    sampled.origin = {15, 25, 35};
+    paused.apply(sampled, true, 43);
+    require(sampled.origin[0] == 15, "Single-step refreshes paused pose");
+    sampled.origin[0] = 18;
+    paused.apply(sampled, false, 43);
+    require(sampled.origin[0] == 18, "Playback resumes immediately even within the same tick");
+    paused.apply(sampled, true, 43);
+    paused.reset();
+    sampled.origin[0] = 24;
+    paused.apply(sampled, true, 43);
+    require(sampled.origin[0] == 24, "Changing target discards paused pose");
     dolly::AttachSmoothing smoothing;
     dolly::CameraPose pose{100, 200, 300, 0, 0, 0, 16.0 / 9};
     smoothing.apply(pose, 0.016, 0);
@@ -349,6 +433,38 @@ void smoothing_behavior() {
     step[4] = 10;
     wrap.apply(step, 0.016, 0.5);
     require(step[4] > 350 && step[4] < 360, "Angle smoothing takes the short way across the wrap");
+
+    dolly::AttachSmoothing anchored;
+    dolly::CameraPose follow{0, 0, 70, 0, 0, 0, 16.0 / 9};
+    anchored.apply_anchored(follow, {0, 0, 0}, 0.016, 0.4, 2.0);
+    // A jump and dash are whole-player motion: the camera travels with them
+    // on the first frame instead of spending the smoothing interval inside
+    // the moving character.
+    follow = {180, 0, 150, 0, 0, 0, 16.0 / 9};
+    anchored.apply_anchored(follow, {180, 0, 80}, 0.016, 0.4, 2.0);
+    require(near(follow[0], 180) && near(follow[2], 150),
+            "Anchored smoothing tracks a jump and dash without world-space lag");
+    for (double root : {182.0, 179.0, 183.0, 180.0}) {
+        follow = {root, 0, 150, 0, 0, 0, 16.0 / 9};
+        anchored.apply_anchored(follow, {root, 0, 80}, 0.016, 0.4, 2.0);
+        require(near(follow[0], root) && near(follow[2], 150),
+                "Camera stays fixed relative to the render skeleton through root interpolation");
+    }
+    follow = {180, 15, 150, 0, 90, 0, 16.0 / 9};
+    anchored.apply_anchored(follow, {180, 0, 80}, 0.016, 0.4, 2.0);
+    require(follow[1] >= 13 && follow[1] < 15,
+            "Relative motion remains smoothed within a strict position bound");
+    require(follow[4] > 0 && follow[4] < 90, "Attached rotation remains smoothed");
+    follow = {180, 15, 150, 0, 90, 0, 16.0 / 9};
+    anchored.apply_anchored(follow, {180, 0, 80}, 0.016, 0, 2.0);
+    require(near(follow[1], 15) && near(follow[4], 90), "Zero smoothing remains exact");
+
+    dolly::AttachSegment offset{};
+    require(near(dolly::attach_smoothing_error_limit(offset), 0.5),
+            "A zero-offset bone cannot drift far from its point");
+    offset.offset[0] = 100;
+    require(near(dolly::attach_smoothing_error_limit(offset), 3.0),
+            "An authored offset still has a finite drift limit");
 }
 
 void track_loading_and_cuts() {
@@ -394,7 +510,7 @@ void track_rejections() {
     set_number(bad, 28, 0.0);
     reject(bad, "An empty segment range is refused");
     bad = good;
-    set_u32(bad, 36, 4);
+    set_u32(bad, 36, 8);
     reject(bad, "Unknown segment flags are refused");
     bad = good;
     set_u32(bad, 40, 2);
@@ -540,6 +656,42 @@ void envelope_loading() {
 
 } // namespace
 
+void rendered_pose_history() {
+    dolly::AttachRenderHistory history;
+    dolly::AttachSample sample{};
+    sample.valid = true;
+    sample.motion_anchor = {100, 200, 300};
+    sample.origin = {100, 200, 380};
+    sample.aim = {2, 30, 0};
+    sample.angles = sample.aim;
+    history.record(sample, 1.0, 10);
+    sample.origin[2] = 380.1;
+    history.record(sample, 1.01, 11);
+    // The current readable animation may step to an older network pose while
+    // scene translation is already current. Follow completed animation locally.
+    sample.motion_anchor = {125, 180, 310};
+    sample.origin = {125, 180, 389.5};
+    require(history.apply(sample, 1.025, 12), "Completed pose not available at next view");
+    require(std::abs(sample.origin[2] - 390.25) < 1e-6, "Irregular view cadence not predicted");
+    require(sample.origin[0] == 125 && sample.origin[1] == 180, "Scene translation lagged");
+    require(sample.aim[1] == 30 && sample.angles[0] == 2, "Completed pose changed aim");
+    const auto unchanged = sample.origin;
+    require(!history.apply(sample, 1.026, 13) && sample.origin == unchanged, "Old frame reused");
+    require(!history.apply(sample, 1.2, 12), "Prediction survived a long stall");
+    require(!history.apply(sample, 1.009, 12), "Backward clock predicted");
+    history.reset();
+    require(!history.apply(sample, 1.025, 12), "Target reset reused history");
+    sample.motion_anchor = {0, 0, 0};
+    sample.origin = {0, 0, 80};
+    history.record(sample, 2, 20);
+    sample.origin[2] = 100;
+    history.record(sample, 2.01, 21);
+    require(history.apply(sample, 2.02, 22) && sample.origin[2] <= 102.000001,
+            "Animation cut caused unbounded prediction");
+    sample.origin[2] = 200;
+    require(!history.apply(sample, 2.02, 22), "Large local discontinuity reused old pose");
+}
+
 int main() {
     try {
         unsigned hide_index = 999;
@@ -563,10 +715,12 @@ int main() {
                     !dolly::hide_owner_matches(owner, 123, 22) &&
                     !dolly::hide_owner_matches(owner, 123, 19),
                 "Wrong owner and stale or future generations remain visible");
+        rendered_pose_history();
         view_offset_validation();
         source_blending();
         eye_resolution();
         offset_application();
+        clearance_behavior();
         identity_gates();
         smoothing_behavior();
         track_loading_and_cuts();

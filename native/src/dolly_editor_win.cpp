@@ -9,6 +9,7 @@
 #include <memory>
 #include "MinHook.h"
 #include "dolly_editor.hpp"
+#include "dolly_bone_picker.hpp"
 #include "dolly_flight.hpp"
 #include "dolly_overlay.hpp"
 #include "dolly_reshade.hpp"
@@ -537,7 +538,9 @@ EditorSnapshot editor_snapshot() noexcept {
         result.attach_available = true;
         result.attach_selected = (attach->flags & 2) != 0;
         result.attach_preview = (attach->flags & 4) != 0;
-        result.attach_hide = attach->hide != 0;
+        result.bone_picker = (attach->flags & 8) != 0;
+        result.attach_hide = (attach->hide & 1) != 0;
+        result.attach_auto_clearance = (attach->hide & 2) != 0;
         result.attach_point = attach->point;
         std::memcpy(result.attach_bone, attach->bone_name, 64);
         result.attach_target_index = attach->target_index;
@@ -601,10 +604,29 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetConfettiDespawnOnGround))
+        std::uint32_t(action) > std::uint32_t(EditorAction::FinishBonePicker))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
+        return false;
+    // While inspecting, only recovery/ownership and picker actions may escape
+    // to Python. In particular no capture, seek or recording of this view.
+    if (state.bone_picker && action != EditorAction::CancelBonePicker &&
+        action != EditorAction::FinishBonePicker && action != EditorAction::GameUI &&
+        action != EditorAction::Console && action != EditorAction::Panel &&
+        action != EditorAction::Stop)
+        return false;
+    if (action == EditorAction::OpenBonePicker &&
+        (!state.attach_selected || !state.ready || !state.manual_active || !state.paused ||
+         state.busy || state.playing || state.owner != EditorOwner::Panel || value != 0))
+        return false;
+    if (action == EditorAction::CancelBonePicker && (!state.bone_picker || value != 0))
+        return false;
+    if (action == EditorAction::FinishBonePicker &&
+        (!state.bone_picker || !pose_override || !std::isfinite((*pose_override)[0]) ||
+         (*pose_override)[0] < 0 || (*pose_override)[0] > 4294967295.0 ||
+         (*pose_override)[0] != std::floor((*pose_override)[0]) || value < 0 ||
+         value >= kPickerMaxBones || value != std::floor(value)))
         return false;
     if (action == EditorAction::ResetCameraPath &&
         (!state.ready || state.playing || state.busy || !state.camera_count ||
@@ -626,7 +648,9 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if (action >= EditorAction::SetAttachTarget && action <= EditorAction::SetSourceBlend &&
         (!state.attach_available || !state.ready || state.playing || state.busy ||
-         !state.camera_count || state.owner != EditorOwner::Panel))
+         (!state.camera_count && action != EditorAction::SetAttachTarget &&
+          action != EditorAction::AttachCycleTarget) ||
+         state.owner != EditorOwner::Panel))
         return false;
     if (action == EditorAction::SetAttachTarget &&
         (value != std::floor(value) || value < 0 || value >= state.roster_count))
@@ -635,7 +659,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if (action == EditorAction::SetAttachSmoothing && (value < 0 || value > 5))
         return false;
-    if (action == EditorAction::SetAttachHide && value != 0 && value != 1)
+    if (action == EditorAction::SetAttachHide &&
+        (value < 0 || value > 3 || value != std::floor(value)))
         return false;
     if (action == EditorAction::AttachPreview && value != 0 && value != 1)
         return false;
@@ -692,7 +717,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
             if (!std::isfinite(component))
                 return false;
     } else if (pose_override && action != EditorAction::SetAttachOffsets &&
-               action != EditorAction::SetAttachBone)
+               action != EditorAction::SetAttachBone && action != EditorAction::FinishBonePicker)
         return false;
     if (action == EditorAction::SetSpeed) {
         if (value < 1 || value > 10000)
@@ -712,6 +737,11 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (gLastEvent - gAcknowledged >= kEditorEventCount) {
         gEventLock.clear(std::memory_order_release);
         ++gDropped;
+        return false;
+    }
+    if (action == EditorAction::FinishBonePicker &&
+        !picker_finish(std::uint32_t((*pose_override)[0]), int(value))) {
+        gEventLock.clear(std::memory_order_release);
         return false;
     }
     if (action == EditorAction::SetSpeed)
@@ -1082,9 +1112,11 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             bool valid =
                 attach_first == InterlockedCompareExchange(attach_sequence, 0, 0) &&
                 std::memcmp(attach.magic, "DLYATTC1", 8) == 0 &&
-                (attach.abi == 2 || attach.abi == 3) && attach.flags <= 7 && attach.reserved == 0 &&
-                (attach.reserved2 == 0 || (attach.abi == 3 && attach.reserved2 <= 10000)) &&
-                attach.point <= 2 && attach.hide <= 1 &&
+                (attach.abi == 2 || attach.abi == 3 || attach.abi == 4 || attach.abi == 5) &&
+                attach.flags <= (attach.abi >= 4 ? 15u : 7u) && attach.reserved == 0 &&
+                (!(attach.flags & 8) || (attach.flags & 3) == 3) &&
+                (attach.reserved2 == 0 || (attach.abi >= 3 && attach.reserved2 <= 10000)) &&
+                attach.point <= 2 && attach.hide <= (attach.abi == 5 ? 3u : 1u) &&
                 (attach.point == 2 ? attach.bone_hash != 0 : attach.bone_hash == 0);
             for (std::uint32_t offset : attach.offsets)
                 valid = valid && offset >= 8 && offset <= 0x8000;
@@ -1096,8 +1128,8 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                     ended = true;
                     continue;
                 }
-                const bool letter =
-                    (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
+                const bool letter = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                                    ch == '_' || (index == 0 && ch == '$');
                 valid = valid && !ended &&
                         (letter || (index > 0 && ((ch >= '0' && ch <= '9') || ch == '.')));
                 bone_token = (bone_token ^ ch) * 1099511628211ull;

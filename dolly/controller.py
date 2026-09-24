@@ -62,7 +62,7 @@ SEEK_SETTLE_SAMPLES = 3
 CAMERA_READBACK_INTERVAL = .25
 CAMERA_DRIFT_LIMIT = 64.0
 CAMERA_DRIFT_SAMPLES = 3
-NATIVE_PAUSE_TIMEOUT = 3.0
+NATIVE_PAUSE_TIMEOUT = 8.0
 # Live-verified switches for the in-game health-bar toggle. Disabling
 # citadel_unit_status_enabled or citadel_hud_objective_health_enabled while a
 # replay renders hangs the game with a DX11 device error, so those master
@@ -1233,7 +1233,7 @@ class Controller:
                 previous_frame = frame
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
-                raise RuntimeError("The renderer has not confirmed a paused replay view. Return to Deadlock and retry Capture; no camera was added.")
+                raise RuntimeError("The pause command was sent, but Deadlock has not rendered a stable paused view. Wait for the game to respond before editing or capturing a camera.")
             time.sleep(min(.01, remaining))
 
     def _sample_paused_native_view(self):
@@ -1964,6 +1964,14 @@ class Controller:
                 # the bridge no longer has (notably after attach faults).
                 self._native_active = self._native_manual = False
                 self._invalidate_paused_camera()
+                # The HUD was already hidden, but the failed arm released the
+                # native camera. Restore the actual replay controls as well as
+                # ownership so engine spectator movement is not disguised as
+                # a frozen Dolly view. Keep the original setup error visible.
+                try:
+                    self.toggle_game_ui(enabled=True)
+                except (RuntimeError, ValueError, OSError):
+                    LOG.exception("Could not restore replay UI after camera setup failed")
                 raise
             self._native_active = True
             self._native_manual = True

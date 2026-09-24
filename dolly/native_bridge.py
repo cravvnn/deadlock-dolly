@@ -655,7 +655,7 @@ class NativeBridge(MediaTransport):
             self._store(offset + 8, even)
             self._editor_citadel_dof_sequence = even
 
-    def configure_editor_attach(self, offsets, attach=None, preview=False, snap_request=0):
+    def configure_editor_attach(self, offsets, attach=None, preview=False, snap_request=0, picker=False):
         """Optional attach block: schema offsets plus the selected key's state."""
         from . import editor_wire as wire
         with self._lock:
@@ -663,7 +663,7 @@ class NativeBridge(MediaTransport):
             previous = getattr(self, "_editor_attach_sequence", 0)
             odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
             data = wire.pack_attach(odd, offsets, attach, preview=bool(preview),
-                                    snap_request=snap_request)
+                                    snap_request=snap_request, picker=bool(picker))
             offset = wire.ATTACH_OFFSET
             self._store(offset + 8, odd)
             self._mapping[offset:offset + 8] = data[:8]
@@ -671,7 +671,22 @@ class NativeBridge(MediaTransport):
             self._store(offset + 8, even)
             self._editor_attach_sequence = even
             self._editor_attach_diagnostics = {"sequence": even, "offsets": dict(offsets),
-                "selection": deepcopy(attach), "preview": bool(preview), "snap_request": snap_request}
+                "selection": deepcopy(attach), "preview": bool(preview), "snap_request": snap_request,
+                "picker": bool(picker)}
+
+    def editor_bone_picker(self):
+        """Optional native picker session/result; old DLLs leave it unwritten."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            for _ in range(4):
+                first = self._load_sequence(wire.PICKER_OFFSET + 8)
+                if first & 1:
+                    continue
+                data = bytes(self._mapping[wire.PICKER_OFFSET:wire.PICKER_OFFSET + wire.PICKER_RESULT.size])
+                if first == self._load_sequence(wire.PICKER_OFFSET + 8):
+                    return wire.unpack_picker(data)
+            raise NativeBridgeError("The Bone Picker is updating; retry in a moment.")
 
     def editor_roster(self):
         """Optional native player roster for the attach target picker."""

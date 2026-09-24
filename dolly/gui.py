@@ -473,7 +473,8 @@ class DollyApp:
 
     def _video_source_changed(self, _event=None):
         pov = self.video_source.get() == "Player POV"
-        if pov:
+        single_attach = len(self.project.keyframes) == 1 and self.project.keyframes[0].source == "attach"
+        if pov or single_attach:
             self.video_pov_controls.pack(fill="x")
         else:
             self.video_pov_controls.pack_forget()
@@ -550,12 +551,19 @@ class DollyApp:
             self.video_fixed_step.set(True)
 
     def _start_video_recording(self):
+        if getattr(self, "_bone_picker_context", None):
+            self.status_text.set("Finish or cancel Bone Picker before recording.")
+            return
         if self.busy:
             self.status_text.set("Finish the current operation before starting a recording.")
             return
         try:
             pov = hasattr(self, "video_source") and self.video_source.get() == "Player POV"
             self._pov_project = None
+            bone_project = None
+            if not pov and len(self.project.keyframes) == 1 and self.project.keyframes[0].source == "attach":
+                from .bone_picker import timed_attachment
+                bone_project = timed_attachment(self.project, self.video_pov_duration.get())
             if pov:
                 duration = float(self.video_pov_duration.get())
                 if not math.isfinite(duration) or not .1 <= duration <= 120:
@@ -582,18 +590,20 @@ class DollyApp:
                                    speed=float(self.video_export_speed.get()),
                                    depth=bool(self.video_depth.get()),
                                    depth_exr=bool(self.video_depth_exr.get()),
-                                   layers=layers, shot_only=pov).validated()
+                                   layers=layers, shot_only=pov or bone_project is not None).validated()
             if "players" in options.layers:
-                self._player_layer_frames(options)
+                self._player_layer_frames(options, project=bone_project)
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             self._error("Record video", exc)
             return
+        if bone_project is not None:
+            self._commit_camera(bone_project.keyframes, 0.0)
         project = self._pov_project or (Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None)
         frozen = False if pov else self.frozen.get()
         self._pending_auto_play = project is not None
         # A layered take ends with its authored path; the queue records one
         # isolated take per selected layer after the color take completes.
-        self._auto_finish_layered = bool(pov or options.depth or options.layers) and project is not None
+        self._auto_finish_layered = bool(pov or bone_project is not None or options.depth or options.layers) and project is not None
         self._base_capture = options if options.layers else None
         # Players need a real alpha channel: their layer is recorded by the
         # native ownership capture (players plus their equipment, no NPCs).
@@ -786,9 +796,9 @@ class DollyApp:
         return self.video_export.start(options, project=pov_project or self._snapshot(),
                                        before_record=configure_layer, pov=pov_project is not None)
 
-    def _player_layer_frames(self, base):
+    def _player_layer_frames(self, base, *, project=None):
         """Preflight estimate; actual capture uses the completed color take's count."""
-        project = getattr(self, "_pov_project", None) or self.project
+        project = project or getattr(self, "_pov_project", None) or self.project
         if project is None or len(project.keyframes) < 2:
             raise RuntimeError("The players layer needs a camera path so its frames match the color take.")
         frames = int(math.ceil(project.duration * base.fps / base.speed - 1e-6))
@@ -1747,14 +1757,28 @@ class DollyApp:
         self.attach_player_combo.pack(fill="x", pady=(0, 6))
         self.attach_point = tk.StringVar(value="Eyes")
         attach_point_combo = ttk.Combobox(attach, textvariable=self.attach_point,
-                                          values=("Eyes", "Weapon", "Bone"), state="readonly", width=10)
+                                          values=("Eyes", "Weapon", "Bone Picker..."), state="readonly", width=10)
         attach_point_combo.pack(fill="x", pady=(0, 6))
+        picker_row = ttk.Frame(attach, style="Card.TFrame")
+        picker_row.pack(fill="x", pady=(0, 6))
+        ttk.Button(picker_row, text="Bone Picker...", command=self._open_bone_picker).pack(side="left")
+        ttk.Button(picker_row, text="Cancel picker", command=self._cancel_bone_picker).pack(side="left", padx=(6, 0))
         bone_row = ttk.Frame(attach, style="Card.TFrame")
         ttk.Label(bone_row, text="Bone name", style="CardMuted.TLabel").pack(anchor="w")
         self.attach_bone = tk.StringVar(value="head")
         self.attach_bone_combo = ttk.Combobox(bone_row, textvariable=self.attach_bone, values=())
         self.attach_bone_combo.pack(fill="x", pady=(0, 6))
         def update_bone_field(*_):
+            if self.attach_point.get() == "Bone Picker...":
+                index = self._selection_index(self.camera_tree)
+                point = "Eyes"
+                if index is not None and 0 <= index < len(self.project.keyframes):
+                    current = self.project.keyframes[index].attach
+                    if current:
+                        point = current.point.title()
+                self.attach_point.set(point)
+                self.root.after_idle(self._open_bone_picker)
+                return
             if self.attach_point.get() == "Bone":
                 bone_row.pack(fill="x", after=attach_point_combo)
             else:
@@ -1764,7 +1788,7 @@ class DollyApp:
         from dolly.gui_theme import compact_slider
         ttk.Label(attach, text="Offsets", style="Card.TLabel").pack(anchor="w", pady=(2, 2))
         self.attach_vars = {}
-        for name, label in (("x", "X"), ("y", "Y"), ("z", "Z"),
+        for name, label in (("x", "Forward"), ("y", "Right"), ("z", "Up"),
                             ("pitch", "Pitch")):
             variable = tk.StringVar(value="0")
             self.attach_vars[name] = variable
@@ -1775,6 +1799,11 @@ class DollyApp:
         self.attach_hide = tk.BooleanVar(value=True)
         ttk.Checkbutton(attach, text="Hide this hero", variable=self.attach_hide,
                         style="Card.TCheckbutton").pack(anchor="w", pady=(0, 6))
+        self.attach_clearance = tk.StringVar(value="Exact offset")
+        ttk.Combobox(attach, textvariable=self.attach_clearance, state="readonly",
+                     values=("Exact offset", "Automatic clearance")).pack(fill="x", pady=(0, 4))
+        ttk.Label(attach, text="Automatic clearance keeps head POV close and forward; other bones use wider spacing. Animated limbs may still cross the view.",
+                  style="CardMuted.TLabel", wraplength=240).pack(anchor="w", pady=(0, 6))
         self.attach_note = ttk.Label(attach, text="Load a replay to list players.",
                                      style="CardMuted.TLabel", wraplength=240)
         self.attach_note.pack(anchor="w", pady=(0, 6))
@@ -2449,6 +2478,9 @@ class DollyApp:
     def _submit(self, label, function, callback=None):
         if self.closed:
             return False
+        if getattr(self, "_bone_picker_context", None):
+            self.status_text.set("Finish or cancel Bone Picker before starting another operation.")
+            return False
         if self.busy:
             self.status_text.set("Please wait for the current operation to finish.")
             return False
@@ -2958,6 +2990,7 @@ class DollyApp:
                 variable.set("0")
             self.attach_smoothing.set("0")
             self.attach_hide.set(True)
+            self.attach_clearance.set("Exact offset")
             self.attach_point.set("Eyes")
             self.attach_bone.set("head")
             self.attach_bone_combo.configure(state="disabled")
@@ -2966,6 +2999,7 @@ class DollyApp:
             variable.set(_number(value))
         self.attach_smoothing.set(_number(attach.smoothing))
         self.attach_hide.set(bool(attach.hide_body))
+        self.attach_clearance.set("Automatic clearance" if attach.clearance_mode == "auto" else "Exact offset")
         self.attach_point.set(attach.point.title())
         self.attach_bone.set(attach.bone or "head")
         self.attach_bone_combo.configure(state="normal" if attach.point == "bone" else "disabled")
@@ -3068,7 +3102,8 @@ class DollyApp:
                                    bone=self.attach_bone.get().strip() if self.attach_point.get() == "Bone" else "",
                                    offset=offsets,
                                    smoothing=_finite(self.attach_smoothing.get(), "Attach smoothing"),
-                                   hide_body=bool(self.attach_hide.get()))
+                                   hide_body=bool(self.attach_hide.get()),
+                                   clearance_mode="auto" if self.attach_clearance.get() == "Automatic clearance" else "exact")
             for target in targets:
                 candidate.keyframes[target].source_blend = float(self.source_blend.get())
                 candidate.keyframes[target].source = "attach" if attach else "free"
@@ -3079,10 +3114,36 @@ class DollyApp:
             self._refresh_keys(self.project.keyframes[index].time)
         self._guard("Apply attach camera", operation)
 
+    def _open_bone_picker(self):
+        from .bone_picker import open_picker, start_attached_view
+        def open_or_start():
+            if self.project.keyframes:
+                return open_picker(self)
+            player = self._attach_players.get(self.attach_player.get())
+            if not player:
+                raise ValueError("Choose a player before opening Bone Picker.")
+            def target(key):
+                key.source = "attach"
+                key.attach = AttachKey(handle=int(player.get("handle", 0)),
+                    entity_id=int(player.get("entity_index", 0) or 0),
+                    model=str(player.get("model_path") or ""))
+            start_attached_view(self, target)
+        self._guard("Bone Picker", open_or_start)
+
+    def _cancel_bone_picker(self):
+        from .bone_picker import close_picker
+        self._guard("Bone Picker", lambda: close_picker(self))
+
     def _update_export_camera_note(self):
         label = getattr(self, "export_camera_note", None)
         if label is None:
             return
+        if hasattr(self, "video_pov_controls"):
+            single_attach = len(self.project.keyframes) == 1 and self.project.keyframes[0].source == "attach"
+            if self.video_source.get() == "Player POV" or single_attach:
+                self.video_pov_controls.pack(fill="x")
+            else:
+                self.video_pov_controls.pack_forget()
         if hasattr(self, "video_source") and self.video_source.get() == "Player POV":
             label.configure(text="Camera: Deadlock's selected spectator view. The saved camera path is unchanged.")
         else:
@@ -3381,6 +3442,9 @@ class DollyApp:
                              "Camera and effect times now match the replay.")
 
     def _capture_view(self, action, native_snapshot=None, *, replacement_confirmed=False):
+        if getattr(self, "_bone_picker_context", None):
+            self.status_text.set("Finish or cancel Bone Picker before capturing a camera.")
+            return
         if action == "append" and not self.project.keyframes:
             action = "start"
         def operation():

@@ -2,6 +2,7 @@
 // state. No Deadlock modules, private addresses, injection, or console needed.
 #include "dolly_overlay.hpp"
 #include "dolly_editor.hpp"
+#include "dolly_bone_picker.hpp"
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_reshade.hpp"
@@ -754,6 +755,64 @@ int main(int argc, char** argv) {
         require(GetCapture() == window, "Raw-only input changed game mouse capture");
         require(present_keeps_os_cursor, "Present is allowed to change the OS mouse cursor");
         ReleaseCapture();
+        // Exercise the real transparent picker canvas, not merely the pure
+        // selection helpers. The original implementation drew circles but
+        // provided no ImGui surface that could own a scene click.
+        {
+            auto catalog = std::make_shared<dolly::PickerCatalog>();
+            catalog->sequence = 42;
+            catalog->total = 4;
+            dolly::PickerSample sample{};
+            sample.count = 4;
+            const char* names[] = {"head", "pelvis", "hand_R", "ankle_L"};
+            for (unsigned i = 0; i < 4; ++i) {
+                dolly::PickerBone bone{};
+                bone.source_index = i;
+                std::strcpy(bone.name, names[i]);
+                catalog->bones.push_back(bone);
+                sample.transforms[i][2] = 90 - 25 * float(i);
+            }
+            sample.transforms[2][1] = -35;
+            dolly::picker_publish(catalog);
+            auto pose = snapshot.pose;
+            snapshot.bone_picker = true;
+            auto render_picker = [&] {
+                dolly::picker_camera(
+                    42, 10, true, true, pose, 90, {},
+                    [](void* p, dolly::PickerSample& out, const char*&) noexcept {
+                        out = *static_cast<dolly::PickerSample*>(p);
+                        return true;
+                    },
+                    &sample);
+                require(SUCCEEDED(chain->Present(0, 0)), "Picker Present failed");
+            };
+            render_picker();
+            render_picker();
+            dolly::PickerFrame frame{};
+            require(dolly::picker_snapshot(frame) && frame.ready, "Synthetic picker not ready");
+            ImGui::SetCurrentContext(screenshot_context);
+            const auto size = ImGui::GetIO().DisplaySize;
+            dolly::VisualizationView view{frame.view, frame.fov, size.x, size.y, 1};
+            std::array<double, 3> point{};
+            dolly::VisualizationPoint screen{};
+            require(dolly::picker_position(frame.sample, catalog->bones[2], point) &&
+                        dolly::project_visualization_point(view, point, screen),
+                    "Synthetic hand not visible");
+            auto mouse = [&](bool down) {
+                ImGui::SetCurrentContext(screenshot_context);
+                ImGui::GetIO().AddMousePosEvent(float(screen.x), float(screen.y));
+                ImGui::GetIO().AddMouseButtonEvent(0, down);
+                render_picker();
+            };
+            mouse(false);
+            mouse(true);
+            mouse(false);
+            require(dolly::picker_snapshot(frame) && frame.selected == 2,
+                    "Clicking the visible hand marker did not select its source bone");
+            dolly::picker_camera(42, 10, false, true, pose, 90, {}, nullptr, nullptr);
+            snapshot.bone_picker = false;
+            require(SUCCEEDED(chain->Present(0, 0)), "Picker cleanup Present failed");
+        }
         // Exercise the real Present capture across the editor-to-path handoff.
         // A valid session survives loss of manual input, pose readiness and focus.
         wchar_t temporary[MAX_PATH]{};

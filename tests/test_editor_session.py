@@ -318,6 +318,13 @@ class EditorSessionTests(unittest.TestCase):
                                          self.bridge))
         keys, _ = self.app._commit_camera.call_args.args
         self.assertFalse(keys[0].attach.hide_body)
+        self.assertEqual(keys[0].attach.clearance_mode, "exact")
+        self.app._commit_camera.reset_mock()
+        self.assertTrue(session.dispatch(self.app, {"action": "set_attach_hide", "value": 2},
+                                         self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertFalse(keys[0].attach.hide_body)
+        self.assertEqual(keys[0].attach.clearance_mode, "auto")
         self.app._commit_camera.reset_mock()
         self.app.preview_attach = True
         self.app._attach_snap_pending = True
@@ -652,6 +659,27 @@ class EditorSessionTests(unittest.TestCase):
         self.app.attach_fields = None
         session.configure(self.app)
         self.bridge.configure_editor_attach.assert_not_called()
+
+    def test_picker_roster_refresh_does_not_replace_active_request(self):
+        from copy import deepcopy
+        from dolly.path import AttachKey
+        self.app.native_editor_active = True
+        self.app.attach_fields = {"scene_node": 816}
+        key = Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+                       attach=AttachKey(handle=11, entity_id=4, model="astro.vmdl"))
+        self.app.project.keyframes = [key]
+        self.app._selection_index = lambda _: 0
+        self.app._bone_picker_context = dict(index=0, key=deepcopy(key), bridge=self.bridge)
+        self.app.attach_roster = None
+        session.configure(self.app)
+        self.assertTrue(self.bridge.configure_editor_attach.call_args.kwargs["picker"])
+        self.app.attach_roster = {"players": [{"handle": 11, "model_path": "astro.vmdl"}]}
+        session.configure(self.app)
+        self.assertEqual(self.bridge.configure_editor_attach.call_count, 1)
+        self.app.project.keyframes[0].attach.handle = 12
+        session.configure(self.app)
+        self.assertIsNone(self.app._bone_picker_context)
+        self.assertNotIn("picker", self.bridge.configure_editor_attach.call_args.kwargs)
 
     def test_bridge_failure_during_recovery_does_not_hide_original_error(self):
         self.controller.toggle_console.side_effect = RuntimeError("console command failed")

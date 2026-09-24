@@ -11,6 +11,11 @@ using Producer = int(__fastcall*)(std::uintptr_t, void*, void*, void*, void*, st
                                   unsigned char*, std::uint32_t*, std::uint32_t*);
 void configure(std::uintptr_t scene, bool hashes_ok) noexcept;
 void tick() noexcept;
+// Optional read-only observer at the reviewed mesh producer. Installation is
+// requested through the existing overlay worker, never from the view callback.
+using PoseObserver = void (*)(std::uint32_t owner, std::uint32_t scene_frame) noexcept;
+void set_pose_observer(PoseObserver) noexcept;
+std::uint32_t pose_scene_frame() noexcept;
 void present_boundary(ID3D11DeviceContext*) noexcept;
 bool layout_hook_requested() noexcept;
 bool install_layout_hook(ID3D11Device*) noexcept;

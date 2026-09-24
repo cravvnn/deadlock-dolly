@@ -84,7 +84,7 @@ class NativeCaptureTimingTests(unittest.TestCase):
     def test_stale_paused_render_cannot_be_used_as_a_new_capture(self):
         self.bridge.advance = False
         with patch("dolly.controller.NATIVE_PAUSE_TIMEOUT", .025):
-            with self.assertRaisesRegex(RuntimeError, "renderer has not confirmed"):
+            with self.assertRaisesRegex(RuntimeError, "has not rendered a stable paused view"):
                 self.controller.capture_at_replay(None, 64)
         self.assertEqual(self.console.camera_writes, [])
 

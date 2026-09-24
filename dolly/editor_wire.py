@@ -38,6 +38,7 @@ EXTRA_ACTIONS = ("console", "set_speed", "select_view", "set_playback_speed", "s
                  "reset_camera_path", "set_video_source", "set_pov_duration")
 EXTRA_ACTIONS += ("set_confetti_enabled", "set_confetti_spawn_height",
                   "set_confetti_despawn_on_ground")
+EXTRA_ACTIONS += ("open_bone_picker", "cancel_bone_picker", "finish_bone_picker")
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
 DOF_CONFIG = struct.Struct("<8s4I11d")
@@ -62,6 +63,28 @@ BONES_OFFSET = ATTACH_RESULT_OFFSET + ATTACH_RESULT.size
 BONES_HEADER = struct.Struct("<8s4IQ2I")
 BONES_COUNT = 256
 BONES_BYTES = BONES_HEADER.size + BONES_COUNT * 64
+PICKER_OFFSET = 2 * 1024 * 1024 + 22528
+PICKER_RESULT = struct.Struct("<8s6IQiI64s7d")
+
+
+def unpack_picker(data):
+    if len(data) != PICKER_RESULT.size:
+        raise ValueError("Invalid Bone Picker result size")
+    if not any(data):
+        return None
+    (magic, sequence, abi, flags, request, handle, entity, model, selected, total,
+     raw, *original) = PICKER_RESULT.unpack(data)
+    import re
+    name = raw.split(b"\0", 1)[0].decode("ascii")
+    if (magic != b"DLYPICK1" or abi != 1 or sequence & 1 or flags & ~15 or
+            not -1 <= selected < 4096 or not 0 <= total <= 4096 or
+            any(not math.isfinite(value) for value in original) or
+            (name and not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_.]{0,63}|\$cloth_m[0-9]+p[0-9]+)", name))):
+        raise ValueError("Invalid Bone Picker result")
+    return dict(sequence=sequence, request=request, active=bool(flags & 1),
+                ready=bool(flags & 2), preview=bool(flags & 4), finishing=bool(flags & 8),
+                handle=handle, entity_id=entity, model=model, selected=selected,
+                total=total, name=name, original_pose=tuple(original))
 
 
 def unpack_bones(data):
@@ -75,7 +98,7 @@ def unpack_bones(data):
     for index in range(count):
         raw = data[BONES_HEADER.size + index * 64:BONES_HEADER.size + (index + 1) * 64]
         name = raw.split(b"\0", 1)[0].decode("ascii")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", name):
+        if not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_.]{0,63}|\$cloth_m[0-9]+p[0-9]+)", name):
             raise ValueError("Native bone picker returned an invalid name")
         names.append(name)
     return {"sequence": sequence, "handle": handle, "entity_id": entity_id,
@@ -98,7 +121,7 @@ def unpack_attach_result(data):
             "offset": tuple(numbers[:6]), "smoothing": numbers[6]}
 
 
-def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0):
+def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0, picker=False):
     """Attach-camera block: schema offsets plus the selected key's attach state.
 
     Every offset comes from the live schema query, so the provider never
@@ -125,6 +148,8 @@ def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0):
             flags |= 2
         if preview and flags & 2:
             flags |= 4
+        if picker and flags & 2:
+            flags |= 8
         blend_ms = round(_finite(attach.get("source_blend", 0), 0, 10, "source blend") * 1000)
         handle = _uint(attach.get("handle", 0), "attach handle")
         entity_id = _uint(attach.get("entity_id", 0), "attach entity id")
@@ -138,13 +163,17 @@ def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0):
         if point == 2:
             import re
             from .native_effects import model_token
-            if not isinstance(bone, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", bone):
+            if not isinstance(bone, str) or len(bone) > 64 or not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_.]{0,63}|\$cloth_m[0-9]+p[0-9]+)", bone):
                 raise ValueError("Choose a valid bone name")
             bone_name = bone.encode("ascii")
             bone_hash = model_token(bone)
         elif bone:
             raise ValueError("A bone name requires the Bone attach point")
         hide = 1 if attach.get("hide_body", True) else 0
+        mode = attach.get("clearance_mode", "exact")
+        if mode not in ("exact", "auto"):
+            raise ValueError("Unknown attach clearance mode")
+        hide |= 2 if mode == "auto" else 0
         model = attach.get("model", 0)
         if (isinstance(model, bool) or not isinstance(model, int)
                 or not 0 <= model <= 0xFFFFFFFFFFFFFFFF):
@@ -160,7 +189,7 @@ def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0):
         key_count = _uint(attach.get("key_count", 0), "shot key count")
         if attached_keys > key_count or key_count > 100000:
             raise ValueError("Attach key counts are inconsistent")
-    return ATTACH_CONFIG.pack(b"DLYATTC1", _uint(sequence, "sequence"), 3 if blend_ms else 2, flags, 0, model,
+    return ATTACH_CONFIG.pack(b"DLYATTC1", _uint(sequence, "sequence"), 5 if hide & 2 else 4 if picker else (3 if blend_ms else 2), flags, 0, model,
                               *values, handle, entity_id, target_index, point, hide, blend_ms,
                               *numbers, attached_keys, key_count,
                               _uint(snap_request, "snap request"), bone_hash, bone_name)

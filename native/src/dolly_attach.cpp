@@ -75,9 +75,57 @@ void rotate(const double basis[3][3], const std::array<double, 3>& local,
 
 } // namespace
 
+void AttachRenderHistory::record(const AttachSample& sample, double time,
+                                 std::uint64_t frame) noexcept {
+    if (!sample.valid || !std::isfinite(time) || !finite3(sample.origin, 1e8) ||
+        !finite3(sample.motion_anchor, 1e8) || (count_ && frame <= latest_.frame))
+        return;
+    previous_ = latest_;
+    for (unsigned i = 0; i < 3; ++i)
+        latest_.local[i] = sample.origin[i] - sample.motion_anchor[i];
+    latest_.time = time;
+    latest_.frame = frame;
+    count_ = std::min(2u, count_ + 1);
+}
+bool AttachRenderHistory::apply(AttachSample& sample, double time,
+                                std::uint64_t frame) const noexcept {
+    if (!sample.valid || !count_ || latest_.frame + 1 != frame || !std::isfinite(time))
+        return false;
+    const double age = time - latest_.time;
+    if (age <= 0 || age > .05)
+        return false;
+    auto local = latest_.local;
+    const double interval = latest_.time - previous_.time;
+    if (count_ == 2 && previous_.frame + 1 == latest_.frame && interval >= .001 &&
+        interval <= .05) {
+        const double ratio = std::min(2.0, age / interval);
+        std::array<double, 3> delta{};
+        double distance = 0;
+        for (unsigned i = 0; i < 3; ++i) {
+            delta[i] = (latest_.local[i] - previous_.local[i]) * ratio;
+            distance += delta[i] * delta[i];
+        }
+        // Never extrapolate an animation cut into a large camera jump.
+        const double scale = distance > 4.0 ? 2.0 / std::sqrt(distance) : 1.0;
+        for (unsigned i = 0; i < 3; ++i)
+            local[i] += delta[i] * scale;
+    }
+    double discontinuity = 0;
+    for (unsigned i = 0; i < 3; ++i) {
+        const double difference = local[i] - (sample.origin[i] - sample.motion_anchor[i]);
+        discontinuity += difference * difference;
+    }
+    if (discontinuity > 32.0 * 32.0)
+        return false;
+    for (unsigned i = 0; i < 3; ++i)
+        sample.origin[i] = sample.motion_anchor[i] + local[i];
+    return true;
+}
+
 void AttachSmoothing::reset() noexcept {
     primed_ = false;
     pose_.fill(0);
+    anchor_.fill(0);
     pose_[6] = 16.0 / 9;
 }
 
@@ -93,6 +141,41 @@ void AttachSmoothing::apply(CameraPose& pose, double dt, double tau) noexcept {
         pose_[i] += (pose[i] - pose_[i]) * alpha;
     for (int i = 3; i < 6; ++i)
         pose_[i] += std::remainder(pose[i] - pose_[i], 360.0) * alpha;
+    pose_[6] = pose[6];
+    pose = pose_;
+}
+
+void AttachSmoothing::apply_anchored(CameraPose& pose, const std::array<double, 3>& anchor,
+                                     double dt, double tau, double max_error) noexcept {
+    if (!finite3(anchor, 1e8) || !std::isfinite(max_error) || max_error < 0) {
+        reset();
+        return;
+    }
+    if (!primed_ || !(tau > 0) || !(dt > 0)) {
+        pose_ = pose;
+        anchor_ = anchor;
+        primed_ = true;
+        return;
+    }
+    dt = std::min(dt, 0.25);
+    const double alpha = 1 - std::exp(-dt / tau);
+    for (int i = 0; i < 3; ++i) {
+        // Follow whole-player movement immediately; only filter motion inside
+        // that moving frame. A world-space filter trails during dashes.
+        pose_[i] += anchor[i] - anchor_[i];
+        pose_[i] += (pose[i] - pose_[i]) * alpha;
+    }
+    for (int i = 3; i < 6; ++i)
+        pose_[i] += std::remainder(pose[i] - pose_[i], 360.0) * alpha;
+    double error_squared = 0;
+    for (int i = 0; i < 3; ++i)
+        error_squared += (pose_[i] - pose[i]) * (pose_[i] - pose[i]);
+    if (error_squared > max_error * max_error) {
+        const double fraction = max_error / std::sqrt(error_squared);
+        for (int i = 0; i < 3; ++i)
+            pose_[i] = pose[i] + (pose_[i] - pose[i]) * fraction;
+    }
+    anchor_ = anchor;
     pose_[6] = pose[6];
     pose = pose_;
 }
@@ -211,6 +294,51 @@ bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segmen
     return true;
 }
 
+void enforce_attach_clearance(const AttachSample& sample, const AttachSegment& segment,
+                              CameraPose& pose) noexcept {
+    if (!(segment.flags & 4) || !sample.valid)
+        return;
+    const auto base_angles = segment.point == AttachPoint::eyes ? sample.aim : sample.angles;
+    double basis[3][3];
+    source_basis(base_angles, basis);
+    std::array<double, 3> center = sample.origin;
+    if (segment.point == AttachPoint::eyes) {
+        double body[3][3];
+        source_basis(sample.angles, body);
+        std::array<double, 3> local{};
+        rotate(body, sample.eye_local, local);
+        for (int i = 0; i < 3; ++i)
+            center[i] += local[i];
+    }
+    double local[3]{};
+    for (int axis = 0; axis < 3; ++axis)
+        for (int i = 0; i < 3; ++i)
+            local[axis] += (pose[i] - center[i]) * basis[i][axis];
+    // A head POV should remain close to the hero. A small forward floor keeps
+    // smoothing from drawing the lens back into the face/shoulders without
+    // turning this view into the wide, generic bone camera below. This is a
+    // spacing guide, not a mesh collision test; exact offset remains opt-in.
+    if (segment.point == AttachPoint::bone && segment.bone_hash == attach_bone_hash("head") &&
+        segment.offset[0] >= 0 && std::hypot(segment.offset[1], segment.offset[2]) <= 24.0) {
+        const double correction = std::max(0.0, 4.0 - local[0]);
+        for (int i = 0; i < 3; ++i)
+            pose[i] += correction * basis[i][0];
+        return;
+    }
+    // A bounded pose-point sphere is a guide, not model collision detection.
+    const double radius = segment.point == AttachPoint::bone ? 48.0 : 30.0;
+    const double remaining = radius * radius - local[1] * local[1] - local[2] * local[2];
+    if (remaining <= 0)
+        return;
+    const double minimum_forward = std::sqrt(remaining);
+    if (std::abs(local[0]) >= minimum_forward)
+        return;
+    const double sign = segment.offset[0] < 0 ? -1.0 : 1.0;
+    const double correction = sign * minimum_forward - local[0];
+    for (int i = 0; i < 3; ++i)
+        pose[i] += correction * basis[i][0];
+}
+
 bool AttachTrack::load(const void* data, std::size_t bytes, double duration, std::string& error) {
     auto fail = [&error](const char* reason) {
         error = reason;
@@ -266,7 +394,7 @@ bool AttachTrack::load(const void* data, std::size_t bytes, double duration, std
                 (segment.end < segment.begin ||
                  (segment.end == segment.begin &&
                   !(version == 3 && index + 1 == count && segment.begin == duration))) ||
-                segment.end > duration + 1e-6 || segment.flags > 3 ||
+                segment.end > duration + 1e-6 || segment.flags > 7 ||
                 point > static_cast<std::uint32_t>(version >= 2 ? AttachPoint::bone
                                                                 : AttachPoint::weapon))
                 return fail("Attach segments are not ordered and contiguous");

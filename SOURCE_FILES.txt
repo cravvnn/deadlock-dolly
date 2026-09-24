@@ -358,6 +358,12 @@ dolly/release_launcher.py
 dolly/gui_theme.py
 tests/test_release_launcher.py
 dolly/attach_camera.py
+dolly/bone_picker.py
+tests/test_bone_picker.py
+native/include/dolly_bone_picker.hpp
+native/src/dolly_bone_picker.cpp
+native/src/dolly_bone_picker_ui.hpp
+native/tests/bone_picker_tests.cpp
 tools/derive_attach_fields.py
 tests/test_attach_camera.py
 native/include/dolly_attach.hpp
@@ -368,3 +374,6 @@ tests/test_attach_shot.py
 native/src/dolly_attach_runtime.hpp
 native/tests/fixtures/attach-shot.bin
 tests/test_rotation_curve.py
+docs/BONE_PICKER.md
+
+docs/RELEASE_NOTES_0.5.35-alpha.md

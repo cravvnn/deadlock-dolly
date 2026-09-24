@@ -43,6 +43,7 @@ std::atomic<double> authoredReplayTime{-1.0};
 ULONGLONG drainStarted = 0;
 std::uintptr_t sceneBase = 0;
 Producer original = nullptr;
+std::atomic<PoseObserver> poseObserver{nullptr};
 bool configured = false, hashesOk = false, attempted = false, captured = false,
      producerInstalled = false;
 std::atomic<bool> wantDrawHooks{false};
@@ -613,6 +614,8 @@ int __fastcall hook(std::uintptr_t a, void* object, void* mesh, void* opaque, vo
                     std::uint32_t* outB) {
     const auto obj = reinterpret_cast<std::uintptr_t>(object);
     ++producerCalls;
+    if (auto observer = poseObserver.load(std::memory_order_acquire))
+        observer(value<std::uint32_t>(obj + 0xc0), frame());
     // Hiding runs without a capture: remember the owner for each produced
     // instance so the draw hook can skip exactly that handle. No events, no
     // allocation, no GPU work.
@@ -1359,6 +1362,14 @@ bool draw_hooks_requested() noexcept {
 }
 void draw_hooks_result(bool installed) noexcept {
     drawHooks.store(installed ? 1 : -1, std::memory_order_release);
+}
+void set_pose_observer(PoseObserver observer) noexcept {
+    poseObserver.store(observer, std::memory_order_release);
+    if (observer)
+        producerHideRequested.store(true, std::memory_order_release);
+}
+std::uint32_t pose_scene_frame() noexcept {
+    return frame();
 }
 bool producer_hook_requested() noexcept {
     return producerHideRequested.load(std::memory_order_acquire) && !producerInstalled && sceneBase;

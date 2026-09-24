@@ -33,7 +33,7 @@ MAX_KEYS = 100_000
 STANDARD_ASPECT = 16.0 / 9.0
 # Deliberate editor limits, not a claim about native attach payload bounds.
 ATTACH_POINTS = ("eyes", "weapon", "bone")
-_BONE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
+_BONE_NAME = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_.]*|\$cloth_m[0-9]+p[0-9]+)")
 ATTACH_BONE_LIMIT = 64
 CURVE_CHANNELS = ("pitch", "yaw", "roll")
 ATTACH_OFFSET_LIMIT = 10000.0
@@ -170,6 +170,7 @@ class AttachKey:
     offset: tuple[float, float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     smoothing: float = 0.0
     hide_body: bool = True
+    clearance_mode: str = "exact"
 
 
 def _validate_attach(attach: Any, label: str) -> None:
@@ -195,6 +196,7 @@ def _validate_attach(attach: Any, label: str) -> None:
         raise ValueError(f"{label}.smoothing must be between 0 and {ATTACH_SMOOTHING_MAX:g} seconds")
     if type(attach.hide_body) is not bool:
         raise ValueError(f"{label}.hide_body must be true or false")
+    _choice(attach.clearance_mode, ("exact", "auto"), f"{label}.clearance_mode")
     if attach.point == "bone":
         name = attach.bone
         if not isinstance(name, str) or not 1 <= len(name) <= ATTACH_BONE_LIMIT \
@@ -208,7 +210,8 @@ def _validate_attach(attach: Any, label: str) -> None:
 def _attach_dict(attach: AttachKey) -> dict[str, Any]:
     data = {"handle": attach.handle, "entity_id": attach.entity_id, "model": attach.model,
             "point": attach.point, "offset": list(attach.offset),
-            "smoothing": attach.smoothing, "hide_body": attach.hide_body}
+            "smoothing": attach.smoothing, "hide_body": attach.hide_body,
+            "clearance_mode": attach.clearance_mode}
     if attach.bone:
         data["bone"] = attach.bone
     return data
@@ -639,7 +642,7 @@ class Project:
             if raw_attach is not None:
                 target = _object(raw_attach, f"Camera keyframe {i} attach")
                 _members(target, ("handle", "entity_id", "model", "point", "bone", "offset",
-                                  "smoothing", "hide_body"), "attach key")
+                                  "smoothing", "hide_body", "clearance_mode"), "attach key")
                 offset = target.get("offset")
                 if isinstance(offset, list):
                     offset = tuple(offset)

@@ -2,7 +2,9 @@
 
 #include "dolly_path.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -27,6 +29,15 @@ enum class AttachPoint : std::uint32_t {
     bone = 2,
 };
 
+constexpr std::uint64_t attach_bone_hash(const char* name) noexcept {
+    std::uint64_t hash = 14695981039346656037ull;
+    for (const char* p = name; *p; ++p) {
+        hash ^= static_cast<unsigned char>(*p);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
 struct AttachTarget {
     std::uint32_t handle = 0;    // Packed replay pawn handle.
     std::uint32_t entity_id = 0; // Replay entity identifier, 0 when unknown.
@@ -35,7 +46,7 @@ struct AttachTarget {
 
 struct AttachSegment {
     double begin = 0, end = 0; // Shot seconds; coverage is contiguous from zero.
-    std::uint32_t flags = 0;   // 1 enabled, 2 hide the target body.
+    std::uint32_t flags = 0;   // 1 enabled, 2 hide the target body, 4 auto clearance.
     AttachPoint point = AttachPoint::eyes;
     AttachTarget target;
     // Local XYZ and pitch/yaw/roll offsets in the resolved frame.
@@ -46,6 +57,17 @@ struct AttachSegment {
     double source_blend = 0; // Version 3: eased arrival, ending at begin.
 };
 
+// Describes what the provider actually resolved, not the editor's highlighted
+// choice. Picker overview resolves Eyes while its highlighted choice may be Head.
+struct AttachResolution {
+    AttachPoint point = AttachPoint::eyes;
+    std::uint64_t bone_hash = 0;
+    bool matches(const AttachSegment& requested) const noexcept {
+        return point == requested.point &&
+               (point != AttachPoint::bone || bone_hash == requested.bone_hash);
+    }
+};
+
 // One live sample of the selected target. The provider fills this from bounded
 // reads; a partial, stale or identity-mismatched sample stays invalid.
 struct AttachSample {
@@ -54,26 +76,83 @@ struct AttachSample {
     AttachTarget target;
     std::array<double, 3> eye_local{}; // Decoded m_vecViewOffset.
     std::array<double, 3> origin{};    // Target world origin.
-    std::array<double, 3> angles{};    // Body angles (eyes) or node angles (weapon).
-    std::array<double, 3> aim{};       // Eye angles, used by the eyes point.
+    std::array<double, 3>
+        motion_anchor{};            // Current scene origin; bone positions are rebased to it.
+    std::array<double, 3> angles{}; // Body angles (eyes) or node angles (weapon).
+    std::array<double, 3> aim{};    // Eye angles, used by the eyes point.
+};
+
+// Call only after validating a fresh sample. Paused replay pose buffers may
+// still oscillate; retain one pose until playback resumes or the tick changes.
+// Reset on camera command/target changes. This never bypasses provider checks.
+template <typename Sample> class PausedAttachSample {
+public:
+    void reset() noexcept { held_ = false; }
+    void apply(Sample& sample, bool paused, int tick) noexcept {
+        if (!paused) {
+            held_ = false;
+            return;
+        }
+        if (!held_ || tick != tick_) {
+            sample_ = sample;
+            tick_ = tick;
+            held_ = true;
+        } else {
+            sample = sample_;
+        }
+    }
+
+private:
+    Sample sample_{};
+    int tick_ = 0;
+    bool held_ = false;
+};
+
+// Completed mesh poses are sampled after animation interpolation. Predict only
+// the local bone translation for the immediately following view; the current
+// scene anchor and aim always remain live. The caller scopes history by target.
+class AttachRenderHistory {
+public:
+    void reset() noexcept { count_ = 0; }
+    void record(const AttachSample& sample, double time, std::uint64_t frame) noexcept;
+    bool apply(AttachSample& sample, double time, std::uint64_t frame) const noexcept;
+
+private:
+    struct Pose {
+        std::array<double, 3> local{};
+        double time = 0;
+        std::uint64_t frame = 0;
+    };
+    Pose previous_{}, latest_{};
+    unsigned count_ = 0;
 };
 
 // Exponential pose smoothing across rendered views. reset() on mode or target
-// changes; apply() overwrites the pose with the smoothed value.
+// changes; apply_anchored follows whole-player movement before filtering.
 class AttachSmoothing {
 public:
     void reset() noexcept;
     bool primed() const noexcept { return primed_; }
     void apply(CameraPose& pose, double dt, double tau) noexcept;
+    void apply_anchored(CameraPose& pose, const std::array<double, 3>& anchor, double dt,
+                        double tau, double max_error) noexcept;
 
 private:
     CameraPose pose_{};
+    std::array<double, 3> anchor_{};
     bool primed_ = false;
 };
 
 inline constexpr double kAttachViewOffsetLimit = 200.0;
 inline constexpr double kAttachOffsetLimit = 10000.0;
 inline constexpr double kAttachSmoothingLimit = 5.0;
+// No geometry query is available here. Keep the filtered pose close to its
+// resolved bone/eye point so it cannot trail deep into the moving character.
+inline double attach_smoothing_error_limit(const AttachSegment& segment) noexcept {
+    const auto& offset = segment.offset;
+    const double distance = std::hypot(offset[0], offset[1], offset[2]);
+    return std::min(3.0, std::max(0.5, distance * 0.2));
+}
 
 // Validate the three floats read at m_vecViewOffset +16/+24/+32.
 bool attach_view_offset(const std::array<float, 3>& values, std::array<double, 3>& out) noexcept;
@@ -87,6 +166,11 @@ const char* attach_hero_name(const char* model_path) noexcept;
 // identity mismatch, and nonfinite values.
 bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segment,
                          CameraPose& out) noexcept;
+// Approximate clearance from the selected pose point. Head POV uses a close
+// forward floor; other bones use a wider guide. No rendered mesh query is
+// available, so animated limbs can still enter the view. Leaves rotation intact.
+void enforce_attach_clearance(const AttachSample& sample, const AttachSegment& segment,
+                              CameraPose& pose) noexcept;
 
 // Authored offsets that place the attached camera exactly at ``camera`` for the
 // given live sample (position in the resolved frame, angles relative to the

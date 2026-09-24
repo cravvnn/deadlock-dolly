@@ -217,13 +217,29 @@ def configure(app):
     publish_attach = getattr(bridge, "configure_editor_attach", None)
     fields = getattr(app, "attach_fields", None)
     if callable(publish_attach) and fields and active:
+        picker_context = getattr(app, "_bone_picker_context", None)
+        if picker_context:
+            from .bone_picker import still_current
+            if not still_current(app, picker_context):
+                app._bone_picker_context = None
+                picker_context = None
+                app.preview_attach = False
         preview = bool(getattr(app, "preview_attach", False))
         snap_request = int(getattr(app, "_attach_snap_request", 0))
-        attach = (tuple(sorted(fields.items())), _attach_state(app, selected, count), preview,
-                  snap_request)
+        attach_state = _attach_state(app, selected, count)
+        if picker_context:
+            # Roster refreshes may reorder UI rows while the exact handle/model
+            # stays unchanged. Keep this transaction's wire request stable;
+            # native sampling still revalidates entity/model ownership.
+            attach_state = picker_context.setdefault("attach_state", attach_state)
+        attach = (tuple(sorted(fields.items())), attach_state, preview,
+                  snap_request, bool(picker_context))
         if (getattr(app, "_native_attach_bridge", None) is not bridge
                 or getattr(app, "_native_attach_cache", None) != attach):
-            publish_attach(dict(fields), attach[1], preview=preview, snap_request=snap_request)
+            kwargs = dict(preview=preview, snap_request=snap_request)
+            if picker_context:
+                kwargs["picker"] = True
+            publish_attach(dict(fields), attach[1], **kwargs)
             app._native_attach_bridge, app._native_attach_cache = bridge, attach
 
 
@@ -251,7 +267,8 @@ def _attach_state(app, selected, count):
             "target_index": target_index, "model": model_token(attach.model),
             "point": ("eyes", "weapon", "bone").index(attach.point),
             "bone": attach.bone,
-            "hide_body": bool(attach.hide_body), "offset": tuple(attach.offset),
+            "hide_body": bool(attach.hide_body), "clearance_mode": attach.clearance_mode,
+            "offset": tuple(attach.offset),
             "smoothing": float(attach.smoothing),
             "attached_keys": sum(1 for item in app.project.keyframes
                                  if getattr(item, "source", "free") == "attach"),
@@ -313,6 +330,15 @@ def dispatch(app, event, bridge):
     if app.busy:
         return False
     action = event["action"]
+    if action in ("open_bone_picker", "cancel_bone_picker", "finish_bone_picker"):
+        from .bone_picker import dispatch as picker_dispatch
+        return picker_dispatch(app, event, bridge)
+    if getattr(app, "_bone_picker_context", None):
+        if action in ("game_ui", "console", "stop"):
+            from .bone_picker import close_picker
+            close_picker(app, resume=False)
+        else:
+            raise ValueError("Finish or cancel Bone Picker before using other camera controls.")
     if action == "reset_camera_path":
         if app.playing:
             raise ValueError("Stop path playback before resetting the camera path.")
@@ -615,6 +641,10 @@ def dispatch(app, event, bridge):
             key.attach = attach
             key.source = "attach"
 
+        if not app.project.keyframes:
+            from .bone_picker import start_attached_view
+            start_attached_view(app, mutate_target)
+            return True
         _attach_edit(app, mutate_target)
         configure(app)
     elif action in ("set_attach_point", "attach_cycle_point"):
@@ -680,14 +710,16 @@ def dispatch(app, event, bridge):
         _attach_edit(app, mutate_smoothing)
         configure(app)
     elif action == "set_attach_hide":
-        if event["value"] not in (0, 1):
-            raise ValueError("Hide this hero must be on or off.")
-        hide = bool(event["value"])
+        if event["value"] not in (0, 1, 2, 3):
+            raise ValueError("Attach visibility and clearance choice is invalid.")
+        hide = bool(int(event["value"]) & 1)
+        clearance = "auto" if int(event["value"]) & 2 else "exact"
 
         def mutate_hide(key):
             if not isinstance(key.attach, AttachKey):
                 raise ValueError("Choose a live player before hiding the body.")
             key.attach.hide_body = hide
+            key.attach.clearance_mode = clearance
 
         _attach_edit(app, mutate_hide)
         configure(app)
@@ -801,7 +833,7 @@ def poll(app):
                 attach_result = result_reader()
             except (NativeBridgeError, ValueError, OSError):
                 attach_result = None
-            if attach_result and attach_result.get("valid"):
+            if attach_result and attach_result.get("valid") and not getattr(app, "_bone_picker_context", None):
                 sequence = attach_result.get("sequence")
                 if sequence and sequence != getattr(app, "_attach_result_sequence", None):
                     app._attach_result_sequence = sequence
@@ -840,6 +872,7 @@ def poll(app):
 
 
 def close(app):
+    app._bone_picker_context = None
     bridge = _bridge(app)
     if bridge is not None:
         try:

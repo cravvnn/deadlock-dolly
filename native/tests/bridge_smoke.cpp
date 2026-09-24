@@ -118,6 +118,64 @@ void owned_model_bones() {
     AttachSample sample{};
     require(attach_runtime::sample(offsets, cache, segment, sample, error),
             "Owned bone sample was rejected");
+    // A stale skeleton root must not make a correctly resolved Head trail the
+    // player's current translation. Keep genuine local head animation intact.
+    const float earlier_root[3] = {100, 200, 300};
+    const float earlier_head[3] = {102, 203, 380};
+    const float current_origin[3] = {112, 194, 315};
+    std::memcpy(poses.pointer, earlier_root, sizeof(earlier_root));
+    std::memcpy(reinterpret_cast<void*>(poses.address() + 32), earlier_head, sizeof(earlier_head));
+    std::memcpy(reinterpret_cast<void*>(node.address() + offsets.origin), current_origin,
+                sizeof(current_origin));
+    require(attach_runtime::sample(offsets, cache, segment, sample, error),
+            "Rebased head rejected");
+    close_to(sample.origin[0], 114, "Head trails current scene X");
+    close_to(sample.origin[1], 197, "Head trails current scene Y");
+    close_to(sample.origin[2], 395, "Head trails current scene Z");
+    close_to(sample.motion_anchor[0], 112, "Smoothing anchor uses stale root");
+    // Once animation catches up, an unchanged local head pose must not jump.
+    const float later_head[3] = {114, 197, 395};
+    std::memcpy(poses.pointer, current_origin, sizeof(current_origin));
+    std::memcpy(reinterpret_cast<void*>(poses.address() + 32), later_head, sizeof(later_head));
+    require(attach_runtime::sample(offsets, cache, segment, sample, error),
+            "Current head rejected");
+    close_to(sample.origin[0], 114, "Skeleton refresh shifted rebased head");
+    close_to(sample.origin[2], 395, "Skeleton refresh shifted rebased head height");
+    put(poses.address() + 32 + 8, 397.0f);
+    require(attach_runtime::sample(offsets, cache, segment, sample, error),
+            "Animated head rejected");
+    close_to(sample.origin[2], 397, "Rebase erased local bone animation");
+    // Exercise the actual producer handoff, including callback provenance and
+    // invalidating history when a paused replay changes tick.
+    auto render_owner = std::make_shared<attach_runtime::Cache>(cache);
+    rendered_attach_sample(0, render_owner, render_owner.get(), offsets, segment, sample, 4.0, 800,
+                           100, false);
+    observe_attach_pose(cache.handle, 999); // wrong renderer frame
+    require(gRenderAttach[0].recorded == 0, "Wrong renderer frame populated pose history");
+    observe_attach_pose(cache.handle + 1, 1);
+    require(gRenderAttach[0].recorded == 0, "Wrong owner populated pose history");
+    observe_attach_pose(cache.handle, 1);
+    require(gRenderAttach[0].recorded == 800, "Completed mesh pose not observed");
+    put(poses.address() + 32 + 8, 400.0f);
+    require(attach_runtime::sample(offsets, cache, segment, sample, error),
+            "Updated head rejected");
+    rendered_attach_sample(0, render_owner, render_owner.get(), offsets, segment, sample, 4.01, 801,
+                           100, false);
+    close_to(sample.origin[2], 397, "Camera reused stepped early pose instead of completed pose");
+    observe_attach_pose(cache.handle, 1);
+    require(attach_runtime::sample(offsets, cache, segment, sample, error), "Pause head rejected");
+    rendered_attach_sample(0, render_owner, render_owner.get(), offsets, segment, sample, 4.02, 802,
+                           101, true);
+    close_to(sample.origin[2], 400, "Pause transition reused animation history");
+    observe_attach_pose(cache.handle, 1);
+    put(poses.address() + 32 + 8, 401.0f);
+    require(attach_runtime::sample(offsets, cache, segment, sample, error), "Step head rejected");
+    rendered_attach_sample(0, render_owner, render_owner.get(), offsets, segment, sample, 4.03, 803,
+                           102, true);
+    close_to(sample.origin[2], 401, "Paused tick step reused older bone pose");
+    gRenderAttach[0].source = {};
+    gRenderAttach[0].history.reset();
+    gRenderAttach[0].handle.store(0);
     put(identity.address() + 0x10, std::uint32_t(1235));
     require(!attach_runtime::sample(offsets, cache, segment, sample, error),
             "A recycled entity handle was accepted as the original target");
@@ -1113,6 +1171,19 @@ void editor_framing_checks() {
         require(editor_enqueue(EditorAction::AttachPreview, 1) &&
                     editor_enqueue(EditorAction::AttachSnap, 0),
                 "Attach preview or snap was rejected by the action range");
+        auto saved_roster = std::atomic_load(&dolly::gRoster);
+        auto roster = std::make_shared<EditorRoster>();
+        roster->count = 1;
+        std::atomic_store(&dolly::gRoster, std::shared_ptr<const EditorRoster>(roster));
+        const auto saved_count = config->camera_count;
+        config->camera_count = 0;
+        require(editor_enqueue(EditorAction::SetAttachTarget, 0),
+                "First player selection still required a captured camera");
+        require(!editor_enqueue(EditorAction::SetAttachTarget, 1) &&
+                    !editor_enqueue(EditorAction::SetAttachPoint, 0),
+                "Empty shot bypassed roster or selected-camera validation");
+        config->camera_count = saved_count;
+        std::atomic_store(&dolly::gRoster, saved_roster);
         // Exercise the exact versioned payload emitted by the in-game bone combo.
         EditorBones bones{};
         std::memcpy(bones.magic, "DLYBONE1", 8);

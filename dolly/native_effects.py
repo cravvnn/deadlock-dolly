@@ -86,14 +86,16 @@ def compile_attach(project):
                 break
         if governing is not None and governing.source == "attach":
             attach = governing.attach
-            segments.append((begin, end, 1 | (2 if attach.hide_body else 0), attach, governing.source_blend))
+            segments.append((begin, end, 1 | (2 if attach.hide_body else 0) |
+                             (4 if attach.clearance_mode == "auto" else 0), attach, governing.source_blend))
         else:
             segments.append((begin, end, 0, None, governing.source_blend if governing else 0))
     if blended and project.duration > 0 and float(keys[-1].time) == float(project.duration):
         last = keys[-1]
         attach = last.attach if last.source == "attach" else None
         segments.append((float(project.duration), float(project.duration),
-                         (1 | (2 if attach.hide_body else 0)) if attach else 0,
+                         (1 | (2 if attach.hide_body else 0) |
+                          (4 if attach.clearance_mode == "auto" else 0)) if attach else 0,
                          attach, last.source_blend))
     if not any(flags & 1 for _, _, flags, _, _ in segments):
         return b""

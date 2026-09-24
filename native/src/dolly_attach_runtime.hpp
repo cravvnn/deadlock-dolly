@@ -20,6 +20,7 @@ struct Offsets {
 
 struct Cache {
     bool ready = false;
+    dolly::AttachResolution resolution;
     std::uintptr_t pawn = 0, identity = 0, node = 0, name_pointer = 0;
     std::uint32_t name_offset = 0, handle = 0, entity_index = 0;
     std::uint64_t model = 0;
@@ -30,6 +31,7 @@ struct Cache {
     std::uint32_t bone_index = 0;
     bool bone_ready = false;
     dolly::EditorBones bones{};
+    std::shared_ptr<dolly::PickerCatalog> picker;
     const char* error = nullptr;
 };
 
@@ -422,8 +424,8 @@ inline bool locate_bone_array(const Offsets& offsets, std::uintptr_t node,
 // Weapon points pick the best-ranked candidate bone; bone points match the
 // authored 64-bit name hash against the skeleton name vector.
 inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
-                         const dolly::AttachSegment& segment, Cache& cache,
-                         const char*& error) noexcept {
+                         const dolly::AttachSegment& segment, Cache& cache, const char*& error,
+                         bool collect_picker = false) noexcept {
     // The reviewed CModelState stores the resource binding immediately before
     // its model-name field (0xa0/0xa8). The binding's first pointer is CModel;
     // CModel's name at +8 must identify the SAME model before inspecting its
@@ -461,7 +463,7 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
         if (!read_value(hit.data + entry * hit.stride, text) ||
             !read_c_string(text, name, sizeof(name)) || !valid_bone_name(name) ||
             !((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= 'a' && name[0] <= 'z') ||
-              name[0] == '_'))
+              name[0] == '_' || name[0] == '$'))
             continue;
         std::memcpy(cache.bones.names[cache.bones.count++], name, std::strlen(name));
     }
@@ -483,7 +485,7 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
             error = "The attach bone name was not found on this model.";
             return false;
         }
-    } else {
+    } else if (segment.point != dolly::AttachPoint::eyes) {
         std::uint32_t best_rank = candidate_count;
         for (std::uint32_t entry = 0; entry < hit.entries; ++entry) {
             std::uintptr_t text = 0;
@@ -522,6 +524,36 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
     cache.bone_array = bone_array;
     cache.bone_index = index;
     cache.bone_ready = true;
+    if (collect_picker) {
+        try {
+            auto catalog = std::make_shared<dolly::PickerCatalog>();
+            catalog->total = hit.entries;
+            catalog->handle = cache.handle;
+            catalog->entity = cache.entity_index;
+            catalog->model = cache.model;
+            catalog->bones.reserve(hit.entries);
+            for (std::uint32_t entry = 0; entry < hit.entries; ++entry) {
+                std::uintptr_t text = 0;
+                dolly::PickerBone bone{};
+                bone.source_index = entry;
+                if (!read_value(hit.data + entry * hit.stride, text) ||
+                    !read_c_string(text, bone.name, sizeof(bone.name)) ||
+                    !valid_bone_name(bone.name)) {
+                    error = "The full bone catalog changed while it was read. Reopen the picker.";
+                    return false;
+                }
+                // These are the same serializable names accepted by AttachKey.
+                if ((bone.name[0] >= 'A' && bone.name[0] <= 'Z') ||
+                    (bone.name[0] >= 'a' && bone.name[0] <= 'z') || bone.name[0] == '_' ||
+                    bone.name[0] == '$')
+                    catalog->bones.push_back(bone);
+            }
+            cache.picker = std::move(catalog);
+        } catch (...) {
+            error = "Could not allocate the bounded bone catalog.";
+            return false;
+        }
+    }
     return true;
 }
 
@@ -530,8 +562,10 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
 // the model to agree when the payload recorded one. The weapon point also
 // resolves the target's weapon bone here.
 inline bool resolve(HMODULE client, const Offsets& offsets, const dolly::AttachTarget& expected,
-                    const dolly::AttachSegment& segment, Cache& out, const char*& error) noexcept {
+                    const dolly::AttachSegment& segment, Cache& out, const char*& error,
+                    bool collect_picker = false) noexcept {
     out = Cache{};
+    out.resolution = {segment.point, segment.bone_hash};
     std::uintptr_t entity_system = 0;
     if (!locate_entity_system(client, entity_system)) {
         error = "The attach camera could not locate the game entity system on this build.";
@@ -598,9 +632,9 @@ inline bool resolve(HMODULE client, const Offsets& offsets, const dolly::AttachT
     out.bones.model = out.model;
     // Eyes needs only the validated player fields. Discover a skeleton only
     // when Weapon/Bone is requested; optional picker work must not stall Eyes.
-    if ((segment.point == dolly::AttachPoint::weapon ||
+    if ((collect_picker || segment.point == dolly::AttachPoint::weapon ||
          segment.point == dolly::AttachPoint::bone) &&
-        !resolve_bone(offsets, out.node, segment, out, error)) {
+        !resolve_bone(offsets, out.node, segment, out, error, collect_picker)) {
         out.ready = false;
         return false;
     }
@@ -662,8 +696,28 @@ inline bool sample(const Offsets& offsets, const Cache& cache, const dolly::Atta
         // axes and would face the camera into the body). Authored offsets
         // still adjust both.
         float aim[3]{};
+        float player_origin[3]{};
+        float root_transform[8]{};
         if (!read_memory(cache.pawn + offsets.eye_angles, aim, sizeof(aim))) {
             error = "The attach weapon aim was not readable; the shot stopped.";
+            return false;
+        }
+        if (!read_memory(node + offsets.origin, player_origin, sizeof(player_origin)) ||
+            !std::isfinite(player_origin[0]) || !std::isfinite(player_origin[1]) ||
+            !std::isfinite(player_origin[2]) || std::abs(player_origin[0]) > 1e8 ||
+            std::abs(player_origin[1]) > 1e8 || std::abs(player_origin[2]) > 1e8) {
+            error = "The attach player motion was not readable; the shot stopped.";
+            return false;
+        }
+        // At view setup the readable skeleton may still contain the previous
+        // root translation. Mesh submission later uses the current scene origin.
+        // Preserve the bone's local animation, then rebase the whole skeleton
+        // onto that current origin before camera offsets or smoothing.
+        if (!read_memory(cache.bone_array, root_transform, sizeof(root_transform)) ||
+            !std::isfinite(root_transform[0]) || !std::isfinite(root_transform[1]) ||
+            !std::isfinite(root_transform[2]) || std::abs(root_transform[0]) > 1e8 ||
+            std::abs(root_transform[1]) > 1e8 || std::abs(root_transform[2]) > 1e8) {
+            error = "The attach skeleton root was not readable; the shot stopped.";
             return false;
         }
         out.valid = true;
@@ -671,7 +725,9 @@ inline bool sample(const Offsets& offsets, const Cache& cache, const dolly::Atta
         out.target.handle = cache.handle;
         out.target.entity_id = cache.entity_index;
         out.target.model = cache.model;
-        out.origin = {transform[0], transform[1], transform[2]};
+        for (unsigned axis = 0; axis < 3; ++axis)
+            out.origin[axis] = double(transform[axis]) - root_transform[axis] + player_origin[axis];
+        out.motion_anchor = {player_origin[0], player_origin[1], player_origin[2]};
         out.angles = {aim[0], aim[1], aim[2]};
         out.aim = out.angles;
         out.eye_local = {0.0, 0.0, 0.0};
@@ -693,6 +749,7 @@ inline bool sample(const Offsets& offsets, const Cache& cache, const dolly::Atta
     out.target.entity_id = cache.entity_index;
     out.target.model = cache.model;
     out.origin = {origin[0], origin[1], origin[2]};
+    out.motion_anchor = out.origin;
     out.angles = {angles[0], angles[1], angles[2]};
     out.aim = {aim[0], aim[1], aim[2]};
     if (!dolly::attach_view_offset({local[0], local[1], local[2]}, out.eye_local)) {

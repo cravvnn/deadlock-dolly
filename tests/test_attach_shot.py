@@ -92,6 +92,19 @@ class AttachProjectTests(unittest.TestCase):
         self.assertTrue(entry["attach"]["hide_body"])
         self.assertEqual(Project.from_dict(data).to_dict(), data)
 
+    def test_clearance_mode_round_trips_and_compiles(self):
+        project = project_with([(0.0, "attach", {"point": "bone", "bone": "head",
+                                                "hide_body": False,
+                                                "clearance_mode": "auto"}),
+                                (1.0, "free")])
+        data = project.to_dict()
+        self.assertEqual(Project.from_dict(data).keyframes[0].attach.clearance_mode, "auto")
+        compiled = compile_attach(project)
+        self.assertEqual(ATTACH_SEGMENT2.unpack_from(compiled, ATTACH_HEADER.size)[2] & 7, 5)
+        old = data["keyframes"][0]["attach"]
+        del old["clearance_mode"]
+        self.assertEqual(Project.from_dict(data).keyframes[0].attach.clearance_mode, "exact")
+
     def test_attach_file_round_trip(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "attach.dolly"
@@ -120,6 +133,7 @@ class AttachProjectTests(unittest.TestCase):
             {"smoothing": 9.0},
             {"smoothing": -1.0},
             {"hide_body": 1},
+            {"clearance_mode": "unsafe"},
             {"entity_id": -1},
             {"handle": True},
         )

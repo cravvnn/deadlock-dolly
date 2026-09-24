@@ -3,6 +3,7 @@
 #include "dolly_overlay.hpp"
 #include "dolly_attach.hpp"
 #include "dolly_editor.hpp"
+#include "dolly_bone_picker.hpp"
 #include "dolly_visualization.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_video.hpp"
@@ -19,6 +20,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -65,6 +67,10 @@ ID3D11DeviceContext* immediate = nullptr;
 ID3D11DeviceContext1* context1 = nullptr;
 ID3DDeviceContextState* overlay_state = nullptr;
 ID3D11RenderTargetView* target = nullptr;
+ID3D11Texture2D* picker_portrait_texture = nullptr;
+ID3D11ShaderResourceView* picker_portrait_view = nullptr;
+DXGI_FORMAT picker_portrait_format = DXGI_FORMAT_UNKNOWN;
+std::uint32_t picker_portrait_captured_request = 0;
 ImGuiContext* imgui = nullptr;
 ImFont* panel_font = nullptr;
 ImFont* heading_font = nullptr;
@@ -264,6 +270,10 @@ void release_device() noexcept {
     editor_text_input_active(false);
     clear_pending_input();
     release_target();
+    release(picker_portrait_view);
+    release(picker_portrait_texture);
+    picker_portrait_format = DXGI_FORMAT_UNKNOWN;
+    picker_portrait_captured_request = 0;
     if (imgui) {
         auto* previous = ImGui::GetCurrentContext();
         ImGui::SetCurrentContext(imgui);
@@ -314,6 +324,73 @@ bool create_target(IDXGISwapChain* chain) noexcept {
     const HRESULT result = device->CreateRenderTargetView(buffer, nullptr, &target);
     buffer->Release();
     return SUCCEEDED(result);
+}
+
+// A tiny crop of the already rendered native replay scene. This texture owns
+// no reference to the swapchain buffer and is refreshed before Dolly's UI is
+// drawn, so neither game art nor a second scene render is needed. Capture
+// only once per picker request: copying the backbuffer on every Present can
+// make a busy renderer accumulate work faster than it retires it.
+void update_picker_portrait(const PickerFrame& frame) noexcept {
+    if (!frame.ready || frame.preview || !frame.catalog || !swapchain || !device || !immediate)
+        return;
+    if (picker_portrait_view && picker_portrait_captured_request == frame.catalog->sequence)
+        return;
+    std::array<double, 3> head{};
+    bool found = false;
+    for (const auto& bone : frame.catalog->bones)
+        if (std::strcmp(bone.name, "head") == 0 && picker_position(frame.sample, bone, head)) {
+            found = true;
+            break;
+        }
+    if (!found)
+        return;
+    ID3D11Texture2D* buffer = nullptr;
+    if (FAILED(
+            swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&buffer))))
+        return;
+    D3D11_TEXTURE2D_DESC source{};
+    buffer->GetDesc(&source);
+    constexpr UINT side = 128;
+    if (source.Width < side || source.Height < side || source.SampleDesc.Count != 1) {
+        buffer->Release();
+        return;
+    }
+    VisualizationView projection{frame.view, frame.fov, double(source.Width), double(source.Height),
+                                 1};
+    VisualizationPoint screen{};
+    if (!project_visualization_point(projection, head, screen)) {
+        buffer->Release();
+        return;
+    }
+    const int left =
+        std::clamp(int(std::lround(screen.x)) - int(side / 2), 0, int(source.Width - side));
+    const int top =
+        std::clamp(int(std::lround(screen.y)) - int(side / 3), 0, int(source.Height - side));
+    if (!picker_portrait_texture || picker_portrait_format != source.Format) {
+        release(picker_portrait_view);
+        release(picker_portrait_texture);
+        picker_portrait_format = DXGI_FORMAT_UNKNOWN;
+        D3D11_TEXTURE2D_DESC image{};
+        image.Width = image.Height = side;
+        image.MipLevels = image.ArraySize = 1;
+        image.Format = source.Format;
+        image.SampleDesc.Count = 1;
+        image.Usage = D3D11_USAGE_DEFAULT;
+        image.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        if (FAILED(device->CreateTexture2D(&image, nullptr, &picker_portrait_texture)) ||
+            FAILED(device->CreateShaderResourceView(picker_portrait_texture, nullptr,
+                                                    &picker_portrait_view))) {
+            release(picker_portrait_texture);
+            buffer->Release();
+            return;
+        }
+        picker_portrait_format = source.Format;
+    }
+    const D3D11_BOX box{UINT(left), UINT(top), 0, UINT(left) + side, UINT(top) + side, 1};
+    immediate->CopySubresourceRegion(picker_portrait_texture, 0, 0, 0, 0, buffer, 0, &box);
+    picker_portrait_captured_request = frame.catalog->sequence;
+    buffer->Release();
 }
 
 ImVec4 panel_color(unsigned rgb, float alpha = 1.0f) {
@@ -771,6 +848,8 @@ const char* video_codec_label(std::uint32_t id) noexcept {
         return "Auto (hardware when available)";
     }
 }
+#include "dolly_bone_picker_ui.hpp"
+
 void draw_panel(const EditorSnapshot& state) {
     auto& io = ImGui::GetIO();
     const float margin =
@@ -995,14 +1074,74 @@ void draw_panel(const EditorSnapshot& state) {
                                             unsigned(guides->camera_count()));
                 }
                 end_panel_card();
+                if (begin_panel_card("##flight-card")) {
+                    // Send one change at the end of a drag, not a settings write per frame.
+                    static float speed_draft = 400.0f;
+                    static bool speed_editing = false;
+                    if (!speed_editing)
+                        speed_draft = std::clamp(static_cast<float>(state.speed), 1.0f, 10000.0f);
+                    char speed_label[48]{};
+                    std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
+                    section_title("Free camera", speed_label);
+                    ImGui::TextWrapped(
+                        "Mouse wheel zooms while flying and updates the selected camera's Framing Curve.");
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                                        ImVec2(12 * panel_scale, 3 * panel_scale));
+                    ImGui::SliderFloat("##flight-speed", &speed_draft, 1.0f, 10000.0f, "",
+                                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::PopStyleVar();
+                    const bool speed_committed = ImGui::IsItemDeactivatedAfterEdit();
+                    speed_editing = ImGui::IsItemActive();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Movement speed in world units per second. Ctrl+click to enter a value.");
+                    if (speed_committed)
+                        editor_enqueue(EditorAction::SetSpeed, double(speed_draft));
+                    ImGui::Spacing();
+                    const float half =
+                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                    action_button("Fly camera", EditorAction::Flight, half);
+                    ImGui::SameLine();
+                    action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
+                    ImGui::Spacing();
+                    ImGui::BeginDisabled(state.playing);
+                    ImGui::TextUnformatted("Updates / s");
+                    ImGui::SetNextItemWidth(-1);
+                    char playback_rate[32]{};
+                    std::snprintf(playback_rate, sizeof(playback_rate), "%u", state.playback_rate);
+                    if (ImGui::BeginCombo("##playback-rate", playback_rate)) {
+                        for (unsigned value : {30u, 60u, 120u}) {
+                            char label[32]{};
+                            std::snprintf(label, sizeof(label), "%u", value);
+                            if (ImGui::Selectable(label, value == state.playback_rate))
+                                editor_enqueue(EditorAction::SetPlaybackRate, double(value));
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip(
+                            "Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
+                    ImGui::EndDisabled();
+                }
+                end_panel_card();
+                ImGui::EndDisabled();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Bone Picker")) {
+                ImGui::BeginDisabled(!state.ready || state.busy);
                 if (begin_panel_card("##attach-card")) {
                     section_title("Attach camera");
                     ImGui::TextDisabled("Player point of view or weapon camera");
+                    if (!state.camera_count)
+                        ImGui::TextWrapped(
+                            "Choose a player to start a bone camera. No camera setup needed.");
                     ImGui::BeginDisabled(!state.attach_available);
                     EditorRoster roster{};
                     const bool roster_ok = editor_roster_snapshot(roster);
                     char player_label[112]{};
-                    if (roster_ok && roster.count && state.attach_target_index < roster.count) {
+                    if (state.attach_selected && roster_ok && roster.count &&
+                        state.attach_target_index < roster.count) {
                         roster_label(roster.players[state.attach_target_index], player_label,
                                      sizeof(player_label));
                     } else {
@@ -1038,39 +1177,16 @@ void draw_panel(const EditorSnapshot& state) {
                             editor_enqueue(EditorAction::SetAttachPoint, 0);
                         if (ImGui::Selectable("Weapon", state.attach_point == 1))
                             editor_enqueue(EditorAction::SetAttachPoint, 1);
-                        if (ImGui::Selectable("Bone", state.attach_point == 2))
-                            editor_enqueue(EditorAction::SetAttachPoint, 2);
+                        if (ImGui::Selectable("Bone Picker...", state.attach_point == 2))
+                            editor_enqueue(EditorAction::OpenBonePicker);
                         ImGui::EndCombo();
                     }
                     if (state.attach_point == 2) {
-                        EditorBones bones{};
-                        const bool available =
-                            editor_bones_snapshot(bones) && roster_ok &&
-                            state.attach_target_index < roster.count &&
-                            bones.handle == roster.players[state.attach_target_index].handle &&
-                            bones.model == roster.players[state.attach_target_index].model;
-                        ImGui::SetNextItemWidth(-1);
-                        if (ImGui::BeginCombo("Bone##attach-bone", state.attach_bone)) {
-                            if (available) {
-                                for (std::uint32_t index = 0; index < bones.count; ++index) {
-                                    char name[65]{};
-                                    std::memcpy(name, bones.names[index], 64);
-                                    if (ImGui::Selectable(
-                                            name, std::strcmp(name, state.attach_bone) == 0)) {
-                                        CameraPose version{};
-                                        version[0] = bones.sequence;
-                                        editor_enqueue(EditorAction::SetAttachBone, double(index),
-                                                       &version);
-                                    }
-                                }
-                            } else
-                                ImGui::TextDisabled("Resolving this player's bones...");
-                            ImGui::EndCombo();
-                        }
-                        if (available && bones.total > bones.count)
-                            ImGui::TextDisabled(
-                                "Showing %u of %u bones; type other names on desktop.", bones.count,
-                                bones.total);
+                        if (ImGui::Button("Change bone...", ImVec2(-1, 0)))
+                            editor_enqueue(EditorAction::OpenBonePicker);
+                        ImGui::TextWrapped("Selected joint: %s", state.attach_bone[0]
+                                                                     ? state.attach_bone
+                                                                     : "Choose a bone");
                     }
                     ImGui::TextDisabled("Offsets");
                     {
@@ -1081,8 +1197,8 @@ void draw_panel(const EditorSnapshot& state) {
                             for (int index = 0; index < 6; ++index)
                                 attach_draft[index] = float(state.attach_offsets[index]);
                         }
-                        static const char* const kAttachAxis[6] = {"X",     "Y",   "Z",
-                                                                   "Pitch", "Yaw", "Roll"};
+                        static const char* const kAttachAxis[6] = {"Forward", "Right", "Up",
+                                                                   "Pitch",   "Yaw",   "Roll"};
                         bool attach_commit = false, attach_active = false;
                         for (int index = 0; index < 4; ++index) {
                             char id[32]{};
@@ -1141,10 +1257,30 @@ void draw_panel(const EditorSnapshot& state) {
                     }
                     bool hide = state.attach_hide;
                     if (compact_checkbox("Hide this hero", &hide, panel_scale))
-                        editor_enqueue(EditorAction::SetAttachHide, hide ? 1 : 0);
+                        editor_enqueue(EditorAction::SetAttachHide,
+                                       (hide ? 1 : 0) | (state.attach_auto_clearance ? 2 : 0));
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
                             "Hides this hero's identified body draws in preview and recordings.");
+                    ImGui::TextDisabled("Visible-model spacing");
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::BeginCombo("##attach-clearance", state.attach_auto_clearance
+                                                                    ? "Automatic clearance"
+                                                                    : "Exact offset")) {
+                        if (ImGui::Selectable("Automatic clearance (experimental)",
+                                              state.attach_auto_clearance))
+                            editor_enqueue(EditorAction::SetAttachHide,
+                                           (state.attach_hide ? 1 : 0) | 2);
+                        if (ImGui::Selectable("Exact offset", !state.attach_auto_clearance))
+                            editor_enqueue(EditorAction::SetAttachHide, state.attach_hide ? 1 : 0);
+                        ImGui::EndCombo();
+                    }
+                    if (state.attach_auto_clearance)
+                        ImGui::TextWrapped(
+                            "Head POV stays close and slightly forward; other bones use a wider spacing guide. Animated arms and clothing can still cross the view.");
+                    else if (!state.attach_hide)
+                        ImGui::TextWrapped(
+                            "Exact offset: the visible hero may cross or block the camera during motion.");
                     ImGui::Separator();
                     const float attach_half =
                         (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
@@ -1178,57 +1314,6 @@ void draw_panel(const EditorSnapshot& state) {
                     ImGui::EndDisabled();
                     if (!state.attach_available)
                         ImGui::TextDisabled("Load a supported replay to choose a camera target.");
-                }
-                end_panel_card();
-                if (begin_panel_card("##flight-card")) {
-                    // Send one change at the end of a drag, not a settings write per frame.
-                    static float speed_draft = 400.0f;
-                    static bool speed_editing = false;
-                    if (!speed_editing)
-                        speed_draft = std::clamp(static_cast<float>(state.speed), 1.0f, 10000.0f);
-                    char speed_label[48]{};
-                    std::snprintf(speed_label, sizeof(speed_label), "Speed %.0f", speed_draft);
-                    section_title("Free camera", speed_label);
-                    ImGui::TextWrapped(
-                        "Mouse wheel zooms while flying and updates the selected camera's Framing Curve.");
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                                        ImVec2(12 * panel_scale, 3 * panel_scale));
-                    ImGui::SliderFloat("##flight-speed", &speed_draft, 1.0f, 10000.0f, "",
-                                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::PopStyleVar();
-                    const bool speed_committed = ImGui::IsItemDeactivatedAfterEdit();
-                    speed_editing = ImGui::IsItemActive();
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Movement speed in world units per second. Ctrl+click to enter a value.");
-                    if (speed_committed)
-                        editor_enqueue(EditorAction::SetSpeed, double(speed_draft));
-                    ImGui::Spacing();
-                    const float half =
-                        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-                    action_button("Fly camera", EditorAction::Flight, half);
-                    ImGui::SameLine();
-                    action_button("Heroes / game UI", EditorAction::GameUI, half, 1);
-                    ImGui::Spacing();
-                    ImGui::BeginDisabled(state.playing);
-                    ImGui::TextUnformatted("Updates / s");
-                    ImGui::SetNextItemWidth(-1);
-                    char playback_rate[32]{};
-                    std::snprintf(playback_rate, sizeof(playback_rate), "%u", state.playback_rate);
-                    if (ImGui::BeginCombo("##playback-rate", playback_rate)) {
-                        for (unsigned value : {30u, 60u, 120u}) {
-                            char label[32]{};
-                            std::snprintf(label, sizeof(label), "%u", value);
-                            if (ImGui::Selectable(label, value == state.playback_rate))
-                                editor_enqueue(EditorAction::SetPlaybackRate, double(value));
-                        }
-                        ImGui::EndCombo();
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "Native monitoring frequency. Camera and supported effects follow each rendered frame; this is not an output FPS setting.");
-                    ImGui::EndDisabled();
                 }
                 end_panel_card();
                 ImGui::EndDisabled();
@@ -1438,9 +1523,10 @@ void draw_panel(const EditorSnapshot& state) {
                                          capture_state == video::State::recording ||
                                          capture_state == video::State::finalizing);
                     int source = state.video_pov ? 1 : 0;
-                    if (ImGui::Combo("Source", &source, "Camera path\0Player POV\0"))
+                    if (ImGui::Combo("Source", &source, "Camera path / Bone camera\0Player POV\0"))
                         editor_enqueue(EditorAction::SetVideoSource, source);
-                    if (state.video_pov) {
+                    const bool single_attach = state.camera_count == 1 && state.attach_selected;
+                    if (state.video_pov || single_attach) {
                         char duration_label[32];
                         std::snprintf(duration_label, sizeof(duration_label), "%.3g seconds",
                                       state.pov_duration);
@@ -1453,8 +1539,12 @@ void draw_panel(const EditorSnapshot& state) {
                             }
                             ImGui::EndCombo();
                         }
-                        ImGui::TextWrapped(
-                            "F9: select a hero and pause at the start. F8: return here. Record POV hides the HUD and stops after this segment.");
+                        if (single_attach && !state.video_pov)
+                            ImGui::TextWrapped(
+                                "Record saves an end time for this bone camera and records the attached shot. Offsets and smoothing are preserved.");
+                        else
+                            ImGui::TextWrapped(
+                                "F9: select a hero and pause at the start. F8: return here. Record POV hides the HUD and stops after this segment.");
                     }
                     ImGui::EndDisabled();
                     if (!state.video_pov && !state.camera_count) {
@@ -1901,10 +1991,14 @@ void render_overlay(IDXGISwapChain* chain) {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     guide_geometry.line_count = guide_geometry.label_count = 0;
-    if (draw_guides)
+    if (draw_guides && !state.bone_picker)
         draw_path_guides(state, guides);
-    if (panel)
-        draw_panel(state);
+    if (panel) {
+        if (state.bone_picker)
+            draw_bone_picker(state);
+        else
+            draw_panel(state);
+    }
     editor_text_input_active(panel && ImGui::GetIO().WantTextInput);
     ImGui::Render();
     immediate->OMSetRenderTargets(1, &target, nullptr);

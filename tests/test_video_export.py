@@ -459,6 +459,39 @@ class VideoGuiTests(unittest.TestCase):
         self.app._play.assert_called_once()
         self.assertFalse(self.app._pending_auto_play)
 
+    def test_picker_inspection_cannot_start_recording(self):
+        self.app._bone_picker_context = {"request": 12}
+        self.app._start_video_recording()
+        self.app._submit.assert_not_called()
+        self.assertIn("Finish or cancel", self.app.status_text.get())
+
+    def test_single_bone_camera_records_timed_native_attachment(self):
+        from dolly.path import AttachKey
+        self.app.project = self.two_camera_project()
+        self.app.project.keyframes = self.app.project.keyframes[:1]
+        key = self.app.project.keyframes[0]
+        key.source = "attach"
+        key.attach = AttachKey(handle=11, entity_id=11,
+                               model="models/heroes/astro/astro.vmdl", point="bone", bone="head",
+                               offset=(4, 0, 6, 0, 0, 0), smoothing=.2)
+        self.app.video_pov_duration = Var("5")
+        self.app._mark_dirty = Mock()
+        self.app._refresh_keys = Mock()
+        self.app._play = Mock()
+        self.app._start_video_recording()
+        self.app._error.assert_not_called()
+        self.assertEqual(self.app.project.duration, 5)
+        self.app._submit.call_args.args[1]()
+        options = self.app.video_export.start.call_args.args[0]
+        exported = self.app.video_export.start.call_args.kwargs["project"]
+        self.assertTrue(options.shot_only)
+        self.assertFalse(self.app.video_export.start.call_args.kwargs["pov"])
+        self.assertEqual(exported.keyframes[0].attach, key.attach)
+        self.assertEqual(exported.keyframes[1].attach, key.attach)
+        self.assertTrue(self.app._auto_finish_layered)
+        self.app._video_operation_done({"state": "recording"})
+        self.app._play.assert_called_once()
+
     def test_recording_without_a_shot_does_not_auto_play(self):
         self.app._play = Mock()
         self.app._start_video_recording()
