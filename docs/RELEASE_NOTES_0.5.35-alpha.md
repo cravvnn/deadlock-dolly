@@ -49,7 +49,7 @@ bounded prediction between views. This reduces the mismatch between a smooth wor
 view and a jittering attached body or weapon, particularly in slow-motion replay.
 Deadlock continues rendering its own models with animation interpolation enabled.
 
-Offsets are labelled **Forward, Right and Up**. **Exact offset** preserves the
+Offsets are labelled **Forward, Left/Right and Up**. **Exact offset** preserves the
 position you author and warns about possible mesh intrusion when the hero is
 visible. Optional **Automatic clearance** provides additional spacing: close head
 POVs stay slightly forward, while other bones use a wider spacing guide. It does

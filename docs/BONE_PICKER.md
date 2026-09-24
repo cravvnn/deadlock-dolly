@@ -22,7 +22,7 @@ is bundled or repeatedly copied during editing.
 4. **Use this bone** saves the point and leaves attached preview active.
    **Cancel** discards the choice and restores the previous camera/preview.
 
-The attached camera's **Forward / Right / Up** offsets are in the selected
+The attached camera's **Forward / Left/Right / Up** offsets are in the selected
 point's local frame. For a face-facing shot, move Forward away from the head and
 turn Yaw about 180 degrees. **Exact offset** keeps those authored values. The
 opt-in **Automatic clearance** mode keeps a close head POV at least four units

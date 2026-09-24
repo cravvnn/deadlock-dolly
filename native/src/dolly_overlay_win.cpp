@@ -1197,8 +1197,8 @@ void draw_panel(const EditorSnapshot& state) {
                             for (int index = 0; index < 6; ++index)
                                 attach_draft[index] = float(state.attach_offsets[index]);
                         }
-                        static const char* const kAttachAxis[6] = {"Forward", "Right", "Up",
-                                                                   "Pitch",   "Yaw",   "Roll"};
+                        static const char* const kAttachAxis[6] = {"Forward", "Left/Right", "Up",
+                                                                   "Pitch",   "Yaw",        "Roll"};
                         bool attach_commit = false, attach_active = false;
                         for (int index = 0; index < 4; ++index) {
                             char id[32]{};
