@@ -1,5 +1,16 @@
 # Changes
 
+## 0.5.39 alpha — Automatic hideout and verified preload startup
+
+- Dolly advances the initial click-to-continue screen automatically, verifies
+  that dashboard map/shader preloading has started and completed, then opens
+  the selected demo through the existing replay and camera safeguards.
+- Startup progress explains the preload stage. Missing evidence, unsupported
+  game builds and timeouts cannot silently mark preloading complete.
+- Hands-off startup passed local Native and Console tests. Users should let
+  Dolly finish loading the hideout and demo without manually navigating menus
+  or loading a replay. No frame-time or crash-rate improvement is claimed.
+
 ## 0.5.37 alpha — Select DirectX 11 for the Native editor
 
 - Native replay launches now explicitly select DirectX 11. Previously a game

@@ -33,6 +33,7 @@ from .pacing import FrameWait
 from .runtime import application_root
 from . import launcher
 from .native_effects import compile_effects
+from .preload import PreloadMonitor
 
 ROOT = application_root(Path(__file__).resolve().parents[1])
 LOG = logging.getLogger("dolly")
@@ -641,6 +642,59 @@ class Controller:
             return {"method": "named_hideout_status", "map": hideouts[0], "demo": demo}
         return {"method": "settled_status", "demo": demo}
 
+    def _wait_dashboard_preload(self, initial_frame, cancel_event):
+        """Verify a started preload, not just an idle counter or elapsed time."""
+        monitor = PreloadMonitor(self._session)
+        try:
+            self._startup_evidence["preload_identity"] = monitor.identity
+            self.toggle_console(False)
+            consecutive = 0
+            last_message = None
+
+            def ready():
+                nonlocal consecutive, last_message
+                sample = monitor.sample()
+                self._startup_evidence["preload"] = sample
+                if not sample.get("coherent"):
+                    consecutive = 0
+                    return None
+                if not sample["started"]:
+                    message = ("waiting_preload_intro", "Preparing Deadlock's intro and map preload. "
+                               "Your replay will open automatically when ready.")
+                    if sample.get("intro_phase") == 2 and "intro_action" not in self._startup_evidence:
+                        if self._automatic_hideout_check(initial_frame):
+                            self._check_startup_cancelled(cancel_event)
+                            if monitor.advance_intro():
+                                self._startup_evidence["intro_action"] = "queued_owned_window_escape"
+                else:
+                    message = ("preloading", "Preloading map and shaders: "
+                               f'{sample["completed"]} of {sample["total"]} in the current batch. '
+                               "Your replay will open automatically when ready.")
+                if message != last_message:
+                    self._message(message[1], startup_stage=message[0])
+                    last_message = message
+                consecutive = consecutive + 1 if sample["ready"] else 0
+                if consecutive < 3:
+                    return None
+                # A completed background job does not replace hideout/demo guards.
+                settled = self._automatic_hideout_check(initial_frame)
+                if not settled:
+                    consecutive = 0
+                    return None
+                final = monitor.sample()
+                if not final.get("coherent") or not final.get("ready"):
+                    consecutive = 0
+                    return None
+                self._startup_evidence["preload"] = final
+                self._startup_evidence["post_preload_hideout"] = settled
+                return final
+
+            self._startup_wait(ready, "waiting for verified map and shader preload completion", cancel_event)
+            self._message("Map and shader preload complete. Opening your selected replay…",
+                          startup_stage="preload_ready")
+        finally:
+            monitor.close()
+
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
                       launch_options="", cancel_event=None):
         """Launch, initialize once before the demo, and enter paused editing.
@@ -678,6 +732,8 @@ class Controller:
                 # Exactly one invocation; missing completion never starts a demo.
                 self.initialize_unlocker()
                 self._startup_evidence["automatic_readiness"] = readiness
+                self._check_startup_cancelled(cancel_event)
+                self._wait_dashboard_preload(initial_frame, cancel_event)
                 self._check_startup_cancelled(cancel_event)
                 self.load_replay()
                 self._message("Unlocker confirmed. Loading the selected replay…", startup_stage="loading_replay")

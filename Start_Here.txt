@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.5.34 ALPHA — SOURCE PACKAGE
+DEADLOCK DOLLY 0.5.39 ALPHA — SOURCE PACKAGE
 
 A camera-path editor for local Deadlock replays.
 
@@ -24,8 +24,10 @@ GETTING STARTED
 1. Open Steam, sign in, and close any running Deadlock game. Use DirectX 11.
 2. Open Dolly. On Home, choose Deadlock's executable and a local, extracted
    .dem replay. Replays lists demos from the selected replay folder.
-3. Click Play replay. Dolly initializes the unlocker in the hideout before
-   loading the replay, then pauses it with native camera controls ready.
+3. Click Open replay in Dolly, then WAIT FOR DOLLY TO LOAD THE HIDEOUT AND DEMO.
+   Dolly advances the initial screen and verifies map/shader preload completion
+   before automatically opening your paused replay. Do not manually load a demo
+   or navigate the game's menus during startup.
 4. Move to the first view and press Ctrl+Alt+K. Advance the replay, frame the
    next view and capture again. The In-game capture switch is on Home beside
    Play replay; set its shortcut in Settings > Controls & keybinds. F8 opens

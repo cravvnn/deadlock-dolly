@@ -2547,6 +2547,9 @@ class DollyApp:
             stage_labels = {
                 "not_launched": "Game not launched",
                 "waiting_hideout": "Waiting for hideout",
+                "waiting_preload_intro": "Preparing Deadlock intro",
+                "preloading": "Preloading map and shaders",
+                "preload_ready": "Preload complete — opening replay",
                 "waiting_console": "Connecting to Deadlock",
                 "initializing_unlocker": "Preparing camera commands",
                 "checking_camera": "Checking camera support",

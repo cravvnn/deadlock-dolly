@@ -27,7 +27,9 @@ installation and current limits. Windows/Deadlock validation is recorded in
 6. Click **Open replay in Dolly**. Dolly connects to the game process it launched,
    waits for rendered pre-replay scene and unlocker-registration evidence,
    executes `cvar_unhide` once, and requires both completion summaries.
-7. Only after confirmation, Dolly loads the selected demo, checks its identity
+7. Dolly advances Deadlock's **click to continue** screen automatically, waits for
+   verified map and shader preload completion, then automatically loads the
+   selected demo, checks its identity
    and camera support, pauses it, closes the console explicitly and enables
    native flight. Startup progress appears in Replay. Do not load a demo manually
    while waiting for this sequence.
@@ -36,7 +38,9 @@ installation and current limits. Windows/Deadlock validation is recorded in
 
 **Cancel startup** stops the automatic sequence; it does not kill Deadlock.
 The launched process remains open. Close it before launching another session.
-A timeout or failed unlocker confirmation does not automatically load the demo.
+A timeout, failed unlocker confirmation, or unverified preload does not
+automatically load the demo. Preload verification supports reviewed game builds;
+after a game update, Dolly may need an update before automatic startup can proceed.
 
 Dolly starts with its reviewed editing `gameinfo.gi`, so competitive presets do
 not carry their framing and rendering overrides into the editing session. Your
@@ -49,7 +53,8 @@ This does not reset separate autoexec files or saved video settings.
 
 **Settings → Troubleshooting & recovery → Startup controls…** retains manual Launch hideout, Connect, Initialize
 unlocker, Load replay and Check camera support. Use the manual initialization
-only when the hideout has finished loading. Probe does not rerun the unlocker
+only when the hideout has finished loading. Manual **Load replay** bypasses the
+automatic preload check; wait for the game's preload to finish yourself. Probe does not rerun the unlocker
 inside a demo. Netconsole remains the default; VConsole is a troubleshooting
 alternative selected before a new launch.
 

@@ -18,6 +18,7 @@ assets/logo-original.png
 docs/BUILDING.md
 docs/CHANGELOG.md
 docs/internal/CONSOLE_RESEARCH.md
+docs/internal/PRELOAD.md
 docs/internal/GAME_UPDATES.md
 docs/internal/HISTORY_VALIDATION.md
 docs/internal/NATIVE_CAMERA.md
@@ -35,6 +36,7 @@ dolly/bindings.py
 dolly/bootstrap.py
 dolly/branding.py
 dolly/compatibility.py
+dolly/preload.py
 dolly/console.py
 dolly/controller.py
 dolly/curve.py
@@ -157,6 +159,7 @@ requirements-build.txt
 tests/test_aspect_controller.py
 tests/test_aspect_path.py
 tests/test_auto_startup.py
+tests/test_preload.py
 tests/test_bindings.py
 tests/test_bootstrap.py
 tests/test_branding.py
@@ -383,3 +386,4 @@ native/tests/hero_portrait_tests.cpp
 docs/RELEASE_NOTES_0.5.36-alpha.md
 docs/RELEASE_NOTES_0.5.37-alpha.md
 docs/RELEASE_NOTES_0.5.38-alpha.md
+docs/RELEASE_NOTES_0.5.39-alpha.md

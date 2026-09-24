@@ -31,6 +31,12 @@ class AutoStartupTests(unittest.TestCase):
         (replay_dir / "nested").mkdir(parents=True)
         self.demo = replay_dir / "nested" / ".." / "example.dem"
         self.demo.write_bytes(b"fixture")
+        self.preload_patch = patch("dolly.controller.PreloadMonitor")
+        self.preload = self.preload_patch.start().return_value
+        self.addCleanup(self.preload_patch.stop)
+        self.preload.identity = {"method": "test_preload"}
+        self.preload.sample.return_value = {"coherent": True, "started": True,
+                                            "completed": 14, "total": 14, "ready": True}
 
     def start(self, **kwargs):
         with patch("dolly.controller.launcher.launch", return_value=self.session), \
@@ -61,6 +67,66 @@ class AutoStartupTests(unittest.TestCase):
                 self.controller.start_editing("installation", self.demo, cancel_event=event)
         launch.assert_not_called()
         self.assertEqual(self.console.sent, [])
+
+    def test_preload_not_started_and_equal_counts_never_dispatch_early(self):
+        samples = [dict(self.preload.sample.return_value, started=False, ready=False),
+                   dict(self.preload.sample.return_value, ready=False),
+                   self.preload.sample.return_value]
+        def observe():
+            self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+            self.assertIn('restore_gameinfo', self.console.events)
+            return samples.pop(0) if len(samples) > 1 else samples[0]
+        self.preload.sample.side_effect = observe
+        self.start()
+        self.assertGreaterEqual(self.preload.sample.call_count, 6)
+        self.preload.close.assert_called_once()
+        self.assertTrue(self.controller._startup_evidence['preload']['ready'])
+
+    def test_cancel_during_preload_closes_reader_without_loading_demo(self):
+        cancelled = threading.Event()
+        def observe():
+            cancelled.set()
+            return dict(self.preload.sample.return_value, started=False, ready=False)
+        self.preload.sample.side_effect = observe
+        with self.assertRaisesRegex(RuntimeError, 'cancelled'):
+            self.start(cancel_event=cancelled)
+        self.preload.close.assert_called_once()
+        self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+
+    def test_unsupported_preload_never_automatically_loads_replay(self):
+        with patch('dolly.controller.PreloadMonitor', side_effect=RuntimeError('unsupported preload build')):
+            with self.assertRaisesRegex(RuntimeError, 'unsupported preload'):
+                self.start()
+        self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+
+    def test_preload_read_failure_closes_reader_and_leaves_replay_unloaded(self):
+        self.preload.sample.side_effect = RuntimeError('preload read failed')
+        with self.assertRaisesRegex(RuntimeError, 'preload read failed'):
+            self.start()
+        self.preload.close.assert_called_once()
+        self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+
+    def test_console_backend_also_verifies_preload(self):
+        self.start(native=False)
+        self.assertGreaterEqual(self.preload.sample.call_count, 4)
+        self.assertTrue(self.controller._startup_evidence['preload']['ready'])
+
+    def test_preload_timeout_closes_reader_and_does_not_load_replay(self):
+        self.controller._session, self.controller._console = self.session, self.console
+        self.preload.sample.return_value = dict(self.preload.sample.return_value, ready=False)
+        with patch('dolly.controller.time.perf_counter', side_effect=[0, 121]):
+            with self.assertRaisesRegex(RuntimeError, 'Timed out.*preload'):
+                self.controller._wait_dashboard_preload(0, None)
+        self.preload.close.assert_called_once()
+        self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+
+    def test_completion_must_survive_fresh_hideout_check(self):
+        good = self.preload.sample.return_value
+        # The sample immediately after hideout revalidation goes incomplete.
+        self.preload.sample.side_effect = [good, good, good, dict(good, ready=False),
+                                          good, good, good, good]
+        self.start()
+        self.assertEqual(self.preload.sample.call_count, 8)
 
     def test_crashed_game_during_startup_reports_exit_code_and_replay_identity(self):
         self.controller._session = self.session
