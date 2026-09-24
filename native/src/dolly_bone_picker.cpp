@@ -14,6 +14,9 @@ PausedAttachSample<PickerSample> paused_sample;
 std::shared_ptr<const PickerCatalog> catalog;
 std::uint32_t active_request = 0, active_command = 0;
 bool saved = false, was_requested = false, rejected = false, framed = false;
+std::array<double, 3> orbit_center{};
+double orbit_radius = 0, orbit_yaw = 0, orbit_pitch = 0;
+double pending_yaw = 0, pending_pitch = 0;
 constexpr double pi = 3.14159265358979323846;
 bool contains(const char* text, const char* needle) noexcept {
     if (!needle || !*needle)
@@ -111,7 +114,7 @@ void picker_stabilize_marker(float raw_x, float raw_y, float scale, float& shown
     shown_y += dy * fraction;
 }
 bool picker_front_view(const PickerCatalog& bones, const PickerSample& sample, double fov,
-                       CameraPose& pose) noexcept {
+                       CameraPose& pose, std::array<double, 3>* center) noexcept {
     if (!std::isfinite(fov) || fov <= 1 || fov >= 179 || !std::isfinite(pose[6]) || pose[6] <= 0 ||
         !std::isfinite(sample.facing_yaw))
         return false;
@@ -139,6 +142,9 @@ bool picker_front_view(const PickerCatalog& bones, const PickerSample& sample, d
     if (!std::isfinite(distance) || distance > 10000)
         return false;
     const double yaw = sample.facing_yaw * pi / 180;
+    if (center)
+        for (int axis = 0; axis < 3; ++axis)
+            (*center)[axis] = (low[axis] + high[axis]) * .5;
     pose[0] = (low[0] + high[0]) * .5 + std::cos(yaw) * distance;
     pose[1] = (low[1] + high[1]) * .5 + std::sin(yaw) * distance;
     pose[2] = (low[2] + high[2]) * .5;
@@ -179,6 +185,7 @@ bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested,
         frame.catalog.reset();
         saved = was_requested = true;
         framed = rejected = false;
+        orbit_radius = pending_yaw = pending_pitch = 0;
         paused_sample.reset();
     }
     frame.active = true;
@@ -210,13 +217,29 @@ bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested,
     paused_sample.apply(frame.sample, true, paused_tick);
     if (!framed) {
         frame.view = frame.original;
-        if (!picker_front_view(*catalog, frame.sample, fov, frame.view)) {
+        if (!picker_front_view(*catalog, frame.sample, fov, frame.view, &orbit_center)) {
             std::snprintf(frame.error, sizeof(frame.error),
                           "Automatic framing unavailable; showing your original view.");
-        } else
+        } else {
             frame.error[0] = 0;
+            orbit_radius =
+                std::hypot(frame.view[0] - orbit_center[0], frame.view[1] - orbit_center[1]);
+            orbit_yaw = frame.view[4];
+            orbit_pitch = 0;
+        }
         framed = true;
     }
+    if (!frame.preview && orbit_radius > 0 && (pending_yaw || pending_pitch)) {
+        orbit_yaw = std::remainder(orbit_yaw + pending_yaw, 360.0);
+        orbit_pitch = std::clamp(orbit_pitch + pending_pitch, -85.0, 85.0);
+        const double yaw = orbit_yaw * pi / 180, pitch = orbit_pitch * pi / 180;
+        frame.view[0] = orbit_center[0] - orbit_radius * std::cos(pitch) * std::cos(yaw);
+        frame.view[1] = orbit_center[1] - orbit_radius * std::cos(pitch) * std::sin(yaw);
+        frame.view[2] = orbit_center[2] + orbit_radius * std::sin(pitch);
+        frame.view[3] = orbit_pitch;
+        frame.view[4] = orbit_yaw;
+    }
+    pending_yaw = pending_pitch = 0;
     if (frame.preview && frame.selected >= 0 &&
         std::size_t(frame.selected) < catalog->bones.size()) {
         AttachSample sample{};
@@ -271,6 +294,17 @@ bool picker_preview(std::uint32_t request, bool preview) noexcept {
         (preview && frame.selected < 0))
         return false;
     frame.preview = preview;
+    pending_yaw = pending_pitch = 0;
+    return true;
+}
+bool picker_orbit(std::uint32_t request, double yaw, double pitch) noexcept {
+    std::unique_lock<std::mutex> lock(guard, std::try_to_lock);
+    if (!lock.owns_lock() || !fresh() || frame.finishing || frame.preview ||
+        request != active_request || orbit_radius <= 0 || !std::isfinite(yaw) ||
+        !std::isfinite(pitch))
+        return false;
+    pending_yaw = std::remainder(pending_yaw + std::remainder(yaw, 360.0), 360.0);
+    pending_pitch = std::clamp(pending_pitch + std::clamp(pitch, -170.0, 170.0), -170.0, 170.0);
     return true;
 }
 bool picker_finish(std::uint32_t request, int index) noexcept {

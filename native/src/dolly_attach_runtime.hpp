@@ -531,6 +531,15 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
             catalog->handle = cache.handle;
             catalog->entity = cache.entity_index;
             catalog->model = cache.model;
+            char model_path[256]{};
+            if (read_c_string(cache.name_pointer, model_path, sizeof(model_path))) {
+                // Normal launcher executable: <game>/bin/win64/citadel.exe.
+                // Disk access stays on the catalog worker, never Camera/Present.
+                const auto exe = std::filesystem::path(module_path(nullptr));
+                catalog->portrait = dolly::load_hero_portrait(
+                    exe.parent_path().parent_path().parent_path() / "citadel/pak01_dir.vpk",
+                    model_path);
+            }
             catalog->bones.reserve(hit.entries);
             for (std::uint32_t entry = 0; entry < hit.entries; ++entry) {
                 std::uintptr_t text = 0;

@@ -1,6 +1,7 @@
 #pragma once
 #include "dolly_attach.hpp"
 #include "dolly_visualization.hpp"
+#include "dolly_hero_portrait.hpp"
 #include <array>
 #include <memory>
 #include <vector>
@@ -15,6 +16,7 @@ struct PickerCatalog {
     std::uint32_t sequence = 0, handle = 0, entity = 0, total = 0;
     std::uint64_t model = 0;
     std::vector<PickerBone> bones;
+    HeroPortrait portrait;
 };
 struct PickerSample {
     // One bulk read of the reviewed pose buffer, indexed by SOURCE index.
@@ -52,8 +54,8 @@ static_assert(kPickerResultOffset + sizeof(PickerResult) <= 2 * 1024 * 1024 + 24
 
 const char* picker_friendly_name(const char* name) noexcept;
 bool picker_position(const PickerSample&, const PickerBone&, std::array<double, 3>&) noexcept;
-bool picker_front_view(const PickerCatalog&, const PickerSample&, double fov,
-                       CameraPose& pose) noexcept;
+bool picker_front_view(const PickerCatalog&, const PickerSample&, double fov, CameraPose& pose,
+                       std::array<double, 3>* center = nullptr) noexcept;
 bool picker_matches(const PickerBone&, const char* search, bool common_only) noexcept;
 // Hysteresis for paused overview markers only; the actual bone pose remains live.
 void picker_stabilize_marker(float raw_x, float raw_y, float scale, float& shown_x, float& shown_y,
@@ -69,6 +71,8 @@ bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested,
 bool picker_snapshot(PickerFrame&) noexcept;
 bool picker_select(std::uint32_t request, int index) noexcept;
 bool picker_preview(std::uint32_t request, bool preview) noexcept;
+// Queue input for the next camera view; Present never advances marker projection early.
+bool picker_orbit(std::uint32_t request, double yaw, double pitch) noexcept;
 bool picker_finish(std::uint32_t request, int index) noexcept;
 void picker_result(PickerResult&) noexcept;
 void picker_abandon() noexcept;

@@ -326,71 +326,33 @@ bool create_target(IDXGISwapChain* chain) noexcept {
     return SUCCEEDED(result);
 }
 
-// A tiny crop of the already rendered native replay scene. This texture owns
-// no reference to the swapchain buffer and is refreshed before Dolly's UI is
-// drawn, so neither game art nor a second scene render is needed. Capture
-// only once per picker request: copying the backbuffer on every Present can
-// make a busy renderer accumulate work faster than it retires it.
+// Upload the installed game's small hero icon once per picker request.
+// The catalog worker has already read/validated pixels; no disk or engine calls here.
 void update_picker_portrait(const PickerFrame& frame) noexcept {
-    if (!frame.ready || frame.preview || !frame.catalog || !swapchain || !device || !immediate)
+    if (!frame.ready || !frame.catalog || !device ||
+        picker_portrait_captured_request == frame.catalog->sequence)
         return;
-    if (picker_portrait_view && picker_portrait_captured_request == frame.catalog->sequence)
+    picker_portrait_captured_request = frame.catalog->sequence;
+    const auto& portrait = frame.catalog->portrait;
+    if (portrait.bgra.empty())
         return;
-    std::array<double, 3> head{};
-    bool found = false;
-    for (const auto& bone : frame.catalog->bones)
-        if (std::strcmp(bone.name, "head") == 0 && picker_position(frame.sample, bone, head)) {
-            found = true;
-            break;
-        }
-    if (!found)
-        return;
-    ID3D11Texture2D* buffer = nullptr;
-    if (FAILED(
-            swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&buffer))))
-        return;
-    D3D11_TEXTURE2D_DESC source{};
-    buffer->GetDesc(&source);
-    constexpr UINT side = 128;
-    if (source.Width < side || source.Height < side || source.SampleDesc.Count != 1) {
-        buffer->Release();
-        return;
-    }
-    VisualizationView projection{frame.view, frame.fov, double(source.Width), double(source.Height),
-                                 1};
-    VisualizationPoint screen{};
-    if (!project_visualization_point(projection, head, screen)) {
-        buffer->Release();
-        return;
-    }
-    const int left =
-        std::clamp(int(std::lround(screen.x)) - int(side / 2), 0, int(source.Width - side));
-    const int top =
-        std::clamp(int(std::lround(screen.y)) - int(side / 3), 0, int(source.Height - side));
-    if (!picker_portrait_texture || picker_portrait_format != source.Format) {
+    D3D11_TEXTURE2D_DESC image{};
+    image.Width = portrait.width;
+    image.Height = portrait.height;
+    image.MipLevels = image.ArraySize = 1;
+    image.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    image.SampleDesc.Count = 1;
+    image.Usage = D3D11_USAGE_IMMUTABLE;
+    image.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA pixels{};
+    pixels.pSysMem = portrait.bgra.data();
+    pixels.SysMemPitch = portrait.width * 4;
+    if (FAILED(device->CreateTexture2D(&image, &pixels, &picker_portrait_texture)) ||
+        FAILED(device->CreateShaderResourceView(picker_portrait_texture, nullptr,
+                                                &picker_portrait_view))) {
         release(picker_portrait_view);
         release(picker_portrait_texture);
-        picker_portrait_format = DXGI_FORMAT_UNKNOWN;
-        D3D11_TEXTURE2D_DESC image{};
-        image.Width = image.Height = side;
-        image.MipLevels = image.ArraySize = 1;
-        image.Format = source.Format;
-        image.SampleDesc.Count = 1;
-        image.Usage = D3D11_USAGE_DEFAULT;
-        image.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        if (FAILED(device->CreateTexture2D(&image, nullptr, &picker_portrait_texture)) ||
-            FAILED(device->CreateShaderResourceView(picker_portrait_texture, nullptr,
-                                                    &picker_portrait_view))) {
-            release(picker_portrait_texture);
-            buffer->Release();
-            return;
-        }
-        picker_portrait_format = source.Format;
     }
-    const D3D11_BOX box{UINT(left), UINT(top), 0, UINT(left) + side, UINT(top) + side, 1};
-    immediate->CopySubresourceRegion(picker_portrait_texture, 0, 0, 0, 0, buffer, 0, &box);
-    picker_portrait_captured_request = frame.catalog->sequence;
-    buffer->Release();
 }
 
 ImVec4 panel_color(unsigned rgb, float alpha = 1.0f) {
@@ -1197,8 +1159,8 @@ void draw_panel(const EditorSnapshot& state) {
                             for (int index = 0; index < 6; ++index)
                                 attach_draft[index] = float(state.attach_offsets[index]);
                         }
-                        static const char* const kAttachAxis[6] = {"Forward", "Left/Right", "Up",
-                                                                   "Pitch",   "Yaw",        "Roll"};
+                        static const char* const kAttachAxis[6] = {"Forward", "Sideways", "Up",
+                                                                   "Pitch",   "Yaw",      "Roll"};
                         bool attach_commit = false, attach_active = false;
                         for (int index = 0; index < 4; ++index) {
                             char id[32]{};

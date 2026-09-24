@@ -1788,7 +1788,7 @@ class DollyApp:
         from dolly.gui_theme import compact_slider
         ttk.Label(attach, text="Offsets", style="Card.TLabel").pack(anchor="w", pady=(2, 2))
         self.attach_vars = {}
-        for name, label in (("x", "Forward"), ("y", "Left/Right"), ("z", "Up"),
+        for name, label in (("x", "Forward"), ("y", "Sideways"), ("z", "Up"),
                             ("pitch", "Pitch")):
             variable = tk.StringVar(value="0")
             self.attach_vars[name] = variable

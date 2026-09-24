@@ -377,3 +377,7 @@ tests/test_rotation_curve.py
 docs/BONE_PICKER.md
 
 docs/RELEASE_NOTES_0.5.35-alpha.md
+native/include/dolly_hero_portrait.hpp
+native/src/dolly_hero_portrait.cpp
+native/tests/hero_portrait_tests.cpp
+docs/RELEASE_NOTES_0.5.36-alpha.md

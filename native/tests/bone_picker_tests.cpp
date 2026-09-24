@@ -74,8 +74,49 @@ int main() {
         view = original;
         require(picker_camera(42, 10, true, true, view, 90, {}, sample, &pose), "Enter inspection");
         require(view != original, "Overview uses temporary native view");
+        const auto front = view;
+        std::array<double, 3> center{};
+        auto calculated = original;
+        require(picker_front_view(*catalog, pose, 90, calculated, &center),
+                "Orbit pivot available");
+        auto distance = [&](const CameraPose& camera) {
+            return std::sqrt(std::pow(camera[0] - center[0], 2) +
+                             std::pow(camera[1] - center[1], 2) +
+                             std::pow(camera[2] - center[2], 2));
+        };
+        const auto radius = distance(front);
+        require(!picker_orbit(41, 10, 0), "Stale orbit refused");
+        require(!picker_orbit(42, std::numeric_limits<double>::infinity(), 0),
+                "Nonfinite orbit refused");
+        for (unsigned step = 0; step < 72; ++step) {
+            require(picker_orbit(42, 5, 0), "Accept full-circle orbit input");
+            PickerFrame before{};
+            require(picker_snapshot(before) && before.view == view,
+                    "Present input cannot move projection ahead of camera");
+            pose.transforms[13][0] += 1;
+            picker_camera(42, 10, true, true, view, 90, {}, sample, &pose);
+            PickerFrame after{};
+            require(picker_snapshot(after) && after.sample.transforms[13][0] == 10,
+                    "Orbit preserves paused bone pose despite animated sampler drift");
+            require(std::abs(distance(view) - radius) < 1e-8, "Orbit radius is invariant");
+            VisualizationPoint target{};
+            require(project_visualization_point({view, 90, 2560, 1440, 1}, center, target) &&
+                        std::abs(target.x - 1280) < 1e-6 && std::abs(target.y - 720) < 1e-6,
+                    "Orbit keeps looking at the fixed hero center");
+        }
+        pose.transforms[13][0] = 10;
+        for (unsigned axis = 0; axis < 6; ++axis)
+            require(std::abs(front[axis] - view[axis]) < 1e-8,
+                    "Full circle returns to opening view");
+        require(picker_orbit(42, 0, 100), "Vertical orbit accepted");
+        picker_camera(42, 10, true, true, view, 90, {}, sample, &pose);
+        require(view[3] == 85 && std::abs(distance(view) - radius) < 1e-8,
+                "Elevation clamps before pole without changing distance");
+        require(picker_orbit(42, 0, -85), "Return to level orbit");
+        picker_camera(42, 10, true, true, view, 90, {}, sample, &pose);
         require(!picker_select(40, 1), "Stale catalog click refused");
         require(picker_select(42, 1) && picker_preview(42, true), "Choose hand and preview");
+        require(!picker_orbit(42, 10, 0), "Attached preview rejects overview input");
         picker_camera(42, 10, true, true, view, 90, {}, sample, &pose);
         require(std::abs(view[0] - 11) < .001 && std::abs(view[2] - 80) < .001,
                 "Attached preview follows the selected source transform");
@@ -83,6 +124,7 @@ int main() {
         picker_camera(42, 10, true, true, view, 90, {}, sample, &pose);
         require(view[0] != 11, "Overview restored");
         require(picker_finish(42, 1), "Confirm current selected bone");
+        require(!picker_orbit(42, 10, 0), "Finishing picker rejects orbit");
         require(!picker_select(42, 2), "Selection frozen while awaiting editor acknowledgement");
         PickerResult result{};
         picker_result(result);

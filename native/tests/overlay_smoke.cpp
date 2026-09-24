@@ -809,6 +809,58 @@ int main(int argc, char** argv) {
             mouse(false);
             require(dolly::picker_snapshot(frame) && frame.selected == 2,
                     "Clicking the visible hand marker did not select its source bone");
+            const auto before_orbit = frame.view;
+            dolly::overlay_raw_mouse_button(2, true);
+            render_picker();
+            ImGui::GetIO().AddMousePosEvent(float(screen.x) + 100, float(screen.y) + 20);
+            render_picker();
+            render_picker();
+            require(dolly::picker_snapshot(frame) && frame.view != before_orbit &&
+                        frame.selected == 2,
+                    "Middle drag must orbit the real canvas without selecting a new bone");
+            dolly::overlay_raw_mouse_button(2, false);
+            render_picker();
+            render_picker();
+            require(dolly::picker_snapshot(frame), "Read released orbit");
+            const auto stopped_view = frame.view;
+            ImGui::GetIO().AddMousePosEvent(float(screen.x) + 150, float(screen.y) + 25);
+            render_picker();
+            render_picker();
+            require(dolly::picker_snapshot(frame) && frame.view == stopped_view,
+                    "Mouse motion after release cannot orbit");
+            view.pose = frame.view;
+            require(dolly::project_visualization_point(view, point, screen),
+                    "Hand visible after orbit");
+            require(dolly::picker_select(42, 0),
+                    "Select different bone before checking rotated hand");
+            mouse(false);
+            mouse(true);
+            mouse(false);
+            require(dolly::picker_snapshot(frame) && frame.selected == 2,
+                    "Rotated marker hit target must follow the applied camera immediately");
+            const auto before_panel_drag = frame.view;
+            ImGui::GetIO().AddMousePosEvent(size.x - 100, 100);
+            render_picker();
+            dolly::overlay_raw_mouse_button(2, true);
+            render_picker();
+            ImGui::GetIO().AddMousePosEvent(float(screen.x), float(screen.y));
+            render_picker();
+            render_picker();
+            require(dolly::picker_snapshot(frame) && frame.view == before_panel_drag,
+                    "Middle drag starting on the panel must not become a scene orbit");
+            dolly::overlay_raw_mouse_button(2, false);
+            render_picker();
+            render_picker();
+            dolly::overlay_raw_mouse_button(2, true);
+            render_picker();
+            ImGui::GetIO().AddFocusEvent(false);
+            render_picker();
+            ImGui::GetIO().AddFocusEvent(true);
+            ImGui::GetIO().AddMousePosEvent(float(screen.x) + 50, float(screen.y));
+            render_picker();
+            render_picker();
+            require(dolly::picker_snapshot(frame) && frame.view == before_panel_drag,
+                    "Losing focus must cancel a held middle drag");
             dolly::picker_camera(42, 10, false, true, pose, 90, {}, nullptr, nullptr);
             snapshot.bone_picker = false;
             require(SUCCEEDED(chain->Present(0, 0)), "Picker cleanup Present failed");

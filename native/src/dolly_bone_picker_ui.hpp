@@ -8,6 +8,9 @@ void draw_bone_picker(const EditorSnapshot& state) {
     static unsigned candidate_count = 0;
     static std::array<ImVec2, kPickerMaxBones> stable_markers{};
     static std::array<bool, kPickerMaxBones> stable_marker_ready{};
+    static CameraPose marker_view{};
+    static ImVec2 marker_display{};
+    static double marker_fov = 0;
     // A contended camera sample must not disable an active text field for one
     // frame: ImGui drops keyboard focus when that happens. Keep the last
     // bounded snapshot; all mutations independently validate the live session.
@@ -33,6 +36,15 @@ void draw_bone_picker(const EditorSnapshot& state) {
             }
     }
     auto& io = ImGui::GetIO();
+    // Screen-space hysteresis must never resist an intentional camera move.
+    // Reproject the held world pose using the view actually applied by Camera.
+    if (marker_view != snapshot.view || marker_fov != snapshot.fov ||
+        marker_display.x != io.DisplaySize.x || marker_display.y != io.DisplaySize.y) {
+        stable_marker_ready.fill(false);
+        marker_view = snapshot.view;
+        marker_fov = snapshot.fov;
+        marker_display = io.DisplaySize;
+    }
     if (snapshot.ready && !snapshot.preview)
         update_picker_portrait(snapshot);
     const float margin = 24 * panel_scale;
@@ -192,7 +204,7 @@ void draw_bone_picker(const EditorSnapshot& state) {
         guide->AddText(ImVec2(from.x + 14 * panel_scale, from.y + 11 * panel_scale),
                        IM_COL32(148, 243, 211, 255), "LIVE HERO  /  BONE PICKER");
         guide->AddText(ImVec2(from.x + 14 * panel_scale, from.y + 35 * panel_scale),
-                       IM_COL32(224, 240, 238, 255), "Select a joint on the character");
+                       IM_COL32(224, 240, 238, 255), "Select a joint / Hold middle mouse to orbit");
     }
 
     if (!snapshot.ready || snapshot.preview || !snapshot.catalog || snapshot.finishing)
@@ -208,12 +220,19 @@ void draw_bone_picker(const EditorSnapshot& state) {
                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::SetCursorPos(ImVec2(0, 0));
-    const bool scene_clicked = ImGui::InvisibleButton("##joints", ImGui::GetWindowSize());
+    const bool scene_clicked = ImGui::InvisibleButton("##joints", ImGui::GetWindowSize(),
+                                                      ImGuiButtonFlags_MouseButtonLeft |
+                                                          ImGuiButtonFlags_MouseButtonMiddle);
+    const bool orbiting = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Middle);
+    if (orbiting && !ImGui::IsPopupOpen("##overlapping-bones", ImGuiPopupFlags_AnyPopupId))
+        picker_orbit(request, -io.MouseDelta.x * .25 / panel_scale,
+                     io.MouseDelta.y * .25 / panel_scale);
     VisualizationView view{snapshot.view, snapshot.fov, double(io.DisplaySize.x),
                            double(io.DisplaySize.y), 1};
     auto* draw = ImGui::GetBackgroundDrawList();
     const float radius = 5 * panel_scale, hit_radius = std::max(12.0f, 12 * panel_scale);
-    const bool clicking = scene_clicked && io.MousePos.x < left - 8 &&
+    const bool clicking = scene_clicked && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+                          !orbiting && io.MousePos.x < left - 8 &&
                           !ImGui::IsPopupOpen("##overlapping-bones", ImGuiPopupFlags_AnyPopupId);
     unsigned hits = 0;
     for (std::size_t index = 0; index < snapshot.catalog->bones.size(); ++index) {

@@ -2,9 +2,10 @@
 
 Bone Picker frames the selected player in the actual paused replay scene. Common
 body joints appear as clickable dots, with a compact searchable list on the
-right. A small crop of the hero appears in the panel header; it is captured
-once from the native scene when the picker opens, so no separate game artwork
-is bundled or repeatedly copied during editing.
+right. The panel header uses the hero's small player icon from the installed game.
+Dolly reads it when opening the picker, so updated artwork is picked up without
+bundling game assets or capturing the scene. Missing or unsupported artwork leaves
+the portrait slot empty; the player name and bone controls remain available.
 
 1. Open the in-game **Bone Picker** tab and choose a player. With an empty
    shot, Dolly creates the starting view at the current replay tick and opens
@@ -12,17 +13,22 @@ is bundled or repeatedly copied during editing.
    On the desktop, choose a player and click **Bone Picker**. For an existing
    camera, choose its attached player, then **Bone Picker…** from the point menu
    or **Change bone…**.
-2. Click a dot or anywhere inside a boxed bone row. Hover to see the exact rig name. If several dots
+2. In **Hero overview**, hold the middle mouse button over the scene and drag
+   to orbit around the character. Horizontal dragging turns through 360 degrees;
+   vertical dragging changes elevation (limited near the poles to avoid flipping).
+   The opening camera distance stays fixed. Release to stop. Orbit does not change
+   saved camera offsets, zoom, or the selected bone.
+3. Click a dot or anywhere inside a boxed bone row. Hover to see the exact rig name. If several dots
    overlap, choose from the small list at that location. Left/right refer to the
    player's own body. Search includes all available named bones, including cloth
    and accessory bones, even with **Common body joints** checked.
-3. Choose **Preview attached view**. The right-hand list stays open; selecting another
-   bone changes the preview immediately. **Hero overview** returns to the front view.
+4. Choose **Preview attached view**. The right-hand list stays open; selecting another
+   bone changes the preview immediately. **Hero overview** returns to your overview angle.
    Preview uses the camera's existing offsets, visibility, and clearance mode.
-4. **Use this bone** saves the point and leaves attached preview active.
+5. **Use this bone** saves the point and leaves attached preview active.
    **Cancel** discards the choice and restores the previous camera/preview.
 
-The attached camera's **Forward / Left/Right / Up** offsets are in the selected
+The attached camera's **Forward / Sideways / Up** offsets are in the selected
 point's local frame. For a face-facing shot, move Forward away from the head and
 turn Yaw about 180 degrees. **Exact offset** keeps those authored values. The
 opt-in **Automatic clearance** mode keeps a close head POV at least four units
@@ -49,10 +55,13 @@ motion remains. Smoothing uses that same current scene position. The picker deli
 Dots can be visible through the body or
 scenery. They represent bone origins, not surface hit points. Animated poses can
 still move slightly in the game's rendered mesh while the replay is paused.
-Holding the picker pose does not freeze the game's animation system. Front framing cannot guarantee
+While orbiting, markers project directly from the same held world pose using
+the applied camera view; screen smoothing resets when that view changes so dots
+do not trail camera motion. Holding the picker pose does not freeze the game's
+animation system. Overview framing cannot guarantee
 that a crouched, folded, hidden, or wall-obstructed character will read clearly.
 Cancel and choose a better replay moment when needed. There is no verified
-mesh collision query or mouse-orbit control in this version.
+mesh collision query; orbiting near walls can put the camera behind scenery.
 
 The picker uses the selected model's verified named skeleton. Extra merged pose
 entries without names are not invented as selectable bones. If the model cannot
@@ -84,3 +93,11 @@ cancel the picker before recording; the inspection overview is not exported.
 
 These entry and duration controls have offline regression coverage. A new
 in-game recording with this shortcut has not yet been validated.
+
+## Orbit verification
+
+The fixed-distance orbit, marker selection after rotation, and installed hero icon
+were verified in one paused Warden replay. Automated checks also cover full-circle
+radius preservation, held pose stability, middle-button input, focus loss, and
+portrait loading for 35 installed heroes. Other heroes and replay poses can still
+have animation or visibility differences; this is not an all-hero zero-jitter guarantee.
