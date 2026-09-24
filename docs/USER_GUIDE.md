@@ -636,7 +636,10 @@ file. Steam launch settings and pre-existing mod files are not changed.
 
 ## If something fails
 
-Use **Export diagnostics** in Dolly and send the resulting ZIP with a short
+When an error dialog appears, press **Copy error details** beside **OK** and
+paste that text with your question; the first line names your Dolly version and
+the failed step. Use **Export diagnostics** in Dolly and send the resulting ZIP
+with a short
 description of the failed step. It includes the active shot and playback
 settings, measured playback update rates, console responses, capability results
 and launch logs, including local file paths. Preview diagnostics include the

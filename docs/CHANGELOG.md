@@ -1,5 +1,14 @@
 # Changes
 
+## 0.5.40 alpha — Copy error details from error dialogs
+
+- Error dialogs now include a **Copy error details** button next to **OK**. One
+  click copies the Dolly version, the failed operation and the exact error text,
+  ready to paste into a support message instead of retaking screenshots.
+- The dialog keeps its previous message-box layout and behavior; unused, nothing
+  changes. Startup failures that occur before the editor window exists still use
+  the original dialog.
+
 ## 0.5.39 alpha — Automatic hideout and verified preload startup
 
 - Dolly advances the initial click-to-continue screen automatically, verifies

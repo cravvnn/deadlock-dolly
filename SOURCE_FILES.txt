@@ -41,6 +41,7 @@ dolly/console.py
 dolly/controller.py
 dolly/curve.py
 dolly/desktop.py
+dolly/dialogs.py
 dolly/display.py
 dolly/editor_actions.py
 dolly/editor_session.py
@@ -165,6 +166,7 @@ tests/test_bootstrap.py
 tests/test_branding.py
 tests/test_camera_position.py
 tests/test_compatibility.py
+tests/test_dialogs.py
 tests/test_console.py
 tests/test_controller.py
 tests/test_pov_export.py
@@ -387,3 +389,4 @@ docs/RELEASE_NOTES_0.5.36-alpha.md
 docs/RELEASE_NOTES_0.5.37-alpha.md
 docs/RELEASE_NOTES_0.5.38-alpha.md
 docs/RELEASE_NOTES_0.5.39-alpha.md
+docs/RELEASE_NOTES_0.5.40-alpha.md

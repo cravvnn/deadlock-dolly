@@ -20,7 +20,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import attach_camera, editor_session, gui_layout, player_layer
+from dolly import attach_camera, dialogs, editor_session, gui_layout, player_layer
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, EDITOR_KEY_CHOICES, EditorBinding, default_action_bindings, validate_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING, KEY_CHOICES
@@ -2695,7 +2695,7 @@ class DollyApp:
         text = str(exc) or type(exc).__name__
         self.status_text.set(text[:240])
         self._log(f"{title}: {text}")
-        messagebox.showerror(title, text, parent=self.root)
+        dialogs.show_error(self.root, title, text)
 
     def _guard(self, title, function):
         if self.busy or self.playing:
