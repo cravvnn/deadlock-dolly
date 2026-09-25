@@ -820,10 +820,41 @@ class Controller:
                     self.begin_paused_camera(cancelled=cancel_event.is_set if cancel_event is not None else None)
                 self._message("Replay ready. Move the camera and capture your first view. F7 opens the console.",
                               startup_stage="editing_ready")
+                if bridge is not None:
+                    self._record_native_renderer()
                 return self.status()
             except Exception as exc:
                 self._message(str(exc), startup_stage="cancelled" if cancel_event is not None and cancel_event.is_set() else "failed")
                 raise
+
+    def _record_native_renderer(self):
+        """One read-only confirmation that a native session really runs DX11.
+
+        The launcher requests ``-dx11`` explicitly, and the native panel and
+        recorder depend on DX11 Present. Record what the engine reports and warn
+        once when an explicit different renderer won. Unknown or rejected
+        answers are recorded but never treated as a renderer failure, and this
+        diagnostic must never be able to fail the startup itself.
+        """
+        try:
+            used = str(self._request("engine_rendersystem_used", allow_error=True) or "").strip()
+            initialized = str(self._request("engine_rendersystem_init", allow_error=True) or "").strip()
+        except Exception as exc:  # noqa: BLE001 - best-effort diagnostics only
+            self._startup_evidence["renderer"] = {"error": str(exc)}
+            return None
+        self._startup_evidence["renderer"] = {"used": used, "init": initialized}
+        combined = (used + " " + initialized).casefold()
+        if "dx11" in combined:
+            return None
+        if not any(token in combined for token in ("vulkan", "d3d12", "dx12", "opengl", "null")):
+            return None
+        warning = ("This session is not rendering with DirectX 11 ("
+                   + (used or initialized or "no renderer answer")
+                   + "). The native camera and recorder need DX11; close the game, keep Dolly's graphics "
+                     "settings unchanged, and launch again.")
+        LOG.warning("Native renderer check found a different renderer: %s", warning)
+        self._message(warning)
+        return warning
 
     def initialize_unlocker(self):
         """Explicit hideout step; no replay is dispatched by this method.

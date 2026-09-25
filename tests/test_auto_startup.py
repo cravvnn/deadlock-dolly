@@ -58,6 +58,41 @@ class AutoStartupTests(unittest.TestCase):
         self.assertTrue(self.console.paused)
         evidence = self.controller._startup_evidence["automatic_readiness"]
         self.assertGreater(evidence["rendered_frame"], evidence["initial_frame"])
+        self.assertIn("renderer", self.controller._startup_evidence)
+
+    def test_native_renderer_evidence_records_engine_answers(self):
+        self.controller._startup_evidence = {}
+        self.controller._request = lambda command, **kwargs: (
+            "engine_rendersystem_used = -dx11 (from CL)" if command.endswith("used")
+            else "engine_rendersystem_init = -dx11")
+        self.assertIsNone(self.controller._record_native_renderer())
+        self.assertEqual(self.controller._startup_evidence["renderer"],
+                         {"used": "engine_rendersystem_used = -dx11 (from CL)",
+                          "init": "engine_rendersystem_init = -dx11"})
+
+    def test_native_renderer_evidence_warns_on_an_explicit_other_renderer(self):
+        self.controller._startup_evidence = {}
+        messages = []
+        self.controller._message = lambda message, **kwargs: messages.append(message)
+        self.controller._request = lambda command, **kwargs: "engine_rendersystem_used = -vulkan"
+        warning = self.controller._record_native_renderer()
+        self.assertIn("not rendering with DirectX 11", warning)
+        self.assertEqual(len(messages), 1)
+
+    def test_native_renderer_evidence_ignores_unknown_or_failed_answers(self):
+        self.controller._startup_evidence = {}
+        messages = []
+        self.controller._message = lambda message, **kwargs: messages.append(message)
+        self.controller._request = lambda command, **kwargs: ""
+        self.assertIsNone(self.controller._record_native_renderer())
+
+        def failing(command, **kwargs):
+            raise RuntimeError("no console")
+
+        self.controller._request = failing
+        self.assertIsNone(self.controller._record_native_renderer())
+        self.assertEqual(messages, [])
+        self.assertIn("error", self.controller._startup_evidence["renderer"])
 
     def test_cancellation_before_launch_changes_no_game_state(self):
         event = threading.Event()
