@@ -1,5 +1,15 @@
 # Changes
 
+## 0.5.43 alpha — Camera recovery and DOF controls
+
+- Return to the editor after native camera release or an attach failure without
+  getting stuck behind repeated camera-unavailable errors. Recovery clears only
+  the live attach preview and preserves saved cameras and bone settings.
+- Right-click values in either in-game Looks DOF card to restore Dolly defaults.
+- Citadel DOF now starts with a usable aperture when none is authored. Switching
+  DOF modes prevents range overrides from masking Citadel blur, preserves saved
+  range curves, and keeps the shared master switch enabled for the active mode.
+
 ## 0.5.40 alpha — Copy error details from error dialogs
 
 - Error dialogs now include a **Copy error details** button next to **OK**. One

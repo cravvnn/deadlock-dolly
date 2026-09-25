@@ -5,7 +5,7 @@
 A camera-path editor for local Deadlock replays. Capture the free camera,
 shape a shot and play it back with animated framing and camera variables.
 
-**Current source: 0.5.42 alpha.** The portable Windows build opens through
+**Current source: 0.5.43 alpha.** The portable Windows build opens through
 `Dolly.exe`. Python and Tcl/Tk are bundled; no separate installation is needed.
 
 **THIS MOD INJECTS CODE INTO DEADLOCK — USE AT YOUR OWN RISK.**
@@ -73,6 +73,10 @@ In-game, **Camera**, **Lens** and **Export** divide the floating panel.
 On the desktop Effects tab, **+ Range DOF** creates a four-value range track.
 Its value order is near blurry, near crisp, far crisp, far blurry. See the
 [supported camera cvars](docs/SUPPORTED_CAMERA_CVARS.md) for values and examples.
+
+In the in-game **Looks** tab, right-click a DOF value to restore Dolly's default.
+Enabling Citadel DOF switches off Native range DOF and supplies a usable aperture
+when none is authored. Switching back retains your range settings and animation.
 
 See `Start_Here.txt` and the [user guide](docs/USER_GUIDE.md) for the full controls.
 The GitHub **Source code** download and source ZIP contain the source and build

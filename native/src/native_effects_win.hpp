@@ -187,6 +187,19 @@ struct NativeEffectState {
                 return false;
             }
         }
+        bool citadel = false, range_override = true;
+        unsigned range_index = count;
+        for (unsigned i = 0; i < count; ++i) {
+            if (bindings[i].id == 0)
+                citadel = values[i][0] != 0;
+            else if (bindings[i].id == 7)
+                range_override = values[i][0] != 0;
+            else if (bindings[i].id == 8)
+                range_index = i;
+        }
+        if (range_index < count)
+            values[range_index] =
+                effective_dof_ranges(values[range_index], citadel, range_override);
         for (unsigned i = 0; i < count; ++i)
             if (!bindings[i].write(values[i])) {
                 error = 2;

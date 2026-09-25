@@ -192,9 +192,13 @@ def frame_commands(frame, lens_cvar=ASPECT_CVAR):
     commands = ["spec_goto " + " ".join(numeric(frame[k]) for k in ("x", "y", "z", "pitch", "yaw")),
                 "cl_citadel_forceangles " + " ".join(numeric(frame[k]) for k in ("pitch", "yaw", "roll")),
                 ASPECT_CVAR + " " + numeric(aspect)]
-    for name, value in sorted(frame.get("cvars", {}).items()):
+    cvars = frame.get("cvars", {})
+    for name, value in sorted(cvars.items()):
         validate_cvar_name(name)
         value = validate_cvar_value(name, value)
+        if (name == "r_dof_override_ranges" and cvars.get("r_citadel_depthoffield_enable", 0)
+                and cvars.get("r_dof_override") == 0):
+            value = (0.0,) * 4  # Suppress the override without changing authored curves.
         if name == ASPECT_CVAR or name in LEGACY_FOV_CONTROLS:
             raise ValueError("Use the Framing curve for aspect ratio. Legacy FOV and duplicate aspect tracks are disabled.")
         if name in DOF_RANGES:
@@ -1978,10 +1982,16 @@ class Controller:
             self._require_probe()
             self._require_demo()
             current = bridge.status()
-            self._require_native_demo(current)
             editor = bridge.editor_status()
             if not current.get("paused") or not editor.get("ready") or editor.get("input_mode") != "panel":
                 raise RuntimeError("Open the in-game Editor on a paused replay before editing DOF.")
+            if current.get("state") in ("stopped", "probe") and not self._game_ui_visible:
+                # Stop and failed preparation release the camera while the
+                # panel stays usable. An explicit edit must reacquire it.
+                self._require_native_demo(current, allow_idle=True)
+                self.enter_native_flight(owner="panel")
+                current = bridge.status()
+            self._require_native_demo(current)
             shot_time = self._shot_time(project, shot_time)
             pose = self._native_pose(current)
             preview = deepcopy(project)
@@ -2154,7 +2164,8 @@ class Controller:
                 self._game_ui_visible = True
                 self._message("Deadlock owns the camera and replay UI. Select a hero, then return to Dolly editing.")
                 return self.status()
-            if self._game_ui_visible or not (self._native_active and self._native_manual):
+            camera_live = (bridge is not None and bridge.status().get("state") == "armed")
+            if self._game_ui_visible or not (self._native_active and self._native_manual and camera_live):
                 self.enter_native_flight()
             else:
                 self._hide_game_ui()
@@ -3573,6 +3584,18 @@ class Controller:
             if bridge is None:
                 raise RuntimeError("The native camera bridge is unavailable; camera ownership could not be changed.")
             if self._alive():
+                status = bridge.status()
+                if status.get("state") in ("stopped", "probe", "fault"):
+                    # Native preparation can release independently of these
+                    # cached flags. Acknowledge release before allowing retry;
+                    # holding an absent path cannot recover the camera.
+                    bridge.release()
+                    self._native_active = self._native_manual = False
+                    self._invalidate_paused_camera()
+                    with self._state_lock:
+                        self._state["playing"] = False
+                        self._state["paused_flight"] = False
+                    return
                 bridge.hold()
                 status = bridge.status()
                 self._native_last_status = status

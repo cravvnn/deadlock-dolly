@@ -35,6 +35,11 @@ struct EffectSegment {
     unsigned kind, flags;
     double left, right, left_derivative, right_derivative;
 };
+// Keep authored range curves intact while the lens-based Citadel mode is active.
+inline std::array<double, 4> effective_dof_ranges(const std::array<double, 4>& authored,
+                                                  bool citadel, bool range_override) noexcept {
+    return citadel && !range_override ? std::array<double, 4>{} : authored;
+}
 struct EffectTrack {
     unsigned id = 0;
     bool restore_override = false;

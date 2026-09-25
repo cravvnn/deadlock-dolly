@@ -6,6 +6,45 @@ from dolly.path import CvarTrack, Keyframe, Project, TrackKey
 
 
 class EditorDofTests(unittest.TestCase):
+    def test_console_citadel_suppresses_runtime_ranges_without_mutating_authored_frame(self):
+        from copy import deepcopy
+        from dolly.controller import frame_commands
+        from dolly.editor_dof import edited_citadel_project
+        project = edited_project(Project(keyframes=[Keyframe(0, 1, 2, 3, 4, 5, 6)]), 0, 0, 1)
+        project = edited_citadel_project(project, 0, 0, 1)
+        frame = project.evaluate(0)
+        original = deepcopy(frame)
+        self.assertIn('r_dof_override_ranges 0 0 0 0', frame_commands(frame))
+        self.assertEqual(frame, original)
+
+    def test_switching_modes_keeps_range_animation_and_seeds_usable_citadel_aperture(self):
+        from copy import deepcopy
+        from dolly.editor_dof import edited_citadel_project, citadel_values_at, CITADEL_APERTURE
+        project = edited_project(Project(), 0, 0, 1)
+        authored = deepcopy(project.tracks)
+        citadel = edited_citadel_project(project, 2, 0, 1)
+        self.assertEqual(citadel.setup_values[CITADEL_APERTURE], .5)
+        self.assertEqual(citadel.setup_values['r_dof_override'], 0)
+        self.assertTrue(citadel_values_at(citadel, 2)[0])
+        self.assertEqual(citadel.tracks, authored)
+        native = edited_project(citadel, 2, 0, 1)
+        self.assertFalse(citadel_values_at(native, 2)[0])
+        self.assertEqual(native.tracks, authored)
+        self.assertEqual(values_at(native, 2)[:2], (1, 1))
+
+    def test_citadel_preserves_explicit_aperture_and_other_mode_master_switch(self):
+        from dolly.editor_dof import edited_citadel_project, CITADEL_APERTURE
+        track = CvarTrack(CITADEL_APERTURE, [TrackKey(0, 0), TrackKey(3, .8)])
+        project = Project(tracks=[track])
+        citadel = edited_citadel_project(project, 0, 0, 1)
+        self.assertEqual(citadel.tracks, project.tracks)
+        self.assertNotIn(CITADEL_APERTURE, citadel.setup_values)
+        native_off = edited_project(citadel, 0, 0, 0)
+        self.assertEqual(native_off.setup_values['r_depth_of_field'], 1)
+        native = edited_project(citadel, 0, 0, 1)
+        citadel_off = edited_citadel_project(native, 0, 0, 0)
+        self.assertEqual(citadel_off.setup_values['r_depth_of_field'], 1)
+
     def test_enable_initializes_the_same_track_as_desktop_range_dof(self):
         from copy import deepcopy
         from unittest.mock import Mock

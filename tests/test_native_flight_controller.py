@@ -76,6 +76,51 @@ def configured_controller():
 
 
 class NativeFlightControllerTests(unittest.TestCase):
+    def test_return_to_editor_recovers_native_release_with_stale_manual_flags(self):
+        for state in ("stopped", "probe", "fault"):
+            with self.subTest(state=state):
+                self.controller.enter_native_flight()
+                self.bridge.state = state
+                with patch.object(self.bridge, "hold", side_effect=AssertionError("No path to hold")):
+                    self.controller.toggle_game_ui(False)
+                self.assertEqual(self.bridge.state, "armed")
+                self.assertTrue(self.controller._native_manual)
+
+    def test_failed_recovery_release_does_not_start_another_camera_writer(self):
+        self.controller.enter_native_flight()
+        self.bridge.state = "fault"
+        with patch.object(self.bridge, "release", side_effect=RuntimeError("release unacknowledged")), \
+                patch.object(self.bridge, "start_flight") as start:
+            with self.assertRaisesRegex(RuntimeError, "release unacknowledged"):
+                self.controller.enter_native_flight()
+            start.assert_not_called()
+        self.assertTrue(self.controller._native_active)
+
+    def test_dof_edit_after_stop_rearms_without_seeking_or_changing_saved_camera(self):
+        self.controller.enter_native_flight()
+        self.controller.stop()
+        self.bridge.editor_status = MagicMock(return_value={"ready": True, "input_mode": "panel"})
+        project = make_project()
+        original = project.to_dict()
+        tick = self.console.tick
+        self.console.events.clear()
+        self.controller.preview_native_effects(project, 0)
+        self.assertEqual(self.bridge.state, "armed")
+        self.assertEqual(self.bridge.owner, "panel")
+        self.assertEqual(self.console.tick, tick)
+        self.assertEqual(project.to_dict(), original)
+        self.assertFalse(any("demo_gototick" in event or "spec_goto " in event
+                             for event in self.console.events))
+
+    def test_dof_edit_does_not_take_camera_from_player_pov_panel(self):
+        self.controller.enter_native_flight()
+        self.controller.toggle_game_ui(True)
+        self.bridge.editor_status = MagicMock(return_value={"ready": True, "input_mode": "panel"})
+        with patch.object(self.bridge, "start_flight") as start:
+            with self.assertRaisesRegex(RuntimeError, "Native camera is unavailable"):
+                self.controller.preview_native_effects(make_project(), 0)
+            start.assert_not_called()
+
     def setUp(self):
         self.controller, self.console, self.bridge = configured_controller()
 

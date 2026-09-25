@@ -34,8 +34,12 @@ def _put_value(project, name, time, value):
 
 def _enable_ranges(project, time, enabled):
     # An animated switch overrides setup_values, so edit its key too when present.
-    for name in ("r_depth_of_field", "r_dof_override"):
-        _put_value(project, name, time, float(enabled))
+    cvars = _cvars_at(project, time)
+    if enabled and "r_citadel_depthoffield_enable" in cvars:
+        _put_value(project, "r_citadel_depthoffield_enable", time, 0.0)
+    _put_value(project, "r_dof_override", time, float(enabled))
+    _put_value(project, "r_depth_of_field", time,
+               float(enabled or bool(cvars.get("r_citadel_depthoffield_enable", 0))))
     if not enabled:
         return  # Turning off never destroys an authored focus pull.
     values = _cvars_at(project, time).get(RANGE_NAME, (0, 0, 0, 0))
@@ -104,6 +108,8 @@ CITADEL_ACTIONS = ("set_citadel_dof_enabled", "set_citadel_dof_sensor_size",
                    "set_citadel_dof_focus_distance")
 CITADEL_SENSOR_DEFAULT = 1.0
 CITADEL_FOCUS_DEFAULT = 200.0
+CITADEL_APERTURE = "r_citadel_depthoffield_aperture_diameter"
+CITADEL_APERTURE_DEFAULT = .5
 
 
 def citadel_values_at(project, time):
@@ -128,8 +134,18 @@ def edited_citadel_project(project, time, control, value):
             state = bool(value)
         else:
             raise ValueError("Citadel DOF switch must be on or off")
-        for name in CITADEL_ENABLE:
-            _put_value(candidate, name, time, 1.0 if state else 0.0)
+        cvars = _cvars_at(candidate, time)
+        _put_value(candidate, CITADEL_ENABLE[0], time, float(state))
+        _put_value(candidate, "r_depth_of_field", time,
+                   float(state or bool(cvars.get("r_dof_override", 0))))
+        if state:
+            _put_value(candidate, "r_dof_override", time, 0.0)
+            # The game's zero aperture default cannot produce lens blur.
+            # Keep explicitly authored aperture curves, including deliberate zeros.
+            if CITADEL_APERTURE not in cvars:
+                _put_value(candidate, CITADEL_APERTURE, time, CITADEL_APERTURE_DEFAULT)
+            if RANGE_NAME not in cvars:
+                _put_value(candidate, RANGE_NAME, time, (0.0,) * 4)
     else:
         name = CITADEL_SENSOR if control == 1 else CITADEL_FOCUS
         _id, minimum, maximum, _discrete = EFFECTS[name]

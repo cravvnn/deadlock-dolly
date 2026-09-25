@@ -1353,7 +1353,8 @@ void draw_panel(const EditorSnapshot& state) {
                         editor_enqueue(EditorAction::SetDofEnabled, enabled ? 1 : 0);
                     static std::array<double, 11> dof_draft{};
                     static std::array<bool, 11> dof_editing{};
-                    auto field = [&](unsigned index, const char* label, float step) {
+                    auto field = [&](unsigned index, const char* label, float step,
+                                     double defaults) {
                         if (!dof_editing[index])
                             dof_draft[index] = state.dof[index];
                         ImGui::PushID(int(index));
@@ -1361,11 +1362,16 @@ void draw_panel(const EditorSnapshot& state) {
                         ImGui::SetNextItemWidth(-1);
                         ImGui::DragScalar("##value", ImGuiDataType_Double, &dof_draft[index], step,
                                           nullptr, nullptr, "%.2f");
-                        const bool committed = ImGui::IsItemDeactivatedAfterEdit();
+                        bool committed = ImGui::IsItemDeactivatedAfterEdit();
                         dof_editing[index] = ImGui::IsItemActive();
+                        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                            dof_draft[index] = defaults;
+                            dof_editing[index] = false;
+                            committed = true;
+                        }
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
-                                "Drag to adjust. Alt: 100x finer; Shift: 10x faster. Ctrl+click to type an exact value. Applies when released.");
+                                "Drag to adjust. Alt: 100x finer; Shift: 10x faster. Ctrl+click to type an exact value. Right-click to reset to Dolly's default. Applies when released.");
                         if (committed)
                             editor_enqueue(
                                 EditorAction(unsigned(EditorAction::SetDofEnabled) + index),
@@ -1380,15 +1386,15 @@ void draw_panel(const EditorSnapshot& state) {
                     ImGui::TextDisabled("Focus ranges");
                     if (ImGui::BeginTable("##focus-ranges", 2, ImGuiTableFlags_SizingStretchSame)) {
                         ImGui::TableNextColumn();
-                        field(2, "Near blurry", 1);
+                        field(2, "Near blurry", 1, -100);
                         ImGui::TableNextColumn();
-                        field(4, "Far crisp", 1);
+                        field(4, "Far crisp", 1, 180);
                         ImGui::TableNextColumn();
-                        field(3, "Near crisp", 1);
+                        field(3, "Near crisp", 1, 0);
                         ImGui::TableNextColumn();
-                        field(5, "Far blurry", 1);
+                        field(5, "Far blurry", 1, 2000);
                         ImGui::TableNextColumn();
-                        field(10, "Ground tilt", .01f);
+                        field(10, "Ground tilt", .01f, .5);
                         ImGui::EndTable();
                     }
                     ImGui::PopStyleVar(2);
@@ -1420,12 +1426,18 @@ void draw_panel(const EditorSnapshot& state) {
                     ImGui::SetNextItemWidth(-1);
                     ImGui::SliderFloat("##citadel-sensor", &sensor_draft, .5f, 3.0f, "%.2f",
                                        ImGuiSliderFlags_AlwaysClamp);
-                    const bool sensor_committed = ImGui::IsItemDeactivatedAfterEdit();
+                    bool sensor_committed = ImGui::IsItemDeactivatedAfterEdit();
                     sensor_editing = ImGui::IsItemActive();
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        sensor_draft = 1.0f;
+                        sensor_editing = false;
+                        sensor_committed = true;
+                    }
                     if (sensor_committed)
                         editor_enqueue(EditorAction::SetCitadelDofSensorSize, double(sensor_draft));
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Lens sensor size in inches, 0.5 to 3.0.");
+                        ImGui::SetTooltip(
+                            "Lens sensor size in inches, 0.5 to 3.0. Right-click to reset to 1.");
                     constexpr double kFocusMaximum = 10000.0;
                     const auto focus_to_slider = [kFocusMaximum](double value) {
                         return float(std::log(1.0 + std::max(0.0, value)) /
@@ -1449,11 +1461,16 @@ void draw_panel(const EditorSnapshot& state) {
                                        ImGuiSliderFlags_AlwaysClamp);
                     const bool focus_committed = ImGui::IsItemDeactivatedAfterEdit();
                     focus_editing = ImGui::IsItemActive();
-                    if (focus_committed)
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        focus_draft = focus_to_slider(200.0);
+                        focus_editing = false;
+                        editor_enqueue(EditorAction::SetCitadelDofFocusDistance, 200.0);
+                    } else if (focus_committed)
                         editor_enqueue(EditorAction::SetCitadelDofFocusDistance,
                                        slider_to_focus(focus_draft));
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Focus distance in inches, 0-10000 on a log scale.");
+                        ImGui::SetTooltip(
+                            "Focus distance in inches, 0-10000 on a log scale. Right-click to reset to 200.");
                     ImGui::PopStyleVar(2);
                     ImGui::EndDisabled();
                     if (!state.camera_count)

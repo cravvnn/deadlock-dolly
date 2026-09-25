@@ -249,8 +249,14 @@ void dispatch(EditorAction action) noexcept {
             // Active manual flight needs no new command, and closing the
             // panel during playback must not interrupt the running shot.
             editor_set_owner(EditorOwner::Flight);
-        } else
+        } else {
+            const auto state = editor_snapshot();
+            if (state.ready && !state.manual_active && !state.playing) {
+                editor_enqueue(EditorAction::Panel, 1);
+                return;
+            }
             editor_set_owner(EditorOwner::Panel);
+        }
         return;
     }
     if (action == EditorAction::GameUI) {

@@ -21,6 +21,22 @@ class Value:
 
 
 class EditorSessionTests(unittest.TestCase):
+    def test_return_after_attach_failure_disables_only_live_preview(self):
+        from copy import deepcopy
+        from dolly.path import AttachKey
+        self.app.preview_attach = True
+        self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+            attach=AttachKey(handle=11, model="models/hero.vmdl", point="bone", bone="head"))]
+        before = deepcopy(self.app.project.keyframes)
+        for state in ("fault", "stopped", "probe"):
+            for action in ("flight", "panel"):
+                with self.subTest(state=state, action=action):
+                    self.app.preview_attach = True
+                    self.bridge.status.return_value = {"state": state}
+                    session.dispatch(self.app, {"action": action, "value": 1}, self.bridge)
+                    self.assertFalse(self.app.preview_attach)
+                    self.assertEqual(self.app.project.keyframes, before)
+
     def test_pov_panel_preserves_game_camera(self):
         self.app.video_source = Value("Player POV")
         session.dispatch(self.app, {"action": "panel", "value": 1}, self.bridge)

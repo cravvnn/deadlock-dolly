@@ -339,6 +339,14 @@ def dispatch(app, event, bridge):
             close_picker(app, resume=False)
         else:
             raise ValueError("Finish or cancel Bone Picker before using other camera controls.")
+    if (action in ("flight", "panel") and getattr(app, "preview_attach", False)
+            and bridge.status().get("state") in ("fault", "stopped", "probe")):
+        # Re-enter a free camera after release. Reusing a failed live attach
+        # preview would immediately fault the recovery command again. The
+        # authored target/bone/offsets remain intact for an explicit retry.
+        app.preview_attach = False
+        app._native_attach_cache = None
+        configure(app)
     if action == "reset_camera_path":
         if app.playing:
             raise ValueError("Stop path playback before resetting the camera path.")

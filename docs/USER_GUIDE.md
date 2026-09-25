@@ -459,7 +459,7 @@ frozen preview determines whether replay time advances during playback.
 
 ## Depth of field and other camera variables
 
-The in-game **Lens** tab separates the two depth-of-field systems. **Native
+The in-game **Looks** tab separates the two depth-of-field systems. **Native
 Depth of Field** is Dolly's own engine override (the focus ranges and ground
 tilt), and **Citadel Depth of Field** is the game's built-in effect. The
 Citadel card has an **Enable DOF** switch plus **Sensor size** and **Focus
@@ -468,6 +468,13 @@ live, so they save to Effects and play back through the native effect binder.
 The desktop **Cameras** tab carries the same Citadel card, with the sliders
 applying through the paused-camera preview. Sensor size uses 0.5–3 inches and
 focus distance uses 0–10000 inches on a logarithmic scale.
+
+Right-click an in-game DOF value to restore Dolly's default for that value.
+Enabling either DOF mode switches off the other. Citadel uses an aperture of
+0.5 inches when no aperture value or curve is authored; the game's default of
+zero produces no lens blur. An explicitly authored aperture remains unchanged.
+While Citadel is active, Dolly suppresses the Native range override at runtime
+and preserves its saved values and curves for switching back.
 
 On **Effects**, use **+ Citadel DOF** as a starting point. The preset
 enables the native Citadel DOF controls and creates focus and aperture tracks.

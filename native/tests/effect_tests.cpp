@@ -13,6 +13,11 @@ static void check(bool okay) {
 int main(int argc, char** argv) {
     try {
         if (argc == 1) {
+            const std::array<double, 4> ranges{-150, 20, 250, 2500};
+            check(effective_dof_ranges(ranges, true, false) == std::array<double, 4>{});
+            check(effective_dof_ranges(ranges, false, false) == ranges);
+            check(effective_dof_ranges(ranges, true, true) == ranges);
+            check(effective_dof_ranges(ranges, false, true) == ranges);
             EffectTrack t;
             t.id = 1;
             t.first_time = 0;
