@@ -99,6 +99,7 @@ native/profiles/deadlock-2026-09-11b-complete.json
 native/profiles/deadlock-2026-09-16-complete.json
 native/profiles/deadlock-2026-09-17-complete.json
 native/profiles/deadlock-2026-09-17b-complete.json
+native/profiles/deadlock-2026-09-25-complete.json
 native/profiles/manifest.json
 native/src/bridge_win.cpp
 native/src/dolly_confetti.cpp
