@@ -927,17 +927,6 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                         "Run as administrator on Dolly.exe before retrying.\n\n"
                         f"Launch log: {log_path}") from exc
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)
-        if bridge is not None:
-            bridge.bind_game(process.pid)
-        try:
-            session.log(f"Created development process PID {session.pid}; -dev and -insecure are mandatory.")
-            session.log("Loaded Dolly's verified editing gameinfo; the user's exact original is backed up for restoration.")
-            session.log("Replay loading deferred until the controller confirms cvar_unhide in the pre-lobby/hideout.")
-            metadata["pid"] = session.pid
-            _save_record(session_dir, metadata)
-        except OSError:
-            # A disk failure after process creation must not delete a live mount.
-            pass
 
         def watch() -> None:
             code = process.wait()
@@ -960,7 +949,22 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 except OSError:
                     pass
 
+        # Start the exit watcher before any attach step. A failure after the
+        # game started must still restore the temporary gameinfo when it exits,
+        # instead of leaving the process running with Dolly's patched config and
+        # no cleanup until the next manual launch.
         threading.Thread(target=watch, name="dolly-game-exit", daemon=True).start()
+        if bridge is not None:
+            bridge.bind_game(process.pid)
+        try:
+            session.log(f"Created development process PID {session.pid}; -dev and -insecure are mandatory.")
+            session.log("Loaded Dolly's verified editing gameinfo; the user's exact original is backed up for restoration.")
+            session.log("Replay loading deferred until the controller confirms cvar_unhide in the pre-lobby/hideout.")
+            metadata["pid"] = session.pid
+            _save_record(session_dir, metadata)
+        except OSError:
+            # A disk failure after process creation must not delete a live mount.
+            pass
         return session
     except Exception as exc:
         if bridge is not None:
@@ -975,6 +979,11 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 shutil.rmtree(overlay, ignore_errors=True)
         if isinstance(exc, LaunchError):
             raise
+        if process is not None and process.poll() is None:
+            raise LaunchError(
+                f"Deadlock started but Dolly could not finish attaching to it: {exc}\n"
+                "Close the game normally; the exit watcher restores the original configuration automatically.\n"
+                f"Launch log: {log_path}") from exc
         raise LaunchError(f"Could not prepare or start the development game session: {exc}\nExtract Dolly into a writable folder and check {log_path}.") from exc
 
 

@@ -677,6 +677,27 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.paths.gameinfo.read_bytes(), before)
         self.assertFalse(list(self.paths.game_dir.glob("citadel_dolly_*")))
 
+    def test_attach_failure_after_game_start_keeps_the_exit_recovery_watch(self):
+        native_root, pins, _ = self._native_fixture()
+        before = self.paths.gameinfo.read_bytes()
+        process = MagicMock(pid=6781)
+        process.poll.return_value = None
+        bridge = MagicMock(token="b" * 32, editor_pid=5432)
+        bridge.bind_game.side_effect = RuntimeError("attach failed")
+        with patch.object(launcher, "_check_runtime"), \
+                patch.object(launcher, "running_processes", return_value={"steam.exe"}), \
+                patch.object(launcher, "NATIVE_ROOT", native_root), \
+                patch.object(launcher, "NATIVE_GAME_SHA256", pins), \
+                patch.object(launcher, "PACKAGE_ROOT", self.package), \
+                patch.object(launcher.NativeBridge, "create", return_value=bridge), \
+                patch.object(launcher.subprocess, "Popen", return_value=process), \
+                patch.object(launcher.threading, "Thread") as threads:
+            with self.assertRaisesRegex(launcher.LaunchError, "could not finish attaching"):
+                launcher.launch(self.paths.root, native=True)
+        threads.return_value.start.assert_called_once()
+        bridge.close.assert_called_once_with()
+        self.assertNotEqual(self.paths.gameinfo.read_bytes(), before)
+
     def test_console_launch_does_not_load_or_validate_native(self):
         with patch.object(launcher, "_verified_native") as native, patch.object(launcher.NativeBridge, "create") as create:
             session = self._launched_session()
