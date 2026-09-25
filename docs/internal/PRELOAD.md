@@ -6,6 +6,15 @@ dispatch it now verifies dashboard map/shader preloading. The game console is
 hidden and Dolly advances Deadlock's normal click-to-continue screen. Dolly
 then opens the selected replay automatically; no extra Load confirmation is needed.
 
+The intro panel does not update its cached phase while `citadel_hud_visible` is
+zero. This reproduces a startup timeout with a rendering hideout, equal shader
+counters, no manifest and phase 0. After unlocker initialization, startup reads
+the HUD value and temporarily enables it if hidden. The previous value is
+restored before replay dispatch and on cancellation, timeout or read failure.
+A failed restoration blocks replay dispatch and retains the original value for
+Stop / restore. No intro preference is changed and preload verification is not
+bypassed. Diagnostics record the original HUD value and restoration outcome.
+
 `dolly/preload.py` is a read-only observer shared by Native and Console camera
 backends. It uses only VM_READ and QUERY_INFORMATION on the live session created
 by Dolly, checks the launch arguments and console ownership, then validates the
@@ -47,6 +56,16 @@ The observer rejects changing manager snapshots and implausible fields. Startup
 requires three consecutive complete observations, a fresh hideout check, and one
 final complete sample before dispatch. The deadline is a failure, never evidence
 of readiness; cancellation and failures always close the observer handle.
+
+Diagnostics include a bounded `preload_trace`: the first observation, the latest
+64 state changes with elapsed times, a dropped-change count, and whether a
+coherent started/ready state was ever observed. Repeated identical polls are
+collapsed; the final sample after hideout revalidation is also recorded. These
+historical observations never authorize replay loading in place of current
+readiness. A null manifest is ambiguous: the reviewed add-on-list notification
+callback (client+0x54e5d0, `IAddonListChangeNotify` subobject at manager+0x10)
+releases/clears the manifest and job without resetting progress counters.
+Do not treat equal counters following that invalidation as completed map preload.
 
 For a game update, re-review the entire predicate and consumers offline, add
 reviewed hash/layout support deliberately, and validate both camera backends in

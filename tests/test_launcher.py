@@ -684,6 +684,38 @@ class LauncherTests(unittest.TestCase):
         create.assert_not_called()
         self.assertIsNone(session.native)
 
+    def test_elevation_required_explains_deadlock_permissions_and_restores_mount(self):
+        native_root, pins, _ = self._native_fixture()
+        before = self.paths.gameinfo.read_bytes()
+        for native in (False, True):
+            with self.subTest(native=native):
+                error = OSError('The requested operation requires elevation')
+                error.winerror = 740
+                bridge = MagicMock(token='c' * 32, editor_pid=5432)
+                with patch.object(launcher, '_check_runtime'), \
+                        patch.object(launcher, 'running_processes', return_value={'steam.exe'}), \
+                        patch.object(launcher, 'PACKAGE_ROOT', self.package), \
+                        patch.object(launcher, 'NATIVE_ROOT', native_root), \
+                        patch.object(launcher, 'NATIVE_GAME_SHA256', pins), \
+                        patch.object(launcher.NativeBridge, 'create', return_value=bridge), \
+                        patch.object(launcher.subprocess, 'Popen', side_effect=error) as popen:
+                    with self.assertRaises(launcher.LaunchError) as caught:
+                        launcher.launch(self.paths.root, native=native)
+                message = str(caught.exception)
+                self.assertIn('WinError 740', message)
+                self.assertIn(str(self.paths.executable), message)
+                self.assertIn('Properties > Compatibility', message)
+                self.assertIn('Run as administrator on Dolly.exe', message)
+                self.assertNotIn('Extract Dolly', message)
+                popen.assert_called_once()
+                self.assertEqual(self.paths.gameinfo.read_bytes(), before)
+                self.assertFalse(list(self.paths.game_dir.glob('citadel_dolly_*')))
+                if native:
+                    bridge.close.assert_called_once_with()
+                    bridge.bind_game.assert_not_called()
+                for journal in (self.package / 'logs').glob('*/session.json'):
+                    self.assertEqual(json.loads(journal.read_text())['config_state'], 'restored')
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -83,6 +83,7 @@ class AutoStartupTests(unittest.TestCase):
         self.assertTrue(self.controller._startup_evidence['preload']['ready'])
 
     def test_cancel_during_preload_closes_reader_without_loading_demo(self):
+        self.console.values['citadel_hud_visible'] = 0
         cancelled = threading.Event()
         def observe():
             cancelled.set()
@@ -92,6 +93,8 @@ class AutoStartupTests(unittest.TestCase):
             self.start(cancel_event=cancelled)
         self.preload.close.assert_called_once()
         self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+        self.assertEqual(self.console.values['citadel_hud_visible'], 0)
+        self.assertNotIn('citadel_hud_visible', self.controller._playback_restore)
 
     def test_unsupported_preload_never_automatically_loads_replay(self):
         with patch('dolly.controller.PreloadMonitor', side_effect=RuntimeError('unsupported preload build')):
@@ -113,12 +116,52 @@ class AutoStartupTests(unittest.TestCase):
 
     def test_preload_timeout_closes_reader_and_does_not_load_replay(self):
         self.controller._session, self.controller._console = self.session, self.console
+        self.console.values['citadel_hud_visible'] = 0
         self.preload.sample.return_value = dict(self.preload.sample.return_value, ready=False)
         with patch('dolly.controller.time.perf_counter', side_effect=[0, 121]):
             with self.assertRaisesRegex(RuntimeError, 'Timed out.*preload'):
                 self.controller._wait_dashboard_preload(0, None)
         self.preload.close.assert_called_once()
         self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+        self.assertEqual(self.console.values['citadel_hud_visible'], 0)
+
+    def test_hidden_hud_is_shown_for_preload_and_restored_before_replay(self):
+        self.console.values['citadel_hud_visible'] = 0
+        good = dict(self.preload.sample.return_value)
+
+        def sample():
+            self.assertEqual(self.console.values['citadel_hud_visible'], 1)
+            return good
+
+        self.preload.sample.side_effect = sample
+        self.start()
+        events = self.console.events
+        enable = events.index('citadel_hud_visible 1')
+        restore = events.index('citadel_hud_visible 0', enable)
+        replay = next(i for i, cmd in enumerate(events) if cmd.startswith('playdemo '))
+        self.assertLess(enable, restore)
+        self.assertLess(restore, replay)
+        self.assertTrue(self.controller._startup_evidence['preload_hud']['restored'])
+
+    def test_preload_read_error_restores_hidden_hud_and_closes_monitor(self):
+        self.console.values['citadel_hud_visible'] = 0
+        self.preload.sample.side_effect = RuntimeError('reader failed')
+        with self.assertRaisesRegex(RuntimeError, 'reader failed'):
+            self.start()
+        self.assertEqual(self.console.values['citadel_hud_visible'], 0)
+        self.assertNotIn('citadel_hud_visible', self.controller._playback_restore)
+        self.assertFalse(self.console.sent)
+        self.preload.close.assert_called_once()
+
+    def test_preload_hud_restore_failure_blocks_replay_and_keeps_recovery_value(self):
+        self.console.values['citadel_hud_visible'] = 0
+        self.console.fail_commands.add('citadel_hud_visible 0')
+        with self.assertRaisesRegex(RuntimeError, 'Simulated console failure'):
+            self.start()
+        self.assertEqual(self.controller._playback_restore['citadel_hud_visible'], 0)
+        self.assertFalse(self.controller._startup_evidence['preload_hud']['restored'])
+        self.assertFalse(self.console.sent)
+        self.preload.close.assert_called_once()
 
     def test_completion_must_survive_fresh_hideout_check(self):
         good = self.preload.sample.return_value
@@ -127,6 +170,51 @@ class AutoStartupTests(unittest.TestCase):
                                           good, good, good, good]
         self.start()
         self.assertEqual(self.preload.sample.call_count, 8)
+        trace = self.controller._startup_evidence['preload_trace']
+        self.assertEqual([row['sample']['ready'] for row in trace['changes']], [True, False, True])
+
+    def test_preload_trace_preserves_invalidation_without_authorizing_replay(self):
+        self.controller._session, self.controller._console = self.session, self.console
+        active = dict(self.preload.sample.return_value, ready=False)
+        invalidated = dict(active, started=False, intro_phase=0)
+        self.preload.sample.side_effect = [active, invalidated, invalidated]
+
+        def wait(check, *args):
+            for _ in range(3):
+                self.assertIsNone(check())
+            raise RuntimeError('Timed out waiting for preload')
+
+        with patch.object(self.controller, '_startup_wait', side_effect=wait):
+            with self.assertRaisesRegex(RuntimeError, 'Timed out'):
+                self.controller._wait_dashboard_preload(0, None)
+        trace = self.controller._startup_evidence['preload_trace']
+        self.assertEqual([row['sample'] for row in trace['changes']], [active, invalidated])
+        self.assertTrue(trace['observed_started'])
+        self.assertFalse(trace['observed_ready'])
+        self.assertEqual(self.console.sent, [])
+        self.preload.close.assert_called_once()
+
+    def test_preload_trace_bounds_history_and_keeps_first_observation(self):
+        self.controller._session, self.controller._console = self.session, self.console
+        samples = [dict(self.preload.sample.return_value, completed=i, total=100, ready=False)
+                   for i in range(70)]
+        self.preload.sample.side_effect = samples
+
+        def wait(check, *args):
+            for _ in samples:
+                self.assertIsNone(check())
+            raise RuntimeError('Timed out waiting for preload')
+
+        with patch.object(self.controller, '_startup_wait', side_effect=wait):
+            with self.assertRaisesRegex(RuntimeError, 'Timed out'):
+                self.controller._wait_dashboard_preload(0, None)
+        trace = self.controller._startup_evidence['preload_trace']
+        self.assertEqual(trace['first']['sample'], samples[0])
+        self.assertEqual(len(trace['changes']), 64)
+        self.assertEqual(trace['dropped_changes'], 6)
+        self.assertEqual(trace['changes'][-1]['sample'], samples[-1])
+        samples[0]['completed'] = -1
+        self.assertEqual(trace['first']['sample']['completed'], 0)
 
     def test_crashed_game_during_startup_reports_exit_code_and_replay_identity(self):
         self.controller._session = self.session

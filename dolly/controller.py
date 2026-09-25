@@ -645,16 +645,49 @@ class Controller:
     def _wait_dashboard_preload(self, initial_frame, cancel_event):
         """Verify a started preload, not just an idle counter or elapsed time."""
         monitor = PreloadMonitor(self._session)
+        restore_hud = None
         try:
             self._startup_evidence["preload_identity"] = monitor.identity
             self.toggle_console(False)
+            # The intro phase is cached by a HUD panel. With the HUD hidden its
+            # update never advances, even while the hideout continues rendering.
+            # Show it only for startup; restore the user's value before loading.
+            hud = read_cvar_value("citadel_hud_visible", self._request("citadel_hud_visible"))
+            self._startup_evidence["preload_hud"] = {
+                "original": hud, "temporarily_enabled": hud == 0, "restored": hud != 0}
+            if hud == 0:
+                restore_hud = hud
+                self._playback_restore["citadel_hud_visible"] = hud
+                self._request("citadel_hud_visible 1")
             consecutive = 0
             last_message = None
+            observed_at = time.monotonic()
+            trace = {"first": None, "changes": [], "dropped_changes": 0,
+                     "observed_started": False, "observed_ready": False}
+            self._startup_evidence["preload_trace"] = trace
+            previous_sample = None
+
+            def observe():
+                nonlocal previous_sample
+                sample = monitor.sample()
+                self._startup_evidence["preload"] = sample
+                trace["observed_started"] |= bool(sample.get("coherent") and sample.get("started"))
+                trace["observed_ready"] |= bool(sample.get("coherent") and sample.get("ready"))
+                if sample != previous_sample:
+                    row = {"elapsed_seconds": round(time.monotonic() - observed_at, 3),
+                           "sample": deepcopy(sample)}
+                    if trace["first"] is None:
+                        trace["first"] = deepcopy(row)
+                    trace["changes"].append(row)
+                    if len(trace["changes"]) > 64:
+                        del trace["changes"][0]
+                        trace["dropped_changes"] += 1
+                    previous_sample = deepcopy(sample)
+                return sample
 
             def ready():
                 nonlocal consecutive, last_message
-                sample = monitor.sample()
-                self._startup_evidence["preload"] = sample
+                sample = observe()
                 if not sample.get("coherent"):
                     consecutive = 0
                     return None
@@ -681,7 +714,7 @@ class Controller:
                 if not settled:
                     consecutive = 0
                     return None
-                final = monitor.sample()
+                final = observe()
                 if not final.get("coherent") or not final.get("ready"):
                     consecutive = 0
                     return None
@@ -690,10 +723,16 @@ class Controller:
                 return final
 
             self._startup_wait(ready, "waiting for verified map and shader preload completion", cancel_event)
-            self._message("Map and shader preload complete. Opening your selected replay…",
-                          startup_stage="preload_ready")
         finally:
-            monitor.close()
+            try:
+                if restore_hud is not None:
+                    self._request("citadel_hud_visible " + numeric(restore_hud))
+                    self._playback_restore.pop("citadel_hud_visible", None)
+                    self._startup_evidence["preload_hud"]["restored"] = True
+            finally:
+                monitor.close()
+        self._message("Map and shader preload complete. Opening your selected replay…",
+                      startup_stage="preload_ready")
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
                       launch_options="", cancel_event=None):

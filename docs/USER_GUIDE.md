@@ -33,11 +33,20 @@ installation and current limits. Windows/Deadlock validation is recorded in
    and camera support, pauses it, closes the console explicitly and enables
    native flight. Startup progress appears in Replay. Do not load a demo manually
    while waiting for this sequence.
+   If your HUD is hidden, Dolly temporarily shows it so the intro can advance,
+   then restores your HUD setting before loading the replay.
 8. Frame a view with WASD and mouse look, then capture it. Fly to the next
    camera position and capture again. **F8** opens the in-game Dolly panel.
 
 **Cancel startup** stops the automatic sequence; it does not kill Deadlock.
 The launched process remains open. Close it before launching another session.
+
+**WinError 740 / administrator permission:** Windows is requiring elevation for
+`deadlock.exe`. Open that executable's **Properties → Compatibility**, including
+**Change settings for all users**, and disable **Run this program as an
+administrator** if it was enabled unnecessarily. If your computer requires that
+permission, close Dolly and use **Run as administrator** on `Dolly.exe`, then retry.
+Re-extracting the ZIP does not resolve this Windows permission requirement.
 A timeout, failed unlocker confirmation, or unverified preload does not
 automatically load the demo. Preload verification supports reviewed game builds;
 after a game update, Dolly may need an update before automatic startup can proceed.

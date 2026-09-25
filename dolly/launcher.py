@@ -913,7 +913,19 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                     environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
                     environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
                 options = {} if environment is None else {"env": environment}
-                process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
+                try:
+                    process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
+                except OSError as exc:
+                    if getattr(exc, "winerror", None) != 740:
+                        raise
+                    raise LaunchError(
+                        "Windows requires administrator permission to start Deadlock (WinError 740).\n\n"
+                        f"In File Explorer, right-click {paths.executable}, open Properties > Compatibility, "
+                        "and check 'Run this program as an administrator', including 'Change settings for all users'. "
+                        "Turn that option off if it was enabled unnecessarily, then retry Dolly.\n\n"
+                        "If administrator access is required on this computer, close Dolly and use "
+                        "Run as administrator on Dolly.exe before retrying.\n\n"
+                        f"Launch log: {log_path}") from exc
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)
         if bridge is not None:
             bridge.bind_game(process.pid)
