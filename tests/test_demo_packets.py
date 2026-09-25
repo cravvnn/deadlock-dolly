@@ -85,6 +85,20 @@ class DemoPacketTests(unittest.TestCase):
         index = demo_packets.packet_index(self.file)
         self.assertEqual(list(index.ticks), [1, 22631, 22634, 22637, 48391, 48394, 48397])
 
+    def test_neighbour_lookups_report_none_below_the_first_packet(self):
+        # Exact seeking applies its own floor before the first recorded packet;
+        # both neighbours must report None there instead of inventing one.
+        self.file.write_bytes(synthetic_demo((10, 20, 30)))
+        index = demo_packets.packet_index(self.file)
+        self.assertEqual(list(index.ticks), [10, 20, 30])
+        for tick in (1, 9):
+            self.assertIsNone(index.following(tick))
+            self.assertIsNone(index.preceding(tick))
+        self.assertEqual(index.following(10), 10)
+        self.assertEqual(index.preceding(10), 10)
+        self.assertIsNone(index.following(31))
+        self.assertEqual(index.preceding(31), 30)
+
     def test_replay_header_reports_recorded_identity_and_build(self):
         # Shape mirrors the user's 9-21Routers2.dem: SourceTV client recording
         # for dl_midtown on the older game build that later fataled Deadlock.
