@@ -831,5 +831,28 @@ class GuiCaptureBindingTests(unittest.TestCase):
         self.assertIn("Invalid JSON", warning.call_args.args[1])
 
 
+class GuiPumpTests(unittest.TestCase):
+    def test_poll_keeps_pumping_after_an_unexpected_callback_failure(self):
+        harness = CaptureHarness()
+        app = harness.app
+        app.root = Mock()
+        app.events = Mock()
+        app.events.get_nowait.side_effect = RuntimeError("poll exploded")
+        app._dropped_logs = 0
+        DollyApp._poll(app)
+        app.root.after.assert_called_once_with(100, app._poll)
+
+    def test_log_events_drop_instead_of_growing_the_queue_without_bound(self):
+        harness = CaptureHarness()
+        app = harness.app
+        app.events = queue.Queue(maxsize=1)
+        app.events.put(("log", "", "first"))
+        app._dropped_logs = 0
+        DollyApp._enqueue_log(app, "second")
+        DollyApp._enqueue_log(app, "third")
+        self.assertEqual(app._dropped_logs, 2)
+        self.assertEqual(app.events.qsize(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

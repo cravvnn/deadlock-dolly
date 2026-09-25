@@ -506,6 +506,22 @@ class ParsingTests(unittest.TestCase):
             self.assertIsNotNone(error_text(output))
         self.assertIsNone(error_text('"x" = "1"\n'))
 
+    def test_reader_decoder_failure_fails_requests_instead_of_killing_the_reader(self):
+        # An unexpected decoder error used to kill the reader thread while
+        # is_connected stayed true, so every later request burned its full
+        # timeout. The failure must be recorded and wake a pending request.
+        peer = Peer("vconsole")
+        client = ConsoleClient("vconsole")
+        self.addCleanup(peer.close)
+        self.addCleanup(client.close)
+        client.connect(port=peer.port, timeout=2.0)
+        started = time.monotonic()
+        with patch.object(VConsoleDecoder, "feed", side_effect=ValueError("decoder exploded")):
+            with self.assertRaisesRegex(ConsoleError, "Console reader failed"):
+                client.request("demo_info", timeout=5.0)
+        self.assertLess(time.monotonic() - started, 4.0)
+        self.assertFalse(client.is_connected)
+
 
 if __name__ == "__main__":
     unittest.main()

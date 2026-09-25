@@ -100,6 +100,11 @@ def _binding_event_key(event):
     return key if key in EDITOR_KEY_CHOICES or key == "F7" else None
 
 
+# Bound pending UI events so a chatty failure loop cannot grow memory without
+# limit. Log lines may be dropped (and are reported); command results never are.
+EVENT_QUEUE_LIMIT = 4096
+
+
 class DollyApp:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -108,8 +113,9 @@ class DollyApp:
         self.ui_scale = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96 / 72))
         self.root.geometry(self._window_size(1180, 800))
         self.root.minsize(*self._window_dimensions(1000, 700))
-        self.events: queue.Queue = queue.Queue()
+        self.events: queue.Queue = queue.Queue(maxsize=EVENT_QUEUE_LIMIT)
         self.jobs: queue.Queue = queue.Queue()
+        self._dropped_logs = 0
         self.closed = False
         self.busy = False
         self.dirty = False
@@ -2517,7 +2523,10 @@ class DollyApp:
         return True
 
     def _enqueue_log(self, *parts):
-        self.events.put(("log", "", " ".join(str(part) for part in parts)))
+        try:
+            self.events.put_nowait(("log", "", " ".join(str(part) for part in parts)))
+        except queue.Full:
+            self._dropped_logs = getattr(self, "_dropped_logs", 0) + 1
 
     def _log(self, text):
         self.log_widget.configure(state="normal")
@@ -2528,6 +2537,17 @@ class DollyApp:
         self.log_widget.configure(state="disabled")
 
     def _poll(self):
+        if self.closed:
+            return
+        try:
+            self._poll_once()
+        except Exception:
+            LOG.exception("Dolly's interface poll failed; the window will keep updating.")
+        finally:
+            if not self.closed:
+                self.root.after(100, self._poll)
+
+    def _poll_once(self):
         if self.closed:
             return
         for _ in range(100):
@@ -2667,8 +2687,10 @@ class DollyApp:
                 self.hotkey_label.set(self._capture_binding_label())
         except Exception as exc:
             self._log("Editor connection unavailable: " + str(exc))
+        if getattr(self, "_dropped_logs", 0):
+            dropped, self._dropped_logs = self._dropped_logs, 0
+            self._log(f"Interface log backlog dropped {dropped} line(s) to stay responsive.")
         self._check_capture_listener()
-        self.root.after(100, self._poll)
 
     def _refresh_renderer_pressure(self):
         """Warn before the engine's DX11 buffer queue hits its fatal capacity.

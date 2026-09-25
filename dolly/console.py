@@ -321,6 +321,14 @@ class ConsoleClient:
                 if self._socket is sock:
                     self._failure = str(exc)
                     self._condition.notify_all()
+        except Exception as exc:  # noqa: BLE001 - a decoder failure must fail requests, not silently kill the reader
+            # Any unexpected error used to kill this thread while is_connected
+            # stayed true, so every later request burned its full timeout and
+            # reported a misleading timeout. Record a real failure instead.
+            with self._condition:
+                if self._socket is sock:
+                    self._failure = f"Console reader failed: {exc}"
+                    self._condition.notify_all()
 
     def _send_locked(self, command: str) -> None:
         self._send_commands_locked((command,))
