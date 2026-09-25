@@ -18,12 +18,18 @@ PENDING = "DOLLY_UPDATE_PENDING.json"
 
 def atomic_json(path, value):
     path = Path(path)
-    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".dolly-", delete=False) as f:
-        f.write((json.dumps(value, indent=2) + "\n").encode("utf-8"))
-        f.flush()
-        os.fsync(f.fileno())
-        temporary = Path(f.name)
-    os.replace(temporary, path)
+    handle = tempfile.NamedTemporaryFile(dir=path.parent, prefix=".dolly-", delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle:
+            handle.write((json.dumps(value, indent=2) + "\n").encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        # A serialization or write failure must not leave .dolly-* temporaries
+        # behind in the install root; a successful replace already moved it.
+        temporary.unlink(missing_ok=True)
 
 
 def checked_file(root, name):

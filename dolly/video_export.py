@@ -408,6 +408,11 @@ class VideoExport:
                 before_record()
         except Exception:
             self._clear_export_timing()
+            if folder is not None:
+                try:
+                    folder.rmdir()
+                except OSError:
+                    pass
             raise
         if capture_only:
             with self._lock:

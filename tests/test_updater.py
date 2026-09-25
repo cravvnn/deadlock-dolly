@@ -108,6 +108,14 @@ class TransactionTests(unittest.TestCase):
         w.rollback(self.plan)
         self.assertEqual(self.snapshot(), self.before)
 
+    def test_atomic_json_failure_leaves_no_temporary_files(self):
+        target = self.root / "state.json"
+        with patch.object(w.json, "dumps", side_effect=ValueError("encode failed")):
+            with self.assertRaises(ValueError):
+                w.atomic_json(target, {"state": "applying"})
+        self.assertFalse(target.exists())
+        self.assertEqual([item for item in self.root.glob(".dolly-*") if item != self.work], [])
+
     def test_failed_file_replacement_rolls_back(self):
         count = 0
         def fail(source, target):

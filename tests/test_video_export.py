@@ -148,6 +148,21 @@ class VideoExportTests(unittest.TestCase):
         self.export.start(VideoOptions(self.path), before_record=lambda: calls.append("filter"))
         self.assertEqual(calls, ["prepare", "filter", "encode"])
 
+    def test_before_record_failure_removes_the_just_created_take_folder(self):
+        ffmpeg = self.path.parent / "ffmpeg.exe"
+        ffmpeg.write_bytes(b"MZ")
+        options = VideoOptions(self.path, depth=True, ffmpeg_path=ffmpeg).validated()
+        folder = self.path.with_suffix("")
+
+        def explode():
+            raise RuntimeError("filter failed")
+
+        with self.assertRaisesRegex(RuntimeError, "filter failed"):
+            self.export.start(options, before_record=explode)
+        self.assertFalse(folder.exists())
+        self.bridge.start_video.assert_not_called()
+        self.controller.set_export_timing.assert_not_called()
+
     def test_pov_prepares_game_view_and_restores_after_capture_stops(self):
         project = object()
         self.export.start(VideoOptions(self.path, shot_only=True), project=project, pov=True)
@@ -1041,10 +1056,11 @@ class VideoGuiTests(unittest.TestCase):
         self.app._active_layer_take = ("world", "black")
         self.app.events = queue.Queue()
         self.app.events.put(("export_error", "Recording layer take", RuntimeError("Disk space")))
-        # Stop the poll at the dialog boundary, where all UI state must be safe.
+        # Stop the poll body at the dialog boundary, where all UI state must be
+        # safe. The outer _poll wrapper is covered by GuiPumpTests.
         self.app._error.side_effect = LookupError("dialog reached")
         with self.assertRaisesRegex(LookupError, "dialog reached"):
-            self.app._poll()
+            self.app._poll_once()
         self.assertFalse(self.app.busy)
         self.assertEqual(self.app._layer_queue, [])
         self.assertIsNone(self.app._base_capture)
