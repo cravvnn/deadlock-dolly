@@ -30,6 +30,7 @@ from dolly.curve import AspectCurve, RotationCurve, TimelineView
 from dolly.display import focus_window
 from dolly.hotkey import CaptureHotkey
 from dolly.launcher import discover_game, recover_pending
+from dolly.memory_watch import PausedMemoryWatch
 from dolly.navigation import CameraMotion
 from dolly.navigation_input import CameraInput
 from dolly.path import (AttachKey, CONFETTI_SPAWN_HEIGHT_DEFAULT, CURVE_CHANNELS,
@@ -116,6 +117,7 @@ class DollyApp:
         self.events: queue.Queue = queue.Queue(maxsize=EVENT_QUEUE_LIMIT)
         self.jobs: queue.Queue = queue.Queue()
         self._dropped_logs = 0
+        self._memory_watch = PausedMemoryWatch()
         self.closed = False
         self.busy = False
         self.dirty = False
@@ -2673,6 +2675,7 @@ class DollyApp:
                 if getattr(self, "_last_video_poll_error", None) != message:
                     self._last_video_poll_error = message
                     self._log(message)
+            self._check_paused_memory(status)
         self._refresh_renderer_pressure()
         try:
             editor_session.poll(self)
@@ -2691,6 +2694,25 @@ class DollyApp:
             dropped, self._dropped_logs = self._dropped_logs, 0
             self._log(f"Interface log backlog dropped {dropped} line(s) to stay responsive.")
         self._check_capture_listener()
+
+    def _check_paused_memory(self, status):
+        """Warn once when the paused engine keeps committing memory.
+
+        The first user's pause-time OOM reproduced on every camera backend, so
+        this is a read-only early warning, never an automatic action. It only
+        reads counters for the PID Dolly launched and owns.
+        """
+        watch = getattr(self, "_memory_watch", None)
+        if watch is None:
+            return
+        getter = getattr(self.controller, "game_pid", None)
+        pid = getter() if callable(getter) else None
+        paused = (bool(status.get("game_running")) and not status.get("playing")
+                  and status.get("tick") is not None)
+        warning = watch.observe(pid, paused=paused, tick=status.get("tick"))
+        if warning:
+            self._log(warning)
+            self.status_text.set(warning)
 
     def _refresh_renderer_pressure(self):
         """Warn before the engine's DX11 buffer queue hits its fatal capacity.

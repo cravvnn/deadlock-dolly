@@ -853,6 +853,18 @@ class GuiPumpTests(unittest.TestCase):
         self.assertEqual(app._dropped_logs, 2)
         self.assertEqual(app.events.qsize(), 1)
 
+    def test_paused_memory_warning_is_logged_and_shown(self):
+        harness = CaptureHarness()
+        app = harness.app
+        app.status_text = Var("")
+        app._memory_watch = Mock()
+        app._memory_watch.observe.return_value = "memory warning"
+        app.controller.game_pid = lambda: 4242
+        DollyApp._check_paused_memory(app, {"game_running": True, "playing": False, "tick": 10})
+        app._memory_watch.observe.assert_called_once_with(4242, paused=True, tick=10)
+        self.assertEqual(app.status_text.get(), "memory warning")
+        app._log.assert_called_once_with("memory warning")
+
 
 if __name__ == "__main__":
     unittest.main()
