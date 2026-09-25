@@ -829,6 +829,19 @@ class VideoGuiTests(unittest.TestCase):
                 self.app._finish_player_capture("players")
             cleanup.assert_not_called()
 
+    def test_players_finalize_after_teardown_is_a_logged_no_op(self):
+        self.app._base_capture = None
+        self.app.controller = Mock()
+        result = self.app._finish_player_capture("players")
+        self.assertEqual(result, {"state": "cancelled", "layer": "players", "reason": "run_torn_down"})
+
+    def test_layer_alpha_combine_after_teardown_restores_matte_and_stops(self):
+        self.app._base_capture = None
+        self.app.controller = Mock()
+        result = self.app._combine_layer("players")
+        self.assertEqual(result, {"state": "cancelled", "layer": "players", "reason": "run_torn_down"})
+        self.app.controller.end_matte_layer.assert_called_once_with()
+
     def test_next_layer_take_hides_the_layer_and_starts_a_fixed_step_take(self):
         exe = Path(self.folder.name) / "ffmpeg.exe"
         exe.write_bytes(b"MZ")

@@ -887,7 +887,11 @@ class DollyApp:
         """Worker step: wait for the capture, then write the alpha layer master."""
         base = self._base_capture
         if base is None:
-            raise RuntimeError("The players layer capture lost the recording options.")
+            # A cancel, discard or competing stop tore the layered run down after
+            # this step was queued. There is nothing left to finalize; raising
+            # here would only stack a confusing error on top of the real cause.
+            LOG.warning("Players layer finalize skipped: the layered run was already torn down")
+            return {"state": "cancelled", "layer": layer, "reason": "run_torn_down"}
         deployment = self.controller.deployment_directory()
         if deployment is None:
             raise RuntimeError("The players layer capture directory is gone.")
@@ -918,12 +922,15 @@ class DollyApp:
         Works for opaque character pixels and additive particles alike.
         """
         base = self._base_capture
-        if base is None:
-            raise RuntimeError("Layer matte combine lost the recording options.")
         try:
             self.controller.end_matte_layer()
         except (RuntimeError, ValueError, OSError):
             LOG.warning("Matte post-processing could not be restored")
+        if base is None:
+            # The layered run was torn down before this queued combine ran; the
+            # matte state is restored above and there is nothing left to build.
+            LOG.warning("Layer alpha combine skipped: the layered run was already torn down")
+            return {"state": "cancelled", "layer": layer, "reason": "run_torn_down"}
         folder = base.path.with_suffix("")
         layer_dir = folder / layer
         black = layer_dir / (layer + ".mp4")
