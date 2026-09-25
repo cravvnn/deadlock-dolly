@@ -41,12 +41,15 @@ vtable/query identities must agree. Unknown builds fail closed for automatic
 startup. Existing manual startup is still available, but does not claim automatic
 preload verification. Do not update pins just to get past a game update.
 
-Reviewed 2026-09-23 build: client getter RVA 0x571e20 yields the manager at
-0x2dd3ef0. Status at 0x57de80 is consumed by the Panorama preload panel at
-0x1a88740. Manager vtable 0x2341738, counts +0x24/+0x28, resource handle +0x30,
-job handle +0x38. The resource singleton at client+0x3994fb0 has vtable
-resourcesystem+0x61058; its +0xc0 slot is resourcesystem+0x18c00. The reviewed
-13-byte query returns true for null and otherwise reads manifest+0x44.
+Reviewed 2026-09-25 build (client cb831d12…): the game update preserved every
+reviewed code span byte-for-byte, re-verified offline against the 2026-09-23
+disassembly before the client pin was refreshed. Client getter RVA 0x571e20
+yields the manager at 0x2dd3ef0. Status at 0x57de80 is consumed by the Panorama
+preload panel at 0x1a88740. Manager vtable 0x2341738, counts +0x24/+0x28,
+resource handle +0x30, job handle +0x38. The resource singleton at
+client+0x3994fb0 has vtable resourcesystem+0x61058; its +0xc0 slot is
+resourcesystem+0x18c00. The reviewed 13-byte query returns true for null and
+otherwise reads manifest+0x44.
 
 Readiness requires a **non-null manifest**, inactive job, completed resource and
 completed >= total. The manifest condition distinguishes not-started from idle:

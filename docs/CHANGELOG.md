@@ -1,5 +1,17 @@
 # Changes
 
+## 0.5.45 alpha — Deadlock update 2026-09-25 (build 6701) compatibility
+
+- The native camera accepts the 2026-09-25 Deadlock update: the client was
+  re-reviewed offline, every reviewed camera function is unchanged, and the
+  native bridge recognizes the new build by hash and signature.
+- Automatic startup preload verification was re-reviewed for the new client.
+  All reviewed code spans are byte-identical to the previous build, and one
+  bounded live session confirmed the paused native editor, native camera
+  recovery cycles and a clean exit with exact configuration restoration.
+- The editing configuration review is refreshed for the new client hash, so
+  one-click startup continues to work after the update.
+
 ## 0.5.44 alpha — Stability hardening and crash diagnostics
 
 - Dolly now warns when a paused replay keeps committing memory, so a long

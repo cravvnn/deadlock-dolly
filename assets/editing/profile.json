@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "description": "Editing configuration supplied and used by Andrew; reviewed September 20, 2026. Refresh with a matching editing gameinfo after a game update.",
+  "description": "Editing configuration supplied and used by Andrew; reviewed September 25, 2026. Refresh with a matching editing gameinfo after a game update.",
   "gameinfo_sha256": "610c0d1e6a132e841636ec76e13fec517a3a1bb351eb444bc960ea20bd586353",
   "modules": {
-    "citadel/bin/win64/client.dll": "d1ee16fc5615c3569f25f76d9bcfb364f3f570c642671aaff35ce71356221e26",
+    "citadel/bin/win64/client.dll": "cb831d124403ee2f3afa54981e69d8acf71251ba1129d0733757251f74a157c2",
     "bin/win64/engine2.dll": "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d",
     "bin/win64/tier0.dll": "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc"
   }

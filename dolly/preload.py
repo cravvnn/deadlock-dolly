@@ -19,7 +19,7 @@ class PreloadError(RuntimeError):
     """Verification unavailable; never permission to dispatch a replay."""
 
 
-CLIENT_SHA256 = "d1ee16fc5615c3569f25f76d9bcfb364f3f570c642671aaff35ce71356221e26"
+CLIENT_SHA256 = "cb831d124403ee2f3afa54981e69d8acf71251ba1129d0733757251f74a157c2"
 RESOURCE_SHA256 = "55ca9912cd80a08ea233d31a215236a0bc601139877eacc0cbd296b6f5bb192b"
 MANAGER = 0x2dd3ef0
 MANAGER_VTABLE = 0x2341738
