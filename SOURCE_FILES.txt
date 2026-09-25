@@ -46,6 +46,7 @@ dolly/display.py
 dolly/editor_actions.py
 dolly/editor_session.py
 dolly/editor_wire.py
+dolly/export_audit.py
 dolly/graphics_diagnostics.py
 dolly/gui.py
 dolly/hotkey.py
@@ -180,6 +181,7 @@ tests/test_graphics_diagnostics.py
 tests/test_gui_capture.py
 tests/test_hotkey.py
 tests/test_launcher.py
+tests/test_memory_watch.py
 tests/test_motion_clock.py
 tests/test_native_atomics.py
 tests/test_native_bridge.py
@@ -240,6 +242,7 @@ tests/test_sparse_seek.py
 docs/internal/STAGE3_PLAN.md
 dolly/media_wire.py
 dolly/media_transport.py
+dolly/memory_watch.py
 dolly/video_export.py
 docs/VIDEO_AND_RESHADE.md
 docs/internal/LAYER_EXPORT.md
@@ -346,6 +349,7 @@ native/tests/player_producer_tests.cpp
 native/tests/player_matte_pass_tests.cpp
 native/tests/player_vertex_guard_tests.cpp
 tests/test_profile_clock.py
+tests/test_export_audit.py
 tests/test_export_timing.py
 native/include/dolly_depth_live.hpp
 native/tests/depth_live_tests.cpp

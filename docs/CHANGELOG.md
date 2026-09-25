@@ -1,5 +1,26 @@
 # Changes
 
+## 0.5.44 alpha — Stability hardening and crash diagnostics
+
+- Dolly now warns when a paused replay keeps committing memory, so a long
+  paused edit can be saved and the session restarted before the engine runs
+  out of memory.
+- A console read failure now fails the affected request immediately with a
+  clear reason instead of making later commands time out for their full
+  duration.
+- The interface keeps updating after an unexpected UI-callback error, and a
+  burst of log messages can no longer grow the event queue without bound.
+- If Deadlock is already running when Dolly fails to attach, closing the game
+  still restores the original configuration automatically. Empty take folders
+  and updater temporaries are cleaned up when a step fails.
+- Cancelled layered exports finish cleanly instead of raising a confusing
+  "lost the recording options" error after the run was torn down.
+- A one-time runtime renderer check records the active renderer and warns when a
+  native session is not actually DirectX 11.
+- Added a read-only take validator: `python -m dolly.export_audit <folder>`
+  flags zero-frame depth output (the missing/ALWAYS signature), incomplete
+  manifests, missing masters and decoded-audit frame/timestamp failures.
+
 ## 0.5.43 alpha — Camera recovery and DOF controls
 
 - Return to the editor after native camera release or an attach failure without
