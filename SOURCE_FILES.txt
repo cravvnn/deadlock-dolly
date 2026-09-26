@@ -182,6 +182,7 @@ tests/test_graphics_diagnostics.py
 tests/test_gui_capture.py
 tests/test_hotkey.py
 tests/test_launcher.py
+tests/test_layer_modes.py
 tests/test_memory_watch.py
 tests/test_motion_clock.py
 tests/test_native_atomics.py

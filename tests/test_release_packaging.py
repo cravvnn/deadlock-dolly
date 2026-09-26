@@ -47,6 +47,20 @@ class ReleasePackagingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release_files.source_files(self.root)
 
+    def test_source_manifest_covers_every_shipped_source_file(self):
+        # SOURCE_FILES.txt is an explicit allowlist, so a new module or test can
+        # silently fall out of the Source ZIP. Require every shipped source file
+        # in the documented families to be listed.
+        root = Path(__file__).resolve().parents[1]
+        listed = {line.strip() for line in (root / "SOURCE_FILES.txt").read_text(encoding="utf-8").splitlines()
+                  if line.strip() and not line.lstrip().startswith("#")}
+        shipped = []
+        for pattern in ("dolly/*.py", "tests/test_*.py", "tools/*.py", "packaging/*"):
+            shipped.extend(sorted(path.relative_to(root).as_posix()
+                                  for path in root.glob(pattern) if path.is_file()))
+        missing = [name for name in shipped if name not in listed]
+        self.assertEqual(missing, [], "SOURCE_FILES.txt is missing shipped source files: %s" % missing)
+
     def test_windows_bundle_omits_runtime_logs_demos_and_update_staging(self):
         for name in ["Dolly.exe", "BUILD_INFO.json", "_internal/base_library.zip",
                      "_internal/python312.dll", "logs/Dolly.log",
