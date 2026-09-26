@@ -95,6 +95,24 @@ class VideoExportTests(unittest.TestCase):
         check.assert_called_once_with(self.path.parent, 2560, 1440, 2402)
         self.bridge.start_video.assert_called_once()
 
+    def test_completed_take_attaches_validation_findings(self):
+        folder = self.path.with_suffix("")
+        depth = folder / "depth"
+        depth.mkdir(parents=True)
+        (depth / "depth.mov").write_bytes(b"depth")
+        (depth / "manifest.json").write_text(json.dumps(
+            {"frames": 0, "complete": True, "master": "depth.mov"}), encoding="utf-8")
+        self.export._layer_folder = folder
+        status = self.export._audit_take({"state": "completed"})
+        self.assertFalse(status["audit"]["ok"])
+        self.assertTrue(any("zero frames" in finding for finding in status["audit"]["findings"]))
+
+    def test_take_audit_without_a_layer_folder_leaves_status_unchanged(self):
+        self.export._layer_folder = None
+        status = {"state": "completed"}
+        self.assertIs(self.export._audit_take(status), status)
+        self.assertNotIn("audit", status)
+
     def test_depth_resolution_is_set_after_preparation_and_restored_on_finish(self):
         ffmpeg = self.path.parent / "ffmpeg.exe"
         ffmpeg.write_bytes(b"MZ")

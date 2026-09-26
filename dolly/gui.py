@@ -118,6 +118,8 @@ class DollyApp:
         self.jobs: queue.Queue = queue.Queue()
         self._dropped_logs = 0
         self._memory_watch = PausedMemoryWatch()
+        self._take_audit_seen: set[str] = set()
+        self._take_audit_reported = False
         self.closed = False
         self.busy = False
         self.dirty = False
@@ -627,6 +629,8 @@ class DollyApp:
         self._layer_queue = queue
         self._active_layer_take = None
         self._take_playing_seen = False
+        self._take_audit_seen = set()
+        self._take_audit_reported = False
         controller = getattr(self, "controller", None)
         game_pid = getattr(controller, "game_pid", None)
         if callable(game_pid):
@@ -676,6 +680,9 @@ class DollyApp:
                 directory = Path(self.video_path.get()).parent
             self.video_path.set(str(default_video_path(self.project.name, directory)))
         if state == "completed":
+            audit = status.get("audit") if isinstance(status, dict) else None
+            if isinstance(audit, dict):
+                self._report_take_audit(audit.get("findings", ()))
             taken = getattr(self, "_active_layer_take", None)
             if taken is not None:
                 self._active_layer_take = None
@@ -786,8 +793,37 @@ class DollyApp:
             return
         self._pipeline_advance = False
         if self._base_capture is not None:
+            self._audit_finished_layers(self._base_capture)
             self._base_capture = None
             self._submit("Restoring scene layers", self._restore_scene_state, lambda _: None)
+
+    def _report_take_audit(self, findings, *, final=False):
+        """Log new take-validation findings once, and one pass line per run.
+
+        The validator is diagnostic only: findings never change an export's
+        result and duplicate lines are suppressed between the color folder
+        check and the final layered check.
+        """
+        findings = [str(item) for item in findings]
+        seen = getattr(self, "_take_audit_seen", set())
+        for finding in findings:
+            if finding not in seen:
+                self._log("Take audit: " + finding)
+        self._take_audit_seen = set(findings)
+        if final:
+            if not findings and not getattr(self, "_take_audit_reported", False):
+                self._log("Take audit: all recorded layers passed validation.")
+            self._take_audit_reported = True
+
+    def _audit_finished_layers(self, base):
+        """Validate the finished layered take folder; never fatal."""
+        try:
+            from dolly.export_audit import audit_take
+            report = audit_take(base.path.with_suffix(""))
+        except Exception:  # noqa: BLE001 - diagnostics must never fail an export
+            LOG.exception("Take audit could not run")
+            return
+        self._report_take_audit(report.get("findings", ()), final=True)
 
     def _start_next_layer_take(self):
         """Worker step: hide the layer's classes and start its next pass."""

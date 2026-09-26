@@ -5,6 +5,7 @@ boundary. Worker completion is explicit so failed captures and stale results
 can be checked without racing threads.
 """
 import copy
+from pathlib import Path
 import queue
 import unittest
 from types import SimpleNamespace
@@ -852,6 +853,34 @@ class GuiPumpTests(unittest.TestCase):
         DollyApp._enqueue_log(app, "third")
         self.assertEqual(app._dropped_logs, 2)
         self.assertEqual(app.events.qsize(), 1)
+
+    def test_take_audit_findings_are_logged_once_and_pass_reported(self):
+        harness = CaptureHarness()
+        app = harness.app
+        DollyApp._report_take_audit(app, ["depth: zero frames"])
+        DollyApp._report_take_audit(app, ["depth: zero frames"], final=True)
+        DollyApp._report_take_audit(app, [], final=True)
+        logged = [call.args[0] for call in app._log.call_args_list]
+        self.assertEqual(logged, ["Take audit: depth: zero frames"])
+
+    def test_clean_take_reports_one_pass_line(self):
+        harness = CaptureHarness()
+        app = harness.app
+        DollyApp._report_take_audit(app, [])
+        DollyApp._report_take_audit(app, [], final=True)
+        DollyApp._report_take_audit(app, [], final=True)
+        logged = [call.args[0] for call in app._log.call_args_list]
+        self.assertEqual(logged, ["Take audit: all recorded layers passed validation."])
+
+    def test_finished_layers_run_the_validator(self):
+        harness = CaptureHarness()
+        app = harness.app
+        base = SimpleNamespace(path=Path("C:/tmp/shot.mp4"))
+        with patch("dolly.export_audit.audit_take",
+                   return_value={"ok": True, "findings": []}) as audit:
+            DollyApp._audit_finished_layers(app, base)
+        audit.assert_called_once()
+        self.assertEqual(audit.call_args.args[0], Path("C:/tmp/shot"))
 
     def test_paused_memory_warning_is_logged_and_shown(self):
         harness = CaptureHarness()

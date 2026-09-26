@@ -494,6 +494,7 @@ class VideoExport:
                     if current.get("state") == "completed" and not cancel:
                         self._finish_layered_sidecar()
                         current = self._encode_depth_preview(current)
+                        current = self._audit_take(current)
                     else:
                         self._depth_options = None
                         if cancel:
@@ -509,6 +510,27 @@ class VideoExport:
             finally:
                 if getattr(self, "_pov", False):
                     self.controller.finish_pov_recording()
+
+    def _audit_take(self, status: dict) -> dict:
+        """Attach a read-only take-folder validation report to the status.
+
+        Diagnostics only: findings are logged for support and surfaced by the
+        UI, but a validator problem can never fail a finished recording.
+        """
+        folder = self._layer_folder
+        if folder is None or not folder.is_dir():
+            return status
+        from .export_audit import audit_take
+        try:
+            report = audit_take(folder)
+        except Exception:  # noqa: BLE001 - diagnostics must never fail an export
+            LOG.exception("Take audit could not run")
+            return status
+        for finding in report["findings"]:
+            LOG.warning("Take audit finding: %s", finding)
+        result = dict(status)
+        result["audit"] = report
+        return result
 
     def _discard_empty_layer_folder(self):
         """Remove only a take folder this session created and left empty."""
