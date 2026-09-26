@@ -1,5 +1,15 @@
 # Changes
 
+## 0.5.46 alpha — Automatic take validation and a complete source export
+
+- Finished layered exports are validated automatically: Dolly checks the take
+  folder for missing or zero-frame depth output, incomplete manifests, missing
+  masters and decoded-audit mismatches, and logs either a clear pass or the
+  exact problem. The check is read-only and never changes the export result.
+- The source export now rejects an incomplete manifest: every shipped
+  `dolly/*.py`, test, tool and packaging file must be listed, and the missing
+  `tests/test_layer_modes.py` was restored to the archive.
+
 ## 0.5.45 alpha — Deadlock update 2026-09-25 (build 6701) compatibility
 
 - The native camera accepts the 2026-09-25 Deadlock update: the client was
