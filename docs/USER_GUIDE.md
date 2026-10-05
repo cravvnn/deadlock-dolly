@@ -95,6 +95,27 @@ kernel driver**. Native launch checks reviewed `client.dll`, `engine2.dll` and
 to force compatibility. **Console (legacy)** in Troubleshooting preserves the
 older workflow without the Stage 1 DX11 panel/native flight.
 
+### Linux (Proton)
+
+Run the Windows package inside Deadlock's own Proton prefix with the same
+Proton version Deadlock uses. Dolly reads the game's process, memory and console
+through Windows APIs, so it and the game must share one Wine server; a separate
+prefix, such as a non-Steam shortcut's, cannot see the game. From a terminal in
+your desktop session, with `lib` set to the Steam library that holds Deadlock:
+
+```sh
+lib=~/.local/share/Steam/steamapps
+export STEAM_COMPAT_DATA_PATH="$lib/compatdata/1422450"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.local/share/Steam
+export SteamAppId=1422450 SteamGameId=1422450
+"$lib/common/SteamLinuxRuntime_sniper/_v2-entry-point" --verb=waitforexitandrun -- \
+  "$lib/common/Proton - Experimental/proton" waitforexitandrun /path/to/DeadlockDolly/Dolly.exe
+```
+
+Replace `Proton - Experimental` with the Proton version selected for Deadlock.
+Dolly finds the game in any Steam library, launches it and restores
+`gameinfo.gi` as on Windows.
+
 ## In-game input and default keys
 
 | Shortcut | Action |
