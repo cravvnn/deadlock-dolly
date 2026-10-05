@@ -303,26 +303,38 @@ def _steam_roots() -> list[Path]:
     return list(dict.fromkeys(roots))
 
 
+def _library_path(value: str) -> Path:
+    """Map a Linux Steam library path onto Wine's Z: drive, which Proton roots at /."""
+    if os.name == "nt" and value.startswith("/"):
+        return Path("Z:" + value)
+    return Path(value)
+
+
 def discover_game() -> Path | None:
-    """Return the installation root from Steam registry/library manifests."""
-    roots = _steam_roots()
-    libraries = list(roots)
-    for root in roots:
+    """Return the installation root from Steam registry/library manifests.
+
+    Each library's manifest is read in turn. Under Proton the prefix's Steam
+    folder lists only the Linux Steam root, whose manifest lists the rest.
+    """
+    libraries = _steam_roots()
+    for root in libraries:
         manifest = root / "steamapps" / "libraryfolders.vdf"
         try:
             entries = _parse(manifest.read_text(encoding="utf-8-sig"))
-            sections = _named(entries, "libraryfolders")
-            for section in sections:
-                for entry in section.children or []:
-                    if entry.children:
-                        for folder in _named(entry.children, "path"):
-                            if folder.value:
-                                libraries.append(Path(folder.value.value))
-                    elif entry.key.value.isdigit() and entry.value:
-                        libraries.append(Path(entry.value.value))
         except (OSError, UnicodeError, LaunchError):
-            pass
-    for library in dict.fromkeys(libraries):
+            continue
+        for section in _named(entries, "libraryfolders"):
+            for entry in section.children or []:
+                if entry.children:
+                    folders = [folder.value.value for folder in _named(entry.children, "path") if folder.value]
+                elif entry.key.value.isdigit() and entry.value:
+                    folders = [entry.value.value]
+                else:
+                    folders = []
+                for folder in map(_library_path, folders):
+                    if folder not in libraries:
+                        libraries.append(folder)
+    for library in libraries:
         install_name = "Deadlock"
         try:
             app = _parse((library / "steamapps" / f"appmanifest_{STEAM_APP_ID}.acf").read_text(encoding="utf-8-sig"))
