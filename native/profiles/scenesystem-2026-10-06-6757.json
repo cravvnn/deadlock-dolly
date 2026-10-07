@@ -14,7 +14,7 @@
   },
   "layout": {
     "object": "0x955cc0",
-    "vtable": "0x61e860",
+    "vtable": "0x61e800",
     "frame": "0x957458",
     "stack": "0x957be8",
     "records": "0x957ce0",
@@ -28,5 +28,5 @@
     "renderer_gpu_buffer_offset": "0x70",
     "renderer_gpu_buffer_evidence": "rendersystemdx11 CreateBuffer 0x82580 passes wrapper+0x70 as output; old wrapper+0x60"
   },
-  "validation": "6757: exact module identity; the reviewed producer prologue/ABI is intact at the same RVA and the producer body is byte-identical modulo relocations (masked-equal to the 6739/6753 body). The CSceneSystem primary vtable (0x61e860, COL 0x63b770) and the reviewed layout globals are unchanged; the renderer wrapper +0x70 GPU-buffer output is unchanged (rendersystemdx11 08a30cba). Live output not yet certified."
+  "validation": "6757: exact module identity; the reviewed producer prologue/ABI is intact at the same RVA and the producer body is byte-identical modulo relocations (masked-equal to the 6739/6753 body). The CSceneSystem primary vtable moved to 0x61e800 (COL 0x63b770 at 0x61e7f8; the constructor stores it into the object at 0x955cc0; 0x61e860 is no longer a vtable start) and the reviewed layout globals are unchanged; the renderer wrapper +0x70 GPU-buffer output is unchanged (rendersystemdx11 08a30cba). Live output not yet certified."
 }

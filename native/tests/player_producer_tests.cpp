@@ -47,7 +47,7 @@ int main() {
     // Every old pair retains its original entry and ABI. Crossed pairs, missing
     // modules, changed identities and wrong PE sizes must never enable a hook.
     const std::uintptr_t entries[] = {0x564b0, 0x5c8e0, 0x5c8e0, 0x5c8f0, 0x5c8f0, 0x5c8f0};
-    const std::uintptr_t tables[] = {0x5d4fe8, 0x61e7d0, 0x61e860, 0x61e860, 0x61e860, 0x61e860};
+    const std::uintptr_t tables[] = {0x5d4fe8, 0x61e7d0, 0x61e860, 0x61e860, 0x61e860, 0x61e800};
     unsigned profile_index = 0;
     for (const auto& scene : kSceneProfiles) {
         require(scene.layout.producer == entries[profile_index] && scene.layout.table == tables[profile_index]);
