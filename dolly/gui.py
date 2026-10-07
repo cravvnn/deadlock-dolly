@@ -20,7 +20,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import attach_camera, dialogs, editor_session, gui_layout, player_layer, ui_theme
+from dolly import attach_camera, dialogs, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
 from .ui import shot_commands
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, BINDABLE_ORDER, EDITOR_KEY_CHOICES, EditorBinding, default_action_bindings, validate_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
@@ -375,6 +375,7 @@ class DollyApp:
         self.demo_path.set(self.app_settings.demo_path)
         self.replay_folder = tk.StringVar(value=self.app_settings.replay_folder)
         self.launch_options = tk.StringVar(value=self.app_settings.launch_options)
+        screenshot_ui.init(self)
         self.editor_move_speed = tk.StringVar(value=_number(self.app_settings.movement_speed))
         self.editor_sensitivity = tk.StringVar(value=_number(self.app_settings.mouse_sensitivity))
         self.replay_search = tk.StringVar()
@@ -846,6 +847,7 @@ class DollyApp:
                 # the selected pass takes start immediately afterwards.
                 self.status_text.set("Color take saved. Recording the selected passes…")
         elif state in ("failed", "cancelled"):
+            screenshot_ui.abandon(self)
             layered = self.layer_pipeline.failed()
             if layered:
                 self._submit("Restoring scene layers", self._restore_scene_state,
@@ -881,6 +883,7 @@ class DollyApp:
 
     def _clear_layer_pipeline(self):
         self.layer_pipeline.clear()
+        screenshot_ui.abandon(self)
 
     def _recover_export_failure(self):
         recover_export_failure(self.video_export.stop, self.controller.stop, self._restore_scene_state)
@@ -894,8 +897,9 @@ class DollyApp:
             combine=self._combine_layer,
             start_next=self._start_next_layer_take,
             complete=self._video_operation_done,
-            audit=self._audit_finished_layers,
-            restore=self._restore_scene_state,
+            audit=lambda base: screenshot_ui.audit(self, base),
+            restore=lambda: screenshot_ui.restore(self),
+            restored=lambda folder: screenshot_ui.restored(self, folder),
         )
 
     def _report_take_audit(self, findings, *, final=False):
@@ -1007,7 +1011,8 @@ class DollyApp:
         LOG.info("Players layer capture armed: %d frames, owner offset %d, back link %d",
                  frames, owner_offset, back_offset)
         folder = base.path.with_suffix("")
-        target = folder / layer / (layer + ".mp4")
+        # Match the color take's container: lossless FFV1 takes (stills) need .mkv.
+        target = folder / layer / (layer + base.path.suffix)
         target.parent.mkdir(parents=True, exist_ok=True)
         options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
                                base.preset, base.ffmpeg_path, True, base.speed,
@@ -1022,6 +1027,8 @@ class DollyApp:
 
     def _finish_player_capture(self, layer):
         """Worker step: wait for the capture, then write the alpha layer master."""
+        if getattr(self, "_still_run", None) is not None:
+            return screenshot_ui.finish_player_capture(self, layer)
         base = self._base_capture
         if base is None:
             # A cancel, discard or competing stop tore the layered run down after
@@ -1164,6 +1171,7 @@ class DollyApp:
                  else format_video_status(status))
         _set_widget_state(self.video_start_button,
                           "normal" if ready and not active and not self.busy else "disabled")
+        screenshot_ui.refresh(self, ready and not active and not self.busy)
         can_stop = state in ("starting", "recording") and not self.busy
         _set_widget_state(self.video_stop_button, "normal" if can_stop else "disabled")
         _set_widget_state(self.video_cancel_button, "normal" if can_stop else "disabled")
@@ -3011,6 +3019,9 @@ class DollyApp:
         self.status_text.set("Shot timing and framing are ready.")
 
     def _snapshot(self):
+        still = screenshot_ui.snapshot(self)
+        if still is not None:
+            return still
         self._sync_options()
         candidate = copy.deepcopy(self.project)
         candidate.validate()

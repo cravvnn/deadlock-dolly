@@ -688,7 +688,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
-    if (!std::isfinite(value) || std::uint32_t(action) > std::uint32_t(EditorAction::FramingGrid))
+    if (!std::isfinite(value) ||
+        std::uint32_t(action) > std::uint32_t(EditorAction::TakeScreenshot))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)

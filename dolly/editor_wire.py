@@ -44,6 +44,7 @@ EXTRA_ACTIONS += ("set_replay_hud",)
 EXTRA_ACTIONS += ("select_camera", "view_camera", "delete_camera", "undo_shot", "redo_shot", "camera_page")
 EXTRA_ACTIONS += ("set_camera_time", "set_camera_roll")
 EXTRA_ACTIONS += ("framing_grid",)
+EXTRA_ACTIONS += ("take_screenshot",)
 
 CAMERA_LIST_OFFSET = 2 * 1024 * 1024 + 23360
 CAMERA_LIST_COUNT = 32

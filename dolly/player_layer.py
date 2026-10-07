@@ -226,7 +226,7 @@ def iter_frames(bundle: Path):
             if len(header) != 64:
                 raise RuntimeError("The player layer bundle is truncated.")
             magic, width, height, draws, _, _, _, bpp = struct.unpack("<8Q", header)
-            if (magic != BUNDLE_MAGIC or not 0 < width <= 3840 or not 0 < height <= 2160
+            if (magic != BUNDLE_MAGIC or not 0 < width <= 8192 or not 0 < height <= 8192
                     or not draws or bpp != 8):
                 raise RuntimeError("The player layer bundle is not a reviewed capture.")
             size = width * height * 8

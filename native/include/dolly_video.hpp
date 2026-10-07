@@ -81,7 +81,7 @@ struct Status {
 };
 // Starts a video-only, real-time recording. The encoder initializes
 // asynchronously after the next Present supplies dimensions. 30/60/120/300/600 FPS,
-// current even-sized SDR game resolution, up to 3840 x 2160. Existing
+// current even-sized SDR game resolution, up to 8192 x 8192. Existing
 // destinations are refused. Calls return promptly; disk/codec failures are
 // reported through status().
 bool start(const Options& options) noexcept;

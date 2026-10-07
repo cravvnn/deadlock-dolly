@@ -30,7 +30,9 @@
 namespace dolly::video {
 namespace {
 constexpr unsigned kSlots = 3;
-constexpr std::uint64_t kMemoryLimit = 256ULL * 1024 * 1024;
+// Sized for an 8K backbuffer (high-resolution stills); 4K takes are unchanged.
+constexpr std::uint64_t kMemoryLimit = 2048ULL * 1024 * 1024;
+constexpr UINT kMaxDimension = 8192;
 template <class T> struct Com {
     T* p = nullptr;
     ~Com() { reset(); }
@@ -1186,11 +1188,11 @@ bool initialize_resources(Session& s, IDXGISwapChain* swapchain, ID3D11Device* d
     // Three GPU textures, three CPU frames, one optional resolve texture and
     // two NV12 samples: a fixed bound independent of recording length.
     if ((!rgba && !bgra) || !desc.Width || !desc.Height || (desc.Width & 1) || (desc.Height & 1) ||
-        desc.Width > 3840 || desc.Height > 2160 ||
+        desc.Width > kMaxDimension || desc.Height > kMaxDimension ||
         (s.depth_enabled ? bytes * 16 > kMemoryLimit * 2 : bytes * 8 > kMemoryLimit) ||
         desc.ArraySize != 1 || desc.MipLevels != 1) {
         fail(s, E_INVALIDARG,
-             L"Recording requires an even-sized SDR BGRA/RGBA backbuffer, up to 3840 x 2160.");
+             L"Recording requires an even-sized SDR BGRA/RGBA backbuffer, up to 8192 x 8192.");
         return false;
     }
     auto staging_desc = desc;

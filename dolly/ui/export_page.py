@@ -68,6 +68,7 @@ class ExportPage:
                   text="F9: select a hero and pause at the start. F8: return to Export. HUD hides automatically.",
                   style="CardMuted.TLabel", wraplength=760).pack(fill="x")
         destination = card(body, "Destination")
+        self.video_destination_card = destination
         self.video_path_entry = field(destination, "Output file", state.video_path)
         self.video_browse_button = actions(destination, (("Browse...", commands.browse_video),
                                   ("Open output folder", commands.open_output_folder)), 2)[0]

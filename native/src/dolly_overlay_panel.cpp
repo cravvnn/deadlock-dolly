@@ -1892,6 +1892,14 @@ void OverlayPanel::draw_panel(const EditorSnapshot& state) {
                                           : (state.video_pov ? "Record POV" : "Record video"),
                                       EditorAction::StartVideo, ImGui::GetContentRegionAvail().x);
                         ImGui::EndDisabled();
+                        ImGui::BeginDisabled(recording.state == video::State::finalizing ||
+                                             state.playing || state.video_pov);
+                        action_button("Screenshot (hero + plate)", EditorAction::TakeScreenshot,
+                                      ImGui::GetContentRegionAvail().x);
+                        ImGui::EndDisabled();
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("High-res still of the current paused view: plate, "
+                                              "players matte and depth. Desktop Export tab.");
                     }
                     ImGui::EndDisabled();
                     if (recording.frames_dropped)

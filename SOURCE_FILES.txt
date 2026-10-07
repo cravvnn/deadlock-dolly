@@ -29,6 +29,7 @@ docs/internal/STAGE1_TESTING.md
 docs/internal/STAGE2_TESTING.md
 docs/SUPPORTED_CAMERA_CVARS.json
 docs/SUPPORTED_CAMERA_CVARS.md
+docs/SCREENSHOTS.md
 docs/USER_GUIDE.md
 docs/internal/VALIDATION.md
 dolly/__init__.py
@@ -85,6 +86,8 @@ dolly/player_layer.py
 dolly/playback.py
 dolly/replays.py
 dolly/runtime.py
+dolly/screenshot.py
+dolly/screenshot_ui.py
 dolly/session_cleanup.py
 dolly/settings.py
 dolly/smoothing.py
@@ -265,6 +268,7 @@ tests/test_portable.py
 tests/test_preview_convergence.py
 tests/test_release_packaging.py
 tests/test_replays.py
+tests/test_screenshot.py
 tests/test_seek_boundary.py
 tests/test_seek_overshoot.py
 tests/test_session_cleanup.py

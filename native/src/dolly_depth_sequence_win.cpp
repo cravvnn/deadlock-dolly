@@ -242,7 +242,7 @@ bool Sequence::write(const RawFrame& raw, std::uint64_t pts) noexcept {
                            frame.sample <= s.last_sample || pts <= s.last_pts)))
             return s.fail(ERROR_INVALID_DATA);
         const auto count = std::uint64_t(frame.width) * frame.height;
-        if (!count || count > 3840ULL * 2160 || raw.pixels.size() != count * 4)
+        if (!count || count > 8192ULL * 8192 || raw.pixels.size() != count * 4)
             return s.fail(ERROR_INVALID_DATA);
         s.linear.resize(static_cast<std::size_t>(count));
         if (!convert(raw.pixels.data(), raw.pixels.size(), std::size_t(frame.width) * 4,

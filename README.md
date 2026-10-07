@@ -42,6 +42,7 @@ Deadlock normally.
 - In-game playback speed and monitoring rate shared with desktop controls.
 - Replay playback with HUD handling, settings restoration and diagnostics.
 - Console fallback with Off, Light, Balanced and Strong smoothing choices.
+- High-resolution screenshots: plate, 16-bit players-only matte, cut-out hero and depth from one paused view, up to 8192 × 8192 (see [High-resolution screenshots](docs/SCREENSHOTS.md)).
 - Video recording at the game resolution: real-time or fixed-step, 30 to 600 FPS, hardware or software H.264/HEVC encoders, or lossless FFV1.
 - Paired depth master as a 10-bit ProRes `.mov`, with an optional float EXR sequence and a normalized preview video.
 - Isolated world, players and effects layer takes; players and effects get a real alpha channel from black and white matte passes.

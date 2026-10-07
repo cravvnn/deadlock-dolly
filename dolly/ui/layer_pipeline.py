@@ -52,7 +52,7 @@ class LayerPipeline:
         return layered
 
     def advance(self, *, busy, recorder_active, submit, finish_capture, combine,
-                start_next, complete, audit, restore):
+                start_next, complete, audit, restore, restored=None):
         if not self.advance_pending or busy:
             return
         if self.pending_capture is not None:
@@ -75,7 +75,7 @@ class LayerPipeline:
         if self.base_capture is not None:
             audit(self.base_capture)
             self.base_capture = None
-            submit('Restoring scene layers', restore, lambda _: None)
+            submit('Restoring scene layers', restore, restored or (lambda _: None))
 
 
 def recover_export_failure(stop_recording, stop_camera, restore_scene):

@@ -150,6 +150,8 @@ def build_export(app):
     )
     view = ExportPage(app.export_tab, state, commands)
     app.export_view = view
+    from . import screenshot_ui
+    screenshot_ui.build(app, view.export_page.body, before=view.video_destination_card)
     app.export_camera_note = view.export_camera_note
     app.export_capture_card = view.export_capture_card
     app.export_page = view.export_page

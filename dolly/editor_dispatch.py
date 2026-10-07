@@ -280,6 +280,9 @@ def _dispatch(app, event, bridge, *, publish):
         app._start_video_recording()
     elif action == "stop_video":
         app._stop_video_recording(cancel=False)
+    elif action == "take_screenshot":
+        from . import screenshot_ui
+        screenshot_ui.start(app)
     elif action == "stop":
         _native_operation(app, "Stopping and restoring",
                           lambda: app.controller.stop(preserve_speed=True), bridge)

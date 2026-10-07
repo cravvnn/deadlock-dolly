@@ -14,7 +14,7 @@ public:
     unsigned width=0,height=0,bytesPerPixel=4;bool pending=false,complete=false;HRESULT failure=S_OK;
     std::vector<unsigned char> pixels;
     bool prepare(ID3D11DeviceContext* c,unsigned w,unsigned h,ID3D11PixelShader* material=nullptr,bool hdr=false,bool preserveMaterial=false) {
-        if(context || !c || c->GetType()!=D3D11_DEVICE_CONTEXT_IMMEDIATE || !w || !h || w>3840 || h>2160)return false;
+        if(context || !c || c->GetType()!=D3D11_DEVICE_CONTEXT_IMMEDIATE || !w || !h || w>8192 || h>8192)return false;
         Com<ID3D11Device> device;c->GetDevice(&device);width=w;height=h;bytesPerPixel=hdr?8:4;
         if(material)white=material;
         else if(!preserveMaterial) {
