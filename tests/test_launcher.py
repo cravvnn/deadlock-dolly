@@ -750,6 +750,21 @@ class LauncherTests(unittest.TestCase):
         with patch.object(launcher, "_steam_roots", return_value=[steam]):
             self.assertEqual(launcher.discover_game(), install.root)
 
+    def test_discovery_follows_manifests_of_listed_libraries(self):
+        # Proton's prefix Steam folder lists only the Linux Steam root, whose
+        # own manifest lists the library that holds the game.
+        prefix_steam = self.folder / "Prefix Steam"
+        (prefix_steam / "steamapps").mkdir(parents=True)
+        linux_steam = self.folder / "Linux Steam"
+        (linux_steam / "steamapps").mkdir(parents=True)
+        library = self.folder / "Linux Games"
+        install = fake_game(library / "steamapps/common/Deadlock", "deadlock.exe")
+        (prefix_steam / "steamapps/libraryfolders.vdf").write_text('"LibraryFolders" { "0" { "path" "' + str(linux_steam) + '" } }')
+        (linux_steam / "steamapps/libraryfolders.vdf").write_text(
+            '"libraryfolders" { "0" { "path" "' + str(linux_steam) + '" } "1" { "path" "' + str(library) + '" } }')
+        with patch.object(launcher, "_steam_roots", return_value=[prefix_steam]):
+            self.assertEqual(launcher.discover_game(), install.root)
+
     def test_discovery_finds_current_executable_in_primary_and_secondary_libraries(self):
         steam = self.folder / "Current Primary Steam"
         primary = fake_game(steam / "steamapps/common/Deadlock", "deadlock.exe")
