@@ -1713,7 +1713,7 @@ void OverlayPanel::draw_panel(const EditorSnapshot& state) {
                                 "Record saves an end time for this bone camera and records the attached shot. Offsets and smoothing are preserved.");
                         else
                             ImGui::TextWrapped(
-                                "F9: select a hero and pause at the start. F8: return here. Record POV hides the HUD and stops after this segment.");
+                                "Select a hero with Game Follow or F9, then pause at the start. F8: return here. Record POV hides the HUD and stops after this segment.");
                     }
                     ImGui::EndDisabled();
                     if (!state.video_pov && !state.camera_count) {

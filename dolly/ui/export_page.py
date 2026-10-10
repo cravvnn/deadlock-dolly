@@ -65,7 +65,7 @@ class ExportPage:
         self.video_pov_duration_combo = field(self.video_pov_controls, "Replay seconds", state.video_pov_duration,
                                            values=("1", "2", "5", "10", "15", "30", "60", "120"))
         ttk.Label(self.video_pov_controls,
-                  text="F9: select a hero and pause at the start. F8: return to Export. HUD hides automatically.",
+                  text="Select a hero with Game Follow or F9, then pause at the start. F8: return to Export. HUD hides automatically.",
                   style="CardMuted.TLabel", wraplength=760).pack(fill="x")
         destination = card(body, "Destination")
         self.video_destination_card = destination
