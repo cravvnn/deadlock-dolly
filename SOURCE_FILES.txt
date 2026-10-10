@@ -306,6 +306,7 @@ tools/build_native.py
 tools/build_ui_override.py
 tools/build_windows.py
 tools/check_game_update.py
+tools/confetti_offsets.py
 tools/update_game.py
 tools/fetch_ffmpeg.py
 tools/release_files.py

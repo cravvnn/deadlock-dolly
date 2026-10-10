@@ -2,12 +2,15 @@
 from pathlib import Path
 import re
 import struct
+import sys
 import unittest
 
 from dolly import particles
 from dolly import launcher
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+import confetti_offsets  # noqa: E402
 
 
 def _parse_build_rows(source):
@@ -85,6 +88,39 @@ class ParticleBuildTableTests(unittest.TestCase):
         self.assertTrue(matched, "no kBuilds row matches the installed client.dll")
         self.assertEqual(create, matched[-1],
                          "the newest kBuilds row does not match the installed client.dll")
+
+
+class ConfettiOffsetsToolTests(unittest.TestCase):
+    """The pipeline helper must round-trip its own parse and derive a row."""
+
+    def test_parse_round_trips_the_committed_table(self):
+        source = (ROOT / "native/src/dolly_confetti.cpp").read_text(encoding="utf-8")
+        rows = confetti_offsets.parse_rows(source)
+        self.assertGreaterEqual(len(rows), 13)
+        for row in rows:
+            self.assertEqual(len(row.manager_bytes), 8)
+            self.assertEqual(len(row.release_bytes), 16)
+        # Re-parsing an appended row is stable.
+        reparse = confetti_offsets.parse_rows(confetti_offsets.append_row(source, rows[0]))
+        self.assertEqual(len(reparse), len(rows) + 1)
+        self.assertEqual(reparse[-1].create, rows[0].create)
+
+    def test_append_bumps_the_array_size(self):
+        source = "constexpr std::array<BuildOffsets, 12> kBuilds{{\n}};"
+        updated = confetti_offsets.append_row(source, confetti_offsets.Row(
+            1, 2, 3, 4, 5, 6, b"\x00" * 8, b"\x00" * 16))
+        self.assertIn("std::array<BuildOffsets, 13>", updated)
+
+    def test_derived_row_matches_the_install_when_present(self):
+        install = launcher.discover_game()
+        if install is None:
+            self.skipTest("Deadlock is not installed; derive check skipped")
+        client = install / "game/citadel/bin/win64/client.dll"
+        if not client.is_file():
+            self.skipTest("client.dll not found")
+        row = confetti_offsets.scan(client)
+        source = (ROOT / "native/src/dolly_confetti.cpp").read_text(encoding="utf-8")
+        self.assertTrue(confetti_offsets.newest_row_matches(confetti_offsets.parse_rows(source), row))
 
 
 class ParticleRegistryTests(unittest.TestCase):

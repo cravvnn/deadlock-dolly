@@ -17,6 +17,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tools"))
 
 from dolly import compatibility  # noqa: E402
 from dolly import launcher  # noqa: E402
@@ -92,6 +93,25 @@ def main(argv: list[str] | None = None) -> int:
     server_state = ("MISSING" if server_hash is None else
                     "KNOWN" if server_hash == server_pin else "CHANGED")
 
+    # The confetti/particle table is a separate compatibility surface: it is not
+    # in the module manifest, so a stale table would silently disable particles.
+    particle_state = "n/a"
+    particle_detail = ""
+    client_path = game_dir / CLIENT
+    if client_path.is_file():
+        import confetti_offsets  # noqa: E402
+        try:
+            row = confetti_offsets.scan(client_path)
+            if confetti_offsets.newest_row_matches(confetti_offsets.parse_rows(
+                    confetti_offsets.source_path().read_text(encoding="utf-8")), row):
+                particle_state = "ok"
+            else:
+                particle_state = "STALE"
+                particle_detail = f"  <- derive create 0x{row.create:x}"
+        except ValueError as error:
+            particle_state = "ERROR"
+            particle_detail = f"  <- {error}"
+
     print("Deadlock update check")
     print(f"  install:       {root}")
     print(f"  game dir:      {game_dir}")
@@ -109,16 +129,23 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {server_state:8s} server.dll             "
           f"{(server_hash or 'n/a')[:16]}  pin={(server_pin or 'n/a')[:16]}")
     print()
+    print("Confetti/particle table (native/src/dolly_confetti.cpp kBuilds):")
+    print(f"  {particle_state:8s} client.dll             {particle_detail}")
+    print()
 
     if missing:
         print(f"SUMMARY: {len(missing)} reviewed module(s) missing: "
               + ", ".join(m.name for m in missing))
         return 2
-    if changed or server_state == "CHANGED":
+    if changed or server_state == "CHANGED" or particle_state in ("STALE", "ERROR"):
         names = ", ".join(m.name for m in changed)
         detail = names or ""
         if server_state == "CHANGED":
             detail = (detail + ", " if detail else "") + "server.dll"
+        if particle_state == "STALE":
+            detail = (detail + ", " if detail else "") + "confetti particle table"
+        if particle_state == "ERROR":
+            detail = (detail + ", " if detail else "") + "confetti table (scan failed)"
         print(f"SUMMARY: update detected — {detail} changed. Run the compatibility pipeline "
               "(tools/update_game.py).")
         return 1

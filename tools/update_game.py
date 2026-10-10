@@ -27,6 +27,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tools"))
 ANALYSIS = ROOT / "analysis"
 
 CLIENT_SCRIPTS = ("collect_anchors.py", "audit_full_{b}.py", "build_map_{b}.py",
@@ -222,6 +223,34 @@ def run_script(script: Path) -> None:
         raise SystemExit(f"{script.name} failed with {result.returncode}")
 
 
+def refresh_confetti_table(game_dir: Path) -> None:
+    """Derive and append the confetti/particle kBuilds row for the new client.
+
+    This table is not part of the module manifest, so the compatibility pipeline
+    used to leave it stale (particles silently disabled). Append the derived row
+    when the newest committed row no longer matches the installed client.
+    """
+    import confetti_offsets  # noqa: E402
+    client = game_dir / "citadel" / "bin" / "win64" / "client.dll"
+    if not client.is_file():
+        print(f"confetti table: no client.dll at {client}; skipped")
+        return
+    try:
+        row = confetti_offsets.scan(client)
+    except ValueError as error:
+        print(f"confetti table: could not derive a row ({error}); review manually")
+        return
+    source = confetti_offsets.source_path().read_text(encoding="utf-8")
+    rows = confetti_offsets.parse_rows(source)
+    if confetti_offsets.newest_row_matches(rows, row):
+        print("confetti table: already matches the installed client; no change")
+        return
+    confetti_offsets.source_path().write_text(
+        confetti_offsets.append_row(source, row), encoding="utf-8", newline="\n")
+    print("confetti table: appended a derived row to native/src/dolly_confetti.cpp; "
+          "REVIEW the diff and run the native tests.")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prev", type=Path, default=None, help="previous analysis/update-* run (default: latest)")
@@ -293,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for template in CLIENT_SCRIPTS:
         run_script(new_dir / template.format(b=new_build))
+
+    refresh_confetti_table(game_dir)
 
     new_server_json = new_dir / f"resolve-server-{new_build}.json"
     if not new_server_json.is_file():
