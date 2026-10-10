@@ -1532,6 +1532,90 @@ void editor_framing_checks() {
     dolly::gAcknowledged = dolly::gLastEvent;
 }
 
+void editor_object_checks() {
+    // Regression: ObjectTransform is action id 104, so the editor_enqueue range
+    // guard must bound at the last declared action. Bounding at ObjectDelete
+    // (103) silently dropped every gizmo commit before it reached the ring.
+    const auto saved_config = std::atomic_load(&dolly::gConfig);
+    const auto saved_view = editor_snapshot();
+    auto config = std::make_shared<EditorConfig>(*saved_config);
+    config->camera_count = 1;
+    std::atomic_store(&dolly::gConfig, std::shared_ptr<const EditorConfig>(config));
+    dolly::gAcknowledged = dolly::gLastEvent;
+    CameraPose pose{1, 2, 3, 4, 5, 6, 16.0 / 9};
+    editor_set_owner(EditorOwner::Panel);
+    editor_update_view(true, true, true, pose);
+
+    // Publish an accepted object config with the picker open, like the desktop.
+    std::vector<unsigned char> memory(kMappingBytes);
+    EditorObjectConfig objects{};
+    std::memcpy(objects.magic, "DLYOBJ01", 8);
+    objects.sequence = 2;
+    objects.abi = 1;
+    objects.flags = 1;  // open
+    objects.count = 1;
+    objects.selected = 0;
+    objects.distance = 600;
+    objects.items[0].shape = 3;  // crate
+    objects.items[0].scale = 1.0f;
+    std::memcpy(memory.data() + kEditorObjectOffset, &objects, sizeof(objects));
+    editor_worker_tick(memory.data(), true);
+    require(editor_snapshot().object_picker && editor_snapshot().object_count == 1,
+            "Object Picker config did not reach the snapshot");
+
+    // Open and cancel round-trip.
+    require(editor_enqueue(EditorAction::ObjectPickerCancel),
+            "Object picker cancel was rejected by the action range");
+    dolly::gAcknowledged = dolly::gLastEvent;
+
+    // Place carries a world point; accepted while open with a finite pose.
+    CameraPose point{10, 20, 30, 0, 0, 0, 0};
+    require(editor_enqueue(EditorAction::ObjectPlace, 3, &point),
+            "Object place was rejected by the action range");
+    require(!editor_enqueue(EditorAction::ObjectPlace, 3, nullptr),
+            "Object place without a world point was accepted");
+    require(!editor_enqueue(EditorAction::ObjectPlace, 9, &point),
+            "Object place with an out-of-range library index was accepted");
+    require(!editor_enqueue(EditorAction::ObjectPlace, 3.5, &point),
+            "Object place with a fractional library index was accepted");
+
+    // The transform event (id 104) must survive both the ID bound and the
+    // pose_override allowlist, and preserve the whole pose.
+    CameraPose transform{5, 6, 7, 10, 20, 30, 2.5};
+    require(editor_enqueue(EditorAction::ObjectTransform, 0, &transform),
+            "Object transform (id 104) was dropped by the action range guard");
+    const auto& event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+    require(event.action == std::uint32_t(EditorAction::ObjectTransform) && event.value == 0 &&
+                event.pose[0] == 5 && event.pose[4] == 20 && event.pose[6] == 2.5,
+            "Object transform payload was not preserved");
+    require(!editor_enqueue(EditorAction::ObjectTransform, 0, nullptr),
+            "Object transform without a pose was accepted");
+    CameraPose bad_transform{5, 6, 7, 10, 20, 30, 50};
+    require(!editor_enqueue(EditorAction::ObjectTransform, 0, &bad_transform),
+            "Object transform with an out-of-range scale was accepted");
+
+    // Select and delete are only valid while the picker is open.
+    dolly::gAcknowledged = dolly::gLastEvent;
+    require(editor_enqueue(EditorAction::ObjectSelect, 0) &&
+                editor_enqueue(EditorAction::ObjectDelete, 0),
+            "Object select/delete was rejected while open");
+    // Close the mode; select/delete must now be refused.
+    std::atomic_store(&dolly::gObjectConfig,
+                      std::shared_ptr<const EditorObjectConfig>{});
+    std::memset(memory.data() + kEditorObjectOffset, 0, sizeof(EditorObjectConfig));
+    editor_worker_tick(memory.data(), true);
+    require(!editor_snapshot().object_picker, "Object picker stayed open after clearing");
+    dolly::gAcknowledged = dolly::gLastEvent;
+    require(!editor_enqueue(EditorAction::ObjectSelect, 0) &&
+                !editor_enqueue(EditorAction::ObjectDelete, 0),
+            "Object select/delete was accepted while closed");
+    require(!editor_enqueue(EditorAction::ObjectTransform, 0, &transform),
+            "Object transform was accepted while closed");
+
+    std::atomic_store(&dolly::gConfig, saved_config);
+    dolly::gAcknowledged = dolly::gLastEvent;
+}
+
 void independent_heartbeat() {
     alignas(8) unsigned char memory[64]{};
     auto* beat = reinterpret_cast<volatile LONG64*>(memory + 32);
@@ -2072,6 +2156,7 @@ void run() {
     editor_cursor_startup_checks();
     editor_input_checks();
     editor_framing_checks();
+    editor_object_checks();
     // The depth master uses video_flags bit 1. The worker must accept the whole
     // config with that bit set; rejecting it silently kept the old config, so
     // the playing state and in-game toggles never applied.

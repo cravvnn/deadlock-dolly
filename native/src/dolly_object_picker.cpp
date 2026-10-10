@@ -96,6 +96,19 @@ bool object_place_screen(const VisualizationView& view, double screen_x, double 
     return object_place_distance(origin, direction, distance, point);
 }
 
+bool object_place_view(const VisualizationView& view, double screen_x, double screen_y,
+                       PlaceMode mode, double distance, double plane_z,
+                       std::array<double, 3>& point) noexcept {
+    std::array<double, 3> direction{};
+    if (!object_screen_ray(view, screen_x, screen_y, direction))
+        return false;
+    const std::array<double, 3> origin{view.pose[0], view.pose[1], view.pose[2]};
+    if (mode == PlaceMode::Ground && object_place_on_plane(origin, direction, plane_z, point))
+        return true;
+    // Distance mode, or a ground ray that misses the plane (parallel/behind).
+    return object_place_distance(origin, direction, distance, point);
+}
+
 void object_face_camera(double camera_yaw, const std::array<double, 3>& authored,
                         std::array<double, 3>& angles) noexcept {
     angles = authored;
@@ -110,6 +123,23 @@ bool object_clamp_bounds(std::array<double, 3>& point, double limit) noexcept {
     point[1] = std::clamp(point[1], -limit, limit);
     point[2] = std::clamp(point[2], -limit, limit);
     return true;
+}
+
+bool object_snap_point(std::array<double, 3>& point, double step) noexcept {
+    if (!finite(point) || !std::isfinite(step) || step <= 0)
+        return false;
+    for (double& value : point)
+        value = std::round(value / step) * step;
+    return finite(point);
+}
+
+double object_snap_angle(double angle, double step) noexcept {
+    if (!std::isfinite(angle) || !std::isfinite(step) || step <= 0)
+        return angle;
+    const double snapped = std::round(angle / step) * step;
+    if (!std::isfinite(snapped))
+        return angle;
+    return std::remainder(snapped, 360.0);
 }
 
 void object_camera_axes(const CameraPose& pose, std::array<double, 3>& right,

@@ -725,8 +725,11 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (action == EditorAction::ReShade)
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
+    // The bound is the last declared action (ObjectTransform), not ObjectDelete:
+    // ObjectTransform is id 104, so bounding at 103 silently dropped every gizmo
+    // commit-on-release before it could reach the event ring.
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::ObjectDelete))
+        std::uint32_t(action) > std::uint32_t(EditorAction::ObjectTransform))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -924,7 +927,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
                 return false;
     } else if (pose_override && action != EditorAction::SetAttachOffsets &&
                action != EditorAction::SetAttachBone && action != EditorAction::FinishBonePicker &&
-               action != EditorAction::StartGameFollow && !camera_action)
+               action != EditorAction::StartGameFollow && action != EditorAction::ObjectPlace &&
+               action != EditorAction::ObjectTransform && !camera_action)
         return false;
     if (action == EditorAction::SetSpeed) {
         if (value < 1 || value > 10000)

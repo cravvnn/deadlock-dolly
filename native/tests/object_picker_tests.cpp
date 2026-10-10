@@ -77,6 +77,42 @@ int main() {
         std::array<double, 3> nan{std::numeric_limits<double>::quiet_NaN(), 0, 0};
         require(!object_clamp_bounds(nan, 100000.0), "Reject nonfinite point");
 
+        // Grid snap: nearest multiple per axis; a bad step leaves it untouched.
+        std::array<double, 3> snap{17.0, -9.0, 31.5};
+        require(object_snap_point(snap, 16.0), "Snap point");
+        require(snap[0] == 16.0 && snap[1] == -16.0 && snap[2] == 32.0, "Snap rounds to grid");
+        std::array<double, 3> unsnapped{17.0, -9.0, 31.5};
+        require(!object_snap_point(unsnapped, 0.0), "Reject zero snap step");
+        require(unsnapped[0] == 17.0 && unsnapped[2] == 31.5, "Rejected snap leaves point unchanged");
+        std::array<double, 3> nan_snap{std::numeric_limits<double>::quiet_NaN(), 0, 0};
+        require(!object_snap_point(nan_snap, 16.0), "Reject nonfinite snap point");
+
+        // Angle snap wraps into [-180, 180); a bad step is returned unchanged.
+        require(std::abs(object_snap_angle(7.0, 15.0) - 0.0) < 1e-9, "Angle snaps down");
+        require(std::abs(object_snap_angle(8.0, 15.0) - 15.0) < 1e-9, "Angle snaps up");
+        require(std::abs(object_snap_angle(359.0, 45.0)) < 1e-9, "Angle wraps 360 to 0");
+        require(object_snap_angle(30.0, 0.0) == 30.0, "Reject zero angle step");
+        require(std::isnan(object_snap_angle(std::numeric_limits<double>::quiet_NaN(), 15.0)),
+                "Nonfinite angle is unchanged (NaN stays NaN)");
+
+        // Unified placement mode: distance always resolves; ground hits the
+        // plane when aimed at it and falls back to distance when it misses.
+        std::array<double, 3> mode_point{};
+        require(object_place_view(view, 800, 450, PlaceMode::Distance, 500, 0, mode_point),
+                "Distance mode places");
+        require(std::abs(mode_point[0] - 600) < 1e-6, "Distance mode is 500 ahead as before");
+        const CameraPose high_pose = {0, 0, 500, 0, 0, 0, 16.0 / 9.0};
+        VisualizationView down_view{high_pose, 90, 1600, 900, 1};
+        require(object_place_view(down_view, 800, 900, PlaceMode::Ground, 500, 0, mode_point),
+                "Ground mode places on a plane");
+        require(std::abs(mode_point[2]) < 1e-6, "Ground mode lands on the plane");
+        // Looking level never crosses the plane, so ground falls back to ahead.
+        const CameraPose level_pose = {0, 0, 500, 0, 0, 0, 16.0 / 9.0};
+        VisualizationView level_view{level_pose, 90, 1600, 900, 1};
+        require(object_place_view(level_view, 800, 450, PlaceMode::Ground, 500, 0, mode_point),
+                "Ground mode falls back when the ray misses");
+        require(std::abs(mode_point[2] - 500) < 1e-6, "Ground fallback is the distance point");
+
         // --- Gizmo math ---
         VisualizationView gview{pose, 90, 1600, 900, 1};
         // Camera axes at yaw 0: right is -Y, up is +Z (Source convention).

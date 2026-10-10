@@ -77,13 +77,14 @@ def _object_place(app, event, publish):
     publish()
 
 
-def _object_select(app, event):
+def _object_select(app, event, publish):
     from . import object_picker as picks
     index = event.get("value")
     if not math.isfinite(index) or index != int(index):
         raise ValueError("Object selection is invalid")
     app.object_picker_selected = picks.select(app.project, int(index))
     app._native_object_cache = None
+    publish()
 
 
 def _object_delete(app, event, publish):
@@ -334,7 +335,7 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "object_place":
         _object_place(app, event, publish)
     elif action == "object_select":
-        _object_select(app, event)
+        _object_select(app, event, publish)
     elif action == "object_delete":
         _object_delete(app, event, publish)
     elif action == "object_transform":

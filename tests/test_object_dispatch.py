@@ -71,6 +71,15 @@ class ObjectDispatchTests(unittest.TestCase):
         self.assertEqual([o.library_id for o in self.app.project.objects], ["barrel"])
         self.assertEqual(self.app.object_picker_selected, 0)
 
+    def test_select_publishes_so_the_ring_refreshes(self):
+        self.app.project = picks.place(Project(), "crate", [0, 0, 0])
+        self.app.project = picks.place(self.app.project, "barrel", [1, 1, 1])
+        self.app.object_picker_open = True
+        with patch("dolly.editor_session.configure") as configure:
+            dispatch.dispatch(self.app, event("object_select", value=1), self.bridge, publish=self.publish)
+        configure.assert_called()
+        self.assertEqual(self.app.object_picker_selected, 1)
+
     def test_delete_rejects_bad_index(self):
         self.app.object_picker_open = True
         with self.assertRaises(ValueError):

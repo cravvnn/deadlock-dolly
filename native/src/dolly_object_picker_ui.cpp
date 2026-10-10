@@ -52,6 +52,30 @@ float g_drop_height = 400.0f;     // world units above the aim point
 constexpr double kDropGravity = 1600.0;
 constexpr double kDropRestitution = 0.35;
 
+// Placement controls, presentation-only. Distance is a fixed distance ahead of
+// the camera; Ground intersects the aim ray with the horizontal plane at world
+// Z ``g_ground_z`` (falling back to Distance when the ray misses the plane).
+// Snap is an optional grid applied when a point is chosen.
+float g_place_distance = 600.0f;
+int g_place_mode = 0;                  // 0 distance, 1 ground
+float g_ground_z = 0.0f;               // world-Z plane for ground placement
+bool g_snap_enabled = false;
+float g_snap_size = 16.0f;             // world units per grid cell
+bool g_snap_angle_enabled = false;
+float g_snap_angle = 15.0f;            // degrees per step on rotate
+
+// A scene click resolves through object_place_view, then optional grid snap.
+bool resolve_place(const VisualizationView& view, const ImVec2& mouse, double fallback_distance,
+                   std::array<double, 3>& point) {
+    const PlaceMode mode = g_place_mode == 1 ? PlaceMode::Ground : PlaceMode::Distance;
+    const double distance = g_place_distance > 0 ? double(g_place_distance) : fallback_distance;
+    if (!object_place_view(view, mouse.x, mouse.y, mode, distance, double(g_ground_z), point))
+        return false;
+    if (g_snap_enabled && g_snap_size > 0)
+        object_snap_point(point, double(g_snap_size));
+    return true;
+}
+
 void start_drop(int index, double floor_z, double drop_height) {
     for (auto& drop : g_drops) {
         if (!drop.active) {
@@ -117,11 +141,28 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
     const float margin = 24 * panel_scale;
     const float width = std::min(350 * panel_scale, io.DisplaySize.x * .42f);
     const float left = io.DisplaySize.x - width - margin;
-    const float height = std::min(io.DisplaySize.y - margin * 2,
-                                  std::max(440 * panel_scale, 620 * panel_scale));
+    // The library child takes its exact content height so the controls below it
+    // always have room. The window is first opened at full available height
+    // (so no child is clamped while laying out), then shrunk to the measured
+    // content height before End, which never clips a control.
+    const float row_height = ImGui::GetTextLineHeight() + 10 * panel_scale;
+    constexpr int kLibraryRows = 9;    // entries in kLibrary
+    constexpr int kCategoryCount = 3;  // Guides, Props, Lights
+    const float spacing = ImGui::GetStyle().ItemSpacing.y;
+    const float line = ImGui::GetTextLineHeight() + spacing;
+    const float natural_library =
+        line * kCategoryCount + (row_height + spacing) * kLibraryRows + spacing * kCategoryCount;
+    const float max_height = io.DisplaySize.y - margin * 2;
+    // Reserve space for the header above the list and every control below it
+    // (placed list, tool, place, snap, drop, buttons). When the display is too
+    // short for the natural list, the list shrinks and scrolls instead, so a
+    // control is never pushed off the panel.
+    const float reserved = line * 10 + 470 * panel_scale;
+    const float library_height =
+        std::max(60.0f, std::min(natural_library, max_height - reserved));
 
     ImGui::SetNextWindowPos(ImVec2(left, margin), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(width, max_height), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(.94f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12 * panel_scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20 * panel_scale, 18 * panel_scale));
@@ -134,7 +175,7 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
     ImGui::PushFont(heading_font);
     ImGui::TextUnformatted("Place an object");
     ImGui::PopFont();
-    ImGui::TextDisabled("Click in the scene to drop the selected object ahead of the camera.");
+    ImGui::TextDisabled("Click to place; drag a row to drop.");
     ImGui::Separator();
 
     ImGui::TextColored(ImVec4(.51f, .94f, .81f, 1), "SELECTED");
@@ -143,14 +184,13 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(.51f, .94f, .81f, 1), "LIBRARY");
 
-    const float footer = 150 * panel_scale;
-    ImGui::BeginChild("##object-library",
-                      ImVec2(0, std::max(60.0f, ImGui::GetContentRegionAvail().y - footer)), false,
-                      ImGuiWindowFlags_NoScrollbar);
+    // The library child is sized to its content, or smaller on a short display
+    // (then it scrolls) so the controls below always keep their room.
+    ImGui::BeginChild("##object-library", ImVec2(0, library_height), false,
+                      ImGuiWindowFlags_HorizontalScrollbar);
     // The stray left-edge navigation cursor line is suppressed, matching the
     // Bone Picker list. The ring is the sole persistent selection indicator.
     ImGui::PushStyleColor(ImGuiCol_NavCursor, IM_COL32(0, 0, 0, 0));
-    const float row_height = ImGui::GetTextLineHeight() + 10 * panel_scale;
     for (const char* category : kCategories) {
         ImGui::TextDisabled("%s", category);
         for (std::size_t index = 0; index < kLibrary.size(); ++index) {
@@ -193,7 +233,8 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
 
     ImGui::TextColored(ImVec4(.51f, .94f, .81f, 1), "PLACED (%u)", state.object_count);
     const float list_height = row_height * 3.4f;
-    ImGui::BeginChild("##object-placed", ImVec2(0, list_height), false);
+    ImGui::BeginChild("##object-placed", ImVec2(0, list_height), false,
+                      ImGuiWindowFlags_NoScrollbar);
     if (state.object_count == 0) {
         ImGui::TextDisabled("Nothing placed yet.");
     } else {
@@ -249,6 +290,39 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
     ImGui::EndDisabled();
     ImGui::Spacing();
 
+    // Placement: how a scene click resolves to a world point.
+    ImGui::TextColored(ImVec4(.51f, .94f, .81f, 1), "PLACE");
+    if (ImGui::RadioButton("Ahead", g_place_mode == 0))
+        g_place_mode = 0;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("On ground", g_place_mode == 1))
+        g_place_mode = 1;
+    if (g_place_mode == 0) {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##place-distance", &g_place_distance, 50.0f, 4000.0f, "%.0f ahead");
+    } else {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##ground-z", &g_ground_z, -2048.0f, 2048.0f, "%.0f floor Z");
+    }
+    ImGui::Spacing();
+
+    // Snapping: an optional grid on placement and move, and an angle step on
+    // rotate. Off by default so free placement is unchanged.
+    ImGui::TextColored(ImVec4(.51f, .94f, .81f, 1), "SNAP");
+    ImGui::Checkbox("Grid", &g_snap_enabled);
+    if (g_snap_enabled) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##snap-size", &g_snap_size, 1.0f, 256.0f, "%.0f units");
+    }
+    ImGui::Checkbox("Angle", &g_snap_angle_enabled);
+    if (g_snap_angle_enabled) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##snap-angle", &g_snap_angle, 1.0f, 90.0f, "%.0f deg");
+    }
+    ImGui::Spacing();
+
     // Drop physics: a client-side gravity animation on placement (the paused
     // replay does not step the engine's physics).
     ImGui::TextColored(ImVec4(.51f, .94f, .81f, 1), "DROP");
@@ -268,6 +342,11 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
     if (ImGui::Button("Delete selected", ImVec2(-1, 0)))
         editor_enqueue(EditorAction::ObjectDelete, double(state.object_selected));
     ImGui::EndDisabled();
+    // Shrink to the measured content height now that every row has been laid
+    // out, so the panel fits its contents exactly and never clips the buttons.
+    const float measured = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
+    if (measured > 0 && measured < max_height)
+        ImGui::SetWindowSize(ImVec2(width, measured));
     ImGui::End();
     ImGui::PopStyleVar(2);
 
@@ -315,8 +394,7 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
             const int library = *static_cast<const int*>(payload->Data);
             if (library >= 0 && library < int(kLibrary.size()) && in_scene) {
                 std::array<double, 3> point{};
-                if (object_place_screen(view, io.MousePos.x, io.MousePos.y, state.object_distance,
-                                        point)) {
+                if (resolve_place(view, io.MousePos, state.object_distance, point)) {
                     CameraPose token{};
                     token[0] = point[0];
                     token[1] = point[1];
@@ -362,8 +440,18 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
                     token[1] += delta[1];
                     token[2] += delta[2];
                 }
+                if (g_snap_enabled && g_snap_size > 0) {
+                    std::array<double, 3> snapped{token[0], token[1], token[2]};
+                    if (object_snap_point(snapped, double(g_snap_size))) {
+                        token[0] = snapped[0];
+                        token[1] = snapped[1];
+                        token[2] = snapped[2];
+                    }
+                }
             } else if (g_gizmo.mode == 1) {
                 token[4] = object_rotate_from_drag(g_gizmo.base_angles[1], dx);
+                if (g_snap_angle_enabled && g_snap_angle > 0)
+                    token[4] = object_snap_angle(token[4], double(g_snap_angle));
             } else {
                 token[6] = object_scale_from_drag(g_gizmo.base_scale, dy, 0.05, 20.0);
             }
@@ -408,8 +496,7 @@ void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
             g_gizmo.start_mouse = io.MousePos;
         } else {
             std::array<double, 3> point{};
-            if (object_place_screen(view, io.MousePos.x, io.MousePos.y, state.object_distance,
-                                    point)) {
+            if (resolve_place(view, io.MousePos, state.object_distance, point)) {
                 CameraPose token{};
                 token[0] = point[0];
                 token[1] = point[1];

@@ -32,6 +32,18 @@ bool object_place_on_plane(const std::array<double, 3>& origin,
 bool object_place_screen(const VisualizationView& view, double screen_x, double screen_y,
                          double distance, std::array<double, 3>& point) noexcept;
 
+// Placement mode for the Object Picker. Distance places the object a fixed
+// distance ahead of the camera (always valid); Ground intersects the aim ray
+// with the horizontal plane at ``plane_z`` and falls back to Distance when the
+// ray is parallel to, or pointing away from, the plane.
+enum class PlaceMode : std::uint32_t { Distance = 0, Ground = 1 };
+
+// Resolve a scene click into a world placement point using the selected mode.
+// Returns false for a non-finite screen point or an invalid view.
+bool object_place_view(const VisualizationView& view, double screen_x, double screen_y,
+                       PlaceMode mode, double distance, double plane_z,
+                       std::array<double, 3>& point) noexcept;
+
 // Rotate an object's authored angles so ``yaw`` follows the camera facing,
 // while pitch/roll are preserved. Used when a placed object should look at the
 // viewer by default.
@@ -41,6 +53,15 @@ void object_face_camera(double camera_yaw, const std::array<double, 3>& authored
 // Clamp a placement into the reviewed world bounds. Returns false when the point
 // is non-finite; otherwise the point is clamped in place and true is returned.
 bool object_clamp_bounds(std::array<double, 3>& point, double limit) noexcept;
+
+// Snap a world point to a grid of ``step`` world units per axis (nearest
+// multiple). Returns false for a non-finite point or a non-positive step, in
+// which case the point is left unchanged so a disabled snap never disturbs it.
+bool object_snap_point(std::array<double, 3>& point, double step) noexcept;
+
+// Snap an angle (degrees) to the nearest multiple of ``step``, wrapped into
+// [-180, 180). A non-finite angle or non-positive step is returned unchanged.
+double object_snap_angle(double angle, double step) noexcept;
 
 // --- Gizmo math -----------------------------------------------------------
 // Camera right/up world axes from a pose (Source convention, matching the
