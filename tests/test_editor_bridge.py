@@ -415,7 +415,9 @@ class EditorBridgeTests(unittest.TestCase):
             self.bridge.acknowledge_editor_event(1)
 
     def test_bad_queue_gap_duplicate_action_and_owner_are_rejected(self):
-        for events, owner in (([(2,0,0)],1), ([(1,0,0),(1,0,0)],1), ([(1,99,0)],1), ([],9)):
+        # 200 is beyond the highest defined action id (103), so it must be
+        # rejected as unknown.
+        for events, owner in (([(2,0,0)],1), ([(1,0,0),(1,0,0)],1), ([(1,200,0)],1), ([],9)):
             with self.subTest(events=events,owner=owner):
                 self.publish(events,owner=owner)
                 with self.assertRaises(nb.NativeBridgeError):

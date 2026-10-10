@@ -45,6 +45,10 @@ EXTRA_ACTIONS += ("select_camera", "view_camera", "delete_camera", "undo_shot", 
 EXTRA_ACTIONS += ("set_camera_time", "set_camera_roll")
 EXTRA_ACTIONS += ("framing_grid",)
 EXTRA_ACTIONS += ("take_screenshot",)
+# Object Picker actions are appended after every existing action, so the stable
+# action-ID ABI is unchanged. Ids 99+ are reserved for this feature.
+EXTRA_ACTIONS += ("object_picker_open", "object_picker_cancel", "object_place",
+                  "object_select", "object_delete", "object_transform")
 
 CAMERA_LIST_OFFSET = 2 * 1024 * 1024 + 23360
 CAMERA_LIST_COUNT = 32

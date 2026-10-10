@@ -28,6 +28,7 @@ std::shared_ptr<const EditorDofConfig> gDofConfig;
 std::shared_ptr<const EditorCitadelDofConfig> gCitadelDofConfig;
 std::shared_ptr<const EditorFollowConfig> gFollowConfig;
 std::shared_ptr<const EditorFramingGridConfig> gFramingGridConfig;
+std::shared_ptr<const EditorObjectConfig> gObjectConfig;
 std::shared_ptr<const EditorCameraList> gCameraList;
 std::shared_ptr<const EditorAttachConfig> gAttachConfig;
 std::shared_ptr<const EditorRoster> gRoster;
@@ -327,6 +328,21 @@ void dispatch_key_press(unsigned vk) noexcept {
             return;
         }
     }
+    // The Object Picker is its own mode, toggled by its own binding (default R),
+    // which also lives in the optional block. It opens from Panel/Flight and
+    // closes when already open. While open it owns the panel and accepts the
+    // same key to close, like a mode switch.
+    if (auto objects = std::atomic_load(&gObjectConfig)) {
+        EditorBinding object_binding{};
+        object_binding.vk = static_cast<std::uint16_t>(objects->reserved & 0xffffu);
+        object_binding.modifiers = static_cast<std::uint16_t>(objects->reserved >> 16);
+        if (object_binding.vk && binding_down(object_binding) &&
+            (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
+            const bool open = (objects->flags & 1u) != 0;
+            editor_enqueue(open ? EditorAction::ObjectPickerCancel : EditorAction::ObjectPickerOpen);
+            return;
+        }
+    }
     for (unsigned i = 0; i < 12; ++i) {
         if ((owner == EditorOwner::ReShade || reshade_overlay_open()) && i != 9 && i != 10)
             continue;
@@ -604,6 +620,15 @@ EditorSnapshot editor_snapshot() noexcept {
     auto roster = std::atomic_load(&gRoster);
     if (roster && gConnected.load())
         result.roster_count = roster->count;
+    auto objects = std::atomic_load(&gObjectConfig);
+    if (objects && gConnected.load()) {
+        result.object_picker = (objects->flags & 1) != 0;
+        result.object_count = objects->count;
+        result.object_selected = objects->selected;
+        result.object_distance = objects->distance;
+        std::memcpy(result.object_items, objects->items,
+                    sizeof(EditorObjectItem) * kEditorObjectCount);
+    }
     // Atomic field seqlock gives an internally coherent capture pose and tick.
     // Bounded retries never wait for the render callback.
     for (int attempt = 0; attempt < 4; ++attempt) {
@@ -640,12 +665,24 @@ EditorBinding editor_binding_snapshot(EditorAction action) noexcept {
             result.vk = static_cast<std::uint16_t>(grid->reserved & 0xffffu);
             result.modifiers = static_cast<std::uint16_t>(grid->reserved >> 16);
         }
+    } else if (action == EditorAction::ObjectPickerOpen) {
+        if (auto objects = std::atomic_load(&gObjectConfig)) {
+            result.vk = static_cast<std::uint16_t>(objects->reserved & 0xffffu);
+            result.modifiers = static_cast<std::uint16_t>(objects->reserved >> 16);
+        }
     }
     return result;
 }
 bool editor_framing_grid_enabled() noexcept {
     auto grid = std::atomic_load(&gFramingGridConfig);
     return grid && gConnected.load() && (grid->flags & 1u) != 0;
+}
+bool editor_object_config(EditorObjectConfig& out) noexcept {
+    auto objects = std::atomic_load(&gObjectConfig);
+    if (!objects || !gConnected.load())
+        return false;
+    out = *objects;
+    return true;
 }
 bool editor_attach_config(EditorAttachConfig& out) noexcept {
     auto attach = std::atomic_load(&gAttachConfig);
@@ -689,7 +726,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return configured() && !gReShadeDeferred.load() &&
                reshade_request_overlay(!reshade_overlay_open());
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::TakeScreenshot))
+        std::uint32_t(action) > std::uint32_t(EditorAction::ObjectDelete))
         return false;
     auto state = editor_snapshot();
     if (!state.enabled)
@@ -723,6 +760,44 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if (action == EditorAction::CancelBonePicker && (!state.bone_picker || value != 0))
         return false;
+    // Object Picker: its own exclusive mode. Open needs a live paused view;
+    // cancel/place/select/delete are only valid while it is open, and place
+    // carries the world point in the event pose.
+    if (action == EditorAction::ObjectPickerOpen &&
+        (state.object_picker || !state.ready || !state.paused || state.busy ||
+         state.playing || state.bone_picker || state.owner != EditorOwner::Panel ||
+         (!state.manual_active && !state.follow_active) || value != 0))
+        return false;
+    if (action == EditorAction::ObjectPickerCancel && (!state.object_picker || value != 0))
+        return false;
+    if ((action == EditorAction::ObjectPlace || action == EditorAction::ObjectSelect ||
+         action == EditorAction::ObjectDelete) && !state.object_picker)
+        return false;
+    if (action == EditorAction::ObjectPlace &&
+        (!pose_override || !std::isfinite((*pose_override)[0]) ||
+         !std::isfinite((*pose_override)[1]) || !std::isfinite((*pose_override)[2]) ||
+         value < 0 || value >= 9 || value != std::floor(value)))
+        return false;
+    if (action == EditorAction::ObjectSelect &&
+        (value < 0 || value >= 64 || value != std::floor(value)))
+        return false;
+    if (action == EditorAction::ObjectDelete &&
+        (value < 0 || value >= 64 || value != std::floor(value)))
+        return false;
+    // Object transform: value is the selected index; the pose carries the full
+    // new transform (position[3], angles[3], scale in pose[6]). The editor
+    // transaction validates ranges again before committing.
+    if (action == EditorAction::ObjectTransform &&
+        (!state.object_picker || !pose_override || value < 0 || value >= 64 ||
+         value != std::floor(value)))
+        return false;
+    if (action == EditorAction::ObjectTransform) {
+        for (unsigned i = 0; i < 7; ++i)
+            if (!std::isfinite((*pose_override)[i]))
+                return false;
+        if ((*pose_override)[6] < 0.05 || (*pose_override)[6] > 20.0)
+            return false;
+    }
     if (action == EditorAction::FinishBonePicker &&
         (!state.bone_picker || !pose_override || !std::isfinite((*pose_override)[0]) ||
          (*pose_override)[0] < 0 || (*pose_override)[0] > 4294967295.0 ||
@@ -1294,6 +1369,51 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                 }
             }
         }
+        auto object_source = memory + kEditorObjectOffset;
+        auto object_sequence = reinterpret_cast<volatile LONG*>(object_source + 8);
+        const auto object_first = InterlockedCompareExchange(object_sequence, 0, 0);
+        const auto object_previous = std::atomic_load(&gObjectConfig);
+        if (!(object_first & 1) &&
+            (!object_previous || object_previous->sequence != std::uint32_t(object_first))) {
+            EditorObjectConfig objects{};
+            std::memcpy(&objects, object_source, sizeof(objects));
+            MemoryBarrier();
+            objects.sequence = std::uint32_t(object_first);
+            if (object_first == InterlockedCompareExchange(object_sequence, 0, 0) &&
+                valid_editor_object_config(objects)) {
+                try {
+                    std::atomic_store(&gObjectConfig,
+                                      std::make_shared<const EditorObjectConfig>(objects));
+                } catch (...) {
+                }
+                // Publish the accepted status so the editor can confirm the
+                // runtime holds the list. Written with the object seqlock.
+                EditorObjectStatus status{};
+                std::memcpy(status.magic, "DLYOBS01", 8);
+                status.sequence = std::uint32_t(object_first);
+                status.abi = 1;
+                // bit 0 available (a valid list was accepted), bit 1 active
+                // (mode open), bit 2 preview.
+                status.flags = 1u;
+                if (objects.flags & 1u)
+                    status.flags |= 2u;
+                if (objects.flags & 2u)
+                    status.flags |= 4u;
+                status.active_count = objects.count;
+                status.selected = std::uint32_t(objects.selected);
+                status.error = 0;
+                auto* status_out = memory + kEditorObjectStatusOffset;
+                auto* status_sequence = reinterpret_cast<volatile LONG*>(status_out + 8);
+                const LONG before = InterlockedCompareExchange(status_sequence, 0, 0);
+                const LONG even = (before & 1) ? before + 1 : before;
+                InterlockedExchange(status_sequence, even + 1);
+                std::memcpy(status_out, &status, 8);
+                std::memcpy(status_out + 12, reinterpret_cast<unsigned char*>(&status) + 12,
+                            sizeof(status) - 12);
+                MemoryBarrier();
+                InterlockedExchange(status_sequence, even + 2);
+            }
+        }
         auto attach_source = memory + kEditorAttachOffset;
         auto attach_sequence = reinterpret_cast<volatile LONG*>(attach_source + 8);
         const auto attach_first = InterlockedCompareExchange(attach_sequence, 0, 0);
@@ -1460,6 +1580,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
         std::atomic_store(&gCitadelDofConfig, std::shared_ptr<const EditorCitadelDofConfig>{});
         std::atomic_store(&gFollowConfig, std::shared_ptr<const EditorFollowConfig>{});
         std::atomic_store(&gFramingGridConfig, std::shared_ptr<const EditorFramingGridConfig>{});
+        std::atomic_store(&gObjectConfig, std::shared_ptr<const EditorObjectConfig>{});
         std::atomic_store(&gCameraList, std::shared_ptr<const EditorCameraList>{});
         std::atomic_store(&gAttachConfig, std::shared_ptr<const EditorAttachConfig>{});
         std::atomic_store(&gRoster, std::shared_ptr<const EditorRoster>{});

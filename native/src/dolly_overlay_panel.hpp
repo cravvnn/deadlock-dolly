@@ -33,6 +33,9 @@ public:
     void draw_framing_grid(const EditorSnapshot& state);
     void draw_panel(const EditorSnapshot& state);
     void draw_bone_picker(const EditorSnapshot& state, const PickerPortrait& portrait);
+    // The Object Picker is its own mode and its own right-side window, entered
+    // only by its bindable key. It needs no GPU resource (proxy wireframes).
+    void draw_object_picker(const EditorSnapshot& state);
     void reset_guides() noexcept { guide_geometry.line_count = guide_geometry.label_count = 0; }
     std::size_t guide_lines() const noexcept { return guide_geometry.line_count; }
     std::size_t guide_labels() const noexcept { return guide_geometry.label_count; }

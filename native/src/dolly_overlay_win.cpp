@@ -777,14 +777,18 @@ void render_overlay(IDXGISwapChain* chain) {
                                      : ImVec2(1, 1);
     ImGui::NewFrame();
     panel_ui.reset_guides();
-    if (draw_guides && !state.bone_picker)
+    // The Object Picker is its own mode: it replaces the normal panel and
+    // suppresses the editing guides so the scene reads cleanly.
+    if (draw_guides && !state.bone_picker && !state.object_picker)
         panel_ui.draw_path_guides(state, guides);
-    if (draw_grid && !state.bone_picker) {
+    if (draw_grid && !state.bone_picker && !state.object_picker) {
         panel_ui.draw_framing_grid(state);
         diagnostic_grid.fetch_add(1, std::memory_order_relaxed);
     }
     if (panel) {
-        if (state.bone_picker)
+        if (state.object_picker)
+            panel_ui.draw_object_picker(state);
+        else if (state.bone_picker)
             panel_ui.draw_bone_picker(state, picker_portrait);
         else
             panel_ui.draw_panel(state);

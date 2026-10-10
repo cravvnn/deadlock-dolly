@@ -36,6 +36,88 @@ def _select(app, index, *, view=True):
     app._submit("Viewing saved camera", lambda: app.controller.select_paused_camera(project, key.time))
 
 
+def _object_picker_open(app, bridge, publish):
+    """Enter the Object Picker mode; the native window draws the placed list."""
+    from . import object_picker as picks
+    # Opening requires a live paused native view; the native side re-validates.
+    app.object_picker_open = True
+    app.object_picker_selected = -1
+    app._native_object_cache = None
+    app.status_text.set("Object Picker open. Click in the scene to place the selected object.")
+    publish()
+
+
+def _object_picker_cancel(app, publish):
+    app.object_picker_open = False
+    app.object_picker_selected = -1
+    app._native_object_cache = None
+    app.status_text.set("Object Picker closed.")
+    publish()
+
+
+def _object_place(app, event, publish):
+    """Append one placed object at the event's world point."""
+    from . import object_picker as picks
+    pose = event.get("pose") or ()
+    if len(pose) < 3 or any(not math.isfinite(pose[i]) for i in range(3)):
+        raise ValueError("Object placement point is invalid")
+    index = event.get("value")
+    from .object_library import OBJECT_IDS
+    if not math.isfinite(index) or index != int(index) or not 0 <= int(index) < len(OBJECT_IDS):
+        raise ValueError("Choose an object from the library")
+    library_id = OBJECT_IDS[int(index)]
+    camera_yaw = (app.project.keyframes[-1].yaw if app.project.keyframes else 0.0)
+    candidate = picks.place(app.project, library_id, [pose[0], pose[1], pose[2]],
+                            angles=[0.0, camera_yaw, 0.0])
+    app.project = candidate
+    app.object_picker_selected = len(candidate.objects) - 1
+    app._native_object_cache = None
+    app._mark_dirty()
+    app.status_text.set(f"Placed {library_id}. Click again to add another, or press Delete.")
+    publish()
+
+
+def _object_select(app, event):
+    from . import object_picker as picks
+    index = event.get("value")
+    if not math.isfinite(index) or index != int(index):
+        raise ValueError("Object selection is invalid")
+    app.object_picker_selected = picks.select(app.project, int(index))
+    app._native_object_cache = None
+
+
+def _object_delete(app, event, publish):
+    from . import object_picker as picks
+    index = event.get("value")
+    if not math.isfinite(index) or index != int(index):
+        raise ValueError("Object deletion index is invalid")
+    app.project = picks.remove(app.project, int(index))
+    app.object_picker_selected = picks.select(app.project, int(index))
+    app._native_object_cache = None
+    app._mark_dirty()
+    app.status_text.set("Removed the placed object.")
+    publish()
+
+
+def _object_transform(app, event, publish):
+    """Commit one gizmo drag: value = index, pose = position[3], angles[3], scale."""
+    from . import object_picker as picks
+    index = event.get("value")
+    pose = event.get("pose") or ()
+    if not math.isfinite(index) or index != int(index):
+        raise ValueError("Object transform index is invalid")
+    if len(pose) < 7 or any(not math.isfinite(pose[i]) for i in range(7)):
+        raise ValueError("Object transform is invalid")
+    app.project = picks.set_transform(
+        app.project, int(index),
+        position=[pose[0], pose[1], pose[2]],
+        angles=[pose[3], pose[4], pose[5]],
+        scale=pose[6])
+    app._native_object_cache = None
+    app._mark_dirty()
+    publish()
+
+
 def _native_operation(app, label, function, bridge):
     def run():
         try:
@@ -245,6 +327,18 @@ def _dispatch(app, event, bridge, *, publish):
             raise ValueError('Choose whether to show the replay HUD.')
         _native_operation(app, 'Changing replay HUD',
                           lambda: app.controller.set_replay_hud(bool(event['value'])), bridge)
+    elif action == "object_picker_open":
+        _object_picker_open(app, bridge, publish)
+    elif action == "object_picker_cancel":
+        _object_picker_cancel(app, publish)
+    elif action == "object_place":
+        _object_place(app, event, publish)
+    elif action == "object_select":
+        _object_select(app, event)
+    elif action == "object_delete":
+        _object_delete(app, event, publish)
+    elif action == "object_transform":
+        _object_transform(app, event, publish)
     elif action == "framing_grid":
         settings = replace(app.app_settings,
                            framing_grid_enabled=not app.app_settings.framing_grid_enabled)

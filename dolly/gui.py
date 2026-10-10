@@ -388,6 +388,9 @@ class DollyApp:
         # after startup and republished by editor_session.configure.
         self.attach_fields = None
         self.preview_attach = False
+        # Object Picker mode: a session-only toggle entered by its bindable key.
+        self.object_picker_open = False
+        self.object_picker_selected = -1
         self.replay_entries = []
         self.binding_action = tk.StringVar()
         self.binding_key = tk.StringVar()

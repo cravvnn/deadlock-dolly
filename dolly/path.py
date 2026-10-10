@@ -19,6 +19,7 @@ from typing import Any, Iterable
 
 from .particles import (PARTICLE_DEFAULT, PARTICLE_IDS, PARTICLE_INTENSITY_DEFAULT,
                         PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN)
+from .object_model import PlacedObject, validate_objects
 
 
 FORMAT_NAME = "deadlock-dolly"
@@ -28,6 +29,8 @@ CONFETTI_FORMAT_VERSION = 7
 PARTICLE_FORMAT_VERSION = 8
 LENS_FORMAT_VERSION = 9
 SPLINE_FORMAT_VERSION = 10
+OBJECTS_FORMAT_VERSION = 11
+MAX_OBJECTS = 64
 CONFETTI_SPAWN_HEIGHT_DEFAULT = 250.0
 CONFETTI_SPAWN_HEIGHT_MIN = 100.0
 CONFETTI_SPAWN_HEIGHT_MAX = 1500.0
@@ -456,6 +459,7 @@ class Project:
     confetti_despawn_on_ground: bool = False
     particles_preset: str = PARTICLE_DEFAULT
     particles_intensity: float = PARTICLE_INTENSITY_DEFAULT
+    objects: list[PlacedObject] = field(default_factory=list)
 
     def validate(self) -> None:
         if not isinstance(self.name, str) or len(self.name) > 256:
@@ -540,6 +544,10 @@ class Project:
         for name, value in self.setup_values.items():
             validate_cvar_name(name)
             validate_cvar_value(name, value, f"{name} setup value")
+
+        if not isinstance(self.objects, list) or len(self.objects) > MAX_OBJECTS:
+            raise ValueError(f"A shot can hold at most {MAX_OBJECTS} placed objects")
+        validate_objects(self.objects, "Placed objects")
 
     @property
     def duration(self) -> float:
@@ -642,6 +650,9 @@ class Project:
         if self.interpolation == "spline":
             version = SPLINE_FORMAT_VERSION
             particles_used = True  # New-format files include the existing optional-setting schema.
+        if self.objects:
+            version = OBJECTS_FORMAT_VERSION
+            particles_used = True  # New-format files include the existing optional-setting schema.
         return {
             "format": FORMAT_NAME,
             "version": version,
@@ -656,6 +667,7 @@ class Project:
                 "particles_preset": self.particles_preset,
                 "particles_intensity": self.particles_intensity}
                if particles_used else {}),
+            **({"objects": [obj.to_dict() for obj in self.objects]} if self.objects else {}),
             "start_tick": self.start_tick,
             "tick_rate": self.tick_rate,
             "setup_values": {name: _json_cvar_value(value) for name, value in self.setup_values.items()},
@@ -676,9 +688,10 @@ class Project:
                 or version not in (1, FORMAT_VERSION, VECTOR_FORMAT_VERSION, ATTACH_FORMAT_VERSION,
                                    ROTATION_FORMAT_VERSION, BLEND_FORMAT_VERSION,
                                    CONFETTI_FORMAT_VERSION, PARTICLE_FORMAT_VERSION,
-                                   LENS_FORMAT_VERSION, SPLINE_FORMAT_VERSION):
+                                   LENS_FORMAT_VERSION, SPLINE_FORMAT_VERSION,
+                                   OBJECTS_FORMAT_VERSION):
             raise ValueError(f"Unsupported project version: {version!r}; expected 1 through "
-                             f"{SPLINE_FORMAT_VERSION}")
+                             f"{OBJECTS_FORMAT_VERSION}")
         allowed = ("format", "version", "name", "interpolation", "rotation_mode",
                    "start_tick", "tick_rate", "setup_values", "keyframes", "tracks")
         if version >= FORMAT_VERSION:
@@ -698,6 +711,8 @@ class Project:
             for required in ("particles_preset", "particles_intensity"):
                 if required not in obj:
                     raise ValueError(f"Project version {version} is missing required field: {required}")
+        if version >= OBJECTS_FORMAT_VERSION:
+            allowed += ("objects",)
         _members(obj, allowed, "project")
         keyframes: list[Keyframe] = []
         for i, raw in enumerate(_array(obj.get("keyframes", []), "Camera keyframes")):
@@ -765,7 +780,14 @@ class Project:
             tracks.append(CvarTrack(name=track["name"], keys=keys,
                                     interpolation=track.get("interpolation", "linear"),
                                     restore_value=track.get("restore_value")))
+        objects: list[PlacedObject] = []
+        for i, raw in enumerate(_array(obj.get("objects", []), "Placed objects")):
+            try:
+                objects.append(PlacedObject.from_dict(raw))
+            except ValueError as exc:
+                raise ValueError(f"Placed object {i} is invalid: {exc}") from exc
         project = cls(name=obj.get("name", "Untitled"), keyframes=keyframes, tracks=tracks,
+                      objects=objects,
                       interpolation=obj.get("interpolation", "smooth"),
                       rotation_mode=obj.get("rotation_mode", "shortest"),
                       start_tick=obj.get("start_tick", 0), tick_rate=obj.get("tick_rate", 64.0),

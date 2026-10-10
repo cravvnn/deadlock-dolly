@@ -6,9 +6,11 @@ namespace dolly {
 constexpr std::uint32_t kBridgeAbi = 4;
 constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 // The editor blocks occupy the first +4096 tail; the attach roster
-// (native -> editor) follows at +4096 inside a second 4 KiB page. Keep this
-// in step with dolly/native_bridge.py MAPPING_BYTES.
-constexpr std::size_t kMappingBytes = kControlBytes + 24576;
+// (native -> editor) follows at +4096 inside a second 4 KiB page. The Object
+// Picker block occupies one appended 4 KiB page after the legacy tail. Keep
+// this in step with dolly/native_bridge.py MAPPING_BYTES and
+// dolly/object_wire.OBJECT_MAPPING_BYTES.
+constexpr std::size_t kMappingBytes = kControlBytes + 24576 + 4096;
 constexpr std::size_t kPayloadOffset = 1024;
 constexpr std::size_t kMaxPayloadBytes = kControlBytes - kPayloadOffset;
 constexpr char kControlMagic[8] = {'D', 'L', 'Y', 'C', 'A', 'M', '0', '1'};
