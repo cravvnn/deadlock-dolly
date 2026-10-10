@@ -3215,7 +3215,7 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                 self._request("demo_pause")
                 pause_confirmed = True
                 stable = 0
-            if target < observed <= target + 2:
+            if target < observed <= target + 4:
                 overshoot_samples = overshoot_samples + 1 if observed == overshoot_tick else 1
                 overshoot_tick = observed
             else:
@@ -3255,7 +3255,8 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                                            "actual_tick": undershoot_tick,
                                            "reason": "recorded_packet"})
             if overshoot_samples >= SEEK_SETTLE_SAMPLES and not corrections:
-                # Native forward seeks can stop two ticks late. Reissuing the
+                # Native forward seeks can stop up to four ticks late (6774:
+                # request15301 settled at15305). Reissuing the
                 # SAME target from there takes the backward-seek route. Do not
                 # react to a transient ahead sample or chase an unrelated seek.
                 self._check_position_cancelled()

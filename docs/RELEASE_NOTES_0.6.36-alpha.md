@@ -1,6 +1,8 @@
-# Deadlock Dolly 0.6.35-alpha
+# Deadlock Dolly 0.6.36-alpha
 
-Compatibility update for Deadlock build 6769, including current hero labels, Hyperline startup handling and hidden FFmpeg output steps.
+Fresh versioned package for Deadlock build 6769, including current hero labels, Hyperline startup handling and hidden FFmpeg output steps.
+
+This release gives the 6769 compatibility package a new version after 0.6.35 was already published. Feature code is unchanged from the verified 6769 candidate.
 
 ## Highlights
 

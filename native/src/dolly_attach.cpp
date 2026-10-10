@@ -204,14 +204,16 @@ const char* attach_hero_name(const char* model_path) noexcept {
         const char* stem;
         const char* name;
     };
-    // Generated from scripts/heroes.vdata (full staged roster, 2026-09-26).
+    // Generated from scripts/heroes.vdata; released additions reviewed 2026-10-09.
     static constexpr Entry kNames[] = {
         {"abrams", "Abrams"},
         {"archer", "Grey Talon"},
         {"astro", "Holliday"},
+        {"baba", "Baba"},
         {"bebop", "Bebop"},
         {"boho", "Boho"},
         {"bookworm", "Paige"},
+        {"chessmaster", "Solomon"},
         {"chrono", "Paradox"},
         {"digger", "Mo and Krill"},
         {"doorman", "Doorman"},
@@ -240,6 +242,7 @@ const char* attach_hero_name(const char* model_path) noexcept {
         {"pocket", "Pocket"},
         {"priest", "Priest"},
         {"punkgoat", "Billy"},
+        {"ratking", "Rat King"},
         {"shiv", "Shiv"},
         {"unicorn", "Unicorn"},
         {"vampirebat", "Mina"},

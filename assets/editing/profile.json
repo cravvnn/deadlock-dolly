@@ -1,11 +1,11 @@
 {
   "format": 1,
-  "description": "Version6766 / Steam reviewed offline. Editing baseline keeps the official October2 gameinfo sync; installed official gameinfo is unchanged. Editing mounts, addon enablement and sampleable depth preserved. Live validation pending.",
+  "description": "Build 6774 reviewed offline and checked in one bounded public-Dolly startup, seek, Follow/POV and restoration run. Editing baseline preserves journaled gameinfo swapping and installed Hyperline mounts. Rendered output is not fully certified.",
   "gameinfo_sha256": "9ba13efbe6961d0d94eb317273bfb3fb67323138498a2e9ec9f954a12b999062",
   "modules": {
-    "citadel/bin/win64/client.dll": "e0edcb5f9d86f879cc9c0ba0ed37714760b81266b47abcdbea7f42ec233f82e0",
-    "bin/win64/engine2.dll": "084c45473667c65174a9a19c428359ac335c3e990008dbf26c0eef91be44784c",
+    "citadel/bin/win64/client.dll": "e2bafed8ebdfd239d506b4f59b24a09719f945c6a63f69766171349b886603d4",
+    "bin/win64/engine2.dll": "e5e4b2df76ff88d99dd9217e4ccde09bcce9b963327b38963f3ae90ce7e55ac2",
     "bin/win64/tier0.dll": "6793cc7306ff40283ba038a784fe96f99f6d38f93c825571ee93ab6b9d9d5332"
   },
-  "unlocker_server_sha256": "72b843001bafdc45fa4e20547c6368f83cb9ab34da452bbfe37aa71695173c50"
+  "unlocker_server_sha256": "9a97830b33a1b53dd766902c185d83e53c44924a5da60732331433c28dba0ba2"
 }

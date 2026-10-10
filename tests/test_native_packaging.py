@@ -42,7 +42,7 @@ class NativePackagingTests(unittest.TestCase):
             "client": (root / "native/src/dolly_compat_generated.hpp",
                        r'\{\s*"([a-f0-9]{64})"'),
             "engine": (root / "native/src/bridge_win.cpp",
-                       r'k(?:Updated|September|Build(?:6726|6728|6739|6753|6757))?EngineHash\[\]\s*=\s*"([a-f0-9]{64})"'),
+                       r'k(?:Updated|September|Build\d+)?EngineHash\[\]\s*=\s*"([a-f0-9]{64})"'),
             "tier0": (root / "native/src/native_effects_win.hpp",
                       r'k(?:Updated|September|Build6726)?Tier0Hash\[\]\s*=\s*"([a-f0-9]{64})"'),
         }

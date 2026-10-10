@@ -1,10 +1,26 @@
 # Changes
 
-## 0.6.35 alpha - Every FFmpeg output step runs hidden in a clean environment
+## 0.6.37-alpha
+
+- Support Deadlock build 6774 with reviewed client profiles and an updated exact-build unlocker.
+- Recover confirmed replay seeks that stop up to four ticks late, retaining one correction, cancellation, the existing deadline and exact-target verification.
+
+## 0.6.36 alpha - Fresh package version for the October 9 update
+
+**0.6.36-alpha**
+
+- **Distinct update version.** *Before:* the 6769 compatibility package reused the already-published 0.6.35 version. *After:* the package and updater identify this build as 0.6.36-alpha. It includes the same reviewed 6769 compatibility, hero mappings, Hyperline handling and FFmpeg fixes.
+
+Full details: [0.6.36 release notes](RELEASE_NOTES_0.6.36-alpha.md).
+
+## 0.6.35 alpha - October 9 update compatibility
 
 **0.6.35-alpha**
 
-- **Every FFmpeg output step runs hidden in a clean environment.** *Before:* assembling a high-resolution still, encoding a Players layer, combining a layer's alpha, muxing clip audio, or encoding a depth preview could flash a console window that stayed open, and in the packaged app FFmpeg could load the editor's bundled libraries. *After:* every FFmpeg call runs hidden with a clean environment, the same way the Players MOV encoder already did.
+- **October 9 update support (6769).** *Before:* Dolly refused the updated game modules. *After:* reviewed compatibility profiles and a rebuilt unlocker allow replay startup and camera editing on 6769.
+- **Current hero names and portraits.** *Before:* Baba, Solomon and Rat King were missing from Dolly's hero mappings. *After:* their names and portrait paths match the installed game assets.
+- **Hyperline mounts survive editor startup.** *Before:* Dolly's temporary editing configuration could omit Hyperline content mounts. *After:* those mounts are carried into the editing session, with verified configuration replacement and recovery.
+- **Hidden FFmpeg output steps.** *Before:* still assembly, Players/layer encoding, audio muxing and depth previews could open console windows or inherit the editor's DLL search path. *After:* these FFmpeg steps run hidden in a clean environment.
 
 Full details: [0.6.35 release notes](RELEASE_NOTES_0.6.35-alpha.md).
 

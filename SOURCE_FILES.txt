@@ -607,3 +607,12 @@ docs/RELEASE_NOTES_0.6.32-alpha.md
 docs/RELEASE_NOTES_0.6.33-alpha.md
 docs/RELEASE_NOTES_0.6.34-alpha.md
 docs/RELEASE_NOTES_0.6.35-alpha.md
+native/profiles/deadlock-2026-10-09-6769-complete.json
+native/profiles/scenesystem-2026-10-09-6769.json
+native/profiles/soundsystem-2026-10-09-6769.json
+third_party/cvar_unlocker/unlocker-build-6769.patch
+docs/RELEASE_NOTES_0.6.36-alpha.md
+
+native/profiles/deadlock-2026-10-09-6774-complete.json
+third_party/cvar_unlocker/unlocker-build-6774.patch
+docs/RELEASE_NOTES_0.6.37-alpha.md
