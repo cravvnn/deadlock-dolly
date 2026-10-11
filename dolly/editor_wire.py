@@ -62,6 +62,41 @@ FRAMING_GRID_ABI = 1
 FRAMING_GRID_MAGIC = b"DLYGRID1"
 FRAMING_GRID = struct.Struct("<8s4I")
 
+# Experimental prop-persistence probe, appended after the object status block in
+# the object page. Offsets must match dolly_editor.hpp exactly.
+OBJECT_CONFIG_BYTES = 32 + 8 + 64 * 40          # EditorObjectConfig
+OBJECT_STATUS_BYTES = 32                          # EditorObjectStatus
+PROP_PROBE_OFFSET = 2 * 1024 * 1024 + 24576 + OBJECT_CONFIG_BYTES + OBJECT_STATUS_BYTES
+PROP_PROBE_ABI = 1
+PROP_PROBE_MAGIC = b"DLYPRP01"
+PROP_PROBE_STATUS_MAGIC = b"DLYPRS01"
+PROP_PROBE_CONFIG = struct.Struct("<8s4I")
+PROP_PROBE_STATUS = struct.Struct("<8s4I" + "I" * 4 + "I" * 4)
+# request values
+PROP_PROBE_CREATE = 1
+PROP_PROBE_RECOUNT = 2
+
+
+def pack_prop_probe(sequence, request):
+    if request not in (PROP_PROBE_CREATE, PROP_PROBE_RECOUNT):
+        raise ValueError("Prop probe request must be create or recount")
+    return PROP_PROBE_CONFIG.pack(PROP_PROBE_MAGIC, _uint(sequence, "sequence"),
+                                  PROP_PROBE_ABI, int(request), 0)
+
+
+def unpack_prop_probe_status(data):
+    if len(data) != PROP_PROBE_STATUS.size:
+        raise ValueError("Prop probe status returned the wrong size")
+    if not any(data):
+        return None
+    fields = PROP_PROBE_STATUS.unpack(data)
+    magic, sequence, abi, state, resolved = fields[:5]
+    if magic != PROP_PROBE_STATUS_MAGIC or abi != PROP_PROBE_ABI or sequence & 1:
+        raise ValueError("Prop probe status does not match this build")
+    return {"sequence": sequence, "state": state, "resolved": resolved,
+            "before_count": fields[5], "after_count": fields[6],
+            "entity_handle": fields[7], "calls": fields[8], "error": fields[9]}
+
 
 def pack_framing_grid(sequence, enabled, binding=None):
     """Guide switch plus its binding in the reserved field (vk | mods << 16)."""

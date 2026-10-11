@@ -34,6 +34,7 @@
 #include "dolly_media.hpp"
 #include "dolly_video.hpp"
 #include "dolly_confetti.hpp"
+#include "dolly_prop_runtime.hpp"
 // Pulled in again (as a no-op) by dolly_compat_runtime.hpp from inside the
 // anonymous namespace below. Declaring it here first keeps `#pragma once` from
 // introducing a `dolly` namespace in that anonymous namespace, which would
@@ -688,6 +689,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         ~Exit() { flag = false; }
     } exit{entered};
     ++gHookCalls;
+    // Experimental prop-persistence probe: consume a one-shot request on the
+    // game/render thread regardless of camera mode. Idempotent and inert when
+    // no request is queued.
+    prop_runtime::tick();
     std::uintptr_t table = 0;
     if (caller != gClient + gCompat.caller ||
         !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
@@ -1435,6 +1440,7 @@ static DWORD WINAPI worker(void*) {
         }
         attach_runtime::configure_client(client);
         confetti::initialize(gClient);
+        prop_runtime::initialize(gClient);
         if (!init_cvar_interface()) {
             startup_status(
                 State::Unsupported, 26,

@@ -376,6 +376,31 @@ static_assert(sizeof(EditorObjectStatus) == 32, "Object status layout");
 static_assert(kEditorObjectStatusOffset + sizeof(EditorObjectStatus) <=
                   2 * 1024 * 1024 + 24576 + 4096,
               "Object status fits the appended 4 KiB page");
+// Experimental prop-persistence probe. Appended after the object status in the
+// same page. The editor writes a request sequence; the render thread consumes
+// it to create ONE model-less client prop (or re-count). The result carries the
+// entity counts before/after so a tick/seek can be tested. This is a probe, not
+// a feature: it exists only to answer whether a client-created entity survives
+// replay playback.
+constexpr std::size_t kEditorPropProbeOffset = kEditorObjectStatusOffset + sizeof(EditorObjectStatus);
+constexpr std::uint32_t kEditorPropProbeAbi = 1;
+#pragma pack(push, 1)
+struct EditorPropProbeConfig {
+    char magic[8];                 // "DLYPRP01"
+    std::uint32_t sequence, abi, request, reserved;  // request: 1 create, 2 recount
+};
+struct EditorPropProbeStatus {
+    char magic[8];                 // "DLYPRS01"
+    std::uint32_t sequence, abi, state, resolved;
+    std::uint32_t before_count, after_count, entity_handle, calls;
+    std::uint32_t error, reserved[3];
+};
+#pragma pack(pop)
+static_assert(sizeof(EditorPropProbeConfig) == 24, "Prop probe config layout");
+static_assert(sizeof(EditorPropProbeStatus) == 56, "Prop probe status layout");
+static_assert(kEditorPropProbeOffset + sizeof(EditorPropProbeConfig) + sizeof(EditorPropProbeStatus) <=
+                  2 * 1024 * 1024 + 24576 + 4096,
+              "Prop probe blocks fit the appended 4 KiB page");
 inline bool valid_editor_object_config(const EditorObjectConfig& c) noexcept {
     if (std::memcmp(c.magic, "DLYOBJ01", 8) || c.abi != kEditorObjectAbi ||
         (c.flags & ~3u) || c.count > kEditorObjectCount ||

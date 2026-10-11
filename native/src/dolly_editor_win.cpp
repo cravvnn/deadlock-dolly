@@ -14,6 +14,7 @@
 #include "dolly_overlay.hpp"
 #include "dolly_reshade.hpp"
 #include "dolly_visualization_runtime.hpp"
+#include "dolly_prop_runtime.hpp"
 namespace dolly {
 namespace {
 std::atomic<HWND> gWindow{nullptr};
@@ -29,6 +30,7 @@ std::shared_ptr<const EditorCitadelDofConfig> gCitadelDofConfig;
 std::shared_ptr<const EditorFollowConfig> gFollowConfig;
 std::shared_ptr<const EditorFramingGridConfig> gFramingGridConfig;
 std::shared_ptr<const EditorObjectConfig> gObjectConfig;
+std::uint32_t gPropProbeSequence = 0;  // last consumed prop-probe request sequence
 std::shared_ptr<const EditorCameraList> gCameraList;
 std::shared_ptr<const EditorAttachConfig> gAttachConfig;
 std::shared_ptr<const EditorRoster> gRoster;
@@ -1417,6 +1419,49 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                 MemoryBarrier();
                 InterlockedExchange(status_sequence, even + 2);
             }
+        }
+        // Experimental prop-persistence probe request. The editor advances the
+        // sequence; the render thread (prop_runtime::tick) consumes it. Status
+        // is republished every pass so the editor can read the counts.
+        {
+            auto* probe_source = memory + kEditorPropProbeOffset;
+            auto* probe_sequence = reinterpret_cast<volatile LONG*>(probe_source + 8);
+            const auto probe_first = InterlockedCompareExchange(probe_sequence, 0, 0);
+            if (!(probe_first & 1) && probe_first &&
+                probe_first != gPropProbeSequence) {
+                EditorPropProbeConfig probe{};
+                std::memcpy(&probe, probe_source, sizeof(probe));
+                MemoryBarrier();
+                if (probe_first == InterlockedCompareExchange(probe_sequence, 0, 0) &&
+                    std::memcmp(probe.magic, "DLYPRP01", 8) == 0 &&
+                    probe.abi == kEditorPropProbeAbi && probe.reserved == 0 &&
+                    (probe.request == 1 || probe.request == 2)) {
+                    gPropProbeSequence = probe_first;
+                    prop_runtime::request(probe.request == 2);
+                }
+            }
+            const auto counts = prop_runtime::diagnostics();
+            EditorPropProbeStatus status{};
+            std::memcpy(status.magic, "DLYPRS01", 8);
+            status.sequence = gPropProbeSequence;
+            status.abi = kEditorPropProbeAbi;
+            status.state = counts.state;
+            status.resolved = counts.resolved;
+            status.before_count = counts.before_count;
+            status.after_count = counts.after_count;
+            status.entity_handle = counts.entity_handle;
+            status.calls = counts.calls;
+            status.error = counts.error;
+            auto* status_out = memory + kEditorPropProbeOffset + sizeof(EditorPropProbeConfig);
+            auto* status_sequence = reinterpret_cast<volatile LONG*>(status_out + 8);
+            const LONG before = InterlockedCompareExchange(status_sequence, 0, 0);
+            const LONG even = (before & 1) ? before + 1 : before;
+            InterlockedExchange(status_sequence, even + 1);
+            std::memcpy(status_out, &status, 8);
+            std::memcpy(status_out + 12, reinterpret_cast<unsigned char*>(&status) + 12,
+                        sizeof(status) - 12);
+            MemoryBarrier();
+            InterlockedExchange(status_sequence, even + 2);
         }
         auto attach_source = memory + kEditorAttachOffset;
         auto attach_sequence = reinterpret_cast<volatile LONG*>(attach_source + 8);

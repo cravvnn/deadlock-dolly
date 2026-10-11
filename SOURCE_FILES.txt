@@ -114,6 +114,7 @@ native/build_info.json
 native/include/dolly_confetti.hpp
 native/include/dolly_editor.hpp
 native/include/dolly_effects.hpp
+native/include/dolly_prop_runtime.hpp
 native/include/dolly_flight.hpp
 native/include/dolly_overlay.hpp
 native/include/dolly_path.hpp
@@ -143,6 +144,7 @@ native/profiles/deadlock-2026-09-25-complete.json
 native/profiles/manifest.json
 native/src/bridge_win.cpp
 native/src/dolly_confetti.cpp
+native/src/dolly_prop_runtime.cpp
 native/src/dolly_compat_generated.hpp
 native/src/dolly_ui_tokens_generated.hpp
 native/src/dolly_compat_runtime.hpp

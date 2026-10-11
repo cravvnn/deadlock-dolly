@@ -903,6 +903,44 @@ class NativeBridge(MediaTransport):
                 if first != self._load_sequence(wire.ROSTER_OFFSET + 8):
                     continue
                 return wire.unpack_roster(data)
+
+    def set_prop_probe(self, request):
+        """Experimental: queue one native prop-persistence probe request.
+
+        ``request`` is 'create' or 'recount'. This is a probe, not a feature; it
+        is only used by the bounded persistence test harness.
+        """
+        from . import editor_wire as wire
+        code = {"create": wire.PROP_PROBE_CREATE, "recount": wire.PROP_PROBE_RECOUNT}.get(request)
+        if code is None:
+            raise ValueError("Prop probe request must be 'create' or 'recount'")
+        with self._lock:
+            self._check_open()
+            previous = getattr(self, "_editor_prop_probe_sequence", 0)
+            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
+            data = wire.pack_prop_probe(odd, code)
+            offset = wire.PROP_PROBE_OFFSET
+            self._store(offset + 8, odd)
+            self._mapping[offset:offset + 8] = data[:8]
+            self._mapping[offset + 12:offset + len(data)] = data[12:]
+            self._store(offset + 8, even)
+            self._editor_prop_probe_sequence = even
+
+    def editor_prop_probe_status(self):
+        """Read the native prop-probe result (counts, handle, error)."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            offset = wire.PROP_PROBE_OFFSET + wire.PROP_PROBE_CONFIG.size
+            for _ in range(4):
+                first = self._load_sequence(offset + 8)
+                if first & 1:
+                    continue
+                data = bytes(self._mapping[offset:offset + wire.PROP_PROBE_STATUS.size])
+                if first == self._load_sequence(offset + 8):
+                    return wire.unpack_prop_probe_status(data)
+            raise NativeBridgeError("The prop probe is updating; retry in a moment.")
+
             raise NativeBridgeError("The native attach roster is busy; retry in a moment.")
 
     def editor_bones(self):
