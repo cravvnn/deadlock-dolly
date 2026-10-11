@@ -174,13 +174,16 @@ def configure(app):
             app._native_citadel_dof_bridge, app._native_citadel_dof_cache = bridge, citadel
     publish_objects = getattr(bridge, "configure_object_picker", None)
     if callable(publish_objects) and active:
+        from .editor_actions import OBJECT_PICKER_ENABLED
         objects = list(getattr(app.project, "objects", None) or [])
-        open_ = bool(getattr(app, "object_picker_open", False))
+        # WIP integration: never let the mode open or a binding reach native
+        # while disabled, so its key cannot fire in a published build.
+        open_ = OBJECT_PICKER_ENABLED and bool(getattr(app, "object_picker_open", False))
         payload = (tuple((o.library_id, o.model, tuple(o.position), tuple(o.angles), o.scale)
                          for o in objects), open_, int(getattr(app, "object_picker_selected", -1)))
         if (getattr(app, "_native_object_bridge", None) is not bridge
                 or getattr(app, "_native_object_cache", None) != payload):
-            binding = settings.action_bindings.get("object_picker")
+            binding = settings.action_bindings.get("object_picker") if OBJECT_PICKER_ENABLED else None
             publish_objects(objects, active=open_, selected=payload[2], binding=binding)
             app._native_object_bridge, app._native_object_cache = bridge, payload
     publish_follow = getattr(bridge, "configure_editor_follow", None)

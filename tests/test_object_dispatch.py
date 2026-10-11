@@ -18,6 +18,12 @@ def event(action, **kw):
 
 class ObjectDispatchTests(unittest.TestCase):
     def setUp(self):
+        # The Object Picker is a WIP integration, disabled by default. These
+        # tests exercise the dispatch logic with the feature enabled; the
+        # disabled behavior is covered by DisabledObjectPickerTests.
+        self._flag = patch("dolly.editor_actions.OBJECT_PICKER_ENABLED", True)
+        self._flag.start()
+        self.addCleanup(self._flag.stop)
         self.publish = lambda: editor_session.configure(self.app)
         self.app = SimpleNamespace(
             project=Project(), status_text=Mock(), busy=False, playing=False,
@@ -108,6 +114,34 @@ class ObjectDispatchTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 dispatch.dispatch(self.app, event("object_transform", value=value, pose=pose),
                                   self.bridge, publish=self.publish)
+
+
+class DisabledObjectPickerTests(unittest.TestCase):
+    """The WIP Object Picker must be unreachable in a published build."""
+
+    def test_flag_is_off_by_default(self):
+        from dolly import editor_actions
+        self.assertFalse(editor_actions.OBJECT_PICKER_ENABLED)
+
+    def test_no_default_binding_when_disabled(self):
+        from dolly.editor_actions import default_action_bindings
+        self.assertIsNone(default_action_bindings().get("object_picker"))
+
+    def test_saved_binding_is_cleared_when_disabled(self):
+        from dolly.editor_actions import EditorBinding, validate_action_bindings
+        result = validate_action_bindings({"object_picker": EditorBinding("R")})
+        self.assertIsNone(result["object_picker"])
+
+    def test_open_is_refused_when_disabled(self):
+        app = SimpleNamespace(
+            project=Project(), status_text=Mock(), busy=False, playing=False,
+            object_picker_open=False, object_picker_selected=-1,
+            _native_object_cache=None, _mark_dirty=Mock(),
+            app_settings=SimpleNamespace(action_bindings={}),
+        )
+        with self.assertRaises(ValueError):
+            dispatch.dispatch(app, event("object_picker_open"), Mock(), publish=lambda: None)
+        self.assertFalse(app.object_picker_open)
 
 
 if __name__ == "__main__":
