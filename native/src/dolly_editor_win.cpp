@@ -1452,6 +1452,12 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             status.entity_handle = counts.entity_handle;
             status.calls = counts.calls;
             status.error = counts.error;
+            status.alive_after_create = counts.alive_after_create;
+            status.alive_after_seek = counts.alive_after_seek;
+            status.entity_ptr = counts.entity_ptr;
+            status.identity_ptr = counts.identity_ptr;
+            status.entity_index = counts.entity_index;
+            std::memcpy(status.entity_class, counts.entity_class, sizeof(status.entity_class));
             auto* status_out = memory + kEditorPropProbeOffset + sizeof(EditorPropProbeConfig);
             auto* status_sequence = reinterpret_cast<volatile LONG*>(status_out + 8);
             const LONG before = InterlockedCompareExchange(status_sequence, 0, 0);

@@ -71,7 +71,7 @@ PROP_PROBE_ABI = 1
 PROP_PROBE_MAGIC = b"DLYPRP01"
 PROP_PROBE_STATUS_MAGIC = b"DLYPRS01"
 PROP_PROBE_CONFIG = struct.Struct("<8s4I")
-PROP_PROBE_STATUS = struct.Struct("<8s4I" + "I" * 4 + "I" * 4)
+PROP_PROBE_STATUS = struct.Struct("<8s4I" + "I" * 5 + "I" * 3 + "Q" + "Q" + "32s" + "I" * 6)
 # request values
 PROP_PROBE_CREATE = 1
 PROP_PROBE_RECOUNT = 2
@@ -95,7 +95,11 @@ def unpack_prop_probe_status(data):
         raise ValueError("Prop probe status does not match this build")
     return {"sequence": sequence, "state": state, "resolved": resolved,
             "before_count": fields[5], "after_count": fields[6],
-            "entity_handle": fields[7], "calls": fields[8], "error": fields[9]}
+            "entity_handle": fields[7], "calls": fields[8], "error": fields[9],
+            "alive_after_create": fields[10], "alive_after_seek": fields[11],
+            "entity_index": fields[12],
+            "entity_ptr": fields[13], "identity_ptr": fields[14],
+            "entity_class": fields[15].split(b"\0", 1)[0].decode("ascii", "replace")}
 
 
 def pack_framing_grid(sequence, enabled, binding=None):

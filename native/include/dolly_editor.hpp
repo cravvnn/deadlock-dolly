@@ -393,11 +393,16 @@ struct EditorPropProbeStatus {
     char magic[8];                 // "DLYPRS01"
     std::uint32_t sequence, abi, state, resolved;
     std::uint32_t before_count, after_count, entity_handle, calls;
-    std::uint32_t error, reserved[3];
+    std::uint32_t error;
+    std::uint32_t alive_after_create, alive_after_seek, entity_index;
+    std::uint64_t entity_ptr;
+    std::uint64_t identity_ptr;
+    char entity_class[32];
+    std::uint32_t reserved1[6];
 };
 #pragma pack(pop)
 static_assert(sizeof(EditorPropProbeConfig) == 24, "Prop probe config layout");
-static_assert(sizeof(EditorPropProbeStatus) == 56, "Prop probe status layout");
+static_assert(sizeof(EditorPropProbeStatus) == 128, "Prop probe status layout");
 static_assert(kEditorPropProbeOffset + sizeof(EditorPropProbeConfig) + sizeof(EditorPropProbeStatus) <=
                   2 * 1024 * 1024 + 24576 + 4096,
               "Prop probe blocks fit the appended 4 KiB page");

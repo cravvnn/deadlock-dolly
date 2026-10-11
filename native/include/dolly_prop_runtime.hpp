@@ -31,6 +31,17 @@ struct Diagnostics {
     std::uint32_t calls{};
     std::uint32_t error{};          // 0 none, 1 bad base, 2 no entity system, 3 create returned null
     std::uint32_t reserved{};
+    // Direct survival tracking of the created entity, independent of whether it
+    // is linked into the identity lists: the full returned pointer, the class
+    // name read from it, and a validity flag re-checked on each recount.
+    std::uint64_t entity_ptr{};
+    std::uint64_t identity_ptr{};   // entity+0x10 at create time (same-entity token)
+    std::uint32_t entity_index{};   // entity+0x34 slot index at create time
+    char entity_class[32]{};
+    std::uint32_t alive_after_create{};
+    std::uint32_t alive_after_play{};
+    std::uint32_t alive_after_seek{};
+    std::uint32_t reserved2{};
 };
 
 // Resolve the client create entry point against the running module. Returns

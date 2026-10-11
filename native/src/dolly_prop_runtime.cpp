@@ -139,9 +139,35 @@ void tick() noexcept {
         counts.error = 2;
         return;
     }
+    // Direct liveness of the created entity, independent of identity-list
+    // membership: an entity slot at `entity_ptr` stores its identity at +0x10,
+    // whose class name pointer is at identity+0x20. If the stream frees the
+    // slot, the identity/class read fails or changes. The recorded class is the
+    // baseline; a mismatching name means the slot was reused by another entity.
+    const auto alive = [&]() -> std::uint32_t {
+        if (!counts.entity_ptr)
+            return 0;
+        std::uintptr_t identity = 0, name_ptr = 0;
+        if (!read_value(counts.entity_ptr + 0x10, identity) || !identity)
+            return 0;
+        if (!read_value(identity + 0x20, name_ptr) || !name_ptr)
+            return 0;
+        char name[32]{};
+        if (!read_value(name_ptr, name) || !name[0])
+            return 0;
+        // Same-entity check: the identity pointer must be unchanged. A different
+        // identity means the slot was recycled (a different entity now lives
+        // there), which is NOT survival.
+        if (counts.identity_ptr && identity != counts.identity_ptr)
+            return 3u;
+        if (!counts.entity_class[0])
+            return 1u;
+        return std::memcmp(name, counts.entity_class, sizeof(name)) == 0 ? 1u : 2u;
+    };
     if (mode == 2) {
-        // Recount-only: used to test survival after a tick/seek.
+        // Recount-only: test survival after a tick/seek.
         counts.after_count = count_entities(system);
+        counts.alive_after_seek = alive();
         return;
     }
     ++counts.calls;
@@ -150,9 +176,27 @@ void tick() noexcept {
     // Model-less class: prop_dynamic binds no model here, so the
     // CSkeletonInstance::SetModel nonresident-asset fatal assert cannot fire.
     void* entity = fn(reinterpret_cast<void*>(system), -1, "prop_dynamic", 0, 0, 0, 1);
-    counts.entity_handle =
-        static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(entity) & 0xffffffffu);
+    counts.entity_ptr = reinterpret_cast<std::uintptr_t>(entity);
+    counts.entity_handle = static_cast<std::uint32_t>(counts.entity_ptr & 0xffffffffu);
+    // Record the created entity's class name and identity as the survival
+    // baseline. The identity pointer is the same-entity token: if the slot is
+    // recycled by a different entity, the identity changes.
+    std::memset(counts.entity_class, 0, sizeof(counts.entity_class));
+    counts.identity_ptr = 0;
+    counts.entity_index = 0;
+    if (entity) {
+        std::uintptr_t identity = 0, name_ptr = 0;
+        if (read_value(counts.entity_ptr + 0x10, identity) &&
+            read_value(identity + 0x20, name_ptr)) {
+            counts.identity_ptr = identity;
+            read_value(name_ptr, counts.entity_class);
+        }
+        std::uint32_t index = 0;
+        if (read_value(counts.entity_ptr + 0x34, index))
+            counts.entity_index = index;
+    }
     counts.after_count = count_entities(system);
+    counts.alive_after_create = alive();
     counts.state = entity ? 2 : 3;
     counts.error = entity ? 0 : 3;
 }
