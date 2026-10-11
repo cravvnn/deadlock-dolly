@@ -1,5 +1,10 @@
 # Changes
 
+## 0.6.38-alpha
+
+- **Startup survives the developer console flood.** *Before:* on a `-dev` build the engine's hidden-cvar dump could delay the `hideconsole` check past its window, and Dolly aborted with "This game build did not confirm hideconsole" before the replay opened. *After:* an unconfirmed console check is treated as unknown, not rejected, so startup continues.
+- **Console availability checks report unknown instead of false.** *Before:* a probe that could not be completed looked the same as an explicit "unknown command". *After:* only an explicit rejection counts as missing; an unconfirmed check no longer blocks hideout readiness, replay recovery, camera support or the console toggle.
+
 ## 0.6.37-alpha
 
 - Support Deadlock build 6774 with reviewed client profiles and an updated exact-build unlocker.

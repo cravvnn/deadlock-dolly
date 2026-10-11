@@ -516,6 +516,31 @@ class AutoStartupTests(unittest.TestCase):
         self.assertNotIn("native.flight", self.console.events)
         self.assertFalse(self.controller.status()["paused_flight"])
 
+    def test_unconfirmed_console_hide_still_proceeds_on_the_dev_flood(self):
+        # A -dev data dump can hide the `help hideconsole` confirmation. Unknown
+        # availability is not a rejection: the explicit command is still issued
+        # and startup reaches the editor (the reported "did not confirm
+        # hideconsole" abort must not happen).
+        self.console.supports = lambda name: None
+        result = self.start()
+        self.assertEqual(result["startup_stage"], "editing_ready")
+        self.assertIn("hideconsole", self.console.events)
+        self.assertLess(self.console.events.index("hideconsole"),
+                        self.console.events.index("native.flight"))
+
+    def test_console_command_available_treats_unknown_as_usable(self):
+        self.controller._console = self.console
+        self.console.supports = lambda name: None
+        self.assertIsNone(self.controller._console_command_available("hideconsole"))
+        self.console.supports = lambda name: False
+        self.assertIs(self.controller._console_command_available("hideconsole"), False)
+        self.console.supports = lambda name: True
+        self.assertIs(self.controller._console_command_available("hideconsole"), True)
+        # A stub without the timeout parameter is still queried safely.
+        self.console.supports = lambda name: name == "hideconsole"
+        self.assertIs(self.controller._console_command_available("hideconsole"), True)
+        self.assertIs(self.controller._console_command_available("absent"), False)
+
     def test_preloaded_replay_refused_before_initialization(self):
         self.controller._session = self.session
         self.controller._console = self.console

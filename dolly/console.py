@@ -465,20 +465,31 @@ class ConsoleClient:
                     if self._sequence == cursor and not self._failure:
                         self._condition.wait(timeout=remaining)
 
-    def supports(self, name: str, timeout: float = 2.0) -> bool:
-        """Conservative name availability check. Does not prove runtime effect."""
+    def supports(self, name: str, timeout: float = 2.0) -> bool | None:
+        """Conservative name availability check: True, False, or None if unknown.
+
+        False means the console explicitly rejected the name. None means the
+        check could not be completed (a developer data-validation flood delayed
+        the echo past the window, or the response was truncated/overflowed),
+        which is NOT evidence the name is missing; a caller must not treat None
+        as a rejection.
+        """
         if not _NAME.fullmatch(name):
             raise ValueError("Expected one plain console variable/command name.")
         try:
             output = self.request("help " + name, timeout, allow_truncated=True)
         except ConsoleError:
             # A flooded console (developer data-validation dump) is not proof the
-            # name is unusable; report not-confirmed so the caller keeps waiting.
-            return False
+            # name is unusable; report availability as unknown, not rejected.
+            return None
         if error_text(output):
             return False
         lines = [line for line in output.splitlines() if not re.search(r"\bhelp\s+" + re.escape(name) + r"\b", line)]
-        return bool(re.search(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", "\n".join(lines)))
+        if re.search(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", "\n".join(lines)):
+            return True
+        # Neither a printed help line nor an explicit rejection: a -dev flood
+        # can swallow the response, so this is unknown, never a rejection.
+        return None
 
 
 def _marker_re(marker: str) -> re.Pattern:

@@ -293,12 +293,36 @@ class ConsoleTests(unittest.TestCase):
             client.close()
             peer.close()
 
-    def test_supports_returns_false_on_a_flooded_console(self):
+    def test_supports_returns_unknown_on_a_flooded_console(self):
+        # A flood that swallows the help text is "unknown", never a rejection:
+        # the caller must not treat it as a missing command.
         peer = Peer("netcon", responses={"help cvar_unhide": "y" * 4096})
         client = ConsoleClient("netcon", max_response_bytes=1024)
         try:
             client.connect(port=peer.port)
-            self.assertFalse(client.supports("cvar_unhide", timeout=3))
+            self.assertIsNone(client.supports("cvar_unhide", timeout=3))
+        finally:
+            client.close()
+            peer.close()
+
+    def test_supports_confirms_when_the_flood_tail_keeps_the_help(self):
+        # The bounded tail can still carry a real help line printed after the
+        # flood, so a positive confirmation survives the developer dump.
+        peer = Peer("netcon", responses={"help cvar_unhide": ("j" * 3000) + "\ncvar_unhide\n"})
+        client = ConsoleClient("netcon", max_response_bytes=1024)
+        try:
+            client.connect(port=peer.port)
+            self.assertTrue(client.supports("cvar_unhide", timeout=5))
+        finally:
+            client.close()
+            peer.close()
+
+    def test_supports_is_unknown_when_no_response_arrives(self):
+        peer = Peer("netcon", silent=True)
+        client = ConsoleClient("netcon")
+        try:
+            client.connect(port=peer.port)
+            self.assertIsNone(client.supports("hideconsole", timeout=1))
         finally:
             client.close()
             peer.close()

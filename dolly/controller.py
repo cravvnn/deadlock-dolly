@@ -546,6 +546,21 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                 raise RuntimeError("Timed out " + label + ". The replay was not marked ready. Use the manual startup controls or export diagnostics.")
             waiter.wait(.25)
 
+    def _console_command_available(self, name, timeout=2.0):
+        """Tri-state availability of a console name: True, False, or None.
+
+        None means the console could not confirm the name (a -dev data dump
+        delays the echo, or the log overflowed). That is not evidence the name
+        is missing, so startup-critical callers must treat None as usable and
+        let the command's own completion/ack decide, instead of aborting.
+        """
+        try:
+            return self._console.supports(name, timeout)
+        except TypeError:
+            # A legacy/stub console without the timeout parameter; treat an
+            # explicit rejection as False and any other result as confirmed.
+            return self._console.supports(name)
+
     def _automatic_hideout_check(self, initial_frame):
         """Require a rendered pre-replay scene and loaded command registration.
 
@@ -584,9 +599,12 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
             evidence = settled
         else:
             evidence["settled_status"] = settled
-        if not self._console.supports("cvar_unhide"):
+        available = self._console_command_available("cvar_unhide")
+        if available is False:
             return None
-        evidence["unlocker_command_registered"] = True
+        # None means the flood hid the confirmation; the unlocker step still
+        # verifies completion patterns before the replay is allowed to load.
+        evidence["unlocker_command_registered"] = available is True
         return evidence
 
     @staticmethod
@@ -1027,7 +1045,7 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                 (self._game_ui_restore and not self._health_panel_held(require_full_hud=False)) or
                 self._replay_hud_restore or self._demo_speed_changed):
             raise RuntimeError("Use Stop / restore to restore pending settings before replay recovery.")
-        if not self._console.supports("disconnect"):
+        if self._console_command_available("disconnect") is False:
             raise RuntimeError("This game does not expose replay disconnect; recovery was not attempted.")
         previous_probe = deepcopy(self._probe_result)
         session = self._session
@@ -1499,7 +1517,8 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                     except ValueError:
                         capabilities[name] = False
                 else:
-                    capabilities[name] = self._console.supports(name)
+                    available = self._console_command_available(name)
+                    capabilities[name] = available is not False
             self._probe_result = {"version": __version__, "capabilities": capabilities, "demo": info,
                                   "live_tick_available": info.get("tick") is not None,
                                   "camera_effect_verified": False,
@@ -2616,16 +2635,33 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                 # for the actual command, including a delayed close operation.
                 editor_configure(owner="console")
             command = "showconsole" if enabled else "hideconsole"
-            if self._console.supports(command):
-                self._request(command)
-            elif self._console_open == enabled:
-                if not enabled and callable(editor_configure):
-                    editor_configure(owner=return_owner)
-                return self.status()
-            elif self._console_open is not None and self._console.supports("toggleconsole"):
-                self._request("toggleconsole")
+            available = self._console_command_available(command)
+            if available is False:
+                # The game explicitly rejected this name. Fall back only when a
+                # blind toggle can still reach the requested state; otherwise
+                # refuse rather than leave console visibility unknown.
+                if self._console_open == enabled:
+                    if not enabled and callable(editor_configure):
+                        editor_configure(owner=return_owner)
+                    return self.status()
+                if self._console_open is not None and self._console_command_available("toggleconsole"):
+                    self._request("toggleconsole")
+                else:
+                    raise RuntimeError("This game build does not support " + command
+                                       + "; the console's current visibility is unknown. Console access was not changed.")
             else:
-                raise RuntimeError("This game build did not confirm " + command + "; the console's current visibility is unknown. Console access was not changed.")
+                # Confirmed, or the flood/stall hid the confirmation: issue the
+                # explicit command. Unknown availability is not a rejection. A
+                # -dev preload stall can delay the echo well past a normal
+                # window, and this visibility command is cosmetic (the editor
+                # already suspends input), so a delayed acknowledgement must not
+                # abort startup; visibility is re-checked before the editor.
+                try:
+                    self._request(command, timeout=8, allow_error=True)
+                except ConsoleTimeout:
+                    LOG.warning("Console command %r was not acknowledged within the "
+                                "window; console visibility will be re-checked before "
+                                "the editor opens.", command)
             self._console_open = enabled
             if not enabled and callable(editor_configure):
                 editor_configure(owner=return_owner)

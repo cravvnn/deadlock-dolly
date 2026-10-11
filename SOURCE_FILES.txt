@@ -635,3 +635,5 @@ docs/RELEASE_NOTES_0.6.36-alpha.md
 native/profiles/deadlock-2026-10-09-6774-complete.json
 third_party/cvar_unlocker/unlocker-build-6774.patch
 docs/RELEASE_NOTES_0.6.37-alpha.md
+
+docs/RELEASE_NOTES_0.6.38-alpha.md
