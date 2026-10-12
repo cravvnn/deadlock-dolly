@@ -867,11 +867,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
                 environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
             options = {} if environment is None else {"env": environment}
-            # Deadlock never loads NVIDIA NGX (so DLSS is not offered) when its
-            # stdout is a file or pipe. With DLSS enabled, pass no standard
-            # handles at all: if any one is given, Python fills the others
-            # itself, using a pipe when the windowed editor has no stdout.
-            # Otherwise capture the game's output for diagnostics.
+
+            # Redirecting handles prevents DLSS from being loaded. Enabling DLSS
+            # will disable stdout logging.
             output = None if enable_dlss else (session_dir / "game_stdout.log").open("ab")
             if output is not None:
                 options.update(stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT)
@@ -890,7 +888,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                     f"Launch log: {log_path}") from exc
             finally:
                 if output is not None:
-                    output.close()  # The game holds its own handle to the log.
+                    output.close()
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)
 
         def watch() -> None:
