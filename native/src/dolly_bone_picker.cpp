@@ -190,21 +190,33 @@ bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested,
     }
     frame.active = true;
     frame.ready = false;
-    if (request != active_request || command != active_command || !permitted) {
+    if (request != active_request || command != active_command) {
         rejected = true;
-        const char* reason = request != active_request   ? "Picker configuration changed"
-                             : command != active_command ? "Camera command changed"
-                                                         : "Paused editor ownership changed";
+        const char* reason = request != active_request ? "Picker configuration changed"
+                                                       : "Camera command changed";
         std::snprintf(frame.error, sizeof(frame.error), "%s. Cancel and reopen Bone Picker.",
                       reason);
     }
     if (rejected)
         return true;
+    if (!permitted) {
+        // The paused editor can briefly drop ownership while it settles (for
+        // example while a heavy model finishes loading or the replay re-pauses).
+        // Retry on the next frame instead of rejecting the whole session, so the
+        // picker recovers on its own once the editor is ready again.
+        std::snprintf(frame.error, sizeof(frame.error), "Preparing the paused editor...");
+        return true;
+    }
     if (!catalog || catalog->sequence != request) {
         std::snprintf(frame.error, sizeof(frame.error), "Resolving this player's skeleton...");
         return true;
     }
     frame.catalog = catalog;
+    if (frame.catalog->bones.empty() && frame.catalog->error[0]) {
+        // Report why the model produced no joints (for example an unsupported
+        // skeleton layout) instead of an unexplained empty list.
+        std::snprintf(frame.error, sizeof(frame.error), "%s", frame.catalog->error);
+    }
     const char* error = nullptr;
     if (!sampler || !sampler(context, frame.sample, error)) {
         std::snprintf(frame.error, sizeof(frame.error), "%s",

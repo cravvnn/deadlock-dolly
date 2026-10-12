@@ -378,7 +378,7 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
             reason = "Deadlock closed"
         else:
             reason = f"Deadlock crashed (exit code {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X})"
-        if context == "waiting for the game console" and not self._replay_requested:
+        if context in ("waiting for the game console", "waiting for hideout readiness"):
             return (f"{reason} while {context}. The game exited before the selected replay "
                     "was loaded. Inspect the startup error or game dump before retrying.")
         header = self._replay_header
@@ -687,7 +687,15 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
         neither an open socket nor an early view callback proves readiness.
         """
         self._capture_game_build()
-        output = self._request("demo_info", allow_error=True, allow_truncated=True)
+        try:
+            output = self._request("demo_info", allow_error=True, allow_truncated=True)
+        except ConsoleError:
+            # A hideout still loading its map/shaders (a large mod VPK, for
+            # example), or a game that has just exited, can miss the console
+            # deadline. Treat it as "not ready yet" and let the startup wait
+            # retry, so a game that died is reported by its exit instead of a
+            # raw console socket error.
+            return None
         try:
             demo = parse_demo_info(output)
         except ValueError:
@@ -3052,6 +3060,13 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
         if not self._replay_hud_restore:
             return
         if self._session is not self._replay_hud_session:
+            process = getattr(self._replay_hud_session, "process", None)
+            if process is None or process.poll() is not None:
+                # The owning process is gone; a new launch starts from the saved
+                # configuration, so drop the stale replay-HUD journal.
+                self._replay_hud_restore = {}
+                self._replay_hud_session = None
+                return
             raise RuntimeError('Replay HUD restoration belongs to a different session.')
         self._require_connection()
         values, _ = self._safe_health_hud_values(self._replay_hud_restore)

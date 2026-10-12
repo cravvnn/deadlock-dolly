@@ -363,6 +363,16 @@ class GameUiHandoffMixin:
         """Restore the original automatic cursor/HUD on Stop or disconnect."""
         if not self._game_ui_restore and self._game_hero_restore is None:
             return None
+        process = getattr(self._session, "process", None)
+        if process is None or process.poll() is not None:
+            # The process that held these temporary settings is gone; a new
+            # launch starts from the saved configuration, so drop the stale
+            # journal silently instead of warning on every future launch.
+            self._game_ui_restore.clear()
+            self._game_hero_restore = None
+            self._replay_hud_restore = {}
+            self._replay_hud_session = None
+            return None
         try:
             self._require_connection()
             # Mode restoration must settle before checking the player context;

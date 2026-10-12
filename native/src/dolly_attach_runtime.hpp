@@ -565,6 +565,55 @@ inline bool locate_bone_array(const Offsets& offsets, std::uintptr_t node,
     out[2] = std::atan2(-r21, r22) * 180.0 / pi;
 }
 
+// A texture/skin mod may replace a hero model with a resource whose internal
+// name differs (for example "magician_default.vmdl") while it still occupies
+// the same model slot. The exact name token is the strict identity; when it
+// differs, accept only a resource in the SAME folder whose file stem is a
+// "_"-suffixed variant of the selected player's reported model stem (or the
+// reverse), which still rejects an unrelated model.
+inline bool same_model_variant(const char* resource, const char* reported) noexcept {
+    if (!resource || !reported)
+        return false;
+    auto fold = [](char c) { return c >= 'A' && c <= 'Z' ? char(c + 32) : c; };
+    auto folder_end = [](const char* text) -> int {
+        int last = -1;
+        for (int index = 0; text[index]; ++index)
+            if (text[index] == '/' || text[index] == '\\')
+                last = index;
+        return last;
+    };
+    auto stem_end = [](const char* text, int start) -> int {
+        int end = start;
+        while (text[end] && text[end] != '.')
+            ++end;
+        return end;
+    };
+    auto extends = [&](const char* base, int base_begin, int base_end, const char* full,
+                       int full_begin, int full_end) -> bool {
+        const int base_len = base_end - base_begin;
+        const int full_len = full_end - full_begin;
+        if (base_len <= 0 || full_len <= base_len + 1)
+            return false;
+        for (int index = 0; index < base_len; ++index)
+            if (fold(base[base_begin + index]) != fold(full[full_begin + index]))
+                return false;
+        return full[full_begin + base_len] == '_';
+    };
+    const int resource_folder = folder_end(resource);
+    const int reported_folder = folder_end(reported);
+    if (resource_folder <= 0 || resource_folder != reported_folder)
+        return false;
+    for (int index = 0; index < resource_folder; ++index)
+        if (fold(resource[index]) != fold(reported[index]))
+            return false;
+    const int resource_stem = resource_folder + 1;
+    const int reported_stem = reported_folder + 1;
+    const int resource_end = stem_end(resource, resource_stem);
+    const int reported_end = stem_end(reported, reported_stem);
+    return extends(resource, resource_stem, resource_end, reported, reported_stem, reported_end) ||
+           extends(reported, reported_stem, reported_end, resource, resource_stem, resource_end);
+}
+
 // Worker thread: resolve the attach bone for a target whose node is known.
 // Weapon points pick the best-ranked candidate bone; bone points match the
 // authored 64-bit name hash against the skeleton name vector.
@@ -585,9 +634,20 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
     if (!read_value(model_state + 0xa0, binding) || !binding || !read_value(binding, object) ||
         !object || !read_value(object + 8, resource_name) ||
         !read_memory(resource_name, resource_path, sizeof(resource_path) - 1) ||
-        !text_looks_like_model(resource_path) || model_token(resource_path) != cache.model) {
+        !text_looks_like_model(resource_path)) {
         error = "The selected model resource could not be verified. Choose Eyes.";
         return false;
+    }
+    if (model_token(resource_path) != cache.model) {
+        // A skin/mod may replace the model with a differently named resource in
+        // the same folder; accept it as the same model family so its skeleton
+        // can still be resolved.
+        char reported_path[256]{};
+        if (!read_c_string(cache.name_pointer, reported_path, sizeof(reported_path)) ||
+            !same_model_variant(resource_path, reported_path)) {
+            error = "The selected model resource could not be verified. Choose Eyes.";
+            return false;
+        }
     }
     VectorHit hit{};
     if (!find_bone_vector(object, hit.data, hit.entries, hit.stride)) {

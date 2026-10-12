@@ -17,6 +17,9 @@ struct PickerCatalog {
     std::uint64_t model = 0;
     std::vector<PickerBone> bones;
     HeroPortrait portrait;
+    // Resolver error for an empty catalog, so the picker can explain why no
+    // joints were found instead of showing an empty list.
+    char error[128]{};
 };
 struct PickerSample {
     // One bulk read of the reviewed pose buffer, indexed by SOURCE index.

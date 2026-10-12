@@ -1801,6 +1801,16 @@ static DWORD WINAPI worker(void*) {
                             if (!preview->cache.picker)
                                 preview->cache.picker = std::make_shared<PickerCatalog>();
                             preview->cache.picker->sequence = attach_config.sequence;
+                            // Carry the resolver error (if any) so an empty catalog
+                            // can explain itself in the picker instead of showing
+                            // an unexplained empty bone list.
+                            preview->cache.picker->error[0] = 0;
+                            const char* picker_failure =
+                                !preview->cache.ready ? attach_error : nullptr;
+                            if (picker_failure)
+                                std::snprintf(preview->cache.picker->error,
+                                              sizeof(preview->cache.picker->error), "%s",
+                                              picker_failure);
                             picker_publish(preview->cache.picker);
                         }
                         if (!preview->cache.ready && attach_error)

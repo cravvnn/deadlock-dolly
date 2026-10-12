@@ -1,5 +1,12 @@
 # Changes
 
+## 0.6.44-alpha
+
+- **Bone Picker works with skin/model mods.** *Before:* a hero whose model is replaced by a mod (a renamed model resource in the same folder) failed with "The selected model resource could not be verified" and listed no joints. *After:* a renamed same-folder model is accepted, so the skeleton and bones resolve; a genuinely different model is still rejected.
+- **The Bone Picker no longer dead-ends.** *Before:* a transient paused-editor ownership change showed "Paused editor ownership changed. Cancel and reopen Bone Picker." and the picker stayed stuck. *After:* it waits and retries, and an empty catalog states the real resolver reason.
+- **Launching recovers when the game exits early.** *Before:* a game that fataled during startup surfaced a raw "[WinError 10054] An existing connection was forcibly closed by the remote host". *After:* the console drop is retried and the game's exit is reported, so you can relaunch immediately.
+- **Saved shots reopen cleanly.** *Before:* a session that ended without Stop / restore left a pending replay-UI/HUD journal, so every later launch warned "restoration remains pending". *After:* a pending restore whose game process is gone is cleared automatically.
+
 ## 0.6.43-alpha
 
 - **Correct crash guidance for unplayable replays.** *Before:* a replay that fataled Deadlock while it loaded always got "Try the latest replay recorded on this build", even when it was recorded on the installed build. *After:* Dolly compares the replay's recorded build with the installed build (read from the game console) and only blames a build mismatch when there is one; otherwise it points at the recording itself. The installed build is also recorded in diagnostics.
