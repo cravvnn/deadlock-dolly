@@ -703,8 +703,12 @@ struct Fixture {
         return result;
     }
 
-    Status frame(unsigned char projection_flags = 0, bool renew_lease = true) {
+    Status frame(unsigned char projection_flags = 0, bool renew_lease = true, int square_size = 0) {
         original_view(projection_flags);
+        if (square_size) {
+            put(view.address() + 0x10 + 0x430, square_size);
+            put(view.address() + 0x10 + 0x438, square_size);
+        }
         if (renew_lease)
             gHeartbeatTime = now_seconds();
         on_view(view.pointer, gClient + gCompat.caller);
@@ -1299,6 +1303,40 @@ void editor_input_checks() {
     dolly::key_event(VK_ESCAPE, false);
     dolly::gTextInput = false;
 
+    // Panorama uses the same native key transition path, with its optional
+    // side-edition binding. No global listener or F8 reassignment.
+    {
+        auto environment=std::make_shared<EditorEnvironmentActionConfig>();
+        std::memcpy(environment->magic,"DLYENVA1",8);
+        environment->abi=1;environment->flags=1;environment->binding=VK_F11;
+        std::atomic_store(&dolly::gEnvironmentActionConfig,
+                          std::shared_ptr<const EditorEnvironmentActionConfig>(environment));
+        dolly::gAcknowledged=dolly::gLastEvent;
+        editor_set_owner(EditorOwner::Flight);
+        dolly::gBlocked[VK_F11]=dolly::gFocusBlocked[VK_F11]=dolly::gKeys[VK_F11]=false;
+        auto before=dolly::gLastEvent;
+        dolly::key_event(VK_F11,true);
+        require(dolly::gLastEvent==before+1 &&
+                dolly::gEvents[(dolly::gLastEvent-1)%kEditorEventCount].action==99,
+                "Panorama binding did not queue its own action");
+        dolly::key_event(VK_F11,true);
+        dolly::key_event('X',true);dolly::key_event('X',false);
+        dolly::key_event(VK_F11,false);dolly::key_event(VK_F11,true);
+        require(dolly::gLastEvent==before+1,"Panorama repeated while an action was pending");
+        dolly::key_event(VK_F11,false);dolly::gAcknowledged=dolly::gLastEvent;
+        dolly::gTextInput=true;dolly::key_event(VK_F11,true);
+        require(dolly::gLastEvent==before+1,"Panorama interrupted text input");
+        dolly::key_event(VK_F11,false);dolly::gTextInput=false;
+        configured->playback_flags=2;
+        dolly::key_event(VK_F11,true);
+        require(dolly::gLastEvent==before+1,"Panorama queued while the editor was busy");
+        dolly::key_event(VK_F11,false);configured->playback_flags=0;
+        std::atomic_store(&dolly::gEnvironmentActionConfig,std::shared_ptr<const EditorEnvironmentActionConfig>{});
+        dolly::key_event(VK_F11,true);
+        require(dolly::gLastEvent==before+1,"Standard edition accepted panorama input");
+        dolly::key_event(VK_F11,false);
+    }
+
     editor_set_owner(EditorOwner::Flight);
     // A movement key physically held during this offline test must not
     // masquerade as a blocked post-transition press.
@@ -1601,7 +1639,49 @@ void confetti_diagnostics_publish() {
             "The synthetic client must not create real particle effects");
 }
 
+void environment_face_checks() {
+    Fixture f;
+    f.enable_synthetic_editor();
+    paused = true;
+    const std::array<std::array<double, 2>, 6> angles{{{0, 0}, {0, -90}, {0, 180}, {0, 90}, {-90, 0}, {90, 0}}};
+    auto submit = [&](const CameraPose& pose) {
+        f.manual(Mode::EnvironmentFace, &pose);
+        auto command = std::make_shared<Command>(*std::atomic_load(&gCommand));
+        command->wire.flags = kFrozen | kAspect;
+        std::atomic_store(&gCommand, std::shared_ptr<const Command>(command));
+    };
+    for (const auto& angle : angles) {
+        CameraPose pose{500, 600, 12, angle[0], angle[1], 0, 1};
+        submit(pose);
+        const auto status = f.frame(0, true, 512);
+        require(!status.error && status.state == unsigned(State::Armed), "Environment face did not arm");
+        close_to(status.applied_fov, 90, "Environment lens was inherited rather than fixed");
+        for (int i = 0; i < 7; ++i)
+            close_to(status.applied_pose[i], pose[i], "Environment face moved or rotated incorrectly");
+    }
+    CameraPose wide{500, 600, 12, 0, 0, 0, std::tan(50.0 * 3.14159265358979323846 / 180.0)};
+    submit(wide);
+    const auto wide_status = f.frame(0, true, 512);
+    require(!wide_status.error, "Overlap environment face did not arm");
+    close_to(wide_status.applied_fov, 100, "Overlap tangent did not produce exact FOV");
+    wide[6] = 1.21;
+    submit(wide);
+    require(f.frame(0, true, 512).error == 46, "Unbounded environment projection accepted");
+    CameraPose pose{500, 600, 12, 0, 0, 0, 1};
+    submit(pose);
+    require(f.frame().error == 46, "Environment capture accepted a nonsquare viewport");
+    f.unchanged();
+    submit(pose);
+    paused = false;
+    require(f.frame(0, true, 512).error == 46, "Environment capture accepted an advancing replay");
+    paused = true;
+    f.command(Mode::Release);
+    f.frame();
+    f.unchanged();
+}
+
 void run() {
+    environment_face_checks();
     gameplay_effect_filter_checks();
     confetti_control_updates();
     confetti_diagnostics_publish();

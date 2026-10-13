@@ -8,6 +8,18 @@ from dolly.editor_actions import default_action_bindings, EditorBinding
 
 
 class EditorBridgeTests(unittest.TestCase):
+    def test_environment_action_is_atomic_and_outside_probe_and_legacy_mapping(self):
+        from dolly.environment_probe import STATUS_OFFSET, STATUS
+        before = bytes(self.memory)
+        self.bridge.configure_environment_action(enabled=True, binding=EditorBinding('F11'))
+        start, end = w.ENVIRONMENT_ACTION_OFFSET, w.ENVIRONMENT_ACTION_OFFSET+w.ENVIRONMENT_ACTION.size
+        self.assertGreaterEqual(start, STATUS_OFFSET+STATUS.size)
+        self.assertEqual(w.ENVIRONMENT_ACTION.unpack_from(self.memory,start), (b'DLYENVA1',2,1,1,0x7a))
+        self.assertEqual(bytes(self.memory[:start]),before[:start])
+        self.assertEqual(bytes(self.memory[end:]),before[end:])
+        self.bridge.configure_environment_action(enabled=False, binding=EditorBinding('F11'))
+        self.assertEqual(w.ENVIRONMENT_ACTION.unpack_from(self.memory,start), (b'DLYENVA1',4,1,0,0))
+
     def test_invalid_camera_rows_leave_the_last_complete_list_untouched(self):
         from dolly.path import Project, Keyframe
         project = Project(keyframes=[Keyframe(0, 1, 2, 3, 4, 5, 6),
@@ -415,7 +427,7 @@ class EditorBridgeTests(unittest.TestCase):
             self.bridge.acknowledge_editor_event(1)
 
     def test_bad_queue_gap_duplicate_action_and_owner_are_rejected(self):
-        for events, owner in (([(2,0,0)],1), ([(1,0,0),(1,0,0)],1), ([(1,99,0)],1), ([],9)):
+        for events, owner in (([(2,0,0)],1), ([(1,0,0),(1,0,0)],1), ([(1,100,0)],1), ([],9)):
             with self.subTest(events=events,owner=owner):
                 self.publish(events,owner=owner)
                 with self.assertRaises(nb.NativeBridgeError):
@@ -449,6 +461,25 @@ class EditorBridgeTests(unittest.TestCase):
         for pose in ([1,2], [1,2,float("nan"),4,5,6,1], [1,2,3,4,5,6,0]):
             with self.assertRaises(ValueError):
                 self.bridge.start_flight("test.dem",pose)
+        self.assertEqual(self.bridge._command,before)
+
+    def test_environment_face_publishes_dedicated_frozen_mode(self):
+        self.publish()
+        with patch.object(self.bridge, "_wait", return_value={"state":"armed"}):
+            pose = [1,2,3,-90,0,0,1]
+            self.bridge.start_flight("test.dem",pose,owner="panel",environment_face=True)
+            header=nb.CONTROL.unpack_from(self.memory)
+            self.assertEqual(header[4],5)
+            self.assertEqual(header[8] & 3,3)
+            self.assertEqual(struct.unpack_from("<7d",self.memory,nb.PAYLOAD_OFFSET),tuple(pose))
+
+    def test_environment_invalid_request_does_not_publish(self):
+        before=self.bridge._command
+        for options in ({'owner':'flight'}, {'playback':True}, {'pose':None},
+                        {'pose':[1,2,3,0,0,0,16/9]}):
+            parameters=dict(pose=[1,2,3,0,0,0,1],owner='panel',environment_face=True)
+            parameters.update(options)
+            with self.assertRaises(ValueError): self.bridge.start_flight('test.dem',**parameters)
         self.assertEqual(self.bridge._command,before)
 
     def test_flight_waits_for_dx11_and_input_even_when_launcher_has_focus(self):

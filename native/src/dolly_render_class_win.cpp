@@ -10,6 +10,8 @@
 #include <mutex>
 #include <unordered_map>
 #include "dolly_render_class.hpp"
+#include "dolly_environment_probe.hpp"
+#include "dolly_environment_capture.hpp"
 
 namespace dolly::classify {
 namespace {
@@ -81,6 +83,8 @@ bool probing() noexcept {
     return gProbe.load(std::memory_order_acquire);
 }
 void draw(ID3D11DeviceContext* context, unsigned method) noexcept {
+    environment::probe_draw(context);
+    environment::capture_draw(context);
     if (!context || !probing())
         return;
     try {

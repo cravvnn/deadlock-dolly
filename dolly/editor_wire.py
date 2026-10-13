@@ -45,6 +45,21 @@ EXTRA_ACTIONS += ("select_camera", "view_camera", "delete_camera", "undo_shot", 
 EXTRA_ACTIONS += ("set_camera_time", "set_camera_roll")
 EXTRA_ACTIONS += ("framing_grid",)
 EXTRA_ACTIONS += ("take_screenshot",)
+EXTRA_ACTIONS += ("capture_environment",)
+
+# Side-edition optional block, beyond the entire legacy mapping and probe status.
+ENVIRONMENT_ACTION_OFFSET = 2 * 1024 * 1024 + 25728
+ENVIRONMENT_ACTION = struct.Struct('<8s4I')
+
+
+def pack_environment_action(sequence, enabled, binding=None):
+    from .editor_actions import EditorBinding
+    if type(enabled) is not bool or (binding is not None and not isinstance(binding, EditorBinding)):
+        raise ValueError('Invalid environment action configuration')
+    if binding is not None and (binding.key in ('Ctrl', 'Alt', 'Shift') or binding.key == 'F7'):
+        raise ValueError('Panorama capture needs a non-console key or mouse button')
+    chord = binding.vk | binding.modifiers << 16 if binding is not None and enabled else 0
+    return ENVIRONMENT_ACTION.pack(b'DLYENVA1', _uint(sequence, 'sequence'), 1, int(enabled), chord)
 
 CAMERA_LIST_OFFSET = 2 * 1024 * 1024 + 23360
 CAMERA_LIST_COUNT = 32

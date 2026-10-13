@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <bcrypt.h>
+#include <d3d11.h>
 #include <intrin.h>
 #include <algorithm>
 #include <array>
@@ -17,6 +18,7 @@
 #include <thread>
 #include <vector>
 #include "MinHook.h"
+#include "dolly_hook_init.hpp"
 #include "dolly_follow_anchor.hpp"
 #include "dolly_capabilities.hpp"
 #include "dolly_runtime_generated.hpp"
@@ -30,6 +32,8 @@
 #include "dolly_overlay.hpp"
 #include "dolly_player_capture.hpp"
 #include "dolly_renderer_diagnostics.hpp"
+#include "dolly_environment_probe.hpp"
+#include "dolly_environment_capture.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_media.hpp"
 #include "dolly_video.hpp"
@@ -68,9 +72,12 @@ constexpr char kBuild6753EngineHash[] =
 // kept its RVA (see the 6757 engine audit).
 constexpr char kBuild6757EngineHash[] =
     "084c45473667c65174a9a19c428359ac335c3e990008dbf26c0eef91be44784c";
+// October 9: all twelve reviewed replay accessors and primary RTTI tables are unchanged.
+constexpr char kBuild6769EngineHash[] =
+    "e5e4b2df76ff88d99dd9217e4ccde09bcce9b963327b38963f3ae90ce7e55ac2";
 constexpr char kSound6726Hash[] =
     "a2f20871181b240b994c3a3b9d5a61fcb52392e991b7ce984c06bf1d55fd642c";
-constexpr char kUnlockerHash[] = "005129711605ba32d20b19fd5fc81e87cac4d22aa6e030d0b197ffc82176c696";
+constexpr char kUnlockerHash[] = "aa4834d5d189743decc330d53fb07680416a0c31ab53d2a25112a464a04e72a2";
 constexpr char kSoundSystemHash[] =
     "5f01b91485f67c980235054c8e1e517b04e34fb53491f26100c8e1c743dd0ba0";
 constexpr char kSeptemberSoundSystemHash[] =
@@ -107,6 +114,7 @@ HANDLE gMapping = nullptr, gEditor = nullptr;
 unsigned char* gMemory = nullptr;
 std::atomic<bool> gHookInstalled{false};
 std::atomic<bool> gDemoSeeking{false};
+std::atomic<double> gEnvironmentViewTime{0};
 std::atomic<bool> gReliefAllowed{true};
 std::atomic<double> gHeartbeatTime{0};
 std::atomic<unsigned> gWorkerError{0};
@@ -792,6 +800,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                             pose_valid(original) && std::isfinite(original_fov) &&
                             original_fov > 1 && original_fov < 179 && width > 0 && height > 0 &&
                             !(flags & 2) && state != State::Fault && state != State::Unsupported;
+        gEnvironmentViewTime.store(editor_ready && demo.paused && command &&
+            same_demo(command->wire.demo_name, demo.name) ? now : 0, std::memory_order_release);
         CameraPose shown{};
         for (int i = 0; i < 7; ++i)
             shown[i] = status.applied_pose[i];
@@ -837,7 +847,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         fault = 0;
         first_fault_code = 0;
         first_fault_message[0] = 0;
-        if (c.mode == std::uint32_t(Mode::Manual)) {
+        if (c.mode == std::uint32_t(Mode::Manual) || c.mode == std::uint32_t(Mode::EnvironmentFace)) {
             manual_pose = command->has_manual_pose ? command->manual_pose
                                                    : (displayed_valid ? displayed_pose : original);
             phase = gEffects.count ? gEffects.phase : 0;
@@ -924,6 +934,15 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         return;
     }
     if (command->manual) {
+        const bool environment_face = c.mode == std::uint32_t(Mode::EnvironmentFace);
+        if (environment_face && (!demo.paused || demo.tick != last_tick || width != height || width < 512 || width > 4096
+            || (c.flags & (kFrozen | kAspect)) != (kFrozen | kAspect)
+            || (c.flags & (kGamePov | kConfetti)) || !command->has_manual_pose
+            || (manual_pose[6] < 1.0 || manual_pose[6] > 1.2))) {
+            fault = 46;
+            finish(State::Fault, fault, "Environment face requires a paused square view, explicit pose and frozen bounded square projection.");
+            return;
+        }
         auto editor = editor_snapshot();
         if (!editor.input_available) {
             fault = 19;
@@ -947,7 +966,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         // that reproduce the current pose; both publish through the result
         // block for the editor to persist on the selected key.
         EditorAttachConfig preview_config{};
-        const bool have_preview_config = editor_attach_config(preview_config);
+        const bool have_preview_config = !environment_face && editor_attach_config(preview_config);
         const bool picker_requested = have_preview_config && (preview_config.flags & 8);
         const bool preview_flag =
             have_preview_config && (preview_config.flags & 4) && !picker_requested;
@@ -1097,6 +1116,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                 2 * 180 / pi *
                 std::atan(std::tan(double(pinned_fov) * pi / 360) * manual_pose[6] / pinned_aspect);
         }
+        if (environment_face)
+            fov = 360.0 / 3.14159265358979323846 * std::atan(manual_pose[6]);
         if (!std::isfinite(fov) || fov <= 1 || fov >= 179) {
             fault = 17;
             finish(State::Fault, fault, "Native flight aspect is unsupported; camera released.");
@@ -1389,6 +1410,21 @@ static DWORD WINAPI worker(void*) {
             return 0;
         }
         startup_status(State::Starting, 0, "Waiting for Deadlock client and engine modules.");
+        // Environment-edition opt-in. Collect only reviewed shader metadata
+        // before client/preload creation; no private engine layout or draw work.
+        // Owned config/editor and -dev/-insecure were already verified.
+        wchar_t environment_metadata[2]{};
+        if (GetEnvironmentVariableW(L"DOLLY_ENVIRONMENT_METADATA",environment_metadata,2)==1 &&
+            environment_metadata[0]==L'1') {
+            ID3D11Device* metadata_device=nullptr;
+            const HRESULT created=D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_HARDWARE,nullptr,0,
+                nullptr,0,D3D11_SDK_VERSION,&metadata_device,nullptr,nullptr);
+            const bool ready=SUCCEEDED(created) && metadata_device &&
+                player_capture::install_environment_metadata_hook(metadata_device);
+            if (metadata_device) metadata_device->Release();
+            OutputDebugStringA(ready ? "Dolly environment: early shader metadata hook ready.\n" :
+                "Dolly environment: early shader metadata hook unavailable.\n");
+        }
         double began = now_seconds();
         HMODULE client = nullptr, engine = nullptr;
         while (now_seconds() - began < 120 && WaitForSingleObject(gEditor, 0) == WAIT_TIMEOUT) {
@@ -1403,8 +1439,9 @@ static DWORD WINAPI worker(void*) {
         const bool engine6739 = module_matches(engine, kBuild6739EngineHash, 0x906000);
         const bool engine6753 = module_matches(engine, kBuild6753EngineHash, 0x906000);
         const bool engine6757 = module_matches(engine, kBuild6757EngineHash, 0x906000);
+        const bool engine6769 = module_matches(engine, kBuild6769EngineHash, 0x906000);
         const bool september_engine = module_matches(engine, kSeptemberEngineHash, 0x906000);
-        if (!engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
+        if (!engine6769 && !engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
             !module_matches(engine, kEngineHash, 0x969000) &&
             !module_matches(engine, kUpdatedEngineHash, 0x969000)) {
             startup_status(
@@ -1414,7 +1451,8 @@ static DWORD WINAPI worker(void*) {
         }
         gClient = reinterpret_cast<std::uintptr_t>(client);
         gEngine = reinterpret_cast<std::uintptr_t>(engine);
-        gEngineLayout = engine6757         ? kEngine6728Layout
+        gEngineLayout = engine6769         ? kEngine6728Layout
+                        : engine6757       ? kEngine6728Layout
                         : engine6753       ? kEngine6728Layout
                         : engine6739       ? kEngine6728Layout
                         : engine6728       ? kEngine6728Layout
@@ -1460,7 +1498,7 @@ static DWORD WINAPI worker(void*) {
                            "Could not keep the native callback resident; no hook was installed.");
             return 0;
         }
-        if (MH_Initialize() != MH_OK ||
+        if (!initialize_hook_library() ||
             MH_CreateHook(reinterpret_cast<void*>(gClient + gCompat.setup),
                           reinterpret_cast<void*>(setup_hook),
                           reinterpret_cast<void**>(&gOriginalSetup)) != MH_OK) {
@@ -1530,6 +1568,8 @@ static DWORD WINAPI worker(void*) {
         for (;;) {
             publish_follow_anchor(gMemory);
             if (WaitForSingleObject(gEditor, 0) != WAIT_TIMEOUT) {
+                environment::probe_worker(gMemory, false, editor_pid, GetCurrentProcessId());
+                environment::capture_worker(gMemory, false, editor_pid, GetCurrentProcessId(),0,0);
                 gWorkerError = 30;
                 seek_relief_tick(false);
                 editor_worker_tick(gMemory, false);
@@ -1572,6 +1612,18 @@ static DWORD WINAPI worker(void*) {
                 }
             }
             renderer_diagnostics_tick(gMemory);
+            const auto hdr_camera=std::atomic_load(&gCommand);
+            const auto hdr_view=editor_snapshot();
+            environment::capture_worker(gMemory,
+                !gWorkerError.load() && now_seconds()-gHeartbeatTime.load()<2.0 &&
+                now_seconds()-gEnvironmentViewTime.load(std::memory_order_acquire)<1.0 &&
+                hdr_view.ready && hdr_view.paused && hdr_view.tick>=0,
+                editor_pid,GetCurrentProcessId(),hdr_camera ? hdr_camera->wire.command : 0,
+                static_cast<unsigned>(hdr_view.tick));
+            environment::probe_worker(gMemory,
+                !gWorkerError.load() && now_seconds() - gHeartbeatTime.load() < 2.0 &&
+                now_seconds() - gEnvironmentViewTime.load(std::memory_order_acquire) < 1.0,
+                editor_pid, GetCurrentProcessId());
             // Apply the reversible render relief while the replay is seeking
             // (the main cause of the vertex-buffer overflow and lingering
             // effects) or the engine's buffer queue is already near capacity.
@@ -1587,11 +1639,15 @@ static DWORD WINAPI worker(void*) {
                     continue;
                 }
                 if (control.editor_pid != editor_pid || control.game_pid != GetCurrentProcessId() ||
-                    control.mode > 4 ||
+                    control.mode > 5 ||
                     control.flags &
                         ~(kFrozen | kAspect | kNoSeekRelief | kGamePov | kConfettiControlMask) ||
                     ((control.flags & kGamePov) && ((control.flags & (kFrozen | kAspect)) ||
-                                                    control.mode == std::uint32_t(Mode::Manual))) ||
+                                                    control.mode >= std::uint32_t(Mode::Manual))) ||
+                    (control.mode == std::uint32_t(Mode::EnvironmentFace) &&
+                     (control.payload_bytes != sizeof(CameraPose) ||
+                      (control.flags & (kFrozen | kAspect)) != (kFrozen | kAspect) ||
+                      (control.flags & kConfetti))) ||
                     ((control.flags & kConfetti) &&
                      (((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) < 100 ||
                       ((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) > 1500 ||
@@ -1616,10 +1672,11 @@ static DWORD WINAPI worker(void*) {
                 }
                 auto candidate = shot;
                 bool next_manual = control.mode == std::uint32_t(Mode::Manual) ||
+                                   control.mode == std::uint32_t(Mode::EnvironmentFace) ||
                                    (manual && control.mode == std::uint32_t(Mode::HoldCurrent));
                 CameraPose seed{};
                 bool has_seed = false;
-                if (control.mode == std::uint32_t(Mode::Manual)) {
+                if (control.mode == std::uint32_t(Mode::Manual) || control.mode == std::uint32_t(Mode::EnvironmentFace)) {
                     if (control.payload_bytes) {
                         if (control.payload_bytes != sizeof(seed)) {
                             gWorkerError = 32;
@@ -1627,7 +1684,7 @@ static DWORD WINAPI worker(void*) {
                             continue;
                         }
                         std::memcpy(seed.data(), payload.data(), sizeof(seed));
-                        if (!pose_valid(seed)) {
+                        if (!pose_valid(seed) || (control.mode == std::uint32_t(Mode::EnvironmentFace) && (seed[6] < 1.0 || seed[6] > 1.2))) {
                             gWorkerError = 32;
                             Sleep(10);
                             continue;

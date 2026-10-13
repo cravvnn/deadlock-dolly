@@ -283,6 +283,9 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "take_screenshot":
         from . import screenshot_ui
         screenshot_ui.start(app)
+    elif action == 'capture_environment':
+        from . import environment_ui
+        environment_ui.start(app, event)
     elif action == "stop":
         _native_operation(app, "Stopping and restoring",
                           lambda: app.controller.stop(preserve_speed=True), bridge)

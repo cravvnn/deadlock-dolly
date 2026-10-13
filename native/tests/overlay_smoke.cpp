@@ -499,6 +499,7 @@ EditorSnapshot editor_snapshot() noexcept {
 bool editor_framing_grid_enabled() noexcept {
     return framing_grid_enabled_stub;
 }
+bool editor_environment_enabled() noexcept { return false; }
 bool editor_camera_list(EditorCameraList& out) noexcept {
     out = {};
     std::memcpy(out.magic, "DLYCAMS1", 8);

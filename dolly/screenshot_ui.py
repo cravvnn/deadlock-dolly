@@ -15,7 +15,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
-from . import player_layer, screenshot
+from . import edition, player_layer, screenshot
 from .display import client_size, focus_window
 from .replays import parse_launch_options
 from .video_export import (ACTIVE_STATES, BITRATE_PRESETS, VideoOptions, bundled_ffmpeg_path,
@@ -26,7 +26,8 @@ LOG = logging.getLogger(__name__)
 
 def init(app) -> None:
     app._still_run = None
-    app.screenshot_depth = tk.BooleanVar(value=True)
+    app.screenshot_depth = tk.BooleanVar(value=not edition.is_environment())
+    app.screenshot_players = tk.BooleanVar(value=not edition.is_environment())
     app.screenshot_render_size = tk.StringVar(
         value=screenshot.render_size_label(app.launch_options.get()))
     app.screenshot_size_text = tk.StringVar(value="Game render size: launch a replay to see it.")
@@ -35,12 +36,16 @@ def init(app) -> None:
 def build(app, parent, *, before=None) -> None:
     """Add the Screenshot card to the Export page."""
     from .ui.widgets import GAP, card, field
-    still = card(parent, "Screenshot (high-res still)")
+    still = card(parent, "Screenshot" if edition.is_environment() else "Screenshot (high-res still)")
     if before is not None:
         still.pack_configure(before=before)
-    ttk.Label(still, text="Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
+    description = ("Save the current view as a PNG. Choose native resolution or a larger render size. "
+                   "Quality: lossless PNG. Uses the capture folder below. "
+                   "Depth and character cutouts are optional." if edition.is_environment() else
+                  "Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
                           "hero_isolated.png and depth.exr in one folder beside the output file. "
-                          "Hero = every player and their equipment, no NPCs.",
+                          "Hero = every player and their equipment, no NPCs.")
+    ttk.Label(still, text=description,
               style="CardMuted.TLabel", wraplength=760).pack(anchor="w", pady=(0, GAP))
     app.screenshot_size_combo = field(still, "Render size (next launch)", app.screenshot_render_size,
                                       values=screenshot.RENDER_SIZE_LABELS)
@@ -52,6 +57,10 @@ def build(app, parent, *, before=None) -> None:
     app.screenshot_depth_check = ttk.Checkbutton(row, style="Card.TCheckbutton",
                                                  text="Include depth (EXR)", variable=app.screenshot_depth)
     app.screenshot_depth_check.pack(side="left", padx=(0, 18))
+    if edition.is_environment():
+        app.screenshot_players_check = ttk.Checkbutton(
+            row, style="Card.TCheckbutton", text="Character cutouts", variable=app.screenshot_players)
+        app.screenshot_players_check.pack(side="left")
     app.screenshot_button = ttk.Button(row, text="Take screenshot", style="Primary.TButton",
                                        command=lambda: start(app))
     app.screenshot_button.pack(side="right")
@@ -76,6 +85,9 @@ def refresh(app, ready: bool) -> None:
     if button is None:
         return
     idle = getattr(app, "_still_run", None) is None and not app._layer_queue
+    players_check = getattr(app, "screenshot_players_check", None)
+    if players_check is not None:
+        players_check.configure(state="normal" if idle else "disabled")
     # The render size only edits launch options, so it stays usable before launch.
     for widget, state in ((button, "normal" if ready and idle else "disabled"),
                           (app.screenshot_depth_check, "normal" if idle else "disabled"),
@@ -94,6 +106,11 @@ def refresh(app, ready: bool) -> None:
 
 
 def _output_directory(app) -> Path:
+    if edition.is_environment():
+        directory = Path(app.environment_folder.get()).expanduser()
+        if not directory.is_dir():
+            raise ValueError('Choose an existing capture output folder.')
+        return directory
     raw = app.video_path.get().strip()
     directory = Path(raw).expanduser().parent if raw else None
     if directory is None or not directory.is_dir():
@@ -116,11 +133,12 @@ def start(app) -> None:
         if ffmpeg is None:
             raise ValueError("Screenshots need FFmpeg. Choose it under Export > FFmpeg runtime.")
         depth = bool(app.screenshot_depth.get())
+        players = not edition.is_environment() or bool(app.screenshot_players.get())
         path = screenshot.default_still_path(app.project.name, _output_directory(app))
         options = VideoOptions(path, screenshot.STILL_FPS, BITRATE_PRESETS["20 Mbps"],
                                codec=screenshot.STILL_CODEC, ffmpeg_path=ffmpeg, fixed_step=True,
                                speed=screenshot.STILL_SPEED, depth=depth, depth_exr=depth,
-                               layers=("players",)).validated()
+                               layers=("players",) if players else ()).validated()
         base = copy.deepcopy(app.project)
     except (ValueError, OSError) as exc:
         app._error("Screenshot", exc)
@@ -130,7 +148,7 @@ def start(app) -> None:
     app._pending_auto_play = True
     app._auto_finish_layered = True
     app._base_capture = options
-    app._layer_queue = [("players", "capture")]
+    app._layer_queue = [("players", "capture")] if players else []
     app._active_layer_take = None
     app._take_playing_seen = False
     app._take_audit_seen = set()
@@ -150,7 +168,8 @@ def start(app) -> None:
         abandon(app)
         app._clear_layer_pipeline()
     else:
-        app.status_text.set("Taking screenshot: color, depth and players passes record automatically.")
+        passes = ["color"] + (["depth"] if depth else []) + (["character cutouts"] if players else [])
+        app.status_text.set("Taking screenshot: " + ", ".join(passes) + ".")
 
 
 def abandon(app) -> None:

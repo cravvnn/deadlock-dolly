@@ -10,6 +10,8 @@
 #include "dolly_depth_live.hpp"
 #include "dolly_depth_scene.hpp"
 #include "dolly_render_class.hpp"
+#include "dolly_environment_probe.hpp"
+#include "dolly_environment_capture.hpp"
 #include "dolly_player_capture.hpp"
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
@@ -599,6 +601,16 @@ void render_overlay(IDXGISwapChain* chain) {
     }
     if (!target && !create_target(chain))
         return;
+    environment::probe_present();
+    environment::capture_present(immediate);
+    if (environment::capture_active())
+        environment::capture_hooks((player_capture::pixel_metadata_ready(device) ||
+                                    player_capture::install_layout_hook(device)) &&
+                                   depth::install_scene_hooks(device, immediate));
+    if (environment::probe_active())
+        environment::probe_hooks((player_capture::pixel_metadata_ready(device) ||
+                                  player_capture::install_layout_hook(device)) &&
+                                 depth::install_scene_hooks(device, immediate));
     player_capture::present_boundary(immediate);
     // Metadata hooks start after verified startup, before replay shaders are
     // created. Scene capture still requires its separately bounded request.

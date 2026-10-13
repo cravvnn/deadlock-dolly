@@ -150,8 +150,19 @@ def build_export(app):
     )
     view = ExportPage(app.export_tab, state, commands)
     app.export_view = view
+    from . import edition
+    capture_only = edition.is_environment()
+    if capture_only:
+        # Keep the existing controller/widget references for status refresh,
+        # while exposing only still and panorama workflows in this edition.
+        for widget in view.export_page.body.winfo_children():
+            widget.pack_forget()
+        view.recording_holder.pack_forget()
     from . import screenshot_ui
-    screenshot_ui.build(app, view.export_page.body, before=view.video_destination_card)
+    screenshot_ui.build(app, view.export_page.body,
+                        before=None if capture_only else view.video_destination_card)
+    from . import environment_ui
+    environment_ui.build(app, view.export_page.body)
     app.export_camera_note = view.export_camera_note
     app.export_capture_card = view.export_capture_card
     app.export_page = view.export_page

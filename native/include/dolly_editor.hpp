@@ -125,7 +125,8 @@ enum class EditorAction : std::uint32_t {
     SetCameraTime,
     SetCameraRoll,
     FramingGrid,
-    TakeScreenshot
+    TakeScreenshot,
+    CaptureEnvironment
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
@@ -310,6 +311,19 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SelectCamera) == 89,
 // carries the bindable action that is not part of the 26-entry wire table:
 // vk in the low 16 bits, modifier bits in the high 16 bits (0 = unbound).
 constexpr std::size_t kEditorFramingGridOffset = 2 * 1024 * 1024 + 24424;
+constexpr std::size_t kEditorEnvironmentActionOffset = 2 * 1024 * 1024 + 25728;
+struct EditorEnvironmentActionConfig {
+    char magic[8];
+    std::uint32_t sequence, abi, flags, binding;
+};
+static_assert(sizeof(EditorEnvironmentActionConfig)==24);
+static_assert(static_cast<unsigned>(EditorAction::CaptureEnvironment)==99);
+inline bool valid_environment_action(const EditorEnvironmentActionConfig& c) noexcept {
+    const auto vk=c.binding & 0xffffu, mods=c.binding >> 16;
+    return !std::memcmp(c.magic,"DLYENVA1",8) && c.abi==1 && !(c.flags & ~1u) &&
+           vk<=255 && mods<=7 && vk!=0x76 && vk!=0x11 && vk!=0x12 && vk!=0x10 &&
+           ((c.flags & 1u) || !c.binding);
+}
 struct EditorFramingGridConfig {
     char magic[8];
     std::uint32_t sequence, abi, flags, reserved;
@@ -449,6 +463,7 @@ bool editor_attach_config(EditorAttachConfig& out) noexcept;
 bool editor_follow_config(EditorFollowConfig& out) noexcept;
 // Published framing-guide switch; false while no valid block has arrived.
 bool editor_framing_grid_enabled() noexcept;
+bool editor_environment_enabled() noexcept;
 bool editor_camera_list(EditorCameraList& out) noexcept;
 bool editor_bones_snapshot(EditorBones& out) noexcept;
 // Latest native player roster; false while no valid block arrived.

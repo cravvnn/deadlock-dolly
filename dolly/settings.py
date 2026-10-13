@@ -21,6 +21,7 @@ from .editor_actions import (
     default_action_bindings, validate_action_bindings,
 )
 from .replays import parse_launch_options
+from . import edition
 
 SETTINGS_VERSION = 6
 DEFAULT_RESHADE_BINDING = EditorBinding("F11")
@@ -41,7 +42,7 @@ class AppSettings:
     reshade_runtime_path: str = ""
     full_editor: bool = False
     ffmpeg_path: str = ""
-    auto_updates: bool = True
+    auto_updates: bool = field(default_factory=edition.allow_standard_updates)
     framing_grid_enabled: bool = False
     migration_warnings: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
@@ -133,7 +134,7 @@ def settings_path() -> Path:
     """Return the per-user settings path, shared by extracted Dolly versions."""
     appdata = os.environ.get("APPDATA")
     base = Path(appdata) if appdata and appdata.strip() else Path.home() / ".config"
-    return base / "DeadlockDolly" / "settings.json"
+    return base / edition.settings_directory() / "settings.json"
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

@@ -57,6 +57,19 @@ def bundle_self_test(report_path: Path) -> int:
         app_ui = gui.DollyApp(root)
         from .update_ui import UpdateUI
         app_ui.update_manager = UpdateUI(app_ui, skip_startup=True)
+        from . import edition
+        if not edition.allow_standard_updates():
+            from .settings import settings_path
+            from .environment_panorama import FACES, panorama_rows
+            import numpy as np
+            assert settings_path().parent.name == 'DollyEnvironmentCapture'
+            assert not app_ui.update_manager.enabled
+            assert root.title().startswith(edition.application_name())
+            faces = {f.name:np.full((4,4,3),2.5,dtype=np.float32) for f in FACES}
+            panorama = np.concatenate([block for _,block in panorama_rows(faces,32)])
+            assert panorama.shape == (16,32,3) and np.all(panorama == 2.5)
+            report['checks']['environment_edition'] = dict(separate_settings=True,
+                standard_updates_disabled=True, panorama_runtime=True, hdr_values_preserved=True)
         root.update_idletasks()
         root.update()
         # Exercise the new export controls at the supported minimum size.
@@ -73,13 +86,21 @@ def bundle_self_test(report_path: Path) -> int:
                     or x + widget.winfo_width() > root.winfo_width()
                     or y + widget.winfo_height() > root.winfo_height()):
                 raise RuntimeError(f"Layout clips {name} at the minimum window size")
-        for name in ("video_path_entry", "video_start_button", "video_stop_button", "video_cancel_button"):
-            visible(name)
-        # Recording actions stay reachable while advanced runtime settings scroll.
-        app_ui.export_page.canvas.yview_moveto(1)
-        root.update_idletasks()
-        for name in ("video_start_button", "video_stop_button", "video_cancel_button"):
-            visible(name)
+        if edition.is_environment():
+            assert len(app_ui.export_page.body.pack_slaves()) == 2
+            assert not app_ui.export_view.recording_holder.winfo_manager()
+            visible("screenshot_button")
+            assert not app_ui.screenshot_depth.get()
+            assert not app_ui.screenshot_players.get()
+            report["checks"]["capture_only_export"] = True
+        else:
+            for name in ("video_path_entry", "video_start_button", "video_stop_button", "video_cancel_button"):
+                visible(name)
+            # Recording actions stay reachable while advanced runtime settings scroll.
+            app_ui.export_page.canvas.yview_moveto(1)
+            root.update_idletasks()
+            for name in ("video_start_button", "video_stop_button", "video_cancel_button"):
+                visible(name)
         app_ui.notebook.select(app_ui.settings_tab)
         root.update()
         for name in ("reshade_path_entry", "reshade_configure_button", "reshade_disable_button", "reshade_forget_button"):
@@ -93,18 +114,24 @@ def bundle_self_test(report_path: Path) -> int:
         app_ui.library_page.reveal(app_ui.library_capture_toggle)
         visible("library_capture_toggle")
         report["checks"]["library_capture_switch"] = True
-        app_ui.full_editor.set(True)
-        app_ui._apply_editor_mode()
-        app_ui.notebook.select(app_ui.camera_tab)
-        root.update()
-        visible("slider")
-        report["checks"]["citadel_dof_card"] = bool(app_ui.citadel_dof_checkbox.winfo_ismapped())
-        app_ui.full_editor.set(False)
-        app_ui._apply_editor_mode()
-        assert app_ui.notebook.select() == str(app_ui.setup_tab)
-        assert app_ui.notebook.tab(app_ui.camera_tab, "state") == "hidden"
-        report["checks"]["simple_and_full_editor"] = True
-        report["checks"]["export_layout"] = "minimum_window_controls_visible"
+        if edition.is_environment():
+            assert not app_ui.full_editor_switch.winfo_manager()
+            assert app_ui.notebook.tab(app_ui.camera_tab, "state") == "hidden"
+            assert app_ui.notebook.tab(app_ui.cvar_tab, "state") == "hidden"
+            report["checks"]["capture_only_navigation"] = True
+        else:
+            app_ui.full_editor.set(True)
+            app_ui._apply_editor_mode()
+            app_ui.notebook.select(app_ui.camera_tab)
+            root.update()
+            visible("slider")
+            report["checks"]["citadel_dof_card"] = bool(app_ui.citadel_dof_checkbox.winfo_ismapped())
+            app_ui.full_editor.set(False)
+            app_ui._apply_editor_mode()
+            assert app_ui.notebook.select() == str(app_ui.setup_tab)
+            assert app_ui.notebook.tab(app_ui.camera_tab, "state") == "hidden"
+            report["checks"]["simple_and_full_editor"] = True
+            report["checks"]["export_layout"] = "minimum_window_controls_visible"
         if sys.platform == "win32":
             root.iconbitmap(str(branding.ASSETS / "dolly.ico"))  # No silent PNG fallback in this gate.
         else:

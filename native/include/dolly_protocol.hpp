@@ -8,12 +8,15 @@ constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 // The editor blocks occupy the first +4096 tail; the attach roster
 // (native -> editor) follows at +4096 inside a second 4 KiB page. Keep this
 // in step with dolly/native_bridge.py MAPPING_BYTES.
-constexpr std::size_t kMappingBytes = kControlBytes + 24576;
+// The environment edition appends its diagnostic page after ALL legacy blocks,
+// including the camera list and framing guide near the end of the old mapping.
+constexpr std::size_t kMappingBytes = kControlBytes + 28672;
 constexpr std::size_t kPayloadOffset = 1024;
 constexpr std::size_t kMaxPayloadBytes = kControlBytes - kPayloadOffset;
 constexpr char kControlMagic[8] = {'D', 'L', 'Y', 'C', 'A', 'M', '0', '1'};
 constexpr char kStatusMagic[8] = {'D', 'L', 'Y', 'S', 'T', 'A', 'T', '1'};
-enum class Mode : std::uint32_t { Release = 0, Hold = 1, Play = 2, HoldCurrent = 3, Manual = 4 };
+enum class Mode : std::uint32_t { Release = 0, Hold = 1, Play = 2, HoldCurrent = 3, Manual = 4,
+                                  EnvironmentFace = 5 };
 enum class State : std::uint32_t {
     Starting = 0,
     Probe = 1,

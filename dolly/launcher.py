@@ -35,6 +35,7 @@ from .keyvalues import _Token, _Entry, _tokens, _parse, _named
 from .runtime import application_root, resource_root, external_program_environment
 from .native_bridge import NativeBridge, ABI as NATIVE_ABI
 from . import __version__ as DOLLY_VERSION
+from . import edition
 from .compatibility import (
     CompatibilityError,
     SUPPORTED,
@@ -51,7 +52,7 @@ CONFETTI_PACK = NATIVE_ROOT / "assets" / "confetti" / "pak01_dir.vpk"
 CONFETTI_PACK_SHA256 = "99c0325fe333bfa12c3f23a2808767c2fd27b49fe0e5abe4531fa472519f8ae6"
 UI_OVERRIDE_PACK = NATIVE_ROOT / "assets" / "ui" / "pak02_dir.vpk"
 UI_OVERRIDE_PACK_SHA256 = "160c23f2b4ef670469833a193b2fa3d4ed5f027a4b9310607391008f39054cc0"
-UNLOCKER_SHA256 = "005129711605ba32d20b19fd5fc81e87cac4d22aa6e030d0b197ffc82176c696"
+UNLOCKER_SHA256 = "aa4834d5d189743decc330d53fb07680416a0c31ab53d2a25112a464a04e72a2"
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.
 try:
@@ -611,8 +612,9 @@ def recover_pending(game_path: str | os.PathLike[str] | None = None) -> list[str
             continue
         if expected is not None and Path(preliminary.get("original_gameinfo", "")).resolve() != expected.resolve():
             continue
-        from . import graphics_profiles
-        pending = preliminary.get("config_state") != "restored" or graphics_profiles.pending(journal.parent)
+        from . import graphics_profiles, display_resolution
+        pending = (preliminary.get("config_state") != "restored" or graphics_profiles.pending(journal.parent)
+                   or display_resolution.pending(journal.parent))
         if not pending and not Path(preliminary.get("overlay_dir", "")).exists():
             continue
         if not pending and Path(preliminary.get("session_dir", "")).resolve() != journal.parent.resolve():
@@ -841,6 +843,11 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         if graphics_profile:
             from . import graphics_profiles
             graphics_profiles.prepare(session_dir, graphics_profile)
+        # A forced window size (e.g. the panorama square) is persisted by the game
+        # into the user's video.txt; snapshot the saved resolution so it can be
+        # put back after the game exits.
+        from . import display_resolution
+        display_resolution.prepare(session_dir, launch_options)
         # Check again immediately before process creation, after file preparation.
         if _game_is_running(running_processes()):
             raise LaunchError("Deadlock started while Dolly was preparing. Exit it and try again.")
@@ -866,6 +873,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                     environment["RESHADE_DISABLE_GRAPHICS_HOOK"] = "1"
                     environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
                     environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
+                    environment.pop("DOLLY_ENVIRONMENT_METADATA", None)
+                    if edition.is_environment():
+                        environment["DOLLY_ENVIRONMENT_METADATA"] = "1"
                 options = {} if environment is None else {"env": environment}
                 try:
                     process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)

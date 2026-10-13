@@ -278,7 +278,7 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
             reason = "Deadlock closed"
         else:
             reason = f"Deadlock crashed (exit code {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X})"
-        if context == "waiting for the game console" and not self._replay_requested:
+        if context in ("waiting for the game console", "waiting for hideout readiness"):
             return (f"{reason} while {context}. The game exited before the selected replay "
                     "was loaded. Inspect the startup error or game dump before retrying.")
         message = (f"{reason} while {context}. A replay that this game build cannot "
@@ -553,7 +553,13 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
         loading. Require settled engine status as well as rendered frames;
         neither an open socket nor an early view callback proves readiness.
         """
-        output = self._request("demo_info", allow_error=True, allow_truncated=True)
+        try:
+            output = self._request("demo_info", allow_error=True, allow_truncated=True)
+        except ConsoleError:
+            # A hideout still loading its map/shaders, or a game that has just
+            # exited, can miss the console deadline. Treat it as "not ready yet"
+            # so the startup wait retries and a dead game is reported cleanly.
+            return None
         try:
             demo = parse_demo_info(output)
         except ValueError:
@@ -2817,6 +2823,13 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
         if not self._replay_hud_restore:
             return
         if self._session is not self._replay_hud_session:
+            process = getattr(self._replay_hud_session, "process", None)
+            if process is None or process.poll() is not None:
+                # The owning process is gone; a new launch starts from the saved
+                # configuration, so drop the stale replay-HUD journal.
+                self._replay_hud_restore = {}
+                self._replay_hud_session = None
+                return
             raise RuntimeError('Replay HUD restoration belongs to a different session.')
         self._require_connection()
         values, _ = self._safe_health_hud_values(self._replay_hud_restore)
@@ -3215,7 +3228,7 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                 self._request("demo_pause")
                 pause_confirmed = True
                 stable = 0
-            if target < observed <= target + 2:
+            if target < observed <= target + 4:
                 overshoot_samples = overshoot_samples + 1 if observed == overshoot_tick else 1
                 overshoot_tick = observed
             else:
@@ -3255,7 +3268,8 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
                                            "actual_tick": undershoot_tick,
                                            "reason": "recorded_packet"})
             if overshoot_samples >= SEEK_SETTLE_SAMPLES and not corrections:
-                # Native forward seeks can stop two ticks late. Reissuing the
+                # Native forward seeks can stop up to four ticks late (6774:
+                # request15301 settled at15305). Reissuing the
                 # SAME target from there takes the backward-seek route. Do not
                 # react to a transient ahead sample or chase an unrelated seek.
                 self._check_position_cancelled()
@@ -3541,6 +3555,10 @@ class Controller(LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHa
 
     def _native_bridge(self):
         return getattr(self._session, "native", None) if self._session is not None else None
+
+    def environment_backend(self, *, event=None, cancelled=lambda:False):
+        from .environment_backend import EnvironmentBackend
+        return EnvironmentBackend(self,event=event,cancelled=cancelled)
 
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking."""

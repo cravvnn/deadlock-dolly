@@ -21,7 +21,7 @@ ACTION_ORDER = (
 # Actions that are bindable but are not part of the 26-entry wire action table.
 # Their bindings travel in dedicated trailing config fields, so the stable
 # ACTION_ORDER/ID ABI and every extra action ID stay untouched.
-BINDABLE_EXTRA = ("framing_grid",)
+BINDABLE_EXTRA = ("framing_grid", "capture_environment")
 BINDABLE_ORDER = ACTION_ORDER + BINDABLE_EXTRA
 ACTION_IDS = {name: index for index, name in enumerate(ACTION_ORDER)}
 ACTION_LABELS = dict(zip(ACTION_ORDER, (
@@ -32,6 +32,7 @@ ACTION_LABELS = dict(zip(ACTION_ORDER, (
     "Move slowly", "Look left", "Look right", "Look up", "Look down", "Roll left", "Roll right",
 )))
 ACTION_LABELS["framing_grid"] = "Toggle framing guide"
+ACTION_LABELS["capture_environment"] = "Capture panorama"
 MOVEMENT_ACTIONS = frozenset(ACTION_ORDER[12:])
 MODIFIER_KEYS = {"Ctrl": 0x11, "Alt": 0x12, "Shift": 0x10}
 _EXTRA_KEYS = {**MODIFIER_KEYS, "Comma": 0xBC, "Period": 0xBE,
@@ -100,6 +101,7 @@ def default_action_bindings(capture_binding: CaptureBinding = DEFAULT_BINDING) -
     result["capture"] = EditorBinding.from_dict(capture_binding.to_dict())
     result["replace"] = EditorBinding("R", ctrl=True, alt=True)
     result["framing_grid"] = EditorBinding("G", alt=True)
+    result["capture_environment"] = None
     return result
 
 

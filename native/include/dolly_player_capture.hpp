@@ -34,6 +34,10 @@ std::uint32_t pose_scene_frame() noexcept;
 void present_boundary(ID3D11DeviceContext*) noexcept;
 bool layout_hook_requested() noexcept;
 bool install_layout_hook(ID3D11Device*) noexcept;
+bool pixel_metadata_ready(ID3D11Device*) noexcept;
+// Platform API metadata only, before game shader creation; no draw/scene hooks.
+bool install_environment_metadata_hook(ID3D11Device*) noexcept;
+std::uint64_t environment_metadata_calls() noexcept;
 bool draw_hooks_requested() noexcept;
 void draw_hooks_result(bool installed) noexcept;
 // Invalidate submitted ownership when an unsupported writable Map succeeds.

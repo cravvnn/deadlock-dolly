@@ -109,6 +109,10 @@ def run_regression_tests(root: Path, log_path: Path) -> None:
 
 
 def main() -> int:
+    build_edition = os.environ.get('DOLLY_BUILD_EDITION', 'standard')
+    if build_edition not in ('standard', 'environment'):
+        raise ValueError('Unknown build edition')
+    environment = build_edition == 'environment'
     if sys.platform != "win32" or struct.calcsize("P") != 8 or platform.machine().lower() not in {"amd64", "x86_64"}:
         raise RuntimeError("Build Dolly.exe on Windows x64 or use the included GitHub Actions workflow")
     if sys.version_info[:2] != (3, 12):
@@ -142,7 +146,7 @@ def main() -> int:
                     "--workpath", str(build / "bootstrap-work"), "--specpath", str(build / "bootstrap-spec"),
                     "--icon", str(ROOT / "assets/dolly.ico"), "--version-file", str(build / "windows-version.txt"),
                     "--add-data", str(ROOT / "assets/dolly.ico") + ";assets",
-                    str(ROOT / "packaging/bootstrap_entrypoint.py")], cwd=ROOT, check=True)
+                    str(ROOT / "packaging" / ("environment_launcher.py" if environment else "bootstrap_entrypoint.py"))], cwd=ROOT, check=True)
     shutil.copy2(build / "bootstrap/Dolly.exe", bundle / "Dolly.exe")
     subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test", str(checks / "updater-smoke.json")], check=True, timeout=60)
     if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
@@ -173,9 +177,54 @@ def main() -> int:
         shutil.copy2(release_notes, bundle / "Release_Notes.md")
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
+    if environment:
+        (bundle / 'Start_Here.txt').write_text(
+            'Dolly Environment Capture 0.1.6 - experimental\n\n'
+            'Capture panorama is available in Keybinds, unbound by default. F8 still opens Dolly.\n'
+            'A matching Capture panorama button is in Export. Read Environment_Capture.md.\n'
+            'The complete six-face HDR reference workflow passed a local 1024-square replay check.\n'
+            'If capture reports that the game is rendering below the HDR size, turn off upscaling (FSR/DLSS)\n'
+            'or set render scale to 100% in Deadlock, then capture again.\n'
+            'Select a square render size, open a replay, pause and position the camera before capture.\n'
+            'If Deadlock waits on its intro, focus the game and press Escape once.\n'
+            'Rendered HDR references are not calibrated lighting or certified fully empty scenery.\n'
+            'This is an experimental map-reference tool; inspect each result before relying on it.\n'
+            'Settings are separate from regular Dolly. Standard Dolly auto-updates are disabled.\n', encoding='utf-8')
+        shutil.copy2(ROOT / 'docs/ENVIRONMENT_CAPTURE.md', bundle / 'Environment_Capture.md')
+        (bundle / 'Release_Notes.md').write_text(
+            '# Environment Capture 0.1.6 (experimental)\n\n'
+            '- Overlapping 100-degree captures avoid the dark image borders that caused thin black panorama joins. Exact projection and normalized blending preserve HDR values.\n'
+            '- Camera restoration now preserves the original projection mode as well as pose and lens.\n'
+            '- Panorama capture now forces 100% render scale, so it works with FSR/DLSS upscaling or a reduced render scale. '
+            'Previously capture failed with "HDR source dimensions were not established". The previous scale is restored afterward.\n'
+            '- If capture still reports the game is rendering below the HDR size, it now names the setting to change.\n'
+            '- The user\'s saved window resolution is restored after a sized panorama session, so a later normal launch is no longer left at the square size.\n'
+            '- Focused desktop Export page: Screenshot and Environment panorama only. Camera-path tabs and Full editor switch hidden.\n'
+            '- Screenshots default to lossless color PNG; depth and character cutouts are optional. Shared capture folder.\n'
+            '- Removed the development header. Choose screenshot resolution before opening a replay.\n'
+            '- Panorama still requires a square render size; native widescreen panorama is not included in this test build.\n'
+            '- Capture panorama button and user-assigned action in existing Keybinds; unbound by default. F8 is unchanged.\n'
+            '- Six fixed-centre overlapping 100-degree HDR views, world-class filtering and automatic EXR panorama assembly.\n'
+            '- Actual GPU render-size validation, exposure consistency checks, cancellation and camera/HUD restoration.\n\n'
+            'The render-scale fix was proven on build 6774: with render scale at 66.67% the source discovery reproduced the '
+            'reported failure exactly (viewport 682x682 against a 1024x1024 texture), and capture succeeded at 100% scale with '
+            'the previous scale restored. The production source workflow and bundled native helper passed a local 1024-square '
+            'replay check, producing a 4096x2048 EXR, with complete session/configuration cleanup. Portable startup is checked '
+            'separately. Zipline ribbons are removed during panorama capture. Intended for already-empty scenes; combat '
+            'cleanup is incomplete. The packaged keypress-to-output path and higher resolutions still require acceptance checks.\n\n'
+            'Intro dismissal can require a manual Escape press. A known Steam networking assertion remained in the live log; '
+            'the owned process exited normally. Outputs are rendered HDR references, not calibrated lighting or certified '
+            'complete actor/attachment/shadow removal. Settings and updates remain separate from regular Dolly.\n', encoding='utf-8')
     for extension in ("md", "json"):
         shutil.copy2(ROOT / "docs" / f"SUPPORTED_CAMERA_CVARS.{extension}",
                      bundle / f"Supported_Camera_Cvars.{extension}")
+    if environment:
+        # Ship the environment edition as a slim folder: runtime, examples,
+        # BUILD_INFO.json, Dolly.exe and LICENSE.txt only.
+        for name in ("Video_and_ReShade.md", "Release_Notes.md", "Start_Here.txt",
+                     "Environment_Capture.md", "Supported_Camera_Cvars.md",
+                     "Supported_Camera_Cvars.json"):
+            (bundle / name).unlink(missing_ok=True)
     shutil.copytree(ROOT / "examples", bundle / "examples", dirs_exist_ok=True)
     reject_game_binaries(bundle)
     executable = bundle / "Dolly.exe"
@@ -201,6 +250,8 @@ def main() -> int:
         if not smoke.get("passed") or not smoke.get("frozen") or smoke.get("game_launched"):
             raise RuntimeError("Invalid packaged GUI smoke-test report")
     info = {"version": __version__, "built_utc": datetime.now(timezone.utc).isoformat(),
+            "edition": build_edition, "environment_capture_ready": False,
+            "environment_reference_capture_available": environment,
             "python": platform.python_version(), "pyinstaller": PyInstaller.__version__,
             "executable": pe_report, "bundle_gui_smoke_passed": True,
             "game_runtime_verified": False, "code_signed": False,
@@ -208,13 +259,19 @@ def main() -> int:
             "native_bridge": {"abi": native_info["abi"], "sha256": native_info["sha256"],
                               "pe": native_report, "game_runtime_verified": False}}
     (bundle / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
-    from dolly.updater import write_manifest
-    write_manifest(bundle, __version__)
+    if environment:
+        # The environment edition has no standard update channel, so it ships
+        # without the updater manifest (a slim folder for the user).
+        (bundle / "UPDATE_MANIFEST.json").unlink(missing_ok=True)
+    else:
+        from dolly.updater import write_manifest
+        write_manifest(bundle, __version__)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    windows_zip = dist / f"Deadlock_Dolly_{__version__}_Windows_x64.zip"
+    prefix = 'Dolly_Environment_Capture_0.1.7_Experimental' if environment else f'Deadlock_Dolly_{__version__}'
+    windows_zip = dist / f"{prefix}_Windows_x64.zip"
     bundle_zip(bundle, windows_zip)
-    sources = source_zip(ROOT, dist / f"Deadlock_Dolly_{__version__}_Source.zip")
+    sources = source_zip(ROOT, dist / f"{prefix}_Source.zip")
     (dist / "SHA256SUMS.txt").write_text("".join(f"{sha256(path)}  {path.name}\n" for path in (windows_zip, sources)), encoding="utf-8")
     print(f"Ready: {windows_zip}\nSource: {sources}\nNothing was uploaded or published.")
     return 0

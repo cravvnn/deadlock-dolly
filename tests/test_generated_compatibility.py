@@ -146,10 +146,10 @@ class GeneratedCompatibilityTests(unittest.TestCase):
 
     def test_player_profiles_keep_exact_pairs_and_moved_producer(self):
         scenes = generate.player_scenes(self.root, self.data)
-        self.assertEqual([row['rva'] for row in scenes], [0x564b0, 0x5c8e0, 0x5c8e0, 0x5c8f0, 0x5c8f0, 0x5c8f0])
-        self.assertEqual([row['arguments'] for row in scenes], [9, 10, 10, 10, 10, 10])
+        self.assertEqual([row['rva'] for row in scenes], [0x564b0, 0x5c8e0, 0x5c8e0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0])
+        self.assertEqual([row['arguments'] for row in scenes], [9, 10, 10, 10, 10, 10, 10])
         self.assertEqual([row['fields'][1] for row in scenes],
-                         [0x5d4fe8, 0x61e7d0, 0x61e860, 0x61e860, 0x61e860, 0x61e800])
+                         [0x5d4fe8, 0x61e7d0, 0x61e860, 0x61e860, 0x61e860, 0x61e800, 0x61e800])
         header = generate.generated_outputs(self.root)['native/include/dolly_player_scene_generated.hpp']
         for scene in scenes:
             self.assertIn(scene['scene_hash'], header)

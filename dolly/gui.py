@@ -20,7 +20,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import attach_camera, dialogs, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
+from dolly import edition, attach_camera, dialogs, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
 from .ui import shot_commands
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, BINDABLE_ORDER, EDITOR_KEY_CHOICES, EditorBinding, default_action_bindings, validate_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
@@ -273,7 +273,7 @@ class DollyApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         apply_window_icon(root)
-        self.root.title("Deadlock Dolly — Untitled shot")
+        self.root.title(edition.application_name() + " — Untitled shot")
         self.ui_scale = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96 / 72))
         self.root.geometry(self._window_size(1180, 800))
         self.root.minsize(*self._window_dimensions(1000, 700))
@@ -462,7 +462,7 @@ class DollyApp:
         heading = ttk.Frame(outer)
         heading.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         heading.columnconfigure(0, weight=1)
-        ttk.Label(heading, text="DEADLOCK DOLLY", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(heading, text=edition.application_name().upper(), style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(heading, textvariable=self.project_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
         status_row = ttk.Frame(heading)
         status_row.grid(row=0, column=1, sticky="e")
@@ -484,6 +484,8 @@ class DollyApp:
             command=self._toggle_full_editor, style="FullEditor.TCheckbutton")
         style.configure("FullEditor.TCheckbutton", font=(FAMILY, _F["callout"], "bold"), padding=(16, 10))
         self.full_editor_switch.grid(row=0, column=2, rowspan=2, padx=(18, 0))
+        if edition.is_environment():
+            self.full_editor_switch.grid_remove()
         self.setup_tab = ttk.Frame(self.notebook)
         self.camera_tab = ttk.Frame(self.notebook)
         self.cvar_tab = ttk.Frame(self.notebook)
@@ -537,7 +539,7 @@ class DollyApp:
         gui_layout.build_library(self)
 
     def _apply_editor_mode(self):
-        enabled = self.full_editor.get()
+        enabled = self.full_editor.get() and not edition.is_environment()
         if not enabled and self.notebook.select() in (str(self.camera_tab), str(self.cvar_tab)):
             self.notebook.select(self.setup_tab)
         for tab in (self.camera_tab, self.cvar_tab):
@@ -1608,6 +1610,8 @@ class DollyApp:
         selected = selected or next(iter(self.bindings_tree.selection()), ACTION_ORDER[0])
         self.bindings_tree.delete(*self.bindings_tree.get_children())
         for action in BINDABLE_ORDER:
+            if action == 'capture_environment' and not edition.is_environment():
+                continue
             binding = self.app_settings.action_bindings.get(action)
             self.bindings_tree.insert("", "end", iid=action, values=(ACTION_LABELS[action], binding.label if binding else "Unbound"))
         binding = self.app_settings.reshade_binding
@@ -4122,7 +4126,7 @@ class DollyApp:
     def _title(self):
         marker = " *" if self.dirty else ""
         self.project_text.set(self.project.name + marker)
-        self.root.title(f"Deadlock Dolly — {self.project.name}{marker}")
+        self.root.title(f"{edition.application_name()} — {self.project.name}{marker}")
 
     def _mark_dirty(self):
         history = getattr(self, "shot_history", None)

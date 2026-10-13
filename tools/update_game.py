@@ -26,6 +26,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 ANALYSIS = ROOT / "analysis"
 
 CLIENT_SCRIPTS = ("collect_anchors.py", "audit_full_{b}.py", "build_map_{b}.py",

@@ -784,7 +784,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), meta["bundled_file_sha256"])
         self.assertEqual(meta["bundled_file_sha256"], launcher.UNLOCKER_SHA256)
         self.assertEqual(meta["license"], "MIT")
-        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6766")
+        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6774")
         self.assertEqual(dll.stat().st_size, meta["bundled_file_size"])
         self.assertIn("unlocker-build-6712.patch", meta["patches"])
         self.assertIn("unlocker-build-6722.patch", meta["patches"])
@@ -797,6 +797,8 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("unlocker-build-6742.patch", meta["patches"])
         self.assertIn("unlocker-build-6745.patch", meta["patches"])
         self.assertIn("unlocker-build-6746.patch", meta["patches"])
+        self.assertIn("unlocker-build-6769.patch", meta["patches"])
+        self.assertIn("unlocker-build-6774.patch", meta["patches"])
         for patch in meta["patches"]:
             self.assertTrue((launcher.UNLOCKER_ROOT / patch).is_file(), patch)
 
@@ -925,6 +927,30 @@ class LauncherTests(unittest.TestCase):
         bridge.close.assert_called_once_with()
         self.assertEqual(self.paths.gameinfo.read_bytes(), before)
         self.assertFalse(session.overlay_dir.exists())
+
+    def test_environment_metadata_opt_in_is_scoped_to_owned_game(self):
+        native_root,pins,dll=self._native_fixture()
+        for enabled in (False,True):
+            with self.subTest(environment_edition=enabled):
+                bridge=MagicMock(token='d'*32,editor_pid=5432)
+                process=MagicMock(pid=6781);process.poll.return_value=None
+                with patch.object(launcher,'_check_runtime'), \
+                     patch.object(launcher,'running_processes',return_value={'steam.exe'}), \
+                     patch.object(launcher,'NATIVE_ROOT',native_root), \
+                     patch.object(launcher,'NATIVE_GAME_SHA256',pins), \
+                     patch.object(launcher,'PACKAGE_ROOT',self.package), \
+                     patch.object(launcher.NativeBridge,'create',return_value=bridge), \
+                     patch.object(launcher.subprocess,'Popen',return_value=process) as popen, \
+                     patch.object(launcher.threading,'Thread'), \
+                     patch.object(launcher.edition,'_environment',enabled), \
+                     patch.dict(launcher.os.environ,{'DOLLY_ENVIRONMENT_METADATA':'inherited'}):
+                    session=launcher.launch(self.paths.root,native=True)
+                    environment=popen.call_args.kwargs['env']
+                    self.assertEqual(environment.get('DOLLY_ENVIRONMENT_METADATA'),'1' if enabled else None)
+                    self.assertEqual(launcher.os.environ['DOLLY_ENVIRONMENT_METADATA'],'inherited')
+                    self.assertIn('-dev',popen.call_args.args[0]);self.assertIn('-insecure',popen.call_args.args[0])
+                    process.poll.return_value=0
+                    self.assertTrue(session.close())
 
     def test_native_failed_process_creation_closes_bridge_and_restores_gameinfo(self):
         native_root, pins, dll = self._native_fixture()

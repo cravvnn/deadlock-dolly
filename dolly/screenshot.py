@@ -297,10 +297,10 @@ def _ffmpeg(ffmpeg: Path, *args: str, timeout: float = 300.0) -> None:
         raise RuntimeError("FFmpeg failed: " + (detail[-1] if detail else "unknown error"))
 
 
-def extract_plate(ffmpeg: Path, video: Path, index: int, output: Path) -> Path:
+def extract_plate(ffmpeg: Path, video: Path, index: int, output: Path, *, timeout=300.0) -> Path:
     """Decode one lossless color frame. The backbuffer alpha is not coverage."""
     _ffmpeg(ffmpeg, "-i", str(video), "-vf", "select=eq(n\\,%d)" % index, "-vsync", "0",
-            "-frames:v", "1", "-pix_fmt", "rgb24", str(output))
+            "-frames:v", "1", "-pix_fmt", "rgb24", str(output), timeout=timeout)
     if not Path(output).is_file():
         raise RuntimeError("The color take has no frame %d." % index)
     return Path(output)
@@ -338,10 +338,11 @@ def finish(ffmpeg: Path, run: StillRun) -> list[Path]:
     video = folder / Path(run.options.path).name
     index = settled_index(folder, video.name)
     outputs = [extract_plate(ffmpeg, video, index, folder / "plate.png")]
-    alpha, isolated = folder / "hero_alpha.png", folder / "hero_isolated.png"
-    if not alpha.is_file() or not isolated.is_file():
-        raise RuntimeError("The players stills were not written.")
-    outputs += [alpha, merge_hero_rgba(ffmpeg, outputs[0], alpha, folder / "hero_rgba.png"), isolated]
+    if "players" in run.options.layers:
+        alpha, isolated = folder / "hero_alpha.png", folder / "hero_isolated.png"
+        if not alpha.is_file() or not isolated.is_file():
+            raise RuntimeError("The players stills were not written.")
+        outputs += [alpha, merge_hero_rgba(ffmpeg, outputs[0], alpha, folder / "hero_rgba.png"), isolated]
     if run.depth:
         outputs.append(copy_depth(folder, index, folder / "depth.exr"))
     cleanup(folder, video)

@@ -233,6 +233,32 @@ class PreloadTests(unittest.TestCase):
                 preload._post_intro_escape(SimpleNamespace(pid=42, running=True))
         api.PostMessageW.assert_not_called()
 
+    def test_environment_intro_pair_is_separated_and_release_checks_ownership(self):
+        api=Mock(); session=SimpleNamespace(pid=42,running=True)
+        api.GetWindowTextW.side_effect=lambda hwnd,text,size:setattr(text,'value','Deadlock') or 8
+        api.GetWindowThreadProcessId.side_effect=lambda hwnd,owner:setattr(owner._obj,'value',42) or 1
+        api.IsWindowVisible.return_value=True
+        api.EnumWindows.side_effect=lambda visit,_:visit(100,0)
+        api.PostMessageW.return_value=True
+        decorator=lambda *args:lambda function:function
+        order=[]
+        api.PostMessageW.side_effect=lambda *args:order.append(args[1]) or True
+        with patch('dolly.preload.ctypes.WinDLL',return_value=api,create=True), \
+             patch('dolly.preload.ctypes.WINFUNCTYPE',side_effect=decorator,create=True), \
+             patch('dolly.edition.is_environment',return_value=True), \
+             patch('dolly.preload.time.sleep',side_effect=lambda delay:order.append(delay)):
+            preload._post_intro_escape(session)
+        self.assertEqual(order,[0x100,.1,0x101])
+
+        def lose_owner(delay): session.running=False
+        api.PostMessageW.reset_mock()
+        with patch('dolly.preload.ctypes.WinDLL',return_value=api,create=True), \
+             patch('dolly.preload.ctypes.WINFUNCTYPE',side_effect=decorator,create=True), \
+             patch('dolly.edition.is_environment',return_value=True), \
+             patch('dolly.preload.time.sleep',side_effect=lose_owner):
+            with self.assertRaises(preload.PreloadError):preload._post_intro_escape(session)
+        self.assertEqual(api.PostMessageW.call_count,1)
+
 
 if __name__ == '__main__':
     unittest.main()

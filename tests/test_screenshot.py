@@ -170,7 +170,7 @@ class AssemblyTests(unittest.TestCase):
         pixels = [0.0] * (64 * 36 * 4)
         pixels[3::4] = [1.0] * (64 * 36)
         screenshot.write_hero_stills(64, 36, struct.pack("<%de" % len(pixels), *pixels), folder)
-        run = screenshot.StillRun(None, SimpleNamespace(path=path), True)
+        run = screenshot.StillRun(None, SimpleNamespace(path=path, layers=("players",)), True)
 
         outputs = screenshot.finish(Path(FFMPEG), run)
 
@@ -205,6 +205,29 @@ class AssemblyTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             screenshot.finish(Path(FFMPEG), run)
         self.assertTrue((folder / "shot.json").is_file())
+
+@unittest.skipUnless(FFMPEG, "FFmpeg is not on PATH")
+class ColorOnlyAssemblyTests(unittest.TestCase):
+    def setUp(self):
+        self.parent = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.parent, ignore_errors=True)
+
+    def test_color_only_finishes_without_character_outputs(self):
+        path = self.parent / "Color_only.mkv"
+        folder = path.with_suffix("")
+        folder.mkdir()
+        subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=60",
+                        "-frames:v", "12", "-pix_fmt", "bgra", "-c:v", "ffv1", str(folder / path.name)],
+                       check=True)
+        (folder / "shot.json").write_text(json.dumps({"video_file": path.name, "frames_written": 12}))
+        run = screenshot.StillRun(None, SimpleNamespace(path=path, layers=()), False)
+        outputs = screenshot.finish(Path(FFMPEG), run)
+        self.assertEqual([p.name for p in outputs], ["plate.png"])
+        self.assertEqual([p.name for p in folder.iterdir()], ["plate.png"])
+        raw = subprocess.run([FFMPEG, "-v", "error", "-i", str(outputs[0]),
+                              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                             check=True, capture_output=True).stdout
+        self.assertEqual(len(raw), 64 * 36 * 3)
 
 
 class EditorActionTests(unittest.TestCase):
@@ -242,7 +265,7 @@ class DesktopFlowTests(unittest.TestCase):
             frames += bundle_frame(8, 4, [0.5, 0.5, 0.5, value] * 32)
         (deployment / player_layer.BUNDLE_NAME).write_bytes(frames)
         (deployment / player_layer.STATUS_NAME).write_text("complete\n")
-        options = SimpleNamespace(path=path, ffmpeg_path=Path(FFMPEG))
+        options = SimpleNamespace(path=path, ffmpeg_path=Path(FFMPEG), layers=("players",))
         restored = []
         app = SimpleNamespace(
             _still_run=screenshot.StillRun(None, options, False), _base_capture=options,

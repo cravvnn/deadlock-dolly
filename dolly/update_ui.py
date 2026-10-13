@@ -8,7 +8,7 @@ import time
 from tkinter import ttk
 from . import __version__
 from .runtime import application_root, is_frozen
-from . import updater
+from . import updater, edition
 from .video_export import ACTIVE_STATES
 from .update_worker import check_processes, pending_work, launch_worker
 
@@ -22,7 +22,7 @@ class UpdateUI:
         self.restarting = False
         self.ready_after = 0
         self.notice = ttk.Button(app.sidebar, text="Updates", command=self.check, width=12)
-        self.enabled = is_frozen() and (application_root() / updater.MANIFEST).is_file()
+        self.enabled = edition.allow_standard_updates() and is_frozen() and (application_root() / updater.MANIFEST).is_file()
         if not self.enabled:
             app.update_status.set("Automatic installation is available in the packaged Windows build.")
         app.root.after(250, self.poll)
@@ -30,6 +30,9 @@ class UpdateUI:
             app.root.after(2000, self.check)
 
     def check(self):
+        if not edition.allow_standard_updates():
+            self.app.update_status.set("Environment Capture updates are supplied as separate ZIPs.")
+            return
         if self.running or self.restarting:
             return
         if not self.enabled:

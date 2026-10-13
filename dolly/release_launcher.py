@@ -12,7 +12,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk
-from . import __version__, ui_theme, updater, update_worker
+from . import __version__, ui_theme, updater, update_worker, edition
 from .settings import load_settings
 
 
@@ -48,6 +48,9 @@ def open_editor(target, arguments=(), *, wait=False):
 
 
 def check_for_update(target, events, excluded):
+    if not edition.allow_standard_updates():
+        events.put(("status", "Environment Capture updates are supplied as separate ZIPs."))
+        return
     """Worker emits data only; the window and installation stay on the UI thread."""
     try:
         update_worker.check_processes(target, exclude_pid=excluded)
@@ -162,7 +165,7 @@ def main(argv=None, *, target=None):
         automatic = load_settings().auto_updates
     except (OSError, ValueError):
         automatic = True
-    if not args and automatic and (target / updater.MANIFEST).is_file():
+    if not args and automatic and edition.allow_standard_updates() and (target / updater.MANIFEST).is_file():
         if StartupWindow(target).run() == "updating":
             return 0
     open_editor(target, args)

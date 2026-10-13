@@ -195,6 +195,44 @@ class SeekOvershootTests(unittest.TestCase):
         self.assertEqual([s["target"] for s in self.console.seek_attempts], [123])
         self.assertGreaterEqual(self.console.status_samples.count(123), 6)
 
+    def test_build6774_adjacent_seek_four_tick_overshoot_requires_exact_return(self):
+        # Recorded6774:15300 -> request15301 -> stable15305. This must use
+        # one confirmed backward correction, never accept15305 as the target.
+        self.console.tick=15300
+        self.console.overshoot=4
+        info=self.controller._seek_tick(15301)
+        self.assertEqual(info['tick'],15301)
+        self.assertEqual([s['target'] for s in self.console.seek_attempts],[15301,15301])
+        correction=self.controller._last_seek_details['corrections']
+        self.assertEqual(len(correction),1)
+        self.assertEqual(correction[0]['from_tick'],15305)
+        self.assertEqual([s['tick'] for s in correction[0]['samples_before']][-3:],[15305]*3)
+        self.assertGreaterEqual(self.console.status_samples.count(15301),6)
+        self.assertNotIn('demo_resume',self.console.operations)
+
+    def test_four_tick_overshoot_still_allows_only_one_correction(self):
+        self.console.tick=15300
+        self.console.overshoot=4
+        self.console.permanent=True
+        with self.assertRaisesRegex(RuntimeError,'did not reach tick 15301'):
+            self.controller._seek_tick(15301)
+        self.assertEqual([s['target'] for s in self.console.seek_attempts],[15301,15301])
+        self.assertGreaterEqual(self.clock.now,15)
+        self.assertLess(self.clock.now,15.1)
+        self.assert_failed_without_camera_writes()
+
+    def test_four_tick_overshoot_cancellation_prevents_correction(self):
+        self.console.tick=15300
+        self.console.overshoot=4
+        def cancel(tick):
+            if len(self.console.status_samples)==3:
+                self.controller._stop_event.set()
+        self.console.on_status=cancel
+        with self.assertRaisesRegex(RuntimeError,'cancel'):
+            self.controller._seek_tick(15301)
+        self.assertEqual([s['target'] for s in self.console.seek_attempts],[15301])
+        self.assert_failed_without_camera_writes()
+
     def test_stable_overshoot_that_settles_after_pause_needs_no_corrective_seek(self):
         self.console.tick = 100
         self.console.goto_outputs = deque([125, 125, 125, 123] + [123] * 6)
@@ -265,7 +303,8 @@ class SeekOvershootTests(unittest.TestCase):
         self.assert_failed_without_camera_writes()
 
     def test_large_overshoot_and_stuck_lower_tick_are_never_retargeted(self):
-        for landed in (122, 126, 700):
+        # Five ticks is outside the measured four-tick correction envelope.
+        for landed in (122, 128, 700):
             with self.subTest(landed=landed):
                 self.console.seek_attempts.clear()
                 self.console.goto_outputs = deque([landed] * 500)

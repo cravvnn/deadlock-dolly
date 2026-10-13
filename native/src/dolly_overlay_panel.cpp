@@ -1896,6 +1896,9 @@ void OverlayPanel::draw_panel(const EditorSnapshot& state) {
                                              state.playing || state.video_pov);
                         action_button("Screenshot (hero + plate)", EditorAction::TakeScreenshot,
                                       ImGui::GetContentRegionAvail().x);
+                        if (editor_environment_enabled())
+                            action_button("Capture panorama", EditorAction::CaptureEnvironment,
+                                          ImGui::GetContentRegionAvail().x);
                         ImGui::EndDisabled();
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip("High-res still of the current paused view: plate, "

@@ -148,6 +148,14 @@ def configure(app):
                             can_undo=history.can_undo, can_redo=history.can_redo)
             app._native_cameras_bridge, app._native_cameras_cache = bridge, camera_values
     publish_grid = getattr(bridge, "configure_framing_grid", None)
+    publish_environment = getattr(bridge, 'configure_environment_action', None)
+    if callable(publish_environment):
+        from . import edition
+        environment = (active and edition.is_environment(), settings.action_bindings.get('capture_environment'))
+        if (getattr(app, '_native_environment_bridge', None) is not bridge or
+                getattr(app, '_native_environment_cache', None) != environment):
+            publish_environment(enabled=environment[0], binding=environment[1])
+            app._native_environment_bridge, app._native_environment_cache = bridge, environment
     if callable(publish_grid):
         grid_binding = settings.action_bindings.get("framing_grid")
         grid = (active, bool(settings.framing_grid_enabled), grid_binding)

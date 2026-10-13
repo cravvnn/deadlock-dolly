@@ -77,7 +77,15 @@ def _post_intro_escape(session):
         raise PreloadError('Deadlock intro window ownership changed.')
     # WM_KEYDOWN/UP, VK_ESCAPE, scan code 1. No focus change or SendInput.
     down = api.PostMessageW(hwnd, 0x100, 0x1b, 0x00010001)
-    up = api.PostMessageW(hwnd, 0x101, 0x1b, 0xc0010001) if owned(hwnd) else False
+    try:
+        from . import edition
+        if down and edition.is_environment():
+            # The side edition's phase-2 stall showed that successful queueing
+            # is not proof of consumption. Separate down/up across input polls;
+            # still one owned-window pair, never a retry or global input.
+            time.sleep(.1)
+    finally:
+        up = api.PostMessageW(hwnd, 0x101, 0x1b, 0xc0010001) if owned(hwnd) else False
     if not down or not up:
         raise PreloadError('Could not advance the Deadlock intro; replay remains unloaded.')
 
