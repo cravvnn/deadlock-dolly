@@ -1271,18 +1271,20 @@ int main(int argc, char** argv) {
             require(SUCCEEDED(chain->Present(0, 0)), "Object Picker cleanup Present failed");
         }
         // Exercise the real Present capture across the editor-to-path handoff.
-        // A valid session survives loss of manual input, pose readiness and focus.
+        // A valid session starts without focus (desktop export), then survives
+        // loss of manual input, pose readiness and later focus changes.
         wchar_t temporary[MAX_PATH]{};
         require(GetTempPathW(MAX_PATH, temporary) != 0, "Video temporary directory unavailable");
         const auto movie = std::wstring(temporary) + L"DollyHandoff-" +
                            std::to_wstring(GetCurrentProcessId()) + L".mp4";
         require(GetFileAttributesW(movie.c_str()) == INVALID_FILE_ATTRIBUTES,
                 "Handoff output already exists");
-        snapshot.focused = true;
-        require(dolly::video::start(movie.c_str(), 30, 2000000), "Handoff recording start failed");
         const auto saved_snapshot = snapshot;
+        snapshot.focused = false;
+        require(dolly::video::start(movie.c_str(), 30, 2000000), "Handoff recording start failed");
         for (unsigned stage = 0; stage < 3; ++stage) {
             if (stage == 1) {
+                snapshot.focused = true;
                 snapshot.enabled = false;
                 snapshot.ready = false;
             }
@@ -1302,7 +1304,8 @@ int main(int argc, char** argv) {
                 Sleep(10);
             }
             require(dolly::video::status().frames_written >= goal,
-                    "Recording stopped producing frames during camera handoff");
+                    stage == 0 ? "Unfocused recording never received its first game frame"
+                               : "Recording stopped producing frames during camera handoff");
         }
         dolly::media_worker_tick(nullptr, false);
         require(!dolly::media_session_active(), "Disconnected media session remained active");

@@ -44,7 +44,7 @@ class NativePackagingTests(unittest.TestCase):
             "engine": (root / "native/src/bridge_win.cpp",
                        r'k(?:Updated|September|Build\d+)?EngineHash\[\]\s*=\s*"([a-f0-9]{64})"'),
             "tier0": (root / "native/src/native_effects_win.hpp",
-                      r'k(?:Updated|September|Build6726)?Tier0Hash\[\]\s*=\s*"([a-f0-9]{64})"'),
+                      r'k(?:Updated|September|Build\d+)?Tier0Hash\[\]\s*=\s*"([a-f0-9]{64})"'),
         }
         for module, relative, key in (
             ("client", "citadel/bin/win64/client.dll", "client_sha256"),

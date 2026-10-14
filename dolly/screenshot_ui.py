@@ -120,7 +120,8 @@ def start(app) -> None:
         options = VideoOptions(path, screenshot.STILL_FPS, BITRATE_PRESETS["20 Mbps"],
                                codec=screenshot.STILL_CODEC, ffmpeg_path=ffmpeg, fixed_step=True,
                                speed=screenshot.STILL_SPEED, depth=depth, depth_exr=depth,
-                               layers=("players",)).validated()
+                               layers=("players",),
+                               players_scratch=(app.players_scratch.get().strip() or None) if hasattr(app, "players_scratch") else None).validated()
         base = copy.deepcopy(app.project)
     except (ValueError, OSError) as exc:
         app._error("Screenshot", exc)
@@ -177,6 +178,8 @@ def finish_player_capture(app, layer):
         player_layer.request_stop(deployment)
     except OSError as exc:
         LOG.warning("Players stop request failed: %s", exc)
+    from .player_scratch import from_marker
+    data_dir = from_marker(deployment)
     status = player_layer.wait_for_capture(deployment, timeout=180.0)
     folder = run.take_folder
     index = screenshot.settled_index(folder, Path(run.options.path).name)
@@ -184,11 +187,11 @@ def finish_player_capture(app, layer):
         # The players pass can end a frame or two before the color take. A still
         # only uses the settled frame, so accept it when that frame is aligned.
         if not (status.startswith(screenshot.SHORT_CAPTURE_STATUS) and screenshot.settled_frame_aligned(
-                deployment / player_layer.META_NAME, folder, index)):
+                data_dir / player_layer.META_NAME, folder, index)):
             raise RuntimeError("The players capture did not finish cleanly: "
                                + (status or "no status was reported"))
         LOG.warning("Players capture ended short; settled frame %d is aligned, using it", index)
-    width, height, pixels = screenshot.read_bundle_frame(deployment / player_layer.BUNDLE_NAME, index)
+    width, height, pixels = screenshot.read_bundle_frame(data_dir / player_layer.BUNDLE_NAME, index)
     alpha, _isolated = screenshot.write_hero_stills(width, height, pixels, folder)
     del pixels
     leftovers = player_layer.cleanup_capture(deployment, folder / layer)

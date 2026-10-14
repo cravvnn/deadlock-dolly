@@ -117,6 +117,8 @@ def build_export(app):
         ffmpeg_path=app.ffmpeg_path,
         video_bitrate=app.video_bitrate,
         video_codec=app.video_codec,
+        player_processing=app.player_processing,
+        players_scratch=app.players_scratch,
         video_depth=app.video_depth,
         video_depth_exr=app.video_depth_exr,
         video_export_speed=app.video_export_speed,
@@ -136,6 +138,7 @@ def build_export(app):
     )
     commands = ExportActions(
         browse_ffmpeg=app._browse_ffmpeg,
+        browse_players_scratch=app._browse_players_scratch,
         browse_video=app._browse_video,
         depth_toggled=app._depth_toggled,
         layer_toggled=app._layer_toggled,
@@ -162,6 +165,9 @@ def build_export(app):
     app.video_browse_button = view.video_browse_button
     app.video_cancel_button = view.video_cancel_button
     app.video_codec_combo = view.video_codec_combo
+    app.player_processing_combo = view.player_processing_combo
+    app.players_scratch_entry = view.players_scratch_entry
+    app.players_scratch_browse = view.players_scratch_browse
     app.video_depth_checkbox = view.video_depth_checkbox
     app.video_depth_exr_checkbox = view.video_depth_exr_checkbox
     app.video_fixed_checkbox = view.video_fixed_checkbox
@@ -169,6 +175,8 @@ def build_export(app):
     app.video_game_audio_check = view.video_game_audio_check
     app.video_layer_checkboxes = view.video_layer_checkboxes
     app.video_path_entry = view.video_path_entry
+    app.video_path_entry.bind("<FocusOut>", app._remember_export_folder)
+    app.video_path_entry.bind("<Return>", app._remember_export_folder)
     app.video_pov_controls = view.video_pov_controls
     app.video_pov_duration_combo = view.video_pov_duration_combo
     app.video_reconstructed_audio_check = view.video_reconstructed_audio_check

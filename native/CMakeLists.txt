@@ -89,6 +89,13 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
+    if(BUILD_TESTING)
+        add_executable(player_scratch_tests tests/player_scratch_tests.cpp)
+        target_include_directories(player_scratch_tests PRIVATE include)
+        target_compile_definitions(player_scratch_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+        add_test(NAME native_player_scratch_tests COMMAND player_scratch_tests)
+        set_tests_properties(native_player_scratch_tests PROPERTIES TIMEOUT 15)
+    endif()
     add_executable(DollyGameAudio src/dolly_game_audio.cpp)
     target_link_libraries(DollyGameAudio PRIVATE ole32 mmdevapi)
     set_target_properties(DollyGameAudio PROPERTIES

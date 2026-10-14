@@ -72,9 +72,12 @@ constexpr char kBuild6757EngineHash[] =
 // October 9: all twelve reviewed replay accessors and primary RTTI tables are unchanged.
 constexpr char kBuild6769EngineHash[] =
     "e5e4b2df76ff88d99dd9217e4ccde09bcce9b963327b38963f3ae90ce7e55ac2";
+// Build 6779 retains this replay layout; network-service changes are in the generated profile.
+constexpr char kBuild6779EngineHash[] =
+    "8cba5362c844f9c8bbeab1e54ae8bd8991c2ef54542e5a4536f4e10c7da8d493";
 constexpr char kSound6726Hash[] =
     "a2f20871181b240b994c3a3b9d5a61fcb52392e991b7ce984c06bf1d55fd642c";
-constexpr char kUnlockerHash[] = "aa4834d5d189743decc330d53fb07680416a0c31ab53d2a25112a464a04e72a2";
+constexpr char kUnlockerHash[] = "76ceb22085e2912b6858877fc644cc5aaa86baded2a3f7da9f6a68c1e5f8bc47";
 constexpr char kSoundSystemHash[] =
     "5f01b91485f67c980235054c8e1e517b04e34fb53491f26100c8e1c743dd0ba0";
 constexpr char kSeptemberSoundSystemHash[] =
@@ -1411,9 +1414,10 @@ static DWORD WINAPI worker(void*) {
         const bool engine6739 = module_matches(engine, kBuild6739EngineHash, 0x906000);
         const bool engine6753 = module_matches(engine, kBuild6753EngineHash, 0x906000);
         const bool engine6757 = module_matches(engine, kBuild6757EngineHash, 0x906000);
+        const bool engine6779 = module_matches(engine, kBuild6779EngineHash, 0x906000);
         const bool engine6769 = module_matches(engine, kBuild6769EngineHash, 0x906000);
         const bool september_engine = module_matches(engine, kSeptemberEngineHash, 0x906000);
-        if (!engine6769 && !engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
+        if (!engine6779 && !engine6769 && !engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
             !module_matches(engine, kEngineHash, 0x969000) &&
             !module_matches(engine, kUpdatedEngineHash, 0x969000)) {
             startup_status(
@@ -1423,7 +1427,7 @@ static DWORD WINAPI worker(void*) {
         }
         gClient = reinterpret_cast<std::uintptr_t>(client);
         gEngine = reinterpret_cast<std::uintptr_t>(engine);
-        gEngineLayout = engine6769         ? kEngine6728Layout
+        gEngineLayout = (engine6779 || engine6769) ? kEngine6728Layout
                         : engine6757       ? kEngine6728Layout
                         : engine6753       ? kEngine6728Layout
                         : engine6739       ? kEngine6728Layout
@@ -1440,7 +1444,12 @@ static DWORD WINAPI worker(void*) {
         }
         attach_runtime::configure_client(client);
         confetti::initialize(gClient);
-        prop_runtime::initialize(gClient);
+        // Experimental native prop creation is reviewed only for build 6774.
+        // Common prologue bytes alone cannot admit its private create ABI.
+        if (module_matches(client,
+                           "e2bafed8ebdfd239d506b4f59b24a09719f945c6a63f69766171349b886603d4",
+                           0x4226000))
+            prop_runtime::initialize(gClient);
         if (!init_cvar_interface()) {
             startup_status(
                 State::Unsupported, 26,

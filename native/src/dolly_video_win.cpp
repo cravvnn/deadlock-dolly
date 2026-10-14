@@ -799,7 +799,8 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             apply_deferred_stop(*s);
             if (GetTickCount64() > deadline)
                 fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
-                     L"No DirectX 11 game frame was available for recording.");
+                     L"Recording did not receive a game frame within 10 seconds. Restore the "
+                     L"Deadlock window and retry. If it persists, export diagnostics.");
         }
         if (!s->stopping.load()) {
             std::wstring error;
@@ -1039,7 +1040,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
             apply_deferred_stop(*s);
             if (GetTickCount64() > deadline)
                 fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
-                     L"No DirectX 11 game frame was available for recording.");
+                     L"Recording did not receive a game frame within 10 seconds. Restore the "
+                     L"Deadlock window and retry. If it persists, export diagnostics.");
         }
         if (!s->stopping.load()) {
             HRESULT hr = api.load() ? S_OK : HRESULT_FROM_WIN32(ERROR_MOD_NOT_FOUND);

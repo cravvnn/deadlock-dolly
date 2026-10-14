@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <windows.h>
 namespace dolly::player_capture {
 class SequenceWriter {
 public:
@@ -21,13 +22,19 @@ public:
     SequenceWriter& operator=(const SequenceWriter&) = delete;
     ~SequenceWriter() { finish(); }
 
-    bool open(const std::wstring& path, unsigned maxQueued) {
+    bool open(const std::wstring& path, unsigned maxQueued, bool exclusive = false) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (opened_ && !closed_) return false;
         queue_.clear(); free_.clear();
         maxQueued_ = maxQueued ? maxQueued : 1;
-        file_.open(path, std::ios::binary | std::ios::trunc);
-        if (!file_) return false;
+        if (exclusive) {
+            handle_ = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                  CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (handle_ == INVALID_HANDLE_VALUE) return false;
+        } else {
+            file_.open(path, std::ios::binary | std::ios::trunc);
+            if (!file_) return false;
+        }
         opened_ = true; closed_ = false; closing_ = false;
         error_.store(false); written_.store(0); refused_.store(0); inFlight_.store(0);
         if (!synchronous_) worker = std::thread([this] { run(); });
@@ -55,19 +62,20 @@ public:
     }
 
     // False means the frame was not accepted (overflow, closed, or write failure).
+    // A rejected frame remains owned by the caller, including its pixel bytes.
     bool push(const std::uint64_t header[8], Buffer&& pixels) {
         if (!opened_ || closing_) return false;
         if (synchronous_) {
             const bool ok = write_record(header, pixels);
-            if (ok) written_.fetch_add(1); else error_.store(true);
-            recycle(std::move(pixels));
+            if (ok) {
+                written_.fetch_add(1);
+                recycle(std::move(pixels));
+            } else error_.store(true);
             return ok;
         }
         std::unique_lock<std::mutex> lock(mutex_);
         if (queue_.size() >= maxQueued_) {
             refused_.fetch_add(1);
-            lock.unlock();
-            recycle(std::move(pixels));
             return false;
         }
         queue_.emplace_back();
@@ -95,6 +103,11 @@ public:
             if (!file_) error_.store(true);
             file_.close();
         }
+        if (handle_ != INVALID_HANDLE_VALUE) {
+            if (!FlushFileBuffers(handle_)) error_.store(true);
+            CloseHandle(handle_);
+            handle_ = INVALID_HANDLE_VALUE;
+        }
         closed_ = true;
         return !error_.load();
     }
@@ -102,6 +115,13 @@ public:
 private:
     struct Item { std::uint64_t header[8]{}; Buffer pixels; };
     bool write_record(const std::uint64_t header[8], const Buffer& pixels) {
+        if (handle_ != INVALID_HANDLE_VALUE) {
+            DWORD written = 0;
+            if (!WriteFile(handle_, header, 64, &written, nullptr) || written != 64) return false;
+            if (pixels.size() > MAXDWORD) return false;
+            return pixels.empty() || (WriteFile(handle_, pixels.data(), static_cast<DWORD>(pixels.size()),
+                                                &written, nullptr) && written == pixels.size());
+        }
         file_.write(reinterpret_cast<const char*>(header), static_cast<std::streamsize>(sizeof(std::uint64_t) * 8));
         if (!pixels.empty())
             file_.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
@@ -133,6 +153,7 @@ private:
         }
     }
     std::ofstream file_;
+    HANDLE handle_ = INVALID_HANDLE_VALUE;
     std::thread worker;
     std::mutex mutex_;
     std::condition_variable wake_;

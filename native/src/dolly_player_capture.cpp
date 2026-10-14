@@ -24,6 +24,7 @@
 #include "dolly_player_material_matte.hpp"
 #include "dolly_player_vertex_guard.hpp"
 #include "dolly_player_sequence_writer.hpp"
+#include "dolly_player_scratch.hpp"
 
 namespace dolly::player_capture {
 namespace {
@@ -93,7 +94,10 @@ CreateShader originalShader = nullptr;
 HRESULT STDMETHODCALLTYPE shader_hook(ID3D11Device* device, const void* bytes, SIZE_T length,
                                       ID3D11ClassLinkage* linkage, ID3D11VertexShader** output);
 
-ID3D11Device* layoutDevice = nullptr; // retained for the bounded process lifetime
+// Method discovery uses a temporary device before the game's first Present.
+// Metadata belongs to each created COM resource, including resources created
+// by other devices using those methods. Capture admission still requires the
+// reviewed main-window context, submitted ownership and exact GPU records.
 const GUID PixelBytesKey = {
     0x4fa14e83, 0xd077, 0x4773, {0x9d, 0x31, 0x31, 0x63, 0xd1, 0x5f, 0x17, 0x82}};
 using CreatePixel = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const void*, SIZE_T,
@@ -102,7 +106,7 @@ CreatePixel originalPixel = nullptr;
 HRESULT STDMETHODCALLTYPE pixel_hook(ID3D11Device* device, const void* bytes, SIZE_T length,
                                      ID3D11ClassLinkage* linkage, ID3D11PixelShader** output) {
     const auto hr = originalPixel(device, bytes, length, linkage, output);
-    if (device == layoutDevice && SUCCEEDED(hr) && output && *output && bytes && length >= 36 &&
+    if (SUCCEEDED(hr) && output && *output && bytes && length >= 36 &&
         length <= 1024 * 1024 && !linkage)
         (*output)->SetPrivateData(PixelBytesKey, static_cast<UINT>(length), bytes);
     return hr;
@@ -112,7 +116,7 @@ HRESULT STDMETHODCALLTYPE layout_hook(ID3D11Device* device, const D3D11_INPUT_EL
                                       UINT count, const void* bytes, SIZE_T length,
                                       ID3D11InputLayout** output) {
     const auto hr = originalLayout(device, desc, count, bytes, length, output);
-    if (device != layoutDevice || FAILED(hr) || !output || !*output || !desc || count > 32)
+    if (FAILED(hr) || !output || !*output || !desc || count > 32)
         return hr;
     LayoutInfo info{};
     info.w[0] = 1;
@@ -149,7 +153,7 @@ HRESULT STDMETHODCALLTYPE layout_hook(ID3D11Device* device, const D3D11_INPUT_EL
 HRESULT STDMETHODCALLTYPE shader_hook(ID3D11Device* device, const void* bytes, SIZE_T length,
                                       ID3D11ClassLinkage* linkage, ID3D11VertexShader** output) {
     const auto hr = originalShader(device, bytes, length, linkage, output);
-    if (device != layoutDevice || FAILED(hr) || !output || !*output)
+    if (FAILED(hr) || !output || !*output)
         return hr;
     if (!linkage && bytes && length >= 36 && length <= 1024 * 1024)
         (*output)->SetPrivateData(VertexBytesKey, static_cast<UINT>(length), bytes);
@@ -187,6 +191,10 @@ HRESULT STDMETHODCALLTYPE shader_hook(ID3D11Device* device, const void* bytes, S
     return hr;
 }
 std::wstring directory;
+std::wstring captureDirectory;
+std::string scratchHex;
+bool sequenceV4 = false;
+bool scratchReady = false;
 ULONGLONG started = 0;
 std::uint32_t startFrame = 0;
 std::atomic<std::uint64_t> presentEpoch{0};
@@ -786,6 +794,11 @@ void status(const char* text) noexcept {
         f << text << '\n';
         if (!captureRequest.empty())
             f << "request " << captureRequest << '\n';
+        if (sequenceV4 && !scratchHex.empty()) f << "scratch " << scratchHex << '\n';
+        if (scratchReady) {
+            std::ofstream retained(captureDirectory + L"capture-status.txt", std::ios::trunc);
+            retained << text << '\n' << "request " << captureRequest << '\n';
+        }
     } catch (...) {
     }
 }
@@ -840,7 +853,7 @@ bool dump(const wchar_t* path) noexcept {
         if (sequenceV2 && framesSealed > 0) {
             // Pairing metadata for the recorder's take: authored-path replay
             // time, epoch and draw window for every streamed player frame.
-            std::ofstream m(directory + L"dolly_owner_frame_meta.bin",
+            std::ofstream m(captureDirectory + L"dolly_owner_frame_meta.bin",
                             std::ios::binary | std::ios::trunc);
             const std::uint64_t header[8] = {
                 0x314154454d564f44ULL, 1, 64, framesSealed, 0, 0, 0, 0};
@@ -1023,7 +1036,7 @@ void arm_capture() noexcept {
     startPresent = presentEpoch.load(std::memory_order_acquire);
     started = GetTickCount64();
     if (sequenceV2 && !sequenceWriterReady) {
-        sequenceWriterReady = sequence_writer().open(directory + L"dolly_owner_color_frame.bin", 2);
+        sequenceWriterReady = sequence_writer().open(captureDirectory + L"dolly_owner_color_frame.bin", 2, sequenceV4);
         if (!sequenceWriterReady) {
             status("rejected sequence writer open");
             captured = true;
@@ -1073,6 +1086,9 @@ void reset_capture() noexcept {
     captureFps = 60;
     captureSpeed = 1.0;
     captureRequest.clear();
+    scratchReady = sequenceV4 = false;
+    scratchHex.clear();
+    captureDirectory = directory;
     ownerFieldOffset = sceneNodeFieldOffset = 0;
     recordValid = recordInvalid = validateStall = 0;
     blendOver = blendDarken = blendOther = blendSkip = 0;
@@ -1123,7 +1139,11 @@ void tick() noexcept {
             std::istringstream marker(requestText);
             std::string mode;
             marker >> mode >> allowedCount;
-            sequenceV3 = mode == "color-sequence-v3";
+            sequenceV4 = mode == "color-sequence-v4";
+            captureDirectory = directory;
+            scratchHex.clear();
+            scratchReady = false;
+            sequenceV3 = sequenceV4 || mode == "color-sequence-v3";
             sequenceV2 = sequenceV3 || mode == "color-sequence-v2";
             sequenceMode = sequenceV2 || mode == "color-sequence-v1";
             aggregateMode = sequenceMode || mode == "color-aggregate-v1";
@@ -1197,6 +1217,17 @@ void tick() noexcept {
                     return;
                 }
             }
+            if (sequenceV4) {
+                std::string scratchOption, extra;
+                if (!playersOnly || speedOption != "speed" || !(marker >> scratchOption >> scratchHex) ||
+                    scratchOption != "scratch" || (marker >> extra) ||
+                    !scratch_directory(scratchHex, captureRequest, captureDirectory)) {
+                    status("rejected scratch directory/request ownership");
+                    captured = true;
+                    return;
+                }
+            }
+            scratchReady = sequenceV4;
             if (!playersOnly && allowedCount < 1) {
                 status("rejected GPU marker format/count");
                 captured = true;
@@ -1366,10 +1397,8 @@ bool install_layout_hook(ID3D11Device* device) noexcept {
         originalShader = nullptr;
         return false;
     }
-    layoutDevice = device;
-    device->AddRef();
-    if (MH_EnableHook(target) != MH_OK || MH_EnableHook(shaderTarget) != MH_OK ||
-        MH_EnableHook(pixelTarget) != MH_OK) {
+    if (MH_QueueEnableHook(target) != MH_OK || MH_QueueEnableHook(shaderTarget) != MH_OK ||
+        MH_QueueEnableHook(pixelTarget) != MH_OK || MH_ApplyQueued() != MH_OK) {
         MH_DisableHook(target);
         MH_DisableHook(shaderTarget);
         MH_DisableHook(pixelTarget);
@@ -1379,8 +1408,6 @@ bool install_layout_hook(ID3D11Device* device) noexcept {
         originalLayout = nullptr;
         originalShader = nullptr;
         originalPixel = nullptr;
-        layoutDevice->Release();
-        layoutDevice = nullptr;
         return false;
     }
     return true;
@@ -1597,7 +1624,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             if (sequenceV2 && result != 0 && slot.sealed && !slot.capture.complete)
                 sequenceStall = true;
         }
-    if (sequenceV2) {
+    if (sequenceV2 && !sequenceStall) {
         // Frames stream in capture order; a busy slot or failed write is
         // reported instead of skipping or reordering the take.
         unsigned guard = SequenceRing;
@@ -1638,6 +1665,11 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                 const auto* px = slot.capture.pixels.data();
                 const std::size_t count =
                     static_cast<std::size_t>(slot.capture.width) * slot.capture.height;
+                if (slot.capture.bytesPerPixel != 8 || !count ||
+                    slot.capture.pixels.size() != count * 8) {
+                    sequenceStall = true;
+                    break;
+                }
                 std::size_t rgb = 0, alpha = 0;
                 for (std::size_t i = 0; i < count; ++i) {
                     const auto* q = px + i * slot.capture.bytesPerPixel;

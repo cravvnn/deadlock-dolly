@@ -1,5 +1,7 @@
 """Real Tk layout transitions, without game commands or user preference writes."""
 import copy
+from pathlib import Path
+import tempfile
 import tkinter as tk
 import unittest
 from unittest.mock import patch
@@ -15,7 +17,11 @@ class DesktopLayoutTests(unittest.TestCase):
             self.skipTest(str(error))
         self.root.withdraw()
         self.submit = patch.object(DollyApp, "_submit").start()
-        self.settings = patch.object(DollyApp, "_load_app_settings", return_value=AppSettings()).start()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.export_folder = Path(directory.name) / 'Remembered exports'
+        self.settings = patch.object(DollyApp, "_load_app_settings",
+            return_value=AppSettings(export_folder=str(self.export_folder))).start()
         patch("dolly.graphics_profiles.load_library", return_value={"format": 1, "selected": "", "profiles": []}).start()
         self.addCleanup(patch.stopall)
         self.app = DollyApp(self.root)
@@ -27,6 +33,14 @@ class DesktopLayoutTests(unittest.TestCase):
         for timer in self.root.tk.splitlist(self.root.tk.call("after", "info")):
             self.root.tk.call("after", "cancel", timer)
         self.root.destroy()
+
+    def test_startup_keeps_export_folder_and_binds_explicit_edits(self):
+        path = Path(self.app.video_path.get())
+        self.assertEqual(path.parent, self.export_folder)
+        self.assertEqual(path.suffix, '.mp4')
+        self.assertFalse(self.export_folder.exists())
+        self.assertTrue(self.app.video_path_entry.bind('<FocusOut>'))
+        self.assertTrue(self.app.video_path_entry.bind('<Return>'))
 
     def test_layout_switch_preserves_shot_and_export_settings(self):
         app = self.app

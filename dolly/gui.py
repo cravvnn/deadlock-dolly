@@ -338,13 +338,18 @@ class DollyApp:
         self.show_coordinates = tk.BooleanVar(value=False)
         self.app_settings = self._load_app_settings()
         self.full_editor = tk.BooleanVar(value=self.app_settings.full_editor)
-        self.video_path = tk.StringVar(value=str(default_video_path(self.project.name)))
+        self.video_path = tk.StringVar(value=str(default_video_path(self.project.name,
+            Path(self.app_settings.export_folder) if self.app_settings.export_folder else None)))
         self.video_source = tk.StringVar(value="Camera path")
         self.video_pov_duration = tk.StringVar(value="10")
         self._pov_project = None
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
+        self.player_processing = tk.StringVar(value="Background")
+        self.players_scratch = tk.StringVar(value="")
+        self._player_encode_cancel = None
+        self._player_encode_progress = 0
         self.video_fixed_step = tk.BooleanVar(value=False)
         self.video_depth = tk.BooleanVar(value=False)
         self.video_depth_exr = tk.BooleanVar(value=False)
@@ -618,6 +623,26 @@ class DollyApp:
                                           filetypes=(("MP4 video", "*.mp4"),), confirmoverwrite=False)
         if path:
             self.video_path.set(path)
+            self._remember_export_folder()
+
+    def _remember_export_folder(self, _event=None):
+        """Persist explicit destination edits, never generated per-layer paths."""
+        settings = getattr(self, "app_settings", None)
+        if settings is None:
+            return
+        try:
+            raw = self.video_path.get().strip()
+            if not raw:
+                return
+            folder = Path(raw).expanduser().absolute().parent
+            # An incomplete edit or an unplugged drive must not erase the last choice.
+            if not folder.is_dir() or str(folder) == settings.export_folder:
+                return
+            updated = replace(settings, export_folder=str(folder))
+            save_settings(updated)
+            self.app_settings = updated
+        except (OSError, ValueError) as exc:
+            self._error("Save export folder", exc)
 
     def _browse_ffmpeg(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
@@ -630,6 +655,11 @@ class DollyApp:
         if path:
             self.ffmpeg_path.set(path)
             self._save_ffmpeg_preference()
+
+    def _browse_players_scratch(self):
+        folder = filedialog.askdirectory(parent=self.root, title="Players scratch folder")
+        if folder:
+            self.players_scratch.set(folder)
 
     def _save_ffmpeg_preference(self):
         def save():
@@ -723,13 +753,19 @@ class DollyApp:
                                    depth=bool(self.video_depth.get()),
                                    depth_exr=bool(self.video_depth_exr.get()),
                                    layers=layers, shot_only=pov or bone_project is not None,
+                                   players_scratch=(getattr(self, "players_scratch", None).get().strip() or None) if getattr(self, "players_scratch", None) is not None else None,
                                    bundle_audio=bool(self.video_game_audio.get() or
                                                      self.video_reconstructed_audio.get())).validated()
             if "players" in options.layers:
                 self._player_layer_frames(options, project=bone_project)
+            from .player_encode import resource_policy
+            choice = getattr(self, 'player_processing', None)
+            self._player_resource_mode = choice.get() if choice is not None else 'Background'
+            resource_policy(self._player_resource_mode)
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             self._error("Record video", exc)
             return
+        self._remember_export_folder()
         if bone_project is not None:
             self._commit_camera(bone_project.keyframes, 0.0)
         project = self._pov_project or (Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None)
@@ -758,11 +794,12 @@ class DollyApp:
         controller = getattr(self, "controller", None)
         game_pid = getattr(controller, "game_pid", None)
         if callable(game_pid):
-            # The recorder's first frame is focus-gated. A desktop Start would
-            # otherwise leave focus on Dolly and time out with no game frame.
+            # Bring the game into view for recording. Capture also works if Windows
+            # refuses this request or desktop controls take focus during setup.
             focus_window(game_pid())
         game_audio = self.video_game_audio.get()
         reconstructed = self.video_reconstructed_audio.get()
+        game_executable = self.game_path.get() if game_audio or reconstructed else None
         def start():
             audio = None
             if game_audio or reconstructed:
@@ -771,7 +808,7 @@ class DollyApp:
                     raise RuntimeError("The native media bridge is not connected")
                 color = options.path.with_suffix("") / options.path.name
                 audio = ClipAudioCapture(color, game_audio=game_audio, reconstructed=reconstructed,
-                                         bridge=bridge, game=validate_game(self.game_path.get()).executable,
+                                         bridge=bridge, game=validate_game(game_executable).executable,
                                          game_pid=self.controller.game_pid())
                 audio.start()
             try:
@@ -788,6 +825,11 @@ class DollyApp:
         self._submit("Preparing replay and recording", start, self._video_operation_done)
 
     def _stop_video_recording(self, cancel=False):
+        encoding_cancel = getattr(self, '_player_encode_cancel', None)
+        if cancel and encoding_cancel is not None:
+            encoding_cancel.set()
+            self.status_text.set("Cancelling Players processing; raw capture will be kept.")
+            return
         if self.busy:
             self.status_text.set("Finish the current operation before stopping the recording.")
             return
@@ -860,7 +902,9 @@ class DollyApp:
                 self._submit("Restoring scene layers", self._restore_scene_state,
                              lambda _: None)
         if self._pending_auto_play:
-            if state in ("starting", "recording"):
+            # Starting only acknowledges the request; render resources and the
+            # encoder may still be initializing. Play needs responsive views.
+            if state == "recording":
                 self._pending_auto_play = False
                 if getattr(self, "_pov_project", None) is not None:
                     project = self._pov_project
@@ -1010,10 +1054,15 @@ class DollyApp:
             base.path.with_suffix("") / base.path.name, base.fps)
         dimensions = self.video_export.status()
         required_bytes = player_layer.check_capture_space(
-            deployment, dimensions.get("width"), dimensions.get("height"), frames)
+            base.players_scratch or deployment, dimensions.get("width"), dimensions.get("height"), frames)
         LOG.info("Players capture raw storage estimate: %d bytes", required_bytes)
         def arm_capture():
-            player_layer.begin_capture(deployment, owner_offset, frames, back_offset, fps=base.fps, speed=base.speed)
+            player_layer.begin_capture(deployment, owner_offset, frames, back_offset, fps=base.fps, speed=base.speed,
+                                       scratch_root=base.players_scratch,
+                                       output=base.path.with_suffix("") / layer / (layer + ".mov"))
+            if base.players_scratch is not None:
+                from .player_scratch import from_marker
+                LOG.info("Players scratch capture created: %s", from_marker(deployment))
             player_layer.wait_until_armed(deployment)
         LOG.info("Players layer capture armed: %d frames, owner offset %d, back link %d",
                  frames, owner_offset, back_offset)
@@ -1058,8 +1107,28 @@ class DollyApp:
         ffmpeg = resolve_ffmpeg(base.ffmpeg_path) or bundled_ffmpeg_path()
         if ffmpeg is None:
             raise RuntimeError("The players layer needs ffmpeg for its alpha master.")
-        master = player_layer.encode_bundle(Path(ffmpeg), deployment / player_layer.BUNDLE_NAME,
-                                            layer_dir / (layer + ".mov"), fps=base.fps)
+        from .player_encode import encode_in_worker
+        from . import player_scratch
+        data_dir = player_scratch.from_marker(deployment)
+        if data_dir != Path(deployment):
+            player_scratch.update(data_dir, 'captured')
+            LOG.info("Players scratch capture: %s", data_dir)
+        self._player_encode_cancel = threading.Event()
+        self._player_encode_progress = 0
+        try:
+            master = encode_in_worker(Path(ffmpeg), data_dir / player_layer.BUNDLE_NAME,
+                layer_dir / (layer + ".mov"), fps=base.fps,
+                resource_mode=getattr(self, '_player_resource_mode', 'Background'),
+                cancel=self._player_encode_cancel,
+                progress=lambda count: setattr(self, '_player_encode_progress', count))
+        except InterruptedError:
+            if data_dir != Path(deployment): player_scratch.update(data_dir, 'cancelled')
+            return {"state": "cancelled", "layer": layer, "reason": "processing_cancelled"}
+        except Exception as exc:
+            if data_dir != Path(deployment): player_scratch.update(data_dir, 'encode_failed', error=exc)
+            raise
+        finally:
+            self._player_encode_cancel = None
         leftovers = player_layer.cleanup_capture(deployment, layer_dir)
         if leftovers:
             LOG.warning("Players MOV saved; could not remove intermediates: %s", ", ".join(leftovers))
@@ -1138,6 +1207,9 @@ class DollyApp:
         status = self.video_export.status()
         state = status.get("state", "idle")
         previous = getattr(self, "_last_video_state", "idle")
+        if (getattr(self, "_pending_auto_play", False) and state == "recording"
+                and not self.busy):
+            self._video_operation_done(status)
         if state != previous:
             if state == "completed":
                 if (self.clip_audio is not None
@@ -1185,10 +1257,18 @@ class DollyApp:
         screenshot_ui.refresh(self, ready and not active and not self.busy)
         can_stop = state in ("starting", "recording") and not self.busy
         _set_widget_state(self.video_stop_button, "normal" if can_stop else "disabled")
+        self.video_cancel_button.configure(text="Discard recording")
         _set_widget_state(self.video_cancel_button, "normal" if can_stop else "disabled")
+        if getattr(self, '_player_encode_cancel', None) is not None:
+            _set_widget_state(self.video_cancel_button, "normal")
+            self.video_cancel_button.configure(text="Cancel processing")
+            _set_var(self.video_status_text,
+                     "Building Players MOV: %d frames converted (%s)." %
+                     (self._player_encode_progress, getattr(self, '_player_resource_mode', 'Background')))
         entry_state = "disabled" if active or self.busy else "normal"
         for widget in (self.video_path_entry, self.video_browse_button,
-                       getattr(self, "ffmpeg_path_entry", None), getattr(self, "ffmpeg_browse_button", None)):
+                       getattr(self, "ffmpeg_path_entry", None), getattr(self, "ffmpeg_browse_button", None),
+                       getattr(self, "players_scratch_entry", None), getattr(self, "players_scratch_browse", None)):
             if widget is not None:
                 _set_widget_state(widget, entry_state)
         combo_state = "disabled" if active or self.busy else "readonly"
@@ -1196,6 +1276,7 @@ class DollyApp:
                        getattr(self, "video_source_combo", None),
                        getattr(self, "video_pov_duration_combo", None),
                        getattr(self, "video_codec_combo", None),
+                       getattr(self, "player_processing_combo", None),
                        getattr(self, "video_speed_combo", None)):
             if widget is not None:
                 _set_widget_state(widget, combo_state)

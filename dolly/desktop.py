@@ -175,6 +175,9 @@ def _run(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if len(arguments) == 2 and arguments[0] == '--player-encode-worker':
+        from .player_encode import worker_main
+        return worker_main(Path(arguments[1]))
     log = application_root() / "logs" / "Dolly_startup.log"
     try:
         log.parent.mkdir(parents=True, exist_ok=True)

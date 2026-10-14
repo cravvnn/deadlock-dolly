@@ -628,12 +628,16 @@ docs/RELEASE_NOTES_0.6.34-alpha.md
 docs/RELEASE_NOTES_0.6.35-alpha.md
 native/profiles/deadlock-2026-10-09-6769-complete.json
 native/profiles/scenesystem-2026-10-09-6769.json
+native/profiles/scenesystem-2026-10-13-6779.json
 native/profiles/soundsystem-2026-10-09-6769.json
+native/profiles/soundsystem-2026-10-13-6779.json
 third_party/cvar_unlocker/unlocker-build-6769.patch
 docs/RELEASE_NOTES_0.6.36-alpha.md
 
 native/profiles/deadlock-2026-10-09-6774-complete.json
+native/profiles/deadlock-2026-10-13-6779-complete.json
 third_party/cvar_unlocker/unlocker-build-6774.patch
+third_party/cvar_unlocker/unlocker-build-6779.patch
 docs/RELEASE_NOTES_0.6.37-alpha.md
 
 docs/RELEASE_NOTES_0.6.38-alpha.md
@@ -649,3 +653,15 @@ docs/RELEASE_NOTES_0.6.42-alpha.md
 docs/RELEASE_NOTES_0.6.43-alpha.md
 
 docs/RELEASE_NOTES_0.6.44-alpha.md
+
+docs/RELEASE_NOTES_0.6.45-alpha.md
+
+dolly/player_encode.py
+dolly/player_pixels.py
+tests/test_player_processing.py
+
+dolly/player_scratch.py
+native/include/dolly_player_scratch.hpp
+native/tests/player_scratch_tests.cpp
+tests/test_player_scratch.py
+docs/RELEASE_NOTES_0.6.46-alpha.md

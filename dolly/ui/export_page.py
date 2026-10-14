@@ -14,6 +14,8 @@ class ExportState:
     ffmpeg_path: tk.Variable
     video_bitrate: tk.Variable
     video_codec: tk.Variable
+    player_processing: tk.Variable
+    players_scratch: tk.Variable
     video_depth: tk.Variable
     video_depth_exr: tk.Variable
     video_export_speed: tk.Variable
@@ -35,6 +37,7 @@ class ExportState:
 @dataclass(frozen=True)
 class ExportActions:
     browse_ffmpeg: Callable[..., object]
+    browse_players_scratch: Callable[..., object]
     browse_video: Callable[..., object]
     depth_toggled: Callable[..., object]
     layer_toggled: Callable[..., object]
@@ -115,6 +118,14 @@ class ExportPage:
         quality = disclosure(capture, "Encoder & quality")
         self.video_codec_combo = field(quality.body, "Encoder", state.video_codec, values=state.codec_choices)
         self.video_bitrate_combo = field(quality.body, "Bitrate", state.video_bitrate, values=state.bitrate_choices)
+        self.player_processing_combo = field(quality.body, "Players processing", state.player_processing,
+                                             values=("Background", "Balanced", "Fast"))
+        ttk.Label(quality.body, text="Background leaves more CPU time for editing while building the Players MOV. Faster modes use more CPU.",
+                  style="CardMuted.TLabel", wraplength=320).pack(fill="x")
+        self.players_scratch_entry = field(quality.body, "Players scratch folder", state.players_scratch)
+        self.players_scratch_browse = actions(quality.body, (("Browse scratch folder...", commands.browse_players_scratch),), 1)[0]
+        ttk.Label(quality.body, text="Blank uses the output folder. Raw Players files need a fast drive with free space. Failed or cancelled captures are kept in their own folders.",
+                  style="CardMuted.TLabel", wraplength=320).pack(fill="x")
         controls = card(recording_holder, "Recording")
         buttons = actions(controls, (("Play shot", commands.play), ("Record video", commands.start_video_recording, "Primary.TButton"),
                                      ("Finish recording", commands.stop_video_recording),

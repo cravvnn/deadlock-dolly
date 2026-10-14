@@ -687,6 +687,34 @@ class VideoGuiTests(unittest.TestCase):
         focus.assert_called_once_with(4321)
         self.app._submit.assert_called_once()
 
+    def test_export_folder_browse_and_typed_edit_persist_only_parent(self):
+        from dolly.settings import load_settings, save_settings
+        settings_path = Path(self.folder.name) / 'settings.json'
+        first = Path(self.folder.name) / 'Vidéos'
+        second = Path(self.folder.name) / 'Other exports'
+        first.mkdir(); second.mkdir()
+        self.app.app_settings = AppSettings(game_path='D:/Deadlock')
+        self.app.root = None
+        with patch('dolly.gui.save_settings', side_effect=lambda settings: save_settings(settings, settings_path)), \
+                patch('dolly.gui.filedialog.asksaveasfilename', return_value=str(first / 'one.mp4')):
+            self.app._browse_video()
+            self.assertEqual(load_settings(settings_path).export_folder, str(first))
+            self.app.video_path.set(str(second / 'two.mp4'))
+            self.app._remember_export_folder()
+            self.assertEqual(load_settings(settings_path).export_folder, str(second))
+            self.assertEqual(load_settings(settings_path).game_path, 'D:/Deadlock')
+            self.app.video_path.set(str(second / 'missing' / 'three.mp4'))
+            self.app._remember_export_folder()
+            self.assertEqual(load_settings(settings_path).export_folder, str(second))
+        self.app._error.assert_not_called()
+
+    def test_export_folder_failed_save_keeps_previous_preference(self):
+        self.app.app_settings = AppSettings(export_folder='D:/Previous exports')
+        with patch('dolly.gui.save_settings', side_effect=OSError('disk full')):
+            self.app._remember_export_folder()
+        self.assertEqual(self.app.app_settings.export_folder, 'D:/Previous exports')
+        self.app._error.assert_called_once()
+
     def test_fixed_step_audio_refuses_before_focus_or_audio_worker(self):
         self.app.video_fixed_step.set(True)
         for name in ('video_game_audio', 'video_reconstructed_audio'):
@@ -704,9 +732,22 @@ class VideoGuiTests(unittest.TestCase):
         self.app._start_video_recording()
         self.assertTrue(self.app._pending_auto_play)
         self.app._submit.call_args.args[1]()
+        self.app._video_operation_done({"state": "starting"})
+        self.app._play.assert_not_called()
+        self.assertTrue(self.app._pending_auto_play)
         self.app._video_operation_done({"state": "recording"})
         self.app._play.assert_called_once()
         self.assertFalse(self.app._pending_auto_play)
+
+    def test_poll_delivers_recorder_ready_to_pending_playback(self):
+        self.app._pending_auto_play = True
+        self.app.busy = False
+        self.app._last_video_state = "starting"
+        self.app.video_export.status.return_value = {"state": "recording"}
+        self.app._video_operation_done = Mock(side_effect=LookupError("ready delivered"))
+        with self.assertRaisesRegex(LookupError, "ready delivered"):
+            self.app._refresh_video({})
+        self.app._video_operation_done.assert_called_once_with({"state": "recording"})
 
     def test_picker_inspection_cannot_start_recording(self):
         self.app._bone_picker_context = {"request": 12}
@@ -995,7 +1036,7 @@ class VideoGuiTests(unittest.TestCase):
         with patch("dolly.gui.player_layer.wait_until_armed"):
             self.app.video_export.start.call_args.kwargs["before_record"]()
         marker = (deploy / "dolly_owner_start.txt").read_text(encoding="ascii")
-        self.assertRegex(marker, r"^color-sequence-v3 0 62 players 408 816 fps 60 request [0-9a-f]{32}\n$")
+        self.assertRegex(marker, r"^color-sequence-v4 0 62 players 408 816 fps 60 request [0-9a-f]{32} speed 1 scratch [0-9a-f]+\n$")
         options = self.app.video_export.start.call_args.args[0]
         self.assertTrue(options.full_resolution)
         self.assertEqual(options.path, Path(self.folder.name) / "shot" / "players" / "players.mp4")
@@ -1014,7 +1055,7 @@ class VideoGuiTests(unittest.TestCase):
         master = Path(self.folder.name)/"shot/players/players.mov"
         with patch("dolly.gui.player_layer.wait_for_capture", return_value="complete"), \
              patch("dolly.gui.resolve_ffmpeg", return_value=Path("ffmpeg.exe")), \
-             patch("dolly.gui.player_layer.encode_bundle", return_value=master) as encode, \
+             patch("dolly.player_encode.encode_in_worker", return_value=master) as encode, \
              patch("dolly.gui.player_layer.cleanup_capture", return_value=[]) as cleanup:
             result = self.app._finish_player_capture("players")
             self.assertEqual(result, {"state":"completed", "layer":"players", "master":str(master)})
@@ -1024,6 +1065,12 @@ class VideoGuiTests(unittest.TestCase):
             cleanup.reset_mock()
             with self.assertRaisesRegex(RuntimeError, "encoder failed"):
                 self.app._finish_player_capture("players")
+            cleanup.assert_not_called()
+
+            encode.side_effect = InterruptedError("cancelled")
+            result = self.app._finish_player_capture("players")
+            self.assertEqual(result["state"], "cancelled")
+            self.assertIsNone(self.app._player_encode_cancel)
             cleanup.assert_not_called()
 
     def test_players_finalize_after_teardown_is_a_logged_no_op(self):

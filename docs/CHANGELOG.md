@@ -1,5 +1,10 @@
 # Changes
 
+## 0.6.45-alpha
+
+- **Reliable export startup.** *Before:* switching away from Deadlock or using Dolly's desktop controls could block the first recording frame and produce a misleading DirectX 11 error. *After:* recording starts from available game frames even when another window has focus.
+- **Clearer recording errors.** *Before:* a timeout waiting for the first frame looked like missing DirectX 11. *After:* the message explains the frame timeout and suggests restoring the game window, retrying, and exporting diagnostics if it persists.
+
 ## 0.6.44-alpha
 
 - **Bone Picker works with skin/model mods.** *Before:* a hero whose model is replaced by a mod (a renamed model resource in the same folder) failed with "The selected model resource could not be verified" and listed no joints. *After:* a renamed same-folder model is accepted, so the skeleton and bones resolve; a genuinely different model is still rejected.

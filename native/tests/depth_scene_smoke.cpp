@@ -1,4 +1,5 @@
 #include "dolly_depth_scene.hpp"
+#include "dolly_player_capture.hpp"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <array>
@@ -10,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 using namespace dolly::depth;
@@ -27,6 +29,65 @@ template <class T> struct Com {
     Com(const Com&) = delete;
     Com& operator=(const Com&) = delete;
 };
+void check_early_shader_metadata(D3D_DRIVER_TYPE driver) {
+    Com<ID3D11Device> discovery, rendering;
+    require(SUCCEEDED(D3D11CreateDevice(nullptr, driver, nullptr, 0, nullptr, 0,
+                                        D3D11_SDK_VERSION, &discovery.p, nullptr, nullptr)),
+            "Create metadata discovery device failed");
+    require(dolly::player_capture::install_layout_hook(discovery.p),
+            "Install early metadata hooks failed");
+    require(SUCCEEDED(D3D11CreateDevice(nullptr, driver, nullptr, 0, nullptr, 0,
+                                        D3D11_SDK_VERSION, &rendering.p, nullptr, nullptr)),
+            "Create separate rendering device failed");
+    // Real shader/layout creation before any swapchain or Present. Discovery's
+    // temporary device must not restrict metadata to its own resources.
+    const char* source = "StructuredBuffer<float4> records:register(t1);"
+                         "float4 main(uint id:TEXCOORD13):SV_Position{return records[id];}";
+    Com<ID3DBlob> code, errors;
+    require(SUCCEEDED(D3DCompile(source, std::strlen(source), nullptr, nullptr, nullptr,
+                                 "main", "vs_5_0", 0, 0, &code.p, &errors.p)),
+            "Compile player metadata shader failed");
+    Com<ID3D11VertexShader> shader;
+    require(SUCCEEDED(rendering.p->CreateVertexShader(code.p->GetBufferPointer(),
+                  code.p->GetBufferSize(), nullptr, &shader.p)), "Create early player shader failed");
+    const GUID shader_key = {0xb1a1d260,0xa73c,0x46ae,{0x82,0x49,0x4e,0x4a,0x27,0xfa,0x61,0xd4}};
+    std::uint64_t info[8]{};
+    UINT size = sizeof(info);
+    require(SUCCEEDED(shader.p->GetPrivateData(shader_key, &size, info)) && size == sizeof(info),
+            "Shader created before first Present lost metadata on rendering device");
+    require(info[0] == 1 && info[1] == 0 && info[2] == 1 && (info[4] & 1) &&
+            info[5] == 1 && info[6] == D3D_SIT_STRUCTURED && info[7] == 1,
+            "Early shader identity/reflection metadata incorrect");
+    const GUID bytes_key = {0x369a0c21,0xef10,0x4a0c,{0xac,0xa5,0x92,0x79,0x37,0x21,0xab,0x08}};
+    std::vector<unsigned char> bytes(code.p->GetBufferSize());
+    size = static_cast<UINT>(bytes.size());
+    require(SUCCEEDED(shader.p->GetPrivateData(bytes_key, &size, bytes.data())) &&
+            size == bytes.size() && !std::memcmp(bytes.data(), code.p->GetBufferPointer(), size),
+            "Early vertex bytecode was not preserved exactly");
+    D3D11_INPUT_ELEMENT_DESC element{"TEXCOORD",13,DXGI_FORMAT_R32_UINT,1,0,
+                                      D3D11_INPUT_PER_INSTANCE_DATA,1};
+    Com<ID3D11InputLayout> layout;
+    require(SUCCEEDED(rendering.p->CreateInputLayout(&element,1,code.p->GetBufferPointer(),
+                        code.p->GetBufferSize(),&layout.p)), "Create early identity layout failed");
+    const GUID layout_key = {0x7c6ea90b,0xc290,0x4f0c,{0xa7,0x76,0x9b,0xc9,0x2e,0x51,0xd4,0x06}};
+    size = sizeof(info);
+    require(SUCCEEDED(layout.p->GetPrivateData(layout_key,&size,info)) && info[0] == 1 &&
+            info[1] == 1 && info[2] == 1 && info[3] == DXGI_FORMAT_R32_UINT && info[5] == 1,
+            "Early identity layout metadata incorrect");
+    const char* pixel_source = "float4 main():SV_Target{return float4(1,1,1,1);}";
+    Com<ID3DBlob> pixel_code, pixel_errors;
+    require(SUCCEEDED(D3DCompile(pixel_source,std::strlen(pixel_source),nullptr,nullptr,nullptr,
+                "main","ps_5_0",0,0,&pixel_code.p,&pixel_errors.p)), "Compile early pixel shader failed");
+    Com<ID3D11PixelShader> pixel;
+    require(SUCCEEDED(rendering.p->CreatePixelShader(pixel_code.p->GetBufferPointer(),
+                pixel_code.p->GetBufferSize(),nullptr,&pixel.p)), "Create early pixel shader failed");
+    const GUID pixel_key = {0x4fa14e83,0xd077,0x4773,{0x9d,0x31,0x31,0x63,0xd1,0x5f,0x17,0x82}};
+    bytes.resize(pixel_code.p->GetBufferSize());
+    size = static_cast<UINT>(bytes.size());
+    require(SUCCEEDED(pixel.p->GetPrivateData(pixel_key,&size,bytes.data())) && size == bytes.size() &&
+            !std::memcmp(bytes.data(),pixel_code.p->GetBufferPointer(),size),
+            "Early pixel bytecode was not preserved exactly");
+}
 struct Test {
     Com<ID3D11Device> device;
     Com<ID3D11DeviceContext> context, deferred;
@@ -470,6 +531,7 @@ void check(D3D_DRIVER_TYPE driver) {
 }
 int main(int argc, char**) {
     try {
+        check_early_shader_metadata(argc > 1 ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP);
         check(argc > 1 ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP);
         std::puts(
             "DX11 scene draw hooks, deferred replay, calibration snapshots and late-clear rejection passed.");

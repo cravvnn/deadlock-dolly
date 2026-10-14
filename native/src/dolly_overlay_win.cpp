@@ -618,10 +618,12 @@ void render_overlay(IDXGISwapChain* chain) {
     {
         const auto editor = editor_snapshot();
         const auto snapshot = video::status();
-        // Focus gates the first frame only. Desktop controls and a transient
-        // missing editor pose must not finish an already running MP4.
+        // A requested take may start while desktop controls own focus. The
+        // validated game swapchain supplies frames independently of input focus;
+        // do not block initialization while the controller waits for recording.
         if (media_session_active() &&
-            (snapshot.state == video::State::recording || editor.focused)) {
+            (snapshot.state == video::State::starting ||
+             snapshot.state == video::State::recording || editor.focused)) {
             // The recorder reports the size only once a take exists. ReShade
             // also needs depth while merely editing, so fall back to the
             // current backbuffer dimensions.
@@ -701,7 +703,8 @@ void render_overlay(IDXGISwapChain* chain) {
         const auto editor = editor_snapshot();
         const auto snapshot = video::status();
         if (!media_session_active() ||
-            (snapshot.state != video::State::recording && !editor.focused))
+            (snapshot.state != video::State::starting &&
+             snapshot.state != video::State::recording && !editor.focused))
             return;
         const auto* sample = static_cast<const depth::SceneFrame*>(user);
         // Prefer the native path clock this view just evaluated: it is the
@@ -975,6 +978,12 @@ bool discover_swapchain_methods(void*& present, void*& resize) noexcept {
         auto table = *reinterpret_cast<void***>(dummy);
         present = table[8];
         resize = table[13];
+        // The reviewed startup worker has already configured Players support.
+        // Observe shader creation now: waiting for the game's first Present
+        // misses shaders loaded beforehand, leaving valid player draws unknown.
+        // This only records resource metadata; no capture or game draw is armed.
+        if (player_capture::layout_hook_requested())
+            player_capture::install_layout_hook(dummy_device);
     }
     release(dummy_context);
     release(dummy_device);

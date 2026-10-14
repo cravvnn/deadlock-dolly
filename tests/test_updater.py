@@ -72,6 +72,15 @@ class ReleaseTests(unittest.TestCase):
 
 
 class TransactionTests(unittest.TestCase):
+    def test_update_preserves_user_export_folder_preference(self):
+        settings_path = self.root / 'Roaming' / 'DeadlockDolly' / 'settings.json'
+        settings = AppSettings(export_folder=str(self.root / 'My exports'), full_editor=True)
+        save_settings(settings, settings_path)
+        before = settings_path.read_bytes()
+        w.install(self.plan)
+        self.assertEqual(settings_path.read_bytes(), before)
+        self.assertEqual(load_settings(settings_path), settings)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -303,7 +312,8 @@ class PreferenceTests(unittest.TestCase):
             original = AppSettings(full_editor=True, reshade_runtime_path="C:/user/ReShade64.dll")
             save_settings(original, path)
             raw = json.loads(path.read_text()); raw["version"] = 4
-            raw.pop("ffmpeg_path"); raw.pop("auto_updates"); raw.pop("framing_grid_enabled"); raw.pop("enable_dlss")
+            raw.pop("ffmpeg_path"); raw.pop("auto_updates"); raw.pop("framing_grid_enabled"); raw.pop("export_folder")
+            raw.pop("enable_dlss")
             path.write_text(json.dumps(raw)); before = path.read_bytes()
             self.assertEqual(load_settings(path), original)
             self.assertEqual(path.read_bytes(), before)

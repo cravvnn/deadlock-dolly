@@ -51,7 +51,7 @@ CONFETTI_PACK = NATIVE_ROOT / "assets" / "confetti" / "pak01_dir.vpk"
 CONFETTI_PACK_SHA256 = "99c0325fe333bfa12c3f23a2808767c2fd27b49fe0e5abe4531fa472519f8ae6"
 UI_OVERRIDE_PACK = NATIVE_ROOT / "assets" / "ui" / "pak02_dir.vpk"
 UI_OVERRIDE_PACK_SHA256 = "160c23f2b4ef670469833a193b2fa3d4ed5f027a4b9310607391008f39054cc0"
-UNLOCKER_SHA256 = "aa4834d5d189743decc330d53fb07680416a0c31ab53d2a25112a464a04e72a2"
+UNLOCKER_SHA256 = "76ceb22085e2912b6858877fc644cc5aaa86baded2a3f7da9f6a68c1e5f8bc47"
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.
 try:

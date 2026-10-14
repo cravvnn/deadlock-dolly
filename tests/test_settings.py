@@ -36,8 +36,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(set(raw), {"version", "full_editor", "ffmpeg_path", "auto_updates", "capture_binding", "game_path", "replay_folder",
                                    "demo_path", "launch_options", "movement_speed",
                                    "mouse_sensitivity", "action_bindings", "reshade_binding",
-                                   "reshade_runtime_path", "framing_grid_enabled", "enable_dlss"})
-        self.assertEqual(raw["version"], 7)
+                                   "reshade_runtime_path", "framing_grid_enabled", "export_folder",
+                                   "enable_dlss"})
+        self.assertEqual(raw["version"], 8)
         self.assertEqual(raw["capture_binding"], settings.capture_binding.to_dict())
         self.assertNotIn("enabled", raw)
 
@@ -50,7 +51,7 @@ class SettingsTests(unittest.TestCase):
         raw.pop("full_editor")
         raw.pop("ffmpeg_path")
         raw.pop("auto_updates")
-        raw.pop("framing_grid_enabled")
+        raw.pop("framing_grid_enabled"); raw.pop("export_folder")
         raw.pop("enable_dlss")
         self.write_raw(json.dumps(raw))
         before = self.path.read_bytes()
@@ -66,6 +67,47 @@ class SettingsTests(unittest.TestCase):
         for invalid in (0, 1, "true", None):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 AppSettings(full_editor=invalid)
+
+    def test_v6_migrates_without_resetting_existing_preferences(self):
+        settings = AppSettings(game_path='D:/Deadlock', ffmpeg_path='E:/tools/ffmpeg.exe',
+                               full_editor=True, auto_updates=False, framing_grid_enabled=True)
+        save_settings(settings, self.path)
+        raw = json.loads(self.path.read_text('utf-8'))
+        raw['version'] = 6
+        raw.pop('export_folder')
+        raw.pop('enable_dlss')
+        self.write_raw(json.dumps(raw))
+        before = self.path.read_bytes()
+        self.assertEqual(load_settings(self.path), settings)
+        self.assertEqual(load_settings(self.path).export_folder, '')
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_released_v7_migrates_with_dlss_disabled(self):
+        settings = AppSettings(game_path='D:/Deadlock', export_folder='E:/Exports')
+        save_settings(settings, self.path)
+        raw = json.loads(self.path.read_text('utf-8'))
+        raw['version'] = 7
+        raw.pop('enable_dlss')
+        self.write_raw(json.dumps(raw))
+        before = self.path.read_bytes()
+        loaded = load_settings(self.path)
+        self.assertEqual(loaded, settings)
+        self.assertEqual(loaded.export_folder, 'E:/Exports')
+        self.assertFalse(loaded.enable_dlss)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_export_folder_survives_reload_even_when_drive_is_unavailable(self):
+        from dolly.video_export import default_video_path
+        folder = Path(self.directory.name) / 'Unplugged drive' / 'Vidéos'
+        settings = AppSettings(export_folder=str(folder))
+        save_settings(settings, self.path)
+        loaded = load_settings(self.path)
+        self.assertEqual(loaded, settings)
+        self.assertFalse(folder.exists())
+        self.assertEqual(default_video_path('Fresh shot', Path(loaded.export_folder)).parent, folder)
+        for invalid in (None, 17, 'bad\nfolder'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                AppSettings(export_folder=invalid)
 
     def test_invalid_file_load_preserves_original_and_creates_no_backup(self):
         self.write_raw("{ broken")

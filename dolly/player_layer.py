@@ -157,7 +157,7 @@ def check_capture_space(deployment: Path, width: int, height: int, frames: int) 
     if free < required + reserve:
         shortfall = required + reserve - free
         raise RuntimeError(
-            "Players layer capture needs about %.1f GiB of raw temporary space on the game drive "
+            "Players layer capture needs about %.1f GiB of raw temporary space on the scratch drive "
             "(plus 1 GiB free); only %.1f GiB is available, so it is short by about %.1f GiB. "
             "The Players layer stores every frame as an uncompressed image during capture. "
             "Free space on that drive, shorten the camera path, or lower the FPS or resolution, "
@@ -167,12 +167,20 @@ def check_capture_space(deployment: Path, width: int, height: int, frames: int) 
 
 
 def begin_capture(deployment: Path, owner_offset: int, frames: int,
-                  back_offset: int = SCENE_NODE_FIELD_OFFSET, *, fps: int = 60, speed: float = 1.0) -> Path:
+                  back_offset: int = SCENE_NODE_FIELD_OFFSET, *, fps: int = 60, speed: float = 1.0,
+                  scratch_root=None, output=None) -> Path:
     """Write the capture marker beside the deployed native DLL."""
     marker = Path(deployment) / MARKER_NAME
     temporary = marker.with_name(marker.name + ".tmp")
     request_id = uuid.uuid4().hex
-    temporary.write_text(marker_text(owner_offset, frames, back_offset, fps=fps, request_id=request_id, speed=speed), encoding="ascii")
+    text = marker_text(owner_offset, frames, back_offset, fps=fps, request_id=request_id, speed=speed)
+    if scratch_root is not None:
+        from . import player_scratch
+        folder, request_id = player_scratch.create(scratch_root, fps=fps, frames=frames, output=output)
+        text = marker_text(owner_offset, frames, back_offset, fps=fps, request_id=request_id, speed=1.0)
+        text = text.replace('color-sequence-v3', 'color-sequence-v4').strip()
+        text += ' speed %.9g scratch %s\n' % (speed, str(folder).encode('utf-8').hex())
+    temporary.write_text(text, encoding="ascii")
     stop = Path(deployment) / STOP_NAME
     try:
         stop.unlink()
@@ -207,6 +215,10 @@ def capture_status(deployment: Path) -> str:
         match = re.search(r" request ([0-9a-f]{32})", marker.read_text(encoding="ascii"))
         if match and "request " + match[1] not in text.splitlines():
             return ""  # Never accept another take's status/bundle.
+    if marker.is_file() and marker.read_text(encoding="ascii").startswith('color-sequence-v4 '):
+        requested = re.search(r' scratch ([0-9a-f]+)', marker.read_text(encoding="ascii"))
+        if text.startswith(('armed', 'complete')) and (not requested or 'scratch ' + requested[1] not in text.splitlines()):
+            return 'rejected scratch directory was not acknowledged by the native capture'
     return text
 
 
@@ -319,24 +331,32 @@ def wait_until_armed(deployment: Path, timeout: float = 10.0) -> None:
     raise RuntimeError("Player capture did not acknowledge this take. Use a matching updated Dolly build.")
 
 
-def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60) -> Path:
+def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60,
+                  resource_mode="Balanced", cancelled=lambda: False, progress=lambda count: None,
+                  partial_path=None) -> Path:
     """Stream one frame at a time to an atomic alpha MOV; no PNG/MP4 intermediates."""
     if fps not in (30, 60, 120, 300, 600):
         raise ValueError("Unsupported player layer FPS.")
+    from .player_encode import resource_policy
+    from .player_pixels import convert_rgba
+    threads, priority = resource_policy(resource_mode)
     frames = iter(iter_frames(bundle))
     first = next(frames, None)
     if first is None:
         raise RuntimeError("The player layer captured no frames.")
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(output.stem + "." + uuid.uuid4().hex + ".partial.mov")
+    temporary = Path(partial_path) if partial_path else output.with_name(output.stem + "." + uuid.uuid4().hex + ".partial.mov")
     width, height, _ = first
-    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-threads", "2",
+    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-threads", str(threads),
+               "-filter_threads", str(threads), "-filter_complex_threads", str(threads),
                "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{width}x{height}",
                "-framerate", str(fps), "-i", "pipe:0", "-an", "-c:v", "prores_ks",
                "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-vendor", "apl0",
-               "-threads", "2", str(temporary)]
+               "-threads", str(threads), str(temporary)]
     import itertools
     process = None; timer = None
+    monitor_stop = threading.Event()
+    monitor = None
     try:
         with tempfile.TemporaryFile() as errors:
             # FFmpeg is a separate runtime, including when shipped beside Dolly.
@@ -346,21 +366,26 @@ def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60) ->
                 process = subprocess.Popen(
                     command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                     stderr=errors, env=environment,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | priority)
+            def watch_cancel():
+                while not monitor_stop.wait(.1):
+                    if cancelled():
+                        if process.poll() is None:
+                            try: process.kill()
+                            except OSError: pass
+                        return
+            monitor = threading.Thread(target=watch_cancel, daemon=True)
+            monitor.start()
             estimated_frames = max(1, Path(bundle).stat().st_size // (64 + width * height * 8))
             timer = threading.Timer(max(120, 30 * estimated_frames), process.kill)
             timer.daemon = True; timer.start()
             try:
-                for w, h, pixels in itertools.chain((first,), frames):
+                for count, (w, h, pixels) in enumerate(itertools.chain((first,), frames), 1):
                     if (w, h) != (width, height):
                         raise RuntimeError("Player layer dimensions changed during capture.")
-                    preview = bytearray(w * h * 4)
-                    for i, rgba in enumerate(struct.iter_unpack("<4e", pixels)):
-                        alpha = rgba[3]
-                        if alpha:
-                            preview[i*4:i*4+4] = bytes([*(_preview_channel(x / alpha) for x in rgba[:3]),
-                                                       round(alpha * 255)])
+                    preview = convert_rgba(pixels, cancelled=cancelled)
                     process.stdin.write(preview)
+                    progress(count)
                 process.stdin.close()
                 code = process.wait(timeout=120)
             except (OSError, subprocess.TimeoutExpired) as exc:
@@ -375,11 +400,15 @@ def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60) ->
                     code = process.wait()
                     stopped = True
                 raise RuntimeError(_encode_failure(errors, code, exc, stopped=stopped)) from exc
+            if cancelled():
+                raise InterruptedError("Players processing cancelled.")
             if code or not temporary.is_file() or not temporary.stat().st_size:
                 raise RuntimeError(_encode_failure(errors, code))
         os.replace(temporary, output)
         return output
     finally:
+        monitor_stop.set()
+        if monitor: monitor.join(timeout=1)
         if timer: timer.cancel()
         if process and process.poll() is None:
             process.kill(); process.wait()
@@ -407,8 +436,11 @@ def _encode_failure(errors, code: int, cause=None, *, stopped: bool = False) -> 
 
 def cleanup_capture(deployment: Path, layer_dir: Path) -> list[str]:
     """Delete only known completed-take intermediates, never folders recursively."""
+    from . import player_scratch
+    data_dir = player_scratch.from_marker(deployment)
     failures = []
-    for parent, names in ((Path(deployment), (BUNDLE_NAME, META_NAME, "dolly_owner_events.bin")),
+    for parent, names in ((data_dir, (BUNDLE_NAME, META_NAME, "capture-status.txt")),
+                          (Path(deployment), ("dolly_owner_events.bin",)),
                           (Path(layer_dir), ("players.mp4", "players.mp4.shot.json")),
                           (Path(layer_dir)/"capture", ())):
         if not parent.exists(): continue
@@ -427,4 +459,11 @@ def cleanup_capture(deployment: Path, layer_dir: Path) -> list[str]:
         if parent.name == "capture":
             try: parent.rmdir()
             except OSError: pass
+    if data_dir != Path(deployment) and not failures:
+        player_scratch.update(data_dir, 'completed')
+        # Leave ownership intact if there are unexpected files; never recurse.
+        if {p.name for p in data_dir.iterdir()} == {player_scratch.OWNER, player_scratch.MANIFEST}:
+            (data_dir/player_scratch.MANIFEST).unlink()
+            (data_dir/player_scratch.OWNER).unlink()
+            data_dir.rmdir()
     return failures
