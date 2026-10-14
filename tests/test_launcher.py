@@ -101,6 +101,14 @@ class GameInfoTests(unittest.TestCase):
         reviewed = load_manifest(root / 'native/profiles/manifest.json')['modules']
         for relative, digest in profile['modules'].items():
             self.assertIn(digest, reviewed[relative]['accepted'])
+        # Being accepted historically is insufficient: startup's current client
+        # and tier0 contracts must also pass this separate editing-profile gate.
+        contracts = json.loads((root / 'native/profiles/runtime-contracts.json').read_text())
+        for name in ('client', 'tier0'):
+            module = contracts['modules'][name]
+            current = json.loads((root / 'native/profiles' / module['profile']).read_text())
+            self.assertEqual(profile['modules'][module['path']],
+                             current[module['section']][module['hash_key']])
         result = launcher.make_gameinfo(data.decode('utf-8'), 'citadel_dolly_test')
         self.assertIn('citadel_dolly_test/cvar_unlocker', result)
         self.assertNotIn('Game                citadel/cvar_unlocker', result)
@@ -784,7 +792,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), meta["bundled_file_sha256"])
         self.assertEqual(meta["bundled_file_sha256"], launcher.UNLOCKER_SHA256)
         self.assertEqual(meta["license"], "MIT")
-        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6774")
+        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6779")
         self.assertEqual(dll.stat().st_size, meta["bundled_file_size"])
         self.assertIn("unlocker-build-6712.patch", meta["patches"])
         self.assertIn("unlocker-build-6722.patch", meta["patches"])

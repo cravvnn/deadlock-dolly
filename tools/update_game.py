@@ -29,6 +29,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 ANALYSIS = ROOT / "analysis"
 
+# The newer update stage scripts were authored in the canonical checkout and
+# hardcode that analysis root. Rewrite it to the checkout that actually invokes
+# the pipeline, so it runs from a worktree too.
+_STALE_ROOTS = ("C:/Users/Andrew/OneDrive/Documents/Default Project/deadlock-dolly",
+                "C:\\Users\\Andrew\\OneDrive\\Documents\\Default Project\\deadlock-dolly")
+
+
+def rebase(text: str) -> str:
+    for stale in _STALE_ROOTS:
+        text = text.replace(stale, ROOT.as_posix())
+    return text
+
 CLIENT_SCRIPTS = ("collect_anchors.py", "audit_full_{b}.py", "build_map_{b}.py",
                   "resolve_data_{b}.py", "resolve_settings_{b}.py", "resolve_missing_{b}.py",
                   "merge_resolved_{b}.py", "translate_contract_{b}.py", "materialize_{b}.py",
@@ -187,7 +199,7 @@ def generate_client(prev_dir: Path, new_dir: Path, game_dir: Path, pairs: list[t
         source = prev_dir / template.format(b=prev_build)
         if not source.is_file():
             continue
-        text = shift(source.read_text(encoding="utf-8"), pairs)
+        text = rebase(shift(source.read_text(encoding="utf-8"), pairs))
         text = _client_autofix(template, text, game_dir, resolved, server)
         (new_dir / template.format(b=new_build)).write_text(text, encoding="utf-8", newline="\n")
         written.append(template.format(b=new_build))
@@ -203,7 +215,7 @@ def generate_unlocker(prev_dir: Path, new_dir: Path, pairs: list[tuple[str, str]
         if not source.is_file():
             continue
         source_text = source.read_text(encoding="utf-8")
-        text = shift(source_text, pairs)
+        text = rebase(shift(source_text, pairs))
         if template.startswith("prepare_unlocker"):
             text = _prepare_autofix(text, source_text, prev_dir, prev_build, new_build, new_server, prev_server)
         elif template.startswith("finalize_unlocker"):
