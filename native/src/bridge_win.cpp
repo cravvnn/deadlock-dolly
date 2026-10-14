@@ -75,9 +75,12 @@ constexpr char kBuild6769EngineHash[] =
 // Build 6779 retains this replay layout; network-service changes are in the generated profile.
 constexpr char kBuild6779EngineHash[] =
     "8cba5362c844f9c8bbeab1e54ae8bd8991c2ef54542e5a4536f4e10c7da8d493";
+// Build 6782 changes only engine debug metadata; the reviewed code/data are identical.
+constexpr char kBuild6782EngineHash[] =
+    "34901dc81a2135bb5a7932b47278b2b21550d01513924a3072b244a89bf74110";
 constexpr char kSound6726Hash[] =
     "a2f20871181b240b994c3a3b9d5a61fcb52392e991b7ce984c06bf1d55fd642c";
-constexpr char kUnlockerHash[] = "76ceb22085e2912b6858877fc644cc5aaa86baded2a3f7da9f6a68c1e5f8bc47";
+constexpr char kUnlockerHash[] = "923f4998f9b28cbf0dd3228716f32f4d8724a72192e5a8ecde7370c33dc9473a";
 constexpr char kSoundSystemHash[] =
     "5f01b91485f67c980235054c8e1e517b04e34fb53491f26100c8e1c743dd0ba0";
 constexpr char kSeptemberSoundSystemHash[] =
@@ -1415,9 +1418,10 @@ static DWORD WINAPI worker(void*) {
         const bool engine6753 = module_matches(engine, kBuild6753EngineHash, 0x906000);
         const bool engine6757 = module_matches(engine, kBuild6757EngineHash, 0x906000);
         const bool engine6779 = module_matches(engine, kBuild6779EngineHash, 0x906000);
+        const bool engine6782 = module_matches(engine, kBuild6782EngineHash, 0x906000);
         const bool engine6769 = module_matches(engine, kBuild6769EngineHash, 0x906000);
         const bool september_engine = module_matches(engine, kSeptemberEngineHash, 0x906000);
-        if (!engine6779 && !engine6769 && !engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
+        if (!engine6782 && !engine6779 && !engine6769 && !engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
             !module_matches(engine, kEngineHash, 0x969000) &&
             !module_matches(engine, kUpdatedEngineHash, 0x969000)) {
             startup_status(
@@ -1427,7 +1431,7 @@ static DWORD WINAPI worker(void*) {
         }
         gClient = reinterpret_cast<std::uintptr_t>(client);
         gEngine = reinterpret_cast<std::uintptr_t>(engine);
-        gEngineLayout = (engine6779 || engine6769) ? kEngine6728Layout
+        gEngineLayout = (engine6782 || engine6779 || engine6769) ? kEngine6728Layout
                         : engine6757       ? kEngine6728Layout
                         : engine6753       ? kEngine6728Layout
                         : engine6739       ? kEngine6728Layout

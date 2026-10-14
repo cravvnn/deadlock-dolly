@@ -1,14 +1,14 @@
 {
   "manifest_format": 1,
   "native_abi": 4,
-  "generated_utc": "2026-10-13",
+  "generated_utc": "2026-10-14",
   "generator": "tools/generate_profile.py",
-  "reviewed_client_utc": "2026-09-30",
+  "reviewed_client_utc": "2026-10-14",
   "modules": {
     "citadel/bin/win64/client.dll": {
       "role": "client",
-      "reviewed_utc": "2026-10-13",
-      "latest_timestamp": 1791923226,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791997238,
       "accepted": [
         "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
         "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
@@ -38,18 +38,19 @@
         "e0edcb5f9d86f879cc9c0ba0ed37714760b81266b47abcdbea7f42ec233f82e0",
         "6ea4d22ce48c827ebd1606d37ac3a7671e5f0f9bc2cefa2a4a3060a61161e780",
         "e2bafed8ebdfd239d506b4f59b24a09719f945c6a63f69766171349b886603d4",
-        "7602e238c7ce10b2759a3cbf9ad4f219257dd5598e1f69cfa20b46a1785c09db"
+        "7602e238c7ce10b2759a3cbf9ad4f219257dd5598e1f69cfa20b46a1785c09db",
+        "b7deb2d934614b2b9a4e3edf6cf7bfb954b9f1436aadb0bf07b24f07bb7d5515"
       ],
       "feature_pins": {
         "automatic preload": [
-          "7602e238c7ce10b2759a3cbf9ad4f219257dd5598e1f69cfa20b46a1785c09db"
+          "b7deb2d934614b2b9a4e3edf6cf7bfb954b9f1436aadb0bf07b24f07bb7d5515"
         ]
       }
     },
     "bin/win64/engine2.dll": {
       "role": "engine",
-      "reviewed_utc": "2026-10-13",
-      "latest_timestamp": 1791917199,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791994530,
       "accepted": [
         "887201acec33837fdb18d73c04f8e0894971d26eebafe992a28a12fada118afb",
         "301d042c7443090241d7b83244747bf8a32916f61df60aea5d8a1799f432ef8d",
@@ -60,25 +61,27 @@
         "aac84e48de57844d5499af8fd95c976143efe2f14845ff2409b111eb9ff5ce74",
         "084c45473667c65174a9a19c428359ac335c3e990008dbf26c0eef91be44784c",
         "e5e4b2df76ff88d99dd9217e4ccde09bcce9b963327b38963f3ae90ce7e55ac2",
-        "8cba5362c844f9c8bbeab1e54ae8bd8991c2ef54542e5a4536f4e10c7da8d493"
+        "8cba5362c844f9c8bbeab1e54ae8bd8991c2ef54542e5a4536f4e10c7da8d493",
+        "34901dc81a2135bb5a7932b47278b2b21550d01513924a3072b244a89bf74110"
       ]
     },
     "bin/win64/tier0.dll": {
       "role": "tier0",
-      "reviewed_utc": "2026-10-13",
-      "latest_timestamp": 1791916961,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791994402,
       "accepted": [
         "b4300eb0abfe73e1e877516ab6b8bdd1a1bdb4ffc47c7515a349d0623b852f69",
         "b3192eac3cb8c54ac3f9c7aaf7c725ddfcc2dc46d99ba13d16177b6ebf736ebc",
         "493bf3ca610bac0eec1369d19aa67f4c279c6ae1c8f1243b3bad0974c6a8db82",
         "6793cc7306ff40283ba038a784fe96f99f6d38f93c825571ee93ab6b9d9d5332",
-        "784e692b1391809ba31c8fd8fddc121ad1950c36241411d198c2f1cbbb2c2eb6"
+        "784e692b1391809ba31c8fd8fddc121ad1950c36241411d198c2f1cbbb2c2eb6",
+        "5c9fc2b512afeb3b523c3e2093102300e28119035b32b6a12f12bdab38a3f17d"
       ]
     },
     "bin/win64/scenesystem.dll": {
       "role": "scenesystem",
-      "reviewed_utc": "2026-10-13",
-      "latest_timestamp": 1791917084,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791994497,
       "accepted": [
         "e480a7f28ae073dd4a83833bfee8db44bfff22f097147f2f697a109b2ea2de4b",
         "3ece2e69f0f779e9bb05f1bd52b524df7adc5da262ddf9766ea71d1b01ce248d",
@@ -87,13 +90,14 @@
         "5f9e9b069d284a4b58824d78ec6dce2f9fec0ed6d2639d32bd1a35e771867de7",
         "f7933050f4151d44c4a5a39eff84850b50662c96462ef36d70fbbc6dff2685bd",
         "4b58120a35a7426e65e6adf785b0cc526a2dc2b5f7d4c788986a28caa19bfe4d",
-        "cb3374bf12f988525ea85a6f1b8b60592687d6d13787c9dc3c11939b1225f1ac"
+        "cb3374bf12f988525ea85a6f1b8b60592687d6d13787c9dc3c11939b1225f1ac",
+        "b903b7284094e3ddbe4e4960a7fc8d5eaf022b12de96c3f83f2ffd63912a3169"
       ]
     },
     "bin/win64/soundsystem.dll": {
       "role": "soundsystem",
-      "reviewed_utc": "2026-10-13",
-      "latest_timestamp": 1791917122,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791994469,
       "accepted": [
         "5f01b91485f67c980235054c8e1e517b04e34fb53491f26100c8e1c743dd0ba0",
         "42123ba07ab346b781c27038eff41f8ae39714b0d3936904d108956c71d8e281",
@@ -102,31 +106,34 @@
         "1df6e097125504ac6d4863edd4169928697f1f1d440397033b20f2b1e52aa8c2",
         "dcc87930af3a5e3ad993d3819e71c5c22355eeab2a05919bc35014a7cab316ca",
         "c48d1465e6cdc218feaec6cef2b56bb5e727f709498cf93a40d435ddbce72bd1",
-        "c77766b216df1467f33cef2308b930c16ed1b6d7db33f2e2899cf90b3c5d4797"
+        "c77766b216df1467f33cef2308b930c16ed1b6d7db33f2e2899cf90b3c5d4797",
+        "6f6eb08a5abd283257734c587724a729db48c3edd8203bb2ddfb4aa3831f9109"
       ]
     },
     "bin/win64/resourcesystem.dll": {
       "role": "resourcesystem",
-      "reviewed_utc": "2026-10-09",
-      "latest_timestamp": 1791572538,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791994424,
       "accepted": [
         "1eb0193b3098f0941377abe1fce5579c4d61bcc29c4ab099da894a3edab80095",
         "86d09bc988ab3609d43473c3fdc07246bd8958e7f8fc50af4bbba4ffe05a3da0",
         "4921031042cd2135039b4431b01bea414387b37e7f33e852e4e977f6cf1544f3",
-        "fba2c4733b0b3913ddf46cd26158f29b2ff87dfb06f9ab1b63da3361f0528800"
+        "fba2c4733b0b3913ddf46cd26158f29b2ff87dfb06f9ab1b63da3361f0528800",
+        "c2e0c0ee1715b3da657091e72ed148159bebfab8c611703d0937dd8e0db83005"
       ]
     },
     "bin/win64/rendersystemdx11.dll": {
       "role": "rendersystemdx11",
-      "reviewed_utc": "2026-10-09",
-      "latest_timestamp": 1791572558,
+      "reviewed_utc": "2026-10-14",
+      "latest_timestamp": 1791994453,
       "accepted": [
         "386bdc4adfc8b8a0db67520b98b391f872a214e07077cc17a02f10bf94e3b2d8",
         "00ee98d8f2b87b4a8b81ce185549b863f1c9b61e40000f81f6fcfc46a8c18c37",
         "d0b561df9ca1f02e8e78999e7828a03cd20b95d53de0d95215993e58efe0b59c",
         "ca0cd37c078fd070d9b8f4708fc892971d2a35f4c637624b366395e205723889",
         "08a30cbaaad05636295012cdd9db518e3cbbf213ddc81a5d749e5cc01d220c04",
-        "119853ca35dfb719ea269974dc181c22a8f4d33a667a26fc62242e765dcd39d9"
+        "119853ca35dfb719ea269974dc181c22a8f4d33a667a26fc62242e765dcd39d9",
+        "595220c9af9a6f5a4f310c24c7288a6dcfe247ffdfbca32b165e02875ab67d6d"
       ]
     }
   },
@@ -177,6 +184,9 @@
     "deadlock-2026-10-09-6774-complete.json",
     "deadlock-2026-10-13-6779-complete.json",
     "scenesystem-2026-10-13-6779.json",
-    "soundsystem-2026-10-13-6779.json"
+    "soundsystem-2026-10-13-6779.json",
+    "deadlock-2026-10-14-6782-complete.json",
+    "scenesystem-2026-10-14-6782.json",
+    "soundsystem-2026-10-14-6782.json"
   ]
 }

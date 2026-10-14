@@ -13,9 +13,9 @@ import re
 from generate_profile import Image, ProfileError, ROOT, build_signature, resolve_game_dir
 
 LEGACY_PROFILE = ROOT / "native/profiles/soundsystem-2026-09-09.json"
-PROFILE = ROOT / "native/profiles/soundsystem-2026-10-13-6779.json"
+PROFILE = ROOT / "native/profiles/soundsystem-2026-10-14-6782.json"
 HEADER = ROOT / "native/src/dolly_sound_compat_generated.hpp"
-REVIEWED_HASH = "c77766b216df1467f33cef2308b930c16ed1b6d7db33f2e2899cf90b3c5d4797"
+REVIEWED_HASH = "6f6eb08a5abd283257734c587724a729db48c3edd8203bb2ddfb4aa3831f9109"
 # Reviewed prefixes span complete instructions. Stop has split unwind records;
 # its first .pdata entry covers only the prologue, not the function body.
 ANCHORS = (("voice_start", 0x96270, 0x120, 14),

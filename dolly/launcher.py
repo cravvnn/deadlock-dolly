@@ -51,7 +51,7 @@ CONFETTI_PACK = NATIVE_ROOT / "assets" / "confetti" / "pak01_dir.vpk"
 CONFETTI_PACK_SHA256 = "99c0325fe333bfa12c3f23a2808767c2fd27b49fe0e5abe4531fa472519f8ae6"
 UI_OVERRIDE_PACK = NATIVE_ROOT / "assets" / "ui" / "pak02_dir.vpk"
 UI_OVERRIDE_PACK_SHA256 = "160c23f2b4ef670469833a193b2fa3d4ed5f027a4b9310607391008f39054cc0"
-UNLOCKER_SHA256 = "76ceb22085e2912b6858877fc644cc5aaa86baded2a3f7da9f6a68c1e5f8bc47"
+UNLOCKER_SHA256 = "923f4998f9b28cbf0dd3228716f32f4d8724a72192e5a8ecde7370c33dc9473a"
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.
 try:
@@ -828,7 +828,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
                 encoding="ascii", newline="\n")
         command = build_command(paths, overlay, port, demo, protocol, launch_options, native=native)
-        metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2-dolly-build-6765", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
+        metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2-dolly-build-6782", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
         metadata["dlss_enabled"] = bool(enable_dlss)
         metadata["editing_gameinfo_sha256"] = hashlib.sha256(editing.encode("utf-8")).hexdigest()
         metadata["carried_addon_mounts"] = [{"key": key, "path": path} for key, path in addon_mounts]

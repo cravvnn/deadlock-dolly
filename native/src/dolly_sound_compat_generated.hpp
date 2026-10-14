@@ -26,7 +26,7 @@ inline constexpr TableReference kTableReferences[] = {
     {3, 28, 3, 7},
     {3, 158, 3, 7},
 };
-inline constexpr char kHash[] = "c77766b216df1467f33cef2308b930c16ed1b6d7db33f2e2899cf90b3c5d4797";
+inline constexpr char kHash[] = "6f6eb08a5abd283257734c587724a729db48c3edd8203bb2ddfb4aa3831f9109";
 inline constexpr unsigned kImageSize = 7073792;
 inline constexpr unsigned kVoiceTable = 6655520;
 inline constexpr unsigned kVoiceMapOffset = 256;

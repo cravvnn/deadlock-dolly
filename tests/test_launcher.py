@@ -809,7 +809,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), meta["bundled_file_sha256"])
         self.assertEqual(meta["bundled_file_sha256"], launcher.UNLOCKER_SHA256)
         self.assertEqual(meta["license"], "MIT")
-        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6779")
+        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6782")
         self.assertEqual(dll.stat().st_size, meta["bundled_file_size"])
         self.assertIn("unlocker-build-6712.patch", meta["patches"])
         self.assertIn("unlocker-build-6722.patch", meta["patches"])

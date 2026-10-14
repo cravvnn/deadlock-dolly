@@ -665,3 +665,8 @@ native/include/dolly_player_scratch.hpp
 native/tests/player_scratch_tests.cpp
 tests/test_player_scratch.py
 docs/RELEASE_NOTES_0.6.46-alpha.md
+native/profiles/deadlock-2026-10-14-6782-complete.json
+native/profiles/scenesystem-2026-10-14-6782.json
+native/profiles/soundsystem-2026-10-14-6782.json
+third_party/cvar_unlocker/unlocker-build-6782.patch
+docs/RELEASE_NOTES_0.6.47-alpha.md
