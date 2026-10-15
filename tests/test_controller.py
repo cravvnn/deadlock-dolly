@@ -517,6 +517,19 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(self.controller._launch_attempt["status"], "started")
             self.assertEqual(self.controller._launch_attempt["pid"], 700)
 
+    def test_launch_passes_enable_dlss(self):
+        self.controller._session = None
+        with tempfile.TemporaryDirectory() as directory:
+            replay = Path(directory) / "new.dem"
+            replay.write_bytes(b"demo fixture")
+            session = SimpleNamespace(pid=701, session_dir=Path(directory), process=self.process,
+                                      restore_gameinfo=MagicMock(), owns_console_port=lambda: True)
+            with patch("dolly.controller.launcher.launch", return_value=session) as launch:
+                self.controller.launch("game", str(replay), protocol="netcon", enable_dlss=True)
+                launch.assert_called_once_with("game", str(replay.resolve()), port=29090, protocol="netcon",
+                                               enable_dlss=True)
+            self.assertTrue(self.controller._launch_attempt["dlss_enabled"])
+
     def test_failed_launch_diagnostics_retain_paths_and_actual_error_before_session_exists(self):
         self.controller._session = None
         with tempfile.TemporaryDirectory() as directory:

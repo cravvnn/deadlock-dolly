@@ -1823,7 +1823,7 @@ class DollyApp:
         dialog = tk.Toplevel(self.root)
         dialog.title("Launch options · Deadlock Dolly")
         dialog.configure(bg=BG)
-        dialog.geometry(self._window_size(690, 350))
+        dialog.geometry(self._window_size(690, 430))
         dialog.transient(self.root)
         body = ttk.Frame(dialog, padding=22)
         body.pack(fill="both", expand=True)
@@ -1834,16 +1834,19 @@ class DollyApp:
         value = tk.StringVar(value=self.launch_options.get())
         ttk.Entry(body, textvariable=value).grid(row=3, column=0, sticky="ew")
         ttk.Label(body, text="Examples: -windowed -w 1920 -h 1080\nReplay loading, console connection and security settings are managed by Dolly.", style="Muted.TLabel", wraplength=620).grid(row=4, column=0, sticky="w", pady=(9, 16))
+        dlss = tk.BooleanVar(value=self.app_settings.enable_dlss)
+        ttk.Checkbutton(body, text="Enable DLSS", variable=dlss).grid(row=5, column=0, sticky="w")
+        ttk.Label(body, text="When on, \"Export Diagnostics\" will not be able to save data for troubleshooting.", style="Muted.TLabel", wraplength=620).grid(row=6, column=0, sticky="w", pady=(3, 16))
         def save():
             def operation():
                 text = value.get().strip()
                 parse_launch_options(text)
-                candidate = replace(self.app_settings, launch_options=text)
+                candidate = replace(self.app_settings, launch_options=text, enable_dlss=dlss.get())
                 self.launch_options.set(text)
                 if self._persist_preferences(candidate, "Launch options saved for the next session."):
                     dialog.destroy()
             self._guard("Launch options", operation)
-        ttk.Button(body, text="Save options", style="Primary.TButton", command=save).grid(row=5, column=0, sticky="e")
+        ttk.Button(body, text="Save options", style="Primary.TButton", command=save).grid(row=7, column=0, sticky="e")
 
     def _start_editing_session(self):
         def operation():
@@ -1859,12 +1862,13 @@ class DollyApp:
             cancel = threading.Event()
             protocol = "vconsole" if self.protocol.get() == "VConsole" else "netcon"
             native = self.camera_driver.get() == "Native (experimental)"
+            dlss = {"enable_dlss": True} if settings.enable_dlss else {}
             self._disable_external_input()
             self.attach_fields = None
             def start():
                 save_settings(settings)
                 return self.controller.start_editing(game, demo, protocol=protocol, native=native,
-                    launch_options=options, cancel_event=cancel, **graphics_options)
+                    launch_options=options, cancel_event=cancel, **graphics_options, **dlss)
             def complete(result):
                 self.app_settings = settings
                 self._editing_started(result)
@@ -2967,8 +2971,9 @@ class DollyApp:
         except (OSError, ValueError, RuntimeError) as exc:
             self._error("Graphics profiles", exc)
             return
+        dlss = {"enable_dlss": True} if self.app_settings.enable_dlss else {}
         self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol, native=native,
-                     **graphics_options), self._session_result)
+                     **graphics_options, **dlss), self._session_result)
 
     def _session_result(self, result):
         if result is not None:

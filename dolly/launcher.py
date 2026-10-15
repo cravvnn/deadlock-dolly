@@ -760,7 +760,7 @@ class Session:
             return False
 
 
-def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "", graphics_profile: str = "") -> Session:
+def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "", graphics_profile: str = "", enable_dlss: bool = False) -> Session:
     _check_runtime()
     from .replays import parse_launch_options
     parse_launch_options(launch_options)  # Validate before changing game files.
@@ -829,6 +829,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                 encoding="ascii", newline="\n")
         command = build_command(paths, overlay, port, demo, protocol, launch_options, native=native)
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": "v0.5.2-dolly-build-6782", "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared"}
+        metadata["dlss_enabled"] = bool(enable_dlss)
         metadata["editing_gameinfo_sha256"] = hashlib.sha256(editing.encode("utf-8")).hexdigest()
         metadata["carried_addon_mounts"] = [{"key": key, "path": path} for key, path in addon_mounts]
         if native:
@@ -855,31 +856,39 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         _save_record(session_dir, metadata)
         if graphics_profile:
             graphics_profiles.apply(session_dir)
-        with (session_dir / "game_stdout.log").open("ab") as output:
-            with external_program_environment() as environment:
-                # Dolly owns the one graphics callback for its optional manual
-                # ReShade runtime. Never install a second automatic DXGI hook.
-                # This environment belongs only to the launched development game.
-                if native:
-                    from .settings import reshade_config_path
-                    environment = dict(os.environ if environment is None else environment)
-                    environment["RESHADE_DISABLE_GRAPHICS_HOOK"] = "1"
-                    environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
-                    environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
-                options = {} if environment is None else {"env": environment}
-                try:
-                    process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
-                except OSError as exc:
-                    if getattr(exc, "winerror", None) != 740:
-                        raise
-                    raise LaunchError(
-                        "Windows requires administrator permission to start Deadlock (WinError 740).\n\n"
-                        f"In File Explorer, right-click {paths.executable}, open Properties > Compatibility, "
-                        "and check 'Run this program as an administrator', including 'Change settings for all users'. "
-                        "Turn that option off if it was enabled unnecessarily, then retry Dolly.\n\n"
-                        "If administrator access is required on this computer, close Dolly and use "
-                        "Run as administrator on Dolly.exe before retrying.\n\n"
-                        f"Launch log: {log_path}") from exc
+        with external_program_environment() as environment:
+            # Dolly owns the one graphics callback for its optional manual
+            # ReShade runtime. Never install a second automatic DXGI hook.
+            # This environment belongs only to the launched development game.
+            if native:
+                from .settings import reshade_config_path
+                environment = dict(os.environ if environment is None else environment)
+                environment["RESHADE_DISABLE_GRAPHICS_HOOK"] = "1"
+                environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
+                environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
+            options = {} if environment is None else {"env": environment}
+
+            # Redirecting handles prevents DLSS from being loaded. Enabling DLSS
+            # will disable stdout logging.
+            output = None if enable_dlss else (session_dir / "game_stdout.log").open("ab")
+            if output is not None:
+                options.update(stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT)
+            try:
+                process = subprocess.Popen(command, cwd=str(paths.game_dir), shell=False, **options)
+            except OSError as exc:
+                if getattr(exc, "winerror", None) != 740:
+                    raise
+                raise LaunchError(
+                    "Windows requires administrator permission to start Deadlock (WinError 740).\n\n"
+                    f"In File Explorer, right-click {paths.executable}, open Properties > Compatibility, "
+                    "and check 'Run this program as an administrator', including 'Change settings for all users'. "
+                    "Turn that option off if it was enabled unnecessarily, then retry Dolly.\n\n"
+                    "If administrator access is required on this computer, close Dolly and use "
+                    "Run as administrator on Dolly.exe before retrying.\n\n"
+                    f"Launch log: {log_path}") from exc
+            finally:
+                if output is not None:
+                    output.close()
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)
 
         def watch() -> None:

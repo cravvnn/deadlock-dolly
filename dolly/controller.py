@@ -519,7 +519,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             return None
         return info
 
-    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile=""):
+    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile="",
+               enable_dlss=False):
         with self._op_lock:
             self._launch_attempt = {
                 "game_path": str(game_path),
@@ -533,10 +534,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._launch_attempt["graphics_profile"] = str(graphics_profile)
             if native:
                 self._launch_attempt["camera_backend"] = "native"
+            if enable_dlss:
+                self._launch_attempt["dlss_enabled"] = True
             LOG.info("Launch requested: %s", self._launch_attempt)
             try:
                 result = self._launch(game_path, demo_path, protocol, native=native, launch_options=launch_options,
-                                      graphics_profile=graphics_profile)
+                                      graphics_profile=graphics_profile, enable_dlss=enable_dlss)
             except Exception as exc:
                 self._launch_attempt.update(status="failed", error=str(exc), error_type=type(exc).__name__)
                 LOG.exception("Launch failed")
@@ -545,7 +548,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._launch_attempt.update(status="started", pid=result["pid"], session_dir=result["session_dir"])
             return result
 
-    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile=""):
+    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile="", enable_dlss=False):
         with self._op_lock:
             if protocol not in ("vconsole", "netcon"):
                 raise ValueError("Unknown console protocol.")
@@ -562,6 +565,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 options["launch_options"] = launch_options
             if graphics_profile:
                 options["graphics_profile"] = graphics_profile
+            if enable_dlss:
+                options["enable_dlss"] = True
             self._recording_replay = None
             self._recording_warmup = None
             self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol, **options)
@@ -963,7 +968,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     LOG.info("Could not restore the replay timescale after the pre-show", exc_info=True)
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
-                      launch_options="", cancel_event=None, graphics_profile=""):
+                      launch_options="", cancel_event=None, graphics_profile="", enable_dlss=False):
         """Launch, initialize once before the demo, and enter paused editing.
 
         Every transition uses process, console or rendered-view evidence.
@@ -974,6 +979,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             try:
                 self._check_startup_cancelled(cancel_event)
                 profile_options = {"graphics_profile": graphics_profile} if graphics_profile else {}
+                if enable_dlss:
+                    profile_options["enable_dlss"] = True
                 self.launch(game_path, demo_path, protocol, native=native, launch_options=launch_options,
                             **profile_options)
                 self._message("Starting Deadlock. Waiting for its console connection…", startup_stage="waiting_console")

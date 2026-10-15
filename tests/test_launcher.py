@@ -596,7 +596,24 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(session.overlay_dir.exists())
         self.assertEqual(self.paths.gameinfo.read_bytes(), before)
         self.assertTrue(session.log_path.exists())
-        self.assertEqual(json.loads((session.session_dir / "session.json").read_text())["pid"], 5678)
+        self.assertIs(popen.call_args.kwargs["stdin"], launcher.subprocess.DEVNULL)
+        self.assertIs(popen.call_args.kwargs["stderr"], launcher.subprocess.STDOUT)
+        self.assertEqual(Path(popen.call_args.kwargs["stdout"].name), session.session_dir / "game_stdout.log")
+        self.assertTrue(popen.call_args.kwargs["stdout"].closed)
+        journal = json.loads((session.session_dir / "session.json").read_text())
+        self.assertEqual(journal["pid"], 5678)
+        self.assertFalse(journal["dlss_enabled"])
+
+    def test_enable_dlss_passes_the_game_no_standard_handles(self):
+        process = MagicMock()
+        process.pid = 5681
+        process.poll.return_value = None
+        with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.subprocess, "Popen", return_value=process) as popen, patch.object(launcher.threading, "Thread"):
+            session = launcher.launch(self.paths.root, enable_dlss=True)
+        for handle in ("stdin", "stdout", "stderr"):
+            self.assertNotIn(handle, popen.call_args.kwargs)
+        self.assertFalse((session.session_dir / "game_stdout.log").exists())
+        self.assertTrue(json.loads((session.session_dir / "session.json").read_text())["dlss_enabled"])
 
     def test_selected_replay_is_journaled_but_never_loaded_on_startup(self):
         demo = self.folder / "Chosen shot with spaces.dem"
