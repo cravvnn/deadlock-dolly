@@ -1,11 +1,11 @@
 {
   "format": 1,
-  "description": "Build 6779 reviewed offline against 6774; new-build live startup and restoration remain unverified. Editing baseline includes the ResourceCompiler map-build option, journaled gameinfo swapping and installed addon mount preservation.",
+  "description": "Build6785 reviewed offline. Retained editing baseline: complete camera/startup/observer consumers and named schema, relevant HUD CSS, hero identity/model/selectability and portraits verified. Engine/tier0/scene/renderer/audio/particle/schema modules are identical to6782. Local mod-manager settings are excluded. Journaled exact restoration remains; live acceptance is separate.",
   "gameinfo_sha256": "1037523d910f8ff277538175fbbd09fae73346e3e511989886ad6ce13a677424",
   "modules": {
-    "citadel/bin/win64/client.dll": "7602e238c7ce10b2759a3cbf9ad4f219257dd5598e1f69cfa20b46a1785c09db",
-    "bin/win64/engine2.dll": "8cba5362c844f9c8bbeab1e54ae8bd8991c2ef54542e5a4536f4e10c7da8d493",
-    "bin/win64/tier0.dll": "784e692b1391809ba31c8fd8fddc121ad1950c36241411d198c2f1cbbb2c2eb6"
+    "citadel/bin/win64/client.dll": "fadaf78301af6d47d286de6199d1fd0aba7053f6ab597afa3de55369f72424c6",
+    "bin/win64/engine2.dll": "34901dc81a2135bb5a7932b47278b2b21550d01513924a3072b244a89bf74110",
+    "bin/win64/tier0.dll": "5c9fc2b512afeb3b523c3e2093102300e28119035b32b6a12f12bdab38a3f17d"
   },
-  "unlocker_server_sha256": "10b577ce6eb0bc6df849d121dd39d51e5f594c2e61abf9b457562faf0e2cdf3f"
+  "unlocker_server_sha256": "d81b26bb1301866db23aed2866bfb2ae57acfaad8932e964b0b33d0bec562b15"
 }

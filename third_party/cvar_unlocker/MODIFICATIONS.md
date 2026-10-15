@@ -14,6 +14,12 @@ already invalidated, producing an access violation on normal game exit.
 
 ## Changes
 
+- `unlocker-build-6785.patch` (apply after the 6782 patch): adds the reviewed
+  build6785 server and its configuration interface. Builds6782 and6785 use
+  the same tier0 binary, so both exact server pairs remain supported. Unknown
+  and crossed pairs are refused. Existing secure-mode and shutdown code is
+  unchanged. Offline checks passed; live acceptance is recorded separately.
+
 - `unlocker-build-6753.patch` (apply after the 6746 patch): adds the exact
   October5 server hash; the reviewed Source2ServerConfig001 secondary table
   moved +0x4240 while all three method bodies and the this-8 thunks are
@@ -119,8 +125,8 @@ before use. The unmodified upstream release binary hash is recorded there for
 provenance.
 
 Apply `unlocker-shutdown.patch` to the pinned upstream source and
-`sdk-disconnect.patch` to its pinned SDK first, then apply
-`unlocker-build-6712.patch` at the source root. Then apply `unlocker-build-6722.patch`, `unlocker-build-6723.patch`, `unlocker-build-6726.patch`, `unlocker-build-6728.patch`, `unlocker-build-6730.patch`, `unlocker-build-6731.patch`, `unlocker-build-6739.patch`, `unlocker-build-6742.patch`, `unlocker-build-6745.patch` and `unlocker-build-6746.patch` in order.
+`sdk-disconnect.patch` to its pinned SDK first, then apply the build patches
+in the order listed in `THIRD_PARTY.json`, through `unlocker-build-6785.patch`.
 The 6712 patch includes `CMakeLists.txt`
 and offline tests. With the SDK at `sdk/`:
 

@@ -9,6 +9,8 @@ constexpr char kBuild6726Tier0Hash[] =
     "6793cc7306ff40283ba038a784fe96f99f6d38f93c825571ee93ab6b9d9d5332";
 constexpr char kBuild6779Tier0Hash[] =
     "784e692b1391809ba31c8fd8fddc121ad1950c36241411d198c2f1cbbb2c2eb6";
+constexpr char kBuild6782Tier0Hash[] =
+    "5c9fc2b512afeb3b523c3e2093102300e28119035b32b6a12f12bdab38a3f17d";
 constexpr std::uintptr_t kCvarTable = 0x3106e8, kCvarSet = 0x20ec60;
 std::uintptr_t gTier0 = 0, gCvar = 0;
 bool gExtendedCvarSupported = false;
@@ -220,8 +222,9 @@ struct NativeEffectState {
 NativeEffectState gEffects;
 static bool init_cvar_interface() {
     auto tier0 = GetModuleHandleW(L"tier0.dll");
-    const bool build6779 = module_matches(tier0, kBuild6779Tier0Hash, 0x401000);
-    const bool september = build6779 || module_matches(tier0, kSeptemberTier0Hash, 0x401000) ||
+    const bool current_setter = module_matches(tier0, kBuild6779Tier0Hash, 0x401000) ||
+                                module_matches(tier0, kBuild6782Tier0Hash, 0x401000);
+    const bool september = current_setter || module_matches(tier0, kSeptemberTier0Hash, 0x401000) ||
                            module_matches(tier0, kBuild6726Tier0Hash, 0x401000);
     if (!september && !module_matches(tier0, kTier0Hash, 0x400000) &&
         !module_matches(tier0, kUpdatedTier0Hash, 0x400000))
@@ -236,7 +239,7 @@ static bool init_cvar_interface() {
     // The interface name did not change, but GetConVarData moved from slot 43
     // to 41. Select only by exact reviewed module identity, then verify slots.
     const auto table_rva = september ? 0x313208u : kCvarTable;
-    const auto setter_rva = build6779 ? 0x20fe80u : (september ? 0x20fd40u : kCvarSet);
+    const auto setter_rva = current_setter ? 0x20fe80u : (september ? 0x20fd40u : kCvarSet);
     if (!read_value(gCvar, table) || table != gTier0 + table_rva ||
         !read_value(table + 11 * 8, find) || find != gTier0 + (september ? 0x6c6b0u : 0x6bef0u) ||
         !read_value(table + (september ? 41 : 43) * 8, data) ||

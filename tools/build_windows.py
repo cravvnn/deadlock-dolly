@@ -268,7 +268,7 @@ def main() -> int:
         write_manifest(bundle, __version__)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    prefix = 'Dolly_Environment_Capture_0.1.7_Experimental' if environment else f'Deadlock_Dolly_{__version__}'
+    prefix = 'Dolly_Environment_Capture_0.1.8_Experimental' if environment else f'Deadlock_Dolly_{__version__}'
     windows_zip = dist / f"{prefix}_Windows_x64.zip"
     bundle_zip(bundle, windows_zip)
     sources = source_zip(ROOT, dist / f"{prefix}_Source.zip")
