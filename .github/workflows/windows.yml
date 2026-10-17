@@ -12,10 +12,19 @@ jobs:
   windows:
     runs-on: windows-2022
     timeout-minutes: 20
+    env:
+      # The runner profile exposes %TEMP% through its 8.3 alias (RUNNER~1), and
+      # tests that compare resolved paths against the temporary directory
+      # disagree with that short form. Build in a plain path instead.
+      TEMP: D:\ci-temp
+      TMP: D:\ci-temp
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Prepare a plain temporary directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force D:\ci-temp | Out-Null
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
