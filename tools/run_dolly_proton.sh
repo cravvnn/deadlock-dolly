@@ -13,6 +13,7 @@
 # no Steam setting. Override detection with:
 #   PROTON="/path/to/steamapps/common/Proton 10.0"
 #   STEAM_ROOT="/path/to/Steam"
+#   DOLLY_COMPAT_TOOL_DIRS="/extra/tool/dir:/another"
 #
 set -euo pipefail
 
@@ -33,7 +34,8 @@ same Proton prefix the game uses. Close Deadlock first: Dolly launches it.
   --dry-run   print the detected paths and exact command, start nothing
   --help      show this text
 
-Environment overrides: STEAM_ROOT, PROTON, PROTON_RUNTIME.
+Environment overrides: STEAM_ROOT, PROTON, PROTON_RUNTIME,
+DOLLY_COMPAT_TOOL_DIRS (colon-separated extra compatibility tool folders).
 EOF
 }
 
@@ -89,45 +91,92 @@ done
 [ -n "$compat" ] || die "Deadlock's Proton prefix is missing under $game_lib/steamapps/compatdata/$APP_ID
 Run Deadlock through Proton once, then try again."
 
-# --- Matching Proton tool and Steam Linux Runtime -------------------------
+# --- Compatibility tools --------------------------------------------------
 
-find_tool() {  # $1 = compatmanager_layer_name from compatdata/version
-    local name=$1 lib dir
-    for lib in "${libs[@]}"; do
-        for dir in "$lib/steamapps/common"/Proton* "$lib/compatibilitytools.d"/*; do
-            [ -f "$dir/toolmanifest.vdf" ] || continue
-            if grep -q "\"compatmanager_layer_name\"[[:space:]]*\"$name\"" \
-                    "$dir/toolmanifest.vdf" 2>/dev/null; then
-                printf '%s\n' "$dir"
-                return 0
-            fi
-        done
+# Steam reads compatibility tools from each library's steammapps/common
+# (official Proton) and compatibilitytools.d, from the Steam root's own
+# compatibilitytools.d, and from the read-only system folders that distribution
+# packages use. Missing globs stay literal and are filtered by the proton
+# executable check.
+tool_dirs=()
+add_tool_dirs() {
+    local dir
+    for dir in "$@"; do
+        if [ -f "$dir/proton" ]; then
+            tool_dirs+=("$dir")
+        fi
     done
+    return 0
+}
+for lib in "${libs[@]}"; do
+    add_tool_dirs "$lib/steamapps/common"/Proton* "$lib/compatibilitytools.d"/*
+done
+add_tool_dirs "$root/compatibilitytools.d"/* \
+    /usr/share/steam/compatibilitytools.d/* \
+    /usr/local/share/steam/compatibilitytools.d/* \
+    /usr/lib/steam/compatibilitytools.d/*
+
+if [ -n "${DOLLY_COMPAT_TOOL_DIRS:-}" ]; then
+    IFS=: read -r -a extra_tool_dirs <<< "$DOLLY_COMPAT_TOOL_DIRS"
+    for dir in "${extra_tool_dirs[@]}"; do
+        if [ -n "$dir" ]; then
+            add_tool_dirs "$dir" "$dir"/*
+        fi
+    done
+fi
+
+# Steam records the tool as compatmanager_layer_name in its manifest, but custom
+# builds differ: compare the folder name and the tool's own version file too.
+# Everything is folded to lowercase without spaces, with - and _ treated alike,
+# so "Proton - Experimental" matches the recorded "proton_experimental".
+normalize_tool_name() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]' | tr '-' '_'
+}
+
+tool_matches() {  # $1 = tool directory, $2 = normalized recorded name
+    local dir=$1 wanted=$2 name
+    if [ -f "$dir/toolmanifest.vdf" ]; then
+        name=$(sed -n 's/.*"compatmanager_layer_name"[[:space:]]*"\([^"]*\)".*/\1/p' \
+                   "$dir/toolmanifest.vdf" 2>/dev/null | head -n 1)
+        [ -n "$name" ] && [ "$(normalize_tool_name "$name")" = "$wanted" ] && return 0
+    fi
+    [ "$(normalize_tool_name "$(basename "$dir")")" = "$wanted" ] && return 0
+    if [ -f "$dir/version" ]; then
+        name=$(tr -d '[:space:]' < "$dir/version")
+        [ "$(normalize_tool_name "$name")" = "$wanted" ] && return 0
+    fi
     return 1
 }
 
 proton=""
 if [ -n "${PROTON:-}" ]; then
     proton=$PROTON
-else
-    layer=""
-    [ -f "$compat/version" ] && layer=$(tr -d '[:space:]' < "$compat/version")
-    if [ -n "$layer" ]; then
-        proton=$(find_tool "$layer" || true)
-    fi
-    if [ -z "$proton" ] && [ -d "$root/steamapps/common/Proton - Experimental" ]; then
-        proton="$root/steamapps/common/Proton - Experimental"
-        say "warning: adopted 'Proton - Experimental' because the version file did not match"
-    fi
+elif [ -f "$compat/version" ]; then
+    wanted=$(normalize_tool_name "$(tr -d '[:space:]' < "$compat/version")")
+    for dir in "${tool_dirs[@]}"; do
+        if tool_matches "$dir" "$wanted"; then
+            proton=$dir
+            break
+        fi
+    done
 fi
 if [ -z "$proton" ] || [ ! -f "$proton/proton" ]; then
-    say "installed compatibility tools:"
-    for lib in "${libs[@]}"; do
-        for dir in "$lib/steamapps/common"/Proton* "$lib/compatibilitytools.d"/*; do
-            [ -f "$dir/proton" ] && say "  $dir"
-        done
+    say "compatibility tools found:"
+    for dir in "${tool_dirs[@]}"; do
+        name=""
+        [ -f "$dir/toolmanifest.vdf" ] && name=$(sed -n \
+            's/.*"compatmanager_layer_name"[[:space:]]*"\([^"]*\)".*/\1/p' \
+            "$dir/toolmanifest.vdf" 2>/dev/null | head -n 1)
+        say "  $dir${name:+  (layer: $name)}"
     done
-    die "could not identify Deadlock's Proton. Set PROTON=\"/path/to/Proton 10.0\"."
+    if [ -f "$compat/version" ]; then
+        say "Deadlock's prefix was last used with: $(tr -d '[:space:]' < "$compat/version")"
+    else
+        say "Deadlock's prefix has no version file; run Deadlock through Proton once"
+    fi
+    # Never start Dolly with a different Proton than the game: that rewrites the
+    # shared prefix. Stop and let the user name the tool instead.
+    die "could not identify Deadlock's Proton. Set PROTON=\"/path/to/that/tool\"."
 fi
 
 runtime=""
