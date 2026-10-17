@@ -133,31 +133,64 @@ normalize_tool_name() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]' | tr '-' '_'
 }
 
-tool_matches() {  # $1 = tool directory, $2 = normalized recorded name
-    local dir=$1 wanted=$2 name
+tool_version_file() {  # $1 = tool directory; prints its recorded version text
+    local dir=$1 file
+    for file in "$dir/version" "$dir/version.txt"; do
+        if [ -f "$file" ]; then
+            tr -d '[:space:]' < "$file"
+            return 0
+        fi
+    done
+    return 0
+}
+
+tool_matches() {  # $1 = tool directory, $2 = normalized recorded name, $3 = raw value
+    local dir=$1 wanted=$2 raw=$3 name
     if [ -f "$dir/toolmanifest.vdf" ]; then
         name=$(sed -n 's/.*"compatmanager_layer_name"[[:space:]]*"\([^"]*\)".*/\1/p' \
                    "$dir/toolmanifest.vdf" 2>/dev/null | head -n 1)
         [ -n "$name" ] && [ "$(normalize_tool_name "$name")" = "$wanted" ] && return 0
+        # Custom builds record a version string rather than a layer name; the
+        # same value appears somewhere in the tool's own manifest.
+        [ -n "$raw" ] && grep -qF "\"$raw\"" "$dir/toolmanifest.vdf" 2>/dev/null && return 0
     fi
     [ "$(normalize_tool_name "$(basename "$dir")")" = "$wanted" ] && return 0
-    if [ -f "$dir/version" ]; then
-        name=$(tr -d '[:space:]' < "$dir/version")
+    name=$(tool_version_file "$dir")
+    if [ -n "$name" ]; then
         [ "$(normalize_tool_name "$name")" = "$wanted" ] && return 0
+        [ -n "$raw" ] && [ "$name" = "$raw" ] && return 0
     fi
     return 1
+}
+
+# Steam names the tool it launches the game with in config.vdf. The prefix
+# records a version string for some custom builds, so the mapping is the more
+# reliable name when the prefix value matches nothing.
+steam_tool_mapping() {  # $1 = config.vdf, $2 = app id
+    [ -f "$1" ] || return 0
+    awk -v app="\"$2\"" '
+        $1 == app { inside = 1; next }
+        inside && $1 == "\"name\"" { n = split($0, parts, "\""); if (n >= 4) print parts[4]; exit }
+        inside && $1 == "}" { inside = 0 }
+    ' "$1"
 }
 
 proton=""
 if [ -n "${PROTON:-}" ]; then
     proton=$PROTON
-elif [ -f "$compat/version" ]; then
-    wanted=$(normalize_tool_name "$(tr -d '[:space:]' < "$compat/version")")
-    for dir in "${tool_dirs[@]}"; do
-        if tool_matches "$dir" "$wanted"; then
-            proton=$dir
-            break
-        fi
+else
+    wanted_raw=""
+    [ -f "$compat/version" ] && wanted_raw=$(tr -d '[:space:]' < "$compat/version")
+    mapped_raw=$(steam_tool_mapping "$root/config/config.vdf" "$APP_ID")
+    for wanted_raw_try in "$wanted_raw" "$mapped_raw"; do
+        [ -n "$wanted_raw_try" ] || continue
+        wanted=$(normalize_tool_name "$wanted_raw_try")
+        for dir in "${tool_dirs[@]}"; do
+            if tool_matches "$dir" "$wanted" "$wanted_raw_try"; then
+                proton=$dir
+                break 2
+            fi
+        done
     done
 fi
 if [ -z "$proton" ] || [ ! -f "$proton/proton" ]; then
@@ -167,12 +200,18 @@ if [ -z "$proton" ] || [ ! -f "$proton/proton" ]; then
         [ -f "$dir/toolmanifest.vdf" ] && name=$(sed -n \
             's/.*"compatmanager_layer_name"[[:space:]]*"\([^"]*\)".*/\1/p' \
             "$dir/toolmanifest.vdf" 2>/dev/null | head -n 1)
-        say "  $dir${name:+  (layer: $name)}"
+        tversion=$(tool_version_file "$dir")
+        say "  $dir${name:+  (layer: $name)}${tversion:+  (version: $tversion)}"
     done
     if [ -f "$compat/version" ]; then
-        say "Deadlock's prefix was last used with: $(tr -d '[:space:]' < "$compat/version")"
+        say "Deadlock's prefix records: $(tr -d '[:space:]' < "$compat/version")"
     else
         say "Deadlock's prefix has no version file; run Deadlock through Proton once"
+    fi
+    if [ -n "$mapped_raw" ]; then
+        say "Steam's compatibility mapping for Deadlock names: $mapped_raw"
+    else
+        say "Steam's config.vdf has no compatibility mapping for Deadlock"
     fi
     # Never start Dolly with a different Proton than the game: that rewrites the
     # shared prefix. Stop and let the user name the tool instead.
