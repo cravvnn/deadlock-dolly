@@ -255,6 +255,26 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(raced)
         self.assertFalse(self.session.overlay_dir.exists())
 
+    def test_empty_directory_left_after_marker_removal_does_not_block_recovery(self):
+        self.session.restore_gameinfo()
+        rmdir = Path.rmdir
+        def held_open(path, *args, **kwargs):
+            if path == self.session.overlay_dir:
+                raise PermissionError("another cleanup still has the directory open")
+            return rmdir(path, *args, **kwargs)
+        with patch.object(Path, "rmdir", held_open), self.assertRaises(PermissionError):
+            cleanup.remove_overlay(self.session.overlay_dir, self.paths, self.session.session_dir)
+        self.assertEqual(list(self.session.overlay_dir.iterdir()), [])
+        self.recover()
+        self.assertFalse(self.session.overlay_dir.exists())
+
+    def test_empty_directory_without_marker_is_kept_while_mounted(self):
+        for child in sorted(self.session.overlay_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            child.rmdir() if child.is_dir() else child.unlink()
+        with self.assertRaises(launcher.LaunchError):
+            cleanup.remove_overlay(self.session.overlay_dir, self.paths, self.session.session_dir)
+        self.assertTrue(self.session.overlay_dir.is_dir())
+
     def test_game_alive_never_removes_mounted_files(self):
         self.session.restore_gameinfo()
         self.assertFalse(self.session.close())
