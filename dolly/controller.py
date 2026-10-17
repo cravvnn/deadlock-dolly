@@ -44,7 +44,7 @@ from .playback import ReplayClock
 from .smoothing import PhaseSmoother, smoothing_window
 from .display import client_aspect_ratio
 from .pacing import FrameWait
-from .runtime import application_root
+from .runtime import application_root, wine_version
 from . import launcher
 from .native_effects import compile_effects
 from .preload import PreloadMonitor
@@ -326,6 +326,23 @@ class PreloadUnavailableError(RuntimeError):
 
 class StartupAcknowledgementRequired(PreloadUnavailableError):
     """The intro never began; ask the user to check the game's startup screen."""
+
+
+def preload_unavailable_reason() -> str:
+    """Explain why preload verification cannot run here, or "" when it can.
+
+    The verification reads the game's module list and memory as a second
+    process. Wine/Proton does not answer those calls (module enumeration of
+    another process fails with a Windows access error), so the automatic check
+    is unavailable there and the desktop offers its documented manual load.
+    """
+    wine = wine_version()
+    if not wine:
+        return ""
+    return (f"Preload verification is unavailable under Wine/Proton ({wine}): Dolly cannot read "
+            "another Windows process there, so the reviewed preload cannot be checked. The game "
+            "session stays open; load the selected replay from Startup controls to continue "
+            "without preload verification.")
 
 
 class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFlightMixin, GameUiHandoffMixin):
@@ -1087,6 +1104,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         longer than the whole stall window on a slower machine, and a game
         update rebuilds the entire cache. Silence, not elapsed time, ends it.
         """
+        unavailable = preload_unavailable_reason()
+        if unavailable:
+            self._startup_evidence["preload_unavailable"] = {
+                "reason": "unsupported_environment", "wine": wine_version()}
+            self._message(unavailable, startup_stage="preload_unavailable")
+            raise PreloadUnavailableError(unavailable)
         monitor = PreloadMonitor(self._session)
         restore_hud = None
         try:

@@ -11,6 +11,8 @@ tuned to neutral, low-chroma tones.
 """
 from __future__ import annotations
 
+import os
+
 # Semantic tokens. Keys are referenced verbatim by the desktop theme and the
 # generated native header, so rename with both in mind.
 TOKENS: dict[str, str] = {
@@ -62,9 +64,12 @@ TOKENS: dict[str, str] = {
 
 
 # Typography. Tk uses point sizes; the in-game ImGui panel loads its own font, so
-# these apply to the desktop surfaces.
-FONT_FAMILY = "Segoe UI"
-FONT_MONO = "Consolas"
+# these apply to the desktop surfaces. A Wine/Proton prefix usually has neither
+# Segoe UI nor Consolas, and Tk then draws whatever the prefix substitutes;
+# DOLLY_FONT_FAMILY and DOLLY_FONT_MONO let a user point the desktop at fonts
+# their prefix does have, without changing the Windows default.
+FONT_FAMILY = os.environ.get("DOLLY_FONT_FAMILY", "").strip() or "Segoe UI"
+FONT_MONO = os.environ.get("DOLLY_FONT_MONO", "").strip() or "Consolas"
 FONT_SIZES = {"title": 18, "callout": 12, "card_title": 11, "section": 10, "body": 10,
               "small": 9, "tiny": 8}
 
