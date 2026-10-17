@@ -2,9 +2,11 @@
 from contextlib import ExitStack
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -171,6 +173,17 @@ class PathGuardTests(unittest.TestCase):
                     link.rmdir()
                 else:
                     link.unlink()
+
+    def test_reparse_point_that_resolves_to_itself_is_plain(self):
+        # Wine reports each Unix mount point, including the root behind Z:,
+        # as a directory reparse point that does not redirect anywhere.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve()
+            mount = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_file_attributes=0x410)
+            with patch.object(Path, 'lstat', return_value=mount):
+                self.assertTrue(session_cleanup._plain_path(path))
+                with patch.object(os.path, 'realpath', return_value=str(path.parent)):
+                    self.assertFalse(session_cleanup._plain_path(path))
 
 
 class FileBoundaryTests(unittest.TestCase):
