@@ -1,4 +1,5 @@
 import copy
+from functools import lru_cache
 from pathlib import Path
 import shutil
 import struct
@@ -42,13 +43,34 @@ class EffectCompilerTests(unittest.TestCase):
         p=project();p.tracks.append(CvarTrack('r_depth_of_field',[]))
         self.assertEqual(compile_effects(p),compile_effects(project()))
 
-@unittest.skipUnless(shutil.which('g++'), 'Windows CMake runs the native effect gate')
+@lru_cache(maxsize=1)
+def portable_compiler():
+    """Return a g++ that can actually build, or None.
+
+    The runner image ships a MinGW g++ that fails on the C++17 sources, so a
+    present executable is not enough to run the parity gate.
+    """
+    compiler = shutil.which('g++')
+    if not compiler:
+        return None
+    with tempfile.TemporaryDirectory() as probe_dir:
+        probe = Path(probe_dir) / 'probe.cpp'
+        probe.write_text('int main(){return 0;}')
+        try:
+            subprocess.run([compiler, '-std=c++17', '-O2', str(probe), '-o', str(probe.with_suffix(''))],
+                           check=True, capture_output=True)
+        except (OSError, subprocess.CalledProcessError):
+            return None
+    return compiler
+
+
+@unittest.skipUnless(portable_compiler(), 'Windows CMake runs the native effect gate')
 class NativeEffectEvaluationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp=tempfile.TemporaryDirectory();cls.addClassCleanup(cls.temp.cleanup)
         root=Path(__file__).resolve().parents[1];cls.runner=Path(cls.temp.name)/'effects'
-        subprocess.run([shutil.which('g++'),'-std=c++17','-O2','-ffp-contract=off','-I',str(root/'native/include'),
+        subprocess.run([portable_compiler(),'-std=c++17','-O2','-ffp-contract=off','-I',str(root/'native/include'),
             str(root/'native/src/dolly_path.cpp'),str(root/'native/src/dolly_effects.cpp'),
             str(root/'native/tests/effect_tests.cpp'),'-o',str(cls.runner)],check=True,capture_output=True)
     def run_blob(self,data,*times):
