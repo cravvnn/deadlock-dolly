@@ -4329,8 +4329,20 @@ int main(int argc, char** argv) {
             screenshot_context->NavNextActivateId = timeline_window->GetID("Campaths###lite-campath-mode");
             render_lite(); render_lite();
             const auto shot_rect = dolly::overlay_diagnostics();
+            // The bottom dock sits a fixed distance above the render target's
+            // bottom, so measure against the frame's own display height. The
+            // absolute 1080 row this used to assume failed on the CI runner,
+            // whose windowed swap chain is smaller than a desktop one.
+            const auto lite_display = ImGui::GetIO().DisplaySize;
+            char shot_detail[192];
+            std::snprintf(shot_detail, sizeof(shot_detail),
+                          "Shot controls did not move into the timeline (display %.0fx%.0f, "
+                          "timeline %.0f-%.0f at y %.0f, view %ux%u)",
+                          lite_display.x, lite_display.y, shot_rect.timeline_x0,
+                          shot_rect.timeline_x1, shot_rect.timeline_y,
+                          snapshot.view_width, snapshot.view_height);
             require(shot_rect.timeline_x1 > shot_rect.timeline_x0 && shot_rect.timeline_y > 0 &&
-                    shot_rect.timeline_y > 900, "Shot controls did not move into the timeline");
+                    shot_rect.timeline_y > lite_display.y * 0.83f, shot_detail);
             auto* lite_main = ImGui::FindWindowByName("Deadlock Dolly");
             require(lite_main != nullptr, "Lite menu missing");
             ImGui::FocusWindow(lite_main);
