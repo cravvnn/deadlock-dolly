@@ -64,12 +64,32 @@ Dolly under a different Proton.
 
 ## Not supported yet
 
+- **Preload verification.** Automatic startup normally reads the game's loaded
+  modules and memory to verify the reviewed preload before loading the replay.
+  Wine/Proton does not answer those calls, so Dolly reports that the check is
+  unavailable and offers its existing manual load instead: keep the game open and
+  load the selected replay from Startup controls. Nothing is broken, and the
+  replay loads without the preload wait.
 - **Hardware encoders.** NVENC, AMF and Quick Sync need driver DLLs that do not
   exist in a Proton prefix, and Windows Media Foundation has no H.264 encoder
   under Wine. Use **Lossless FFV1 (.mkv)**; software H.264 is planned.
 - **Self-update.** Replacing the running executable under Wine is untested.
   Choose Later when Dolly offers an update.
 - **Steam Deck Gaming Mode.** Desktop Mode uses the same steps but is untested.
+
+## Desktop text
+
+A Proton prefix usually has neither Segoe UI nor Consolas, so Wine substitutes
+fonts and the desktop can look off. Point Dolly at fonts the prefix can see:
+
+```sh
+DOLLY_FONT_FAMILY="Noto Sans" DOLLY_FONT_MONO="Noto Sans Mono" \
+  bash run_dolly_proton.sh
+```
+
+Installing Microsoft's fonts into the prefix, and Wine's smoothing settings, are
+described in the private tester notes kept with this work; leave the variables
+unset to keep the Windows defaults.
 
 ## Troubleshooting
 
