@@ -1,4 +1,5 @@
 ﻿"""Behavior contracts for UI-1 shared widgets; no application or game required."""
+import time
 import tkinter as tk
 from tkinter import ttk
 from types import SimpleNamespace
@@ -69,8 +70,24 @@ class SharedWidgetTests(unittest.TestCase):
         first_path = marker.coords(first_outline)
         # Native hit testing and the actual ttk mouse binding remain in charge.
         button = buttons[1]
-        self.assertIs(self.root.winfo_containing(button.winfo_rootx()+button.winfo_width()//2,
-                                               button.winfo_rooty()+button.winfo_height()//2), button)
+        # Windows answers winfo containing from the desktop's own stacking
+        # order, so an unrelated application sitting over this window would hide
+        # the button from the check. Float above the desktop for this one
+        # sample; the assertion still fails if the overlay canvas or anything
+        # else of ours intercepts the point.
+        self.root.attributes('-topmost', True)
+        try:
+            for _ in range(100):
+                point = (button.winfo_rootx() + button.winfo_width() // 2,
+                         button.winfo_rooty() + button.winfo_height() // 2)
+                if self.root.winfo_containing(*point) is button:
+                    break
+                self.root.update()
+                time.sleep(0.005)
+            self.assertIs(self.root.winfo_containing(*point), button,
+                          'the native hit test did not reach the button')
+        finally:
+            self.root.attributes('-topmost', False)
         clock = [10.0]
         with patch('dolly.ui.widgets.time.monotonic', side_effect=lambda: clock[0]), \
              patch.object(ttk.Style, 'configure', side_effect=AssertionError('Animation changes global styles')), \
