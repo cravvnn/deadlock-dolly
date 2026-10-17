@@ -37,8 +37,14 @@ different Wine server that cannot see the running game.
 
    Leave the terminal open. Dolly should appear, find Deadlock and launch it.
 
-Environment overrides: `STEAM_ROOT`, `PROTON` and `PROTON_RUNTIME`. Flatpak
-Steam is detected at `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`.
+Environment overrides: `STEAM_ROOT`, `PROTON`, `PROTON_RUNTIME` and
+`DOLLY_COMPAT_TOOL_DIRS`. Custom compatibility tools are found in each
+library's `compatibilitytools.d` and in the system folders distributions use
+(`/usr/share/steam/compatibilitytools.d`), matched against the tool Deadlock
+was last started with. Flatpak Steam is detected at
+`~/.var/app/com.valvesoftware.Steam/.local/share/Steam`. If the tool cannot be
+identified the script stops and lists what it found; name one with `PROTON=`
+rather than starting Dolly under a different Proton.
 
 ## Test checklist
 
