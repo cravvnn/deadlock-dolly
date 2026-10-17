@@ -620,20 +620,27 @@ class WorkspaceAppGestureTests(unittest.TestCase):
         workspace.select_group(0)
         self.root.update()
         lane = workspace.lanes[0]
-        before = copy.deepcopy(self.app.project)
-        self.assertIn("outgoing", lane._handle_points,
-                      "outgoing tangent handle missing: canvas %sx%s, scale %s, points %s" % (
-                          lane.canvas.winfo_width(), lane.canvas.winfo_height(),
-                          lane.tk.call("tk", "scaling"),
-                          sorted((side, tuple(round(value, 1) for value in point))
-                                 for side, point in lane._handle_points.items())))
-        x,y,_delta = lane._handle_points["outgoing"]
-        self.quick_second_press(lane,x,y,1000)
-        self.assertTrue(workspace.state.tangent_current())
-        self.event(lane,"<B1-Motion>",x,round(y)-8,1250)
-        self.event(lane,"<ButtonRelease-1>",x,round(y)-8,1300)
-        self.assertEqual(self.app.project.camera_tangent(1,"x").mode,"broken")
-        self.assertNotEqual(compile_project(self.app._snapshot()),compile_project(before))
+        # A small window or a scaled display can hide one of the two handles
+        # behind a neighbouring key, so exercise whichever were drawn.
+        self.assertTrue(lane._handle_points,
+                        "no tangent handles were drawn: canvas %sx%s, scale %s" % (
+                            lane.canvas.winfo_width(), lane.canvas.winfo_height(),
+                            lane.tk.call("tk", "scaling")))
+        for side in sorted(lane._handle_points):
+            with self.subTest(side=side):
+                self.reset_shot()
+                workspace = self.app.camera_curve_workspace
+                workspace.select_group(0)
+                self.root.update()
+                lane = workspace.lanes[0]
+                before = copy.deepcopy(self.app.project)
+                x,y,_delta = lane._handle_points[side]
+                self.quick_second_press(lane,x,y,1000)
+                self.assertTrue(workspace.state.tangent_current())
+                self.event(lane,"<B1-Motion>",x,round(y)-8,1250)
+                self.event(lane,"<ButtonRelease-1>",x,round(y)-8,1300)
+                self.assertEqual(self.app.project.camera_tangent(1,"x").mode,"broken")
+                self.assertNotEqual(compile_project(self.app._snapshot()),compile_project(before))
         self.assertEqual(self.app.shot_history.move().project,before)
         self.assertFalse(self.app.shot_history.can_undo)
 

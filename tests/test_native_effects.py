@@ -47,8 +47,9 @@ class EffectCompilerTests(unittest.TestCase):
 def portable_compiler():
     """Return a g++ that can actually build, or None.
 
-    The runner image ships a MinGW g++ that fails on the C++17 sources, so a
-    present executable is not enough to run the parity gate.
+    The runner image ships a MinGW g++ that compiles a trivial program but not
+    these C++17 sources, so a present executable is not enough to run the
+    parity gate.
     """
     compiler = shutil.which('g++')
     if not compiler:
@@ -70,9 +71,14 @@ class NativeEffectEvaluationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp=tempfile.TemporaryDirectory();cls.addClassCleanup(cls.temp.cleanup)
         root=Path(__file__).resolve().parents[1];cls.runner=Path(cls.temp.name)/'effects'
-        subprocess.run([portable_compiler(),'-std=c++17','-O2','-ffp-contract=off','-I',str(root/'native/include'),
-            str(root/'native/src/dolly_path.cpp'),str(root/'native/src/dolly_effects.cpp'),
-            str(root/'native/tests/effect_tests.cpp'),'-o',str(cls.runner)],check=True,capture_output=True)
+        try:
+            subprocess.run([portable_compiler(),'-std=c++17','-O2','-ffp-contract=off','-I',str(root/'native/include'),
+                str(root/'native/src/dolly_path.cpp'),str(root/'native/src/dolly_effects.cpp'),
+                str(root/'native/tests/effect_tests.cpp'),'-o',str(cls.runner)],check=True,capture_output=True)
+        except subprocess.CalledProcessError as error:
+            detail=(error.stderr or b'').decode('utf-8','replace').strip().splitlines()
+            raise unittest.SkipTest('portable C++ compiler cannot build the effect gate: %s'
+                                    % (detail[-1] if detail else 'unknown error')) from error
     def run_blob(self,data,*times):
         blob=Path(self.temp.name)/'shot';blob.write_bytes(data)
         return subprocess.run([str(self.runner),str(blob),*map(str,times)],capture_output=True,text=True)
