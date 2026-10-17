@@ -42,11 +42,15 @@ GENERATED_FILES = frozenset({
 GENERATED_DIRS = frozenset({"cvar_unlocker", "cvar_unlocker/bin", "cvar_unlocker/bin/win64"})
 
 
+def _owned_location(overlay: Path, paths) -> bool:
+    return (overlay.is_absolute() and overlay.parent.resolve() == paths.game_dir.resolve()
+            and re.fullmatch(r"citadel_dolly_[a-z0-9_]+", overlay.name) is not None
+            and _plain_ancestors(overlay))
+
+
 def _marker(overlay: Path, paths, session_dir: Path | None = None) -> dict:
     try:
-        if (not overlay.is_absolute() or overlay.parent.resolve() != paths.game_dir.resolve()
-                or re.fullmatch(r"citadel_dolly_[a-z0-9_]+", overlay.name) is None
-                or not _plain_ancestors(overlay)):
+        if not _owned_location(overlay, paths):
             raise ValueError("unexpected or linked plugin directory")
         marker = overlay / ".dolly-session.json"
         if not _plain_path(marker) or not marker.is_file():
@@ -90,6 +94,20 @@ def _mount_is_referenced(paths, overlay: Path) -> bool:
     return False
 
 
+def _interrupted_removal(overlay: Path, paths) -> bool:
+    """Report an empty, unmounted plugin directory whose marker is already gone.
+
+    The marker is deleted just before the directory itself, so a removal that
+    raced another cleanup or found the directory still held open stops here.
+    An empty directory holds nothing to protect.
+    """
+    try:
+        return (_owned_location(overlay, paths) and overlay.is_dir() and not any(overlay.iterdir())
+                and not _mount_is_referenced(paths, overlay))
+    except (OSError, LaunchError):
+        return False
+
+
 def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> bool:
     """Caller must first establish game exit. Unknown contents are never deleted."""
     if not overlay.exists() and not overlay.is_symlink():
@@ -99,7 +117,13 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
     except LaunchError:
         if not overlay.exists():
             return False  # The editor's exit thread may have finished first.
-        raise
+        if not _interrupted_removal(overlay, paths):
+            raise
+        try:
+            overlay.rmdir()
+        except FileNotFoundError:
+            return False
+        return True
     if _mount_is_referenced(paths, overlay):
         raise LaunchError(f"The game still references {overlay.name}; its temporary files were left intact. "
                           "Recover the game configuration before starting Deadlock normally.")
