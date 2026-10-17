@@ -126,21 +126,37 @@ does not itself disable the manual route, but every patch is not guaranteed.
 Run the Windows package inside Deadlock's own Proton prefix with the same
 Proton version Deadlock uses. Dolly reads the game's process, memory and console
 through Windows APIs, so it and the game must share one Wine server; a separate
-prefix, such as a non-Steam shortcut's, cannot see the game. From a terminal in
-your desktop session, with `lib` set to the Steam library that holds Deadlock:
+prefix, such as a non-Steam shortcut's, cannot see the game.
+
+`tools/run_dolly_proton.sh` finds the Steam library, the Proton version Deadlock
+uses and the matching Steam Linux Runtime, then starts Dolly in that prefix:
+
+```sh
+bash tools/run_dolly_proton.sh --dry-run   # show detected paths, start nothing
+bash tools/run_dolly_proton.sh             # start Dolly, then launch from Dolly
+```
+
+To start it by hand, match the runtime to the Proton version. Proton 8-10 use
+`SteamLinuxRuntime_sniper`; Proton 11 and newer use `SteamLinuxRuntime_4`
+(`require_tool_appid` in the Proton folder's `toolmanifest.vdf`: `1628350` is
+sniper, `4183110` is Steam Linux Runtime 4). With `lib` set to the Steam library
+that holds Deadlock:
 
 ```sh
 lib=~/.local/share/Steam/steamapps
 export STEAM_COMPAT_DATA_PATH="$lib/compatdata/1422450"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.local/share/Steam
 export SteamAppId=1422450 SteamGameId=1422450
-"$lib/common/SteamLinuxRuntime_sniper/_v2-entry-point" --verb=waitforexitandrun -- \
-  "$lib/common/Proton - Experimental/proton" waitforexitandrun /path/to/DeadlockDolly/Dolly.exe
+"$lib/common/SteamLinuxRuntime_4/_v2-entry-point" --verb=waitforexitandrun -- \
+  "$lib/common/Proton - Experimental/proton" waitforexitandrun "$PWD/Dolly.exe"
 ```
 
-Replace `Proton - Experimental` with the Proton version selected for Deadlock.
-Dolly finds the game in any Steam library, launches it and restores
-`gameinfo.gi` as on Windows.
+Replace `Proton - Experimental` and the runtime with the versions selected for
+Deadlock. Recording uses the bundled FFmpeg, whose hardware encoders need driver
+DLLs a Proton prefix does not have; choose **Lossless FFV1 (.mkv)** until
+software H.264 is available. Dolly finds the game in any Steam library, launches
+it and restores `gameinfo.gi` as on Windows. See
+[LINUX_PROTON.md](LINUX_PROTON.md) for the current test checklist.
 
 ## In-game input and default keys
 
