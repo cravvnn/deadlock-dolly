@@ -31,6 +31,7 @@ docs/internal/TESTING.md
 docs/internal/STAGE2_TESTING.md
 docs/SUPPORTED_CAMERA_CVARS.json
 docs/SUPPORTED_CAMERA_CVARS.md
+docs/LINUX_PROTON.md
 docs/SCREENSHOTS.md
 docs/USER_GUIDE.md
 docs/internal/VALIDATION.md
@@ -317,6 +318,7 @@ tools/confetti_offsets.py
 tools/update_game.py
 tools/fetch_ffmpeg.py
 tools/release_files.py
+tools/run_dolly_proton.sh
 .clang-format
 tools/format_cpp.py
 tools/generate_profile.py
