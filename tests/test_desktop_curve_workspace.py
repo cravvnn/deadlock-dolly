@@ -621,6 +621,12 @@ class WorkspaceAppGestureTests(unittest.TestCase):
         self.root.update()
         lane = workspace.lanes[0]
         before = copy.deepcopy(self.app.project)
+        self.assertIn("outgoing", lane._handle_points,
+                      "outgoing tangent handle missing: canvas %sx%s, scale %s, points %s" % (
+                          lane.canvas.winfo_width(), lane.canvas.winfo_height(),
+                          lane.tk.call("tk", "scaling"),
+                          sorted((side, tuple(round(value, 1) for value in point))
+                                 for side, point in lane._handle_points.items())))
         x,y,_delta = lane._handle_points["outgoing"]
         self.quick_second_press(lane,x,y,1000)
         self.assertTrue(workspace.state.tangent_current())
