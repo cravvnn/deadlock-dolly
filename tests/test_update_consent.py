@@ -463,7 +463,7 @@ class UpdateConsentTests(unittest.TestCase):
         manager = self.discover()
         self.notice_factory.call_args.kwargs["full_notes"]()
         self.browser.assert_called_once_with(
-            "https://github.com/cravvnn/deadlock-dolly/releases/tag/v9.0.1")
+            f"https://github.com/{updater.REPOSITORY}/releases/tag/v9.0.1")
         self.notice.toggle_notes.assert_not_called()
         self.assertIsNone(manager.approved)
         self.network.assert_not_called()

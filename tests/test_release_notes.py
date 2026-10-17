@@ -145,7 +145,7 @@ class ReleaseNotesMetadataTests(unittest.TestCase):
                 "html_url": "https://untrusted.example/notes",
                 "assets": [{"name": "Deadlock_Dolly_0.6.50-alpha_Windows_x64.zip", "state": "uploaded",
                             "size": 100, "digest": "sha256:" + "a" * 64,
-                            "browser_download_url": "https://github.com/cravvnn/deadlock-dolly/releases/download/v0.6.50-alpha/Deadlock_Dolly_0.6.50-alpha_Windows_x64.zip"}]}
+                            "browser_download_url": f"https://github.com/{updater.REPOSITORY}/releases/download/v0.6.50-alpha/Deadlock_Dolly_0.6.50-alpha_Windows_x64.zip"}]}
 
     def test_existing_latest_metadata_supplies_preview_without_another_fetch(self):
         payload = BytesIO(json.dumps(self.release()).encode("utf-8"))
@@ -154,7 +154,7 @@ class ReleaseNotesMetadataTests(unittest.TestCase):
             selected = updater.check_latest("0.6.49-alpha")
         self.assertEqual(selected["notes"], parse_release_notes(RELEASE_0650, "0.6.50-alpha"))
         self.assertEqual(selected["notes_url"],
-                         "https://github.com/cravvnn/deadlock-dolly/releases/tag/v0.6.50-alpha")
+                         f"https://github.com/{updater.REPOSITORY}/releases/tag/v0.6.50-alpha")
         network.assert_called_once_with(updater.LATEST_URL)
         download.assert_not_called()
 
