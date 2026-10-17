@@ -44,10 +44,18 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
 
 
 def _plain_path(path: Path) -> bool:
-    """Do not traverse symbolic links, Windows junctions or other reparse points."""
+    """Do not traverse symbolic links, Windows junctions or other reparse points.
+
+    A reparse point that resolves to itself redirects nothing and stays plain.
+    Wine reports every Unix mount point that way, including the root behind
+    the Z: drive, so Proton paths would otherwise all look linked.
+    """
     info = path.lstat()
-    return not stat.S_ISLNK(info.st_mode) and not (
-        getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    if stat.S_ISLNK(info.st_mode):
+        return False
+    if not getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+        return True
+    return os.path.normcase(os.path.realpath(path)) == os.path.normcase(os.path.abspath(path))
 
 
 def _plain_ancestors(path: Path) -> bool:
