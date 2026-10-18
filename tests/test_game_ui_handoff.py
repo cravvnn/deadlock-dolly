@@ -127,6 +127,27 @@ class GameUiHandoffTests(unittest.TestCase):
         self.addCleanup(context.stop)
         return name
 
+    def test_wine_restores_the_saved_panel_without_the_verified_handoff(self):
+        # Under Wine the panel handoff can never be verified (it reads the game's
+        # process memory), so the saved values must be applied directly instead of
+        # holding the session's settings pending forever.
+        name = self.health_panel()
+        with patch('dolly.game_ui_handoff.wine_version', return_value='wine-11.0'), \
+                patch.object(self.controller, '_own_health_hud_value', return_value=None):
+            self.controller._game_ui_restore[name] = 0
+            result = self.controller._restore_game_ui_settings()
+        self.assertIsNone(result)
+        self.assertEqual(self.console.values[name], 0)
+        self.assertEqual(self.controller._game_ui_restore, {})
+
+    def test_unverifiable_panel_still_reports_pending_without_wine(self):
+        name = self.health_panel()
+        with patch.object(self.controller, '_own_health_hud_value', return_value=None):
+            self.controller._game_ui_restore[name] = 0
+            result = self.controller._restore_game_ui_settings()
+        self.assertIn('pending', result)
+        self.assertEqual(self.controller._game_ui_restore[name], 0)
+
     def test_free_camera_hides_health_panel_and_f9_stop_restore_exactly(self):
         name = self.health_panel()
         self.controller.toggle_game_ui(True)

@@ -612,7 +612,6 @@ class DollyApp:
         self.video_start_button.configure(text="Record POV" if pov else "Record video")
         self._update_export_camera_note()
 
-    def _browse_video(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
             return
         current = Path(self.video_path.get())

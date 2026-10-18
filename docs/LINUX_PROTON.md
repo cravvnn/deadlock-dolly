@@ -72,6 +72,10 @@ Dolly under a different Proton.
   unavailable and offers its existing manual load instead: keep the game open and
   load the selected replay from Startup controls. Nothing is broken, and the
   replay loads without the preload wait.
+- **Health-panel handoff verification.** The same cross-process check also guards
+  the replay HUD handoff. Under Wine it cannot run, so Dolly restores the saved
+  HUD values directly instead of holding them pending; expect an INFO line, and a
+  possible brief HUD flicker when the panel comes back.
 - **Hardware encoders.** NVENC, AMF and Quick Sync need driver DLLs that do not
   exist in a Proton prefix, and Windows Media Foundation has no H.264 encoder
   under Wine. Use **Lossless FFV1 (.mkv)**; software H.264 is planned.
@@ -100,12 +104,20 @@ are described in the private tester notes kept with this work.
 - Launch fails: re-run with `PROTON_LOG=1` and read `~/steam-1422450.log`.
 - Dolly reports that Steam is not running: start the desktop Steam client, then
   re-run.
-- The replay never appears in the game: under Proton Dolly offers the replay
-  first as `replays/<file>.dem`, which is inside the engine's own search path,
-  then as the full path, and records each attempt with the console's answer in
-  the startup evidence. Export diagnostics (or send `<Dolly folder>/logs`) if
-  neither form starts; also try loading the same replay from Deadlock's own
-  replay browser to separate a Dolly problem from a replay file problem.
+- The replay never appears in the game: try a **fresh** replay first. A demo
+  recorded on an older game build can be rejected by Deadlock itself
+  (`Host_EndGame: LinkClasses: unable to match one or more serializers` →
+  back to the hideout); that is the game, not Dolly. Under Proton Dolly offers
+  the replay first as `replays/<file>.dem`, which is inside the engine's own
+  search path, then as the full path, and records each attempt with the
+  console's answer in the startup evidence. Export diagnostics (or send
+  `<Dolly folder>/logs`) if neither form starts.
+- A preserved `citadel_dolly_*` folder in `game/` after a force-kill is
+  deliberate: Dolly never deletes a session folder that still holds replay or
+  settings data. It does not block a new launch; delete it by hand if you want
+  the space back.
+- `sh: lsof: not found` in the terminal is not Dolly (it never runs `lsof`); it
+  comes from another host component, for example a frame-generation layer.
 - A leftover plugin folder blocks a launch: start Dolly again, it recovers
   before launching. Do not delete `gameinfo.gi` or the plugin folder by hand.
 - Logs and settings:

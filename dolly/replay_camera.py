@@ -52,12 +52,16 @@ class ReplayCameraMonitor:
             raise
 
     def _owned(self):
-        if (not self.session.running or not self.command
-                or '-dev' not in self.command or '-insecure' not in self.command
-                or tuple(self.session.command) != self.command
-                or tuple(self.session.process.args) != self.command
-                or not self.session.owns_console_port()):
-            raise PreloadError('Replay camera verification requires the owned development session.')
+        prefix = 'Replay camera verification requires the owned development session'
+        if not self.session.running:
+            raise PreloadError(f'{prefix} (the game is no longer running).')
+        if not self.command or '-dev' not in self.command or '-insecure' not in self.command:
+            raise PreloadError(f'{prefix} (it was not launched with -dev -insecure).')
+        if (tuple(self.session.command) != self.command
+                or tuple(self.session.process.args) != self.command):
+            raise PreloadError(f'{prefix} (its command line changed after launch).')
+        if not self.session.owns_console_port():
+            raise PreloadError(f'{prefix} (the console listener does not belong to this process).')
 
     def sample(self):
         self._owned()
