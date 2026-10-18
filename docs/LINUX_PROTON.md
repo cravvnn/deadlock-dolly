@@ -76,6 +76,11 @@ Dolly under a different Proton.
   the replay HUD handoff. Under Wine it cannot run, so Dolly restores the saved
   HUD values directly instead of holding them pending; expect an INFO line, and a
   possible brief HUD flicker when the panel comes back.
+- **Depth capture and capture layers.** The native depth readback fails on the
+  first frame under Wine/Proton, so a depth master, EXR sequence or layer pass
+  writes nothing (the colour take of a layered run may still land). Dolly now
+  refuses a depth take up front with that reason instead of failing after the
+  shot. Plain colour takes — **Lossless FFV1 (.mkv)** — work.
 - **Hardware encoders.** NVENC, AMF and Quick Sync need driver DLLs that do not
   exist in a Proton prefix, and Windows Media Foundation has no H.264 encoder
   under Wine. Use **Lossless FFV1 (.mkv)**; software H.264 is planned.
@@ -85,11 +90,13 @@ Dolly under a different Proton.
 
 ## Desktop text
 
-The desktop picks the first family the system actually has (`Segoe UI`, then
-`Noto Sans`, `DejaVu Sans`, `Liberation Sans`, `Arial`; `Consolas`, then
-`Noto Sans Mono`, `DejaVu Sans Mono`, `Liberation Mono`), so a prefix without
-Microsoft's fonts still gets a real sans and mono. `DOLLY_FONT_FAMILY` and
-`DOLLY_FONT_MONO` override that choice:
+The desktop uses the first family the system **actually reports**
+(`Segoe UI`, then `Noto Sans`, `DejaVu Sans`, `Liberation Sans`, `Arial`;
+`Consolas`, then `Noto Sans Mono`, `DejaVu Sans Mono`, `Liberation Mono`). Wine
+echoes the requested name back for a font it does not have, so only the system's
+own font list counts; a prefix without Microsoft's fonts gets a real sans and
+mono instead of a thin serif. `DOLLY_FONT_FAMILY` and `DOLLY_FONT_MONO` override
+that choice:
 
 ```sh
 DOLLY_FONT_FAMILY="Noto Sans" DOLLY_FONT_MONO="Noto Sans Mono" \
@@ -112,6 +119,11 @@ are described in the private tester notes kept with this work.
   search path, then as the full path, and records each attempt with the
   console's answer in the startup evidence. Export diagnostics (or send
   `<Dolly folder>/logs`) if neither form starts.
+- `The sound hooks are unavailable; the replay pause cue will still play` and a
+  slightly heavier mouse in the in-game panel are expected under Wine; report
+  them if they become unworkable.
+- The in-game panel opens with **F8** (automatic startup goes straight to the
+  free camera and no longer flashes it).
 - A preserved `citadel_dolly_*` folder in `game/` after a force-kill is
   deliberate: Dolly never deletes a session folder that still holds replay or
   settings data. It does not block a new launch; delete it by hand if you want

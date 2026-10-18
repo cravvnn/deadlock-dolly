@@ -18,7 +18,7 @@ import threading
 import time
 
 from . import encoder_select, player_layer
-from .runtime import external_program_environment
+from .runtime import external_program_environment, wine_version
 from .display import client_size
 
 
@@ -99,6 +99,20 @@ def resolve_backend(options: "VideoOptions") -> tuple[int, int]:
     if needs_ffmpeg and not options.ffmpeg_path:
         return 0, 0
     return encoder, codec_id
+
+
+def unsupported_environment_reason(options: "VideoOptions") -> str:
+    """Explain a capture this platform cannot perform, or "" when it can.
+
+    Wine answers most Windows APIs but not the native depth readback: a verified
+    Proton session fails on the very first frame with E_FAIL and writes nothing,
+    so the take is refused up front instead of after a played shot.
+    """
+    if wine_version() and options.depth:
+        return ("Depth capture is not supported under Wine/Proton yet: the depth readback fails on the "
+                "first frame, so no video, EXR or layer files are written. Record a plain color take "
+                "(Lossless FFV1 works), or run the depth take on Windows.")
+    return ""
 
 
 def default_video_path(shot_name: str, directory: Path | None = None, *, now: datetime | None = None) -> Path:
