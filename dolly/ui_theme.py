@@ -75,11 +75,22 @@ PREFERRED_MONO_FAMILIES = ("Consolas", "Noto Sans Mono", "DejaVu Sans Mono", "Li
                            "Courier New")
 
 
-def _first_available(current: str, preferred: tuple[str, ...], available: set[str]) -> str:
-    if current.casefold() in available:
-        return current
-    for name in preferred:
-        if name.casefold() in available:
+def _family_available(tkfont, root, name: str, listed: frozenset[str]) -> bool:
+    if name.casefold() in listed:
+        return True
+    try:
+        # Tk answers with the family it really used, so a missing name shows up
+        # as its substitute instead of as the name that was asked for.
+        probe = tkfont.Font(root=root, family=name, size=10)
+        return str(probe.actual("family")).casefold() == name.casefold()
+    except Exception:  # noqa: BLE001 - the probe must never block startup
+        return False
+
+
+def _first_available(tkfont, root, current: str, preferred: tuple[str, ...],
+                     listed: frozenset[str]) -> str:
+    for name in (current, *preferred):
+        if _family_available(tkfont, root, name, listed):
             return name
     return current
 
@@ -89,18 +100,22 @@ def prefer_available_fonts(root) -> None:
 
     Called once with a Tk root before the views are built. Real Windows already
     has the first choice, so nothing changes there; a Wine/Proton prefix gets a
-    real sans and mono instead of Tk's substitution.
+    real sans and mono instead of Tk's substitution, which otherwise drops to a
+    thin serif because the prefix has no Segoe UI or Consolas.
     """
     global FONT_FAMILY, FONT_MONO
+    import logging
     import tkinter.font as tkfont
     try:
-        available = {str(name).casefold() for name in tkfont.families(root)}
-    except Exception:  # noqa: BLE001 - a headless or broken Tk keeps the defaults
-        return
+        listed = frozenset(str(name).casefold() for name in tkfont.families(root))
+    except Exception:  # noqa: BLE001 - headless or broken Tk keeps the defaults
+        listed = frozenset()
     if not os.environ.get("DOLLY_FONT_FAMILY", "").strip():
-        FONT_FAMILY = _first_available(FONT_FAMILY, PREFERRED_FONT_FAMILIES, available)
+        FONT_FAMILY = _first_available(tkfont, root, FONT_FAMILY, PREFERRED_FONT_FAMILIES, listed)
     if not os.environ.get("DOLLY_FONT_MONO", "").strip():
-        FONT_MONO = _first_available(FONT_MONO, PREFERRED_MONO_FAMILIES, available)
+        FONT_MONO = _first_available(tkfont, root, FONT_MONO, PREFERRED_MONO_FAMILIES, listed)
+    logging.getLogger("dolly").info(
+        "Desktop fonts resolved to family=%s mono=%s", FONT_FAMILY, FONT_MONO)
 FONT_SIZES = {"title": 18, "callout": 12, "card_title": 11, "section": 10, "body": 10,
               "small": 9, "tiny": 8}
 

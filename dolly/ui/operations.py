@@ -47,7 +47,13 @@ class OperationQueue:
             try:
                 result = function()
             except Exception as exc:
-                LOG.exception('Operation failed: %s', label)
+                from ..controller import PreloadUnavailableError
+                if isinstance(exc, PreloadUnavailableError):
+                    # The desktop offers its manual replay load for this, so it is
+                    # an expected outcome on this platform, not a failure to trace.
+                    LOG.info('Operation needs the manual step: %s: %s', label, exc)
+                else:
+                    LOG.exception('Operation failed: %s', label)
                 try:
                     kind = failure_kind()
                 except Exception:

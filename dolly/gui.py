@@ -51,7 +51,8 @@ from dolly.particles import (LABEL_TO_ID, PARTICLE_DEFAULT, PARTICLE_INTENSITY_D
 from dolly.smoothing import smoothing_window
 from dolly.source2viewer import HELP_SIZE_MB, find_viewer
 from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
-                                CODEC_LABEL_TO_KEY, DEFAULT_CODEC_KEY, VideoExport, VideoOptions,
+                                CODEC_LABEL_TO_KEY, DEFAULT_CODEC_KEY, LOSSLESS_CODEC_ID,
+                                VideoExport, VideoOptions,
                                 bundled_ffmpeg_path, default_video_path, format_video_status,
                                 recording_ready, resolve_ffmpeg)
 
@@ -345,6 +346,7 @@ class DollyApp:
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
         self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
+        self.video_codec.trace_add("write", self._keep_container_suffix)
         self.player_processing = tk.StringVar(value="Background")
         self.players_scratch = tk.StringVar(value="")
         self._player_encode_cancel = None
@@ -609,13 +611,36 @@ class DollyApp:
         self.video_start_button.configure(text="Record POV" if pov else "Record video")
         self._update_export_camera_note()
 
+    def _keep_container_suffix(self, *_args):
+        """Match the destination suffix to the selected codec's container.
+
+        Lossless FFV1 only muxes into Matroska; without this the path keeps its
+        .mp4 name and validation rejects it one dialog later.
+        """
+        raw = self.video_path.get().strip()
+        if not raw:
+            return
+        codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
+        wanted = ".mkv" if CODEC_BY_KEY[codec_key][2] == LOSSLESS_CODEC_ID else ".mp4"
+        current = Path(raw)
+        if current.suffix.lower() != wanted:
+            self.video_path.set(str(current.with_suffix(wanted)))
+
     def _browse_video(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
             return
         current = Path(self.video_path.get())
-        path = filedialog.asksaveasfilename(parent=self.root, title="Record video", defaultextension=".mp4",
+        codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
+        # Lossless FFV1 only muxes into Matroska, so the picker must not hand back
+        # an .mp4 name that validation rejects one dialog later.
+        if CODEC_BY_KEY[codec_key][2] == LOSSLESS_CODEC_ID:
+            current = current.with_suffix(".mkv")
+            extension, filetypes = ".mkv", (("Matroska video", "*.mkv"),)
+        else:
+            extension, filetypes = ".mp4", (("MP4 video", "*.mp4"),)
+        path = filedialog.asksaveasfilename(parent=self.root, title="Record video", defaultextension=extension,
                                           initialdir=str(current.parent), initialfile=current.name,
-                                          filetypes=(("MP4 video", "*.mp4"),), confirmoverwrite=False)
+                                          filetypes=filetypes, confirmoverwrite=False)
         if path:
             self.video_path.set(path)
             self._remember_export_folder()

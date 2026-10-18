@@ -11,6 +11,7 @@ import time
 
 from .camera_commands import numeric
 from .convar_response import read_cvar_value
+from .runtime import wine_version
 
 LOG = logging.getLogger("dolly")
 OWN_HEALTH_HUD = "citadel_hud_hide_own_health"
@@ -268,7 +269,21 @@ class GameUiHandoffMixin:
                 self._request(OWN_HEALTH_HUD + ' 1')
                 self._verify_game_ui_values({OWN_HEALTH_HUD: 1})
 
+    def _health_verification_unavailable(self) -> bool:
+        """True when the verified panel handoff can never run here.
+
+        The handoff reads the running game's process memory, which Wine/Proton
+        does not provide. Restoring then applies the saved values directly
+        instead of holding the session's settings pending forever and blocking
+        playback and recording.
+        """
+        return bool(wine_version())
+
     def _require_own_health_hud(self, values, *, keep_hud=False):
+        if self._health_verification_unavailable():
+            LOG.info('Health HUD panel verification is unavailable under Wine; '
+                     'restoring the saved values without the verified handoff.')
+            return dict(values), False
         if OWN_HEALTH_HUD in values and self._own_health_hud_value() is None:
             raise RuntimeError('Health HUD panel verification is unavailable; saved settings remain pending.')
         if (values.get(OWN_HEALTH_HUD) == 0 or
@@ -299,6 +314,10 @@ class GameUiHandoffMixin:
 
     def _safe_health_hud_values(self, values, *, keep_hud=False):
         """Keep an unsafe reveal hidden, preserving the outer original."""
+        if self._health_verification_unavailable():
+            # Wine cannot verify the handoff at all, so holding the reveal back
+            # would never end; the saved values are restored directly instead.
+            return dict(values), False
         values = dict(values)
         reveal_health = values.get(OWN_HEALTH_HUD) == 0
         reveal_hud = (values.get('citadel_hud_visible') == 1 and
