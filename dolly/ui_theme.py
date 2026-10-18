@@ -73,6 +73,13 @@ FONT_MONO = os.environ.get("DOLLY_FONT_MONO", "").strip() or "Consolas"
 PREFERRED_FONT_FAMILIES = ("Segoe UI", "Noto Sans", "DejaVu Sans", "Liberation Sans", "Arial")
 PREFERRED_MONO_FAMILIES = ("Consolas", "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono",
                            "Courier New")
+# A Wine/Proton prefix answers for Windows-only names it does not really have:
+# the prefix registers the name against a host face of its own choosing and Tk's
+# enumeration then lists that substitute under the requested name, so no probe
+# can tell it apart. The 0.6.57 tester build resolved "Segoe UI" this way and
+# drew the desktop in a serif, so under Wine these names are dropped first and
+# the resolution falls through to the host families below.
+WINDOWS_ONLY_FAMILIES = frozenset({"segoe ui", "consolas"})
 
 
 def _family_available(tkfont, root, name: str, listed: frozenset[str]) -> bool:
@@ -111,16 +118,22 @@ def prefer_available_fonts(root) -> None:
     global FONT_FAMILY, FONT_MONO
     import logging
     import tkinter.font as tkfont
+    from .runtime import wine_version
     try:
         listed = frozenset(str(name).casefold() for name in tkfont.families(root))
     except Exception:  # noqa: BLE001 - headless or broken Tk keeps the defaults
         listed = frozenset()
+    under_wine = bool(wine_version())
+    if under_wine:
+        # Windows-only names are substitutes here, never real faces.
+        listed = frozenset(listed - WINDOWS_ONLY_FAMILIES)
     if not os.environ.get("DOLLY_FONT_FAMILY", "").strip():
         FONT_FAMILY = _first_available(tkfont, root, FONT_FAMILY, PREFERRED_FONT_FAMILIES, listed)
     if not os.environ.get("DOLLY_FONT_MONO", "").strip():
         FONT_MONO = _first_available(tkfont, root, FONT_MONO, PREFERRED_MONO_FAMILIES, listed)
     logging.getLogger("dolly").info(
-        "Desktop fonts resolved to family=%s mono=%s", FONT_FAMILY, FONT_MONO)
+        "Desktop fonts resolved to family=%s mono=%s%s", FONT_FAMILY, FONT_MONO,
+        " (Wine prefix; Windows-only families skipped)" if under_wine else "")
 FONT_SIZES = {"title": 18, "callout": 12, "card_title": 11, "section": 10, "body": 10,
               "small": 9, "tiny": 8}
 

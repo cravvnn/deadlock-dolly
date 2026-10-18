@@ -38,6 +38,30 @@ class UiThemeTests(unittest.TestCase):
             self.assertEqual(ui_theme.FONT_FAMILY, "Noto Sans")
             self.assertEqual(ui_theme.FONT_MONO, "Noto Sans Mono")
 
+    def test_wine_prefix_never_accepts_a_windows_only_family(self):
+        # A Wine prefix lists "Segoe UI" and "Consolas" for host faces it picked
+        # itself (0.6.57 drew a serif from "Segoe UI"), so those names are
+        # dropped under Wine and the host families decide the desktop face.
+        with patch.dict(os.environ, {"DOLLY_FONT_FAMILY": "", "DOLLY_FONT_MONO": ""}), \
+                patch("tkinter.font.families",
+                      return_value=["Segoe UI", "Consolas", "Noto Sans", "Noto Sans Mono"]), \
+                patch("dolly.runtime.wine_version", return_value="11.0"), \
+                patch.object(ui_theme, "FONT_FAMILY", "Segoe UI"), \
+                patch.object(ui_theme, "FONT_MONO", "Consolas"):
+            ui_theme.prefer_available_fonts(object())
+            self.assertEqual(ui_theme.FONT_FAMILY, "Noto Sans")
+            self.assertEqual(ui_theme.FONT_MONO, "Noto Sans Mono")
+
+    def test_real_windows_keeps_the_preferred_windows_family(self):
+        with patch.dict(os.environ, {"DOLLY_FONT_FAMILY": "", "DOLLY_FONT_MONO": ""}), \
+                patch("tkinter.font.families", return_value=["Segoe UI", "Consolas"]), \
+                patch("dolly.runtime.wine_version", return_value=""), \
+                patch.object(ui_theme, "FONT_FAMILY", "Segoe UI"), \
+                patch.object(ui_theme, "FONT_MONO", "Consolas"):
+            ui_theme.prefer_available_fonts(object())
+            self.assertEqual(ui_theme.FONT_FAMILY, "Segoe UI")
+            self.assertEqual(ui_theme.FONT_MONO, "Consolas")
+
     def test_explicit_font_variables_are_never_overridden(self):
         with patch.dict(os.environ, {"DOLLY_FONT_FAMILY": "Custom Sans", "DOLLY_FONT_MONO": ""}), \
                 patch("tkinter.font.families", return_value=["Noto Sans", "Noto Sans Mono"]), \
