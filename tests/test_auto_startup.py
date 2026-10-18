@@ -256,16 +256,17 @@ class AutoStartupTests(unittest.TestCase):
                 self.start()
         self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
 
-    def test_wine_environment_offers_the_manual_load_instead_of_a_hard_stop(self):
-        self.controller._session, self.controller._console = self.session, self.console
-        with patch('dolly.controller.wine_version', return_value='wine-10.0'):
-            with self.assertRaisesRegex(PreloadUnavailableError, 'unavailable under Wine'):
-                self.controller._wait_dashboard_preload(0, None)
+    def test_wine_skips_the_preload_wait_and_still_enters_the_editor(self):
+        # Wine cannot read the game's preload state, so the automatic check is
+        # skipped entirely: the replay still loads and the paused editor still
+        # opens (stopping there used to leave the in-game UI to a manual F8).
+        with patch('dolly.controller.wine_version', return_value='wine-11.0'):
+            self.start(native=False)
         evidence = self.controller._startup_evidence['preload_unavailable']
         self.assertEqual(evidence['reason'], 'unsupported_environment')
-        self.assertEqual(evidence['wine'], 'wine-10.0')
-        self.assertEqual(self.controller._state['startup_stage'], 'preload_unavailable')
-        self.assertFalse(any(c.startswith('playdemo ') for c in self.console.sent))
+        self.assertEqual(evidence['wine'], 'wine-11.0')
+        self.assertTrue(any(command.startswith('playdemo ') for command in self.console.sent))
+        self.assertEqual(self.controller.status()['startup_stage'], 'editing_ready')
 
     def test_preload_read_failure_closes_reader_and_leaves_replay_unloaded(self):
         self.preload.sample.side_effect = RuntimeError('preload read failed')
