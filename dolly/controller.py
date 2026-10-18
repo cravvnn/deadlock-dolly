@@ -257,6 +257,10 @@ PRELOAD_INTRO_STALL_SECONDS = 45.0
 # stops after this much silence, and never runs past the absolute ceiling.
 PRELOAD_STALL_SECONDS = 120.0
 PRELOAD_MAX_SECONDS = 900.0
+# How long one playdemo path form may take to begin before the next form is
+# tried. Only environments that offer more than one form wait at all: Windows
+# sends the reviewed absolute path and leaves verification to Probe.
+REPLAY_LOAD_FORM_SECONDS = 45.0
 # A replay's recorded match intro (client game state MatchIntro -> GameInProgress)
 # plays before the stock gameplay camera takes over, at normal 1x. That segment
 # is part of the demo timeline, so ordinary packet-ordered playback at a higher
@@ -1674,21 +1678,91 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._remember_replay_header(path)
             # Source commands use forward slashes; _validate_demo rejects quotes,
             # separators and line breaks before this trusted quoted argument.
-            command = 'playdemo "' + path.as_posix() + '"'
+            forms = self._replay_command_forms(path)
+            self._startup_evidence["replay_command_forms"] = forms
             self._invalidate_probe()
             self._replay_requested = True
             self._startup_evidence["replay_requested"] = str(path)
+            attempts = []
             try:
-                # Map loading may outlast a console request deadline. Queue the
+                # Map loading may outlast a console request deadline. Queue each
                 # command once; Probe later verifies the actual selected demo.
-                self._console.send(command)
-                self._last_output["playdemo"] = "Sent: " + command + "\nWaiting for Check camera support to verify the loaded replay."
-                LOG.info("Replay requested after confirmed unlocker initialization: %s", path)
-                self._message("Replay load requested. Wait until it is visible in the game, then Check camera support.", startup_stage="loading_replay", tick=None, total_ticks=None)
-                return {"requested": str(path), "confirmed_loaded": False}
+                # Windows sends the reviewed absolute path only. Under Wine the
+                # game-relative form is tried first and the absolute one kept as
+                # a fallback, because the engine reaches the game through its own
+                # library drive there and a form it cannot resolve leaves the
+                # session waiting with nothing in the log to explain it.
+                for position, form in enumerate(forms, start=1):
+                    command = 'playdemo "' + form + '"'
+                    attempt = {"command": command}
+                    attempts.append(attempt)
+                    self._console.send(command)
+                    self._last_output["playdemo"] = "Sent: " + command + "\nWaiting for Check camera support to verify the loaded replay."
+                    LOG.info("Replay requested after confirmed unlocker initialization (%d/%d): %s",
+                             position, len(forms), form)
+                    self._message("Replay load requested. Wait until it is visible in the game, then Check camera support.",
+                                  startup_stage="loading_replay", tick=None, total_ticks=None)
+                    if len(forms) == 1 or self._replay_form_started(attempt):
+                        break
+                self._startup_evidence["replay_attempts"] = attempts
+                started = any(attempt.get("started") for attempt in attempts)
+                return {"requested": str(path), "confirmed_loaded": started}
             except Exception as exc:
                 self._message("Replay load request failed: " + str(exc), startup_stage="failed")
                 raise
+
+    def _replay_command_forms(self, path: Path) -> list[str]:
+        """``playdemo`` path forms in the order to try them.
+
+        Windows keeps the reviewed absolute path as the only form. Under Wine
+        the engine resolves commands through the game folder it was started
+        from, so a replay inside ``replays`` is offered game-relative first and
+        the absolute path is kept as the fallback.
+        """
+        if not wine_version():
+            return [path.as_posix()]
+        forms = []
+        if path.parent.name.casefold() == "replays":
+            forms.append(f"replays/{path.name}")
+        absolute = path.as_posix()
+        if absolute not in forms:
+            forms.append(absolute)
+        return forms
+
+    def _replay_form_started(self, attempt) -> bool:
+        """Report whether the last ``playdemo`` form actually began a replay.
+
+        A form that does not start is recorded with the console's own answer;
+        the caller then tries the next form. The wait is bounded, and a game
+        that closes is reported through the recorded note instead of aborting
+        the load request.
+        """
+        def begun():
+            try:
+                output = self._request("demo_goto", allow_error=True)
+                try:
+                    current = parse_demo_tick(output)
+                except ValueError:
+                    output = self._request("demo_info", allow_error=True)
+                    current = parse_demo_info(output)
+                if not current.get("playing"):
+                    return None
+                info = self._resolve_demo(output)
+                return bool(info["tick"] >= 2)
+            except ConsoleTimeout:
+                return None
+
+        try:
+            # No startup cancel event here: the wait is bounded, non-fatal, and
+            # load_replay is also reached from the desktop's own Start controls.
+            self._startup_wait(begun, "waiting for " + attempt["command"],
+                               None, timeout=REPLAY_LOAD_FORM_SECONDS)
+        except (StartupTimeout, RuntimeError) as exc:
+            attempt["started"] = False
+            attempt["note"] = str(exc)
+            return False
+        attempt["started"] = True
+        return True
 
     def cancel_replay_recovery(self):
         """Signal the existing worker; never launch, reconnect or queue a retry."""

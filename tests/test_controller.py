@@ -897,6 +897,75 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.console.sent, [])
         self.assertNotIn("cvar_unhide", self.console.requests)
 
+    def test_wine_offers_the_game_relative_replay_path_first(self):
+        replay = Path("C:/games/Deadlock/game/citadel/replays/example.dem")
+        with patch("dolly.controller.wine_version", return_value="wine-10.0"):
+            forms = self.controller._replay_command_forms(replay)
+        self.assertEqual(forms, ["replays/example.dem", replay.as_posix()])
+
+    def test_windows_keeps_the_absolute_replay_path_only(self):
+        replay = Path("C:/games/Deadlock/game/citadel/replays/example.dem")
+        with patch("dolly.controller.wine_version", return_value=""):
+            forms = self.controller._replay_command_forms(replay)
+        self.assertEqual(forms, [replay.as_posix()])
+
+    def test_wine_replay_load_falls_back_to_the_absolute_path(self):
+        self._prepare_hideout()
+        with tempfile.TemporaryDirectory(prefix="dolly replay ") as directory:
+            replay_dir = Path(directory) / "replays"
+            replay_dir.mkdir()
+            replay = replay_dir / "example.dem"
+            replay.write_bytes(b"fixture")
+            self.controller._demo = replay
+            self.controller.initialize_unlocker()
+            absolute = 'playdemo "' + replay.resolve().as_posix() + '"'
+            forward = self.console.send
+
+            def send(command, _forward=forward):
+                # Only the absolute form reaches the engine in this scenario.
+                if command == absolute:
+                    self.console.demo_output = None
+                _forward(command)
+
+            self.console.send = send
+            with patch("dolly.controller.wine_version", return_value="wine-10.0"), \
+                    patch("dolly.controller.REPLAY_LOAD_FORM_SECONDS", 0):
+                load = self.controller.load_replay()
+        self.assertTrue(load["confirmed_loaded"])
+        self.assertEqual([command for command in self.console.sent if command.startswith("playdemo ")],
+                         ['playdemo "replays/example.dem"', absolute])
+        attempts = self.controller._startup_evidence["replay_attempts"]
+        self.assertEqual([attempt["started"] for attempt in attempts], [False, True])
+        self.assertEqual(self.controller._startup_evidence["replay_command_forms"],
+                         ["replays/example.dem", absolute[len('playdemo "'):-1]])
+
+    def test_wine_replay_load_stops_when_the_first_form_begins(self):
+        self._prepare_hideout()
+        with tempfile.TemporaryDirectory(prefix="dolly replay ") as directory:
+            replay_dir = Path(directory) / "replays"
+            replay_dir.mkdir()
+            replay = replay_dir / "example.dem"
+            replay.write_bytes(b"fixture")
+            self.controller._demo = replay
+            self.controller.initialize_unlocker()
+            relative = 'playdemo "replays/example.dem"'
+            forward = self.console.send
+
+            def send(command, _forward=forward):
+                if command == relative:
+                    self.console.demo_output = None
+                _forward(command)
+
+            self.console.send = send
+            with patch("dolly.controller.wine_version", return_value="wine-10.0"), \
+                    patch("dolly.controller.REPLAY_LOAD_FORM_SECONDS", 0):
+                load = self.controller.load_replay()
+        self.assertTrue(load["confirmed_loaded"])
+        self.assertEqual([command for command in self.console.sent if command.startswith("playdemo ")],
+                         [relative])
+        attempts = self.controller._startup_evidence["replay_attempts"]
+        self.assertEqual([attempt["started"] for attempt in attempts], [True])
+
     def test_initialize_refuses_already_playing_replay_before_unlocker_command(self):
         self.controller._unlocker_pid = None
         with self.assertRaisesRegex(RuntimeError, "replay is already loaded"):
