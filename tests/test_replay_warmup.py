@@ -150,6 +150,42 @@ class WarmupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "clock changed"): self.warm()
         self.assertIsNone(self.c.goal)
         self.c.bridge.prepare.assert_not_called()
+    def test_slow_replay_simulation_extends_the_settling_deadline(self):
+        # A Wine prefix simulates far below real time: the 0.6.57 tester run
+        # managed ~9 ticks/s and the fixed 8 s budget expired mid-seek while the
+        # replay was still advancing normally. Progress must extend the budget.
+        c = self.c
+
+        def slow_status():
+            c.frame_count += 1
+            if not c.paused and not c.stalled:
+                c.tick = min(c.goal, c.tick + 4)
+                c.paused = c.tick == c.goal
+            return {"tick": c.tick, "paused": c.paused, "frame_count": c.frame_count}
+
+        c.bridge.status.side_effect = slow_status
+        clock = iter(range(0, 500))
+        with patch("dolly.replay_warmup.time.perf_counter", side_effect=lambda: next(clock)):
+            result = self.c._warm_replay_for_shot(self.project, 0, {"tick": 500})
+        self.assertTrue(result["replay_warmup"]["verified"])
+        self.assertEqual(result["replay_warmup"]["paused_tick"], 500)
+
+    def test_a_stalled_game_still_fails_the_settling_wait(self):
+        fallback = self.c.bridge.status.side_effect
+        c = self.c
+
+        def frozen_status():
+            sample = fallback()
+            c.tick, c.paused = 380, False
+            return {"tick": c.tick, "paused": c.paused, "frame_count": sample["frame_count"]}
+
+        c.bridge.status.side_effect = frozen_status
+        clock = iter(range(0, 500))
+        with patch("dolly.replay_warmup.time.perf_counter", side_effect=lambda: next(clock)):
+            with self.assertRaisesRegex(RuntimeError, "did not pause"):
+                self.c._warm_replay_for_shot(self.project, 0, {"tick": 500})
+        self.assertEqual(self.c.events[-1], "demo_resume; demo_pause")
+
     def test_timeout_disarms_goal_without_seek_retry(self):
         self.c.stalled = True
         with patch("dolly.replay_warmup.time.perf_counter", side_effect=[0, 9]):

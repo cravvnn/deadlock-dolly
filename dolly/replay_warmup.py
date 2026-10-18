@@ -8,6 +8,15 @@ import time
 from .demo_packets import packet_index
 
 WARMUP_SECONDS = 2.0
+# The settling wait is measured, not fixed. A Wine/Proton prefix simulates the
+# replay well below real time (0.6.57's tester run managed ~9 ticks/s), so the
+# old fixed 8 s budget expired mid-seek and reported "The replay did not pause at
+# the shot start during effect settling." while nothing was wrong. The base
+# budget stays, the deadline extends from the observed tick rate while ticks keep
+# moving, and an absolute cap bounds a pathologically slow session.
+SETTLE_BASE_SECONDS = 8.0
+SETTLE_STALL_SECONDS = 8.0
+SETTLE_MAX_SECONDS = 120.0
 LOG = logging.getLogger("dolly")
 _SEEK_CLOCK = re.compile(
     r"Demo Skipping:\s*skipping(?: forward)? to demo tick (\d+)\s+\(game tick (\d+)\)")
@@ -111,8 +120,14 @@ class ReplayWarmupMixin:
                 goal_owned = True
                 # resume CLEARS a previous goal. Arm the stock one-shot command last.
                 self._request(f"demo_timescale 1; demo_resume; demo_pauseatservertick {server_target}")
-                deadline = time.perf_counter() + 8.0
+                deadline = time.perf_counter() + SETTLE_BASE_SECONDS
+                # One clock read per iteration keeps the loop testable and cheap;
+                # the start time is recovered from the budget it produced.
+                started = deadline - SETTLE_BASE_SECONDS
                 last_frame = int(before["frame_count"])
+                first_tick = int(before["tick"])
+                last_tick = first_tick
+                last_move = started
                 first_paused_frame = None
                 stable_frames = 0
                 while True:
@@ -120,6 +135,7 @@ class ReplayWarmupMixin:
                     current = bridge.status()
                     check_context()
                     self._require_native_demo(current)
+                    now = time.perf_counter()
                     sample = {"tick": current["tick"], "paused": current["paused"],
                               "frame": int(current["frame_count"])}
                     observation["samples"] += 1
@@ -130,7 +146,16 @@ class ReplayWarmupMixin:
                         observation.setdefault("first_ahead", sample)
                         observation["last_ahead"] = sample
                         observation["ahead_samples"] += 1
-                    if time.perf_counter() >= deadline:
+                    if int(sample["tick"]) > last_tick:
+                        last_tick = int(sample["tick"])
+                        last_move = now
+                        elapsed = now - started
+                        remaining = max(0, target - last_tick)
+                        if elapsed >= 1.0 and remaining > 1:
+                            rate = max(1e-6, (last_tick - first_tick) / elapsed)
+                            deadline = min(started + SETTLE_MAX_SECONDS,
+                                           max(deadline, now + remaining / rate * 1.5 + 2.0))
+                    if now >= deadline or now - last_move >= SETTLE_STALL_SECONDS:
                         raise RuntimeError("The replay did not pause at the shot start during effect settling.")
                     # The running render tick can briefly lead the stock pause
                     # endpoint. Wait inside the same budget, then require two

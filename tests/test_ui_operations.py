@@ -57,33 +57,41 @@ class OperationLifecycleTests(unittest.TestCase):
         app._submit.assert_not_called()
         app.status_text.set.assert_called_once_with('Please wait for the current operation to finish.')
 
-    def test_native_effect_stall_is_reported_once_after_the_window(self):
+    def test_game_stall_is_reported_once_per_stalled_episode(self):
         app = self.app()
         app.controller = Mock()
-        bridge = Mock(); bridge.status.return_value = {"effect_phase": 3, "effect_frames": 10}
+        bridge = Mock()
+        bridge.status.return_value = {"frame_count": 10, "tick": 3328, "paused": True,
+                                      "effect_phase": 3, "frame_interval_ms": 41.0}
         app.controller._native_bridge.return_value = bridge
-        status = {"playing": True, "camera_backend": "native"}
-        with patch("dolly.gui.time.monotonic", side_effect=[0.0, 1.0, 30.0, 31.0, 60.0]), \
+        status = {"playing": False, "native_holding": True, "camera_backend": "native"}
+        with patch("dolly.gui.time.monotonic", side_effect=[0.0, 1.0, 30.0, 31.0, 60.0, 61.0]), \
                 patch("dolly.gui.LOG") as log:
-            app._watch_native_effect_stall(status)
-            app._watch_native_effect_stall(status)
-            app._watch_native_effect_stall(status)
+            app._watch_game_stall(status)
+            app._watch_game_stall(status)
+            app._watch_game_stall(status)
             log.warning.assert_called_once()
-            app._watch_native_effect_stall(status)
+            app._watch_game_stall(status)
             log.warning.assert_called_once()
-            bridge.status.return_value = {"effect_phase": 4, "effect_frames": 40}
-            app._watch_native_effect_stall(status)
+            bridge.status.return_value = {"frame_count": 11, "tick": 3328, "paused": True,
+                                          "effect_phase": 3, "frame_interval_ms": 41.0}
+            app._watch_game_stall(status)
+            log.info.assert_called_once()
             log.warning.assert_called_once()
+            bridge.status.return_value = {"frame_count": 11, "tick": 3328, "paused": True,
+                                          "effect_phase": 3, "frame_interval_ms": 41.0}
+            app._watch_game_stall(status)
 
     def test_idle_or_console_playback_never_watches_for_a_stall(self):
         app = self.app()
         app.controller = Mock()
         app.controller._native_bridge.return_value = Mock()
         with patch("dolly.gui.LOG") as log:
-            app._watch_native_effect_stall({"playing": False, "camera_backend": "native"})
-            app._watch_native_effect_stall({"playing": True, "camera_backend": "console"})
+            app._watch_game_stall({"playing": False, "native_holding": False,
+                                   "camera_backend": "native"})
+            app._watch_game_stall({"playing": True, "camera_backend": "console"})
             log.warning.assert_not_called()
-        self.assertIsNone(app._effect_stall)
+        self.assertIsNone(app._game_stall)
 
     def test_submit_sets_busy_display_before_enqueuing_original_objects(self):
         app = self.app(); order = []
