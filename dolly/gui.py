@@ -17,6 +17,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -89,6 +90,11 @@ ASPECT_PRESETS = {"16:9": 16 / 9, "16:10": 16 / 10, "21:9": 21 / 9, "4:3": 4 / 3
 
 
 
+# A native playback whose effect phase and frame counters stop advancing while
+# the game is still alive is treated as stalled and written to Dolly.log once.
+EFFECT_STALL_SECONDS = 15.0
+
+
 def _number(value: object) -> str:
     """Human-friendly round-trip formatting for editable numeric cells."""
     try:
@@ -109,6 +115,7 @@ def _finite(value: str, label: str) -> float:
 
 def _set_var(variable, value):
     """Assign a Tk variable only when it changes.
+
 
     The status poll runs several times a second; re-setting identical strings
     makes Tk redraw labels and comboboxes for no visible change, which is the
@@ -1449,7 +1456,42 @@ class DollyApp:
         LOG.info("Layer alpha master saved to %s", master)
         return {"state": "completed", "layer": layer, "master": str(master)}
 
+    def _watch_native_effect_stall(self, controller_status):
+        """Note a native effect phase that stopped advancing.
+
+        The native path applies effect cvars inside the game, so those writes do
+        not appear in the console log. A playback that is still "playing" while
+        its effect phase and frame counters stop moving is what a stalled engine
+        looks like from here; one dated line is what a freeze report needs.
+        """
+        if not (controller_status.get("playing")
+                and controller_status.get("camera_backend") == "native"):
+            self._effect_stall = None
+            return
+        controller = getattr(self, "controller", None)
+        bridge = controller._native_bridge() if controller is not None else None
+        read = getattr(bridge, "status", None)
+        if not callable(read):
+            return
+        try:
+            native = read()
+        except Exception:  # noqa: BLE001 - a status poll must never break the desktop
+            return
+        marker = (native.get("effect_phase"), native.get("effect_frames"))
+        watch = getattr(self, "_effect_stall", None)
+        now = time.monotonic()
+        if watch is None or watch["marker"] != marker:
+            self._effect_stall = {"marker": marker, "since": now, "warned": False}
+            return
+        if not watch["warned"] and now - watch["since"] >= EFFECT_STALL_SECONDS:
+            watch["warned"] = True
+            LOG.warning("Native playback has not advanced for %.0f s (effect phase %s, frame %s); "
+                        "the game may be stalled. Stop / restore cancels the running shot, and a "
+                        "frozen game has to be closed.",
+                        now - watch["since"], marker[0], marker[1])
+
     def _refresh_video(self, controller_status):
+        self._watch_native_effect_stall(controller_status)
         status = self.video_export.status()
         state = status.get("state", "idle")
         previous = getattr(self, "_last_video_state", "idle")
@@ -2706,8 +2748,12 @@ class DollyApp:
 
     def _session_operation(self, label, function):
         if self.busy and function in (self.controller.stop, self.controller.pause):
-            if self.controller.cancel_replay_recovery():
-                self.status_text.set("Cancelling replay preparation…")
+            # A busy pointer with a dead game is what "unrecoverable" looks like:
+            # the stop waits behind the operation holding the lock. Ask it to
+            # cancel, queue the stop for when it does, and say so.
+            if self.controller.request_operation_cancel():
+                self.status_text.set("Cancelling the current operation…")
+                self._submit(label, function)
                 return True
         if self.busy:
             self.status_text.set("Please wait for the current operation to finish.")

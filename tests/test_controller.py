@@ -966,6 +966,17 @@ class ControllerTests(unittest.TestCase):
         attempts = self.controller._startup_evidence["replay_attempts"]
         self.assertEqual([attempt["started"] for attempt in attempts], [True])
 
+    def test_operation_cancel_signals_playback_and_preparation_only(self):
+        self.controller._stop_event.clear()
+        self.assertFalse(self.controller.request_operation_cancel())
+        self.assertFalse(self.controller._stop_event.is_set(),
+                         "An idle controller must not leave a stale stop request")
+        self.controller._replay_warmup_active = True
+        self.assertTrue(self.controller.request_operation_cancel())
+        self.assertTrue(self.controller._stop_event.is_set())
+        self.controller._replay_warmup_active = False
+        self.controller._stop_event.clear()
+
     def test_initialize_refuses_already_playing_replay_before_unlocker_command(self):
         self.controller._unlocker_pid = None
         with self.assertRaisesRegex(RuntimeError, "replay is already loaded"):

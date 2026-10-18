@@ -1773,6 +1773,22 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         attempt["started"] = True
         return True
 
+    def request_operation_cancel(self) -> bool:
+        """Signal a running shot preparation or playback to stop, right now.
+
+        The desktop's Stop / restore is itself an operation, so it cannot run
+        while another operation holds the lock - which is exactly the state a
+        game that stopped answering leaves it in. Playback and shot preparation
+        already honour ``_stop_event``, so setting it lets them unwind, release
+        the lock and let the requested stop proceed. Exports and recordings have
+        their own cancel controls and are deliberately left alone.
+        """
+        playing = bool(self.status().get("playing"))
+        if not (playing or self._replay_recovery_active or self._replay_warmup_active):
+            return False
+        self._stop_event.set()
+        return True
+
     def cancel_replay_recovery(self):
         """Signal the existing worker; never launch, reconnect or queue a retry."""
         if not (self._replay_recovery_active or self._replay_warmup_active):
