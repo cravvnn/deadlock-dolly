@@ -1,9 +1,11 @@
 """The desktop and in-game UI must share exactly one palette (dolly/ui_theme.py)."""
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 from dolly import ui_theme
 
@@ -26,6 +28,24 @@ class UiThemeTests(unittest.TestCase):
             result.returncode, 0,
             "native/src/dolly_ui_tokens_generated.hpp is stale; run tools/generate_ui_tokens.py\n"
             + result.stdout + result.stderr)
+
+    def test_missing_windows_fonts_fall_back_to_available_families(self):
+        with patch.dict(os.environ, {"DOLLY_FONT_FAMILY": "", "DOLLY_FONT_MONO": ""}), \
+                patch("tkinter.font.families", return_value=["Noto Sans", "Noto Sans Mono"]), \
+                patch.object(ui_theme, "FONT_FAMILY", "Segoe UI"), \
+                patch.object(ui_theme, "FONT_MONO", "Consolas"):
+            ui_theme.prefer_available_fonts(object())
+            self.assertEqual(ui_theme.FONT_FAMILY, "Noto Sans")
+            self.assertEqual(ui_theme.FONT_MONO, "Noto Sans Mono")
+
+    def test_explicit_font_variables_are_never_overridden(self):
+        with patch.dict(os.environ, {"DOLLY_FONT_FAMILY": "Custom Sans", "DOLLY_FONT_MONO": ""}), \
+                patch("tkinter.font.families", return_value=["Noto Sans", "Noto Sans Mono"]), \
+                patch.object(ui_theme, "FONT_FAMILY", "Custom Sans"), \
+                patch.object(ui_theme, "FONT_MONO", "Consolas"):
+            ui_theme.prefer_available_fonts(object())
+            self.assertEqual(ui_theme.FONT_FAMILY, "Custom Sans")
+            self.assertEqual(ui_theme.FONT_MONO, "Noto Sans Mono")
 
     def test_desktop_has_no_hardcoded_colours(self):
         for name in ("dolly/gui.py", "dolly/gui_theme.py", "dolly/gui_layout.py",

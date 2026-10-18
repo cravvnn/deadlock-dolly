@@ -65,11 +65,42 @@ TOKENS: dict[str, str] = {
 
 # Typography. Tk uses point sizes; the in-game ImGui panel loads its own font, so
 # these apply to the desktop surfaces. A Wine/Proton prefix usually has neither
-# Segoe UI nor Consolas, and Tk then draws whatever the prefix substitutes;
-# DOLLY_FONT_FAMILY and DOLLY_FONT_MONO let a user point the desktop at fonts
-# their prefix does have, without changing the Windows default.
+# Segoe UI nor Consolas, and Tk then draws whatever the prefix substitutes, so
+# the desktop resolves the first family this system actually has; the explicit
+# DOLLY_FONT_FAMILY and DOLLY_FONT_MONO variables still win.
 FONT_FAMILY = os.environ.get("DOLLY_FONT_FAMILY", "").strip() or "Segoe UI"
 FONT_MONO = os.environ.get("DOLLY_FONT_MONO", "").strip() or "Consolas"
+PREFERRED_FONT_FAMILIES = ("Segoe UI", "Noto Sans", "DejaVu Sans", "Liberation Sans", "Arial")
+PREFERRED_MONO_FAMILIES = ("Consolas", "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono",
+                           "Courier New")
+
+
+def _first_available(current: str, preferred: tuple[str, ...], available: set[str]) -> str:
+    if current.casefold() in available:
+        return current
+    for name in preferred:
+        if name.casefold() in available:
+            return name
+    return current
+
+
+def prefer_available_fonts(root) -> None:
+    """Resolve the desktop font families against what this system has.
+
+    Called once with a Tk root before the views are built. Real Windows already
+    has the first choice, so nothing changes there; a Wine/Proton prefix gets a
+    real sans and mono instead of Tk's substitution.
+    """
+    global FONT_FAMILY, FONT_MONO
+    import tkinter.font as tkfont
+    try:
+        available = {str(name).casefold() for name in tkfont.families(root)}
+    except Exception:  # noqa: BLE001 - a headless or broken Tk keeps the defaults
+        return
+    if not os.environ.get("DOLLY_FONT_FAMILY", "").strip():
+        FONT_FAMILY = _first_available(FONT_FAMILY, PREFERRED_FONT_FAMILIES, available)
+    if not os.environ.get("DOLLY_FONT_MONO", "").strip():
+        FONT_MONO = _first_available(FONT_MONO, PREFERRED_MONO_FAMILIES, available)
 FONT_SIZES = {"title": 18, "callout": 12, "card_title": 11, "section": 10, "body": 10,
               "small": 9, "tiny": 8}
 

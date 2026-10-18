@@ -201,6 +201,10 @@ def main() -> int:
     shutil.copy2(ROOT / "CREDITS.md", bundle / "_internal" / "CREDITS.md")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
     shutil.copytree(ROOT / "examples", bundle / "examples", dirs_exist_ok=True)
+    # Linux testers run this same Windows build inside Deadlock's Proton prefix,
+    # so the launcher and its guide travel with the download they already have.
+    shutil.copy2(ROOT / "tools" / "run_dolly_proton.sh", bundle / "run_dolly_proton.sh")
+    shutil.copy2(ROOT / "docs" / "LINUX_PROTON.md", bundle / "LINUX_PROTON.md")
     reject_game_binaries(bundle)
     executable = bundle / "Dolly.exe"
     pe_report = check_executable(executable, ROOT / "assets" / "dolly.ico")

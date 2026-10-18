@@ -4940,6 +4940,10 @@ class DollyApp:
 
 def main():
     root = tk.Tk()
+    # The desktop font choice is made once here, before any view captures it.
+    ui_theme.prefer_available_fonts(root)
+    global FAMILY, MONO
+    FAMILY, MONO = ui_theme.FONT_FAMILY, ui_theme.FONT_MONO
     app = DollyApp(root)
     from .update_ui import UpdateUI
     app.update_manager = UpdateUI(app, skip_startup="--updated" in sys.argv)

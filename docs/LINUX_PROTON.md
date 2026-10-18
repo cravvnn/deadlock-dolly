@@ -19,9 +19,11 @@ different Wine server that cannot see the running game.
 
 ## Quick start
 
-1. Extract the Windows ZIP. Put `run_dolly_proton.sh` next to `Dolly.exe` if it
-   is not already there.
-2. From that folder:
+The ZIP from a green hosted run of `feat/linux-proton` already carries
+`run_dolly_proton.sh` and this guide beside `Dolly.exe`.
+
+1. Extract the ZIP and open a terminal in the extracted `DeadlockDolly` folder.
+2. Check detection first:
 
    ```sh
    bash run_dolly_proton.sh --dry-run
@@ -79,23 +81,31 @@ Dolly under a different Proton.
 
 ## Desktop text
 
-A Proton prefix usually has neither Segoe UI nor Consolas, so Wine substitutes
-fonts and the desktop can look off. Point Dolly at fonts the prefix can see:
+The desktop picks the first family the system actually has (`Segoe UI`, then
+`Noto Sans`, `DejaVu Sans`, `Liberation Sans`, `Arial`; `Consolas`, then
+`Noto Sans Mono`, `DejaVu Sans Mono`, `Liberation Mono`), so a prefix without
+Microsoft's fonts still gets a real sans and mono. `DOLLY_FONT_FAMILY` and
+`DOLLY_FONT_MONO` override that choice:
 
 ```sh
 DOLLY_FONT_FAMILY="Noto Sans" DOLLY_FONT_MONO="Noto Sans Mono" \
   bash run_dolly_proton.sh
 ```
 
-Installing Microsoft's fonts into the prefix, and Wine's smoothing settings, are
-described in the private tester notes kept with this work; leave the variables
-unset to keep the Windows defaults.
+Installing Microsoft's fonts into the prefix, and Wine's smoothing settings,
+are described in the private tester notes kept with this work.
 
 ## Troubleshooting
 
 - Launch fails: re-run with `PROTON_LOG=1` and read `~/steam-1422450.log`.
 - Dolly reports that Steam is not running: start the desktop Steam client, then
   re-run.
+- The replay never appears in the game: under Proton Dolly offers the replay
+  first as `replays/<file>.dem`, which is inside the engine's own search path,
+  then as the full path, and records each attempt with the console's answer in
+  the startup evidence. Export diagnostics (or send `<Dolly folder>/logs`) if
+  neither form starts; also try loading the same replay from Deadlock's own
+  replay browser to separate a Dolly problem from a replay file problem.
 - A leftover plugin folder blocks a launch: start Dolly again, it recovers
   before launching. Do not delete `gameinfo.gi` or the plugin folder by hand.
 - Logs and settings:
