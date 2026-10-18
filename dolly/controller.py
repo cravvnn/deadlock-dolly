@@ -1540,7 +1540,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             # -console preserves access but can leave the console
             # visible at startup. Close it explicitly before enabling
             # native flight, so its text box cannot share movement keys.
-            self.toggle_console(False)
+            # Input returns to flight, not the panel: the panel would
+            # otherwise appear for one frame and vanish as flight takes
+            # over (a visible flash under Wine).
+            self.toggle_console(False, editor_owner="flight")
             self.enter_native_flight(cancelled=cancel_event.is_set if cancel_event is not None else None)
         else:
             self.begin_paused_camera(cancelled=cancel_event.is_set if cancel_event is not None else None)
@@ -3711,8 +3714,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                           playing=False, paused_flight=owner == "flight", replay_paused=not playback)
             return deepcopy(frame)
 
-    def toggle_console(self, enabled=None):
-        """Native input is suspended before its console-toggle event arrives."""
+    def toggle_console(self, enabled=None, *, editor_owner=None):
+        """Native input is suspended before its console-toggle event arrives.
+
+        ``editor_owner`` overrides which owner regains input when the console
+        closes; the startup handoff passes ``"flight"`` so the panel does not
+        flash on its way to the free camera.
+        """
         with self._op_lock:
             self._require_connection()
             if enabled is not None and not isinstance(enabled, bool):
@@ -3724,8 +3732,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             # Startup closes the console before preload/replay readiness. Keep
             # the editor's recovery keys enabled without opening its panel over
             # the hideout. Only a verified replay may return to the panel.
-            return_owner = ("game_ui" if self._game_ui_visible else
-                            "panel" if self._probe_result else "disabled")
+            return_owner = editor_owner or (
+                "game_ui" if self._game_ui_visible else
+                "panel" if self._probe_result else "disabled")
             if callable(editor_configure):
                 # A seek already in progress may have overwritten the optimistic
                 # F7 owner before this queued event runs. Suspend input again

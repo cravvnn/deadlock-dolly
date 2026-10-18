@@ -396,6 +396,16 @@ class GameUiHandoffTests(unittest.TestCase):
         self.assertEqual(self.console.values["citadel_hud_visible"], 0)
         self.assertEqual(self.bridge.owner, "flight")
 
+    def test_startup_console_close_returns_input_to_flight_not_the_panel(self):
+        # Automatic startup closes the console and immediately enters flight.
+        # Returning input to the panel there made the in-game panel appear for a
+        # frame and vanish (a visible flash under Wine).
+        self.controller.toggle_game_ui(True)
+        self.controller.toggle_console(True)
+        self.assertEqual(self.bridge.owner, "console")
+        self.controller.toggle_console(False, editor_owner="flight")
+        self.assertEqual(self.bridge.owner, "flight")
+
     def test_f7_closes_console_back_to_game_ui_with_cursor_available(self):
         self.controller.toggle_game_ui(True)
         self.controller.toggle_console(True)

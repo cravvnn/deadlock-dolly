@@ -54,7 +54,8 @@ from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CO
                                 CODEC_LABEL_TO_KEY, CONTAINER_CHOICES, CONTAINER_LABEL_TO_KEY,
                                 DEFAULT_CODEC_KEY, DEFAULT_CONTAINER, VideoExport, VideoOptions,
                                 bundled_ffmpeg_path, default_video_path, format_video_status,
-                                recording_ready, resolve_container, resolve_ffmpeg, video_suffix)
+                                recording_ready, resolve_container, resolve_ffmpeg,
+                                unsupported_environment_reason, video_suffix)
 
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -889,6 +890,9 @@ class DollyApp:
                                    container=container).validated()
             if "players" in options.layers:
                 self._player_layer_frames(options, project=bone_project)
+            reason = unsupported_environment_reason(options)
+            if reason:
+                raise RuntimeError(reason)
             from .player_encode import resource_policy
             choice = getattr(self, 'player_processing', None)
             self._player_resource_mode = choice.get() if choice is not None else 'Background'
@@ -1049,6 +1053,10 @@ class DollyApp:
             if not directory.is_dir():
                 directory = Path(self.video_path.get()).parent
             self.video_path.set(str(default_video_path(self.project.name, directory)))
+            # The regenerated name must match the selected codec's container:
+            # a lossless take keeps .mkv, and the field must not silently fall
+            # back to .mp4 (which validation rejects one click later).
+            self._keep_container_suffix()
         if state == "completed":
             audit = status.get("audit") if isinstance(status, dict) else None
             if isinstance(audit, dict):
@@ -1487,6 +1495,11 @@ class DollyApp:
                     return
                 message = format_video_status(status)
                 self._log(message)
+                # The popup is transient; record the native reason in Dolly.log
+                # too, because a failed take is exactly what a report needs.
+                LOG.warning("Video recording failed: %s (code=%s frames_written=%s frames_dropped=%s)",
+                            status.get("error") or message, status.get("error_code"),
+                            status.get("frames_written"), status.get("frames_dropped"))
                 # A take can fail after playback started, when no worker is
                 # waiting for it. Surface the reason instead of only the log.
                 self._error("Recording", RuntimeError(status.get("error") or message))

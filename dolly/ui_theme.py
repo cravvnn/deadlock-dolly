@@ -78,9 +78,14 @@ PREFERRED_MONO_FAMILIES = ("Consolas", "Noto Sans Mono", "DejaVu Sans Mono", "Li
 def _family_available(tkfont, root, name: str, listed: frozenset[str]) -> bool:
     if name.casefold() in listed:
         return True
+    if listed:
+        # Tk's own enumeration is authoritative when it has entries. A probe for
+        # an absent family can echo the requested name straight back (Wine does
+        # this), which would keep a family the system does not have.
+        return False
     try:
-        # Tk answers with the family it really used, so a missing name shows up
-        # as its substitute instead of as the name that was asked for.
+        # Only without an enumeration: ask Tk which family it really used, so a
+        # missing name shows up as its substitute instead of the name asked for.
         probe = tkfont.Font(root=root, family=name, size=10)
         return str(probe.actual("family")).casefold() == name.casefold()
     except Exception:  # noqa: BLE001 - the probe must never block startup

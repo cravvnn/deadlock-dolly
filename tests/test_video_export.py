@@ -13,7 +13,8 @@ from dolly.gui import DollyApp
 from dolly.bindings import DEFAULT_BINDING
 from dolly.editor_actions import EditorBinding
 from dolly.settings import AppSettings
-from dolly.video_export import VideoExport, VideoOptions, default_video_path, format_video_status, recording_ready, video_suffix
+from dolly.video_export import (VideoExport, VideoOptions, default_video_path, format_video_status,
+                                recording_ready, unsupported_environment_reason, video_suffix)
 
 
 READY = {"connected": True, "game_running": True, "camera_backend": "native", "startup_stage": "editing_ready"}
@@ -72,6 +73,16 @@ class VideoExportTests(unittest.TestCase):
         self.controller.play.assert_not_called()
         self.controller._request.assert_not_called()
         self.controller.set_export_resolution.assert_not_called()
+
+    def test_depth_capture_is_refused_under_wine_before_a_take_starts(self):
+        options = VideoOptions(self.path, 60, 20_000_000, depth=True)
+        with patch("dolly.video_export.wine_version", return_value="wine-11.0"):
+            self.assertIn("not supported under Wine", unsupported_environment_reason(options))
+        with patch("dolly.video_export.wine_version", return_value=""):
+            self.assertEqual(unsupported_environment_reason(options), "")
+        with patch("dolly.video_export.wine_version", return_value="wine-11.0"):
+            plain = VideoOptions(self.path, 60, 20_000_000)
+            self.assertEqual(unsupported_environment_reason(plain), "")
 
     def test_bounded_export_preserves_limit_through_validation_and_native_start(self):
         options = VideoOptions(self.path, max_frames=2, fixed_step=True, shot_only=True)

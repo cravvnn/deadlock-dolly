@@ -47,6 +47,25 @@ class UiThemeTests(unittest.TestCase):
             self.assertEqual(ui_theme.FONT_FAMILY, "Custom Sans")
             self.assertEqual(ui_theme.FONT_MONO, "Noto Sans Mono")
 
+    def test_an_echoing_probe_does_not_keep_a_missing_family(self):
+        # Wine's font mapper answers "Segoe UI" when asked for it even though the
+        # prefix has no such font, so only the enumeration may accept a family.
+        class EchoFont:
+            def __init__(self, **_kwargs):
+                pass
+
+            def actual(self, _option):
+                return "Segoe UI"
+
+        with patch.dict(os.environ, {"DOLLY_FONT_FAMILY": "", "DOLLY_FONT_MONO": ""}), \
+                patch("tkinter.font.families", return_value=["Noto Sans", "Noto Sans Mono"]), \
+                patch("tkinter.font.Font", EchoFont), \
+                patch.object(ui_theme, "FONT_FAMILY", "Segoe UI"), \
+                patch.object(ui_theme, "FONT_MONO", "Consolas"):
+            ui_theme.prefer_available_fonts(object())
+            self.assertEqual(ui_theme.FONT_FAMILY, "Noto Sans")
+            self.assertEqual(ui_theme.FONT_MONO, "Noto Sans Mono")
+
     def test_desktop_has_no_hardcoded_colours(self):
         for name in ("dolly/gui.py", "dolly/gui_theme.py", "dolly/gui_layout.py",
                      "dolly/curve.py", "dolly/release_launcher.py", "dolly/ui/widgets.py", "dolly/ui/library_page.py",
