@@ -68,10 +68,10 @@ Dolly under a different Proton.
 
 - **Preload verification.** Automatic startup normally reads the game's loaded
   modules and memory to verify the reviewed preload before loading the replay.
-  Wine/Proton does not answer those calls, so Dolly reports that the check is
-  unavailable and offers its existing manual load instead: keep the game open and
-  load the selected replay from Startup controls. Nothing is broken, and the
-  replay loads without the preload wait.
+  Wine/Proton does not answer those calls, so Dolly records that the check is
+  unavailable, skips the wait and continues: the replay loads and the paused
+  editor opens on their own, without the preload verification (and without the
+  dialog Windows shows when a readable preload is slow).
 - **Health-panel handoff verification.** The same cross-process check also guards
   the replay HUD handoff. Under Wine it cannot run, so Dolly restores the saved
   HUD values directly instead of holding them pending; expect an INFO line, and a

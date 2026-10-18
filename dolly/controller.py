@@ -1110,10 +1110,16 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         """
         unavailable = preload_unavailable_reason()
         if unavailable:
+            # Wine cannot verify the preload at all, so there is nothing to wait
+            # for. Record it and continue the automatic startup: stopping here
+            # would also skip loading the replay and opening the paused editor.
+            # The desktop's manual-load offer stays for a preload that fails on
+            # a platform where it can actually be read.
             self._startup_evidence["preload_unavailable"] = {
                 "reason": "unsupported_environment", "wine": wine_version()}
             self._message(unavailable, startup_stage="preload_unavailable")
-            raise PreloadUnavailableError(unavailable)
+            LOG.info("%s Continuing automatic startup without the preload wait.", unavailable)
+            return None
         monitor = PreloadMonitor(self._session)
         restore_hud = None
         try:
