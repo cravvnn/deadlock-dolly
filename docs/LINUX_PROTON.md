@@ -90,13 +90,19 @@ Dolly under a different Proton.
 
 ## Desktop text
 
-The desktop uses the first family the system **actually reports**
-(`Segoe UI`, then `Noto Sans`, `DejaVu Sans`, `Liberation Sans`, `Arial`;
-`Consolas`, then `Noto Sans Mono`, `DejaVu Sans Mono`, `Liberation Mono`). Wine
-echoes the requested name back for a font it does not have, so only the system's
-own font list counts; a prefix without Microsoft's fonts gets a real sans and
-mono instead of a thin serif. `DOLLY_FONT_FAMILY` and `DOLLY_FONT_MONO` override
-that choice:
+On real Windows the desktop asks for `Segoe UI` (mono: `Consolas`). Under Wine
+those names are **not trusted**: the prefix lists them for host fonts of its own
+choosing — "Segoe UI" resolves to a serif on some systems — so Dolly drops the
+Windows-only names and takes the first family the system really has (`Noto Sans`,
+`DejaVu Sans`, `Liberation Sans`, `Arial`; mono: `Noto Sans Mono`,
+`DejaVu Sans Mono`, `Liberation Mono`). `Dolly.log` records the outcome:
+
+```text
+Desktop fonts resolved to family=Noto Sans mono=Noto Sans Mono (Wine prefix; Windows-only families skipped)
+```
+
+`DOLLY_FONT_FAMILY` and `DOLLY_FONT_MONO` override that choice (and are the way
+to keep a Windows-only name if the prefix really has one):
 
 ```sh
 DOLLY_FONT_FAMILY="Noto Sans" DOLLY_FONT_MONO="Noto Sans Mono" \
@@ -122,6 +128,12 @@ are described in the private tester notes kept with this work.
 - `The sound hooks are unavailable; the replay pause cue will still play` and a
   slightly heavier mouse in the in-game panel are expected under Wine; report
   them if they become unworkable.
+- A shot that hangs: press **Stop / restore**. It cancels the running preparation
+  or playback instead of asking you to wait for it, and diagnostics export again
+  once it unwinds. If the game itself stopped rendering, `Dolly.log` carries one
+  dated line — `No new game frames for N s while the paused camera is held (frame,
+  tick, paused, effect phase, last frame interval)` — send that line with the log.
+  A game that has really frozen must be closed and reopened.
 - The in-game panel opens with **F8** (automatic startup goes straight to the
   free camera and no longer flashes it).
 - A preserved `citadel_dolly_*` folder in `game/` after a force-kill is
