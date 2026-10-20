@@ -27,6 +27,9 @@ LOG = logging.getLogger(__name__)
 
 VCONSOLE_VERSION = 0x00D40000
 MAX_PACKET_SIZE = 65535
+# A sustained console output rate above this (roughly, lines per second) is
+# treated as a flood worth one warning and a diagnostics counter.
+FLOOD_LINES_PER_SECOND = 60.0
 _HEADER = struct.Struct("!4sIHH")
 
 
@@ -338,6 +341,17 @@ class ConsoleClient:
         self._timeouts = 0
         self._unresponsive = False
         self._last_data_at = 0.0
+        # Console output rate, for one flood warning and for diagnostics. A replay
+        # whose user commands fail to decode makes the engine print two warnings
+        # per command on the same pipe replies use.
+        self._flood_lines = 0
+        self._flood_total = 0
+        self._flood_window = time.monotonic()
+        self._flood_rate = 0.0
+        self._flood_peak = 0.0
+        self._flood_windows = 0
+        self._flood_warned = False
+        self._flood_sample = ""
 
     @property
     def is_connected(self) -> bool:
@@ -349,6 +363,52 @@ class ConsoleClient:
         """The socket is open but the game stopped answering its console."""
         with self._condition:
             return self._unresponsive
+
+    @property
+    def flood_stats(self) -> dict:
+        """Recent console output rate, for diagnostics and support reports."""
+        with self._condition:
+            return {"lines_per_second": round(self._flood_rate, 1),
+                    "peak_lines_per_second": round(self._flood_peak, 1),
+                    "lines": self._flood_total,
+                    "sample": self._flood_sample}
+
+    def _track_flood(self, chunks) -> None:
+        """Note the console output rate and warn once per sustained flood.
+
+        A replay whose user-command stream does not decode makes the engine print
+        two CSVCMsg_UserCommands warnings per command, on the same pipe replies
+        use. Dolly used to log none of that, so the flood was invisible in
+        ``Dolly.log``; one warning plus the counter in diagnostics.json is enough
+        to name it. Called by the reader with the condition held.
+        """
+        lines = sum(chunk.count("\n") + 1 for chunk in chunks if chunk)
+        self._flood_lines += lines
+        self._flood_total += lines
+        if not self._flood_sample:
+            first = next((chunk.strip() for chunk in chunks if chunk.strip()), "")
+            if first:
+                self._flood_sample = first.splitlines()[0][:120]
+        now = time.monotonic()
+        window = now - self._flood_window
+        if window < 1.0:
+            return
+        self._flood_rate = self._flood_lines / window
+        self._flood_peak = max(self._flood_peak, self._flood_rate)
+        self._flood_lines = 0
+        self._flood_window = now
+        if self._flood_rate >= FLOOD_LINES_PER_SECOND:
+            self._flood_windows += 1
+        else:
+            self._flood_windows = 0
+            if self._flood_rate < FLOOD_LINES_PER_SECOND / 2:
+                self._flood_warned = False
+        if self._flood_windows >= 2 and not self._flood_warned:
+            self._flood_warned = True
+            LOG.warning("The game console is flooding (%.0f lines/s): %s",
+                        self._flood_rate, self._flood_sample)
+        if self._flood_rate < FLOOD_LINES_PER_SECOND:
+            self._flood_sample = ""
 
     def recent_output(self, limit_bytes: int = 262144) -> str:
         """Return a bounded tail of this connection's received console text.
@@ -440,6 +500,7 @@ class ConsoleClient:
                     self._last_data_at = time.monotonic()
                     self._timeouts = 0
                     self._unresponsive = False
+                    self._track_flood(chunks)
                     for chunk in chunks:
                         if not chunk:
                             continue
@@ -615,7 +676,7 @@ class ConsoleClient:
                         if len(output.encode("utf-8")) > self.max_response_bytes:
                             output = output.encode("utf-8")[-self.max_response_bytes:].decode(
                                 "utf-8", errors="ignore")
-                    return output.strip("\r\n")
+                    return _strip_engine_flood(output).strip("\r\n")
                 if failure:
                     raise ConsoleError(failure)
                 remaining = deadline - time.monotonic()
@@ -667,6 +728,27 @@ class ConsoleClient:
         # Neither a printed help line nor an explicit rejection: a -dev flood
         # can swallow the response, so this is unknown, never a rejection.
         return None
+
+
+_ENGINE_FLOOD = (
+    "Ignoring CSVCMsg_UserCommands_t with no command data",
+    "Ignoring CSVCMsg_UserCommands_t: Missing command to delta from",
+)
+
+
+def _strip_engine_flood(text: str) -> str:
+    """Break up known engine warning floods glued into a reply.
+
+    Those warnings are a demo-decode diagnostic, not command output. Written
+    without newlines they can run straight into a value line
+    (``...command datacitadel_hud_visible = false``), which makes the value look
+    like part of a longer identifier and hides it from the parsers. Replacing
+    each occurrence with a newline restores the separation the engine omitted.
+    """
+    for line in _ENGINE_FLOOD:
+        if line in text:
+            text = text.replace(line, "\n")
+    return text
 
 
 def _marker_re(marker: str) -> re.Pattern:

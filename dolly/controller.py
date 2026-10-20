@@ -1683,7 +1683,34 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._replay_header = header
             self._startup_evidence["replay_header"] = header
             LOG.info("Replay header: %s", header)
+            self._check_replay_build_mismatch()
         return header
+
+    def _check_replay_build_mismatch(self):
+        """Warn once when the replay was recorded on a newer game build.
+
+        Demo user-command messages are delta-coded. A replay from a newer
+        internal build can fail to decode on this client, printing two
+        CSVCMsg_UserCommands warnings per command; that flood starves the same
+        console pipe replies use, so commands arrive seconds late or time out.
+        Nothing is refused (the replay may still play), but the mismatch explains
+        the flood and points at the fix: use a replay recorded on this build.
+        """
+        recorded = (self._replay_header or {}).get("build_num")
+        try:
+            recorded = int(recorded) if recorded is not None else None
+        except (TypeError, ValueError):
+            return
+        if not recorded or not self._game_build or recorded <= self._game_build:
+            return
+        evidence = {"replay_build": recorded, "client_build": self._game_build}
+        if self._startup_evidence.get("replay_build_mismatch") == evidence:
+            return
+        self._startup_evidence["replay_build_mismatch"] = evidence
+        LOG.warning("This replay was recorded on game build %s while the client reports build %s. "
+                    "Its user-command stream may fail to decode, which floods the game console with "
+                    "CSVCMsg_UserCommands warnings and can make Dolly's controls slow or time out; "
+                    "use a replay recorded on the current build.", recorded, self._game_build)
 
     def _capture_game_build(self):
         """Record the installed build the engine announced on its console.
@@ -1703,6 +1730,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         if build is not None:
             self._game_build = build
             self._startup_evidence["game_build"] = build
+            self._check_replay_build_mismatch()
 
     def load_replay(self):
         with self._op_lock:
@@ -5935,6 +5963,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 history = self._console.recent_output()
             except Exception as exc:
                 report["console_history_error"] = str(exc)
+        if self._console is not None and hasattr(self._console, "flood_stats"):
+            try:
+                report["console_flood"] = self._console.flood_stats
+            except Exception as exc:  # noqa: BLE001 - diagnostics must still export
+                report["console_flood_error"] = str(exc)
         # Game crashes leave breakpad minidumps in the game's working folder.
         # Include the newest ones so a support ZIP does not need a second trip
         # to the game install. Oversized full-memory dumps are skipped.
