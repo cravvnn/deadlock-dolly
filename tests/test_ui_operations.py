@@ -15,6 +15,8 @@ class OperationLifecycleTests(unittest.TestCase):
         app.events = queue.Queue(maxsize=EVENT_QUEUE_LIMIT)
         app.closed = False
         app.busy = False
+        app._closing = False
+        app._close_after_cancel = False
         app.busy_text = Mock()
         app.status_text = Mock()
         app._base_capture = None
@@ -56,6 +58,39 @@ class OperationLifecycleTests(unittest.TestCase):
         self.assertFalse(app._session_operation('Stopping', app.controller.stop))
         app._submit.assert_not_called()
         app.status_text.set.assert_called_once_with('Please wait for the current operation to finish.')
+
+    def test_busy_close_cancels_the_operation_then_finishes_the_close(self):
+        # "Dolly cannot close" was a busy operation (often a console timeout)
+        # refusing the close. The close now cancels it and finishes when idle.
+        app = self.app()
+        app.root = Mock()
+        app.busy = True
+        app.playing = True
+        app._closing = False
+        app.controller = Mock()
+        app.controller.request_operation_cancel.return_value = True
+        app._finish_close = Mock()
+        with patch("dolly.gui.messagebox") as box:
+            app._on_close()
+            box.showinfo.assert_not_called()
+        self.assertTrue(app._closing)
+        self.assertTrue(app._close_after_cancel)
+        app._finish_close.assert_not_called()
+        self.assertIn("Cancelling", app.status_text.set.call_args.args[0])
+
+    def test_busy_close_still_explains_an_operation_it_cannot_cancel(self):
+        app = self.app()
+        app.root = Mock()
+        app.busy = True
+        app.playing = False
+        app._closing = False
+        app.controller = Mock()
+        app.controller.request_operation_cancel.return_value = False
+        with patch("dolly.gui.messagebox") as box:
+            app._on_close()
+            box.showinfo.assert_called_once()
+        self.assertFalse(app._closing)
+        self.assertFalse(app._close_after_cancel)
 
     def test_game_stall_is_reported_once_per_stalled_episode(self):
         app = self.app()
