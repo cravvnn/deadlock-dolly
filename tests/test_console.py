@@ -6,7 +6,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from dolly.console import (ConsoleClient, ConsoleError, ConsoleTimeout,
+from dolly.console import (_marker_re, ConsoleClient, ConsoleError,
+                           ConsoleTimeout,
                            ConsoleUnresponsive, VConsoleDecoder, encode_command, error_text,
                            parse_demo_info, parse_demo_tick, parse_game_build)
 
@@ -17,8 +18,10 @@ def print_packet(text):
 
 
 class Peer:
-    def __init__(self, protocol="vconsole", silent=False, disconnect=False, responses=None):
+    def __init__(self, protocol="vconsole", silent=False, disconnect=False, responses=None,
+                 glue_markers=False):
         self.protocol, self.silent, self.disconnect = protocol, silent, disconnect
+        self.glue_markers = glue_markers
         self.responses = responses or {}
         self.end_written = threading.Event()
         self.listener = socket.socket()
@@ -61,7 +64,15 @@ class Peer:
                         continue
                     if cmd.startswith("echo "):
                         # Include an echoed command first: it must not delimit.
-                        response = "> " + cmd + "\n" + cmd[5:] + "\n"
+                        printed = cmd[5:]
+                        if self.glue_markers:
+                            # 0.6.62: the engine wrote warnings back to back with
+                            # no newline, so the printed marker had no line start.
+                            response = ("> " + cmd + "\n"
+                                        + "Ignoring CSVCMsg_UserCommands_t with no command data"
+                                        + printed + "\n")
+                        else:
+                            response = "> " + cmd + "\n" + printed + "\n"
                     elif cmd in self.responses:
                         response = self.responses[cmd]
                     elif cmd.startswith("help "):
@@ -234,6 +245,43 @@ class ConsoleTests(unittest.TestCase):
             with self.assertRaises(ConsoleUnresponsive):
                 client.request("demo_info", timeout=0.1)
             self.assertLess(time.monotonic() - started, 0.05)
+        finally:
+            client.close()
+            peer.close()
+
+    def test_marker_regex_accepts_glued_and_rejects_echoed_markers(self):
+        pattern = _marker_re("DOLLY_BEGIN_abc")
+        self.assertIsNotNone(pattern.search("spamspamDOLLY_BEGIN_abc\n"))
+        self.assertIsNotNone(pattern.search("DOLLY_BEGIN_abc"))
+        self.assertIsNone(pattern.search("> echo DOLLY_BEGIN_abc\n"))
+        self.assertIsNone(pattern.search("echo DOLLY_BEGIN_abc\n"))
+
+    def test_a_marker_glued_to_flooded_output_still_completes_the_request(self):
+        # 0.6.62: the engine printed CSVCMsg warnings without newline separators,
+        # so the printed marker had no line start and every reply timed out even
+        # though the bytes arrived.
+        peer = Peer("netcon", glue_markers=True)
+        client = ConsoleClient("netcon")
+        try:
+            client.connect(port=peer.port)
+            output = client.request("demo_info", timeout=2)
+            self.assertEqual(parse_demo_info(output)["tick"], 123)
+        finally:
+            client.close()
+            peer.close()
+
+    def test_a_timeout_records_whether_the_markers_arrived(self):
+        # The next report must be able to say whether the bytes never came (a dead
+        # console) or came glued into other output (a framing problem).
+        peer = Peer("netcon", silent=True)
+        client = ConsoleClient("netcon")
+        try:
+            client.connect(port=peer.port)
+            with patch("dolly.console.LOG") as log:
+                with self.assertRaises(ConsoleTimeout):
+                    client.request("demo_goto", timeout=0.1)
+            self.assertIn("begin marker %s", log.info.call_args.args[0])
+            self.assertIn("missing", log.info.call_args.args[3:])
         finally:
             client.close()
             peer.close()

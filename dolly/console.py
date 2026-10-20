@@ -566,6 +566,14 @@ class ConsoleClient:
                             f"{self.protocol} acknowledged {command.split()[0]!r}, but the expected "
                             f"completion messages did not arrive within {timeout:g}s. "
                             "Export diagnostics to inspect the received console text.")
+                    # Evidence for the next report: did the marker bytes arrive at
+                    # all? A marker that arrived glued into other output used to be
+                    # invisible here and looked like a dead console.
+                    LOG.info("No complete %s reply to %r within %gs: %d bytes received; "
+                             "begin marker %s, end marker %s.", self.protocol,
+                             command.split()[0], timeout, len(output),
+                             "present" if begin in output else "missing",
+                             "present" if end in output else "missing")
                     if self._note_timeout():
                         raise ConsoleUnresponsive(
                             "The game stopped answering its console. Close Deadlock and relaunch it "
@@ -603,7 +611,17 @@ class ConsoleClient:
 
 
 def _marker_re(marker: str) -> re.Pattern:
-    return re.compile(r"(?m)^[ \t]*(?:\[[^\]\r\n]*\][ \t]*)*" + re.escape(marker) + r"[ \t\r]*\n")
+    """Match a printed echo marker, wherever the console glued it.
+
+    The engine normally prints an ``echo`` result on its own line, but a console
+    that is flooding warnings can glue its output together without separators
+    (0.6.62: the two CSVCMsg_UserCommands warnings were written back to back with
+    no newline between them). A line-anchored match then never completes a reply,
+    which looks exactly like a dead console. The marker is a random token, so a
+    substring match is unique; its only other occurrence is the echoed command
+    (``echo MARKER``), which is excluded.
+    """
+    return re.compile(r"(?<!echo )" + re.escape(marker))
 
 
 def _compile_completion_patterns(values: tuple[str, ...] | None) -> tuple[re.Pattern, ...]:
