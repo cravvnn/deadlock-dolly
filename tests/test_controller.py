@@ -1605,6 +1605,27 @@ class ControllerTests(unittest.TestCase):
         self.assertNotIn("demo_goto", self.console.requests)
         self.assertIn("demo_resume", self.console.requests)
 
+    def test_a_replay_recorded_on_a_newer_build_is_flagged_once(self):
+        # 0.6.62: the replay was recorded on build 10932 while the client reported
+        # 10931; its user-command stream did not decode, flooding the console.
+        self.controller._replay_header = {"build_num": 10932}
+        self.controller._game_build = 10931
+        with patch("dolly.controller.LOG") as log:
+            self.controller._check_replay_build_mismatch()
+            self.controller._check_replay_build_mismatch()
+        log.warning.assert_called_once()
+        self.assertEqual(self.controller._startup_evidence["replay_build_mismatch"],
+                         {"replay_build": 10932, "client_build": 10931})
+
+    def test_a_replay_from_the_same_or_older_build_is_not_flagged(self):
+        self.controller._game_build = 10931
+        for recorded in (10931, 10930, None):
+            self.controller._replay_header = {"build_num": recorded} if recorded else {}
+            with patch("dolly.controller.LOG") as log:
+                self.controller._check_replay_build_mismatch()
+            log.warning.assert_not_called()
+        self.assertNotIn("replay_build_mismatch", self.controller._startup_evidence)
+
     def _run_with_clock(self, project, *, limit=4, speed=1, frozen=False):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=limit)

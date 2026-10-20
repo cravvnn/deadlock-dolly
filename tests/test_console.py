@@ -6,7 +6,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from dolly.console import (_marker_re, ConsoleClient, ConsoleError,
+from dolly.convar_response import read_cvar_value
+from dolly.console import (_marker_re, _strip_engine_flood, ConsoleClient, ConsoleError,
                            ConsoleTimeout,
                            ConsoleUnresponsive, VConsoleDecoder, encode_command, error_text,
                            parse_demo_info, parse_demo_tick, parse_game_build)
@@ -269,6 +270,32 @@ class ConsoleTests(unittest.TestCase):
         finally:
             client.close()
             peer.close()
+
+    def test_glued_engine_warnings_do_not_hide_a_value_line(self):
+        # The warnings have no trailing newline, so a value printed after them
+        # looked like part of a longer identifier and the parser missed it.
+        text = ("Ignoring CSVCMsg_UserCommands_t with no command data"
+                "Ignoring CSVCMsg_UserCommands_t: Missing command to delta from"
+                "citadel_hud_visible = false\n")
+        cleaned = _strip_engine_flood(text)
+        self.assertEqual(cleaned.splitlines()[-1], "citadel_hud_visible = false")
+        self.assertEqual(read_cvar_value("citadel_hud_visible", cleaned), 0.0)
+
+    def test_a_sustained_console_flood_is_counted_and_warned_once(self):
+        # 0.6.62: a replay whose user commands did not decode made the engine
+        # print two warnings per command; Dolly logged none of it, so the flood
+        # was invisible. One warning plus the counter makes it diagnosable.
+        client = ConsoleClient("netcon")
+        client._flood_window = 0.0
+        burst = ["Ignoring CSVCMsg_UserCommands_t with no command data\n" * 80]
+        with patch("dolly.console.time.monotonic", side_effect=[0.0, 0.0, 1.0, 2.0]), \
+                patch("dolly.console.LOG") as log:
+            for _ in range(4):
+                client._track_flood(burst)
+        stats = client.flood_stats
+        self.assertGreater(stats["peak_lines_per_second"], 60)
+        self.assertIn("Ignoring CSVCMsg", stats["sample"])
+        log.warning.assert_called_once()
 
     def test_a_timeout_records_whether_the_markers_arrived(self):
         # The next report must be able to say whether the bytes never came (a dead
