@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 
 from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknowledgementRequired,
                               StartupTimeout)
+from dolly.console import ConsoleTimeout
+from tests.test_native_flight_controller import configured_controller
 from tests.test_native_flight_controller import configured_controller
 
 
@@ -728,7 +730,8 @@ class AutoStartupTests(unittest.TestCase):
         # The recorded match intro is played faster through the ordinary packet
         # path, but the speed is restored to 1x before the caller pauses so the
         # editor opens at the normal rate. A seek is never used.
-        with patch('dolly.controller.REPLAY_PRESHOW_TIMESCALE', 4.0):
+        with patch('dolly.controller.REPLAY_PRESHOW_TIMESCALE', 4.0), \
+                patch('dolly.controller.wine_version', return_value=''):
             self.start()
         scales = [event for event in self.console.events if event.startswith('demo_timescale ')]
         self.assertEqual(scales[0], 'demo_timescale 4')
@@ -739,6 +742,57 @@ class AutoStartupTests(unittest.TestCase):
         self.assertLess(self.console.events.index(scales[-1]), self.console.events.index('demo_pause'))
         self.assertNotIn('demo_gototick', self.console.events)
 
+    def test_preshow_acceleration_is_skipped_under_wine(self):
+        # 0.6.62 tester evidence: the intro at 4x floods the game console with
+        # CSVCMsg_UserCommands warnings until it stops answering commands. The
+        # intro is short at 1x, so Wine never accelerates it.
+        with patch('dolly.controller.REPLAY_PRESHOW_TIMESCALE', 4.0), \
+                patch('dolly.controller.wine_version', return_value='11.0'):
+            self.start()
+        scales = [event for event in self.console.events if event.startswith('demo_timescale ')]
+        self.assertNotIn('demo_timescale 4', scales)
+        self.assertEqual(self.controller._startup_evidence['preshow_timescale'],
+                         'skipped (Wine/Proton)')
+        self.assertEqual(self.controller.status()['startup_stage'], 'editing_ready')
+
+    def test_preshow_acceleration_timeout_still_restores_normal_speed(self):
+        # A timed-out timescale request can still have been applied by the game;
+        # the 0.6.62 sessions were left at 4x because the restore only ran when
+        # the request returned normally.
+        original = self.console.request
+
+        def request(command, *args, **kwargs):
+            if command == 'demo_timescale 4':
+                raise ConsoleTimeout('No complete netcon response to demo_timescale within 3s.')
+            return original(command, *args, **kwargs)
+        self.console.request = request
+        with patch('dolly.controller.REPLAY_PRESHOW_TIMESCALE', 4.0), \
+                patch('dolly.controller.wine_version', return_value=''):
+            self.start()
+        scales = [event for event in self.console.events if event.startswith('demo_timescale ')]
+        self.assertIn('demo_timescale 1', scales)
+        self.assertTrue(self.controller._startup_evidence.get('preshow_timescale_restored'))
+        self.assertEqual(self.controller.status()['startup_stage'], 'editing_ready')
+
+    def test_one_console_timeout_during_the_intro_is_retried(self):
+        # The engine services console commands on the game thread, so a single
+        # missed deadline during the intro is not a failed replay.
+        original = self.controller._require_demo
+        state = {'raised': False}
+
+        def require_demo(*args, **kwargs):
+            if (not state['raised']
+                    and self.controller.status().get('startup_stage') == 'waiting_replay_camera'):
+                state['raised'] = True
+                raise ConsoleTimeout('No complete netcon response to demo_goto within 3s.')
+            return original(*args, **kwargs)
+
+        with patch.object(self.controller, '_require_demo', side_effect=require_demo):
+            self.start()
+        self.assertTrue(state['raised'])
+        self.assertTrue(self.controller._startup_evidence.get('replay_camera_console_retry'))
+        self.assertEqual(self.controller.status()['startup_stage'], 'editing_ready')
+
     def test_preshow_acceleration_is_optional_when_timescale_is_rejected(self):
         original = self.console.request
 
@@ -747,7 +801,8 @@ class AutoStartupTests(unittest.TestCase):
                 raise RuntimeError('timescale rejected')
             return original(command, *args, **kwargs)
         self.console.request = request
-        with patch('dolly.controller.REPLAY_PRESHOW_TIMESCALE', 4.0):
+        with patch('dolly.controller.REPLAY_PRESHOW_TIMESCALE', 4.0), \
+                patch('dolly.controller.wine_version', return_value=''):
             self.start()  # Must still succeed without the accelerator.
         self.assertEqual(self.controller.status()['startup_stage'], 'editing_ready')
 

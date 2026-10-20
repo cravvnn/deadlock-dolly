@@ -103,6 +103,33 @@ class ConsoleUnresponsive(ConsoleError):
     """The connection is open but the game stopped answering its console."""
 
 
+def _collapse_repeats(text: str, *, threshold: int = 3) -> str:
+    """Collapse runs of identical lines for the diagnostics tail.
+
+    A -dev session can print one engine warning thousands of times while a
+    replay parses; a 256 KB tail of that hides the commands and errors around
+    it. Long runs become the line plus an explicit repeat count, so the archive
+    still shows that the lines arrived.
+    """
+    lines = text.splitlines()
+    if len(lines) < threshold:
+        return text
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        end = index + 1
+        while end < len(lines) and lines[end] == line:
+            end += 1
+        count = end - index
+        if count >= threshold and line.strip():
+            out.append(f"{line}  [repeated {count} times]")
+        else:
+            out.extend(lines[index:end])
+        index = end
+    return "\n".join(out)
+
+
 def error_text(output: str) -> str | None:
     """Return a recognizable console rejection, or None (not proof of success)."""
     patterns = (
@@ -328,7 +355,10 @@ class ConsoleClient:
 
         This is diagnostic evidence only, not an acknowledgement for a new
         request: the tail may contain old responses or unrelated engine logs.
-        Reading it neither consumes events nor changes a pending request.
+        Reading it neither consumes events nor changes a pending request. Long
+        runs of one repeated engine warning are collapsed with an explicit count,
+        because a -dev session can otherwise bury every useful line under
+        thousands of identical ones.
         """
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes <= 0:
             raise ValueError("Console history limit must be a positive integer.")
@@ -336,7 +366,8 @@ class ConsoleClient:
             chunks = [chunk for _, chunk in self._events]
         # The event queue is already bounded by max_response_bytes * 2. If a
         # slice starts inside a multibyte character, discard that partial prefix.
-        return "".join(chunks).encode("utf-8")[-limit_bytes:].decode("utf-8", errors="ignore")
+        tail = "".join(chunks).encode("utf-8")[-limit_bytes:].decode("utf-8", errors="ignore")
+        return _collapse_repeats(tail)
 
     def connect(self, host: str = "127.0.0.1", port: int = 29090, timeout: float = 3.0) -> None:
         if host == "localhost":

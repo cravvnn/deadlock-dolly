@@ -147,14 +147,21 @@ are described in the private tester notes kept with this work.
   settings data. It does not block a new launch; delete it by hand if you want
   the space back.
 - `sh: lsof: not found` in the terminal is not Dolly (it never runs `lsof`); it
-  comes from another host component, usually a frame-generation layer such as
-  Lossless Scaling (`lsfg-vk`). Installing `lsof` (Arch: `sudo pacman -S lsof`)
-  silences it; otherwise ignore it.
-- **`The game stopped answering its console`.** The game's main loop stopped while
-  the window kept rendering (a game-side hang, not a Dolly crash). Dolly releases
-  the camera and lets Stop/close finish; close Deadlock, relaunch it through
-  Dolly, and send `Dolly.log` if it happens again. The line `No new game frames`
-  or a run of `console` timeouts in the log is the evidence to include.
+  comes from the Steam Linux Runtime (the frame-generation layer also probes it).
+  Harmless: ignore it.
+- **Keep the replay speed at 1x.** At 4x, some replays make the game print
+  `Ignoring CSVCMsg_UserCommands_t` warnings thousands of times while it parses;
+  the game keeps playing but its console stops answering commands, so Dolly can
+  no longer control the replay. Automatic startup therefore skips its 4x pre-show
+  accelerator under Proton and plays the intro at 1x.
+- **`The game stopped answering its console`.** The game keeps running — it may
+  still be playing and rendering — but its console stopped reading commands. Under
+  Proton this happened while a replay played at 4x and the engine flooded the
+  console with `CSVCMsg_UserCommands` warnings; automatic startup now skips its
+  4x intro accelerator, and playback should stay at 1x. Dolly releases the camera
+  and lets Stop/close finish. Press **Connect** once to see whether a fresh console
+  connection recovers; otherwise close Deadlock, relaunch it through Dolly, and
+  send `Dolly.log`.
 - A leftover plugin folder blocks a launch: start Dolly again, it recovers
   before launching. Do not delete `gameinfo.gi` or the plugin folder by hand.
 - Logs and settings:

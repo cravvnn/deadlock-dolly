@@ -239,6 +239,20 @@ class ConsoleTests(unittest.TestCase):
             client.close()
             peer.close()
 
+    def test_recent_output_collapses_repeated_warning_lines(self):
+        # The 0.6.62 diagnostics tail was 256 KB of one repeated engine warning,
+        # which hid the commands around it. Runs keep their count.
+        client = ConsoleClient("netcon")
+        text = ("Ignoring CSVCMsg_UserCommands_t with no command data\n" * 4
+                + "demo_timescale 4\n")
+        with client._condition:
+            client._events.append((1, text))
+            client._sequence = 1
+        history = client.recent_output()
+        self.assertEqual(history.count("Ignoring CSVCMsg_UserCommands_t"), 1)
+        self.assertIn("[repeated 4 times]", history)
+        self.assertIn("demo_timescale 4", history)
+
     def test_a_new_connection_clears_the_unresponsive_console(self):
         silent = Peer("netcon", silent=True)
         answering = Peer("netcon")

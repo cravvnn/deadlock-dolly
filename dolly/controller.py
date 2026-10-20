@@ -1371,19 +1371,43 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._startup_evidence['replay_camera_identity'] = monitor.identity
             self._message("Waiting for the replay intro and HUD to finish…",
                           startup_stage="waiting_replay_camera")
-            if REPLAY_PRESHOW_TIMESCALE > 1.0:
+            if REPLAY_PRESHOW_TIMESCALE > 1.0 and not wine_version():
                 request = getattr(self, "_request", None)
                 if callable(request):
                     try:
                         request("demo_timescale " + numeric(REPLAY_PRESHOW_TIMESCALE))
-                        accelerated = True
-                        self._startup_evidence["preshow_timescale"] = REPLAY_PRESHOW_TIMESCALE
                     except Exception:  # noqa: BLE001 - the accelerator is optional
                         LOG.info("Replay pre-show acceleration was unavailable", exc_info=True)
+                    finally:
+                        # The game can apply the timescale even when its echo
+                        # misses the deadline, so the restore is owed either way.
+                        # The 0.6.62 tester sessions were left at 4x exactly
+                        # because a timed-out request skipped the restore, and a
+                        # 4x replay is what floods the console with
+                        # CSVCMsg_UserCommands warnings until it stops answering.
+                        accelerated = True
+                        self._startup_evidence["preshow_timescale"] = REPLAY_PRESHOW_TIMESCALE
+            elif REPLAY_PRESHOW_TIMESCALE > 1.0:
+                # 0.6.62 evidence: 4x playback of the tester's replay floods the
+                # game console with parser warnings and the console stops
+                # answering new commands. The intro is short at 1x, so Wine never
+                # accelerates it.
+                self._startup_evidence["preshow_timescale"] = "skipped (Wine/Proton)"
+                LOG.info("Replay pre-show acceleration is skipped under Wine/Proton; the intro plays at 1x.")
 
             def ready():
                 nonlocal previous_ready
-                info = self._require_demo()
+                try:
+                    info = self._require_demo()
+                except ConsoleTimeout:
+                    # The engine services console commands on the game thread, so
+                    # one missed deadline can mean the intro is still being
+                    # parsed, not that the replay failed. Keep waiting inside the
+                    # startup window; a console that is really gone reports
+                    # itself on the next polls.
+                    self._startup_evidence["replay_camera_console_retry"] = True
+                    LOG.info("The replay intro is still using the game console; waiting…")
+                    return None
                 native = bridge.status() if bridge is not None else None
                 if native is not None:
                     self._require_native_demo(native, allow_idle=True)
@@ -1408,9 +1432,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         finally:
             if accelerated:
                 try:
-                    self._request("demo_timescale 1")
+                    self._request("demo_timescale 1", timeout=10)
+                    self._startup_evidence["preshow_timescale_restored"] = True
                 except Exception:  # noqa: BLE001 - a stopped replay has nothing to reset
-                    LOG.info("Could not restore the replay timescale after the pre-show", exc_info=True)
+                    self._startup_evidence["preshow_timescale_restored"] = False
+                    LOG.warning("Could not restore the replay timescale after the pre-show; the replay may "
+                                "still run at %sx. Use Stop / restore to reset it.", REPLAY_PRESHOW_TIMESCALE)
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
                       launch_options="", cancel_event=None, graphics_profile="",
@@ -4194,11 +4221,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if bridge is None:
                 raise RuntimeError("In-game replay controls require the native editor.")
             # The native status already reports the replay identity, tick and
-            # paused state, so no console round trip is needed to ask the same
-            # question. That round trip is the slowest part of this action under
-            # Wine and the first thing to fail when the game's console stops
-            # answering; the resume/pause command below still goes through the
-            # console and reports that failure itself.
+            # paused state, so the toggle needs no console round trip to ask the
+            # same question. That round trip is the slowest part of this action
+            # under Wine and the first thing to fail when the game's console
+            # stops answering; the resume/pause command below still goes through
+            # the console and reports that failure itself. The owned-pause intent
+            # takes its own replay-clock lower bound just before that command,
+            # which is a different question.
             current = bridge.status()
             self._require_native_demo(current, allow_idle=True)
             paused = bool(current["paused"])
