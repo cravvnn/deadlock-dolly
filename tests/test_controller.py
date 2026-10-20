@@ -1566,6 +1566,45 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.controller._look_restore, {})
         self.assertEqual(self.console.values['citadel_camera_fade_viewed_near_opacity'], .4)
 
+    def test_halt_releases_the_camera_before_console_restores_that_can_fail(self):
+        # A game whose main loop hung stops answering its console. Stop must
+        # still give the camera back and finish; 0.6.62 aborted on the HUD
+        # restore first, so the native hold stayed in the game and the tester
+        # could neither Stop nor close Dolly.
+        order = []
+
+        def restore_hud():
+            order.append("hud")
+            raise RuntimeError("The game stopped answering its console.")
+
+        def stop_follow(*_args, **_kwargs):
+            order.append("follow")
+            raise RuntimeError("The game stopped answering its console.")
+
+        self.controller._release_native_camera = lambda: order.append("release")
+        self.controller._restore_replay_hud = restore_hud
+        self.controller.stop_game_follow = stop_follow
+        self.controller._native_active = True
+        self.controller._native_manual = True
+        self.console.is_connected = False  # The console went silent.
+        self.controller._halt(native_action="release")
+        self.assertEqual(order, ["release", "hud", "follow"])
+        self.assertTrue(self.controller._stop_event.is_set())
+        self.assertFalse(self.controller.status().get("playing"))
+
+    def test_toggle_replay_reads_the_native_status_instead_of_the_console(self):
+        # The native status already carries identity, tick and paused state, so
+        # the toggle must not spend a console round trip asking the same
+        # question (the slowest step under Wine and the first to fail silent).
+        bridge = SimpleNamespace(status=lambda: {
+            "paused": True, "demo_name": "example.dem", "tick": 100,
+            "state": "playing", "phase": 0.0, "frame_count": 5})
+        self.controller._native_bridge = lambda: bridge
+        self.controller._native_manual = False
+        self.controller.toggle_replay()
+        self.assertNotIn("demo_goto", self.console.requests)
+        self.assertIn("demo_resume", self.console.requests)
+
     def _run_with_clock(self, project, *, limit=4, speed=1, frozen=False):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=limit)

@@ -501,6 +501,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         if not self._alive():
             raise RuntimeError("Launch the local replay from Dolly first. Connections to separately launched games are disabled.")
         if not self._console or not self._console.is_connected:
+            if getattr(self._console, "unresponsive", False):
+                raise RuntimeError("The game stopped answering its console. Close Deadlock and relaunch it "
+                                   "through Dolly, or press Connect to retry the console.")
             raise RuntimeError("The console is disconnected. Use Connect after Deadlock finishes loading.")
 
     def _game_death_message(self, context):
@@ -3996,10 +3999,15 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         each rendered view even though the replay is not paused.
         """
         with self._op_lock:
-            replay = self._require_demo()
             bridge = self._native_bridge()
             if bridge is None:
                 raise RuntimeError("In-game replay controls require the native editor.")
+            # The native status already reports the replay identity, tick and
+            # paused state, so no console round trip is needed to ask the same
+            # question. That round trip is the slowest part of this action under
+            # Wine and the first thing to fail when the game's console stops
+            # answering; the resume/pause command below still goes through the
+            # console and reports that failure itself.
             current = bridge.status()
             self._require_native_demo(current, allow_idle=True)
             paused = bool(current["paused"])
@@ -5338,12 +5346,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._message("Shot finished. Replay paused and playback settings restored; Stop restores lens/cvar values.", playing=False)
 
     def _halt(self, *, native_action="handoff", preserve_follow=False, _preserve_participant=False):
-        self._restore_replay_hud()
-        if not preserve_follow:
-            if _preserve_participant:
-                self.stop_game_follow(_preserve_participant=True)
-            else:
-                self.stop_game_follow()
+        # Give the game back before any console work. A console that stopped
+        # answering must never leave the native camera holding the game: that is
+        # exactly how the 0.6.62 tester could neither Stop nor close Dolly.
         self._stop_event.set()
         with self._state_lock:
             self._native_pause_intent = None
@@ -5386,6 +5391,31 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         with self._state_lock:
             self._state["playing"] = False
             self._state["paused_flight"] = False
+        # The camera is already released, so the console restores are
+        # best-effort only while the console cannot answer: a live console's
+        # refusal (or a session mismatch) still aborts the stop exactly as
+        # before, which keeps the guards meaningful.
+        try:
+            self._restore_replay_hud()
+        except (RuntimeError, OSError) as exc:
+            if not self._console_unavailable():
+                raise
+            LOG.warning("Replay HUD restore did not finish (the game is not answering its console): %s", exc)
+        if not preserve_follow:
+            try:
+                if _preserve_participant:
+                    self.stop_game_follow(_preserve_participant=True)
+                else:
+                    self.stop_game_follow()
+            except (RuntimeError, OSError) as exc:
+                if not self._console_unavailable():
+                    raise
+                LOG.warning("Game Follow restore did not finish (the game is not answering its console): %s", exc)
+
+    def _console_unavailable(self) -> bool:
+        """True when a console exists but cannot answer (silent or disconnected)."""
+        console = self._console
+        return console is not None and not console.is_connected
 
     def pause(self):
         self._halt(native_action="hold")

@@ -40,6 +40,10 @@ class ConsoleTimeout(ConsoleError, TimeoutError):
     """A response was not completed within the requested deadline."""
 
 
+class ConsoleUnresponsive(ConsoleError):
+    """The connection is open but the game stopped answering its console."""
+
+
 def error_text(output: str) -> str | None:
     """Return a recognizable console rejection, or None (not proof of success)."""
     patterns = (
@@ -241,11 +245,24 @@ class ConsoleClient:
         self._event_bytes = 0
         self._sequence = 0
         self._failure: str | None = None
+        # Consecutive requests that timed out with no reply at all on the open
+        # connection. Two in a row mean the game stopped answering (a hung main
+        # loop leaves exactly that state); a single timeout can be one slow
+        # command and must not escalate. Any received data resets both.
+        self._timeouts = 0
+        self._unresponsive = False
+        self._last_data_at = 0.0
 
     @property
     def is_connected(self) -> bool:
         with self._condition:
-            return self._socket is not None and self._failure is None
+            return self._socket is not None and self._failure is None and not self._unresponsive
+
+    @property
+    def unresponsive(self) -> bool:
+        """The socket is open but the game stopped answering its console."""
+        with self._condition:
+            return self._unresponsive
 
     def recent_output(self, limit_bytes: int = 262144) -> str:
         """Return a bounded tail of this connection's received console text.
@@ -288,6 +305,9 @@ class ConsoleClient:
                 self._events.clear()
                 self._event_bytes = 0
                 self._sequence = 0
+                self._timeouts = 0
+                self._unresponsive = False
+                self._last_data_at = time.monotonic()
             self._reader = threading.Thread(target=self._read_loop, args=(sock,), daemon=True, name="dolly-console")
             self._reader.start()
 
@@ -327,6 +347,9 @@ class ConsoleClient:
                 with self._condition:
                     if self._socket is not sock:
                         return
+                    self._last_data_at = time.monotonic()
+                    self._timeouts = 0
+                    self._unresponsive = False
                     for chunk in chunks:
                         if not chunk:
                             continue
@@ -378,6 +401,36 @@ class ConsoleClient:
         with self._lock:
             self._send_locked(command)
 
+    def _note_timeout(self) -> bool:
+        """Escalate consecutive timeouts with no reply to an unresponsive console.
+
+        A hung game leaves the socket open and never answers, so successive
+        requests each hit their deadline while nothing arrives. One such timeout
+        can be a single slow command (a far fast-goto, a shader reload) and must
+        not escalate; two in a row mean the console stopped answering. Marking it
+        gives callers one clear cause and makes ``is_connected`` false, so
+        console-only recovery steps are skipped instead of spending a timeout
+        each. Any received data or a new connection clears it.
+
+        Pattern timeouts never reach here: the console answered, only the
+        caller's completion messages were missing.
+
+        Returns True when this call is what marked the console unresponsive, so
+        the request that discovered it can report that cause.
+        """
+        now = time.monotonic()
+        with self._condition:
+            self._timeouts += 1
+            if self._timeouts < 2 or self._unresponsive:
+                return False
+            self._unresponsive = True
+            silent_for = now - self._last_data_at
+        LOG.warning("The game stopped answering its console (%d consecutive requests timed out and no "
+                    "output arrived for %.0f s). Dolly cannot command the game until Deadlock is "
+                    "closed and relaunched through Dolly, or the console is reconnected.",
+                    self._timeouts, silent_for)
+        return True
+
     def request(self, command: str, timeout: float = 2.0, *,
                 completion_patterns: tuple[str, ...] | None = None,
                 allow_truncated: bool = False) -> str:
@@ -403,6 +456,10 @@ class ConsoleClient:
         encode_command(command, self.version)
         patterns = _compile_completion_patterns(completion_patterns)
         with self._lock:
+            if self._unresponsive:
+                raise ConsoleUnresponsive(
+                    "The game stopped answering its console. Close Deadlock and relaunch it "
+                    "through Dolly, or press Connect to retry the console.")
             begin = "DOLLY_BEGIN_" + secrets.token_hex(12)
             end = "DOLLY_END_" + secrets.token_hex(12)
             # Match a printed marker, never `echo MARKER` in a command echo.
@@ -478,6 +535,10 @@ class ConsoleClient:
                             f"{self.protocol} acknowledged {command.split()[0]!r}, but the expected "
                             f"completion messages did not arrive within {timeout:g}s. "
                             "Export diagnostics to inspect the received console text.")
+                    if self._note_timeout():
+                        raise ConsoleUnresponsive(
+                            "The game stopped answering its console. Close Deadlock and relaunch it "
+                            "through Dolly, or press Connect to retry the console.")
                     raise ConsoleTimeout(f"No complete {self.protocol} response to {command.split()[0]!r} within {timeout:g}s.")
                 with self._condition:
                     if self._sequence == cursor and not self._failure:

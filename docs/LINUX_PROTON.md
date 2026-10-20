@@ -147,7 +147,14 @@ are described in the private tester notes kept with this work.
   settings data. It does not block a new launch; delete it by hand if you want
   the space back.
 - `sh: lsof: not found` in the terminal is not Dolly (it never runs `lsof`); it
-  comes from another host component, for example a frame-generation layer.
+  comes from another host component, usually a frame-generation layer such as
+  Lossless Scaling (`lsfg-vk`). Installing `lsof` (Arch: `sudo pacman -S lsof`)
+  silences it; otherwise ignore it.
+- **`The game stopped answering its console`.** The game's main loop stopped while
+  the window kept rendering (a game-side hang, not a Dolly crash). Dolly releases
+  the camera and lets Stop/close finish; close Deadlock, relaunch it through
+  Dolly, and send `Dolly.log` if it happens again. The line `No new game frames`
+  or a run of `console` timeouts in the log is the evidence to include.
 - A leftover plugin folder blocks a launch: start Dolly again, it recovers
   before launching. Do not delete `gameinfo.gi` or the plugin folder by hand.
 - Logs and settings:

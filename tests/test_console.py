@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from dolly.console import (ConsoleClient, ConsoleError, ConsoleTimeout,
-                           VConsoleDecoder, encode_command, error_text,
+                           ConsoleUnresponsive, VConsoleDecoder, encode_command, error_text,
                            parse_demo_info, parse_demo_tick, parse_game_build)
 
 
@@ -215,6 +215,70 @@ class ConsoleTests(unittest.TestCase):
                 finally:
                     client.close()
                     peer.close()
+
+    def test_consecutive_silent_requests_mark_the_console_unresponsive(self):
+        # A game whose main loop hangs leaves the socket open and answers
+        # nothing. One timeout can be a slow command, so the second one marks the
+        # console; later requests then fail at once with that cause.
+        peer = Peer("netcon", silent=True)
+        client = ConsoleClient("netcon")
+        try:
+            client.connect(port=peer.port)
+            with self.assertRaises(ConsoleTimeout):
+                client.request("demo_info", timeout=0.1)
+            self.assertTrue(client.is_connected)
+            with self.assertRaises(ConsoleUnresponsive):
+                client.request("demo_info", timeout=0.1)
+            self.assertFalse(client.is_connected)
+            started = time.monotonic()
+            with self.assertRaises(ConsoleUnresponsive):
+                client.request("demo_info", timeout=0.1)
+            self.assertLess(time.monotonic() - started, 0.05)
+        finally:
+            client.close()
+            peer.close()
+
+    def test_a_new_connection_clears_the_unresponsive_console(self):
+        silent = Peer("netcon", silent=True)
+        answering = Peer("netcon")
+        client = ConsoleClient("netcon")
+        try:
+            client.connect(port=silent.port)
+            with self.assertRaises(ConsoleTimeout):
+                client.request("demo_info", timeout=0.1)
+            with self.assertRaises(ConsoleUnresponsive):
+                client.request("demo_info", timeout=0.1)
+            self.assertFalse(client.is_connected)
+            client.connect(port=answering.port)
+            self.assertTrue(client.is_connected)
+            self.assertEqual(parse_demo_info(client.request("demo_info"))["tick"], 123)
+        finally:
+            client.close()
+            silent.close()
+            answering.close()
+
+    def test_an_answered_request_never_counts_as_console_silence(self):
+        # The echo and end marker arrived, so the console is alive; only the
+        # caller's completion patterns were missing. That must not count, and a
+        # single silent timeout afterwards still must not escalate.
+        peer = Peer("netcon")
+        client = ConsoleClient("netcon")
+        try:
+            client.connect(port=peer.port)
+            with self.assertRaises(ConsoleTimeout):
+                client.request("demo_info", timeout=0.2,
+                               completion_patterns=("a message that never appears",))
+            self.assertTrue(client.is_connected)
+            peer.silent = True
+            with self.assertRaises(ConsoleTimeout):
+                client.request("demo_info", timeout=0.1)
+            self.assertTrue(client.is_connected)
+            with self.assertRaises(ConsoleUnresponsive):
+                client.request("demo_info", timeout=0.1)
+            self.assertFalse(client.is_connected)
+        finally:
+            client.close()
+            peer.close()
 
     def test_serial_requests_cannot_mix_responses(self):
         peer = Peer()

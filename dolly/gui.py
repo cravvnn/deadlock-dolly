@@ -289,6 +289,7 @@ class DollyApp:
         self._take_audit_reported = False
         self.closed = False
         self._closing = False
+        self._close_after_cancel = False
         self.busy = False
         self._error_dialog_open = False
         self.dirty = False
@@ -3106,6 +3107,13 @@ class DollyApp:
                     # Stop) failed, often because the game was already closed
                     # from its own window. Still run the file-level close and
                     # exit rather than leaving the window open behind an error.
+                    if getattr(self, "_close_after_cancel", False):
+                        # The failure is only the cancelled operation unwinding;
+                        # the normal close flow (including the save prompt) still
+                        # has to run, so finish it instead of force-closing.
+                        self._close_after_cancel = False
+                        self._finish_close()
+                        return
                     LOG.warning("Close-time failure; finishing the close anyway: %s", payload)
                     self._log(f"{label}: {payload}")
                     self._close_after_failure()
@@ -3133,6 +3141,12 @@ class DollyApp:
                     except Exception as exc:
                         self._error(label, exc)
                 if self.closed:
+                    return
+                if getattr(self, "_close_after_cancel", False):
+                    # Closing cancelled the running operation and this is how it
+                    # finished cleanly; finish the close the user asked for.
+                    self._close_after_cancel = False
+                    self._finish_close()
                     return
         try:
             status = self.controller.status()
@@ -4982,6 +4996,15 @@ class DollyApp:
 
     def _on_close(self):
         if self.busy:
+            # A game that stopped answering can leave one operation waiting out
+            # its console timeouts. Refusing to close then is what "cannot close
+            # Dolly" felt like: ask the operation to cancel and finish the close
+            # when it unwinds (the poll does that, including the save prompt).
+            if self.controller.request_operation_cancel():
+                self._closing = True
+                self._close_after_cancel = True
+                self.status_text.set("Cancelling the current operation before closing…")
+                return
             messagebox.showinfo("Operation in progress", "Wait for the current operation to finish before closing Dolly.", parent=self.root)
             return
         # Record the user's intent to close now, so a failure in any teardown
