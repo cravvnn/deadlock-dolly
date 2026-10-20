@@ -81,6 +81,12 @@ Dolly under a different Proton.
   writes nothing (the colour take of a layered run may still land). Dolly now
   refuses a depth take up front with that reason instead of failing after the
   shot. Plain colour takes — **Lossless FFV1 (.mkv)** — work.
+- **Recording audio.** Both audio checkboxes are off by default and should stay
+  off under Proton. Game audio runs the bundled Windows helper against the game
+  process (`DollyGameAudio.exe`), and reconstructed audio downloads the
+  Source2Viewer .NET CLI; neither has been tried under Wine. A video-only
+  **Lossless FFV1 (.mkv)** take is unaffected. The separate "sound hooks are
+  unavailable" line is about the replay pause cue and is harmless.
 - **Hardware encoders.** NVENC, AMF and Quick Sync need driver DLLs that do not
   exist in a Proton prefix, and Windows Media Foundation has no H.264 encoder
   under Wine. Use **Lossless FFV1 (.mkv)**; software H.264 is planned.
