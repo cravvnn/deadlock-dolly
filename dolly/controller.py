@@ -1518,11 +1518,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 if not {"concommands", "cvars"} <= counts.keys():
                     raise RuntimeError("Dolly could not confirm cvar_unhide completion. Keep the game in the hideout and retry Initialize unlocker. Empty console output alone does not prove the DLL failed to load. Export diagnostics if it persists; the replay has not been loaded by Dolly.")
                 if isinstance(self._session, launcher.Session):
-                    from .editing_session import verify_runtime
-                    self._startup_evidence['editing_configuration'] = verify_runtime(
-                        self._session.session_dir,
-                        lambda command: self._request(command, timeout=3, allow_error=True),
-                        pid=self._session.pid)
+                    self._startup_evidence['editing_configuration'] = self._verify_editing_configuration()
                 after = self._request("demo_info", allow_error=True)
                 try:
                     after_info = parse_demo_info(after)
@@ -1540,6 +1536,26 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._startup_evidence["error"] = str(exc)
                 self._message(str(exc), startup_stage="failed")
                 raise
+
+    def _verify_editing_configuration(self):
+        """Prove the live engine is using this session's isolated settings.
+
+        Windows keeps the strict gate from 0.6.64: a session that cannot prove
+        its settings root must not run. Wine/Proton selects that root through the
+        child environment but cannot always read it back from the console's
+        ``path`` listing, so a failed proof there is recorded and logged instead
+        of blocking the session.
+        """
+        from .editing_session import verify_runtime
+        try:
+            return verify_runtime(self._session.session_dir,
+                                  lambda command: self._request(command, timeout=3, allow_error=True),
+                                  pid=self._session.pid)
+        except (RuntimeError, OSError, ValueError) as exc:
+            if not wine_version():
+                raise
+            LOG.warning("Could not verify the isolated editing settings under Wine/Proton: %s", exc)
+            return {"runtime_verified": False, "wine": wine_version(), "runtime_error": str(exc)}
 
     def _require_unlocker(self):
         self._require_connection()
