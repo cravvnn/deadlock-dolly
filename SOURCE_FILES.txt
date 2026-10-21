@@ -757,8 +757,6 @@ third_party/notices/VConsoleLib-python-MIT.txt
 third_party/notices/ValveResourceFormat-MIT.txt
 third_party/notices/tcl-license.terms
 third_party/notices/tk-license.terms
-<<<<<<< HEAD
-=======
 tools/build_native.py
 tools/build_ui_override.py
 tools/build_windows.py
@@ -828,7 +826,6 @@ assets/reshade/Deadlock-AO.ini
 assets/reshade/Deadlock-Dolly.ini
 third_party/reshade_shaders/crosire-shaders-README.md
 third_party/reshade_shaders/prod80-LICENSE.txt
->>>>>>> 4753d5a (Add Proton launcher and Linux testing notes)
 third_party/reshade_shaders/README.txt
 third_party/reshade_shaders/Shaders/Blending.fxh
 third_party/reshade_shaders/Shaders/Daltonize.fx
