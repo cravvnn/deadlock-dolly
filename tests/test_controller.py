@@ -1675,6 +1675,29 @@ class ControllerTests(unittest.TestCase):
             log.warning.assert_not_called()
         self.assertNotIn("replay_build_mismatch", self.controller._startup_evidence)
 
+    def test_wine_records_an_unverified_editing_settings_root_instead_of_blocking(self):
+        # 0.6.64 proves the live engine's isolated settings root from its `path`
+        # listing. Wine selects that root through the child environment but cannot
+        # always read it back, so the proof is recorded instead of blocking.
+        from dolly.launch_errors import LaunchError
+        with patch("dolly.editing_session.verify_runtime",
+                   side_effect=LaunchError("path listing unreadable")), \
+                patch("dolly.controller.wine_version", return_value="11.0"), \
+                patch("dolly.controller.LOG") as log:
+            evidence = self.controller._verify_editing_configuration()
+        self.assertFalse(evidence["runtime_verified"])
+        self.assertEqual(evidence["wine"], "11.0")
+        self.assertIn("path listing unreadable", evidence["runtime_error"])
+        log.warning.assert_called_once()
+
+    def test_windows_still_blocks_an_unverified_editing_settings_root(self):
+        from dolly.launch_errors import LaunchError
+        with patch("dolly.editing_session.verify_runtime",
+                   side_effect=LaunchError("path listing unreadable")), \
+                patch("dolly.controller.wine_version", return_value=""):
+            with self.assertRaises(LaunchError):
+                self.controller._verify_editing_configuration()
+
     def _run_with_clock(self, project, *, limit=4, speed=1, frozen=False):
         clock = FakeClock()
         self.controller._stop_event = CountedEvent(clock, limit=limit)
