@@ -116,7 +116,6 @@ def _finite(value: str, label: str) -> float:
 def _set_var(variable, value):
     """Assign a Tk variable only when it changes.
 
-
     The status poll runs several times a second; re-setting identical strings
     makes Tk redraw labels and comboboxes for no visible change, which is the
     main source of idle stutter in dropdowns, sliders and scrolling.
@@ -621,6 +620,7 @@ class DollyApp:
         self.video_start_button.configure(text="Record POV" if pov else "Record video")
         self._update_export_camera_note()
 
+    def _browse_video(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
             return
         current = Path(self.video_path.get())
@@ -1064,7 +1064,7 @@ class DollyApp:
             # The regenerated name must match the selected codec's container:
             # a lossless take keeps .mkv, and the field must not silently fall
             # back to .mp4 (which validation rejects one click later).
-            self._keep_container_suffix()
+            self._sync_video_extension()
         if state == "completed":
             audit = status.get("audit") if isinstance(status, dict) else None
             if isinstance(audit, dict):
