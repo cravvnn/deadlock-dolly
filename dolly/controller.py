@@ -2401,7 +2401,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self.open_pov_panel()
                 self._follow_active = True
                 self._follow_settings = settings
-                self._message("Game Follow preview: hero aim drives the camera; replay remains paused.")
+                self._message("Game Follow preview: hero aim drives the camera. Press F8 to hide "
+                              "the panel and aim; the replay remains paused.")
             except BaseException:
                 self.stop_game_follow()
                 raise
