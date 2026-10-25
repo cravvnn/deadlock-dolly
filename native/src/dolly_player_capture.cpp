@@ -15,7 +15,10 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <mutex>
 #include "dolly_player_capture.hpp"
+#include "dolly_environment_source.hpp"
+#include "dolly_environment_shaders_generated.hpp"
 #include "dolly_player_producers.hpp"
 #include "dolly_player_capture_lifecycle.hpp"
 #include "dolly_capture_timing.hpp"
@@ -98,14 +101,25 @@ HRESULT STDMETHODCALLTYPE shader_hook(ID3D11Device* device, const void* bytes, S
 // Metadata belongs to each created COM resource, including resources created
 // by other devices using those methods. Capture admission still requires the
 // reviewed main-window context, submitted ownership and exact GPU records.
-const GUID PixelBytesKey = {
-    0x4fa14e83, 0xd077, 0x4773, {0x9d, 0x31, 0x31, 0x63, 0xd1, 0x5f, 0x17, 0x82}};
+std::atomic<ID3D11Device*> layoutDevice{nullptr}; // retained for process lifetime
+std::mutex metadataMutex;
+std::atomic<bool> earlyEnvironmentMetadata{false};
+std::atomic<std::uint64_t> environmentMetadataCalls{0};
+void* pixelTargetAddress = nullptr;
+using dolly::environment::PixelBytesKey;
 using CreatePixel = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const void*, SIZE_T,
                                                 ID3D11ClassLinkage*, ID3D11PixelShader**);
 CreatePixel originalPixel = nullptr;
 HRESULT STDMETHODCALLTYPE pixel_hook(ID3D11Device* device, const void* bytes, SIZE_T length,
                                      ID3D11ClassLinkage* linkage, ID3D11PixelShader** output) {
     const auto hr = originalPixel(device, bytes, length, linkage, output);
+    if (earlyEnvironmentMetadata.load(std::memory_order_acquire)) {
+        environmentMetadataCalls.fetch_add(1, std::memory_order_relaxed);
+        if (SUCCEEDED(hr) && output && *output && !linkage)
+            dolly::environment::retain_reviewed_shader(
+                *output, bytes, length, dolly::environment::ReviewedPostProcess,
+                std::size(dolly::environment::ReviewedPostProcess));
+    }
     if (SUCCEEDED(hr) && output && *output && bytes && length >= 36 &&
         length <= 1024 * 1024 && !linkage)
         (*output)->SetPrivateData(PixelBytesKey, static_cast<UINT>(length), bytes);
@@ -1399,7 +1413,37 @@ void tick() noexcept {
 bool layout_hook_requested() noexcept {
     return layoutRequested.exchange(false, std::memory_order_acq_rel);
 }
+bool pixel_metadata_ready(ID3D11Device* device) noexcept {
+    std::lock_guard<std::mutex> lock(metadataMutex);
+    return device && originalPixel && (*reinterpret_cast<void***>(device))[15] == pixelTargetAddress &&
+           (earlyEnvironmentMetadata.load() || device == layoutDevice);
+}
+std::uint64_t environment_metadata_calls() noexcept { return environmentMetadataCalls.load(); }
+bool install_environment_metadata_hook(ID3D11Device* device) noexcept {
+    if (!device) return false;
+    std::lock_guard<std::mutex> lock(metadataMutex);
+    auto* target = (*reinterpret_cast<void***>(device))[15];
+    if (originalPixel) {
+        if (pixelTargetAddress != target) return false;
+        earlyEnvironmentMetadata.store(true, std::memory_order_release);
+        return true;
+    }
+    auto init = MH_Initialize();
+    if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) return false;
+    if (MH_CreateHook(target, reinterpret_cast<void*>(&pixel_hook),
+                      reinterpret_cast<void**>(&originalPixel)) != MH_OK)
+        return false;
+    pixelTargetAddress = target;
+    earlyEnvironmentMetadata.store(true, std::memory_order_release);
+    if (MH_EnableHook(target) == MH_OK) return true;
+    earlyEnvironmentMetadata.store(false, std::memory_order_release);
+    MH_RemoveHook(target);
+    originalPixel = nullptr;
+    pixelTargetAddress = nullptr;
+    return false;
+}
 bool install_layout_hook(ID3D11Device* device) noexcept {
+    std::lock_guard<std::mutex> lock(metadataMutex);
     if (!device || originalLayout)
         return false;
     const auto init = MH_Initialize();
@@ -1409,6 +1453,8 @@ bool install_layout_hook(ID3D11Device* device) noexcept {
     auto* target = table[11];
     auto* shaderTarget = table[12];
     auto* pixelTarget = table[15];
+    const bool reusePixel = originalPixel != nullptr;
+    if (reusePixel && pixelTargetAddress != pixelTarget) return false;
     if (MH_CreateHook(target, reinterpret_cast<void*>(&layout_hook),
                       reinterpret_cast<void**>(&originalLayout)) != MH_OK)
         return false;
@@ -1418,7 +1464,7 @@ bool install_layout_hook(ID3D11Device* device) noexcept {
         originalLayout = nullptr;
         return false;
     }
-    if (MH_CreateHook(pixelTarget, reinterpret_cast<void*>(&pixel_hook),
+    if (!reusePixel && MH_CreateHook(pixelTarget, reinterpret_cast<void*>(&pixel_hook),
                       reinterpret_cast<void**>(&originalPixel)) != MH_OK) {
         MH_RemoveHook(target);
         MH_RemoveHook(shaderTarget);
@@ -1426,17 +1472,22 @@ bool install_layout_hook(ID3D11Device* device) noexcept {
         originalShader = nullptr;
         return false;
     }
+    pixelTargetAddress = pixelTarget;
+    device->AddRef();
+    layoutDevice = device;
     if (MH_QueueEnableHook(target) != MH_OK || MH_QueueEnableHook(shaderTarget) != MH_OK ||
-        MH_QueueEnableHook(pixelTarget) != MH_OK || MH_ApplyQueued() != MH_OK) {
+        (!reusePixel && MH_QueueEnableHook(pixelTarget) != MH_OK) || MH_ApplyQueued() != MH_OK) {
         MH_DisableHook(target);
         MH_DisableHook(shaderTarget);
-        MH_DisableHook(pixelTarget);
+        if (!reusePixel) MH_DisableHook(pixelTarget);
         MH_RemoveHook(target);
         MH_RemoveHook(shaderTarget);
-        MH_RemoveHook(pixelTarget);
+        if (!reusePixel) MH_RemoveHook(pixelTarget);
         originalLayout = nullptr;
         originalShader = nullptr;
-        originalPixel = nullptr;
+        if (!reusePixel) { originalPixel = nullptr; pixelTargetAddress = nullptr; }
+        device->Release();
+        layoutDevice = nullptr;
         return false;
     }
     return true;

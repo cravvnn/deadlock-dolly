@@ -507,6 +507,9 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "take_screenshot":
         from . import screenshot_ui
         screenshot_ui.start(app)
+    elif action == "capture_environment":
+        from . import environment_ui
+        environment_ui.start(app, event)
     elif action == "stop":
         preparation = getattr(app, '_native_cinematic_request', None)
         app._native_cinematic_request = None

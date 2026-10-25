@@ -8,6 +8,40 @@ from dolly.editor_actions import default_action_bindings, EditorBinding
 
 
 class EditorBridgeTests(unittest.TestCase):
+    def test_environment_action_is_atomic_and_outside_probe_and_legacy_mapping(self):
+        from dolly.environment_probe import STATUS, STATUS_OFFSET
+        before = bytes(self.memory)
+        self.bridge.configure_environment_action(enabled=True, binding=EditorBinding('F11'))
+        start, end = w.ENVIRONMENT_ACTION_OFFSET, w.ENVIRONMENT_ACTION_OFFSET + w.ENVIRONMENT_ACTION.size
+        self.assertGreaterEqual(start, STATUS_OFFSET + STATUS.size)
+        self.assertEqual(w.ENVIRONMENT_ACTION.unpack_from(self.memory, start),
+                         (b'DLYENVA1', 2, 1, 1, 0x7a))
+        self.assertEqual(bytes(self.memory[:start]), before[:start])
+        self.assertEqual(bytes(self.memory[end:]), before[end:])
+        self.bridge.configure_environment_action(enabled=False, binding=EditorBinding('F11'))
+        self.assertEqual(w.ENVIRONMENT_ACTION.unpack_from(self.memory, start),
+                         (b'DLYENVA1', 4, 1, 0, 0))
+
+    def test_environment_face_publishes_dedicated_frozen_mode(self):
+        self.publish()
+        with patch.object(self.bridge, "_wait", return_value={"state": "armed"}):
+            pose = [1, 2, 3, -90, 0, 0, 1]
+            self.bridge.start_flight("test.dem", pose, owner="panel", environment_face=True)
+            header = nb.CONTROL.unpack_from(self.memory)
+            self.assertEqual(header[4], 5)
+            self.assertEqual(header[8] & 3, 3)
+            self.assertEqual(struct.unpack_from("<7d", self.memory, nb.PAYLOAD_OFFSET), tuple(pose))
+
+    def test_environment_invalid_request_does_not_publish(self):
+        before = self.bridge._command
+        for options in ({'owner': 'flight'}, {'playback': True}, {'pose': None},
+                        {'pose': [1, 2, 3, 0, 0, 0, 16 / 9]}):
+            parameters = dict(pose=[1, 2, 3, 0, 0, 0, 1], owner='panel', environment_face=True)
+            parameters.update(options)
+            with self.assertRaises(ValueError):
+                self.bridge.start_flight('test.dem', **parameters)
+        self.assertEqual(self.bridge._command, before)
+
     def test_last_camera_window_can_backfill_across_a_wire_boundary(self):
         from dolly.path import Project, Keyframe
         from dolly.lite_mode import pack_replay_info, REPLAY_INFO

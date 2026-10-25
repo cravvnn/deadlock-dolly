@@ -59,6 +59,7 @@ class ExportPage:
     def __init__(self, parent, state: ExportState, commands: ExportActions):
         recording_holder = ttk.Frame(parent, padding=(16, GAP, 16, 0))
         recording_holder.pack(side="bottom", fill="x")
+        self.recording_holder = recording_holder
         page = ScrollPage(parent)
         page.pack(fill="both", expand=True)
         self.export_page = page

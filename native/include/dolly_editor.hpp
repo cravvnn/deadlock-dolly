@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include "dolly_path.hpp"
+#include "dolly_protocol.hpp"
 #include "dolly_video.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -155,7 +156,10 @@ enum class EditorAction : std::uint32_t {
     // Selected authored camera seek; existing replay/shot seek IDs stay fixed.
     SeekCamera,
     SetVideoAeCamera,
-    SetVideoUsdCamera
+    SetVideoUsdCamera,
+    // Environment edition: panorama capture. Appended so every earlier action
+    // ID (including TakeScreenshot at 98 and Object Picker at 99+) is unchanged.
+    CaptureEnvironment
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -403,6 +407,21 @@ static_assert(kEditorLevelViewOffset + sizeof(EditorLevelViewConfig) <=
               "Level view config fits the mapping");
 static_assert(static_cast<std::uint32_t>(EditorAction::FramingGrid) == 97,
               "Stable framing guide action ID");
+// Environment-edition panorama shortcut. Lives in its own page after the object
+// page (kEnvironmentPageOffset), so no legacy or object offset moves. The
+// binding uses the same packed vk/modifier convention as the framing guide.
+constexpr std::size_t kEditorEnvironmentActionOffset = kEnvironmentPageOffset + 1408;
+struct EditorEnvironmentActionConfig {
+    char magic[8];
+    std::uint32_t sequence, abi, flags, binding;
+};
+static_assert(sizeof(EditorEnvironmentActionConfig) == 24, "Environment action config layout");
+inline bool valid_environment_action(const EditorEnvironmentActionConfig& c) noexcept {
+    const auto vk = c.binding & 0xffffu, mods = c.binding >> 16;
+    return !std::memcmp(c.magic, "DLYENVA1", 8) && c.abi == 1 && !(c.flags & ~1u) &&
+           vk <= 255 && mods <= 7 && vk != 0x76 && vk != 0x11 && vk != 0x12 && vk != 0x10 &&
+           ((c.flags & 1u) || !c.binding);
+}
 // Object Picker config: its own 4 KiB page appended after the legacy tail
 // (2 MiB + 24576), so every existing offset is unchanged. This block owns the
 // wire layout and validation, exactly like the other editor blocks; the desktop
@@ -651,6 +670,8 @@ bool editor_attach_config(EditorAttachConfig& out) noexcept;
 bool editor_follow_config(EditorFollowConfig& out) noexcept;
 // Published framing-guide switch; false while no valid block has arrived.
 bool editor_framing_grid_enabled() noexcept;
+// Published environment panorama shortcut; false while no valid block arrived.
+bool editor_environment_enabled() noexcept;
 // Live level-view request: levels the paused camera and restores the published
 // normal framing. Consumed once per rendered manual frame; false when no
 // request was pending or the editor does not own the live manual camera.

@@ -27,7 +27,9 @@ class LiteModeTests(unittest.TestCase):
 
     def test_extra_actions_are_appended_without_changing_original_ids(self):
         from dolly.editor_wire import EXTRA_ACTIONS
-        self.assertEqual(EXTRA_ACTIONS[-17:],('save_shot','seek_replay_tick','clear_camera_path','focus_replay_player','prepare_cinematic','set_pause_after_capture','set_camera_position','set_camera_curve_value','select_curve_camera','set_camera_position_tangents','preview_camera_curve_value','preview_camera_position_tangents','clear_camera_curve_preview','level_view','seek_camera','set_video_ae_camera','set_video_usd_camera'))
+        self.assertEqual(EXTRA_ACTIONS[-18:-1],('save_shot','seek_replay_tick','clear_camera_path','focus_replay_player','prepare_cinematic','set_pause_after_capture','set_camera_position','set_camera_curve_value','select_curve_camera','set_camera_position_tangents','preview_camera_curve_value','preview_camera_position_tangents','clear_camera_curve_preview','level_view','seek_camera','set_video_ae_camera','set_video_usd_camera'))
+        # Environment edition: appended last so every earlier action ID is unchanged.
+        self.assertEqual(EXTRA_ACTIONS[-1],'capture_environment')
         self.assertEqual(EXTRA_ACTIONS.index('set_framing')+26,40)
         self.assertEqual(EXTRA_ACTIONS.index('save_shot')+26,105)
         self.assertEqual(EXTRA_ACTIONS.index('focus_replay_player')+26,108)

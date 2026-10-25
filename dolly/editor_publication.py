@@ -183,6 +183,15 @@ def configure(app):
             publish_lite(app.project, history.revision, app._native_camera_page, status.get("total_ticks"))
             app._lite_replay_cache, app._lite_replay_bridge = signature, bridge
     publish_grid = getattr(bridge, "configure_framing_grid", None)
+    publish_environment = getattr(bridge, "configure_environment_action", None)
+    if callable(publish_environment):
+        from . import edition
+        environment = (active and edition.is_environment(),
+                       settings.action_bindings.get("capture_environment"))
+        if (getattr(app, "_native_environment_bridge", None) is not bridge
+                or getattr(app, "_native_environment_cache", None) != environment):
+            publish_environment(enabled=environment[0], binding=environment[1])
+            app._native_environment_bridge, app._native_environment_cache = bridge, environment
     publish_events = getattr(bridge, 'configure_replay_events', None)
     if callable(publish_events) and active:
         from .replay_events import ReplayEventReader

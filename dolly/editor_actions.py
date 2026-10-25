@@ -21,7 +21,7 @@ ACTION_ORDER = (
 # Actions that are bindable but are not part of the 26-entry wire action table.
 # Their bindings travel in dedicated trailing config fields, so the stable
 # ACTION_ORDER/ID ABI and every extra action ID stay untouched.
-BINDABLE_EXTRA = ("framing_grid", "object_picker", "level_view")
+BINDABLE_EXTRA = ("framing_grid", "object_picker", "level_view", "capture_environment")
 BINDABLE_ORDER = ACTION_ORDER + BINDABLE_EXTRA
 # The Object Picker is a work-in-progress integration and must not be reachable
 # in a published build. While this is False the action stays in BINDABLE_ORDER
@@ -41,6 +41,7 @@ ACTION_LABELS = dict(zip(ACTION_ORDER, (
 ACTION_LABELS["framing_grid"] = "Toggle framing guide"
 ACTION_LABELS["object_picker"] = "Toggle Object Picker"
 ACTION_LABELS["level_view"] = "Level view and normal framing"
+ACTION_LABELS["capture_environment"] = "Capture panorama"
 MOVEMENT_ACTIONS = frozenset(ACTION_ORDER[12:])
 MODIFIER_KEYS = {"Ctrl": 0x11, "Alt": 0x12, "Shift": 0x10}
 _EXTRA_KEYS = {**MODIFIER_KEYS, "Comma": 0xBC, "Period": 0xBE,
@@ -120,6 +121,7 @@ def default_action_bindings(capture_binding: CaptureBinding = DEFAULT_BINDING) -
     # Re-enable it only with a free key, or the duplicate-chord check below
     # rejects the whole binding set.
     result["object_picker"] = EditorBinding("B") if OBJECT_PICKER_ENABLED else None
+    result["capture_environment"] = None
     return result
 
 

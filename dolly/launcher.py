@@ -37,6 +37,7 @@ from .native_bridge import NativeBridge, ABI as NATIVE_ABI
 from ._runtime_generated import Unlocker as _Unlocker
 from .panorama_assets import verify_stock_ui_assets
 from . import __version__ as DOLLY_VERSION
+from . import edition
 from .compatibility import (
     CompatibilityError,
     SUPPORTED,
@@ -678,8 +679,9 @@ def recover_pending(game_path: str | os.PathLike[str] | None = None) -> list[str
             continue
         if expected is not None and Path(preliminary.get("original_gameinfo", "")).resolve() != expected.resolve():
             continue
-        from . import graphics_profiles
-        pending = preliminary.get("config_state") != "restored" or graphics_profiles.pending(journal.parent)
+        from . import graphics_profiles, display_resolution
+        pending = (preliminary.get("config_state") != "restored" or graphics_profiles.pending(journal.parent)
+                   or display_resolution.pending(journal.parent))
         if not pending and not Path(preliminary.get("overlay_dir", "")).exists():
             continue
         if not pending and Path(preliminary.get("session_dir", "")).resolve() != journal.parent.resolve():
@@ -936,6 +938,11 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         log_path.write_text("Deadlock Dolly development launcher\n" + json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
         settings = editing_session.prepare(session_dir, paths, graphics_profile=graphics_profile,
                                            editing_root=EDITING_ROOT, launch_options=launch_options)
+        # A forced window size (the panorama square) is persisted by the game
+        # into the user's video.txt; snapshot the saved resolution so it can be
+        # put back after the game exits.
+        from . import display_resolution
+        display_resolution.prepare(session_dir, launch_options)
         # Check again immediately before process creation, after file preparation.
         if _game_is_running(running_processes()):
             raise LaunchError("Deadlock started while Dolly was preparing. Exit it and try again.")
@@ -960,6 +967,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                     environment["RESHADE_DISABLE_GRAPHICS_HOOK"] = "1"
                     environment["RESHADE_BASE_PATH_OVERRIDE"] = str(reshade_config_path().parent)
                     environment["RESHADE_DISABLE_LOADING_CHECK"] = "1"
+                    environment.pop("DOLLY_ENVIRONMENT_METADATA", None)
+                    if edition.is_environment():
+                        environment["DOLLY_ENVIRONMENT_METADATA"] = "1"
                 options = {} if environment is None else {"env": environment}
                 try:
                     process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)

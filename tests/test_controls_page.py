@@ -252,7 +252,9 @@ class ControlsAppFixture(unittest.TestCase):
 
 class ControlsRecorderIntegrationTests(ControlsAppFixture):
     def test_all_existing_actions_present_once_in_central_controls_page(self):
-        expected = set(BINDABLE_ORDER) - {"object_picker"} | {"reshade"}
+        # The standard desktop hides the panorama shortcut; the environment
+        # edition shows it (see test_environment_action).
+        expected = set(BINDABLE_ORDER) - {"object_picker", "capture_environment"} | {"reshade"}
         actual = [record[0] for record in self.app.controls_view.records]
         self.assertEqual(set(actual), expected)
         self.assertEqual(len(actual), len(expected))

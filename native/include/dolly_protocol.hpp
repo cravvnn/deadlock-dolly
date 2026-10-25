@@ -11,12 +11,15 @@ constexpr std::size_t kControlBytes = 2 * 1024 * 1024;
 // this in step with dolly/native_bridge.py MAPPING_BYTES and
 // dolly/object_wire.OBJECT_MAPPING_BYTES. Replay kill events occupy the final
 // optional 32 KiB block; all prior offsets and the camera payload are unchanged.
-constexpr std::size_t kMappingBytes = kControlBytes + 24576 + 4096 + 32768;
+// The environment edition appends one more 4 KiB diagnostic page.
+constexpr std::size_t kEnvironmentPageOffset = kControlBytes + 61440;
+constexpr std::size_t kMappingBytes = kControlBytes + 24576 + 4096 + 32768 + 4096;
 constexpr std::size_t kPayloadOffset = 1024;
 constexpr std::size_t kMaxPayloadBytes = kControlBytes - kPayloadOffset;
 constexpr char kControlMagic[8] = {'D', 'L', 'Y', 'C', 'A', 'M', '0', '1'};
 constexpr char kStatusMagic[8] = {'D', 'L', 'Y', 'S', 'T', 'A', 'T', '1'};
-enum class Mode : std::uint32_t { Release = 0, Hold = 1, Play = 2, HoldCurrent = 3, Manual = 4 };
+enum class Mode : std::uint32_t { Release = 0, Hold = 1, Play = 2, HoldCurrent = 3, Manual = 4,
+                                  EnvironmentFace = 5 };
 enum class State : std::uint32_t {
     Starting = 0,
     Probe = 1,

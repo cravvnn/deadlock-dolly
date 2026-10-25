@@ -20,7 +20,8 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from dolly import attach_camera, dialogs, dof_preflight, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
+from dolly import (attach_camera, dialogs, dof_preflight, edition, editor_session, gui_layout,
+                   player_layer, screenshot_ui, ui_theme)
 from .ui import shot_commands
 from .ui.confirm import ask_reconstructed_helper
 from .ui.widgets import NavigationMarker
@@ -272,7 +273,7 @@ class DollyApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         apply_window_icon(root)
-        self.root.title("Deadlock Dolly — Untitled shot")
+        self.root.title(edition.application_name() + " - Untitled shot")
         self.ui_scale = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96 / 72))
         self.root.geometry(self._window_size(1180, 800))
         self.root.minsize(*self._window_dimensions(1000, 700))
@@ -475,7 +476,7 @@ class DollyApp:
         heading.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         heading.columnconfigure(0, weight=1)
         self.update_notice_parent = heading
-        ttk.Label(heading, text="DEADLOCK DOLLY", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(heading, text=edition.application_name().upper(), style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(heading, textvariable=self.project_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
         status_row = ttk.Frame(heading)
         status_row.grid(row=0, column=1, sticky="e")
@@ -508,6 +509,12 @@ class DollyApp:
                            ("Controls", self.controls_tab),
                            ("Settings", self.settings_tab)):
             self.notebook.add(tab, text=title)
+            if edition.is_environment() and tab in (self.camera_tab, self.cvar_tab):
+                # The slim capture edition has no curve/Look editor; hide the
+                # page and its navigation button rather than deleting the tabs
+                # that later layout code still references.
+                self.notebook.tab(tab, state="hidden")
+                continue
             button = ttk.Button(self.sidebar, text=title, width=12,
                                 command=lambda page=tab: self.notebook.select(page))
             button.pack(fill="x", pady=(0, 8))
@@ -556,6 +563,14 @@ class DollyApp:
         gui_layout.build_library(self)
 
     def _apply_editor_mode(self):
+        if edition.is_environment():
+            # Capture-only navigation: Replay, Export, Controls and Settings.
+            for tab in (self.camera_tab, self.cvar_tab):
+                self.notebook.tab(tab, state="hidden")
+            if self.notebook.select() in (str(self.camera_tab), str(self.cvar_tab)):
+                self.notebook.select(self.setup_tab)
+            self._tab_changed()
+            return
         # Old saved full_editor=False values must not hide desktop tools.
         self.full_editor.set(True)
         for tab in (self.camera_tab, self.cvar_tab):
@@ -1916,7 +1931,8 @@ class DollyApp:
         from .ui.controls_page import ControlsActions, ControlsPage
         groups = {
             "Camera": ("capture", "replace", "play_path", "stop", "previous_view", "next_view",
-                       "flight", "level_view"),
+                       "flight", "level_view") +
+                      (("capture_environment",) if edition.is_environment() else ()),
             "Replay": ("play_pause", "seek_back", "seek_forward"),
             "Interface": ("panel", "game_ui", "framing_grid", "object_picker", "reshade"),
             "Movement": ACTION_ORDER[12:],
@@ -4796,7 +4812,7 @@ class DollyApp:
     def _title(self):
         marker = " *" if self.dirty else ""
         self.project_text.set(self.project.name + marker)
-        self.root.title(f"Deadlock Dolly — {self.project.name}{marker}")
+        self.root.title(f"{edition.application_name()} - {self.project.name}{marker}")
 
     def _mark_dirty(self):
         history = getattr(self, "shot_history", None)

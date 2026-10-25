@@ -142,10 +142,26 @@ if(WIN32)
         vendor/minhook/src/hde/hde64.c)
     target_include_directories(minhook PUBLIC vendor/minhook/include)
 
+    add_library(dolly_environment_source STATIC src/dolly_environment_source_win.cpp
+        src/dolly_environment_probe_win.cpp src/dolly_environment_readback_win.cpp
+        src/dolly_environment_capture_win.cpp)
+    target_include_directories(dolly_environment_source PUBLIC include)
+    target_link_libraries(dolly_environment_source PUBLIC d3d11 bcrypt)
+    if(BUILD_TESTING)
+        add_executable(environment_source_tests tests/environment_source_tests.cpp)
+        target_link_libraries(environment_source_tests PRIVATE dolly_environment_source d3dcompiler)
+        add_test(NAME native_environment_source_tests COMMAND environment_source_tests)
+        set_tests_properties(native_environment_source_tests PROPERTIES TIMEOUT 30)
+    endif()
     add_library(dolly_depth_scene STATIC src/dolly_depth_scene_win.cpp src/dolly_depth_hooks_win.cpp
         src/dolly_render_class_win.cpp src/dolly_player_capture.cpp)
-    target_link_libraries(dolly_depth_scene PUBLIC dolly_depth_readback minhook dxguid)
+    target_link_libraries(dolly_depth_scene PUBLIC dolly_depth_readback dolly_environment_source
+        minhook dxguid)
     if(BUILD_TESTING)
+        add_executable(environment_metadata_tests tests/environment_metadata_tests.cpp)
+        target_link_libraries(environment_metadata_tests PRIVATE dolly_depth_scene d3dcompiler)
+        add_test(NAME native_environment_metadata_tests COMMAND environment_metadata_tests)
+        set_tests_properties(native_environment_metadata_tests PROPERTIES TIMEOUT 30)
         add_executable(depth_scene_smoke tests/depth_scene_smoke.cpp)
         target_link_libraries(depth_scene_smoke PRIVATE dolly_depth_scene d3dcompiler)
         add_test(NAME native_depth_scene_smoke COMMAND depth_scene_smoke)

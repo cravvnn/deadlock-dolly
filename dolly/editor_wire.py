@@ -67,6 +67,8 @@ EXTRA_ACTIONS += ("level_view",)
 EXTRA_ACTIONS += ("seek_camera",)
 EXTRA_ACTIONS += ("set_video_ae_camera",)
 EXTRA_ACTIONS += ("set_video_usd_camera",)
+# Environment edition only: appended so every earlier action ID is unchanged.
+EXTRA_ACTIONS += ("capture_environment",)
 
 # Optional completion signal in the unused mapping tail; existing offsets stay fixed.
 CINEMATIC_OFFSET = 2 * 1024 * 1024 + 60000
@@ -91,6 +93,20 @@ LEVEL_VIEW_OFFSET = 2 * 1024 * 1024 + 24448
 LEVEL_VIEW_ABI = 1
 LEVEL_VIEW_MAGIC = b"DLYLEVL1"
 LEVEL_VIEW = struct.Struct("<8s4Id")
+
+# Environment-edition diagnostic page, appended after the object page. The
+# probe, HDR readback and panorama-action blocks share this one 4 KiB page, so
+# none of the legacy offsets (or the object page) move. These must match
+# native/include/dolly_environment_*.hpp and dolly/protocol constants.
+ENVIRONMENT_PAGE_OFFSET = 2 * 1024 * 1024 + 61440
+ENVIRONMENT_PROBE_REQUEST_OFFSET = ENVIRONMENT_PAGE_OFFSET
+ENVIRONMENT_PROBE_STATUS_OFFSET = ENVIRONMENT_PAGE_OFFSET + 64
+ENVIRONMENT_HDR_REQUEST_OFFSET = ENVIRONMENT_PAGE_OFFSET + 1152
+ENVIRONMENT_HDR_STATUS_OFFSET = ENVIRONMENT_PAGE_OFFSET + 1280
+ENVIRONMENT_ACTION_OFFSET = ENVIRONMENT_PAGE_OFFSET + 1408
+ENVIRONMENT_ACTION_ABI = 1
+ENVIRONMENT_ACTION_MAGIC = b"DLYENVA1"
+ENVIRONMENT_ACTION = struct.Struct("<8s4I")
 
 # Experimental prop-persistence probe, appended after the object status block in
 # the object page. Offsets must match dolly_editor.hpp exactly.
@@ -145,6 +161,21 @@ def pack_framing_grid(sequence, enabled, binding=None):
         reserved = binding.vk | binding.modifiers << 16
     return FRAMING_GRID.pack(FRAMING_GRID_MAGIC, _uint(sequence, "sequence"), FRAMING_GRID_ABI,
                              int(enabled), reserved)
+
+
+def pack_environment_action(sequence, enabled, binding=None):
+    """Panorama-capture binding in the environment page (vk | mods << 16)."""
+    if type(enabled) is not bool:
+        raise ValueError("Environment action switch must be a boolean")
+    if binding is not None:
+        from .editor_actions import EditorBinding
+        if not isinstance(binding, EditorBinding):
+            raise ValueError("Environment action binding must be an EditorBinding or None")
+        if binding.key in ("Ctrl", "Alt", "Shift") or binding.key == "F7":
+            raise ValueError("Panorama capture needs a non-console key or mouse button")
+    chord = binding.vk | binding.modifiers << 16 if binding is not None and enabled else 0
+    return ENVIRONMENT_ACTION.pack(ENVIRONMENT_ACTION_MAGIC, _uint(sequence, "sequence"),
+                                   ENVIRONMENT_ACTION_ABI, int(enabled), chord)
 
 
 def pack_level_view(sequence, binding=None, standard_aspect=None):

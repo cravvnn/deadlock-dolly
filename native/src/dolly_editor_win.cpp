@@ -31,6 +31,7 @@ std::shared_ptr<const EditorDofConfig> gDofConfig;
 std::shared_ptr<const EditorCitadelDofConfig> gCitadelDofConfig;
 std::shared_ptr<const EditorFollowConfig> gFollowConfig;
 std::shared_ptr<const EditorFramingGridConfig> gFramingGridConfig;
+std::shared_ptr<const EditorEnvironmentActionConfig> gEnvironmentActionConfig;
 std::shared_ptr<const EditorLevelViewConfig> gLevelViewConfig;
 // One-shot live reset armed by the level-view key; consumed on the next
 // rendered manual frame, so no project action, event or Undo step is created.
@@ -208,6 +209,11 @@ bool reserved_input(unsigned vk) noexcept {
         c->reshade_binding.modifiers == modifiers())
         return true;
     if (owner != EditorOwner::Console) {
+        auto environment = std::atomic_load(&gEnvironmentActionConfig);
+        if (environment && (environment->flags & 1u) && (environment->binding & 0xffffu) == vk &&
+            vk && (environment->binding >> 16) == modifiers() && !gTextInput.load() &&
+            (owner == EditorOwner::Panel || owner == EditorOwner::Flight))
+            return true;
         auto grid = std::atomic_load(&gFramingGridConfig);
         const auto grid_vk = grid ? std::uint16_t(grid->reserved & 0xffffu) : 0;
         const auto grid_mods = grid ? std::uint16_t(grid->reserved >> 16) : 0;
@@ -362,6 +368,16 @@ void dispatch_key_press(unsigned vk) noexcept {
         binding_down(c->reshade_binding)) {
         toggle_reshade();
         return;
+    }
+    // The panorama capture shortcut (environment edition) is a panel/flight
+    // action in its own appended block, like the framing guide.
+    if (editor_environment_enabled() && !gTextInput.load() &&
+        (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
+        const auto binding = editor_binding_snapshot(EditorAction::CaptureEnvironment);
+        if (binding.vk && binding.vk == vk && binding_down(binding)) {
+            editor_enqueue(EditorAction::CaptureEnvironment);
+            return;
+        }
     }
     // The framing guide is a panel/flight toggle; its binding lives in the
     // optional block so the stable action table is untouched.
@@ -731,6 +747,13 @@ EditorBinding editor_binding_snapshot(EditorAction action) noexcept {
             result.vk = static_cast<std::uint16_t>(grid->reserved & 0xffffu);
             result.modifiers = static_cast<std::uint16_t>(grid->reserved >> 16);
         }
+    } else if (action == EditorAction::CaptureEnvironment) {
+        if (auto environment = std::atomic_load(&gEnvironmentActionConfig)) {
+            if (environment->flags & 1u) {
+                result.vk = static_cast<std::uint16_t>(environment->binding & 0xffffu);
+                result.modifiers = static_cast<std::uint16_t>(environment->binding >> 16);
+            }
+        }
     } else if (action == EditorAction::ObjectPickerOpen) {
         if (auto objects = std::atomic_load(&gObjectConfig)) {
             result.vk = static_cast<std::uint16_t>(objects->reserved & 0xffffu);
@@ -774,6 +797,10 @@ bool editor_apply_level_view(CameraPose& pose) noexcept {
 bool editor_framing_grid_enabled() noexcept {
     auto grid = std::atomic_load(&gFramingGridConfig);
     return grid && gConnected.load() && (grid->flags & 1u) != 0;
+}
+bool editor_environment_enabled() noexcept {
+    auto environment = std::atomic_load(&gEnvironmentActionConfig);
+    return environment && gConnected.load() && (environment->flags & 1u);
 }
 bool editor_object_config(EditorObjectConfig& out) noexcept {
     auto objects = std::atomic_load(&gObjectConfig);
@@ -857,12 +884,17 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
                reshade_request_overlay(!reshade_overlay_open());
     // Appended UI actions retain the original action IDs.
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetVideoUsdCamera))
+        std::uint32_t(action) > std::uint32_t(EditorAction::CaptureEnvironment))
         return false;
     const bool preview_action=action==EditorAction::PreviewCameraCurveValue || action==EditorAction::PreviewCameraPositionTangents;
     const bool clear_preview=action==EditorAction::ClearCameraCurvePreview;
     auto state = editor_snapshot();
     if (!state.enabled && !clear_preview)
+        return false;
+    if (action == EditorAction::CaptureEnvironment &&
+        (!editor_environment_enabled() || !state.ready || !state.paused || state.busy ||
+         state.playing || state.attach_preview || state.bone_picker || gTextInput.load() ||
+         value != 0 || (state.owner != EditorOwner::Panel && state.owner != EditorOwner::Flight)))
         return false;
     if ((action == EditorAction::SetVideoAeCamera || action == EditorAction::SetVideoUsdCamera) &&
         (state.busy || pose_override || (value != 0 && value != 1)))
@@ -1170,6 +1202,12 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (gLastEvent - gAcknowledged >= kEditorEventCount) {
         gEventLock.clear(std::memory_order_release);
         ++gDropped;
+        return false;
+    }
+    if (action == EditorAction::CaptureEnvironment && gLastEvent != gAcknowledged) {
+        // A capture is a fresh user operation, never a queued follow-up behind
+        // an earlier capture or another editor action.
+        gEventLock.clear(std::memory_order_release);
         return false;
     }
     if (action == EditorAction::FinishBonePicker &&
@@ -1629,6 +1667,27 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                 }
             }
         }
+        auto environment_source = memory + kEditorEnvironmentActionOffset;
+        auto environment_sequence = reinterpret_cast<volatile LONG*>(environment_source + 8);
+        const auto environment_first = InterlockedCompareExchange(environment_sequence, 0, 0);
+        if (!(environment_first & 1)) {
+            auto previous = std::atomic_load(&gEnvironmentActionConfig);
+            if (!previous || previous->sequence != std::uint32_t(environment_first)) {
+                EditorEnvironmentActionConfig next{};
+                std::memcpy(&next, environment_source, sizeof(next));
+                MemoryBarrier();
+                if (environment_first == InterlockedCompareExchange(environment_sequence, 0, 0) &&
+                    next.sequence == std::uint32_t(environment_first)) {
+                    try {
+                        std::atomic_store(&gEnvironmentActionConfig,
+                                          valid_environment_action(next)
+                                              ? std::make_shared<const EditorEnvironmentActionConfig>(next)
+                                              : std::shared_ptr<const EditorEnvironmentActionConfig>{});
+                    } catch (...) {
+                    }
+                }
+            }
+        }
         auto grid_source = memory + kEditorFramingGridOffset;
         auto grid_sequence = reinterpret_cast<volatile LONG*>(grid_source + 8);
         const auto grid_first = InterlockedCompareExchange(grid_sequence, 0, 0);
@@ -1934,6 +1993,8 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
         std::atomic_store(&gCitadelDofConfig, std::shared_ptr<const EditorCitadelDofConfig>{});
         std::atomic_store(&gFollowConfig, std::shared_ptr<const EditorFollowConfig>{});
         std::atomic_store(&gFramingGridConfig, std::shared_ptr<const EditorFramingGridConfig>{});
+        std::atomic_store(&gEnvironmentActionConfig,
+                          std::shared_ptr<const EditorEnvironmentActionConfig>{});
         std::atomic_store(&gLevelViewConfig, std::shared_ptr<const EditorLevelViewConfig>{});
         gLevelViewRequest.store(false, std::memory_order_release);
         std::atomic_store(&gObjectConfig, std::shared_ptr<const EditorObjectConfig>{});

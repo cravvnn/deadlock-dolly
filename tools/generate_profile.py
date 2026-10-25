@@ -71,6 +71,8 @@ class Image:
             for s in self.pe.sections
         ]
         self.sha256 = hashlib.sha256(self.data).hexdigest()
+        self._function_ranges = None
+        self._function_begins = None
 
     def close(self) -> None:
         self.pe.close()
@@ -109,25 +111,35 @@ class Image:
             out.append(index)
             start = index + 1
 
-    def functions(self) -> list[tuple[int, int]]:
+    def _load_functions(self) -> None:
+        # An Image is one immutable file snapshot. Re-parsing exception metadata
+        # for every cross-reference is both expensive and memory intensive.
+        if self._function_ranges is not None:
+            return
         import pefile
 
         self.pe.parse_data_directories(
             directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_EXCEPTION"]])
-        return sorted(
+        ranges = tuple(sorted(
             (e.struct.BeginAddress, e.struct.EndAddress)
             for e in getattr(self.pe, "DIRECTORY_ENTRY_EXCEPTION", [])
             if e.struct.BeginAddress and e.struct.EndAddress
-        )
+        ))
+        self._function_begins = tuple(b for b, _ in ranges)
+        self._function_ranges = ranges
+
+    def functions(self) -> list[tuple[int, int]]:
+        self._load_functions()
+        # Preserve the public list API without letting callers mutate the index.
+        return list(self._function_ranges)
 
     def function_at(self, rva: int) -> tuple[int, int] | None:
         import bisect
 
-        functions = self.functions()
-        begins = [b for b, _ in functions]
-        index = bisect.bisect_right(begins, rva) - 1
+        self._load_functions()
+        index = bisect.bisect_right(self._function_begins, rva) - 1
         if index >= 0:
-            begin, end = functions[index]
+            begin, end = self._function_ranges[index]
             if begin <= rva < end:
                 return begin, end
         return None

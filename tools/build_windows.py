@@ -137,6 +137,10 @@ def run_regression_tests(root: Path, log_path: Path) -> None:
 
 
 def main() -> int:
+    build_edition = os.environ.get("DOLLY_BUILD_EDITION", "standard")
+    if build_edition not in ("standard", "environment"):
+        raise ValueError("Unknown build edition")
+    environment = build_edition == "environment"
     if sys.platform != "win32" or struct.calcsize("P") != 8 or platform.machine().lower() not in {"amd64", "x86_64"}:
         raise RuntimeError("Build Dolly.exe on Windows x64 or use the included GitHub Actions workflow")
     if sys.version_info[:2] != (3, 12):
@@ -174,9 +178,11 @@ def main() -> int:
                     "--add-data", str(ROOT / "assets/dolly.ico") + ";assets",
                     str(ROOT / "packaging/bootstrap_entrypoint.py")], cwd=ROOT, check=True)
     shutil.copy2(build / "bootstrap/Dolly.exe", bundle / "Dolly.exe")
-    subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test", str(checks / "updater-smoke.json")], check=True, timeout=60)
-    if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
-        raise RuntimeError("Embedded updater smoke test failed")
+    if not environment:
+        subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test",
+                        str(checks / "updater-smoke.json")], check=True, timeout=60)
+        if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
+            raise RuntimeError("Embedded updater smoke test failed")
     third_party = bundle / "_internal" / "third_party"
     shutil.copytree(ROOT / "third_party", third_party, dirs_exist_ok=True)
     print("Staging bundled FFmpeg (LGPL)...", flush=True)
@@ -200,6 +206,38 @@ def main() -> int:
     shutil.copy2(ROOT / "LICENSE.txt", bundle / "LICENSE.txt")
     shutil.copy2(ROOT / "CREDITS.md", bundle / "_internal" / "CREDITS.md")
     shutil.copy2(ROOT / "packaging" / "Portable_Start_Here.txt", bundle / "Start_Here.txt")
+    if environment:
+        (bundle / "Start_Here.txt").write_text(
+            "Dolly Environment Capture (experimental)\n\n"
+            "Capture panorama is available in Controls, unbound by default. A matching Capture "
+            "panorama button is in Export. Read Environment_Capture.md.\n"
+            "Select a square render size, open a replay, pause and position the camera before capture.\n"
+            "Depth and character cutouts are optional for screenshots; the HDR panorama needs a "
+            "square game view at 100% render scale (turn off FSR/DLSS upscaling if capture says the "
+            "game is rendering below the HDR size).\n"
+            "Settings are separate from regular Dolly. Standard Dolly auto-updates are disabled; new "
+            "environment builds are supplied as separate ZIPs.\n"
+            "Outputs are rendered HDR references, not calibrated lighting or certified empty scenery; "
+            "inspect each result before relying on it.\n", encoding="utf-8")
+        shutil.copy2(ROOT / "docs" / "ENVIRONMENT_CAPTURE.md", bundle / "Environment_Capture.md")
+        (bundle / "Release_Notes.md").write_text(
+            "# Dolly Environment Capture (experimental)\n\n"
+            "Slim capture-only edition of Deadlock Dolly on the current 0.6.75 runtime.\n\n"
+            "- Desktop Export shows only Screenshot and Environment panorama.\n"
+            "- Screenshot: lossless PNG at native or larger render size; depth and character "
+            "cutouts are optional.\n"
+            "- Environment panorama: six overlapping HDR faces assembled into an EXR reference, "
+            "with camera, HUD and display resolution restored afterwards.\n"
+            "- Capture panorama is bindable in Controls and is unbound by default.\n"
+            "- Settings and updates are separate from regular Dolly.\n\n"
+            "Panorama capture requires a square game view and 100% render scale. Outputs are "
+            "rendered HDR references: animated units and effects are filtered, but the result is "
+            "not calibrated lighting or certified empty scenery.\n", encoding="utf-8")
+        # Slim folder: runtime, examples, BUILD_INFO.json, Dolly.exe, LICENSE.txt,
+        # Start_Here.txt, Environment_Capture.md and Release_Notes.md only.
+        for name in ("Video_and_ReShade.md", "LAYER_EXPORT.md", "Updating.md",
+                     "Supported_Camera_Cvars.md", "Supported_Camera_Cvars.json"):
+            (bundle / name).unlink(missing_ok=True)
     shutil.copytree(ROOT / "examples", bundle / "examples", dirs_exist_ok=True)
     reject_game_binaries(bundle)
     executable = bundle / "Dolly.exe"
@@ -228,6 +266,8 @@ def main() -> int:
         if not smoke.get("passed") or not smoke.get("frozen") or smoke.get("game_launched"):
             raise RuntimeError("Invalid packaged GUI smoke-test report")
     info = {"version": __version__, "built_utc": datetime.now(timezone.utc).isoformat(),
+            "edition": build_edition, "environment_capture_ready": False,
+            "environment_reference_capture_available": environment,
             "python": platform.python_version(), "pyinstaller": PyInstaller.__version__,
             "executable": pe_report, "bundle_gui_smoke_passed": True,
             "game_runtime_verified": False, "code_signed": False,
@@ -235,13 +275,19 @@ def main() -> int:
             "native_bridge": {"abi": native_info["abi"], "sha256": native_info["sha256"],
                               "pe": native_report, "game_runtime_verified": False}}
     (bundle / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
-    from dolly.updater import write_manifest
-    write_manifest(bundle, __version__)
+    if environment:
+        # No standard update channel: ship a slim folder without the manifest.
+        (bundle / "UPDATE_MANIFEST.json").unlink(missing_ok=True)
+    else:
+        from dolly.updater import write_manifest
+        write_manifest(bundle, __version__)
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    windows_zip = dist / f"Deadlock_Dolly_{__version__}_Windows_x64.zip"
+    prefix = (f"Dolly_Environment_Capture_{__version__}_Experimental"
+              if environment else f"Deadlock_Dolly_{__version__}")
+    windows_zip = dist / f"{prefix}_Windows_x64.zip"
     bundle_zip(bundle, windows_zip)
-    sources = source_zip(ROOT, dist / f"Deadlock_Dolly_{__version__}_Source.zip")
+    sources = source_zip(ROOT, dist / f"{prefix}_Source.zip")
     (dist / "SHA256SUMS.txt").write_text("".join(f"{sha256(path)}  {path.name}\n" for path in (windows_zip, sources)), encoding="utf-8")
     print(f"Ready: {windows_zip}\nSource: {sources}\nNothing was uploaded or published.")
     return 0

@@ -4850,6 +4850,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def _native_bridge(self):
         return getattr(self._session, "native", None) if self._session is not None else None
 
+    def environment_backend(self, *, event=None, cancelled=lambda: False):
+        from .environment_backend import EnvironmentBackend
+        return EnvironmentBackend(self, event=event, cancelled=cancelled)
+
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking."""
         self._seek_relief = bool(enabled)

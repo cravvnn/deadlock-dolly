@@ -4,7 +4,7 @@ import os
 import queue
 import threading
 import webbrowser
-from . import __version__, updater
+from . import __version__, updater, edition
 from .runtime import application_root, is_frozen
 from .ui.update_notice import UpdateNotice
 from .video_export import ACTIVE_STATES
@@ -29,7 +29,8 @@ class UpdateUI:
                                    later=self.later, reopen=self.reopen, height_limit=self._notes_height_limit)
         if getattr(app, "notebook", None) is not None:
             app.notebook.bind("<Configure>", lambda _event: self.notice.fit_height(), add="+")
-        self.enabled = is_frozen() and (application_root() / updater.MANIFEST).is_file()
+        self.enabled = (edition.allow_standard_updates() and is_frozen()
+                        and (application_root() / updater.MANIFEST).is_file())
         if not self.enabled:
             app.update_status.set("Update installation is available in the packaged Windows build.")
         app.root.after(250, self.poll)
@@ -86,6 +87,10 @@ class UpdateUI:
 
     def check(self):
         if self.restarting or self.app.closed:
+            return
+        if not edition.allow_standard_updates():
+            self.app.update_status.set(
+                "Environment Capture updates are supplied as separate ZIPs.")
             return
         if self.available is not None:
             self.reopen()

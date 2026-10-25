@@ -48,8 +48,9 @@ CONTROL_BYTES = 2 * 1024 * 1024
 # The legacy tail is 24576 bytes (camera list + framing grid). The Object Picker
 # block lives in one appended 4 KiB page after it; keep this in step with
 # dolly_protocol.hpp kMappingBytes. Replay events append a separate 32 KiB block
-# after dolly/object_wire.OBJECT_MAPPING_BYTES; no existing offsets move.
-MAPPING_BYTES = CONTROL_BYTES + 24576 + 4096 + 32768
+# after dolly/object_wire.OBJECT_MAPPING_BYTES; no existing offsets move. The
+# environment edition appends one more 4 KiB page after the object block.
+MAPPING_BYTES = CONTROL_BYTES + 24576 + 4096 + 32768 + 4096
 PAYLOAD_OFFSET = 1024
 MAX_PAYLOAD_BYTES = CONTROL_BYTES - PAYLOAD_OFFSET
 CONTROL = struct.Struct("<8s6IQ2I2d512s")
@@ -699,7 +700,7 @@ class NativeBridge(MediaTransport):
             self._sleep(min(0.02, remaining))
 
     def start_flight(self, demo_name, pose=None, timeout=8, *, cancelled=None, owner="flight",
-                     playback=False, phase=0.0):
+                     playback=False, phase=0.0, environment_face=False):
         """Enter native manual flight, optionally seeded from a displayed view.
 
         ``playback`` selects the replay state to wait for: ``False`` requires
@@ -714,6 +715,12 @@ class NativeBridge(MediaTransport):
             raise ValueError("Native flight owner must be flight or panel")
         if playback is not None and not isinstance(playback, bool):
             raise ValueError("Native flight playback mode must be a boolean or None")
+        if type(environment_face) is not bool:
+            raise ValueError("Environment face selection must be a boolean")
+        if environment_face and (owner != "panel" or playback is not False or pose is None
+                                 or self._confetti_enabled):
+            raise ValueError("Environment capture requires an explicit paused pose, panel ownership "
+                             "and no generated particles")
         if cancelled is not None and not callable(cancelled):
             raise ValueError("Native flight cancellation must be callable")
         if not isinstance(demo_name, str) or not demo_name or any(c in demo_name for c in "\0\r\n"):
@@ -730,6 +737,8 @@ class NativeBridge(MediaTransport):
             if len(numbers) != 7 or not all(math.isfinite(x) and abs(x) <= 1e8 for x in numbers) or not .25 <= numbers[6] <= 8:
                 raise ValueError("Manual camera pose is invalid")
             payload = struct.pack("<7d", *numbers)
+            if environment_face and not 1.0 <= numbers[6] <= 1.2:
+                raise ValueError("Environment capture requires a square projection with tangent scale 1..1.2")
         with self._operations:
             self._check_open()
             if not self.game_pid:
@@ -746,7 +755,7 @@ class NativeBridge(MediaTransport):
                 if cancelled is not None and cancelled():
                     raise NativeBridgeError("Opening the paused camera was cancelled.")
                 self.configure_editor(owner=owner)
-                command = self._publish(4, payload)
+                command = self._publish(5 if environment_face else 4, payload)
                 result = self._wait(command, {"armed"}, timeout)
             except Exception:
                 self._publish(0)
@@ -923,6 +932,21 @@ class NativeBridge(MediaTransport):
             self._mapping[offset + 12:offset + len(data)] = data[12:]
             self._store(offset + 8, even)
             self._editor_framing_grid_sequence = even
+
+    def configure_environment_action(self, *, enabled=False, binding=None):
+        """Environment-edition panorama shortcut; separate appended block."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            previous = getattr(self, "_editor_environment_action_sequence", 0)
+            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
+            data = wire.pack_environment_action(odd, enabled, binding)
+            offset = wire.ENVIRONMENT_ACTION_OFFSET
+            self._store(offset + 8, odd)
+            self._mapping[offset:offset + 8] = data[:8]
+            self._mapping[offset + 12:offset + len(data)] = data[12:]
+            self._store(offset + 8, even)
+            self._editor_environment_action_sequence = even
 
     def configure_level_view(self, *, binding=None, standard_aspect=None):
         """Optional level-view block: the key binding and the normal framing.
