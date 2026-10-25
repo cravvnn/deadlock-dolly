@@ -286,12 +286,17 @@ HEALTHBAR_SWITCH_CVARS = ("citadel_healthbars_enabled", "citadel_unit_status_use
 HEALTHBAR_SWITCH_ON = {"citadel_healthbars_enabled": 1.0, "citadel_unit_status_use_new": 1.0}
 HEALTHBAR_SCALE_CVARS = ("citadel_unit_status_min_distance_scale", "citadel_unit_status_max_distance_scale")
 # A paused replay does not age or retire client-side effects. Seeking away from
-# a tick can leave its ragdolls, decals, screen post-processing and Violet's ink
-# constructs visible over the new frame. These are the game's own cleanup
-# commands; they change no cvars, camera pose or playback speed.
+# a tick can leave its ragdolls, decals, particle systems, screen post-processing
+# and Violet's ink constructs visible over the new frame. These are the game's own
+# cleanup commands; they change no cvars, camera pose or playback speed.
 REPLAY_CLEANUP_COMMANDS = (
     "cl_destroy_ragdolls",
     "citadel_clear_all_post_process_effects",
+    # Paused replays also keep spawned particle systems alive (for example
+    # Paradox's Time Sphere and Pulse Grenade effects). Stop the particle
+    # systems too; this is the game's own cleanup command and does not change
+    # the camera, cvars or playback speed.
+    "particle_stop_all",
     "r_cleardecals",
     # Client entity classes are named differently from their network names in
     # some builds. Both spellings are harmless when the other one matches
@@ -3868,11 +3873,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         """Clear client-side leftovers that stay visible after a replay seek.
 
         The name is retained for the native action ABI; the cleanup now covers
-        ragdolls, decals, screen post-processing and Violet's ink constructs.
-        A paused demo cannot age these effects out, so they otherwise persist
-        when the editor changes frames. The replay, camera and speed are left
-        untouched, and an unavailable command is skipped rather than failing
-        the whole cleanup.
+        ragdolls, decals, spawned particle systems, screen post-processing and
+        Violet's ink constructs. A paused demo cannot age these effects out, so
+        they otherwise persist when the editor changes frames. The replay,
+        camera and speed are left untouched, and an unavailable command is
+        skipped rather than failing the whole cleanup.
         """
         with self._op_lock:
             if self.status().get("playing") or getattr(self, "_export_timing", None):
@@ -3902,8 +3907,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if failed:
                 LOG.info("Replay cleanup could not send: %s", ", ".join(failed))
             LOG.info("Replay cleanup sent: %s", ", ".join(sent))
-            self._message("Replay effects cleared. Ragdolls, decals, screen post-processing "
-                          "and Violet ink leftovers are removed.")
+            self._message("Replay effects cleared. Ragdolls, decals, particle effects, screen "
+                          "post-processing and Violet ink leftovers are removed.")
 
     def _console_cvar(self, name):
         """Current value of a console cvar, or None when it cannot be read."""

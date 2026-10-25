@@ -1385,6 +1385,7 @@ class ControllerTests(unittest.TestCase):
         self.controller.destroy_ragdolls()
         for command in ("cl_destroy_ragdolls",
                         "citadel_clear_all_post_process_effects",
+                        "particle_stop_all",
                         "r_cleardecals",
                         "cl_ent_remove_all citadel_artist_visionblocker",
                         "cl_ent_remove_all C_Citadel_Artist_VisionBlocker",
@@ -1406,6 +1407,7 @@ class ControllerTests(unittest.TestCase):
         self.controller.destroy_ragdolls()
         for command in ("cl_destroy_ragdolls",
                         "citadel_clear_all_post_process_effects",
+                        "particle_stop_all",
                         "r_cleardecals",
                         "cl_ent_remove_all citadel_artist_visionblocker"):
             self.assertIn(command, self.console.requests)

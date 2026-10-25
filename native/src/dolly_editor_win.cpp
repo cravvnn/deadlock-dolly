@@ -284,6 +284,15 @@ void dispatch(EditorAction action) noexcept {
             // running, when F8 should remain only a visibility control.
             if (state.busy || (!state.ready && !state.playing))
                 return;
+            if (state.follow_active) {
+                // Game Follow previews the stock rig: the game's hero aim owns
+                // the camera and Dolly has no manual writer. Hand the mouse and
+                // keys back to the game so closing the panel gives aim control
+                // again; entering Flight here would swallow the mouse with no
+                // camera to apply it to (reported from the Linux build).
+                editor_set_owner(EditorOwner::GameUI);
+                return;
+            }
             if (state.ready && state.paused && !state.manual_active && !state.playing) {
                 editor_enqueue(EditorAction::Flight);
                 return;

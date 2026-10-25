@@ -492,7 +492,7 @@ def _dispatch(app, event, bridge, *, publish):
         app._set_time(value)
         app._seek()
     elif action == "destroy_ragdolls":
-        _native_operation(app, "Clearing ragdolls", app.controller.destroy_ragdolls, bridge)
+        _native_operation(app, "Clearing replay effects", app.controller.destroy_ragdolls, bridge)
     elif action == "toggle_citadel_glow":
         _native_operation(app, "Toggling Citadel glow", app.controller.toggle_citadel_glow, bridge)
     elif action == "toggle_healthbars":

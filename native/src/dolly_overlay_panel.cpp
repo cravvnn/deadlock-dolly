@@ -1686,8 +1686,8 @@ void OverlayPanel::draw_panel(const EditorSnapshot& state) {
                     ImGui::EndDisabled();
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip(
-                            "Clear ragdolls, decals, screen post-processing and Violet ink left "
-                            "behind after seeking or repeated shot playback.");
+                            "Clear ragdolls, decals, particle effects, screen post-processing and "
+                            "Violet ink left behind after seeking or repeated shot playback.");
                     ImGui::BeginDisabled(state.playing);
                     action_button("Toggle Citadel glow", EditorAction::ToggleCitadelGlow,
                                   ImGui::GetContentRegionAvail().x);
