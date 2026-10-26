@@ -68,6 +68,13 @@ class StillProjectTests(unittest.TestCase):
         self.assertLess(screenshot.SETTLED_INDEX, frames)
         self.assertGreaterEqual(frames, player_layer.MIN_FRAMES)
 
+    def test_still_clock_stays_within_the_players_layer_limit(self):
+        # 60 FPS at 0.05x asked for 1200 engine fps; the Players layer refuses
+        # anything above 600 and made every still with players fail after the
+        # color take. Keep the still clock at the limit.
+        self.assertEqual(
+            player_layer.validate_engine_rate(screenshot.STILL_FPS, screenshot.STILL_SPEED), 600)
+
     def test_rejects_missing_tick(self):
         with self.assertRaises(ValueError):
             screenshot.still_project(Project(), Keyframe(0, 0, 0, 0, 0, 0, 0), None)
@@ -170,7 +177,7 @@ class AssemblyTests(unittest.TestCase):
         pixels = [0.0] * (64 * 36 * 4)
         pixels[3::4] = [1.0] * (64 * 36)
         screenshot.write_hero_stills(64, 36, struct.pack("<%de" % len(pixels), *pixels), folder)
-        run = screenshot.StillRun(None, SimpleNamespace(path=path), True)
+        run = screenshot.StillRun(None, SimpleNamespace(path=path, layers=("players",)), True)
 
         outputs = screenshot.finish(Path(FFMPEG), run)
 
@@ -201,7 +208,7 @@ class AssemblyTests(unittest.TestCase):
         folder = path.with_suffix("")
         folder.mkdir()
         (folder / "shot.json").write_text(json.dumps({"video_file": path.name, "frames_written": 12}))
-        run = screenshot.StillRun(None, SimpleNamespace(path=path), False)
+        run = screenshot.StillRun(None, SimpleNamespace(path=path, layers=("players",)), False)
         with self.assertRaises(RuntimeError):
             screenshot.finish(Path(FFMPEG), run)
         self.assertTrue((folder / "shot.json").is_file())

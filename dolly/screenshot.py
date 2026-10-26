@@ -36,8 +36,11 @@ from .path import Keyframe, Project
 from .runtime import external_program_environment
 
 STILL_FPS = 60
-# Slowest supported export speed: the replay advances ~1/1200 s per frame.
-STILL_SPEED = 0.05
+# 60 FPS at 0.1x asks the engine for 600 frames/s. The Players layer refuses
+# anything above 600 (it validates fps / speed), so the old 0.05x value made
+# every still with players fail after the color take. 0.1x is still slow enough
+# for the temporal effects to settle in 12 frames.
+STILL_SPEED = 0.1
 STILL_FRAMES = 12
 # Late enough for temporal effects to converge, early enough that a take
 # ending one frame short still contains it.
@@ -338,10 +341,11 @@ def finish(ffmpeg: Path, run: StillRun) -> list[Path]:
     video = folder / Path(run.options.path).name
     index = settled_index(folder, video.name)
     outputs = [extract_plate(ffmpeg, video, index, folder / "plate.png")]
-    alpha, isolated = folder / "hero_alpha.png", folder / "hero_isolated.png"
-    if not alpha.is_file() or not isolated.is_file():
-        raise RuntimeError("The players stills were not written.")
-    outputs += [alpha, merge_hero_rgba(ffmpeg, outputs[0], alpha, folder / "hero_rgba.png"), isolated]
+    if "players" in run.options.layers:
+        alpha, isolated = folder / "hero_alpha.png", folder / "hero_isolated.png"
+        if not alpha.is_file() or not isolated.is_file():
+            raise RuntimeError("The players stills were not written.")
+        outputs += [alpha, merge_hero_rgba(ffmpeg, outputs[0], alpha, folder / "hero_rgba.png"), isolated]
     if run.depth:
         outputs.append(copy_depth(folder, index, folder / "depth.exr"))
     cleanup(folder, video)

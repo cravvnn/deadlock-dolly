@@ -789,6 +789,30 @@ class VideoExport:
                 except Exception as exc:
                     restoration_errors.append(label + ": " + str(exc))
             if restoration_errors:
+                # A game that crashed during the take can fail the console
+                # restore between the liveness check and the request. Then the
+                # crash is the real error; "restoration remains pending" would
+                # suggest Dolly is stuck when the session is already over.
+                try:
+                    game_gone = self.controller.status().get("game_running") is False
+                except Exception:  # noqa: BLE001 - status must not mask the crash
+                    game_gone = True
+                ended = any(
+                    marker in text
+                    for text in [*restoration_errors, str(stop_error or "")]
+                    for marker in ("Deadlock crashed", "Deadlock closed",
+                                   "Deadlock exited", "Deadlock stopped responding"))
+                with self._lock:
+                    self._finish_pending = not (game_gone and ended)
+                if game_gone and ended:
+                    primary = str(stop_error) if stop_error is not None else restoration_errors[0]
+                    for prefix in ("timing: ", "render scale: ", "POV: "):
+                        if primary.startswith(prefix):
+                            primary = primary[len(prefix):]
+                            break
+                    raise RuntimeError(
+                        primary + " The game session ended, so its export timing and render scale "
+                        "need no restoration; relaunch a replay to continue.") from stop_error
                 with self._lock:
                     self._finish_pending = True
                 message = "Export restoration remains pending: " + " ".join(restoration_errors)

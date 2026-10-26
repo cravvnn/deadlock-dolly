@@ -18,6 +18,7 @@ from tkinter import ttk
 from . import player_layer, screenshot
 from .display import client_size, focus_window
 from .replays import parse_launch_options
+from .runtime import wine_version
 from .video_export import (ACTIVE_STATES, BITRATE_PRESETS, VideoOptions, bundled_ffmpeg_path,
                            resolve_ffmpeg)
 
@@ -26,7 +27,9 @@ LOG = logging.getLogger(__name__)
 
 def init(app) -> None:
     app._still_run = None
-    app.screenshot_depth = tk.BooleanVar(value=True)
+    # Wine/Proton has no native depth readback; a depth take fails on its
+    # first frame and can destabilise the game, so keep it off there.
+    app.screenshot_depth = tk.BooleanVar(value=not wine_version())
     app.screenshot_render_size = tk.StringVar(
         value=screenshot.render_size_label(app.launch_options.get()))
     app.screenshot_size_text = tk.StringVar(value="Game render size: launch a replay to see it.")
@@ -38,9 +41,13 @@ def build(app, parent, *, before=None) -> None:
     still = card(parent, "Screenshot (high-res still)")
     if before is not None:
         still.pack_configure(before=before)
-    ttk.Label(still, text="Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
-                          "hero_isolated.png and depth.exr in one folder beside the output file. "
-                          "Hero = every player and their equipment, no NPCs.",
+    description = ("Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
+                   "hero_isolated.png and depth.exr in one folder beside the output file. "
+                   "Hero = every player and their equipment, no NPCs.")
+    if wine_version():
+        description = ("Captures the current paused view as plate.png beside the output file. "
+                       "Hero cutouts and depth capture are unavailable under Proton.")
+    ttk.Label(still, text=description,
               style="CardMuted.TLabel", wraplength=760).pack(anchor="w", pady=(0, GAP))
     app.screenshot_size_combo = field(still, "Render size (next launch)", app.screenshot_render_size,
                                       values=screenshot.RENDER_SIZE_LABELS)
@@ -52,6 +59,8 @@ def build(app, parent, *, before=None) -> None:
     app.screenshot_depth_check = ttk.Checkbutton(row, style="Card.TCheckbutton",
                                                  text="Include depth (EXR)", variable=app.screenshot_depth)
     app.screenshot_depth_check.pack(side="left", padx=(0, 18))
+    if wine_version():
+        app.screenshot_depth_check.configure(state="disabled")
     app.screenshot_button = ttk.Button(row, text="Take screenshot", style="Primary.TButton",
                                        command=lambda: start(app))
     app.screenshot_button.pack(side="right")
@@ -76,9 +85,10 @@ def refresh(app, ready: bool) -> None:
     if button is None:
         return
     idle = getattr(app, "_still_run", None) is None and not app._layer_queue
+    depth_state = "normal" if idle and not wine_version() else "disabled"
     # The render size only edits launch options, so it stays usable before launch.
     for widget, state in ((button, "normal" if ready and idle else "disabled"),
-                          (app.screenshot_depth_check, "normal" if idle else "disabled"),
+                          (app.screenshot_depth_check, depth_state),
                           (app.screenshot_size_combo, "readonly" if idle else "disabled")):
         if str(widget.cget("state")) != state:
             widget.configure(state=state)
@@ -115,12 +125,21 @@ def start(app) -> None:
         ffmpeg = resolve_ffmpeg(app.ffmpeg_path.get().strip() or None) or bundled_ffmpeg_path()
         if ffmpeg is None:
             raise ValueError("Screenshots need FFmpeg. Choose it under Export > FFmpeg runtime.")
-        depth = bool(app.screenshot_depth.get())
+        depth = bool(app.screenshot_depth.get()) and not wine_version()
+        # The native player/depth layers write nothing through Proton's Wine
+        # D3D11 (the depth readback is the known failure), so the Wine still is
+        # the color plate only instead of a take that fails after recording.
+        players = not wine_version()
+        # The Players layer refuses fixed-step clocks above 600 engine fps.
+        # Reject an impossible still clock before the color take rather than
+        # after it, when the user has already waited for the recording.
+        if players:
+            player_layer.validate_engine_rate(screenshot.STILL_FPS, screenshot.STILL_SPEED)
         path = screenshot.default_still_path(app.project.name, _output_directory(app))
         options = VideoOptions(path, screenshot.STILL_FPS, BITRATE_PRESETS["20 Mbps"],
                                codec=screenshot.STILL_CODEC, ffmpeg_path=ffmpeg, fixed_step=True,
                                speed=screenshot.STILL_SPEED, depth=depth, depth_exr=depth,
-                               layers=("players",),
+                               layers=("players",) if players else (),
                                players_scratch=(app.players_scratch.get().strip() or None) if hasattr(app, "players_scratch") else None).validated()
         base = copy.deepcopy(app.project)
     except (ValueError, OSError) as exc:
@@ -131,7 +150,7 @@ def start(app) -> None:
     app._pending_auto_play = True
     app._auto_finish_layered = True
     app._base_capture = options
-    app._layer_queue = [("players", "capture")]
+    app._layer_queue = [("players", "capture")] if players else []
     app._active_layer_take = None
     app._take_playing_seen = False
     app._take_audit_seen = set()
@@ -151,7 +170,8 @@ def start(app) -> None:
         abandon(app)
         app._clear_layer_pipeline()
     else:
-        app.status_text.set("Taking screenshot: color, depth and players passes record automatically.")
+        passes = ["color"] + (["depth"] if depth else []) + (["players"] if players else [])
+        app.status_text.set("Taking screenshot: " + ", ".join(passes) + ".")
 
 
 def abandon(app) -> None:
