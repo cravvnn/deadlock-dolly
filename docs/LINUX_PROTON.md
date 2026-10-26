@@ -80,7 +80,9 @@ Dolly under a different Proton.
   first frame under Wine/Proton, so a depth master, EXR sequence or layer pass
   writes nothing (the colour take of a layered run may still land). Dolly now
   refuses a depth take up front with that reason instead of failing after the
-  shot. Plain colour takes — **Lossless FFV1 (.mkv)** — work.
+  shot. Plain colour takes - **Lossless FFV1 (.mkv)** - work. Screenshots follow
+  the same rule: under Proton a still saves `plate.png` only; depth and hero
+  cutouts remain Windows-only for now.
 - **Recording audio.** Both audio checkboxes are off by default and should stay
   off under Proton. Game audio runs the bundled Windows helper against the game
   process (`DollyGameAudio.exe`), and reconstructed audio downloads the
