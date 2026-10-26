@@ -75,14 +75,21 @@ class VideoExportTests(unittest.TestCase):
         self.controller.set_export_resolution.assert_not_called()
 
     def test_depth_capture_is_refused_under_wine_before_a_take_starts(self):
-        options = VideoOptions(self.path, 60, 20_000_000, depth=True)
+        options = VideoOptions(self.path, 60, 20_000_000, codec="lossless", depth=True)
         with patch("dolly.video_export.wine_version", return_value="wine-11.0"):
             self.assertIn("not supported under Wine", unsupported_environment_reason(options))
         with patch("dolly.video_export.wine_version", return_value=""):
             self.assertEqual(unsupported_environment_reason(options), "")
         with patch("dolly.video_export.wine_version", return_value="wine-11.0"):
-            plain = VideoOptions(self.path, 60, 20_000_000)
+            plain = VideoOptions(self.path, 60, 20_000_000, codec="lossless")
             self.assertEqual(unsupported_environment_reason(plain), "")
+
+    def test_non_lossless_encoder_is_refused_under_wine(self):
+        options = VideoOptions(self.path, 60, 20_000_000, codec="h264_nvenc")
+        with patch("dolly.video_export.wine_version", return_value="wine-11.0"):
+            self.assertIn("Lossless FFV1 only", unsupported_environment_reason(options))
+        with patch("dolly.video_export.wine_version", return_value=""):
+            self.assertEqual(unsupported_environment_reason(options), "")
 
     def test_bounded_export_preserves_limit_through_validation_and_native_start(self):
         options = VideoOptions(self.path, max_frames=2, fixed_step=True, shot_only=True)

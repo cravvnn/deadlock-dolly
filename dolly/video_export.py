@@ -169,8 +169,14 @@ def unsupported_environment_reason(options: "VideoOptions") -> str:
 
     Wine answers most Windows APIs but not the native depth readback: a verified
     Proton session fails on the very first frame with E_FAIL and writes nothing,
-    so the take is refused up front instead of after a played shot.
+    so the take is refused up front instead of after a played shot. Hardware
+    encoders and the built-in Media Foundation writer are also absent from a
+    Wine prefix; only the bundled software FFV1 encoder is verified.
     """
+    if wine_version() and options.codec != "lossless":
+        return ("Video encoding under Wine/Proton supports Lossless FFV1 only: hardware encoders and "
+                "the built-in Media Foundation writer are unavailable in the prefix. Select Lossless "
+                "FFV1 (.mkv), or record on Windows.")
     if wine_version() and options.depth:
         return ("Depth capture is not supported under Wine/Proton yet: the depth readback fails on the "
                 "first frame, so no video, EXR or layer files are written. Record a plain color take "

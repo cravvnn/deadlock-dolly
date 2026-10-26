@@ -27,6 +27,7 @@ from .ui.confirm import ask_reconstructed_helper
 from .ui.widgets import NavigationMarker
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, OBJECT_PICKER_ENABLED, default_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
+from dolly.runtime import wine_version
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING
 from dolly.branding import apply_window_icon
 from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknowledgementRequired,
@@ -354,8 +355,14 @@ class DollyApp:
         self._pov_project = None
         self.video_fps = tk.StringVar(value="60")
         self.video_bitrate = tk.StringVar(value="20 Mbps")
-        self.video_codec = tk.StringVar(value=CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
-        self.video_format = tk.StringVar(value=dict(CONTAINER_CHOICES)[DEFAULT_CONTAINER])
+        self.video_codec = tk.StringVar(
+            value=CODEC_BY_KEY["lossless" if wine_version() else DEFAULT_CODEC_KEY][0])
+        self.video_format = tk.StringVar(
+            value=dict(CONTAINER_CHOICES)["mkv" if wine_version() else DEFAULT_CONTAINER])
+        if wine_version():
+            # The default .mp4 name would need correcting on the first take;
+            # start on the container the Wine-supported codec writes.
+            self.video_path.set(str(Path(self.video_path.get()).with_suffix(".mkv")))
         self.player_processing = tk.StringVar(value="Background")
         self.players_scratch = tk.StringVar(value="")
         self._player_encode_cancel = None
@@ -802,9 +809,11 @@ class DollyApp:
         available = self._ffmpeg_available()
         if resolve_container(codec_key, container, ffmpeg_available=available) != container:
             # Lossless is MKV-only; the built-in writer (and Auto without
-            # FFmpeg) is MP4-only. Show what will actually be written.
-            self.video_codec.set(CODEC_BY_KEY[DEFAULT_CODEC_KEY][0])
-            container = resolve_container(DEFAULT_CODEC_KEY, container, ffmpeg_available=available)
+            # FFmpeg) is MP4-only. Show what will actually be written. Under
+            # Wine only Lossless is supported, so do not fall back to Auto.
+            fallback = "lossless" if wine_version() else DEFAULT_CODEC_KEY
+            self.video_codec.set(CODEC_BY_KEY[fallback][0])
+            container = resolve_container(fallback, container, ffmpeg_available=available)
         self.video_format.set(dict(CONTAINER_CHOICES)[container])
         self._sync_video_extension()
 
@@ -1069,6 +1078,12 @@ class DollyApp:
             audit = status.get("audit") if isinstance(status, dict) else None
             if isinstance(audit, dict):
                 self._report_take_audit(audit.get("findings", ()))
+            dropped = status.get("frames_dropped") if isinstance(status, dict) else None
+            if isinstance(dropped, int) and not isinstance(dropped, bool) and dropped > 0:
+                LOG.warning("Take dropped %d frame(s); the video may have gaps.", dropped)
+                self.status_text.set(
+                    f"Video saved with {dropped} dropped frame(s); the file may have gaps. "
+                    "Close other GPU-heavy apps before recording again.")
             if self.layer_pipeline.completed(status):
                 # The color take of a layered run just landed. Say so, because
                 # the selected pass takes start immediately afterwards.
