@@ -4126,6 +4126,10 @@ int main(int argc, char** argv) {
             rail_regressions(argc==3 ? argv[2] : nullptr);
             return 0;
         }
+        if (argc == 3 && std::strcmp(argv[1], "--rail-motion") == 0) {
+            rail_regressions(argv[2], true);
+            return 0;
+        }
         const bool rail_hook = argc==2 && std::strcmp(argv[1],"--rail-hook-check")==0;
         // Existing geometry/curve regressions exercise the supported classic fallback.
         SetEnvironmentVariableA("DOLLY_OVERLAY_UI", rail_hook ? nullptr : "classic");

@@ -152,26 +152,40 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
         bool selected = tab == 5 ? rail_paths_open_ : rail_selected_ == int(tab);
         if (tab == 5 && !selected)
             d.clear = false;
-        if (selected != rail_target_[tab]) {
-            rail_from_[tab] = rail_progress_[tab];
-            rail_started_[tab] = ImGui::GetTime();
-            rail_target_[tab] = selected;
-        }
-        const float time = float(std::clamp((ImGui::GetTime() - rail_started_[tab]) / .32, 0., 1.));
-        const float ease = 1 - (1 - time) * (1 - time) * (1 - time);
-        const float progress = rail_progress_[tab] =
-            reduced_motion_ ? (selected ? 1.f : 0.f)
-                            : rail_from_[tab] + ((selected ? 1.f : 0.f) - rail_from_[tab]) * ease;
+        auto& open = d.open[tab];
+        open.set(selected);
+        open.step(io.DeltaTime, .32f, reduced_motion_);
+        d.hover[tab].step(io.DeltaTime, .22f, reduced_motion_);
+        const float progress = open.value();
+        const float hover = d.hover[tab].value();
         const float width = (65 + (widths[tab] - 65) * progress) * s;
         const float x = tab == 5 ? origin + 1861 * s - width : next_x;
         next_x = x + width + 5 * s;
-        const float hover =
-            ImGui::IsMouseHoveringRect(ImVec2(x, 0), ImVec2(x + width, 90 * s), false) ? 1.f : 0.f;
-        rail_hover_[tab] += (hover - rail_hover_[tab]) * std::min(1.f, io.DeltaTime * 22);
-        const float closed_height = (65 + 25 * rail_hover_[tab]) * s;
+        const float closed_height = (65 + 25 * hover) * s;
         const float pad = tab == 0 || tab == 1 || tab == 5 ? 21.f : 31.f;
-        // Width stays in design coordinates while clipping reveals the drawer.
+        // Measure once before opening, so the card does not reveal a stale height
+        // and start a second resize as soon as its contents become visible.
         const float content_width = widths[tab] - 2 * pad + 1;
+        if (!d.measured[tab]) {
+            char measure_id[40];
+            std::snprintf(measure_id, sizeof(measure_id), "##rail-measure%u", tab);
+            ImGui::SetNextWindowPos(ImVec2(-40000, -40000));
+            ImGui::SetNextWindowSize(ImVec2(widths[tab] * s, 4000 * s));
+            ImGui::Begin(measure_id, nullptr,
+                         flags | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus);
+            ImGui::SetWindowFontScale(font_scale);
+            const int previous_page = lite_page_;
+            lite_page_ = std::min(int(tab), 4);
+            ImGui::BeginDisabled();
+            k::BeginRegion(ImGui::GetWindowPos(), content_width);
+            draw_kara_drawer(state, tab, true);
+            rail_body_height_[tab] = d.used_height;
+            ImGui::EndDisabled();
+            lite_page_ = previous_page;
+            ImGui::End();
+            d.measured[tab] = true;
+        }
         const float wanted_height = rail_body_height_[tab] + pad + (pad - 1) + 64;
         auto& tween = d.heights[tab];
         const auto height_at = [&] {
@@ -182,7 +196,7 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
         if (!tween.to)
             tween.from = tween.to = wanted_height;
         if (std::abs(wanted_height - tween.to) > .01f) {
-            tween.from = height_at();
+            tween.from = progress > 0 ? height_at() : wanted_height;
             tween.to = wanted_height;
             tween.started = ImGui::GetTime();
         }
@@ -192,34 +206,51 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
             closed_height + (std::min(target_height, max_height) - closed_height) * progress;
         char id[40];
         std::snprintf(id, sizeof(id), "##rail-tab%u", tab);
-        ImGui::SetNextWindowPos(ImVec2(x, 0));
-        ImGui::SetNextWindowSize(ImVec2(width, height));
+        // Round both edges, as in Kara's preview. Rounding position and width
+        // separately lets Campaths' fixed right edge wobble by a pixel.
+        const float pixel_x = std::round(x);
+        ImGui::SetNextWindowPos(ImVec2(pixel_x, 0));
+        ImGui::SetNextWindowSize(ImVec2(std::round(x + width) - pixel_x, std::round(height)));
         ImGui::Begin(id, nullptr, flags);
         ImGui::SetWindowFontScale(font_scale);
         auto* dl = ImGui::GetWindowDrawList();
         const ImVec2 a = ImGui::GetWindowPos();
         const ImVec2 b(a.x + ImGui::GetWindowWidth(), a.y + ImGui::GetWindowHeight());
-        const auto fill = t::Mix(t::Mix(t::bg_surface, t::button_hover, rail_hover_[tab]),
-                                 t::bg_surface, progress);
+        const auto fill =
+            t::Mix(t::Mix(t::bg_surface, t::button_hover, hover), t::bg_surface, progress);
         // The rail hangs from the top edge: only the bottom corners are rounded.
         dl->AddRectFilled(a, b, t::U32(t::border_soft), 31 * s, ImDrawFlags_RoundCornersBottom);
         dl->AddRectFilled(ImVec2(a.x + s, a.y), ImVec2(b.x - s, b.y - s), t::U32(fill), 30 * s,
                           ImDrawFlags_RoundCornersBottom);
         hovered_ui |= ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-        const float alpha = std::clamp((progress - .6f) / .4f, 0.f, 1.f);
+        // Kara's fade starts after 60% of opening TIME, not eased geometry.
+        // Closing decays at the same rate; reversing keeps the current opacity.
+        const float opening_time = 1 - std::cbrt(std::max(0.f, 1 - progress));
+        const float fade_target = std::clamp((opening_time - .6f) / .4f, 0.f, 1.f);
+        const float alpha = d.alpha[tab] =
+            reduced_motion_ ? (selected ? 1.f : 0.f)
+                            : std::max(fade_target, d.alpha[tab] - io.DeltaTime / (.32f * .4f));
         if (alpha > .001f) {
             lite_page_ = std::min(int(tab), 4);
-            const float card_x = tab == 5 ? std::floor(origin + 1861 * s - widths[tab] * s) : a.x;
+            const float card_x = tab == 5 ? origin + 1861 * s - widths[tab] * s : a.x;
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, previous.Alpha * alpha);
             ImGui::PushClipRect(a, ImVec2(b.x, std::max(0.f, b.y - 64 * s)), true);
+            // Keep transitioning controls inert without adding a second dim/fade.
+            ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.f);
             ImGui::BeginDisabled(!selected || progress < .98f);
             // A bounded scroller only appears when the viewport cannot hold an expanded drawer.
             ImGui::SetCursorScreenPos(ImVec2(card_x + pad * s, pad * s));
             const float body_height = std::max(1.f, height - (pad + 64) * s);
-            const bool scroll = progress > .98f && target_height > max_height;
-            if (scroll)
-                ImGui::BeginChild("##drawer-scroll", ImVec2(content_width * s, body_height),
+            const bool scroll = target_height > max_height;
+            if (scroll) {
+                // Put the scrollbar in the drawer's existing right inset. Shrinking
+                // the design region cuts fixed-width rows, and placing text flush
+                // against the child scissor can shave off the last glyph at a
+                // fractional UI scale. Keep the full row width plus an 8px gutter.
+                const float scroll_width = content_width * s + style.ScrollbarSize + 8 * s;
+                ImGui::BeginChild("##drawer-scroll", ImVec2(scroll_width, body_height),
                                   ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+            }
             k::BeginRegion(ImGui::GetCursorScreenPos(), content_width);
             draw_kara_drawer(state, tab);
             if (std::abs(rail_body_height_[tab] - d.used_height) > .01f)
@@ -230,15 +261,18 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
                 ImGui::EndChild();
             }
             ImGui::EndDisabled();
+            ImGui::PopStyleVar();
             ImGui::PopClipRect();
             ImGui::PopStyleVar();
         }
         const ImVec2 icon((a.x + b.x) * .5f, b.y - (32.5f - .5f * progress) * s);
         rail_icons::DrawRail(dl, rail_icons::Rail(tab), icon, s,
                              t::U32(t::Mix(t::text_muted, t::text_primary, progress)));
-        const ImRect hit(ImVec2(a.x, progress > .02f ? b.y - 64 * s : a.y), b);
+        const ImRect hit(ImVec2(a.x, selected ? b.y - 64 * s : a.y), b);
         ImGui::SetCursorScreenPos(hit.Min);
-        if (ImGui::InvisibleButton("##rail-button", hit.GetSize())) {
+        if (ImGui::InvisibleButton("##rail-button", hit.GetSize(),
+                                   selected ? ImGuiButtonFlags_None
+                                            : ImGuiButtonFlags_PressedOnClick)) {
             if (tab == 5) {
                 rail_paths_open_ = !rail_paths_open_;
                 d.clear = d.remove = false;
@@ -250,6 +284,8 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
         rail_tab_rects_[tab] = ImVec4(hit.Min.x, hit.Min.y, hit.Max.x, hit.Max.y);
         if (ImGui::IsItemHovered())
             k::ShowTooltip(names[tab]);
+        d.hover[tab].set(ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+                         ImGui::IsMouseHoveringRect(a, b));
         ImGui::End();
     }
     draw_kara_transport(state);

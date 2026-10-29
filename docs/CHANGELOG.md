@@ -4,6 +4,12 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
+## Unreleased
+
+- **Complete drawer padding.** *Before:* a drawer scrollbar could cut off right-aligned labels, shortcut chips and buttons. *After:* scrolling preserves the full rows and leaves a clear gap beside the scrollbar.
+
+- **Consistent tab motion.** *Before:* drawer text faded in too early, brightened abruptly, and interrupted transitions restarted their timing. *After:* tabs follow Kara's hover easing, reversible motion and content fade, with their correct height from the first opening.
+
 ## 0.6.83-alpha
 
 - **Optional NVIDIA DLSS support.** *Before:* Dolly's redirected game output could hide NVIDIA DLSS in Deadlock's Video settings. *After:* an opt-in Settings switch makes the game's DLSS controls available for previews and Color recordings. Turn it off before a new launch to use standard output capture again.

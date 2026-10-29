@@ -112,10 +112,6 @@ public:
 private:
     bool rail_enabled_ = true, rail_drawing_ = false, rail_paths_open_ = false, rail_picker_mode_ = false;
     int rail_selected_ = -1;
-    float rail_progress_[6]{}, rail_hover_[6]{};
-    float rail_from_[6]{};
-    double rail_started_[6]{};
-    bool rail_target_[6]{};
     float rail_body_height_[6]{654,390,314,536,399,480};
     ImVec4 rail_tab_rects_[6]{};
     ImVec2 rail_paths_position_{}, rail_paths_size_{};

@@ -1,7 +1,182 @@
 // Real rail controls and WARP screenshots; synthetic data, no game access.
 #include "../src/dolly_overlay_assets.hpp"
 #include "../vendor/imgui/backends/imgui_impl_dx11.h"
-static void rail_regressions(const char* output) {
+// The expected timings come from Kara's supplied rail.cpp (EaseAnim and Frame),
+// checked against the actual window geometry and emitted text, not a test tween.
+static void rail_motion_regressions() {
+    auto* previous = ImGui::GetCurrentContext();
+    const auto saved = snapshot;
+    SetEnvironmentVariableA("DOLLY_UI_LAYOUT_FILE", "none");
+    for (const auto size :
+         {ImVec2(1280, 720), ImVec2(1920, 1080), ImVec2(2560, 1440), ImVec2(3840, 2160)}) {
+        auto* ctx = ImGui::CreateContext();
+        auto& io = ImGui::GetIO();
+        io.DisplaySize = size;
+        io.DeltaTime = .01f;
+        io.IniFilename = nullptr;
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        dolly::OverlayPanel panel;
+        panel.style_panel();
+        // Reserve non-white atlas UVs for glyphs in the opacity assertions;
+        // ImGui can otherwise texture anti-aliased icon strokes from this atlas.
+        ImGui::GetStyle().AntiAliasedLinesUseTex = false;
+        panel.initialize_layout();
+        panel.load_panel_fonts(1.5f);
+        io.Fonts->Build();
+        snapshot = {};
+        snapshot.enabled = snapshot.focused = snapshot.ready = snapshot.paused = true;
+        snapshot.manual_active = snapshot.attach_available = true;
+        snapshot.owner = dolly::EditorOwner::Panel;
+        snapshot.camera_count = 2;
+        snapshot.horizontal_fov = 90;
+        snapshot.duration = 3;
+        snapshot.speed = 400;
+        auto frame = [&] {
+            ImGui::NewFrame();
+            panel.draw_rail(snapshot);
+            ImGui::Render();
+        };
+        auto frames = [&](int count) {
+            while (count--)
+                frame();
+        };
+        auto window = [&](unsigned tab) {
+            char name[32];
+            std::snprintf(name, sizeof(name), "##rail-tab%u", tab);
+            return ImGui::FindWindowByName(name);
+        };
+        auto choose = [&](unsigned tab) {
+            ctx->NavNextActivateId = window(tab)->GetID("##rail-button");
+            frame();
+        };
+        auto text_alpha = [&](ImGuiWindow* w) {
+            unsigned maximum = 0;
+            for (const auto& v : w->DrawList->VtxBuffer)
+                if (v.uv.x != io.Fonts->TexUvWhitePixel.x || v.uv.y != io.Fonts->TexUvWhitePixel.y)
+                    maximum = std::max(maximum, (v.col >> IM_COL32_A_SHIFT) & 255u);
+            return maximum;
+        };
+        const float scale = size.y / 1080;
+        io.AddMousePosEvent(-100, -100);
+        frames(3);
+        io.AddMousePosEvent(80 * scale, 20 * scale);
+        frame(); // hover is resolved after drawing, as in the supplied preview
+        frames(6);
+        require(std::abs(window(0)->Size.y - 80.383f * scale) < 1.1f,
+                "Rail hover no longer follows Kara's 220ms cubic easing");
+        io.AddMousePosEvent(-100, -100);
+        frames(60);
+        choose(0);
+        frames(10);
+        require(std::abs(window(0)->Size.x - 320.8435f * scale) < 1.1f,
+                "Rail opening does not follow Kara's 320ms geometry");
+        const float early_height = window(0)->Size.y;
+        require(text_alpha(window(0)) == 0,
+                "Drawer text appears before the final 40 percent of opening time");
+        frames(10);
+        require(std::abs(int(text_alpha(window(0))) - 16) <= 2,
+                "Drawer fade is early or gains a separate disabled-control brightness jump");
+        frames(20);
+        const float first_open = 1 - std::pow(1 - .1f / .32f, 3);
+        require(std::abs(early_height -
+                         (65 * scale + (window(0)->Size.y - 65 * scale) * first_open)) < 1.5f,
+                "First opening resizes again when initially hidden content is measured late");
+        panel.close_rail_drawers();
+        frames(10);
+        require(std::abs(window(0)->Size.x - 188.1565f * scale) < 1.1f &&
+                    std::abs(int(text_alpha(window(0))) - 56) <= 2,
+                "Closing drawer lost Kara's geometry or linear content fade-out");
+        choose(0); // reverse a closing drawer without restarting a full transition
+        const float progress = (window(0)->Size.x / scale - 65) / 379;
+        const float phase = 1 - std::cbrt(std::max(0.f, 1 - progress));
+        frames(10);
+        const float remaining = std::max(0.f, 1 - phase - .1f / .32f);
+        const float expected = 65 + 379 * (1 - remaining * remaining * remaining);
+        require(std::abs(window(0)->Size.x - expected * scale) < 2,
+                "Reversing a drawer restarts its duration instead of preserving the motion phase");
+        frames(50);
+        choose(1);
+        frames(16);
+        require(std::abs(window(0)->Size.x - 112.375f * scale) < 1.1f &&
+                    std::abs(window(1)->Size.x - 396.625f * scale) < 1.1f,
+                "Switching tabs does not animate both drawers at Kara's pace");
+        frames(50);
+        require(observed_actions.empty(),
+                "Motion or hidden measurement dispatched an editor action");
+        for (unsigned direction = 0; direction < 2; ++direction) {
+            choose(5);
+            for (unsigned tick = 0; tick < 20; ++tick) {
+                frame();
+                const float edge = std::round((size.x - 1920 * scale) * .5f + 1861 * scale);
+                require(std::abs(window(5)->Pos.x + window(5)->Size.x - edge) < .1f,
+                        "Right-anchored Campaths edge wobbles during the animation");
+            }
+            frames(20);
+        }
+        // Use the real saved preference, not a test-only animation switch.
+        ImGui::LoadIniSettingsFromMemory("[DollyUI][Preferences]\nReducedMotion=1\n");
+        choose(0);
+        frame();
+        require(std::abs(window(0)->Size.x - 444 * scale) < 1.1f &&
+                    std::abs(window(1)->Size.x - 65 * scale) < 1.1f && text_alpha(window(0)) == 255,
+                "Reduce motion does not snap drawer geometry and text together");
+        // A short viewport exercises real scrolling without the parked tripod feature.
+        io.DisplaySize = ImVec2(480, 200);
+        frames(4);
+        ImGuiWindow* child = nullptr;
+        for (auto* w : ctx->Windows)
+            if (w->Active && std::strstr(w->Name, "##drawer-scroll"))
+                child = w;
+        require(child && child->ScrollbarY, "Short viewport did not exercise drawer scrolling");
+        for (unsigned position = 0; position < 2; ++position) {
+            if (position) {
+                ImGui::SetScrollY(child, child->ScrollMax.y);
+                frames(2);
+            }
+            require(child->DC.CursorMaxPos.x <= child->InnerClipRect.Max.x,
+                    "Scrollbar clips fixed-width controls");
+            unsigned glyphs = 0;
+            for (const auto& cmd : child->DrawList->CmdBuffer) {
+                if (std::abs(cmd.ClipRect.z - child->InnerClipRect.Max.x) > .1f)
+                    continue;
+                for (unsigned i = cmd.IdxOffset; i < cmd.IdxOffset + cmd.ElemCount; ++i) {
+                    const auto& v =
+                        child->DrawList->VtxBuffer[cmd.VtxOffset + child->DrawList->IdxBuffer[i]];
+                    if (v.uv.x == io.Fonts->TexUvWhitePixel.x &&
+                        v.uv.y == io.Fonts->TexUvWhitePixel.y)
+                        continue;
+                    ++glyphs;
+                    require(v.pos.x <= cmd.ClipRect.z, "Scrollbar cuts a rendered letter");
+                }
+            }
+            require(glyphs > 20, "Scroll regression did not inspect rendered glyphs");
+        }
+        io.DisplaySize = size;
+        ImGui::LoadIniSettingsFromMemory("[DollyUI][Preferences]\nReducedMotion=0\n");
+        for (const int rate : {30, 60, 144}) {
+            io.DeltaTime = 1.f / rate;
+            panel.close_rail_drawers();
+            frames(rate);
+            choose(0);
+            const int count = int(std::round(.2 * rate));
+            frames(count);
+            const float elapsed = float(count) / rate;
+            const float p = 1 - std::pow(1 - elapsed / .32f, 3);
+            const float alpha = std::clamp((elapsed / .32f - .6f) / .4f, 0.f, 1.f);
+            require(std::abs(window(0)->Size.x - (65 + 379 * p) * scale) < 1.1f &&
+                        std::abs(int(text_alpha(window(0))) - int(std::round(255 * alpha))) <= 2,
+                    "Rail geometry or fade changes with frame rate");
+        }
+        ImGui::DestroyContext(ctx);
+        std::printf(
+            "Rail motion %.0fx%.0f: reference hover/open/close/fade/reverse/switch, reduced motion and scrolled glyphs passed.\n",
+            size.x, size.y);
+    }
+    ImGui::SetCurrentContext(previous);
+    snapshot = saved;
+}
+static void rail_regressions(const char* output, bool motion = false) {
+    rail_motion_regressions();
     SyntheticViewer viewer;
     SetEnvironmentVariableA("DOLLY_OVERLAY_UI", nullptr);
     auto* previous = ImGui::GetCurrentContext();
@@ -437,7 +612,7 @@ static void rail_regressions(const char* output) {
         settle();
         require(!panel.rail_drawers_open() && panel.rail_tab_rect(0).w < 100 * size.y / 1080,
                 "Closing drawers left a live drawer");
-        if (output && size.x == 1920) {
+        if (output && size.x == (motion ? 1280 : 1920)) {
             ID3D11Device* device = nullptr;
             ID3D11DeviceContext* context = nullptr;
             D3D_FEATURE_LEVEL level{};
@@ -449,8 +624,8 @@ static void rail_regressions(const char* output) {
             auto* background = dolly::load_rail_background(device);
             require(background != nullptr, "Rail background resource missing");
             D3D11_TEXTURE2D_DESC desc{};
-            desc.Width = 1920;
-            desc.Height = 1080;
+            desc.Width = unsigned(size.x);
+            desc.Height = unsigned(size.y);
             desc.MipLevels = desc.ArraySize = 1;
             desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             desc.SampleDesc.Count = 1;
@@ -461,8 +636,34 @@ static void rail_regressions(const char* output) {
                     "Rail screenshot target failed");
             require(SUCCEEDED(device->CreateRenderTargetView(target, nullptr, &view)),
                     "Rail screenshot view failed");
-            for (unsigned tab = 0; tab < 11; ++tab) {
-                if (tab < 6)
+            if (motion) {
+                panel.close_rail_drawers();
+                io.DeltaTime = 1.f / 60;
+                settle();
+            }
+            for (unsigned shot = 0; shot < (motion ? 180u : 11u); ++shot) {
+                const unsigned tab = motion ? 0 : shot;
+                if (motion) {
+                    const float scale = size.y / 1080;
+                    io.AddMousePosEvent(shot < 12 ? 80 * scale : -100,
+                                        shot < 12 ? 20 * scale : -100);
+                    int change = -1;
+                    if (shot == 20 || shot == 55)
+                        change = 0;
+                    if (shot == 45)
+                        change = 1;
+                    if (shot == 62)
+                        change = 3;
+                    if (shot == 90 || shot == 130)
+                        change = 5;
+                    if (shot == 120 || shot == 150)
+                        panel.close_rail_drawers();
+                    if (change >= 0) {
+                        char name[32];
+                        std::snprintf(name, sizeof(name), "##rail-tab%d", change);
+                        ctx->NavNextActivateId = find(name)->GetID("##rail-button");
+                    }
+                } else if (tab < 6)
                     activate_tab(tab);
                 else if (tab == 6) {
                     panel.close_rail_drawers();
@@ -526,11 +727,11 @@ static void rail_regressions(const char* output) {
                 D3D11_MAPPED_SUBRESOURCE pixels{};
                 require(SUCCEEDED(context->Map(readback, 0, D3D11_MAP_READ, 0, &pixels)),
                         "Rail map failed");
-                std::ofstream file(std::string(output) + "-" + std::to_string(tab) + ".ppm",
+                std::ofstream file(std::string(output) + "-" + std::to_string(shot) + ".ppm",
                                    std::ios::binary);
-                file << "P6\n1920 1080\n255\n";
-                for (unsigned y = 0; y < 1080; ++y)
-                    for (unsigned x = 0; x < 1920; ++x)
+                file << "P6\n" << unsigned(size.x) << " " << unsigned(size.y) << "\n255\n";
+                for (unsigned y = 0; y < unsigned(size.y); ++y)
+                    for (unsigned x = 0; x < unsigned(size.x); ++x)
                         file.write(static_cast<const char*>(pixels.pData) + y * pixels.RowPitch +
                                        x * 4,
                                    3);
