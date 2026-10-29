@@ -17,7 +17,9 @@ that hugs its text (a kit button) the way Figma does, from the shipped face's ow
 The VALVE faces are never shipped. They are used when Windows already has them,
 or after :func:`request_private_fonts` registers the three audited files from the
 user's own Deadlock install, privately for this process, through a verified copy
-under ``%LOCALAPPDATA%\\DeadlockDolly\\ui-fonts-v1``. A changed game font means a
+under ``%LOCALAPPDATA%\\DeadlockDolly\\ui-fonts-v1``. A private derivative corrects
+their shallow Windows descent metrics, preserving outlines and widths. It uses
+a distinct internal face name so installed originals cannot shadow it. A changed game font means a
 silent fallback (Inter, then Segoe UI) by design; :func:`status` says why.
 ``DOLLY_UI_FONTS=fallback`` forces the Segoe UI fallbacks, Inter included
 (deterministic tests).
@@ -73,6 +75,7 @@ FONT_SOURCES = (
     {"family": "VALVE Pulp Bold", "name": "valvepulp-bold.ttf",
      "bytes": 240028, "sha256": "60b904cb9353c2a8a8c7b9e6b052c9c368a8ea1e941dd4d4005a185822d205b9"},
 )
+_DISPLAY_FAMILIES = {spec["family"]: spec["family"].replace("VALVE", "DOLLY", 1) for spec in FONT_SOURCES}
 FR_PRIVATE = 0x10
 _FONT_LIMIT = 1024 * 1024
 _REGISTERED = {}  # SHA-256 -> path; private registrations last until the process exits.
@@ -112,7 +115,7 @@ def install(root, scale: float) -> None:
     forced = _forced_fallback()
     if not forced:
         state.bundled = load_bundled()
-    families = set(tkfont.families(root))
+    families = _logical_families(tkfont.families(root))
     state.status = "fallback" if forced else _availability(
         [spec["family"] for spec in FONT_SOURCES], families)
     _resolve_ui_faces(root, state, families, forced)
@@ -228,12 +231,12 @@ def request_private_fonts(root, game_path: str) -> str:
             state.status = "fallback"
             return state.status
         wanted = [spec["family"] for spec in FONT_SOURCES]
-        families = set(tkfont.families(root))
+        families = _logical_families(tkfont.families(root))
         path = str(game_path or "").strip()
-        missing = [family for family in wanted if family not in families]
+        missing = [family for family in wanted if _DISPLAY_FAMILIES[family] not in families]
         if missing and path and sys.platform == "win32" and path not in state.requests:
             state.requests[path] = state.detail = _load_private(path, families=set(missing))
-            families = set(tkfont.families(root))
+            families = _logical_families(tkfont.families(root))
         state.status = _availability(wanted, families)
         if _apply(root, state, families):
             _notify(state)
@@ -306,13 +309,19 @@ def _choose(candidates, families, forced):
     return family, size, style, False
 
 
+def _logical_families(families):
+    families = set(families)
+    return families | {family for family, display in _DISPLAY_FAMILIES.items() if display in families}
+
+
 def _apply(root, state, families):
     """Configure every named font; True when an existing font changed."""
     forced = _forced_fallback()
     changed = False
     for key, candidates in ui_theme.DISPLAY_FONTS.items():
         family, size, style, listed = _choose(candidates, families, forced)
-        options = {"family": family, "size": -px(state.scale, size),
+        display = _DISPLAY_FAMILIES.get(family)
+        options = {"family": display if display in families else family, "size": -px(state.scale, size),
                    "weight": "bold" if "bold" in style.split() else "normal", "slant": "roman"}
         state.resolved[key] = family if listed else ""
         state.design[key] = (family, size, options["weight"])
@@ -509,6 +518,80 @@ def _cache_dir():
     return Path(local) / "DeadlockDolly" / "ui-fonts-v1"
 
 
+def _checksum(data):
+    padded = data + b"\0" * (-len(data) % 4)
+    return sum(word[0] for word in struct.iter_unpack(">I", padded)) & 0xFFFFFFFF
+
+
+def _display_metrics(data):
+    """Give Tk the font's real descender depth without changing any glyphs.
+
+    The audited VALVE faces' Windows descent is shallower than their outlines.
+    Canvas text is clipped to that line box, so widget padding alone cannot fix it.
+    Vertical metrics, private face names and TrueType checksums change locally.
+    """
+    _check_tables(data)
+    tables = {}
+    for position in range(12, 12 + 16 * struct.unpack_from(">H", data, 4)[0], 16):
+        tag, _sum, offset, length = struct.unpack_from(">4sIII", data, position)
+        tables[tag] = (position, offset, length)
+    for tag, minimum in ((b"head", 54), (b"hhea", 36), (b"OS/2", 78), (b"name", 6)):
+        if tag not in tables or tables[tag][2] < minimum:
+            raise ValueError("Display font is missing its vertical metrics")
+    head, hhea, os2 = (tables[tag][1] for tag in (b"head", b"hhea", b"OS/2"))
+    lowest = struct.unpack_from(">h", data, head + 38)[0]
+    depth = max(0, -lowest)
+    if struct.unpack_from(">H", data, os2 + 76)[0] >= depth:
+        return data
+    fixed = bytearray(data)
+    struct.pack_into(">H", fixed, os2 + 76, depth)
+    for offset in (hhea + 6, os2 + 70):
+        struct.pack_into(">h", fixed, offset, min(lowest, struct.unpack_from(">h", data, offset)[0]))
+    # A distinct private face prevents Windows selecting an older/system copy of
+    # the same font. Glyph outlines, widths, copyright and licence stay intact.
+    name, length = tables[b"name"][1:]
+    count, strings = struct.unpack_from(">HH", data, name + 2)
+    if 6 + count * 12 > length:
+        raise ValueError("Invalid display font name records")
+    for index in range(count):
+        platform, _encoding, _language, kind, size, offset = struct.unpack_from(">6H", data, name + 6 + index * 12)
+        if strings + offset + size > length:
+            raise ValueError("Invalid display font name string")
+        if kind not in (1, 3, 4, 6, 16):
+            continue
+        start = name + strings + offset
+        encoding = "utf-16-be" if platform in (0, 3) else "latin-1"
+        old, new = (text.encode(encoding) for text in ("VALVE", "DOLLY"))
+        fixed[start:start + size] = bytes(fixed[start:start + size]).replace(old, new)
+    struct.pack_into(">I", fixed, head + 8, 0)
+    for tag in (b"head", b"hhea", b"OS/2", b"name"):
+        position, offset, length = tables[tag]
+        struct.pack_into(">I", fixed, position + 4, _checksum(bytes(fixed[offset:offset + length])))
+    struct.pack_into(">I", fixed, head + 8, (0xB1B0AFBA - _checksum(bytes(fixed))) & 0xFFFFFFFF)
+    return bytes(fixed)
+
+
+def _display_font(path, spec):
+    """Verified local derivative; retain the original cache and game files exactly."""
+    if spec["family"] not in ui_theme.TRUE_DESCENT_EM:
+        return path
+    data = _read_bounded(path, min(spec["bytes"], _FONT_LIMIT))
+    _verify_font(data, spec)
+    fixed = _display_metrics(data)
+    if fixed == data:
+        return path
+    target = path.parent / "display-metrics-v1" / path.name
+    if target.parent.resolve().parent != path.parent.resolve():
+        raise ValueError("Display font cache escapes its directory")
+    try:
+        matches = _read_bounded(target, _FONT_LIMIT) == fixed
+    except (OSError, ValueError):
+        matches = False
+    if not matches:
+        _atomic_write(target, fixed, _FONT_LIMIT)
+    return target
+
+
 def _register_private(path, digest):
     global _GDI32
     with _REGISTER_LOCK:
@@ -581,7 +664,9 @@ def _load_private(game_path, *, families=None, cache_dir=None):
         if path is not None:
             state["cache_path"] = str(path)
             try:
-                state["status"] = _register_private(path, spec["sha256"])
+                display = _display_font(path, spec)
+                state["display_path"] = str(display)
+                state["status"] = _register_private(display, spec["sha256"])
             except (OSError, ValueError, RuntimeError, AttributeError) as exc:
                 state.update(status="unavailable", error=str(exc)[:240])
         result["fonts"].append(state)

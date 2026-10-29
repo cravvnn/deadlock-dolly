@@ -4,11 +4,17 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
-## Unreleased
+## 0.6.84-alpha
 
-- **Complete drawer padding.** *Before:* a drawer scrollbar could cut off right-aligned labels, shortcut chips and buttons. *After:* scrolling preserves the full rows and leaves a clear gap beside the scrollbar.
+- **Audio export with content mods.** *Before:* both fixed-step audio options could stop before recording with a movie-audio path error when content mods were installed. *After:* Dolly verifies the complete launched configuration so game and reconstructed audio can start with those mods enabled, while retaining session and cleanup safeguards.
 
-- **Consistent tab motion.** *Before:* drawer text faded in too early, brightened abruptly, and interrupted transitions restarted their timing. *After:* tabs follow Kara's hover easing, reversible motion and content fade, with their correct height from the first opening.
+- **Complete drawer padding.** *Before:* drawer scrollbars could cut off labels, shortcuts and buttons. *After:* scrolling keeps complete rows with clear space beside the scrollbar.
+
+- **Smoother tab animations.** *Before:* text appeared too early, brightness jumped and interrupted transitions felt uneven. *After:* tabs follow Kara's intended hover, opening and closing motion, with smooth fading and stable drawer sizes and edges. Reduce motion remains available.
+
+- **Complete desktop lettering.** *Before:* the bottoms of letters such as y, p, g and j could be clipped in desktop headings and stickers. *After:* Dolly gives the same font shapes enough room to display their tails at different display scales, without changing the game's font files.
+
+Full details: [0.6.84 release notes](RELEASE_NOTES_0.6.84-alpha.md).
 
 ## 0.6.83-alpha
 

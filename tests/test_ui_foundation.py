@@ -422,7 +422,88 @@ def truetype_blob():
     return b"\x00\x01\x00\x00" + struct.pack(">HHHH", 1, 16, 0, 0) + directory + body
 
 
+def display_metrics_blob():
+    head, hhea, os2 = bytearray(54), bytearray(36), bytearray(78)
+    struct.pack_into(">H", head, 18, 1000)
+    struct.pack_into(">h", head, 38, -300)
+    struct.pack_into(">h", hhea, 6, -200)
+    struct.pack_into(">h", os2, 70, -200)
+    struct.pack_into(">H", os2, 76, 90)
+    names = [(1, 'VALVE Oracle Medium'), (3, 'VALVEOracle-Medium'),
+             (13, 'Copyright VALVE; original licence'), (16, 'VALVE Oracle')]
+    strings, records = b'', b''
+    for kind, text in names:
+        encoded = text.encode('utf-16-be')
+        records += struct.pack('>6H', 3, 1, 1033, kind, len(encoded), len(strings))
+        strings += encoded
+    name = struct.pack('>3H', 0, len(names), 6 + len(records)) + records + strings
+    tables = [(b'head', bytes(head)), (b'hhea', bytes(hhea)), (b'OS/2', bytes(os2)),
+              (b'name', name), (b'glyf', b'Outlines stay exact'), (b'hmtx', b'Advances stay exact')]
+    directory, body = b'', b''
+    for tag, data in tables:
+        directory += struct.pack('>4sIII', tag, 0, 12 + 16 * len(tables) + len(body), len(data))
+        body += data + b'\0' * (-len(data) % 4)
+    return b'\x00\x01\x00\x00' + struct.pack('>4H', len(tables), 0, 0, 0) + directory + body
+
+
 class FontTests(RootCase):
+    def test_display_metrics_keep_glyphs_and_licence_but_reserve_full_descenders(self):
+        original = display_metrics_blob()
+        fixed = fonts._display_metrics(original)
+        self.assertEqual(len(fixed), len(original))
+        self.assertEqual(fonts._checksum(fixed), 0xB1B0AFBA)
+        tables = {tag: (checksum, offset, length) for tag, checksum, offset, length in
+                  (struct.unpack_from('>4sIII', fixed, pos) for pos in range(12, 108, 16))}
+        for tag in (b'glyf', b'hmtx'):
+            _checksum, offset, length = tables[tag]
+            self.assertEqual(fixed[offset:offset + length], original[offset:offset + length])
+        for tag, delta in ((b'hhea', 6), (b'OS/2', 70)):
+            self.assertEqual(struct.unpack_from('>h', fixed, tables[tag][1] + delta)[0], -300)
+        self.assertEqual(struct.unpack_from('>H', fixed, tables[b'OS/2'][1] + 76)[0], 300)
+        self.assertIn('DOLLY Oracle Medium'.encode('utf-16-be'), fixed)
+        self.assertIn('Copyright VALVE; original licence'.encode('utf-16-be'), fixed)
+        for tag in (b'head', b'hhea', b'OS/2', b'name'):
+            checksum, offset, length = tables[tag]
+            table = bytearray(fixed[offset:offset + length])
+            if tag == b'head': struct.pack_into('>I', table, 8, 0)
+            self.assertEqual(fonts._checksum(bytes(table)), checksum, tag)
+        self.assertEqual(fonts._display_metrics(fixed), fixed)
+        with self.assertRaises(ValueError): fonts._display_metrics(truetype_blob())
+
+    def test_private_display_cache_rechecks_source_and_repairs_only_its_derivative(self):
+        blob = display_metrics_blob()
+        spec = dict(family='VALVE Oracle Medium', bytes=len(blob), sha256=hashlib.sha256(blob).hexdigest())
+        with tempfile.TemporaryDirectory() as folder:
+            original = Path(folder) / 'original.ttf'
+            original.write_bytes(blob)
+            display = fonts._display_font(original, spec)
+            self.assertNotEqual(original, display)
+            self.assertEqual(original.read_bytes(), blob)
+            expected = display.read_bytes()
+            display.write_bytes(b'bad derived cache')
+            self.assertEqual(fonts._display_font(original, spec).read_bytes(), expected)
+            original.write_bytes(b'bad original cache')
+            with self.assertRaises(ValueError): fonts._display_font(original, spec)
+            self.assertEqual(display.read_bytes(), expected)
+
+    def test_private_corrected_faces_replace_named_fonts_after_loading(self):
+        listed = ('Segoe UI', 'VALVE Oracle Medium')
+        with patch.dict(os.environ, {'DOLLY_UI_FONTS': ''}), \
+                patch.object(fonts, 'load_bundled', return_value=[]), \
+                patch.object(fonts.tkfont, 'families', return_value=listed):
+            fonts.install(self.root, 1.0)
+            title = fonts.font(self.root, 'page_title')
+            self.assertEqual(title.cget('family'), 'VALVE Oracle Medium')
+        changes = []
+        fonts.on_change(self.root, lambda: changes.append(True))
+        with patch.object(fonts.tkfont, 'families', return_value=listed + ('DOLLY Oracle Medium',)), \
+                patch.object(fonts, 'load_bundled', return_value=[]):
+            fonts.install(self.root, 1.0)
+        self.assertIs(fonts.font(self.root, 'page_title'), title)
+        self.assertEqual(title.cget('family'), 'DOLLY Oracle Medium')
+        self.assertEqual(fonts.family_available(self.root, 'page_title'), 'VALVE Oracle Medium')
+        self.assertEqual(changes, [True])
+
     def test_forced_fallback_uses_system_faces_per_root(self):
         with patch.dict(os.environ, {"DOLLY_UI_FONTS": "fallback"}):
             fonts.install(self.root, 1.0)
@@ -448,6 +529,7 @@ class FontTests(RootCase):
         listed = ("Segoe UI", "Segoe UI Semibold", "VALVE Oracle Medium", "VALVE Oracle SemiBold",
                   "VALVE Pulp Bold", "Segoe MDL2 Assets")
         with patch.dict(os.environ, {"DOLLY_UI_FONTS": ""}), \
+             patch.dict(fonts._REGISTERED, {}, clear=True), \
              patch.object(fonts.tkfont, "families", return_value=listed):
             fonts.install(self.root, 1.0)
             self.assertEqual(fonts.family_available(self.root, "card_title"), "VALVE Oracle SemiBold")
@@ -476,8 +558,8 @@ class FontTests(RootCase):
     def test_empty_game_path_touches_no_files(self):
         with tempfile.TemporaryDirectory() as local, patch.dict(os.environ, {"LOCALAPPDATA": local, "DOLLY_UI_FONTS": ""}), \
                 patch.object(fonts, "_load_private", side_effect=AssertionError("disk")) as load:
-            self.assertIn(fonts.request_private_fonts(self.root, ""), ("fallback", "system", "partial"))
-            self.assertIn(fonts.request_private_fonts(self.root, None), ("fallback", "system", "partial"))
+            self.assertIn(fonts.request_private_fonts(self.root, ""), ("fallback", "system", "partial", "ready"))
+            self.assertIn(fonts.request_private_fonts(self.root, None), ("fallback", "system", "partial", "ready"))
             load.assert_not_called()
             self.assertEqual(os.listdir(local), [])
 

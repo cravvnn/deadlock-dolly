@@ -62,6 +62,86 @@ class MovieOutputContextTests(unittest.TestCase):
         context.verify_owner(self.c)
         self.assertEqual(self.paths.gameinfo.read_bytes().decode('utf-8').count('citadel_dolly_'),0)
 
+    def configure_content_mods(self, addon_config=False):
+        from dolly import launcher
+        from test_launcher import DMM_GAMEINFO
+        original=DMM_GAMEINFO
+        if addon_config:
+            original=original.replace('    FileSystem', '    AddonConfig { VpkDirectories "addons" }\n    FileSystem')
+        original=original.encode('utf-8')
+        self.paths.gameinfo.write_bytes(original)
+        (self.directory/'original.gameinfo.gi').write_bytes(original)
+        self.record['original_sha256']=hashlib.sha256(original).hexdigest()
+        marker=json.loads((self.overlay/'.dolly-session.json').read_text())
+        marker['original_sha256']=self.record['original_sha256']
+        (self.overlay/'.dolly-session.json').write_text(json.dumps(marker),encoding='utf-8')
+        pairs=launcher.mod_search_paths(original.decode('utf-8'))
+        self.record['carried_addon_mounts']=[dict(key=key,path=path) for key,path in pairs]
+        baseline=(launcher.EDITING_ROOT/'gameinfo.gi').read_bytes().decode('utf-8')
+        merged=launcher.merge_addon_mounts(original.decode('utf-8'),baseline,pairs)
+        patched=launcher.make_gameinfo(merged,self.overlay.name,isolated_settings=True)
+        self.record['patched_sha256']=hashlib.sha256(patched.encode('utf-8')).hexdigest()
+        self.save()
+
+    def test_both_fixed_step_audio_options_accept_carried_mods_and_keep_original_files(self):
+        from dolly.clip_audio import ClipAudioCapture
+        for reconstructed in (False,True):
+            with self.subTest(reconstructed=reconstructed):
+                self.configure_content_mods(addon_config=reconstructed)
+                before=self.paths.gameinfo.read_bytes()
+                self.c.game_pid=MagicMock(return_value=None)
+                self.c._native_bridge=MagicMock(return_value=SimpleNamespace(status=lambda:{'engine_time':0}))
+                self.c._request=MagicMock(side_effect=lambda command,**kwargs: (
+                    'Started recording movie: movie/2026_10_29_12_00_00/take.*: framerate 30'
+                    if command.startswith('startmovie ') else 'Finishing movie' if command=='endmovie' else ''))
+                vpk=self.paths.citadel_dir/'pak01_dir.vpk';vpk.write_bytes(b'test sound archive')
+                with patch('dolly.clip_audio._ffmpeg',return_value=self.folder/'ffmpeg.exe'), \
+                        patch('dolly.clip_audio._viewer',return_value=self.folder/'viewer.exe'):
+                    capture=ClipAudioCapture(self.folder/'shot.mkv',game_audio=not reconstructed,
+                        reconstructed=reconstructed,bridge=MagicMock(),game=self.paths.executable,
+                        game_pid=4321,controller=self.c,fixed_step=True)
+                try:
+                    capture.start()
+                    capture.start_movie()
+                    self.assertEqual(capture.movie.folder,self.mod/'movie/2026_10_29_12_00_00')
+                finally:
+                    capture.cancel()
+                self.assertEqual([call.args[0].split()[0] for call in self.c._request.call_args_list],
+                                 ['hideconsole','startmovie','endmovie'])
+                self.assertEqual(self.paths.gameinfo.read_bytes(),before)
+                self.assertEqual((self.directory/'original.gameinfo.gi').read_bytes(),before)
+
+    def test_modded_context_refuses_missing_changed_or_oversized_original_backup(self):
+        self.configure_content_mods()
+        backup=self.directory/'original.gameinfo.gi'
+        original=backup.read_bytes()
+        backup.unlink()
+        with self.assertRaisesRegex(RuntimeError,'original configuration'):
+            self.c.movie_output_context()
+        for content in (original+b'changed',b'',b'x'*(1024*1024+1)):
+            with self.subTest(size=len(content)):
+                backup.write_bytes(content)
+                with self.assertRaisesRegex(RuntimeError,'original configuration'):
+                    self.c.movie_output_context()
+
+    def test_modded_context_refuses_malformed_launch_mounts(self):
+        for mounts in (None,{},[None],[{'key':'Game'}],[{'key':1,'path':'citadel/addons'}]):
+            with self.subTest(mounts=mounts):
+                self.record['carried_addon_mounts']=mounts
+                self.save()
+                with self.assertRaisesRegex(RuntimeError,'launch mounts'):
+                    self.c.movie_output_context()
+
+    def test_modded_context_refuses_mount_changes_before_and_after_creation(self):
+        self.configure_content_mods()
+        context=self.c.movie_output_context()
+        self.record['carried_addon_mounts'][0]['path']='citadel/addons2'
+        self.save()
+        with self.assertRaisesRegex(RuntimeError,'output owner changed'):
+            context.verify_owner(self.c)
+        with self.assertRaisesRegex(RuntimeError,'primary MOD'):
+            self.c.movie_output_context()
+
     def test_context_refuses_same_pid_replacement_session_and_wrong_controller(self):
         context=self.c.movie_output_context()
         with self.assertRaisesRegex(RuntimeError,'session changed'):

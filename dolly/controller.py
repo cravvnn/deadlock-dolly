@@ -548,14 +548,38 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     or Path(record['overlay_dir']) != overlay
                     or demo is None or record.get('selected_demo') != str(demo)):
                 raise RuntimeError("The movie audio launch identity could not be verified.")
-            patched = launcher.make_gameinfo(baseline.decode('utf-8'), overlay.name, isolated_settings=True)
+            editing = baseline.decode('utf-8')
+            mounts = record.get('carried_addon_mounts', [])
+            if (not isinstance(mounts, list) or any(
+                    not isinstance(entry, dict) or not isinstance(entry.get('key'), str)
+                    or not isinstance(entry.get('path'), str) for entry in mounts)):
+                raise RuntimeError("The movie audio launch mounts could not be verified.")
+            if mounts:
+                # Recreate the launcher's exact input, including carried content
+                # mounts and AddonConfig. The live gameinfo has already been
+                # restored and may have changed since this session was launched.
+                backup = directory / record['backup_name']
+                try:
+                    if not _plain_ancestors(backup) or not 0 < backup.stat().st_size <= 1024 * 1024:
+                        raise ValueError('unavailable original configuration')
+                    with backup.open('rb') as stream:
+                        original = stream.read(1024 * 1024 + 1)
+                    if (len(original) > 1024 * 1024
+                            or hashlib.sha256(original).hexdigest() != record['original_sha256']):
+                        raise ValueError('changed original configuration')
+                    editing = launcher.merge_addon_mounts(
+                        original.decode('utf-8'), editing,
+                        [(entry['key'], entry['path']) for entry in mounts])
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError("The movie audio original configuration could not be verified.") from exc
+            patched = launcher.make_gameinfo(editing, overlay.name, isolated_settings=True)
             mods = [entry for entry in launcher._search_paths_entries(launcher._parse(patched))
                     if entry.key.value.casefold() == 'mod']
             if (hashlib.sha256(patched.encode('utf-8')).hexdigest() != record['patched_sha256']
                     or not mods or mods[0].value.value != overlay.name + '/cvar_unlocker'):
                 raise RuntimeError("The movie audio primary MOD path could not be verified.")
             fields = ('pid', 'command', 'overlay_dir', 'original_sha256', 'patched_sha256',
-                      'editing_gameinfo_sha256', 'configuration_mode', 'selected_demo')
+                      'editing_gameinfo_sha256', 'configuration_mode', 'selected_demo', 'carried_addon_mounts')
             identity = {name: record.get(name) for name in fields}
 
             def verify_owner(controller):
