@@ -22,7 +22,7 @@
 Capture views from a local replay, shape a camera path and play it back with
 animated framing and effects. Edit through the desktop or directly in the game.
 
-**Current source: 0.6.82-alpha · Windows x64 · DirectX 11.**
+**Current source: 0.6.83-alpha · Windows x64 · DirectX 11.**
 Native source changes need a matching rebuilt helper. The portable app includes
 Python and Tcl/Tk; no separate installation is needed.
 
@@ -195,7 +195,7 @@ separate terms in [assets/README.md](assets/README.md).
 ## Releases
 
 - [Downloads and published release notes](https://github.com/cravvnn/deadlock-dolly/releases)
-- [0.6.82-alpha release notes](docs/RELEASE_NOTES_0.6.82-alpha.md)
+- [0.6.83-alpha release notes](docs/RELEASE_NOTES_0.6.83-alpha.md)
 - [0.6.81-alpha release notes](docs/RELEASE_NOTES_0.6.81-alpha.md)
 - [0.6.80-alpha release notes](docs/RELEASE_NOTES_0.6.80-alpha.md)
 - [Complete changelog](docs/CHANGELOG.md)

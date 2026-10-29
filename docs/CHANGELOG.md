@@ -4,13 +4,13 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
-## Unreleased
+## 0.6.83-alpha
 
 - **Optional NVIDIA DLSS support.** *Before:* Dolly's redirected game output could hide NVIDIA DLSS in Deadlock's Video settings. *After:* an opt-in Settings switch makes the game's DLSS controls available for previews and Color recordings. Turn it off before a new launch to use standard output capture again.
 - **Retained launch diagnostics.** *Before:* dropping all redirected streams to enable DLSS lost useful game error output. *After:* DLSS startup retains stderr, an engine console file, received console text and native-hook diagnostics. Support exports keep startup and recent output; stdout-only messages before engine logging begins remain unavailable.
 - **Quiet Windows builds.** *Before:* automated UI checks could open windows over the desktop. *After:* build commands keep all checks on a verified private desktop, retaining their logs and exit status.
 
-These development changes are not included in the existing 0.6.82-alpha ZIPs.
+Full details: [0.6.83 release notes](RELEASE_NOTES_0.6.83-alpha.md).
 
 ## 0.6.82-alpha
 

@@ -147,6 +147,7 @@ docs/RELEASE_NOTES_0.6.79-alpha.md
 docs/RELEASE_NOTES_0.6.80-alpha.md
 docs/RELEASE_NOTES_0.6.81-alpha.md
 docs/RELEASE_NOTES_0.6.82-alpha.md
+docs/RELEASE_NOTES_0.6.83-alpha.md
 docs/DISCORD_PRESENCE.md
 docs/SCREENSHOTS.md
 docs/SUPPORTED_CAMERA_CVARS.json
