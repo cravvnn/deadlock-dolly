@@ -168,7 +168,12 @@ def _write_diagnostics_archive(destination, report, history, session_files, sess
             for name in session_files:
                 file = session.session_dir / name
                 if file.is_file():
-                    archive.writestr("session/" + name, _tail_file(file))
+                    if name in ("engine_console.log", "console_transcript.log"):
+                        from .game_logging import diagnostic_log
+                        content = diagnostic_log(file)
+                    else:
+                        content = _tail_file(file)
+                    archive.writestr("session/" + name, content)
         # A successful retry must not hide the previous crashed launch.
         journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:8]
         for journal in journals:
@@ -178,7 +183,12 @@ def _write_diagnostics_archive(destination, report, history, session_files, sess
             for name in session_files:
                 file = folder / name
                 if file.is_file():
-                    archive.writestr("previous_sessions/" + folder.name + "/" + name, _tail_file(file, 512_000))
+                    if name in ("engine_console.log", "console_transcript.log"):
+                        from .game_logging import diagnostic_log
+                        content = diagnostic_log(file, limit=512_000)
+                    else:
+                        content = _tail_file(file, 512_000)
+                    archive.writestr("previous_sessions/" + folder.name + "/" + name, content)
         for path in dumps:
             try:
                 archive.write(path, "crashes/" + path.name)
@@ -876,7 +886,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             return None
         return info
 
-    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False):
+    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False, nvidia_dlss=False):
         with self._op_lock:
             self._launch_attempt = {
                 "game_path": str(game_path),
@@ -892,11 +902,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._launch_attempt["camera_backend"] = "native"
             if allow_mod_overrides:
                 self._launch_attempt["allow_mod_overrides"] = True
+            if nvidia_dlss:
+                self._launch_attempt["nvidia_dlss"] = True
             LOG.info("Launch requested: %s", self._launch_attempt)
             try:
                 result = self._launch(game_path, demo_path, protocol, native=native, launch_options=launch_options,
                                       graphics_profile=graphics_profile,
-                                      allow_mod_overrides=allow_mod_overrides)
+                                      allow_mod_overrides=allow_mod_overrides, nvidia_dlss=nvidia_dlss)
             except Exception as exc:
                 self._launch_attempt.update(status="failed", error=str(exc), error_type=type(exc).__name__)
                 LOG.exception("Launch failed")
@@ -905,7 +917,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._launch_attempt.update(status="started", pid=result["pid"], session_dir=result["session_dir"])
             return result
 
-    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False):
+    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False, nvidia_dlss=False):
         with self._op_lock:
             if protocol not in ("vconsole", "netcon"):
                 raise ValueError("Unknown console protocol.")
@@ -926,6 +938,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 options["allow_mod_overrides"] = True
             if graphics_profile:
                 options["graphics_profile"] = graphics_profile
+            if nvidia_dlss:
+                options["nvidia_dlss"] = True
             self._recording_replay = None
             self._recording_warmup = None
             self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol, **options)
@@ -976,7 +990,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if not self._session.owns_console_port():
                 self._console = None
                 raise RuntimeError("The launched Deadlock process does not yet own the console port. Wait for loading to finish and retry. If it persists, export diagnostics and test the other console protocol in a new launch.")
-            console = ConsoleClient(protocol=self._protocol)
+            console_options = {}
+            if getattr(self._session, "nvidia_dlss", False) is True:
+                from .game_logging import CONSOLE_LOG
+                console_options["transcript_path"] = self._session.session_dir / CONSOLE_LOG
+            console = ConsoleClient(protocol=self._protocol, **console_options)
             try:
                 console.connect(host="127.0.0.1", port=self._port, timeout=3)
                 self._console = console
@@ -1441,7 +1459,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
                       launch_options="", cancel_event=None, graphics_profile="",
-                      allow_mod_overrides=False):
+                      allow_mod_overrides=False, nvidia_dlss=False):
         """Launch, initialize once before the demo, and enter paused editing.
 
         Every transition uses process, console or rendered-view evidence.
@@ -1452,6 +1470,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             try:
                 self._check_startup_cancelled(cancel_event)
                 profile_options = {"graphics_profile": graphics_profile} if graphics_profile else {}
+                if nvidia_dlss:
+                    profile_options["nvidia_dlss"] = True
                 self.launch(game_path, demo_path, protocol, native=native, launch_options=launch_options,
                             allow_mod_overrides=allow_mod_overrides, **profile_options)
                 self._message("Starting Deadlock. Waiting for its console connection…", startup_stage="waiting_console")
@@ -5775,7 +5795,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             deployment = self.deployment_directory()
             if deployment is not None:
                 preserve_diagnostics(deployment, self._session.session_dir)
-        session_files = ("session.json", "launch.log", "game_stdout.log",
+        from .game_logging import SESSION_LOGS
+        session_files = SESSION_LOGS + ("session.json", "launch.log", "game_stdout.log",
                          "native_diagnostics.json", "graphics-session.json", "graphics-runtime.json",
                          "editing-session.json") + DIAGNOSTIC_NAMES
         destination = Path(destination)
@@ -5783,6 +5804,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                   "motion_clock": motion_clock_info(),
                   "launch_attempt": self._launch_attempt,
                   "startup_evidence": self._startup_evidence,
+                  "console_transcript_error": getattr(self._console, "transcript_error", None),
                   "replay_recovery": deepcopy(self._replay_recovery),
                   "game_exit_code": self._session.process.poll() if self._session else None,
                   "lens_control": self.lens_cvar, "standard_aspect": self.standard_aspect,

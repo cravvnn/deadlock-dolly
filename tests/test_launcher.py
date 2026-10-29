@@ -5,6 +5,7 @@ import socket
 import shutil
 import stat
 import struct
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -885,6 +886,39 @@ class LauncherTests(unittest.TestCase):
         process.poll.return_value = None
         with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.subprocess, "Popen", return_value=process), patch.object(launcher.threading, "Thread"):
             return launcher.launch(self.paths.root)
+
+    def test_dlss_switch_uses_gui_handles_and_owned_log_only_when_enabled(self):
+        from dolly import game_logging
+        original = self.paths.gameinfo.read_bytes()
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                process = MagicMock(pid=6789)
+                process.poll.return_value = None
+                with patch.object(launcher, '_check_runtime'), \
+                     patch.object(launcher, 'running_processes', return_value={'steam.exe'}), \
+                     patch.object(launcher, 'PACKAGE_ROOT', self.package), \
+                     patch.object(launcher.threading, 'Thread'), \
+                     patch.object(game_logging, 'spawn', return_value=process) as gui_spawn, \
+                     patch.object(launcher.subprocess, 'Popen', return_value=process) as ordinary:
+                    session = launcher.launch(self.paths.root, nvidia_dlss=enabled)
+                self.assertIs(session.nvidia_dlss, enabled)
+                record = json.loads((session.session_dir / 'session.json').read_text())
+                self.assertIs(record['nvidia_dlss'], enabled)
+                if enabled:
+                    ordinary.assert_not_called()
+                    args = gui_spawn.call_args.args[0]
+                    self.assertEqual(args[-3:], ['-condebug', '-con_logfile', str((session.session_dir / 'engine_console.log').resolve())])
+                    self.assertNotIn('stdout', gui_spawn.call_args.kwargs)
+                    self.assertNotIn('stderr', gui_spawn.call_args.kwargs)
+                    self.assertIn('stdout-only', record['game_logging']['limitation'])
+                else:
+                    gui_spawn.assert_not_called()
+                    self.assertNotIn('-condebug', ordinary.call_args.args[0])
+                    self.assertEqual(ordinary.call_args.kwargs['stderr'], subprocess.STDOUT)
+                    self.assertIsNotNone(ordinary.call_args.kwargs['stdout'])
+                process.poll.return_value = 0
+                session.close()
+                self.assertEqual(self.paths.gameinfo.read_bytes(), original)
 
     def _skin_mount(self):
         addons = self.paths.game_dir / "citadel" / "addons"

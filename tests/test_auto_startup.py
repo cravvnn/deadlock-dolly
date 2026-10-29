@@ -1053,11 +1053,15 @@ class AutoStartupTests(unittest.TestCase):
         self.assertNotIn("playdemo", str(launch.call_args))
 
     def test_selected_graphics_profile_reaches_normal_launcher(self):
+        self.session.nvidia_dlss = True
         with patch("dolly.controller.launcher.launch", return_value=self.session) as launch, \
-             patch("dolly.controller.ConsoleClient", return_value=self.console):
-            self.controller.start_editing("installation", self.demo, graphics_profile="selected-profile-id")
+             patch("dolly.controller.ConsoleClient", return_value=self.console) as console:
+            self.controller.start_editing("installation", self.demo, graphics_profile="selected-profile-id", nvidia_dlss=True)
         self.assertEqual(launch.call_args.kwargs["graphics_profile"], "selected-profile-id")
         self.assertEqual(self.controller._launch_attempt["graphics_profile"], "selected-profile-id")
+        self.assertIs(launch.call_args.kwargs['nvidia_dlss'], True)
+        self.assertIs(self.controller._launch_attempt['nvidia_dlss'], True)
+        self.assertEqual(console.call_args.kwargs['transcript_path'], self.session.session_dir / 'console_transcript.log')
 
 
 if __name__ == "__main__":

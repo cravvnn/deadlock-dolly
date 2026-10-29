@@ -28,6 +28,26 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(load_settings(self.path), AppSettings())
         self.assertFalse(self.path.parent.exists())
 
+    def test_dlss_opt_in_migrates_v10_without_writing_and_roundtrips_both_choices(self):
+        from dataclasses import replace
+        original = AppSettings(auto_updates=False, discord_presence=False, allow_mod_overrides=True)
+        save_settings(original, self.path)
+        raw = json.loads(self.path.read_text('utf-8'))
+        raw['version'] = 10
+        raw.pop('nvidia_dlss')
+        self.write_raw(json.dumps(raw))
+        before = self.path.read_bytes()
+        self.assertEqual(load_settings(self.path), original)
+        self.assertFalse(load_settings(self.path).nvidia_dlss)
+        self.assertEqual(self.path.read_bytes(), before)
+        for enabled in (True, False):
+            settings = replace(original, nvidia_dlss=enabled)
+            save_settings(settings, self.path)
+            self.assertEqual(load_settings(self.path), settings)
+        for invalid in (None, 0, 1, 'true'):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'nvidia_dlss'):
+                AppSettings(nvidia_dlss=invalid)
+
     def test_roundtrip_custom_keyboard_binding_and_editor_preferences_persist(self):
         settings = AppSettings(CaptureBinding(key="F8", ctrl=False, alt=False, shift=True))
         save_settings(settings, self.path)
@@ -36,8 +56,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(set(raw), {"version", "full_editor", "ffmpeg_path", "auto_updates", "capture_binding", "game_path", "replay_folder",
                                    "demo_path", "launch_options", "movement_speed",
                                    "mouse_sensitivity", "action_bindings", "reshade_binding",
-                                   "reshade_runtime_path", "framing_grid_enabled", "export_folder", "pause_after_capture", "allow_mod_overrides", "discord_presence"})
-        self.assertEqual(raw["version"], 10)
+                                   "reshade_runtime_path", "framing_grid_enabled", "export_folder", "pause_after_capture", "allow_mod_overrides", "discord_presence", "nvidia_dlss"})
+        self.assertEqual(raw["version"], 11)
         self.assertEqual(raw["capture_binding"], settings.capture_binding.to_dict())
         self.assertNotIn("enabled", raw)
 
@@ -53,7 +73,7 @@ class SettingsTests(unittest.TestCase):
         raw.pop("framing_grid_enabled"); raw.pop("export_folder")
         raw.pop("pause_after_capture")
         raw.pop("allow_mod_overrides")
-        raw.pop("discord_presence")
+        raw.pop("discord_presence"); raw.pop("nvidia_dlss")
         self.write_raw(json.dumps(raw))
         before = self.path.read_bytes()
         loaded = load_settings(self.path)
@@ -78,7 +98,7 @@ class SettingsTests(unittest.TestCase):
         raw.pop('export_folder')
         raw.pop('pause_after_capture')
         raw.pop('allow_mod_overrides')
-        raw.pop('discord_presence')
+        raw.pop('discord_presence'); raw.pop('nvidia_dlss')
         self.write_raw(json.dumps(raw))
         before = self.path.read_bytes()
         self.assertEqual(load_settings(self.path), settings)
@@ -95,7 +115,7 @@ class SettingsTests(unittest.TestCase):
                     raw['version'] = version
                     for since, name in ((6, 'framing_grid_enabled'), (7, 'export_folder'),
                                         (8, 'pause_after_capture'),
-                                        (9, 'allow_mod_overrides'), (10, 'discord_presence')):
+                                        (9, 'allow_mod_overrides'), (10, 'discord_presence'), (11, 'nvidia_dlss')):
                         if version < since:
                             raw.pop(name)
                     self.write_raw(json.dumps(raw))
@@ -107,7 +127,7 @@ class SettingsTests(unittest.TestCase):
                     self.assertEqual(list(self.path.parent.iterdir()), [self.path])
                     save_settings(loaded, self.path)
                     persisted = json.loads(self.path.read_text('utf-8'))
-                    self.assertEqual(persisted['version'], 10)
+                    self.assertEqual(persisted['version'], 11)
                     self.assertIs(persisted['auto_updates'], enabled)
 
     def test_export_folder_survives_reload_even_when_drive_is_unavailable(self):
@@ -131,7 +151,7 @@ class SettingsTests(unittest.TestCase):
         raw['version'] = 7
         raw.pop('pause_after_capture')
         raw.pop('allow_mod_overrides')
-        raw.pop('discord_presence')
+        raw.pop('discord_presence'); raw.pop('nvidia_dlss')
         self.write_raw(json.dumps(raw))
         before = self.path.read_bytes()
         loaded = load_settings(self.path)
@@ -162,7 +182,7 @@ class SettingsTests(unittest.TestCase):
         save_settings(original, self.path)
         raw = json.loads(self.path.read_text())
         raw['version'] = 9
-        raw.pop('discord_presence')
+        raw.pop('discord_presence'); raw.pop('nvidia_dlss')
         self.write_raw(json.dumps(raw))
         before = self.path.read_bytes()
         self.assertEqual(load_settings(self.path), original)

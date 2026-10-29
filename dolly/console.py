@@ -314,11 +314,14 @@ class ConsoleClient:
     """
 
     def __init__(self, protocol: Literal["vconsole", "netcon"] = "vconsole", *,
-                 max_response_bytes: int = 1024 * 1024, version: int = VCONSOLE_VERSION) -> None:
+                 max_response_bytes: int = 1024 * 1024, version: int = VCONSOLE_VERSION,
+                 transcript_path=None) -> None:
         if protocol not in {"vconsole", "netcon"}:
             raise ValueError("Protocol must be vconsole or netcon.")
         if max_response_bytes < 1024:
             raise ValueError("Response limit must be at least 1024 bytes.")
+        self.transcript_path = transcript_path
+        self.transcript_error = None
         self.protocol = protocol
         self.version = version
         self.max_response_bytes = max_response_bytes
@@ -415,6 +418,13 @@ class ConsoleClient:
                 if not data:
                     raise ConsoleError("Game closed the console connection.")
                 chunks = decoder.feed(data) if self.protocol == "vconsole" else [text_decoder.feed(data)]
+                if self.transcript_path is not None and self.transcript_error is None:
+                    try:
+                        from .game_logging import append_transcript
+                        append_transcript(self.transcript_path, "".join(chunks))
+                    except OSError as exc:
+                        self.transcript_error = str(exc)
+                        LOG.warning("Could not save game console transcript: %s", exc)
                 with self._condition:
                     if self._socket is not sock:
                         return

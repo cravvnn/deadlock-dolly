@@ -26,9 +26,10 @@ CARDS = (("Updates", "updates_card", (0, 0, 613, 164)),
          ("Troubleshooting & Recovery", "tools_card", (0, 179, 613, 392)),
          ("Game & Files", "game_card", (0, 407, 613, 592)),
          ("Replay Graphics Profiles", "profiles_card", (0, 607, 613, 823)),
-         ("ReShade", "reshade_card", (0, 838, 613, 1054)),
-         ("Discord Rich Presence", "presence_card", (0, 1069, 613, 1193)),
-         ("Replay Mod Overrides", "mods_card", (0, 1208, 613, 1348)))
+         ("NVIDIA DLSS", "dlss_card", (0, 838, 613, 978)),
+         ("ReShade", "reshade_card", (0, 993, 613, 1209)),
+         ("Discord Rich Presence", "presence_card", (0, 1224, 613, 1348)),
+         ("Replay Mod Overrides", "mods_card", (0, 1363, 613, 1503)))
 # Every button of the page, in reading order, and the action it runs.
 BUTTONS = (("Check for updates", "check_updates"), ("Startup controls...", "open_advanced_startup"),
            ("Recover configuration...", "recover_game_config"), ("Export diagnostics", "diagnostics"),
@@ -202,7 +203,7 @@ class SettingsLayoutTests(SettingsCase):
                 self.assertLessEqual(abs((card.rect[3] - card.rect[1]) / page.scale - (y1 - y0)), tolerance)
                 self.assertRect(page, card.rect, (x0, y0, x1, y1), 2 * tolerance)
         self.assertEqual(page.content_height, rects[-1][3])
-        self.assertLessEqual(abs(page.content_height / page.scale - 1348), 2 * tolerance)
+        self.assertLessEqual(abs(page.content_height / page.scale - 1503), 2 * tolerance)
         # The fields keep the kit's 30 px at this scale; checkboxes sit on the middle of their 18 px row.
         for widget in (view.game_path_entry, view.graphics_profiles.combo, view.reshade_path_entry):
             rect = self.design(page, page.rect_of(widget))
@@ -341,6 +342,9 @@ class SettingsActionTests(SettingsCase):
         view.discord_presence_checkbox.invoke()
         self.assertFalse(view.discord_presence.get())
         self.assertEqual(self.calls[-1][0], "save_discord_preference")
+        view.dlss_checkbox.invoke()
+        self.assertTrue(view.nvidia_dlss.get())
+        self.assertEqual(self.calls[-1][0], "save_dlss_preference")
         reached = {name for name, _args in self.calls}
         self.assertEqual({f.name for f in fields(SettingsActions)} - reached, set())
 
@@ -433,7 +437,7 @@ class SettingsActionTests(SettingsCase):
             self.assertEqual(counts["moving"], 1)
         else:                                        # without window regions: one window per card
             self.assertEqual(counts["page"], len(page.cards))
-        self.assertEqual(counts["inputs"], 8)         # three paths, the dropdown, two checkboxes (PR3: <= 10)
+        self.assertEqual(counts["inputs"], 9)         # Includes optional DLSS; stays within the kit's <=10 budget.
         for widget, element in page._widgets.items():
             self.assertIs(widget.master, element.card.host)
             self.assertEqual(widget.winfo_manager(), "place")
@@ -478,7 +482,7 @@ class SettingsScrollTests(SettingsCase):
             self.assertEqual(int(page.canvas.canvasy(0)), moved)
             # A window tall enough for all five cards (1054 + the gap above the footer) does not scroll.
             self.root.wm_maxsize(px(page.scale, 2000), px(page.scale, 2000))
-            self.resize(view, 948, 1400)
+            self.resize(view, 948, 1600)
             self.assertGreaterEqual(page.canvas.winfo_height(), page.content_height)
             self.assertEqual(page.canvas.yview(), (0.0, 1.0))
             self.assertFalse(page.scrollbar.winfo_ismapped())
@@ -556,6 +560,21 @@ class SettingsInAppTests(unittest.TestCase):
         replay = app.library_page
         self.assertEqual(replay.canvas.winfo_rootx(), settings_x)
         self.assertEqual(replay.card_width, page.content_width)
+
+    def test_dlss_toggle_saves_for_next_launch_and_rolls_back_a_failed_save(self):
+        app = self.app
+        self.assertIs(app.nvidia_dlss, app.settings_view.nvidia_dlss)
+        with patch('dolly.gui.save_settings') as save:
+            app.settings_view.dlss_checkbox.invoke()
+        self.assertTrue(app.app_settings.nvidia_dlss)
+        self.assertTrue(save.call_args.args[0].nvidia_dlss)
+        app.controller.launch = unittest.mock.Mock()
+        with patch('dolly.gui.save_settings', side_effect=OSError('disk full')), patch.object(app, '_error') as error:
+            app.settings_view.dlss_checkbox.invoke()
+        self.assertTrue(app.nvidia_dlss.get())
+        self.assertTrue(app.app_settings.nvidia_dlss)
+        error.assert_called_once()
+        app.controller.launch.assert_not_called()
 
     def test_reshade_controls_fit_the_minimum_window_once_revealed(self):
         # desktop.py's bundle self-test, shown (cloaked) at 1000 x 700.

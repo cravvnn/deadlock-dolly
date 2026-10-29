@@ -265,6 +265,10 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=Path, help="Save release files in a separate directory")
     arguments = parser.parse_args()
     try:
+        from build_desktop import isolate_build
+        status = isolate_build()
+        if status is not None:
+            raise SystemExit(status)
         raise SystemExit(main(arguments.output_dir))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)

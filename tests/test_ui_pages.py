@@ -73,7 +73,7 @@ class PageBoundaryTests(unittest.TestCase):
     def test_settings_owns_preferences_and_routes_to_dedicated_controls(self):
         state = self.variables(SettingsState, auto_updates_initial=True,
                                allow_mod_overrides_initial=False,
-                               discord_presence_initial=True,
+                               discord_presence_initial=True, nvidia_dlss_initial=False,
                                show_log=tk.BooleanVar(self.root, False))
         with patch('dolly.graphics_profiles.load_library', return_value={'format': 1, 'selected': '', 'profiles': []}):
             view = SettingsPage(self.root, state, self.callbacks(SettingsActions), root=self.root,

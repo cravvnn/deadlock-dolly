@@ -501,6 +501,16 @@ startup. The portable launcher opens the editor without a Python console window.
 **Controls** contains shortcuts, camera sensitivity and movement speed.
 **Settings** contains saved paths, ReShade and troubleshooting.
 
+**Settings → NVIDIA DLSS**, directly below Replay Graphics Profiles, has an optional
+**Enable NVIDIA DLSS support** switch. It applies to the next launch. On a compatible
+NVIDIA GPU, choose NVIDIA DLSS and the scaling mode in the game's Video settings;
+that selection affects both the preview and recorded Color video. It starts off.
+Turn it off before launching again to restore standard game output capture when
+diagnosing a startup issue. With it on, Dolly retains game stderr, an engine console
+file, received console text and native-hook diagnostics, but cannot guarantee output
+written only to stdout before engine logging starts. Export diagnostics includes the
+new logs and preserves their startup and latest output if they need to be shortened.
+
 **Camera** keeps the saved-camera list, Position/Rotation/Framing curves,
 selected-camera controls and XY path overview.
 Look contains DOF and numeric camera-variable tracks. Coordinate entry and

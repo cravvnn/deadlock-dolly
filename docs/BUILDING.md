@@ -69,6 +69,13 @@ same interpreter. `cmake` and `ctest` must be available on `PATH` (the CMake
 installer can add them). The script stops if a regression, icon check, or actual
 packaged-editor startup fails. Inspect `build/checks/` after a failure.
 
+The Windows build commands run on a private desktop, so GUI and native overlay
+checks do not open windows over your work. Their checks, console output and failure
+status are retained. If desktop isolation cannot be verified, the build stops
+instead of running visible UI checks. This affects build commands only; the editor
+and its manually requested preview/self-test windows still open normally.
+
+
 Successful outputs are under `dist/`:
 
 - `Deadlock_Dolly_0.6.82-alpha_Windows_x64.zip` - the release asset

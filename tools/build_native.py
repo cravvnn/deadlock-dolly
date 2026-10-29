@@ -207,6 +207,10 @@ def build_native(root: Path = ROOT) -> dict:
 
 if __name__ == "__main__":
     try:
+        from build_desktop import isolate_build
+        status = isolate_build()
+        if status is not None:
+            raise SystemExit(status)
         build_native()
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         print(f"Native build failed: {error}", file=sys.stderr)

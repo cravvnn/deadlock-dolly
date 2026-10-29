@@ -401,7 +401,7 @@ class PreferenceTests(unittest.TestCase):
             raw.pop("ffmpeg_path"); raw.pop("auto_updates"); raw.pop("framing_grid_enabled"); raw.pop("export_folder")
             raw.pop("pause_after_capture")
             raw.pop("allow_mod_overrides")
-            raw.pop("discord_presence")
+            raw.pop("discord_presence"); raw.pop("nvidia_dlss")
             path.write_text(json.dumps(raw)); before = path.read_bytes()
             self.assertEqual(load_settings(path), original)
             self.assertEqual(path.read_bytes(), before)

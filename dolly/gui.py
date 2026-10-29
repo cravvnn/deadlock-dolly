@@ -1185,6 +1185,17 @@ class DollyApp:
         except Exception:
             LOG.debug("Discord activity update unavailable", exc_info=True)
 
+    def _save_dlss_preference(self):
+        try:
+            settings = replace(self.app_settings, nvidia_dlss=self.nvidia_dlss.get())
+            save_settings(settings)
+        except Exception as exc:
+            self.nvidia_dlss.set(self.app_settings.nvidia_dlss)
+            self._error("Save NVIDIA DLSS preference", exc)
+            return
+        self.app_settings = settings
+        self.status_text.set("NVIDIA DLSS support preference saved for the next launch.")
+
     def _save_mod_preference(self):
         def save():
             settings = replace(self.app_settings,
@@ -2729,6 +2740,8 @@ class DollyApp:
                           if hasattr(self, "allow_mod_overrides")
                           else bool(getattr(self.app_settings, "allow_mod_overrides", False)))
             mod_options = {"allow_mod_overrides": True} if allow_mods else {}
+            if getattr(self.app_settings, "nvidia_dlss", False):
+                mod_options["nvidia_dlss"] = True
             self._disable_external_input()
             self.attach_fields = None
             def start():
@@ -3654,6 +3667,8 @@ class DollyApp:
                       if hasattr(self, "allow_mod_overrides")
                       else bool(getattr(self.app_settings, "allow_mod_overrides", False)))
         mod_options = {"allow_mod_overrides": True} if allow_mods else {}
+        if getattr(self.app_settings, "nvidia_dlss", False):
+            mod_options["nvidia_dlss"] = True
         self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol, native=native,
                      **mod_options, **graphics_options), self._session_result)
 

@@ -76,6 +76,7 @@ class SettingsState:
     auto_updates_initial: bool
     allow_mod_overrides_initial: bool = False
     discord_presence_initial: bool = True
+    nvidia_dlss_initial: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ class SettingsActions:
     save_mod_preference: Callable[..., object]
     save_update_preference: Callable[..., object]
     save_discord_preference: Callable[..., object]
+    save_dlss_preference: Callable[..., object]
     select_reshade_runtime: Callable[..., object]
     toggle_log: Callable[..., object]
     show_reshade_keybinds: Callable[..., object]
@@ -144,6 +146,18 @@ class SettingsPage:
 
         self.profiles_card = page.add_card("Replay Graphics Profiles", info=PROFILES_INFO)
         self.graphics_profiles = GraphicsProfiles(None, root=root, on_error=on_error, card=self.profiles_card)
+
+        dlss = self.dlss_card = page.add_card("NVIDIA DLSS", info=(
+            "Dolly keeps engine, received console and native-hook diagnostics with DLSS. "
+            "Some game output before the engine logger starts may be unavailable. "
+            "Turn this off before a new launch to use standard game logging when troubleshooting."))
+        self.nvidia_dlss = tk.BooleanVar(page, value=state.nvidia_dlss_initial)
+        row = dlss.row(height=18)
+        self.dlss_checkbox = row.widget(ttk.Checkbutton(
+            row.host, text="Enable NVIDIA DLSS support", variable=self.nvidia_dlss,
+            command=commands.save_dlss_preference, style="Kit.TCheckbutton"))
+        dlss.text("Applies to the next launch. Then choose NVIDIA DLSS in the game's Video settings. "
+                  "Requires a compatible NVIDIA GPU; affects previews and recorded Color video.", top=15)
 
         shade = self.reshade_card = page.add_card("ReShade")
         self.reshade_path_entry, self.reshade_path_cover, self.reshade_browse_button = self._path_row(

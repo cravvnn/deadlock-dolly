@@ -31,6 +31,16 @@ class EditorLauncherTests(unittest.TestCase):
             self.assertTrue(call.kwargs['native'])
             self.assertEqual(call.kwargs['launch_options'],'-windowed -w 1920')
             self.assertEqual(save.call_args.args[0].launch_options,'-windowed -w 1920')
+            self.assertNotIn('nvidia_dlss', call.kwargs)
+            from dataclasses import replace
+            app.app_settings = replace(app.app_settings, nvidia_dlss=True)
+            app.play_replay_button.invoke()
+            with patch('dolly.gui.save_settings'):
+                app._submit.call_args.args[1]()
+            self.assertIs(app.controller.start_editing.call_args.kwargs['nvidia_dlss'], True)
+            app._launch()
+            app._submit.call_args.args[1]()
+            self.assertIs(app.controller.launch.call_args.kwargs['nvidia_dlss'], True)
             app.launch_options.set('-windowed -dolly-lite -w 1920')
             app.play_replay_button.invoke()
             with patch('dolly.gui.save_settings'):

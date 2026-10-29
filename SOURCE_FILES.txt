@@ -222,6 +222,7 @@ dolly/follow_camera.py
 dolly/follow_capabilities.py
 dolly/follow_target.py
 dolly/game_installation.py
+dolly/game_logging.py
 dolly/game_processes.py
 dolly/game_ui_handoff.py
 dolly/gameinfo_transaction.py
@@ -638,6 +639,7 @@ tests/test_input_diagnostics.py
 tests/test_keyvalues.py
 tests/test_launch_recovery.py
 tests/test_launcher.py
+tests/test_game_logging.py
 tests/test_layer_modes.py
 tests/test_lite_gui.py
 tests/test_lite_mode.py
@@ -655,6 +657,7 @@ tests/test_native_effects.py
 tests/test_native_flight_controller.py
 tests/test_native_owned_pause.py
 tests/test_native_packaging.py
+tests/test_build_desktop.py
 tests/test_native_path.py
 tests/test_native_pause_boundary.py
 tests/test_navigation.py
@@ -839,6 +842,7 @@ third_party/reshade_shaders/Textures/pd80_permtexture.png
 third_party/reshade_shaders/crosire-shaders-README.md
 third_party/reshade_shaders/prod80-LICENSE.txt
 tools/build_native.py
+tools/build_desktop.py
 tools/build_replay_index.py
 tools/build_ui_override.py
 tools/build_windows.py

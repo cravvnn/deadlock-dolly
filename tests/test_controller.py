@@ -1897,11 +1897,13 @@ class ControllerTests(unittest.TestCase):
             session_dir = Path(directory)/"session"
             session_dir.mkdir()
             self.controller._session.session_dir = session_dir
-            for name in ("session.json", "launch.log", "game_stdout.log"):
+            names = ("session.json", "launch.log", "game_stdout.log", "native_diagnostics.json",
+                     "engine_console.log", "console_transcript.log")
+            for name in names:
                 (session_dir/name).write_text("fixture")
             destination = self.controller.export_diagnostics(Path(directory)/"report.zip")
             with zipfile.ZipFile(destination) as archive:
-                for name in ("session.json", "launch.log", "game_stdout.log"):
+                for name in names:
                     self.assertIn("session/" + name, archive.namelist())
 
     def test_diagnostics_list_temporary_mount_entries_without_reading_them(self):
