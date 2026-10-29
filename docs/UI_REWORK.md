@@ -2,9 +2,14 @@
 
 [Documentation](README.md) · [User guide](USER_GUIDE.md)
 
-The main panel has five tabs: **Camera**, **Follow**, **Bone Picker**, **Look**
-and **Export**. Your saved cameras are in **Campaths** on the left, with the
-timeline and playback controls below.
+The default interface uses Kara's top rail: **Camera**, **Follow**, **Bone
+Picker**, **Look** and **Export** open drawers, with **Campaths** on the right
+and the replay/shot/curve transport below. See the [redesigned interface
+guide](UI_REDESIGN.md) for placement, Escape behavior and the classic fallback.
+
+The control reference below also describes the classic overlay. Its main panel
+has five tabs and its Campaths list sits on the left. Layout and Arrange
+instructions apply to that fallback; the rail uses fixed drawers.
 
 Fresh layouts put Campaths in the upper left and the main panel in the upper
 right, leaving space above for ReShade's startup banner. Saved main-panel and

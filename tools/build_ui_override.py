@@ -12,6 +12,8 @@ under ``content/citadel_addons/<addon>``, outputs under
 
 Re-run and re-pin after a Deadlock UI update: the same-path override replaces
 the stock stylesheet, so the sources must be refreshed from the new build.
+The rebuild, re-pin and in-game checklist for the current card are in
+``native/ui_override/panorama/README.md``.
 
 Usage:
     python tools/build_ui_override.py --sdk "D:\\deadlock 3d\\Reduced_CSDK_12"
@@ -35,7 +37,11 @@ SIGNATURE = 0x55AA1234
 VERSION = 2
 INLINE_ARCHIVE = 0x7FFF
 ENTRY_TERMINATOR = 0xFFFF
-EXPECTED_RULES = ("ClientServerDebugStats", "GameLogoIcon", "DollyLoadingProbeV2")
+# The capture-clean rules, the card, and the redesigned card's own parts (the
+# Familiar icon's boil keyframes and the chalk doodle), so a pack compiled from
+# the older card sources is refused.
+EXPECTED_RULES = ("ClientServerDebugStats", "GameLogoIcon", "DollyLoadingProbeV2",
+                  "DollyFamiliarBoil", "DollyChalk")
 EXPECTED_SOURCES = {
     "panorama/styles/citadel_client_status.css": ".vcss_c",
     "panorama/styles/citadel_hud_and_db_overlay.css": ".vcss_c",
@@ -121,6 +127,8 @@ def pack(output_root: Path, compiled: list[Path], destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(struct.pack("<IIIIIII", SIGNATURE, VERSION, len(tree), len(data), 0, 0, 0) + tree + data)
     print(f"{destination}: {len(entries)} resources, {destination.stat().st_size} bytes")
+    for virtual_path, payload in sorted(entries.items()):
+        print(f"  {virtual_path} sha256 {hashlib.sha256(payload).hexdigest()}")
     print("sha256 " + hashlib.sha256(destination.read_bytes()).hexdigest())
 
 

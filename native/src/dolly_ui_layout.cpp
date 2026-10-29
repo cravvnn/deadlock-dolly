@@ -26,6 +26,7 @@ bool OverlayPanel::lite_timeline_compact(float width) const {
     return ImGui::GetIO().DisplaySize.y<650*s || width<full_width;
 }
 float OverlayPanel::lite_timeline_height() const {
+    if (rail_drawing_ && !curve_view_) return 188*panel_scale;
     if (curve_view_) {
         const float s = panel_scale;
         // At 720p the default two lanes leave the replay and camera list visible.
@@ -270,6 +271,21 @@ bool OverlayPanel::flush_layout(bool force) noexcept {
     }
 }
 void OverlayPanel::prepare_sections() {
+    if (rail_drawing_) {
+        const unsigned count = section_count(lite_page_);
+        const float gap = 30*panel_scale;
+        const float width = (ImGui::GetContentRegionAvail().x-gap*(layout_columns_-1))/layout_columns_;
+        float y[3]{card_origin_y_,card_origin_y_,card_origin_y_};
+        for (unsigned index=0; index<count; ++index) {
+            const unsigned column = index % layout_columns_;
+            section_columns_[index] = column;
+            section_widths_[index] = width;
+            section_positions_[index] = ImVec2(ImGui::GetWindowContentRegionMin().x+column*(width+gap),y[column]);
+            section_extra_draw_[index] = section_draw_heights_[index] = 0;
+            y[column] += section_heights_[lite_page_][index]*panel_scale+gap;
+        }
+        return;
+    }
     const auto count=section_count(lite_page_);
     const float gap=12*panel_scale;
     const float available=ImGui::GetContentRegionAvail().x;

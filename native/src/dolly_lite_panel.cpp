@@ -1,4 +1,5 @@
 #include "dolly_overlay_panel.hpp"
+#include "dolly_rail_design.hpp"
 #include "dolly_lite.hpp"
 #include "dolly_replay_events.hpp"
 #include "dolly_visualization_runtime.hpp"
@@ -11,10 +12,6 @@
 #include <cstring>
 #include <climits>
 namespace dolly {
-static ImVec4 color(unsigned rgb) {
-    return ImVec4(float((rgb >> 16) & 255) / 255, float((rgb >> 8) & 255) / 255,
-                  float(rgb & 255) / 255, 1);
-}
 bool lite_mode_requested() noexcept {
     // Historical internal name: there is now one standard Dolly interface.
     // Keep the camera transport ABI and authored data compatible.
@@ -30,14 +27,31 @@ bool OverlayPanel::shader_notice_visible(const EditorSnapshot& state) const noex
     return state.focused && editor_lite_replay_info(info) && (info.flags & 4);
 }
 void OverlayPanel::draw_shader_notice() {
+    if(rail_enabled_ && rail_font_) {
+        namespace k=rail_kit;namespace t=rail_theme;
+        if(!rail_design_)rail_design_=std::make_shared<RailDesignState>();
+        k::Scope scope(rail_design_->kit);k::SetFonts(rail_font_,rail_medium_,rail_small_,rail_chip_,rail_heading_,rail_font_dpi_);
+        const auto display=ImGui::GetIO().DisplaySize;const float scale=std::min(display.x/1920.f,display.y/1080.f);k::SetScale(scale);
+        const ImVec2 a((display.x-420*scale)*.5f,display.y*.75f-110*scale),b(a.x+420*scale,a.y+110*scale);
+        ImGui::SetNextWindowPos(a);ImGui::SetNextWindowSize(ImVec2(420*scale,110*scale));
+        ImGui::Begin("##shader-loading",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoBackground);
+        auto* dl=ImGui::GetWindowDrawList();k::DropShadow(dl,ImRect(a,b),6,ImVec4(0,0,0,.45f),24,8);
+        dl->AddRectFilled(a,b,t::U32(t::bg_surface),6*scale);dl->AddRect(a,b,t::U32(t::border_default),6*scale,0,scale);
+        dl->AddRectFilled(ImVec2(a.x+188*scale,a.y+6*scale),ImVec2(a.x+232*scale,a.y+8*scale),t::U32(t::accent_default),scale);
+        k::BeginRegion(a,420);k::At(21,21);k::Text("Deadlock Dolly",t::text_muted,k::Role::BodyMedium,16);
+        auto* title=rail_loading_title_?rail_loading_title_:rail_heading_;
+        const float size=title->FontSize/rail_font_dpi_*scale,base=a.y+(43+26*.5f)*scale+(title->Ascent+title->Descent)*size/title->FontSize*.5f;
+        dl->AddText(title,size,ImVec2(a.x+21*scale,base-title->Ascent*size/title->FontSize),t::U32(t::text_primary),"Loading shaders");
+        k::At(21,75);k::Text("Your replay will open automatically.",t::text_muted,k::Role::Body,16);k::EndRegion();ImGui::End();return;
+    }
     const auto size = ImGui::GetIO().DisplaySize;
     const float s = panel_scale;
     const float inset = 24 * s;
     ImGui::SetNextWindowPos(ImVec2(size.x * .5f, size.y * .75f), ImGuiCond_Always, ImVec2(.5f, 1));
     ImGui::SetNextWindowSize(ImVec2(std::min(420 * s, std::max(1.f, size.x - 2 * inset)), 0));
     ImGui::SetNextWindowBgAlpha(1.f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, color(ui::PANEL));
-    ImGui::PushStyleColor(ImGuiCol_Border, color(ui::EDGE));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, lite_color(ui::PANEL));
+    ImGui::PushStyleColor(ImGuiCol_Border, lite_color(ui::EDGE));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18 * s, 16 * s));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6 * s);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, s);
@@ -50,16 +64,16 @@ void OverlayPanel::draw_shader_notice() {
     ImGui::GetWindowDrawList()->AddRectFilled(
         ImVec2(middle - 22 * s, position.y + 5 * s),
         ImVec2(middle + 22 * s, position.y + 7 * s),
-        ImGui::GetColorU32(color(ui::ACCENT)), s);
+        ImGui::GetColorU32(lite_color(ui::ACCENT)), s);
     ImGui::PushFont(heading_font);
-    ImGui::PushStyleColor(ImGuiCol_Text, color(ui::ACCENT));
+    ImGui::PushStyleColor(ImGuiCol_Text, lite_color(ui::ACCENT));
     ImGui::TextUnformatted("Deadlock Dolly");
     ImGui::PopStyleColor();
     ImGui::PopFont();
     ImGui::PushFont(title_font);
     ImGui::TextUnformatted("Loading shaders");
     ImGui::PopFont();
-    ImGui::PushStyleColor(ImGuiCol_Text, color(ui::MUTED));
+    ImGui::PushStyleColor(ImGuiCol_Text, lite_color(ui::MUTED));
     ImGui::PushTextWrapPos(0);
     ImGui::TextUnformatted("Your replay will open automatically.");
     ImGui::PopTextWrapPos();
@@ -91,7 +105,7 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
     const bool compact = io.DisplaySize.x < 900 * s || io.DisplaySize.y < 650 * s;
     // The compact camera list can be closed while the independent Curves dock
     // remains visible; hiding the list must not cancel a dock gesture.
-    if (compact && state.owner == EditorOwner::Panel && !compact_paths_) return;
+    if (!rail_drawing_ && compact && state.owner == EditorOwner::Panel && !compact_paths_) return;
     EditorCameraList list{};
     EditorLiteReplayInfo info{};
     bool have_list = editor_camera_list(list) && list.total == state.camera_count;
@@ -161,9 +175,14 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
         PushStyleVar(ImGuiStyleVar_WindowRounding, 6 * s);
         PushStyleVar(ImGuiStyleVar_FrameRounding, 4 * s);
         PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+        if (rail_drawing_) {
+            SetNextWindowPos(rail_paths_position_,ImGuiCond_Always);
+            SetNextWindowSize(rail_paths_size_,ImGuiCond_Always);
+            SetNextWindowSizeConstraints(ImVec2(1,1),rail_paths_size_);
+        }
         Begin("##lite-campaths", nullptr, flags);
-        constrain_panel();
-        panel_handle("Drag campaths");
+        if (rail_drawing_) SetWindowFontScale(12*s/ImGui::GetFont()->FontSize);
+        else { constrain_panel(); panel_handle("Drag campaths"); }
         if (have_camera_total_ && list.total > previous_camera_total_) {
             animated_camera_ = state.selected_camera < list.total ? state.selected_camera : list.total - 1;
             camera_added_at_ = GetTime();
@@ -183,7 +202,7 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
             editor_enqueue(EditorAction::SetCameraRoll,bank_release_index_,&request);
             bank_release_pending_=false;
         }
-        TextColored(color(ui::ACCENT), "CAMPATHS");
+        TextColored(lite_color(rail_drawing_ ? ui::STRONG : ui::ACCENT), rail_drawing_ ? "Campaths" : "CAMPATHS");
         SameLine();
         char count[32];
         std::snprintf(count, sizeof(count), "%u PLACED", list.total);
@@ -230,7 +249,7 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
         const unsigned visible_end = std::min(list.count, visible_begin + rows);
         if (list.count) {
             PushStyleVar(ImGuiStyleVar_CellPadding,ImVec2(2*s,2*s));
-            PushStyleColor(ImGuiCol_TableHeaderBg,color(ui::BUTTON));
+            PushStyleColor(ImGuiCol_TableHeaderBg,lite_color(ui::BUTTON));
             const auto row_seed=sidebar_id;
             PushStyleVar(ImGuiStyleVar_CellPadding,ImVec2(2*s,2*s));
             if (BeginTable("##lite-campath-details",4,ImGuiTableFlags_BordersInnerV |
@@ -245,7 +264,7 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
                     const auto& camera=list.rows[i];
                     const bool selected=index==state.selected_camera;
                     TableNextRow(ImGuiTableRowFlags_None,row_height);
-                    if(selected)TableSetBgColor(ImGuiTableBgTarget_RowBg0,ImColor(color(ui::SELECTED)));
+                    if(selected)TableSetBgColor(ImGuiTableBgTarget_RowBg0,ImColor(lite_color(ui::SELECTED)));
                     TableSetColumnIndex(0);
                     // Keep camera/field IDs stable when changing their presentation.
                     PushOverrideID(row_seed);PushID(int(index));
@@ -265,8 +284,8 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
                     PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2 * s, 2 * s));
                     PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
                     PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-                    PushStyleColor(ImGuiCol_FrameBgHovered, color(ui::FIELD));
-                    PushStyleColor(ImGuiCol_FrameBgActive, color(ui::FIELD));
+                    PushStyleColor(ImGuiCol_FrameBgHovered, lite_color(ui::FIELD));
+                    PushStyleColor(ImGuiCol_FrameBgActive, lite_color(ui::FIELD));
                     SetNextItemWidth(-1);
                     DragFloat("##arrive", &lite_arrive_drafts_[i], .01f, 0.f, 1e9f, "%.2f",
                               ImGuiSliderFlags_AlwaysClamp);
@@ -330,7 +349,7 @@ void OverlayPanel::draw_lite_campaths(const EditorSnapshot& state) {
             PopStyleColor();PopStyleVar();
         } else {
             Spacing(); Spacing();
-            TextColored(color(ui::TEXT), "Your first camera starts here");
+            TextColored(lite_color(ui::TEXT), "Your first camera starts here");
             TextWrapped("Frame a view, then capture it. Add another view to create a cinematic path.");
             Spacing();
             BeginDisabled(!state.ready || !state.paused || state.busy || state.playing || state.attach_preview || recording_locked);
@@ -503,10 +522,28 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
     const bool compact_curve_frames=curve_view_ && io.DisplaySize.y<650*s;
     if(compact_curve_frames)
         PushStyleVar(ImGuiStyleVar_FramePadding,ImVec2(GetStyle().FramePadding.x,3*s));
-    PushStyleColor(ImGuiCol_WindowBg, color(ui::BG));
+    PushStyleColor(ImGuiCol_WindowBg, lite_color(ui::BG));
+    if (rail_drawing_) {
+        SetNextWindowPos(ImVec2((io.DisplaySize.x-width)*.5f+rail_bar_offset_.x,
+            std::clamp(io.DisplaySize.y-height-8*s+rail_bar_offset_.y,0.f,std::max(0.f,io.DisplaySize.y-height))),ImGuiCond_Always);
+        SetNextWindowSize(ImVec2(width,height),ImGuiCond_Always);
+        flags |= ImGuiWindowFlags_NoSavedSettings;
+    }
     Begin("##lite-timeline",nullptr,flags);
+    if (rail_drawing_) {
+        SetWindowFontScale(12*s/ImGui::GetFont()->FontSize);
+        const auto pos=GetWindowPos(),size=GetWindowSize();
+        if (rail_background_)
+            GetWindowDrawList()->AddImage(rail_background_,pos,ImVec2(pos.x+size.x,pos.y+size.y));
+        if (IsWindowHovered() && !IsAnyItemHovered() && IsMouseDragging(0) &&
+            !IsAnyItemActive() && !IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId)) {
+            rail_bar_offset_.x=std::clamp(rail_bar_offset_.x+io.MouseDelta.x,-(io.DisplaySize.x-width)*.5f,(io.DisplaySize.x-width)*.5f);
+            rail_bar_offset_.y+=io.MouseDelta.y;
+        }
+        if (IsWindowHovered() && IsMouseDoubleClicked(0) && !IsAnyItemHovered()) rail_bar_offset_=ImVec2();
+    }
     const bool compact=lite_timeline_compact(GetWindowSize().x) || (!curve_view_ && GetWindowSize().y<150*s);
-    constrain_panel(); panel_handle("Drag timeline");
+    if (!rail_drawing_) { constrain_panel(); panel_handle("Drag timeline"); }
     if (curve_view_) {
         draw_curve_workspace(state, list);
         End(); PopStyleColor();
@@ -516,8 +553,8 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
     cancel_position_graph();
     auto cinematic_button = [&] {
         BeginDisabled(state.camera_count < 2 || !have_list || state.playing || !state.paused || state.attach_preview || cinematic_preparing_);
-        PushStyleColor(ImGuiCol_Button, color(ui::ACCENT));
-        PushStyleColor(ImGuiCol_Text, color(ui::KEYCAP_INK));
+        PushStyleColor(ImGuiCol_Button, lite_color(ui::ACCENT));
+        PushStyleColor(ImGuiCol_Text, lite_color(rail_drawing_ ? ui::ACCENT_INK : ui::KEYCAP_INK));
         if (Button("Play cinematic", ImVec2(132 * s, 0))) {
             EditorCinematicStatus previous{};
             if (editor_cinematic_status(previous) && (!cinematic_token_ ||
@@ -674,7 +711,7 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
             const double time = lite_campath_timeline_ ? double(kill.tick-info.start_tick)/info.tick_rate : kill.tick;
             if (time < timeline_view_start_ || time > timeline_view_end_) continue;
             const float x = timeline_x0_ + (timeline_x1_-timeline_x0_)*float((time-timeline_view_start_)/span);
-            const auto tint = color(kind == ReplayEventKind::Kill ? 0x65b5ff : 0xff727a);
+            const auto tint = lite_color(kind == ReplayEventKind::Kill ? 0x65b5ff : 0xff727a);
             // Markers have a separate lane and an outlined stem, so the
             // playhead at the same tick cannot cover the event.
             draw->AddLine(ImVec2(x,timeline_y_-18*s),ImVec2(x,timeline_y_-7*s),IM_COL32(12,16,19,255),5*s);
@@ -752,6 +789,50 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
         tick_editor();
     } else after_track.y-=6*s; // Keep the transport spacing below the taller ruler.
     SetCursorScreenPos(after_track);
+    if (rail_drawing_) {
+        SetCursorPos(ImVec2(16*s,GetWindowHeight()-46*s));
+        action_button(state.paused ? "Resume" : "Pause",EditorAction::PlayPause,78*s);
+        SameLine();
+        BeginDisabled(state.playing || state.attach_preview || !state.camera_count || !have_list ||
+                      (!lite_campath_timeline_ && (!state.paused ||
+                       editor_recording_locks_cameras(editor_recording_status().state))));
+        if (lite_campath_timeline_) action_button("Seek here",EditorAction::SeekShot,95*s,double(lite_shot_time_));
+        else if (Button("Seek camera",ImVec2(95*s,0))) {
+            CameraPose request{}; request[0]=double(list.revision);
+            camera_request(EditorAction::SeekCamera,state.selected_camera,list);
+        }
+        SameLine();action_button("<",EditorAction::PreviousView,32*s);
+        SameLine();action_button(">",EditorAction::NextView,32*s);
+        EndDisabled();
+        SameLine(std::max(GetCursorPosX(),GetWindowWidth()-420*s));
+        const auto now_ms=GetTickCount64();
+        if (state.pause_after_capture==pause_capture_pending_value_ || now_ms>=pause_capture_pending_until_)
+            pause_capture_pending_until_=0;
+        bool pause_capture=pause_capture_pending_until_ ? pause_capture_pending_value_ : state.pause_after_capture;
+        if (Checkbox("Pause after capture",&pause_capture) &&
+            editor_enqueue(EditorAction::SetPauseAfterCapture,pause_capture ? 1 : 0)) {
+            pause_capture_pending_value_=pause_capture;pause_capture_pending_until_=now_ms+1000;
+        }
+        SameLine();TextDisabled("Speed");SameLine();SetNextItemWidth(80*s);
+        char speed[24];std::snprintf(speed,sizeof(speed),"%.3gx",state.playback_speed);
+        if (BeginCombo("##rail-speed",speed)) {
+            for(double value:{.05,.1,.25,.5,1.,2.,4.}) {
+                char label[24];std::snprintf(label,sizeof(label),"%.3gx",value);
+                if(Selectable(label,value==state.playback_speed))editor_enqueue(EditorAction::SetPlaybackSpeed,value);
+            }
+            EndCombo();
+        }
+        SameLine();TextDisabled("FOV");SameLine();SetNextItemWidth(64*s);
+        BeginDisabled(!state.paused || state.playing || state.attach_preview || !state.manual_active || state.horizontal_fov<=0);
+        if(!lite_fov_editing_)lite_fov_draft_=float(state.horizontal_fov);
+        InputFloat("##lite-fov",&lite_fov_draft_,0,0,"%.1f",ImGuiInputTextFlags_AutoSelectAll);
+        const bool committed=IsItemDeactivatedAfterEdit();lite_fov_editing_=IsItemActive();
+        if(committed) {
+            const auto factor=lite_fov_factor(state.horizontal_fov,lite_fov_draft_);
+            if(std::isfinite(factor))editor_request_framing_factor(factor);
+        }
+        EndDisabled();
+    } else {
     const bool compact_popup = compact && BeginPopup("##compact-transport");
     if (!compact || compact_popup) {
         const float seek_width = (lite_campath_timeline_ ? 76.f : 112.f) * s;
@@ -818,7 +899,7 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
     for(double value : {.25,.5,1.,2.,4.}) {
         char label[16];std::snprintf(label,sizeof(label),"%gx",value);
         const bool selected=std::abs(state.playback_speed-value)<.0001;
-        if(selected) {PushStyleColor(ImGuiCol_Button,color(ui::SELECTED_BLUE));PushStyleColor(ImGuiCol_Text,color(ui::STRONG));}
+        if(selected) {PushStyleColor(ImGuiCol_Button,lite_color(ui::SELECTED_BLUE));PushStyleColor(ImGuiCol_Text,lite_color(ui::STRONG));}
         if(Button(label))editor_enqueue(EditorAction::SetPlaybackSpeed,value);
         if(selected)PopStyleColor(2);SameLine();
     }
@@ -834,6 +915,7 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
     if (!compact) speed_width_ = GetItemRectSize().x;
     }
     if (compact_popup) EndPopup();
+    }
     EndDisabled();
     EditorCinematicStatus preparation{};
     const bool have_preparation = editor_cinematic_status(preparation) &&

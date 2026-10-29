@@ -52,7 +52,7 @@
 				<CitadelLatestNews id="LatestNews" />
 			</Panel>
 			<Panel id="DollyShaderNoticeAnchorV2" hittest="false" hittestchildren="false" style="width: 100%; height: 100%;">
-				<CitadelPrewarmAssetsStatus id="PrewarmStatus" style="width: 500px; horizontal-align: center; vertical-align: top; position: 0px 16% 0px;" />
+				<CitadelPrewarmAssetsStatus id="PrewarmStatus" style="width: 420px; horizontal-align: center; vertical-align: top; position: 0px 16% 0px;" />
 			</Panel>
 		</Panel>
 	</CitadelHudHideout>

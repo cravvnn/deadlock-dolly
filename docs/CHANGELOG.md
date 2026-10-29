@@ -4,13 +4,24 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
-## Unreleased
+## 0.6.82-alpha
+
+- Integrate Kara's desktop redesign and in-game top rail with Dolly's current replay, camera, attachment, curve and export controls. Keep per-camera vertical-aim lock, the current export options and the handoff's animation pace. Escape closes drawers before returning to flight; F8 toggles the full editor.
+- Group **Seek camera**, **Replace selected** and **Save Path** in Campaths, with matching spacing. Paused saved-camera seeks can reconstruct the next recorded replay packet while holding the final camera and effects; playback and export retain their shot-range checks.
+- Restore clickable scene joint circles in the Bone Picker with blue fills and contrasting rings. Keep the upper overview/attached-preview switcher and remove the duplicate lower button.
+- Report a game exit that races with a startup console timeout or disconnect, and distinguish older crash dumps from files written after the current session started. Native startup errors suggest closing overlays such as U.GG and comparing Console mode, without automatically relaunching.
+
+Full details: [0.6.82 release notes](RELEASE_NOTES_0.6.82-alpha.md) and [redesigned interface guide](UI_REDESIGN.md).
+
+## 0.6.81-alpha
 
 - Add a per-camera **Lock vertical aim** option for Bone and Weapon attachments, based on [@ExoCalibra's contribution](https://github.com/cravvnn/deadlock-dolly/commit/f8e23dbdb811ccf76e51f88f72e8ff6086d317ed). Existing cameras leave it off.
 - Keep newly snapped attachment framing together as the player moves and changes aim, and allow exact position offsets beyond the small slider range. Existing attached cameras retain their original behavior until snapped again.
 - Move attached-preview flight relative to the displayed camera view, based on [@ExoCalibra's PR #29](https://github.com/cravvnn/deadlock-dolly/pull/29).
 - Recover a verified forward seek that settles one tick short, based on [@SamuelCurrid's PR #28](https://github.com/cravvnn/deadlock-dolly/pull/28). Require an exact tick unless the engine reported a full-packet floor.
 - Correct a reported small forward-seek overshoot before Players capture, filter repeated known console warnings without hiding raw diagnostics, and keep Players still captures within the native clock limit.
+
+Full details: [0.6.81 release notes](RELEASE_NOTES_0.6.81-alpha.md).
 
 ## 0.6.80-alpha
 

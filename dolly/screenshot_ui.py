@@ -32,29 +32,60 @@ def init(app) -> None:
     app.screenshot_size_text = tk.StringVar(value="Game render size: launch a replay to see it.")
 
 
-def build(app, parent, *, before=None) -> None:
-    """Add the Screenshot card to the Export page."""
-    from .ui.widgets import GAP, card, field
-    still = card(parent, "Screenshot (high-res still)")
+def build(app, parent=None, *, before=None, card=None) -> None:
+    """Fill the Export page's Screenshot card, or add the legacy card to ``parent``.
+
+    ``card`` is the page's kit card (``export_page.screenshot_card``): the page draws
+    its title and info bubble (``SCREENSHOT_INFO``), this adds the rows. A kit card
+    passed as ``parent`` is filled the same way (``before`` means nothing there).
+    """
+    from .ui.kit_card import KitCard
+    if card is None and isinstance(parent, KitCard):
+        card = parent
+    if card is not None:
+        _fill_card(app, card)
+        return
+    from .ui.export_page import SCREENSHOT_INFO
+    from .ui.scale import scaler
+    from .ui.widgets import GAP, card as frame_card, field
+    dp = scaler(parent)
+    still = frame_card(parent, "Screenshot (high-res still)")
     if before is not None:
         still.pack_configure(before=before)
-    ttk.Label(still, text="Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
-                          "hero_isolated.png and depth.exr in one folder beside the output file. "
-                          "Hero = every player and their equipment, no NPCs.",
-              style="CardMuted.TLabel", wraplength=760).pack(anchor="w", pady=(0, GAP))
+    ttk.Label(still, text=SCREENSHOT_INFO, style="CardMuted.TLabel",
+              wraplength=dp(760)).pack(anchor="w", pady=dp((0, GAP)))
     app.screenshot_size_combo = field(still, "Render size (next launch)", app.screenshot_render_size,
                                       values=screenshot.RENDER_SIZE_LABELS)
     app.screenshot_size_combo.bind("<<ComboboxSelected>>", lambda _e: render_size_changed(app))
     ttk.Label(still, textvariable=app.screenshot_size_text, style="CardMuted.TLabel",
-              wraplength=760).pack(anchor="w", pady=(0, GAP))
+              wraplength=dp(760)).pack(anchor="w", pady=dp((0, GAP)))
     row = ttk.Frame(still, style="Card.TFrame")
     row.pack(fill="x")
     app.screenshot_depth_check = ttk.Checkbutton(row, style="Card.TCheckbutton",
                                                  text="Include depth (EXR)", variable=app.screenshot_depth)
-    app.screenshot_depth_check.pack(side="left", padx=(0, 18))
+    app.screenshot_depth_check.pack(side="left", padx=dp((0, 18)))
     app.screenshot_button = ttk.Button(row, text="Take screenshot", style="Primary.TButton",
                                        command=lambda: start(app))
     app.screenshot_button.pack(side="right")
+
+
+def _fill_card(app, card) -> None:
+    """The kit rows (Figma [design reference]): render size, its status line, depth and the primary button."""
+    row = card.row()
+    row.label("Render size (next launch)")
+    row.gap(10)
+    app.screenshot_size_combo = row.widget(ttk.Combobox(row.host, textvariable=app.screenshot_render_size,
+                                                        values=screenshot.RENDER_SIZE_LABELS, state="readonly",
+                                                        style="Kit.TCombobox"), width="fill")
+    app.screenshot_size_combo.bind("<<ComboboxSelected>>", lambda _e: render_size_changed(app))
+    card.text(textvariable=app.screenshot_size_text)
+    row = card.row()
+    app.screenshot_depth_check = row.widget(ttk.Checkbutton(row.host, text="Include depth (EXR)",
+                                                            variable=app.screenshot_depth, style="Kit.TCheckbutton"))
+    row.push()
+    app.screenshot_button = row.button("Take screenshot", lambda: start(app), kind="primary")
+    # The page set its Tab stops before these rows existed (watching again only adds the new ones).
+    card.page.watch_focus()
 
 
 def render_size_changed(app) -> None:

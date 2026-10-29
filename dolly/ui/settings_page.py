@@ -1,4 +1,17 @@
-"""Settings page view: explicit variables/actions, with locally owned widgets."""
+"""Settings page view: explicit variables/actions, with locally owned widgets.
+
+The Settings screen (Figma [design reference]): five kit cards on a :class:`.kit_page.KitPage`
+over the window's backdrop, in one column like Replay's (USER-ADDITIONS UPDATE 17.4,
+Kara's comment #4): Updates, Troubleshooting & Recovery, Game & Files, Replay
+Graphics Profiles and ReShade, 613 design px wide (narrower windows: the content
+width), left-aligned, 15 apart. Each card keeps the rows the frame draws. The whole
+page scrolls as one; Tab reads it top to bottom.
+
+Every button is a canvas-drawn kit button; paths, the profile dropdown and the
+checkboxes stay ttk widgets. The update note and the graphics help became info
+bubbles and the Troubleshooting disclosure an always-open card: no control was
+lost. ``CameraFeel`` and the sensitivity mapping stay here for the Controls page.
+"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -7,8 +20,17 @@ import math
 import tkinter as tk
 from tkinter import ttk
 
-from .widgets import GAP, ScrollPage, actions, card, disclosure, field
+from .kit_fields import elide_at_rest
+from .kit_page import KitPage
+from .scale import chars, scaler
+from .widgets import GAP, card
 
+TITLE = "Settings"
+SUBTITLE = "Set the game and replay paths, replay graphics profiles, ReShade and update checks."
+UPDATES_INFO = "Nothing downloads or installs until you choose Update now."
+UPDATE_STATUS = "Checks published Latest releases; experimental pre-releases are ignored."
+LABEL_WIDTH = 125      # the form's label column; the Browse buttons are as wide
+INDENT = 135           # button rows start under the fields
 
 SENSITIVITY_MIN = 0.005
 SENSITIVITY_MAX = 2.0
@@ -52,8 +74,8 @@ class SettingsState:
     reshade_status_text: tk.Variable
     show_log: tk.Variable
     auto_updates_initial: bool
-    allow_mod_overrides_initial: bool
-    discord_presence_initial: bool
+    allow_mod_overrides_initial: bool = False
+    discord_presence_initial: bool = True
 
 
 @dataclass(frozen=True)
@@ -81,74 +103,105 @@ class SettingsActions:
 
 class SettingsPage:
     def __init__(self, parent, state: SettingsState, commands: SettingsActions, *, root, on_error):
-        page = ScrollPage(parent)
+        # Not at import: the profiles module reaches the game's files (page modules stay light).
+        from ..graphics_profiles_ui import PROFILES_INFO, GraphicsProfiles
+        # One column like Replay's; cards are stacked (and Tab reads them) in build order.
+        page = KitPage(parent)
         page.pack(fill="both", expand=True)
         self.settings_page = page
         self.commands = commands
-        body = page.body
-        ttk.Label(body, text="SETTINGS", style="Section.TLabel").pack(anchor="w", pady=(0, GAP))
-        updates = card(body, "Updates")
-        self.auto_updates = tk.BooleanVar(value=state.auto_updates_initial)
-        self.update_status = tk.StringVar(value="Checks published Latest releases; experimental pre-releases are ignored.")
-        ttk.Checkbutton(updates, style="Card.TCheckbutton", text="Automatically check for updates", variable=self.auto_updates,
-                        command=commands.save_update_preference).pack(anchor="w", pady=(0, GAP))
-        ttk.Label(updates, text="Nothing downloads or installs until you choose Update now.",
-                  wraplength=700, style="CardMuted.TLabel").pack(anchor="w", pady=(0, GAP))
-        self.update_check_button = actions(updates, (("Check for updates", commands.check_updates),), 1)[0]
-        ttk.Label(updates, textvariable=self.update_status, wraplength=700, style="CardMuted.TLabel").pack(fill="x")
-        presence = card(body, "Discord Rich Presence")
-        self.discord_presence = tk.BooleanVar(value=state.discord_presence_initial)
-        self.discord_status = tk.StringVar(value="Requires the Discord desktop app and activity sharing enabled in Discord.")
-        self.discord_presence_checkbox = ttk.Checkbutton(
-            presence, style="Card.TCheckbutton", text="Show Dolly activity on Discord",
-            variable=self.discord_presence, command=commands.save_discord_preference)
-        self.discord_presence_checkbox.pack(anchor="w", pady=(0, GAP))
-        ttk.Label(presence, text="Shows editing, previewing and exporting activity with a session timer. "
-                  "Replay names, project names and file paths stay private.",
-                  wraplength=700, style="CardMuted.TLabel").pack(anchor="w", pady=(0, GAP))
-        ttk.Label(presence, textvariable=self.discord_status, wraplength=700,
-                  style="CardMuted.TLabel").pack(fill="x")
-        game = card(body, "Game & files")
-        field(game, "Deadlock executable", state.game_path)
-        actions(game, (("Browse game...", commands.browse_game),), 1)
-        field(game, "Replay folder", state.replay_folder)
-        actions(game, (("Browse folder...", commands.browse_replay_folder), ("Save paths", commands.save_layout_paths)), 2)
-        actions(game, (("Display launch options...", commands.open_launch_options),), 1)
-        mods = card(body, "Mods")
-        self.allow_mod_overrides = tk.BooleanVar(value=state.allow_mod_overrides_initial)
-        ttk.Checkbutton(
-            mods, style="Card.TCheckbutton",
-            text="Load mixed mod packs (skins with UI/shader overrides)",
-            variable=self.allow_mod_overrides, command=commands.save_mod_preference
-        ).pack(anchor="w", pady=(0, GAP))
-        ttk.Label(
-            mods,
-            text="Off: Dolly loads only skin, map, model, audio and animation content. "
-                 "On: a skin pack that also contains Panorama, shaders, post-processing "
-                 "or startup overrides is loaded too. Those extra files can change what "
-                 "the camera captures or override Dolly's interface hiding.",
-            wraplength=760, style="CardMuted.TLabel",
-        ).pack(anchor="w", pady=(0, GAP))
-        from ..graphics_profiles_ui import GraphicsProfiles
-        self.graphics_profiles = GraphicsProfiles(card(body, "Replay graphics profiles"), root=root, on_error=on_error)
-        self.reshade_card = shade = card(body, "ReShade")
-        self.reshade_path_entry = field(shade, "Runtime DLL", state.reshade_runtime_path)
+        self.auto_updates = tk.BooleanVar(page, value=state.auto_updates_initial)
+        self.update_status = tk.StringVar(page, value=UPDATE_STATUS)
+
+        updates = self.updates_card = page.add_card("Updates")
+        row = updates.row(height=18)
+        self.auto_updates_checkbox = row.widget(ttk.Checkbutton(
+            row.host, text="Automatically check for updates", variable=self.auto_updates,
+            command=commands.save_update_preference, style="Kit.TCheckbutton"))
+        row.gap(5)
+        self.updates_info = row.info(UPDATES_INFO)
+        self.update_check_button, = self._buttons(updates, (("Check for updates", commands.check_updates),))
+        self.update_status_text = updates.text(textvariable=self.update_status, top=15)
+
+        # Always open (it was a closed disclosure); one button per row, as the frame draws it.
+        tools = self.tools_card = page.add_card("Troubleshooting & Recovery")
+        for text, command in (("Startup controls...", commands.open_advanced_startup),
+                              ("Recover configuration...", commands.recover_game_config),
+                              ("Export diagnostics", commands.diagnostics)):
+            self._buttons(tools, ((text, command),))
+        row = tools.row(height=18)
+        self.show_log_checkbox = row.widget(ttk.Checkbutton(
+            row.host, text="Show log", variable=state.show_log, command=commands.toggle_log,
+            style="Kit.TCheckbutton"))
+
+        game = self.game_card = page.add_card("Game & Files")
+        self.game_path_entry, self.game_path_cover, _ = self._path_row(
+            game, "Deadlock executable", state.game_path, "Browse game...", commands.browse_game)
+        self.replay_folder_entry, self.replay_folder_cover, _ = self._path_row(
+            game, "Replay folder", state.replay_folder, "Browse folder...", commands.browse_replay_folder)
+        self._buttons(game, (("Save paths", commands.save_layout_paths),
+                             ("Display launch options...", commands.open_launch_options)), indent=INDENT)
+
+        self.profiles_card = page.add_card("Replay Graphics Profiles", info=PROFILES_INFO)
+        self.graphics_profiles = GraphicsProfiles(None, root=root, on_error=on_error, card=self.profiles_card)
+
+        shade = self.reshade_card = page.add_card("ReShade")
+        self.reshade_path_entry, self.reshade_path_cover, self.reshade_browse_button = self._path_row(
+            shade, "Runtime DLL", state.reshade_runtime_path, "Browse runtime...", commands.browse_reshade)
         self.reshade_path_entry.bind(
-            "<Return>", lambda _event: commands.select_reshade_runtime(state.reshade_runtime_path.get()))
-        self.reshade_browse_button, self.reshade_library_button = actions(
-            shade, (("Browse runtime...", commands.browse_reshade),
-                    ("Browse FX library...", commands.browse_reshade_library)), 2)
-        buttons = actions(shade, (("Enable ReShade", commands.configure_reshade),
-                        ("Disable for this session", commands.disable_reshade), ("Forget runtime", commands.forget_reshade)))
+            "<Return>", lambda _event: commands.select_reshade_runtime(state.reshade_runtime_path.get()), add="+")
+        # Disable only while ReShade loads or is ready; the app's poll owns the three states from here.
+        buttons = self._buttons(shade, (("Enable ReShade", commands.configure_reshade),
+                                        ("Disable for this session", commands.disable_reshade, "disabled"),
+                                        ("Forget runtime", commands.forget_reshade)), indent=INDENT)
         self.reshade_configure_button, self.reshade_disable_button, self.reshade_forget_button = buttons
-        self.reshade_disable_button.configure(state="disabled")
-        actions(shade, (("Menu shortcut...", commands.show_reshade_keybinds),), 1)
-        ttk.Label(shade, textvariable=state.reshade_status_text, style="CardMuted.TLabel", wraplength=760).pack(fill="x")
-        tools = disclosure(body, "Troubleshooting & recovery")
-        actions(tools.body, (("Startup controls...", commands.open_advanced_startup),
-                             ("Recover configuration...", commands.recover_game_config),
-                             ("Export diagnostics", commands.diagnostics)))
-        ttk.Checkbutton(tools.body, text="Show log", variable=state.show_log, command=commands.toggle_log).pack(anchor="w", pady=(0, GAP))
+        self.reshade_library_button, _ = self._buttons(
+            shade, (("Browse FX library...", commands.browse_reshade_library),
+                    ("Menu shortcut...", commands.show_reshade_keybinds)), indent=INDENT)
+        self.reshade_status = shade.text(textvariable=state.reshade_status_text, top=15)
+        presence = self.presence_card = page.add_card("Discord Rich Presence")
+        self.discord_presence = tk.BooleanVar(page, value=state.discord_presence_initial)
+        self.discord_status = tk.StringVar(page, value="Requires the Discord desktop app and activity sharing enabled in Discord.")
+        row = presence.row(height=18)
+        self.discord_presence_checkbox = row.widget(ttk.Checkbutton(
+            row.host, text="Show Dolly activity in Discord", variable=self.discord_presence,
+            command=commands.save_discord_preference, style="Kit.TCheckbutton"))
+        presence.text(textvariable=self.discord_status, top=15)
+
+        mods = self.mods_card = page.add_card("Replay Mod Overrides")
+        self.allow_mod_overrides = tk.BooleanVar(page, value=state.allow_mod_overrides_initial)
+        row = mods.row(height=18)
+        self.mod_overrides_checkbox = row.widget(ttk.Checkbutton(
+            row.host, text="Load installed mod overrides", variable=self.allow_mod_overrides,
+            command=commands.save_mod_preference, style="Kit.TCheckbutton"))
+        mods.text("Extra mods can change the captured view or override Dolly's interface hiding. "
+                  "This applies to the next replay session.", top=15)
+
+        page.watch_focus()
+
+    @staticmethod
+    def _path_row(card, label, variable, button, command):
+        """Label column, a filling path field (elided at rest) and a fixed-width Browse button."""
+        row = card.row()
+        row.label(label, width=LABEL_WIDTH)
+        row.gap(10)
+        entry = row.widget(ttk.Entry(row.host, textvariable=variable, style="Kit.TEntry"), width="fill")
+        cover = elide_at_rest(entry, variable)
+        row.gap(10)
+        return entry, cover, row.button(button, command, width=LABEL_WIDTH)
+
+    @staticmethod
+    def _buttons(card, specs, *, indent=0):
+        """One row of hugging buttons 10 apart: (text, command[, state]) each."""
+        row = card.row()
+        if indent:
+            row.gap(indent)
+        made = []
+        for index, (text, command, *state) in enumerate(specs):
+            if index:
+                row.gap(10)
+            made.append(row.button(text, command, state=state[0] if state else "normal"))
+        return made
 
 
 class CameraFeel:
@@ -157,27 +210,28 @@ class CameraFeel:
         self.mouse_sensitivity = mouse_sensitivity
         self.save_sensitivity = save_sensitivity
         self._sensitivity_syncing = False
+        dp = scaler(body)
         self.sensitivity_position = tk.DoubleVar(value=sensitivity_to_position(self._sensitivity_value()))
         self.sensitivity_text = tk.StringVar()
         feel = card(body, "Camera feel")
         ttk.Label(feel, text="Free-camera look speed. Lower it when a high-DPI mouse makes the "
                              "camera spin, or raise it for a slow desktop mouse.",
-                  style="CardMuted.TLabel", wraplength=760).pack(anchor="w", pady=(0, GAP))
+                  style="CardMuted.TLabel", wraplength=dp(760)).pack(anchor="w", pady=dp((0, GAP)))
         presets = ttk.Frame(feel, style="Card.TFrame")
-        presets.pack(fill="x", pady=(0, GAP))
+        presets.pack(fill="x", pady=dp((0, GAP)))
         for label, value in SENSITIVITY_PRESETS:
             ttk.Button(presets, text=label, style="Card.Quiet.TButton",
-                       command=lambda preset=value: self._apply_sensitivity(preset)).pack(side="left", padx=(0, 8))
+                       command=lambda preset=value: self._apply_sensitivity(preset)).pack(side="left", padx=dp((0, 8)))
         slider = ttk.Scale(feel, from_=0, to=SENSITIVITY_TICKS, orient="horizontal",
                            variable=self.sensitivity_position, command=self._sensitivity_moved)
         slider.pack(fill="x")
         slider.bind("<ButtonRelease-1>", self._sensitivity_released)
-        ttk.Label(feel, textvariable=self.sensitivity_text, style="CardMuted.TLabel").pack(anchor="w", pady=(6, 10))
+        ttk.Label(feel, textvariable=self.sensitivity_text, style="CardMuted.TLabel").pack(anchor="w", pady=dp((6, 10)))
         exact = ttk.Frame(feel, style="Card.TFrame")
         exact.pack(fill="x")
-        ttk.Label(exact, text="Mouse sensitivity", style="CardMuted.TLabel").pack(side="left", padx=(0, 10))
-        self.sensitivity_entry = ttk.Entry(exact, textvariable=mouse_sensitivity, width=12, style="Card.TEntry")
-        self.sensitivity_entry.pack(side="left", padx=(0, 10))
+        ttk.Label(exact, text="Mouse sensitivity", style="CardMuted.TLabel").pack(side="left", padx=dp((0, 10)))
+        self.sensitivity_entry = ttk.Entry(exact, textvariable=mouse_sensitivity, width=chars(exact, 12), style="Card.TEntry")
+        self.sensitivity_entry.pack(side="left", padx=dp((0, 10)))
         self.sensitivity_entry.bind("<Return>", lambda _event: self.save_sensitivity())
         ttk.Button(exact, text="Save sensitivity", command=save_sensitivity,
                    style="Card.Quiet.TButton").pack(side="left")

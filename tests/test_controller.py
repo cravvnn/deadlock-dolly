@@ -7,9 +7,11 @@ methods; these tests do not claim compatibility with a running game build.
 
 from collections import deque
 from dataclasses import replace
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -1934,6 +1936,39 @@ class ControllerTests(unittest.TestCase):
                 self.assertIn("crashes/" + crash.name, archive.namelist())
                 report = json.loads(archive.read("diagnostics.json"))
             self.assertEqual(report["crash_dumps"], [{"name": crash.name, "bytes": 12}])
+
+    def test_crash_message_does_not_attribute_older_dump_to_current_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            game = Path(directory) / 'Deadlock' / 'game'
+            binaries = game / 'bin' / 'win64'
+            binaries.mkdir(parents=True)
+            old = binaries / 'deadlock_2026_1023_000650_0_accessviolation.mdmp'
+            old.write_bytes(b'old dump')
+            previous = datetime(2026, 10, 23, 0, 6, 50, tzinfo=timezone.utc).timestamp()
+            os.utime(old, (previous, previous))
+            self.controller._session.command = (str(binaries / 'deadlock.exe'),)
+            self.controller._session.session_dir = Path(directory) / '20261028_073722_f12f8fb1ef'
+            self.controller._session.session_dir.mkdir()
+            self.controller._launch_attempt = {'game_path': str(binaries)}
+            report = {'faulting_module': 'client.dll', 'module_offset': '0x123', 'access_address': '0x60'}
+            with patch('dolly.crash_dumps.analyse', return_value=report):
+                self.assertEqual(self.controller._crash_suffix(), '')
+                archive_path = self.controller.export_diagnostics(Path(directory) / 'diagnostics.zip')
+                with zipfile.ZipFile(archive_path) as archive:
+                    diagnostic = json.loads(archive.read('diagnostics.json'))
+                self.assertFalse(diagnostic['crash_analysis'][0]['after_session_start'])
+                self.assertEqual(diagnostic['crash_analysis'][0]['modified_utc'],
+                                 '2026-10-23T00:06:50+00:00')
+
+                recent = binaries / 'deadlock_2026_1028_073733_0_accessviolation.mdmp'
+                recent.write_bytes(b'new dump')
+                current = datetime(2026, 10, 28, 7, 37, 33, tzinfo=timezone.utc).timestamp()
+                os.utime(recent, (current, current))
+                suffix = self.controller._crash_suffix()
+                self.assertIn(recent.name, suffix)
+                self.assertNotIn(old.name, suffix)
+                self.controller._session.session_dir = Path(directory) / 'unknown-session'
+                self.assertEqual(self.controller._crash_suffix(), '')
 
     def test_crash_dump_search_resolves_executable_and_install_folder_selections(self):
         from test_launcher import fake_game

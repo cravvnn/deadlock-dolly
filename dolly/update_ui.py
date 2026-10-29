@@ -15,6 +15,8 @@ LOG = logging.getLogger("dolly")
 
 
 class UpdateUI:
+    error = False           # the notice's detail is an error (Figma [design reference]: the updater could not start)
+
     def __init__(self, app, *, skip_startup=False):
         self.app = app
         self.events = queue.Queue()
@@ -67,15 +69,22 @@ class UpdateUI:
         return tuple(release[name] for name in ("version", "url", "sha256", "size"))
 
     def _notes_height_limit(self):
+        """Room for the open release highlights: the page area below the banner.
+
+        Kara's pane (Figma [design reference]) shows every note in full and scrolls only when it is
+        taller than the page, so the highlights may push the whole page down (the page then
+        scrolls, its fallback). Their own height is added back while they show, so the budget
+        stays the same as they displace the page.
+        """
         workspace = getattr(self.app, "notebook", None)
-        sidebar = getattr(self.app, "sidebar", None)
-        if workspace is None or sidebar is None:
+        if workspace is None:
             return self.notice.MAX_NOTES_HEIGHT * self.notice.scale
         current = self.notice.notes_clip.winfo_height() if self.notice.notes_clip.winfo_ismapped() else 0
-        return max(1, workspace.winfo_height() + current - sidebar.winfo_reqheight() - round(8 * self.notice.scale))
+        return max(1, workspace.winfo_height() + current)
 
-    def _status(self, text):
+    def _status(self, text, *, error=False):
         self.message = text
+        self.error = error
         self.app.update_status.set(text)
         self._render()
 
@@ -87,7 +96,7 @@ class UpdateUI:
             if self.dismissed:
                 self.notice.collapse(self.available["version"])
             else:
-                self.notice.show(self.available["version"], self.message, busy=self.running)
+                self.notice.show(self.available["version"], self.message, busy=self.running, error=self.error)
 
     def reopen(self):
         self.dismissed = False
@@ -196,7 +205,7 @@ class UpdateUI:
         try:
             launch_worker(application_root().resolve(), work)
         except (OSError, RuntimeError, ValueError) as error:
-            self._status("Could not start updater: " + str(error) + ". Click Update now to retry.")
+            self._status("Could not start updater: " + str(error) + ". Click Update now to retry.", error=True)
             return
         self.restarting = True
         self.app.update_status.set("Installing Dolly " + version + "; restarting...")

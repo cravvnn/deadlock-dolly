@@ -9,6 +9,7 @@
 struct ImGuiSettingsHandler;
 
 namespace dolly {
+struct RailDesignState;
 // Borrowed renderer operations; the panel never creates/releases a GPU resource.
 struct PickerPortrait {
     void (*reset)() noexcept;
@@ -30,7 +31,9 @@ public:
     // Font pointers borrow the current ImGui atlas. Guide preference and widget
     // edit caches deliberately survive device recreation, as they did before.
     void reset_fonts() noexcept {
-        panel_font = heading_font = title_font = nullptr;
+        panel_font = heading_font = title_font = rail_font_ = rail_heading_ = nullptr;
+        rail_medium_ = rail_small_ = rail_chip_ = nullptr;
+        rail_loading_title_ = nullptr;
         panel_scale = 1.0f;
     }
     bool guides_visible(const EditorSnapshot& state, bool desktop_preview = false) noexcept;
@@ -46,6 +49,12 @@ public:
     void draw_lite_timeline(const EditorSnapshot& state);
     void cancel_position_graph() noexcept;
     void draw_panel(const EditorSnapshot& state);
+    // The rail uses the same control bodies and revision-bound actions as classic.
+    void draw_rail(const EditorSnapshot& state, ImTextureID background = 0);
+    bool rail_enabled() const noexcept { return rail_enabled_; }
+    bool rail_drawers_open() const noexcept { return rail_selected_ >= 0 || rail_paths_open_; }
+    void close_rail_drawers() noexcept { rail_selected_ = -1; rail_paths_open_ = false; }
+    ImVec4 rail_tab_rect(unsigned tab) const noexcept { return tab < 6 ? rail_tab_rects_[tab] : ImVec4(); }
     ImVec4 main_tab_rect(unsigned page) const noexcept { return page<5 ? main_tab_rects_[page] : ImVec4(); }
     ImVec4 main_card_heights(unsigned index) const noexcept {
         return index<4 ? ImVec4(section_heights_[lite_page_][index],section_draw_heights_[index],
@@ -101,6 +110,35 @@ public:
     ImVec4 curve_tangent_value_rect(unsigned side) const noexcept { return side<2 ? tangent_value_rects_[side] : ImVec4(); }
 
 private:
+    bool rail_enabled_ = true, rail_drawing_ = false, rail_paths_open_ = false, rail_picker_mode_ = false;
+    int rail_selected_ = -1;
+    float rail_progress_[6]{}, rail_hover_[6]{};
+    float rail_from_[6]{};
+    double rail_started_[6]{};
+    bool rail_target_[6]{};
+    float rail_body_height_[6]{654,390,314,536,399,480};
+    ImVec4 rail_tab_rects_[6]{};
+    ImVec2 rail_paths_position_{}, rail_paths_size_{};
+    ImVec2 rail_bar_offset_{};
+    ImVec4 rail_track_rect_{};
+    ImTextureID rail_background_ = 0;
+    ImFont* rail_font_ = nullptr;
+    ImFont* rail_heading_ = nullptr;
+    ImFont* rail_medium_ = nullptr;
+    ImFont* rail_small_ = nullptr;
+    ImFont* rail_chip_ = nullptr;
+    ImFont* rail_loading_title_ = nullptr;
+    float rail_font_dpi_=1;
+    std::shared_ptr<RailDesignState> rail_design_;
+    void draw_kara_drawer(const EditorSnapshot& state, unsigned tab, bool measuring = false);
+    void draw_kara_footer(const EditorSnapshot& state, bool record_action = true);
+    void draw_kara_transport(const EditorSnapshot& state);
+    void draw_controls(const EditorSnapshot& state);
+    void draw_controls_footer(const EditorSnapshot& state);
+    void draw_bone_picker_controls(const EditorSnapshot& state, const PickerPortrait& portrait);
+    void draw_object_picker_controls(const EditorSnapshot& state);
+    ImVec4 panel_color(unsigned rgb, float alpha = 1.0f) const;
+    ImVec4 lite_color(unsigned rgb) const { return panel_color(rgb); }
     bool layout_editing_ = false, reduced_motion_ = false, classic_layout_ = false, layout_custom_ = false;
     bool compact_controls_ = false, compact_paths_ = false, card_open_ = false;
     bool editor_custom_ = false, editor_position_pending_ = false, editor_dragging_ = false;

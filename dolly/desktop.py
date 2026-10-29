@@ -18,6 +18,8 @@ from .runtime import application_root, resource_root, is_frozen
 def _message(text: str, *, error: bool = False) -> None:
     if sys.platform == "win32":
         try:
+            from .ui.scale import enable_dpi_awareness
+            enable_dpi_awareness()  # a sharp message box on scaled displays
             api = ctypes.WinDLL("user32", use_last_error=True)
             function = api.MessageBoxW
             function.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
@@ -56,7 +58,10 @@ def bundle_self_test(report_path: Path, *, hidden: bool = False) -> int:
         report["checks"]["unlocker_sha256"] = hashlib.sha256(dll.read_bytes()).hexdigest()
         # Use the real application, not just a mock Tk root. This imports the
         # camera editor, creates its widgets, exercises its icon and closes it.
+        # DPI aware like the editor, so the minimum-size checks see its real layout.
         branding.set_taskbar_identity()
+        from .ui.scale import enable_dpi_awareness
+        enable_dpi_awareness()
         root = tk.Tk()
         if hidden:
             root.withdraw()
@@ -67,7 +72,7 @@ def bundle_self_test(report_path: Path, *, hidden: bool = False) -> int:
         root.update()
         # Exercise the new export controls at the supported minimum size.
         # This runs on the actual frozen Windows GUI in CI without a game.
-        root.geometry(app_ui._window_size(1000, 700))
+        root.geometry(app_ui._main_size(1000, 700))
         app_ui.notebook.select(app_ui.export_tab)
         root.update()
         def visible(name):
@@ -85,12 +90,9 @@ def bundle_self_test(report_path: Path, *, hidden: bool = False) -> int:
                     or x + widget.winfo_width() > root.winfo_width()
                     or y + widget.winfo_height() > root.winfo_height()):
                 raise RuntimeError(f"Layout clips {name} at the minimum window size")
+        # Recording is the page's last card: each action scrolls into view and fits there.
         for name in ("video_path_entry", "video_start_button", "video_stop_button", "video_cancel_button"):
-            visible(name)
-        # Recording actions stay reachable while advanced runtime settings scroll.
-        app_ui.export_page.canvas.yview_moveto(1)
-        root.update_idletasks()
-        for name in ("video_start_button", "video_stop_button", "video_cancel_button"):
+            app_ui.export_page.reveal(getattr(app_ui, name))
             visible(name)
         app_ui.notebook.select(app_ui.settings_tab)
         root.update()
@@ -110,7 +112,13 @@ def bundle_self_test(report_path: Path, *, hidden: bool = False) -> int:
         app_ui.notebook.select(app_ui.camera_tab)
         root.update()
         visible("slider")
+        # Citadel DOF lives on Look; widgets on a page stay mapped while scrolled away.
+        app_ui.notebook.select(app_ui.cvar_tab)
+        root.update()
+        app_ui.look_page.reveal(app_ui.citadel_dof_checkbox)
+        root.update_idletasks()
         report["checks"]["citadel_dof_card"] = bool(app_ui.citadel_dof_checkbox.winfo_ismapped())
+        app_ui.notebook.select(app_ui.camera_tab)
         app_ui.full_editor.set(False)
         app_ui._apply_editor_mode()
         assert app_ui.notebook.select() == str(app_ui.camera_tab)

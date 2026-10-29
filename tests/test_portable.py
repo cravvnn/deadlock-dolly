@@ -138,6 +138,28 @@ class PortableRuntimeTests(unittest.TestCase):
         check.assert_called_once_with(report)
         gui.assert_not_called()
 
+    def test_self_test_window_and_messages_declare_dpi_awareness_first(self):
+        # Windows reads a process's DPI mode when its first window opens; the bundle
+        # check must lay out the editor like the editor itself (sharp, at real size).
+        order = []
+        unlocker = self.base / "unlocker.dll"
+        unlocker.write_bytes(b"dll")
+
+        def window(*_args, **_kwargs):
+            order.append("window")
+            raise RuntimeError("no window in this test")
+        aware = patch("dolly.ui.scale.enable_dpi_awareness", side_effect=lambda: order.append("aware") or True)
+        with aware, patch("dolly.launcher._verified_unlocker", return_value=unlocker), \
+                patch("dolly.branding.set_taskbar_identity"), patch("tkinter.Tk", side_effect=window):
+            self.assertEqual(desktop.bundle_self_test(self.base / "report.json"), 1)
+        self.assertEqual(order, ["aware", "window"])
+        order.clear()
+        user32 = SimpleNamespace(MessageBoxW=Mock(side_effect=lambda *_args: order.append("message box") or 1))
+        with patch("dolly.ui.scale.enable_dpi_awareness", side_effect=lambda: order.append("aware") or True), \
+                patch.object(sys, "platform", "win32"), patch.object(ctypes, "WinDLL", return_value=user32):
+            desktop._message("Recovered or cleaned 1 session(s).")
+        self.assertEqual(order, ["aware", "message box"])
+
     def test_python_bootstrap_cannot_recursively_launch_frozen_executable(self):
         with self.frozen(), patch.object(sys, "platform", "win32"), patch("subprocess.Popen") as spawn:
             with self.assertRaisesRegex(RuntimeError, "directly"):

@@ -5,17 +5,21 @@ import tkinter as tk
 from tkinter import ttk
 
 from .. import ui_theme
+from . import fonts
+from .chrome import style_title_bar
+from .scale import display_scale, px
 
 
 def ask_reconstructed_helper(parent, *, size_mb: float) -> bool:
     """Ask once before the automatic reconstructed-audio helper download.
 
     This replaces the native Tk message box so the prompt uses Dolly's card
-    palette, Segoe UI typography and teal primary action instead of system
-    dialog colours.
+    palette, typography (Inter, or the Segoe UI fallback) and teal primary
+    action instead of system dialog colours.
     """
     tokens = ui_theme.TOKENS
     dialog = tk.Toplevel(parent)
+    style_title_bar(dialog)
     dialog.title("Reconstructed audio helper")
     dialog.configure(bg=tokens["bg"])
     dialog.resizable(False, False)
@@ -33,17 +37,21 @@ def ask_reconstructed_helper(parent, *, size_mb: float) -> bool:
         dialog.destroy()
 
     dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
-    scale = max(1.0, float(parent.tk.call("tk", "scaling")) / (96 / 72))
-    wrap = round(440 * scale)
-    body = ttk.Frame(dialog, padding=round(18 * scale))
+    scale = display_scale(parent.tk)
+    dp = lambda value: px(scale, value)  # noqa: E731
+    wrap = dp(426)
+    body = ttk.Frame(dialog, padding=dp((24, 22, 24, 20)))
     body.pack(fill="both", expand=True)
-    card = ttk.Frame(body, style="Card.TFrame", padding=round(18 * scale))
+    heading = tk.Label(body, text="Reconstructed audio helper", bg=tokens["bg"], fg=tokens["text"],
+                       font=fonts.font(dialog, "page_title"), anchor="w")
+    heading.pack(fill="x", pady=dp((0, 15)))
+    card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=dp(20))
     card.pack(fill="both", expand=True)
     card.columnconfigure(0, weight=1)
     ttk.Label(card, text="RECONSTRUCTED AUDIO", style="Section.TLabel").grid(
         row=0, column=0, sticky="w")
     ttk.Label(card, text="One-time helper download", style="CardTitle.TLabel").grid(
-        row=1, column=0, sticky="w", pady=(6, 10))
+        row=1, column=0, sticky="w", pady=dp((6, 12)))
     ttk.Label(
         card,
         text=(
@@ -60,14 +68,16 @@ def ask_reconstructed_helper(parent, *, size_mb: float) -> bool:
             "needed, and game-only audio works without it."
         ),
         style="CardMuted.TLabel", wraplength=wrap, justify="left").grid(
-            row=3, column=0, sticky="w", pady=(10, 0))
-    actions = ttk.Frame(card, style="Card.TFrame")
-    actions.grid(row=4, column=0, sticky="e", pady=(18, 0))
-    ttk.Button(actions, text="Not now", style="Card.TButton",
+        row=3, column=0, sticky="w", pady=dp((12, 0)))
+    actions = ttk.Frame(body)
+    actions.pack(fill="x", pady=dp((29, 0)))
+    buttons = ttk.Frame(actions)
+    buttons.pack(side="right")
+    ttk.Button(buttons, text="Not now", style="TButton",
                command=lambda: finish(False)).pack(side="left")
-    download = ttk.Button(actions, text="Download helper", style="Card.Primary.TButton",
+    download = ttk.Button(buttons, text="Download helper", style="Primary.TButton",
                           command=lambda: finish(True))
-    download.pack(side="left", padx=(8, 0))
+    download.pack(side="left", padx=dp((10, 0)))
     dialog.bind("<Escape>", lambda _event: finish(False))
     dialog.bind("<Return>", lambda _event: finish(True))
     dialog.update_idletasks()

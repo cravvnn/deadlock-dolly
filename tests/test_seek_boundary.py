@@ -156,6 +156,19 @@ class SeekBoundaryTests(unittest.TestCase):
         self.assertNotIn("demo_resume", self.console.operations)
         self.assertEqual(self.console.camera_writes, [])
 
+    def test_paused_short_shot_holds_endpoint_at_first_seekable_packet(self):
+        self.project.keyframes[-1].time = .005
+        saved = deepcopy(self.project.to_dict())
+        self.controller.seek(self.project, .005)
+        self.assertEqual(self.console.tick, 1)
+        self.assertTrue(self.console.paused)
+        self.assertEqual(self.controller.status()["time"], .005)
+        expected = self.project.evaluate(.005)
+        for index, axis in enumerate(("x", "y", "z", "pitch", "yaw")):
+            self.assertAlmostEqual(self.console.pose[index], expected[axis])
+        self.assertNotIn("demo_resume", self.console.operations)
+        self.assertEqual(self.project.to_dict(), saved)
+
 
 if __name__ == "__main__":
     unittest.main()

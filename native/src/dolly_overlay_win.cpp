@@ -2,6 +2,7 @@
 // second window, console-command renderer, or replacement for path evaluation.
 #include "dolly_overlay.hpp"
 #include "dolly_overlay_panel.hpp"
+#include "dolly_overlay_assets.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_bone_picker.hpp"
 #include "dolly_visualization.hpp"
@@ -42,6 +43,8 @@ std::atomic<bool> installed{false}, enabled{false}, resizing{false};
 // Set by the renderer probe when the engine's vertex-buffer retirement queue
 // nears its 16-bit capacity. Stops Dolly's optional draw submissions.
 std::atomic<bool> renderer_pressure{false};
+std::atomic<bool> rail_drawers_open{false}, rail_escape_requested{false};
+bool rail_background_attempted = false; // render-lock-owned, reset with the device
 std::atomic<std::uint64_t> diagnostic_present{0}, diagnostic_panel{0}, diagnostic_init_attempts{0},
     diagnostic_init_successes{0}, diagnostic_releases{0}, diagnostic_resizes{0};
 std::atomic<std::uint64_t> diagnostic_draw{0}, diagnostic_guides{0}, diagnostic_overlay_last_us{0},
@@ -72,6 +75,7 @@ ID3DDeviceContextState* overlay_state = nullptr;
 ID3D11RenderTargetView* target = nullptr;
 ID3D11Texture2D* picker_portrait_texture = nullptr;
 ID3D11ShaderResourceView* picker_portrait_view = nullptr;
+ID3D11ShaderResourceView* rail_background_view = nullptr;
 DXGI_FORMAT picker_portrait_format = DXGI_FORMAT_UNKNOWN;
 std::uint32_t picker_portrait_captured_request = 0;
 ImGuiContext* imgui = nullptr;
@@ -264,6 +268,10 @@ void reset_depth_lifecycle() noexcept {
     depth_live.clear_device();
 }
 void release_device() noexcept {
+    rail_drawers_open.store(false);
+    rail_escape_requested.store(false);
+    rail_background_attempted = false;
+    release(rail_background_view);
     reset_depth_lifecycle();
     video::reset_resources();
     reshade_release_device();
@@ -550,6 +558,9 @@ bool try_initialize_device(IDXGISwapChain* chain) {
 }
 void render_overlay(IDXGISwapChain* chain) {
     const auto state = editor_snapshot();
+    if (!state.enabled || !state.focused || state.owner != EditorOwner::Panel ||
+        state.bone_picker || state.object_picker || renderer_pressure.load())
+        rail_drawers_open.store(false, std::memory_order_release);
     if (resizing.load(std::memory_order_acquire))
         return;
     const bool media_live = media_session_active();
@@ -813,16 +824,26 @@ void render_overlay(IDXGISwapChain* chain) {
             panel_ui.draw_object_picker(state);
         else if (state.bone_picker)
             panel_ui.draw_bone_picker(state, picker_portrait);
-        else
+        else if (panel_ui.rail_enabled()) {
+            if (rail_escape_requested.exchange(false)) panel_ui.close_rail_drawers();
+            if (!rail_background_attempted) {
+                rail_background_attempted = true;
+                rail_background_view = load_rail_background(device);
+            }
+            panel_ui.draw_rail(state, reinterpret_cast<ImTextureID>(rail_background_view));
+            rail_drawers_open.store(panel_ui.rail_drawers_open(), std::memory_order_release);
+        } else
             panel_ui.draw_panel(state);
     }
-    if (draw_campaths) {
+    if (!panel && panel_ui.rail_enabled()) panel_ui.cancel_position_graph();
+    if (draw_campaths && !panel_ui.rail_enabled()) {
         panel_ui.draw_lite_campaths(state);
         panel_ui.draw_lite_timeline(state);
     }
     if (draw_loading)
         panel_ui.draw_shader_notice();
-    editor_text_input_active(panel && ImGui::GetIO().WantTextInput);
+    editor_text_input_active(panel && (ImGui::GetIO().WantTextInput ||
+        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)));
     ImGui::Render();
     panel_ui.flush_layout();
     immediate->OMSetRenderTargets(1, &target, nullptr);
@@ -1101,6 +1122,11 @@ void overlay_set_renderer_pressure(bool high) noexcept {
 }
 bool overlay_renderer_pressure() noexcept {
     return renderer_pressure.load(std::memory_order_acquire);
+}
+bool overlay_close_drawers_on_escape() noexcept {
+    if (!rail_drawers_open.exchange(false, std::memory_order_acq_rel)) return false;
+    rail_escape_requested.store(true, std::memory_order_release);
+    return true;
 }
 void shutdown_overlay() noexcept {
     enabled = false;

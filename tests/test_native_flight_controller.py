@@ -277,7 +277,7 @@ class NativeFlightControllerTests(unittest.TestCase):
         saved = project.to_dict()
         at = project.duration / 2
         tick = round(project.start_tick + at * project.tick_rate)
-        def seek(*_):
+        def seek(*_, **_options):
             self.console.tick = tick
             self.console.paused = True
             return {"tick": tick}

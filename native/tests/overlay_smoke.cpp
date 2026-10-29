@@ -4118,9 +4118,17 @@ static void shader_notice_regressions(float scale) {
     camera_first_stub=original_first;
     std::printf("Shader notice scale %.2f: three viewports, complete padded text, phase/focus gate, disabled-menu fallback, no input/focus/persistence, and balanced theme/fonts passed.\n",scale);
 }
+#include "rail_regressions.hpp"
 int main(int argc, char** argv) {
     std::setvbuf(stdout,nullptr,_IONBF,0);
     try {
+        if (argc>=2 && std::strcmp(argv[1],"--rail-check")==0) {
+            rail_regressions(argc==3 ? argv[2] : nullptr);
+            return 0;
+        }
+        const bool rail_hook = argc==2 && std::strcmp(argv[1],"--rail-hook-check")==0;
+        // Existing geometry/curve regressions exercise the supported classic fallback.
+        SetEnvironmentVariableA("DOLLY_OVERLAY_UI", rail_hook ? nullptr : "classic");
         if(argc==2 && std::strcmp(argv[1],"--layout-crash-fixture")==0)layout_crash_child();
         SetEnvironmentVariableA("DOLLY_UI_LAYOUT_FILE", "none");
         const bool lite_flight_screenshot = argc == 3 && std::strcmp(argv[1], "--screenshot-lite-flight") == 0;
@@ -4142,8 +4150,8 @@ int main(int argc, char** argv) {
             (std::getenv("DOLLY_UI_TEST_POSITION_GRAPH") || std::getenv("DOLLY_UI_TEST_CURVES"));
         double screenshot_curve_step=3;
         bool screenshot_tangents=false;unsigned screenshot_tangent_mode=0;
-        unsigned render_width = lite_screenshot ? 1920 : 800;
-        unsigned render_height = lite_screenshot ? 1080 : (screenshot ? 1100 : 600);
+        unsigned render_width = lite_screenshot || rail_hook ? 1920 : 800;
+        unsigned render_height = lite_screenshot || rail_hook ? 1080 : (screenshot ? 1100 : 600);
         if (layout_screenshot) {
             if (const auto* width = std::getenv("DOLLY_UI_TEST_WIDTH"))
                 render_width = unsigned(std::clamp(std::atoi(width), 640, 3840));
@@ -4166,7 +4174,7 @@ int main(int argc, char** argv) {
             CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, wc.lpszClassName, L"Dolly graphics smoke", WS_OVERLAPPEDWINDOW, 32,
                             32, 800, screenshot ? 1100 : 600, nullptr, nullptr, instance, nullptr);
         require(window != nullptr, "Could not create synthetic window");
-        if(lite_screenshot || layout_screenshot){RECT r{0,0,LONG(render_width),LONG(render_height)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);SetWindowPos(window,nullptr,0,0,r.right-r.left,r.bottom-r.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);}
+        if(lite_screenshot || layout_screenshot || rail_hook){RECT r{0,0,LONG(render_width),LONG(render_height)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);SetWindowPos(window,nullptr,0,0,r.right-r.left,r.bottom-r.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);}
         // Overlay discovery requires a visible window. Offline runs move this
         // non-activating test surface off screen instead of taking game focus.
         if (GetEnvironmentVariableA("DOLLY_UI_TEST_HIDDEN", nullptr, 0))
@@ -4351,7 +4359,7 @@ int main(int argc, char** argv) {
             context->OMSetRenderTargets(1, &target, nullptr);
             context->RSSetViewports(1, &original_viewport);
             require(SUCCEEDED(chain->Present(0, 0)), "Synthetic Present failed");
-            if (i == 0 && !object_screenshot && (!lite_screenshot || layout_screenshot)) {
+            if (!rail_hook && i == 0 && !object_screenshot && (!lite_screenshot || layout_screenshot)) {
                 // All camera tools must be present in the default editor.
                 ImGui::SetCurrentContext(screenshot_context);
                 require(ImGui::FindWindowByName("Deadlock Dolly") != nullptr,
@@ -4372,6 +4380,28 @@ int main(int argc, char** argv) {
                     (follow_screenshot ? "Follow###FOLLOW" : (bone_screenshot ? "Bone Picker###BONE PICKER" : "Camera###CAMERA")));
                 screenshot_context->NavNextActivateId = panel->GetID(label);
             }
+        }
+        if (rail_hook) {
+            ImGui::SetCurrentContext(screenshot_context);
+            require(ImGui::FindWindowByName("##rail-status") && ImGui::FindWindowByName("##lite-timeline"),
+                "Real rail hook lost status or transport");
+            require(!dolly::overlay_close_drawers_on_escape(),"Closed rail consumed Escape");
+            auto* tab=ImGui::FindWindowByName("##rail-tab2");require(tab!=nullptr,"Real rail tab missing");
+            screenshot_context->NavNextActivateId=tab->GetID("##rail-button");
+            for(int n=0;n<3;++n)require(SUCCEEDED(chain->Present(0,0)),"Rail activation Present failed");
+            require(dolly::overlay_close_drawers_on_escape(),"First Escape did not close real rail drawer");
+            require(SUCCEEDED(chain->Present(0,0)),"Rail Escape Present failed");
+            require(!dolly::overlay_close_drawers_on_escape(),"Second Escape must reach the editor's flight action");
+            auto* drawer=ImGui::FindWindowByName("##rail-drawer");
+            require(!drawer || !drawer->Active,"Escape left a live rail drawer");
+            snapshot.owner=dolly::EditorOwner::Flight;
+            require(SUCCEEDED(chain->Present(0,0)),"Rail flight Present failed");
+            require(!ImGui::FindWindowByName("##rail-status")->Active,"Flight failed to hide the rail");
+            dolly::shutdown_overlay();
+            target->Release();backbuffer->Release();context->Release();device->Release();chain->Release();
+            DestroyWindow(window);UnregisterClassW(wc.lpszClassName,instance);
+            std::puts("Real WARP rail hook: embedded assets, first/second Escape and flight ownership passed.");
+            return 0;
         }
         if (layout_screenshot && lite_replay_screenshot) {
             auto* transport=ImGui::FindWindowByName("##lite-timeline");

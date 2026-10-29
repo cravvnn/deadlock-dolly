@@ -56,6 +56,12 @@ The early workflow research is recorded in
 | [CMake](https://cmake.org/), [Visual Studio C++ tools](https://visualstudio.microsoft.com/vs/features/cplusplus/) and [clang-format](https://clang.llvm.org/docs/ClangFormat.html) | Building and maintaining the native helper. |
 | [OpenAI ChatGPT](https://openai.com/chatgpt/) and [Codex](https://openai.com/codex/) | Reverse-engineering assistance for analyzing Deadlock binaries and researching camera, rendering and game-update compatibility. |
 
+## Interface design
+
+**Kara** designed the desktop interface, artwork treatments and in-game top rail.
+The bundled [**Inter**](https://github.com/rsms/inter) typefaces are by The Inter Project Authors, under the
+[SIL Open Font License 1.1](assets/fonts/inter/LICENSE.txt).
+
 ## Licenses, provenance and artwork
 
 Dolly's code uses the [MIT license](https://github.com/cravvnn/deadlock-dolly/blob/main/LICENSE.txt).

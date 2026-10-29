@@ -176,6 +176,57 @@ class SparseSeekTests(unittest.TestCase):
         self.assertFalse(self.console.camera_writes)
         self.assertNotIn("demo_resume", self.console.operations)
 
+    def _reported_endpoint(self):
+        # The reported replay has packets 175, 178; a paused camera can be
+        # captured between them. Its exact authored endpoint must survive seek.
+        self.demo.write_bytes(synthetic_demo((1, 97, 175, 178, 48142)))
+        self.console.total_ticks = 48142
+        self.console.tick = self.console.goto_output = 97
+        self.project.start_tick = 97
+        self.project.keyframes[-1].time = 80 / 64  # Requested tick 177.
+        self.bridge.start_flight = Mock()  # Native manual-camera capability.
+        self.project.tracks = [CvarTrack("r_citadel_depthoffield_focus_distance",
+            [TrackKey(0, 200), TrackKey(80 / 64, 840)], interpolation="linear")]
+        return deepcopy(self.project.to_dict())
+
+    def test_paused_endpoint_seek_holds_saved_camera_and_effects_at_next_packet(self):
+        saved = self._reported_endpoint()
+        self.controller.seek(self.project, 80 / 64)
+        self.assertEqual([s["target"] for s in self.console.seek_attempts], [178])
+        self.assertEqual(self.console.tick, 178)
+        self.assertTrue(self.console.paused)
+        self.assertNotIn("demo_resume", self.console.operations)
+        self.assertEqual(self.bridge.phase, 80 / 64)
+        expected = self.project.evaluate(80 / 64)
+        for axis in ("x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio"):
+            self.assertAlmostEqual(self.controller._paused_pose[axis], expected[axis])
+        self.assertEqual(self.console.values["r_citadel_depthoffield_focus_distance"], 840)
+        self.assertEqual(self.controller.status()["time"], 80 / 64)
+        self.assertIn("Final camera held", self.controller.status()["message"])
+        self.assertEqual(self.project.to_dict(), saved)
+
+    def test_paused_endpoint_cancellation_prevents_camera_application(self):
+        saved = self._reported_endpoint()
+        self.bridge.prepare = Mock(wraps=self.bridge.prepare)
+        self.console.on_seek = lambda seek: self.controller._stop_event.set()
+        with self.assertRaisesRegex(RuntimeError, "cancel"):
+            self.controller.seek(self.project, 80 / 64)
+        self.bridge.prepare.assert_not_called()
+        self.assertFalse(self.console.camera_writes)
+        self.assertNotIn("demo_resume", self.console.operations)
+        self.assertEqual(self.project.to_dict(), saved)
+
+    def test_paused_endpoint_changed_replay_prevents_camera_application(self):
+        saved = self._reported_endpoint()
+        self.bridge.prepare = Mock(wraps=self.bridge.prepare)
+        self.console.on_seek = lambda seek: setattr(self.console, "demo_name", "other.dem")
+        with self.assertRaisesRegex(RuntimeError, "selected|different|launched"):
+            self.controller.seek(self.project, 80 / 64)
+        self.bridge.prepare.assert_not_called()
+        self.assertFalse(self.console.camera_writes)
+        self.assertNotIn("demo_resume", self.console.operations)
+        self.assertEqual(self.project.to_dict(), saved)
+
     def test_generic_exact_seek_and_console_backend_do_not_opt_in(self):
         info = self.controller._seek_tick(48393)
         self.assertEqual(info["tick"], 48393)

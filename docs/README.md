@@ -7,6 +7,7 @@ older screenshots and per-version notes may show controls that have changed.
 
 | Task | Current guide |
 | --- | --- |
+| Find controls in Kara's desktop redesign and the in-game top rail | [Redesigned interface](UI_REDESIGN.md) |
 | Install, open a replay, capture cameras, use shortcuts and recover a session | [User guide](USER_GUIDE.md) |
 | Use Camera, Follow, Bone Picker, Look, Export, Campaths and the timelines | [In-game editor](UI_REWORK.md) |
 | Attach a camera to a replay participant's bone | [Bone Picker](BONE_PICKER.md) |

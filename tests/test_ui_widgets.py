@@ -461,7 +461,7 @@ class SharedWidgetBoundaryTests(unittest.TestCase):
         import sys
         result = subprocess.run([sys.executable, '-c',
             'import sys; from dolly.ui import widgets; '
-            'allowed = {"dolly", "dolly.ui", "dolly.ui.widgets", "dolly.ui_theme"}; '
+            'allowed = {"dolly", "dolly.ui", "dolly.ui.widgets", "dolly.ui_theme", "dolly.ui.scale"}; '
             'unexpected = {name for name in sys.modules if name == "dolly" or name.startswith("dolly.")} - allowed; '
             'assert not unexpected, sorted(unexpected)'],
             capture_output=True, text=True, timeout=15)

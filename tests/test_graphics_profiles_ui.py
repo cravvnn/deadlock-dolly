@@ -156,3 +156,114 @@ class GraphicsPanelTests(unittest.TestCase):
         self.panel.delete()
         self.assertEqual(profiles.load_library(), {'format': 1, 'selected': '', 'profiles': []})
         self.assertEqual(self.panel.selection.get(), profiles.CURRENT)
+
+    def test_the_frame_layout_keeps_its_help_text(self):
+        from dolly.graphics_profiles_ui import PROFILES_INFO
+
+        def walk(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from walk(child)
+        texts = [w.cget('text') for w in walk(self.root) if isinstance(w, ttk.Label)]
+        self.assertIn(PROFILES_INFO, texts)
+        self.assertTrue(PROFILES_INFO.startswith('Profiles apply when Dolly starts a replay.'))
+        self.assertTrue(PROFILES_INFO.endswith('use Display launch options for window size.'))
+        buttons = [w.cget('text') for w in walk(self.root) if isinstance(w, ttk.Button)]
+        self.assertEqual(buttons, ['Save current graphics...', 'Import video.txt...', 'Preview changes...',
+                                   'Rename...', 'Delete...'])
+
+
+class GraphicsCardTests(unittest.TestCase):
+    """``GraphicsProfiles(card=)``: the Settings card's rows (Figma [design reference]) on a kit card."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as error:
+            self.skipTest(str(error))
+        self.addCleanup(self.root.destroy)
+        self.root.withdraw()
+        self.errors = []
+        self.failures = []
+        self.root.report_callback_exception = lambda *args: self.failures.append(args)
+
+    def tearDown(self):
+        if hasattr(self, 'failures'):
+            self.assertEqual(self.failures, [], 'Tk callback raised an exception')
+
+    def build(self, library=None, error=None):
+        from dolly import gui_theme
+        from dolly.graphics_profiles_ui import PROFILES_INFO
+        from dolly.ui.kit_page import KitPage
+        from dolly.ui.scale import px, ui_scale
+        gui_theme.initialize(self.root)
+        s = ui_scale(self.root)
+        self.root.deiconify()
+        self.root.geometry(f'{px(s, 700)}x{px(s, 400)}')
+        page = KitPage(self.root)
+        page.pack(fill='both', expand=True)
+        card = page.add_card('Replay Graphics Profiles', info=PROFILES_INFO)
+        loaded = {'side_effect': error} if error else {'return_value': library or {'format': 1, 'selected': '', 'profiles': []}}
+        with patch.object(profiles, 'load_library', **loaded):
+            panel = GraphicsProfiles(None, root=self.root, on_error=lambda *args: self.errors.append(args), card=card)
+            self.root.update()
+            page.layout_now()
+        return page, card, panel
+
+    def test_rows_dropdown_buttons_and_status_without_the_help_text(self):
+        from dolly.graphics_profiles_ui import PROFILES_INFO
+        from dolly.ui import kit_controls
+        page, card, panel = self.build()
+        s = page.scale
+
+        def design(rect):
+            x0, y0, _x1, _y1 = card.rect
+            return tuple(round((value - origin) / s) for value, origin in zip(rect, (x0, y0, x0, y0)))
+        self.assertEqual(str(panel.combo.cget('style')), 'Kit.TCombobox')
+        self.assertEqual(str(panel.combo.cget('state')), 'readonly')
+        self.assertIs(panel.combo.master, card.host)
+        self.assertEqual(tuple(panel.combo.cget('values')), (profiles.CURRENT,))
+        self.assertEqual(panel.selection.get(), profiles.CURRENT)
+        combo = design(page.rect_of(panel.combo))
+        for actual, expected in zip(combo, (156, 54, 592, 84)):
+            self.assertLessEqual(abs(actual - expected), 1, combo)
+        buttons = kit_controls.buttons(card.host)
+        self.assertEqual([b.cget('text') for b in buttons],
+                         ['Save current graphics...', 'Import video.txt...', 'Preview changes...', 'Rename...', 'Delete...'])
+        tops = [design(page.rect_of(b))[1] for b in buttons]
+        self.assertEqual(tops, [94, 94, 134, 134, 134])
+        for first in (buttons[0], buttons[2]):
+            self.assertLessEqual(abs(design(page.rect_of(first))[0] - 156), 1)
+        self.assertLessEqual(abs(design(page.rect_of(panel.status_text))[1] - 179), 1)
+        self.assertEqual(panel.status_text.cget('text'), '0 local profile(s). Selection applies to the next launch.')
+        self.assertLessEqual(abs((card.rect[3] - card.rect[1]) / s - 216), 1)
+        texts = [card.host.itemcget(i, 'text') for i in card.host.find_all() if card.host.type(i) == 'text']
+        self.assertIn('Next replay session', texts)
+        self.assertNotIn(PROFILES_INFO, texts)
+        self.assertEqual(card.info.cget('text'), PROFILES_INFO)
+
+    def test_buttons_look_their_action_up_when_pressed(self):
+        from dolly.ui import kit_controls
+        _page, card, panel = self.build()
+        called = []
+        for name in ('capture', 'import_file', 'preview', 'rename', 'delete', 'select'):
+            setattr(panel, name, lambda name=name: called.append(name))
+        for button in kit_controls.buttons(card.host):
+            button.invoke()
+        panel.combo.event_generate('<<ComboboxSelected>>')
+        self.root.update_idletasks()   # the theme clears the dropdown's selection at idle
+        self.assertEqual(called, ['capture', 'import_file', 'preview', 'rename', 'delete', 'select'])
+        # A failing action reports through the status line and on_error, as before.
+        panel.rename = lambda: panel.chosen()
+        with patch.object(profiles, 'load_library', return_value={'format': 1, 'selected': '', 'profiles': []}):
+            kit_controls.buttons(card.host)[3].invoke()
+        self.assertEqual(panel.status.get(), 'Select a named graphics profile first.')
+        self.assertEqual(panel.status_text.cget('text'), 'Select a named graphics profile first.')
+        self.assertEqual(self.errors[0][0], 'Graphics profiles')
+
+    def test_a_damaged_library_shows_its_error_after_building(self):
+        _page, _card, panel = self.build(error=profiles.LaunchError('Damaged profile library'))
+        self.assertEqual(panel.status.get(), 'Damaged profile library')
+        self.root.update()
+        self.assertEqual([(args[0], str(args[1])) for args in self.errors],
+                         [('Graphics profiles', 'Damaged profile library')])

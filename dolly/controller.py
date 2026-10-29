@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from collections import deque
 from copy import deepcopy
 from dataclasses import asdict
+from datetime import datetime, timezone
 import json
 import logging
 import math
@@ -598,9 +599,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             reason = f"Deadlock crashed (exit code {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X})"
         if (not self._replay_requested or
                 context in ("waiting for the game console", "waiting for hideout readiness")):
-            return (f"{reason} while {context}. The game exited before the selected replay "
-                    "was loaded. Inspect the startup error or game dump before retrying."
-                    + self._crash_suffix())
+            message = (f"{reason} while {context}. The game exited before the selected replay "
+                       "was loaded. Inspect the startup error or game dump before retrying.")
+            if self._session is not None and getattr(self._session, "native", None) is not None:
+                message += (" If you use an in-game overlay such as U.GG, try fully exiting it "
+                            "(including from the system tray) before the next launch. To compare, "
+                            "select Console (legacy) as the camera driver before a new "
+                            "session; Native camera, in-game editor and layers are unavailable in that mode.")
+            return message + self._crash_suffix()
         header = self._replay_header
         recorded_build = header.get("build_num")
         if (recorded_build is not None and self._game_build is not None
@@ -622,18 +628,32 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             message += f" Selected replay: {details}."
         return message + self._crash_suffix()
 
-    def _crash_suffix(self):
-        """Name the newest crash dump's module and offset when one exists."""
+    def _session_start_epoch(self):
+        """UTC launch-directory timestamp, or None when it cannot be verified."""
         try:
             session = self._session
-            if session is None or not session.command:
+            name = Path(session.session_dir).name if session is not None else ""
+            match = re.fullmatch(r"(\d{8}_\d{6})_[0-9a-f]{10}", name, re.IGNORECASE)
+            if match is None:
+                return None
+            return datetime.strptime(match[1], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc).timestamp()
+        except (AttributeError, OSError, TypeError, ValueError, OverflowError):
+            return None
+
+    def _crash_suffix(self):
+        """Name a recent dump without attributing an old one to this launch."""
+        try:
+            session = self._session
+            started = self._session_start_epoch()
+            if session is None or not session.command or started is None:
                 return ""
             executable = Path(session.command[0])
             game = executable.parents[2] if len(executable.parents) > 2 else executable.parent
             candidates = []
             for folder in (game / "bin" / "win64", game / "citadel" / "crash"):
                 if folder.is_dir():
-                    candidates.extend(folder.glob("*.mdmp"))
+                    candidates.extend(path for path in folder.glob("*.mdmp")
+                                      if path.is_file() and path.stat().st_mtime >= started)
             if not candidates:
                 return ""
             newest = max(candidates, key=lambda path: path.stat().st_mtime)
@@ -644,7 +664,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             module = str(report.get("faulting_module") or "unknown module")
             offset = report.get("module_offset")
             access = report.get("access_address")
-            parts = [f"Crash dump {newest.name}: {module}" + (f"+{offset}" if offset else "")]
+            parts = [f"Recent dump {newest.name} (not matched to this process): {module}"
+                     + (f"+{offset}" if offset else "")]
             if access:
                 parts.append(f"read at {access}")
             return " " + ", ".join(parts) + "."
@@ -661,17 +682,26 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         match = re.search(r"citadel_v(\d+)", str(header.get("game_directory") or ""), re.IGNORECASE)
         return int(match.group(1)) if match else None
 
-    def _wait_for_crash_after_console_drop(self, context):
+    def _wait_for_crash_after_console_drop(self, context, *, cancel_event=None, session=None):
         """Give a dying game time to report its exit after the console socket drops."""
-        session = self._session
-        if session is None:
+        session = self._session if session is None else session
+        if session is None or self._session is not session:
             return None
         deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            if session.process.poll() is not None:
+        waiter = cancel_event if cancel_event is not None else threading.Event()
+        while True:
+            self._check_startup_cancelled(cancel_event)
+            if self._session is not session:
+                return None
+            exit_code = session.process.poll()
+            if self._session is not session:
+                return None
+            if exit_code is not None:
                 return self._game_death_message(context)
-            time.sleep(0.05)
-        return None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            waiter.wait(min(0.05, remaining))
 
     def _request(self, command, timeout=3.0, allow_error=False, completion_patterns=None,
                  allow_truncated=False):
@@ -986,7 +1016,20 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 if exit_code not in (None, 0):
                     raise RuntimeError(self._game_death_message(label) + " Export diagnostics to inspect startup.")
                 raise RuntimeError("Deadlock closed while " + label + ". Export diagnostics to inspect startup.")
-            result = check()
+            session = self._session
+            try:
+                result = check()
+            except RuntimeError as exc:
+                self._check_startup_cancelled(cancel_event)
+                text = str(exc).lower()
+                if (self._session is session and
+                        (isinstance(exc, ConsoleError) or "console is disconnected" in text
+                         or "game closed the console" in text)):
+                    message = self._wait_for_crash_after_console_drop(
+                        label, cancel_event=cancel_event, session=session)
+                    if message:
+                        raise RuntimeError(message + " Export diagnostics to inspect startup.") from exc
+                raise
             self._check_startup_cancelled(cancel_event)
             if result is not None and result is not False:
                 return result
@@ -4315,7 +4358,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             raise ValueError("Shot time must be finite.")
         return max(0.0, min(project.duration, value))
 
-    def _seek(self, project, shot_time):
+    def _seek(self, project, shot_time, *, paused=False):
         target = int(round(project.start_tick + shot_time * project.tick_rate))
         # SourceTV recordings may store one packet per several simulation
         # ticks. Normal pausing can expose a tick between those records, but
@@ -4332,7 +4375,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     # A same-named file may have been replaced since playback
                     # loaded it. Its new index cannot adjust this live replay.
                     return self._seek_tick(target, allow_start_boundary=True)
-                if (actual - project.start_tick) / project.tick_rate > project.duration:
+                if not paused and (actual - project.start_tick) / project.tick_rate > project.duration:
                     raise RuntimeError(f"The next recorded replay packet is tick {actual}, after this shot ends. "
                                        "Extend the shot or preview its camera without seeking.")
                 self._check_position_cancelled()
@@ -4344,12 +4387,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     "actual_tick": actual, "reason": "recorded_packet"})
         return self._seek_tick(target, allow_start_boundary=True)
 
-    def _seek_shot_time(self, project, shot_time, info):
+    def _seek_shot_time(self, project, shot_time, info, *, paused=False):
         """Sample the original shot timeline at an explicit reconstruction tick."""
         if not info.get("seek_boundary"):
             return shot_time
         actual_time = (info["tick"] - project.start_tick) / project.tick_rate
         boundary = info["seek_boundary"]
+        if paused and actual_time > project.duration:
+            # A paused endpoint preview needs no remaining playback interval.
+            # Reconstruct the verified packet and hold the authored final pose
+            # and effects. Play/export must still reject an empty interval.
+            return project.duration
         if boundary.get("reason") == "recorded_packet":
             if actual_time > project.duration:
                 raise RuntimeError(f"The next recorded replay packet is tick {info['tick']}, after this shot ends. "
@@ -4632,8 +4680,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             shot_time = self._shot_time(project, shot_time)
             bridge = self._native_bridge() if self._supports_native_flight() else None
             before_frame = int(bridge.status().get("frame_count", 0)) if bridge else 0
-            positioned_demo = self._seek(project, shot_time)
-            shot_time = self._seek_shot_time(project, shot_time, positioned_demo)
+            positioned_demo = self._seek(project, shot_time, paused=True)
+            shot_time = self._seek_shot_time(project, shot_time, positioned_demo, paused=True)
             if bridge is None:
                 self._position_direct_frame(project.evaluate(shot_time), positioned_demo["tick"])
             else:
@@ -4657,9 +4705,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 bridge.configure_editor(owner="panel")
             boundary = positioned_demo.get("seek_boundary")
             if boundary:
+                endpoint = ((positioned_demo["tick"] - project.start_tick) / project.tick_rate
+                            > project.duration)
+                held = "Final camera held at the saved shot end. " if endpoint else ""
                 self._message(f"Replay paused at recorded tick {positioned_demo['tick']} "
                               f"({shot_time:.6f} shot seconds); requested tick {boundary['requested_tick']}. "
-                              "Saved camera and effect times are unchanged.", time=shot_time)
+                              f"{held}Saved camera and effect times are unchanged.", time=shot_time)
             else:
                 self._message("Replay paused at the requested path time.", time=shot_time)
 
@@ -5791,12 +5842,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 continue
         report["crash_dumps"] = [{"name": path.name, "bytes": path.stat().st_size} for path in dumps]
         crash_reports = []
+        started = self._session_start_epoch()
         for path in dumps:
+            age = {}
             try:
                 from .crash_dumps import analyse
-                crash_reports.append({"name": path.name, **analyse(path)})
-            except (OSError, ValueError) as exc:
-                crash_reports.append({"name": path.name, "error": str(exc)})
+                modified = path.stat().st_mtime
+                age = {"modified_utc": datetime.fromtimestamp(modified, timezone.utc).isoformat(),
+                       "after_session_start": modified >= started if started is not None else None}
+                crash_reports.append({"name": path.name, **age, **analyse(path)})
+            except (OSError, OverflowError, ValueError) as exc:
+                crash_reports.append({"name": path.name, **age, "error": str(exc)})
         report["crash_analysis"] = crash_reports
         try:
             # A blocked/deferred temporary-file cleanup is only explainable by

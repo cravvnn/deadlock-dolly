@@ -116,7 +116,7 @@ class UpdateConsentTests(unittest.TestCase):
         self.worker.assert_not_called()
         self.assertIsNone(manager.approved)
         self.assertIsNone(manager.ready)
-        self.notice.show.assert_called_with(manager.available["version"], manager.message, busy=False)
+        self.notice.show.assert_called_with(manager.available["version"], manager.message, busy=False, error=False)
 
     def test_no_new_release_hides_notice_without_staging(self):
         self.discovery.return_value = None
@@ -501,7 +501,7 @@ class UpdateConsentTests(unittest.TestCase):
         self.notice.scale = 1.5
         self.notice.notes_clip.winfo_ismapped.return_value = True
         self.notice.notes_clip.winfo_height.return_value = 110
-        self.assertEqual(manager._notes_height_limit(), 58)  # 360 + 110 - 400 - 12
+        self.assertEqual(manager._notes_height_limit(), 470)  # New highlights use the page area: 360 + 110.
         notebook.winfo_reqheight.assert_not_called()
         sidebar.winfo_height.assert_not_called()
         notebook.winfo_height.return_value = 480
@@ -509,7 +509,7 @@ class UpdateConsentTests(unittest.TestCase):
         self.notice.notes_clip.winfo_ismapped.return_value = False
         self.notice.notes_clip.winfo_height.reset_mock()
         self.notice.notes_clip.winfo_height.return_value = 1000
-        self.assertEqual(manager._notes_height_limit(), 72)  # Hidden height contributes nothing.
+        self.assertEqual(manager._notes_height_limit(), 480)  # Hidden height contributes nothing.
         self.notice.notes_clip.winfo_height.assert_not_called()
 
     def test_notes_budget_is_invariant_when_the_mapped_clip_displaces_the_workspace(self):
@@ -522,12 +522,12 @@ class UpdateConsentTests(unittest.TestCase):
             with self.subTest(clip=clip):
                 notebook.winfo_height.return_value = 480 - clip
                 self.notice.notes_clip.winfo_height.return_value = clip
-                self.assertEqual(manager._notes_height_limit(), 72)
+                self.assertEqual(manager._notes_height_limit(), 480)
 
     def test_notes_budget_never_returns_a_zero_or_negative_viewport(self):
         notebook, sidebar = Mock(), Mock()
         manager = self.make_manager(notebook=notebook, sidebar=sidebar)
-        notebook.winfo_height.return_value = 300
+        notebook.winfo_height.return_value = 0
         sidebar.winfo_reqheight.return_value = 400
         self.notice.scale = 1
         self.notice.notes_clip.winfo_ismapped.return_value = False
@@ -536,7 +536,7 @@ class UpdateConsentTests(unittest.TestCase):
     def test_notes_budget_uses_the_scaled_view_cap_when_layout_is_missing(self):
         self.notice.MAX_NOTES_HEIGHT = 168
         self.notice.scale = 1.5
-        for notebook, sidebar in ((None, Mock()), (Mock(), None), (None, None)):
+        for notebook, sidebar in ((None, Mock()), (None, None)):
             with self.subTest(notebook=notebook, sidebar=sidebar):
                 manager = self.make_manager(notebook=notebook, sidebar=sidebar)
                 self.assertEqual(manager._notes_height_limit(), 252)

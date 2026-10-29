@@ -1,6 +1,17 @@
 """Shared desktop camera curves, using the saved Project and normal edit callbacks.
 
 Snapshots, viewport scales and unfinished gestures belong to presentation only.
+
+The look follows the Camera Curves card of Kara's Camera frame (Figma [design reference]): kit
+tabs and muted checkboxes in the top row, a lane header of axis tabs, the value
+field and its units, the graph as a rounded ``field`` plate on the card, then the
+optional curve-mode row, the hint and the tangent row. On the Camera page
+(PLAN-5 3.1) the workspace is one block of its card: ``fixed_lane_height`` keeps
+every graph that tall and lets the page scroll instead of an inner canvas,
+``tool_parent`` (the card's title row) takes "Update original" and "Frame all" as
+canvas buttons, ``modes`` builds the Interpolation/Framing row and ``on_legend``
+receives the legend text for the card's info bubble. Without them the workspace
+keeps its own scroll area, tools row and legend line.
 """
 from __future__ import annotations
 
@@ -9,11 +20,13 @@ from dataclasses import dataclass, replace
 import math
 import tkinter as tk
 from tkinter import ttk
-from tkinter import font as tkfont
 
 from . import ui_theme
 from .curve import POSITION_LIMIT, PositionBounds, TimelineView, hit_key, sample_channel
 from .path import CURVE_CHANNELS, Project, _unwrap, channel_value
+from .ui import art, fonts, kit_styles
+from .ui.kit_controls import KitButton
+from .ui.scale import chars, even_px, px, scaler, ui_scale
 from .ui.widgets import ScrollPage
 
 GROUPS = ("Position", "Rotation", "Framing")
@@ -21,6 +34,26 @@ CHANNELS = (("x", "y", "z"), ("pitch", "yaw", "roll"), ("aspect_ratio",))
 LABELS = {"x": "X", "y": "Y", "z": "Z", "pitch": "Pitch", "yaw": "Yaw",
           "roll": "Roll", "aspect_ratio": "Aspect ratio"}
 TANGENT_MODES = ("auto", "flat", "linked", "broken")
+TAB_STYLES = ("Kit.Tab.TButton", "Kit.Tab.Selected.TButton")
+FIELD_WIDTH = 90      # design px: the lane value, the tangent mode and slopes
+MODE_WIDTH = 100      # design px: the Interpolation and Framing dropdowns
+
+
+def _label(parent, text="", tone="muted"):
+    """A card label inside the workspace (a composite, so ttk labels stay; PLAN-5 PR1).
+
+    At least the kit's 16 px text line tall, whatever the face's own line height.
+    """
+    t = ui_theme.TOKENS
+    font = (ui_theme.FONT_FAMILY, ui_theme.FONT_SIZES["body"])
+    room = max(0, px(ui_scale(parent), 16)-int(parent.tk.call("font", "metrics", font, "-linespace")))
+    return ttk.Label(parent, text=text, style="Stage.CardMuted.TLabel", background=t["panel"],
+                     foreground=t[tone], font=font, padding=(0, room//2, 0, room-room//2))
+
+
+def _frame(parent):
+    """A grouping frame painting the card surface (a tk frame repaints cheaper than ttk, PR4)."""
+    return tk.Frame(parent, background=ui_theme.TOKENS["panel"], borderwidth=0, highlightthickness=0, takefocus=0)
 
 
 def tangent_times(project, index):
@@ -75,6 +108,24 @@ def display_values(project, channel):
 def valid_value(channel, value):
     return (not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
             and (.5 <= value <= 4 if channel == "aspect_ratio" else abs(value) <= POSITION_LIMIT))
+
+
+def _set_text(variable, value):
+    """Assign a Tk variable only when it changes; an equal string still redraws its entry."""
+    if variable.get() != value:
+        variable.set(value)
+
+
+def _configure_changed(widget, **options):
+    """Configure only the options whose value differs from the widget's current one.
+
+    The status poll re-syncs every lane several times a second. Re-applying an
+    equal style, state or text still makes Tk re-layout and redraw the widget,
+    which was most of the editor's idle CPU; the end state is the same either way.
+    """
+    changed = {name: value for name, value in options.items() if str(widget.cget(name)) != value}
+    if changed:
+        widget.configure(**changed)
 
 
 def branch_offset(project, reference, channel):
@@ -340,8 +391,15 @@ class CurveWorkspaceState:
         return (source(self.project), source(self.original)
                 if self.show_original and self.original is not None else None)
 
-    def bounds(self, channel, width, height):
+    def bounds(self, channel, width, height, dpi_scale=1.0):
+        """Plot bounds of ``channel`` on a ``width`` x ``height`` canvas; margins in design px at ``dpi_scale``.
+
+        The graph of [design reference]: value labels in 52 px on the left, 16 above, 14 on the
+        right and 40 below for the time labels.
+        """
         start, end = self.view.window(self.project.duration or 1.0)
+        dp = lambda value: even_px(dpi_scale, value)  # noqa: E731
+        rect = dp(52), dp(16), max(dp(76), width-dp(14)), max(dp(47), height-dp(40))
         signature = self._scale_signature(channel)
         if channel not in self.scales or self._scale_signatures.get(channel) != signature:
             values = [value for _, value in self.samples(self.project,channel,start,end)]
@@ -358,8 +416,7 @@ class CurveWorkspaceState:
             previous = self.scales.get(channel)
             self._scale_signatures[channel] = signature
             if previous is not None and previous[0] <= low <= high <= previous[1]:
-                return PositionBounds(62, 12, max(86, width-16), max(43, height-28),
-                                      start, end, *previous)
+                return PositionBounds(*rect, start, end, *previous)
             if previous is not None:
                 low, high = min(low, previous[0]), max(high, previous[1])
             minimum = .08 if channel == "aspect_ratio" else 10 if channel in CHANNELS[0] else 3
@@ -371,13 +428,17 @@ class CurveWorkspaceState:
             limit = float.fromhex("0x1.fffffffffffffp+1023")/scale
             self.scales[channel] = max(-limit,middle-span*.65)*scale, min(limit,middle+span*.65)*scale
         low, high = self.scales[channel]
-        return PositionBounds(62, 12, max(86, width-16), max(43, height-28), start, end, low, high)
+        return PositionBounds(*rect, start, end, low, high)
 
 
-class CameraCurveLane(ttk.Frame):
+class CameraCurveLane(tk.Frame):
     """One visible channel, sharing the workspace's selection and shot clock."""
     def __init__(self, parent, workspace, group):
-        super().__init__(parent, style="Card.TFrame")
+        super().__init__(parent, background=ui_theme.TOKENS["panel"], borderwidth=0, highlightthickness=0,
+                         takefocus=0)
+        self.scale = ui_scale(self)
+        self._px = scaler(self)
+        self._chars = lambda count: chars(self, count)
         self.workspace, self.group, self.channel = workspace, group, CHANNELS[group][0]
         self._bounds, self._points = None, []
         self._drag_bounds = self._drag_press_y = self._preview = None
@@ -393,47 +454,55 @@ class CameraCurveLane(ttk.Frame):
         self._handle_points = {}
         self._handle_delta = None
         self._handle_radius = 9.0
+        fixed = workspace.fixed_lane_height
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
-        header = self.header = ttk.Frame(self, style="Card.TFrame")
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        self.rowconfigure(1, weight=0 if fixed and not workspace.fill_lanes else 1)
+        # Rows: header 0, graph 1, the workspace's curve-mode row 2 (when this lane hosts
+        # it), hint 3, tangents 4; 15 px between them, 10 above the tangents ([design reference]).
+        header = self.header = _frame(self)
+        header.grid(row=0, column=0, sticky="ew", pady=self._px((0, 15)))
         header.columnconfigure(1, weight=1)
-        self.title_label = ttk.Label(header,text=GROUPS[group],style="CardMuted.TLabel")
-        self.title_label.grid(row=0,column=0,sticky="w",padx=(0,8))
-        self.axes = ttk.Frame(header, style="Card.TFrame")
+        self.title_label = _label(header, GROUPS[group])
+        self.title_label.grid(row=0,column=0,sticky="w",padx=self._px((0,10)))
+        self.axes = _frame(header)
         self.axes.grid(row=0, column=1, sticky="w")
         self.axis_buttons = {}
         for column, name in enumerate(CHANNELS[group] if group < 2 else ()):
-            button = ttk.Button(self.axes, text=LABELS[name], width=3 if group == 0 else 6,
-                                style="Curve.Axis.TButton", command=lambda name=name: self.set_channel(name))
-            button.grid(row=0, column=column, padx=(0, 3))
+            # Kit tabs side by side (34 px for X/Y/Z: the label and 13 px each side).
+            button = ttk.Button(self.axes, text=LABELS[name], style=TAB_STYLES[0],
+                                command=lambda name=name: self.set_channel(name))
+            button.grid(row=0, column=column)
             self.axis_buttons[name] = button
         if group == 2:
-            ttk.Label(self.axes,text="Aspect ratio",style="CardMuted.TLabel").grid(row=0,column=0,sticky="w")
-        self.channel_box = ttk.Combobox(header, state="readonly", width=7 if group == 1 else 3,
-                                        values=[LABELS[name] for name in CHANNELS[group]])
+            _label(self.axes, "Aspect ratio").grid(row=0,column=0,sticky="w")
+        self.channel_box = ttk.Combobox(header, state="readonly", width=self._chars(7 if group == 1 else 3),
+                                        values=[LABELS[name] for name in CHANNELS[group]], style="Kit.TCombobox")
         self.channel_box.current(0)
         self.channel_box.bind("<<ComboboxSelected>>", self._channel_changed)
         self.reset_button = None
         if group == 1:
-            self.reset_button = ttk.Button(header, text="Reset", width=5, style="Quiet.TButton", command=self._reset)
-            self.reset_button.grid(row=0, column=2, padx=(5, 6))
+            # A canvas-drawn quiet kit button (N21) that is still a widget: grid, state, invoke.
+            self.reset_button = KitButton(header, text="Reset", command=self._reset, kind="quiet")
+            self.reset_button.grid(row=0, column=2, padx=self._px((10, 10)))
         self.value_text = tk.StringVar(self, "")
-        self.value_entry = ttk.Entry(header, textvariable=self.value_text, width=12)
-        self.value_entry.grid(row=0, column=3, sticky="e")
+        # One character wide; its grid padding makes it the kit's 90 px field.
+        self.value_entry = ttk.Entry(header, textvariable=self.value_text, width=1, style="Kit.TEntry")
+        self.value_entry.grid(row=0, column=3, sticky="e", ipadx=self._field_pad(self.value_entry))
         units = "units" if group == 0 else "deg" if group == 1 else "ratio"
-        self.units_label = ttk.Label(header,text=units,style="CardMuted.TLabel")
-        self.units_label.grid(row=0,column=4,padx=(5,0))
+        self.units_label = _label(header, units)
+        self.units_label.grid(row=0,column=4,padx=self._px((10,0)))
         self.value_entry.bind("<FocusIn>", self._begin_value)
         self.value_entry.bind("<Return>", self._apply_value)
         self.value_entry.bind("<Escape>", self._cancel_value)
         self.value_entry.bind("<FocusOut>", self._leave_value)
         self.value_entry.bind("<KeyPress>", self._value_key)
-        self.canvas = tk.Canvas(self, background=ui_theme.TOKENS["field"], highlightthickness=0,
-                                borderwidth=0, height=145, width=300, takefocus=True)
+        # The graph is a rounded field plate drawn on a canvas in the card's colour.
+        self.canvas = tk.Canvas(self, background=ui_theme.TOKENS["panel"], highlightthickness=0,
+                                borderwidth=0, height=px(self.scale, fixed) if fixed else self._px(145),
+                                width=self._px(300), takefocus=True)
         self.canvas.grid(row=1, column=0, sticky="nsew")
-        self.hint = ttk.Label(self, style="CardMuted.TLabel")
-        self.hint.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.hint = _label(self, tone="dim")
+        self.hint.grid(row=3, column=0, sticky="w", pady=self._px((15, 0)))
         self.tangent_panel = None
         if group == 0:
             self._build_tangent_controls()
@@ -451,21 +520,22 @@ class CameraCurveLane(ttk.Frame):
         self._sync_value()
 
     def _build_tangent_controls(self):
-        panel = self.tangent_panel = ttk.Frame(self, style="Card.TFrame")
-        panel.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+        panel = self.tangent_panel = _frame(self)
+        panel.grid(row=4, column=0, sticky="ew", pady=self._px((10, 0)))
         self.tangent_mode = tk.StringVar(self, "Auto")
+        # One character wide: the grid columns give the kit's 90 px (see the layout below).
         self.tangent_mode_box = ttk.Combobox(panel, textvariable=self.tangent_mode,
                                             values=tuple(mode.title() for mode in TANGENT_MODES),
-                                            state="readonly", width=8)
+                                            state="readonly", width=1, style="Kit.TCombobox")
         self.tangent_mode_box.bind("<<ComboboxSelected>>", self._change_tangent_mode)
-        self.tangent_units = ttk.Label(panel, text="units/s", style="CardMuted.TLabel")
+        self.tangent_units = _label(panel, "units/s")
         self.tangent_texts = {}
         self.tangent_entries = {}
         self.tangent_labels = {}
         for side, title in (("incoming", "Arrival"), ("outgoing", "Departure")):
-            self.tangent_labels[side] = ttk.Label(panel, text=title, style="CardMuted.TLabel")
+            self.tangent_labels[side] = _label(panel, title)
             text = self.tangent_texts[side] = tk.StringVar(self, "")
-            entry = self.tangent_entries[side] = ttk.Entry(panel, textvariable=text, width=11)
+            entry = self.tangent_entries[side] = ttk.Entry(panel, textvariable=text, width=1, style="Kit.TEntry")
             entry.bind("<FocusIn>", lambda event, side=side: self._begin_tangent_value(side))
             entry.bind("<Return>", self._apply_tangent_value)
             entry.bind("<Escape>", self._cancel_tangent_value)
@@ -473,18 +543,28 @@ class CameraCurveLane(ttk.Frame):
             entry.bind("<KeyPress>", lambda event, side=side: self._tangent_value_key(side))
         self._layout_tangent_controls(False)
 
+    def _field_pad(self, widget):
+        """Internal grid padding that makes a one-character field the kit's 90 px."""
+        return max(0, (px(self.scale, FIELD_WIDTH)-widget.winfo_reqwidth()+1)//2)
+
     def _layout_tangent_controls(self, layout):
+        # Wide ([design reference]): mode · 25 · Arrival 10 field · 25 · Departure 10 field · 10 · units/s.
+        # Narrow: the slopes on a second row; stacked: one slope per row.
         narrow = layout > 0
         stacked = layout == 2
         row = 1 if narrow else 0
-        self.tangent_mode_box.grid(row=0, column=0, sticky="w", padx=(0, 10),
+        self.tangent_mode_box.grid(row=0, column=0, sticky="w", padx=self._px((0, 10 if narrow else 25)),
+                                   ipadx=self._field_pad(self.tangent_mode_box),
                                    columnspan=2 if narrow and not stacked else 1)
         for number, side in enumerate(("incoming", "outgoing")):
             column = 0 if stacked else number*2+(0 if narrow else 1)
-            self.tangent_labels[side].grid(row=row+number if stacked else row, column=column, sticky="w", padx=(0, 5),
-                                           pady=(4, 0) if narrow else 0)
-            self.tangent_entries[side].grid(row=row+number if stacked else row, column=column+1, sticky="w", padx=(0, 10),
-                                            pady=(4, 0) if narrow else 0)
+            last = number == 1 or stacked or narrow
+            self.tangent_labels[side].grid(row=row+number if stacked else row, column=column, sticky="w", padx=self._px((0, 10)),
+                                           pady=self._px((10, 0)) if narrow else 0)
+            self.tangent_entries[side].grid(row=row+number if stacked else row, column=column+1, sticky="w",
+                                            padx=self._px((0, 10 if last else 25)),
+                                            ipadx=self._field_pad(self.tangent_entries[side]),
+                                            pady=self._px((10, 0)) if narrow else 0)
         self.tangent_units.grid(row=0, column=1 if stacked else 2 if narrow else 5, sticky="w")
 
     @property
@@ -518,9 +598,11 @@ class CameraCurveLane(ttk.Frame):
         if width == self._responsive_width:
             return
         self._responsive_width=width
-        fixed = self.title_label.winfo_reqwidth()+self.value_entry.winfo_reqwidth()+self.units_label.winfo_reqwidth()+25
+        dp = self._px
+        field = px(self.scale, FIELD_WIDTH)
+        fixed = self.title_label.winfo_reqwidth()+field+self.units_label.winfo_reqwidth()+dp(25)
         if self.reset_button is not None:
-            fixed += self.reset_button.winfo_reqwidth()+12
+            fixed += self.reset_button.winfo_reqwidth()+dp(20)
         inline = self.group<2 and width>=fixed+self.axes.winfo_reqwidth()
         axis_width = self.axes.winfo_reqwidth() if inline or self.group==2 else self.channel_box.winfo_reqwidth()
         second_row = width<fixed+axis_width
@@ -533,15 +615,13 @@ class CameraCurveLane(ttk.Frame):
                 self.channel_box.grid_remove()
                 self.axes.grid()
             self.value_entry.grid_configure(row=1 if second_row else 0,column=1 if second_row else 3,
-                                             columnspan=2 if second_row else 1,pady=(4,0) if second_row else 0)
+                                             columnspan=2 if second_row else 1,pady=self._px((4,0)) if second_row else 0)
             self.units_label.grid_configure(row=1 if second_row else 0,column=3 if second_row else 4)
-        self.hint.configure(wraplength=max(140,width-6))
+        self.hint.configure(wraplength=max(dp(140),width-dp(6)))
         if self.tangent_panel is not None:
-            total = (self.tangent_mode_box.winfo_reqwidth()+self.tangent_units.winfo_reqwidth()+30
-                     +sum(widget.winfo_reqwidth()+10 for widget in self.tangent_labels.values())
-                     +sum(widget.winfo_reqwidth()+10 for widget in self.tangent_entries.values()))
-            pair_width = (sum(widget.winfo_reqwidth()+10 for widget in self.tangent_labels.values())
-                          +sum(widget.winfo_reqwidth()+10 for widget in self.tangent_entries.values()))
+            pair_width = (sum(widget.winfo_reqwidth()+dp(10) for widget in self.tangent_labels.values())
+                          +2*field+dp(35))
+            total = field+dp(25)+pair_width+self.tangent_units.winfo_reqwidth()
             self._layout_tangent_controls(2 if width < pair_width else 1 if width < total else 0)
         self.workspace._schedule_measure()
 
@@ -553,13 +633,13 @@ class CameraCurveLane(ttk.Frame):
             project = (self._preview if self._drag_bounds is not None and self._preview is not None
                        and self.state.current() else self.project)
             key = project.keyframes[self.selected_index] if self.selected_index is not None else None
-            self.value_text.set(format(channel_value(key,self.channel),".8g") if key is not None else "")
+            _set_text(self.value_text, format(channel_value(key,self.channel),".8g") if key is not None else "")
         enabled = self.state.editable(channel=self.channel)
-        self.value_entry.configure(state="normal" if enabled else "disabled")
+        _configure_changed(self.value_entry, state="normal" if enabled else "disabled")
         for name, button in self.axis_buttons.items():
-            button.configure(style="Curve.Selected.Axis.TButton" if name == self.channel else "Curve.Axis.TButton")
+            _configure_changed(button, style=TAB_STYLES[1 if name == self.channel else 0])
         if self.reset_button is not None:
-            self.reset_button.configure(state="normal" if self.state.enabled else "disabled")
+            _configure_changed(self.reset_button, state="normal" if self.state.enabled else "disabled")
         reason = ("Pause playback or finish recording to edit" if not self.state.enabled else
                   "Select a camera key" if self.selected_index is None else
                   "Attached camera: edit attachment offsets" if self.project.keyframes[self.selected_index].source != "free" else
@@ -568,23 +648,26 @@ class CameraCurveLane(ttk.Frame):
                   "Enter applies; Escape cancels" if self._editing_value else
                   f"Camera {self.selected_index+1:02d} | {self.project.keyframes[self.selected_index].time:.2f} s"+
                   (" | Dotted: captured angles; Reset restores this channel" if self.group==1 else ""))
-        self.hint.configure(text=reason,foreground=ui_theme.TOKENS["warn"] if self._value_error else ui_theme.TOKENS["muted"])
+        hint, color = reason, ui_theme.TOKENS["warn"] if self._value_error else ui_theme.TOKENS["dim"]
         if self.tangent_panel is not None:
             self._sync_tangents()
             if self._tangent_error:
-                self.hint.configure(text=self._tangent_error, foreground=ui_theme.TOKENS["warn"])
+                hint, color = self._tangent_error, ui_theme.TOKENS["warn"]
             elif self.project.interpolation != "smooth":
-                self.hint.configure(text=reason+" | Arrival/departure applies in Smooth; saved controls are kept")
+                hint = reason+" | Arrival/departure applies in Smooth; saved controls are kept"
             elif self._tangent_side is not None:
-                self.hint.configure(text="Slope in units/s | Enter applies; Escape cancels")
+                hint = "Slope in units/s | Enter applies; Escape cancels"
+        _configure_changed(self.hint, text=hint, foreground=color)
         # Stacked graphs share the selected camera and instructions. Keep an
         # individual warning/draft visible, without repeating idle metadata.
-        if (self.workspace.stack_var.get() and enabled and not self._editing_value and not self._value_error
-                and not self._tangent_error and self._tangent_side is None
-                and not (self.group == 0 and self.project.interpolation != "smooth")):
-            self.hint.grid_remove()
-        else:
-            self.hint.grid()
+        shown = not (self.workspace.stack_var.get() and enabled and not self._editing_value and not self._value_error
+                     and not self._tangent_error and self._tangent_side is None
+                     and not (self.group == 0 and self.project.interpolation != "smooth"))
+        if shown != (self.hint.winfo_manager() == "grid"):
+            if shown:
+                self.hint.grid()
+            else:
+                self.hint.grid_remove()
 
     def _sync_tangents(self):
         if self._tangent_side is not None and not self._tangent_value_current():
@@ -596,8 +679,8 @@ class CameraCurveLane(ttk.Frame):
                    and self.state.tangent_current() else self.project)
         tangent = project.camera_tangent(index, self.channel) if valid else None
         enabled = self.state.tangent_editable(index, self.channel)
-        self.tangent_mode_box.configure(state="readonly" if enabled else "disabled")
-        self.tangent_mode.set(tangent.mode.title() if tangent is not None else "Auto")
+        _configure_changed(self.tangent_mode_box, state="readonly" if enabled else "disabled")
+        _set_text(self.tangent_mode, tangent.mode.title() if tangent is not None else "Auto")
         if tangent is None:
             slopes = (None, None)
         elif self.project.interpolation == "smooth":
@@ -608,10 +691,10 @@ class CameraCurveLane(ttk.Frame):
         for number, side in enumerate(("incoming", "outgoing")):
             available = valid and tangent_times(self.project, index)[number] is not None
             editable = enabled and available and tangent.mode in ("linked", "broken")
-            self.tangent_entries[side].configure(state="normal" if editable else "disabled")
+            _configure_changed(self.tangent_entries[side], state="normal" if editable else "disabled")
             if self._tangent_side != side:
                 value = slopes[number] if available else None
-                self.tangent_texts[side].set(format(value, ".8g") if value is not None else "")
+                _set_text(self.tangent_texts[side], format(value, ".8g") if value is not None else "")
 
     def _begin_tangent_value(self, side):
         if (side not in self.tangent_entries or self.selected_index is None
@@ -793,19 +876,21 @@ class CameraCurveLane(ttk.Frame):
         canvas.delete("all")
         self._handle_points = {}
         width, height = canvas.winfo_width(), canvas.winfo_height()
-        if width < 110 or height < 65:
+        dp = self._px
+        if width < dp(110) or height < dp(65):
             return
-        bounds = self._drag_bounds or self.state.bounds(self.channel, width, height)
+        bounds = self._drag_bounds or self.state.bounds(self.channel, width, height, self.scale)
         self._bounds = bounds
         colors = ui_theme.TOKENS
-        font = (ui_theme.FONT_FAMILY, ui_theme.FONT_SIZES["tiny"])
+        font = fonts.font(canvas, "small")
+        self._draw_plate(width, height)
         def value_labels():
             for index in range(3):
                 y = bounds.top+(bounds.bottom-bounds.top)*index/2
                 value = bounds.value_at(y)
                 label = (f"{value:.3f}" if self.group == 2 else f"{value:.1f}" if abs(value)<10000 else
                          f"{value:.0f}" if abs(value)<1e10 else f"{value:.4g}")
-                canvas.create_text(bounds.left-8, y, text=label, anchor="e", fill=colors["muted"], font=font)
+                canvas.create_text(bounds.left-dp(8), y, text=label, anchor="e", fill=colors["dim"], font=font)
         for index in range(3):
             y = bounds.top + (bounds.bottom-bounds.top)*index/2
             canvas.create_line(bounds.left, y, bounds.right, y, fill=colors["edge"])
@@ -818,6 +903,7 @@ class CameraCurveLane(ttk.Frame):
             canvas.create_text((bounds.left+bounds.right)/2, (bounds.top+bounds.bottom)/2,
                                text="Capture a camera to start a curve", fill=colors["muted"], font=font)
             self._points = []
+            canvas.tag_raise("plate-corner")
             return
         accent = colors["curve_"+self.channel] if self.group == 0 else colors["curve_rotation"] if self.group == 1 else colors["accent"]
         def line(project, color, dash=None, offset=0.0, width=1, tag="curve"):
@@ -828,26 +914,29 @@ class CameraCurveLane(ttk.Frame):
         if self.state.show_original and self.state.original is not None:
             # Canvas lines have no alpha: blend against the exact plot surface.
             before = self._blend(colors["curve_before"], colors["field"], .38)
-            line(self.state.original, before, (5, 5), self.state.original_offset(self.channel), tag="original")
+            line(self.state.original, before, dp((5, 5)), self.state.original_offset(self.channel), tag="original")
         if self.group == 1:
             captured = self.state.captured_project()
-            line(captured,colors["muted"],(1,5),branch_offset(self.project,captured,self.channel),tag="captured")
+            line(captured,colors["muted"],dp((1,5)),branch_offset(self.project,captured,self.channel),tag="captured")
         if self.group == 2 and bounds.low <= self.project.standard_aspect <= bounds.high:
             y = bounds.point(bounds.start, self.project.standard_aspect)[1]
-            canvas.create_line(bounds.left, y, bounds.right, y, fill=colors["muted"], dash=(1, 5))
+            canvas.create_line(bounds.left, y, bounds.right, y, fill=colors["muted"], dash=dp((1, 5)))
         project = self._preview or self.project
         draft_offset = branch_offset(self.project,project,self.channel) if self._preview is not None else 0.0
-        line(project,accent,offset=draft_offset,width=2,tag="current")
+        line(project,accent,offset=draft_offset,width=1.5*self.scale,tag="current")
         self._draw_tangent_handles(project, bounds, accent)
         self._points = [bounds.point(key.time,value+draft_offset)
                         for key,value in zip(project.keyframes,display_values(project,self.channel))]
         for index, (x, y) in enumerate(self._points):
             if not bounds.left <= x <= bounds.right or not bounds.top <= y <= bounds.bottom:
                 continue
-            radius = 5 if index == self.selected_index else 3
-            fill = colors["text"] if index == self.selected_index else colors["field"]
+            # Unselected keys: 9 px diamonds in the plate's fill with the key stroke ([design reference]).
+            if index == self.selected_index:
+                radius, fill, outline, stroke = dp(5), colors["text"], accent, 1.5*self.scale
+            else:
+                radius, fill, outline, stroke = 4.5*self.scale, colors["field"], colors["curve_key"], 1.2*self.scale
             canvas.create_polygon(x, y-radius, x+radius, y, x, y+radius, x-radius, y,
-                                  fill=fill, outline=accent, width=1.5, tags="keys")
+                                  fill=fill, outline=outline, width=stroke, tags="keys")
         # Mask overflow, then redraw gutter labels so sampled paths cannot
         # run behind them. Canvas itself clips outside the drawing surface.
         canvas.create_rectangle(0, 0, bounds.left-1, height, fill=colors["field"], outline="", tags="mask")
@@ -856,10 +945,23 @@ class CameraCurveLane(ttk.Frame):
             for index in range(5):
                 timestamp = bounds.start+bounds.duration*index/4
                 x = bounds.point(timestamp,bounds.low)[0]
-                canvas.create_text(x,bounds.bottom+14,text=f"{timestamp:.2f}s",
+                canvas.create_text(x,bounds.bottom+dp(15),text=f"{timestamp:.2f}s",
                                    anchor="w" if index==0 else "e" if index==4 else "center",
-                                   fill=colors["muted"],font=font,tags="time-label")
+                                   fill=colors["dim"],font=font,tags="time-label")
+        # The mask covered the plate's left corners: they go back on top.
+        canvas.tag_raise("plate-corner")
         self._draw_playhead()
+
+    def _draw_plate(self, width, height):
+        """The graph's plate: ``field`` with radius 4 corners, opaque over the card (two rects, four corners)."""
+        canvas, colors = self.canvas, ui_theme.TOKENS
+        r = max(1, round(4*self.scale))
+        canvas.create_rectangle(r, 0, width-r, height, fill=colors["field"], outline="", tags="plate")
+        canvas.create_rectangle(0, r, width, height-r, fill=colors["field"], outline="", tags="plate")
+        root = canvas.winfo_toplevel()
+        for which, x, y in (("nw", 0, 0), ("ne", width-r, 0), ("sw", 0, height-r), ("se", width-r, height-r)):
+            canvas.create_image(x, y, anchor="nw", tags=("plate", "plate-corner"),
+                                image=art.corner_face(root, r, colors["field"], which, surface=colors["panel"]))
 
     def _draw_tangent_handles(self, project, bounds, accent):
         index = self.selected_index
@@ -897,7 +999,7 @@ class CameraCurveLane(ttk.Frame):
                 radius = 3*scale
                 self.canvas.create_oval(x-radius, y-radius, x+radius, y+radius,
                                         fill=ui_theme.TOKENS["field"], outline=accent,
-                                        width=1.5, tags=("tangent-handle", "tangent-"+side))
+                                        width=1.5*scale, tags=("tangent-handle", "tangent-"+side))
 
     @staticmethod
     def _blend(foreground, background, alpha):
@@ -909,7 +1011,7 @@ class CameraCurveLane(ttk.Frame):
         if self._bounds is not None and self._bounds.start <= self.state.current_time <= self._bounds.end:
             x = self._bounds.point(self.state.current_time, self._bounds.low)[0]
             self.canvas.create_line(x, self._bounds.top, x, self._bounds.bottom,
-                                    fill=ui_theme.TOKENS["accent"], dash=(2,4), tags="playhead")
+                                    fill=ui_theme.TOKENS["accent"], dash=self._px((3,3)), tags="playhead")
 
     def _press(self, event):
         if not self.state.enabled:
@@ -922,7 +1024,7 @@ class CameraCurveLane(ttk.Frame):
                 self._handle_side, self._handle_delta = side, delta
                 self._drag_bounds, self._drag_press_y = self._bounds, event.y
                 return "break"
-        index = hit_key(self._points, event.x, event.y)
+        index = hit_key(self._points, event.x, event.y, self._px(12))
         if index is None or self._bounds is None or not self._bounds.top <= event.y <= self._bounds.bottom:
             return
         self.workspace.select(index)
@@ -933,7 +1035,7 @@ class CameraCurveLane(ttk.Frame):
     def _double_press(self, event):
         # Tk substitutes Double-Button for the second ordinary press. A quick
         # click to select, then a drag, must still start an editable gesture.
-        if (hit_key(self._points, event.x, event.y) is not None
+        if (hit_key(self._points, event.x, event.y, self._px(12)) is not None
                 or any((event.x-x)**2+(event.y-y)**2 <= self._handle_radius**2
                        for x, y, _delta in self._handle_points.values())):
             self._press(event)
@@ -1097,9 +1199,10 @@ class CameraCurveColumn(ScrollPage):
         self._sizing = True
         try:
             table, graph, header, curves = self._panels
-            padding = [int(value) for value in self.tk.splitlist(graph.cget("padding"))]
+            padding = [self.tk.getint(value) for value in self.tk.splitlist(graph.cget("padding"))]
             graph_padding = padding[1]+padding[3] if len(padding)==4 else padding[-1]*2 if padding else 0
-            minimum = table.winfo_reqheight()+10+header.winfo_reqheight()+4+graph_padding+curves.minimum_height()
+            gaps = even_px(self.ui_scale, 10) + even_px(self.ui_scale, 4)
+            minimum = table.winfo_reqheight()+header.winfo_reqheight()+gaps+graph_padding+curves.minimum_height()
             width, available = max(1,self.canvas.winfo_width()), max(1,self.canvas.winfo_height())
             height = max(available,minimum)
             if self._content_size != (width,height):
@@ -1110,15 +1213,35 @@ class CameraCurveColumn(ScrollPage):
             self._sizing = False
 
 
-class CameraCurveWorkspace(ttk.Frame):
+class CameraCurveWorkspace(tk.Frame):
+    """The Position/Rotation/Framing lanes with their shared clock, selection and view tools.
+
+    Optional (the Camera page, PLAN-5 3.1): ``fixed_lane_height`` (design px) gives
+    every graph that height and drops the inner scroll area (the page scrolls);
+    ``fill_lanes`` (with it) makes that height each graph's least: a workspace placed
+    taller than it asks (a bento card's spare height) shares the rest among the graphs
+    shown; ``tool_parent`` (a kit row, the card's title row) receives "Update original" and
+    "Frame all" as quiet canvas buttons instead of the tools row; ``modes`` is
+    ``((label, variable, values, command), ...)`` for the curve-mode row under the
+    graph (``mode_combos``); ``on_legend(text)`` receives the legend instead of the
+    legend line under the lanes.
+    """
     def __init__(self,parent,*,on_change,on_select,on_reset,context,view=None,on_tangent_change=None,
-                 on_preview=None):
-        super().__init__(parent,style="Card.TFrame")
+                 on_preview=None,fixed_lane_height=None,tool_parent=None,modes=(),on_legend=None,
+                 fill_lanes=False):
+        t = ui_theme.TOKENS
+        super().__init__(parent,background=t["panel"],borderwidth=0,highlightthickness=0,takefocus=0)
+        kit_styles.install(self)
+        self._px = scaler(self)
         self.on_select,self.on_reset,self.get_context = on_select,on_reset,context
         self.state = CurveWorkspaceState(on_change,view,on_tangent_change)
         self.on_preview = on_preview
+        self.fixed_lane_height = fixed_lane_height
+        self.fill_lanes = bool(fill_lanes)
+        self.on_legend = on_legend
+        self._legend = None
         self._preview_gesture = None
-        self.graph_font = tkfont.Font(self,font=(ui_theme.FONT_FAMILY,ui_theme.FONT_SIZES["tiny"]))
+        self.graph_font = fonts.font(self,"small")
         self.on_geometry = None
         self._measure_pending = False
         self._measure_after = None
@@ -1132,56 +1255,97 @@ class CameraCurveWorkspace(ttk.Frame):
         self.lane_vars = [tk.BooleanVar(self,index<2) for index in range(3)]
         self.columnconfigure(0,weight=1)
         self.rowconfigure(2,weight=1)
-        top = self.top = ttk.Frame(self,style="Card.TFrame")
-        top.grid(row=0,column=0,sticky="ew",pady=(0,5))
-        self.tabs = ttk.Frame(top,style="Card.TFrame")
+        # Top row ([design reference]): kit tabs 5 px apart on the left; Show Original and Stack
+        # graphs 15 px apart on the right; "Graphs" replaces the tabs while stacked.
+        top = self.top = _frame(self)
+        top.grid(row=0,column=0,sticky="ew",pady=self._px((0,10)))
+        self.tabs = _frame(top)
         self.tabs.pack(side="left")
         self.tab_buttons=[]
         for group,label in enumerate(GROUPS):
-            button=ttk.Button(self.tabs,text=label,style="Curve.Axis.TButton",command=lambda group=group:self.select_group(group))
-            button.pack(side="left",padx=(0,3))
+            button=ttk.Button(self.tabs,text=label,style=TAB_STYLES[0],command=lambda group=group:self.select_group(group))
+            button.pack(side="left",padx=self._px((0,5)))
             self.tab_buttons.append(button)
-        self.graphs_button=ttk.Menubutton(top,text="Graphs")
-        self.graphs_menu=tk.Menu(self.graphs_button,tearoff=False,background=ui_theme.TOKENS["panel"],
-                                 foreground=ui_theme.TOKENS["text"],activebackground=ui_theme.TOKENS["selected"],
-                                 activeforeground=ui_theme.TOKENS["text"])
+        self.graphs_button=ttk.Menubutton(top,text="Graphs",style="Kit.TMenubutton")
+        self.graphs_menu=tk.Menu(self.graphs_button,tearoff=False,background=t["panel"],
+                                 foreground=t["text"],activebackground=t["selected"],
+                                 activeforeground=t["text"])
         for group,label in enumerate(GROUPS):
             self.graphs_menu.add_checkbutton(label=label,variable=self.lane_vars[group],command=lambda group=group:self._lanes_changed(group))
         self.graphs_button.configure(menu=self.graphs_menu)
-        self.stack_check = ttk.Checkbutton(top,text="Stack graphs",variable=self.stack_var,command=self._layout)
-        self.stack_check.pack(side="right")
-        tools=self.tools=ttk.Frame(self,style="Card.TFrame")
-        tools.grid(row=1,column=0,sticky="ew",pady=(0,7))
-        self.original_check=ttk.Checkbutton(tools,text="Show original",variable=self.original_var,command=self._show_original)
-        self.original_check.pack(side="left")
-        self.update_original_button=ttk.Button(tools,text="Update original",style="Quiet.TButton",command=self.update_original)
-        self.update_original_button.pack(side="left",padx=(8,0))
-        self.frame_all_button=ttk.Button(tools,text="Frame all",style="Quiet.TButton",command=self.frame_all)
-        self.frame_all_button.pack(side="right")
+        self.checks = _frame(top)
+        self.checks.pack(side="right")
+        self.original_check=ttk.Checkbutton(self.checks,text="Show Original",variable=self.original_var,
+                                            command=self._show_original,style="Kit.Muted.TCheckbutton")
+        self.original_check.pack(side="left",padx=self._px((0,15)))
+        self.stack_check = ttk.Checkbutton(self.checks,text="Stack graphs",variable=self.stack_var,command=self._layout,
+                                           style="Kit.Muted.TCheckbutton")
+        self.stack_check.pack(side="left")
+        self.tools = None
+        if tool_parent is False:
+            # No view tools at all (the redesigned Camera page shows neither button); the
+            # update_original/frame_all actions stay callable.
+            self.update_original_button = self.frame_all_button = None
+        elif tool_parent is not None:
+            # The card's title row: canvas-drawn quiet buttons (N21), 20 px apart.
+            self.update_original_button = tool_parent.button("Update original", self.update_original, kind="quiet")
+            tool_parent.gap(20)
+            self.frame_all_button = tool_parent.button("Frame all", self.frame_all, kind="quiet")
+        else:
+            tools=self.tools=_frame(self)
+            tools.grid(row=1,column=0,sticky="ew",pady=self._px((0,10)))
+            self.update_original_button=ttk.Button(tools,text="Update original",style="Quiet.TButton",command=self.update_original)
+            self.update_original_button.pack(side="left")
+            self.frame_all_button=ttk.Button(tools,text="Frame all",style="Quiet.TButton",command=self.frame_all)
+            self.frame_all_button.pack(side="right")
         # Run before ttk focus/press handling so view actions settle a valid
         # draft instead of silently cancelling it when they take focus.
         for widget in (self.frame_all_button,self.update_original_button,self.original_check):
-            widget.bind("<ButtonPress-1>",self._settle_view_press,add="+")
-        holder=ttk.Frame(self,style="Card.TFrame")
+            if widget is not None:
+                widget.bind("<ButtonPress-1>",self._settle_view_press,add="+")
+        holder=self.holder=_frame(self)
         holder.grid(row=2,column=0,sticky="nsew")
         holder.columnconfigure(0,weight=1)
         holder.rowconfigure(0,weight=1)
-        self.scroll_canvas=tk.Canvas(holder,background=ui_theme.TOKENS["panel"],highlightthickness=0,borderwidth=0)
-        self.scroll_canvas.grid(row=0,column=0,sticky="nsew")
-        self.scrollbar=ttk.Scrollbar(holder,orient="vertical",command=self.scroll_canvas.yview)
-        self.scrollbar.grid(row=0,column=1,sticky="ns")
-        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.body=ttk.Frame(self.scroll_canvas,style="Card.TFrame")
+        if fixed_lane_height:
+            # The page scrolls: the lanes sit in the workspace at their own height.
+            self.scroll_canvas = self.scrollbar = self.body_window = None
+            self.body = _frame(holder)
+            self.body.grid(row=0,column=0,sticky="nsew")
+        else:
+            self.scroll_canvas=tk.Canvas(holder,background=t["panel"],highlightthickness=0,borderwidth=0)
+            self.scroll_canvas.grid(row=0,column=0,sticky="nsew")
+            self.scrollbar=ttk.Scrollbar(holder,orient="vertical",command=self.scroll_canvas.yview)
+            self.scrollbar.grid(row=0,column=1,sticky="ns")
+            self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
+            self.body=_frame(self.scroll_canvas)
+            self.body_window=self.scroll_canvas.create_window(0,0,anchor="nw",window=self.body)
+            self.scroll_canvas.bind("<Configure>",self._size_body)
         self.body.columnconfigure(0,weight=1)
-        self.body_window=self.scroll_canvas.create_window(0,0,anchor="nw",window=self.body)
         self.lanes=tuple(CameraCurveLane(self.body,self,group) for group in range(3))
-        self.footer=ttk.Label(self,text="Drag keys | Up/Down fine tune | Wheel zoom | Right-drag pan",
-                              style="CardMuted.TLabel")
-        self.footer.grid(row=3,column=0,sticky="ew",pady=(6,0))
-        self.scroll_canvas.bind("<Configure>",self._size_body)
+        # Created after the lanes, so it stacks above the lane it is gridded into.
+        self.modes_row = None
+        self.mode_combos = []
+        if modes:
+            self._build_modes(modes)
+        self.footer=_label(self,"Drag keys | Up/Down fine tune | Wheel zoom | Right-drag pan")
+        if on_legend is None:
+            self.footer.grid(row=3,column=0,sticky="ew",pady=self._px((10,0)))
         self.bind("<Configure>",self._responsive,add="+")
         self.bind("<Map>",lambda _event:self.schedule_redraw(),add="+")
         self._layout()
+
+    def _build_modes(self, modes):
+        """The curve-mode row: label · 10 · 100 px dropdown, groups 20 px apart ([design reference])."""
+        row = self.modes_row = _frame(self.body)
+        for index, (label, variable, values, command) in enumerate(modes):
+            _label(row, label).grid(row=0, column=2*index, sticky="w", padx=self._px((20 if index else 0, 10)))
+            combo = ttk.Combobox(row, textvariable=variable, values=tuple(values), state="readonly", width=1,
+                                 style="Kit.TCombobox")
+            combo.grid(row=0, column=2*index+1, sticky="w",
+                       ipadx=max(0, (px(ui_scale(self), MODE_WIDTH)-combo.winfo_reqwidth()+1)//2))
+            combo.bind("<<ComboboxSelected>>", lambda _event, command=command: command())
+            self.mode_combos.append(combo)
 
     def visible_groups(self):
         return tuple(index for index,value in enumerate(self.lane_vars) if value.get()) if self.stack_var.get() else (self.group,)
@@ -1192,50 +1356,62 @@ class CameraCurveWorkspace(ttk.Frame):
     def minimum_height(self):
         # The inner scroll region may contain several graphs. The outer Camera
         # page always reserves room for at least one useful graph below its UI.
-        minimum_graph = 5*self.graph_font.metrics("linespace")+40
+        dp = self._px
+        minimum_graph = 5*self.graph_font.metrics("linespace")+dp(40)
         heights=self._lane_minimums(minimum_graph)
         body_height=sum(heights[group] for group in self.visible_groups()) if self._scroll_owner is not None else max(heights)
-        return self.top.winfo_reqheight()+5+self.tools.winfo_reqheight()+7+body_height+self.footer.winfo_reqheight()+6
+        tools = self.tools.winfo_reqheight()+dp(10) if self.tools is not None else 0
+        footer = self.footer.winfo_reqheight()+dp(10) if self.on_legend is None else 0
+        modes = self.modes_row.winfo_reqheight()+dp(15) if self.modes_row is not None else 0
+        return self.top.winfo_reqheight()+dp(10)+tools+body_height+modes+footer
 
     def _lane_minimums(self,minimum_graph):
-        return [lane.header.winfo_reqheight()+
-                (lane.hint.winfo_reqheight()+4 if lane.hint.winfo_manager() else 0)+
-                (lane.tangent_panel.winfo_reqheight()+6 if lane.tangent_panel is not None else 0)+minimum_graph+9
+        dp = self._px
+        return [lane.header.winfo_reqheight()+dp(15)+
+                (lane.hint.winfo_reqheight()+dp(15) if lane.hint.winfo_manager() else 0)+
+                (lane.tangent_panel.winfo_reqheight()+dp(10) if lane.tangent_panel is not None else 0)+minimum_graph+dp(15)
                 for lane in self.lanes]
 
     def set_scroll_owner(self,owner):
         self._scroll_owner=owner
-        self.scrollbar.grid_remove()
+        if self.scrollbar is not None:
+            self.scrollbar.grid_remove()
         self._body_size=None
         self._schedule_measure()
 
     def _responsive(self,_event=None):
         stacked = self.stack_var.get()
         left = self.graphs_button if stacked else self.tabs
-        split = self.winfo_width() < left.winfo_reqwidth()+self.stack_check.winfo_reqwidth()+12
-        split_tools = self.winfo_width() < (self.original_check.winfo_reqwidth()+self.update_original_button.winfo_reqwidth()+self.frame_all_button.winfo_reqwidth()+20)
+        split = self.winfo_width() < left.winfo_reqwidth()+self.checks.winfo_reqwidth()+self._px(12)
+        split_tools = self.tools is not None and self.winfo_width() < (
+            self.update_original_button.winfo_reqwidth()+self.frame_all_button.winfo_reqwidth()+self._px(20))
         if (stacked,split,split_tools) != self._responsive_mode:
             self._responsive_mode=stacked,split,split_tools
             # Only mode changes rewrite geometry; position/height Configure
             # events while scrolling cannot recursively reflow these rows.
             left.pack_forget()
-            self.stack_check.pack_forget()
+            self.checks.pack_forget()
             self.top.columnconfigure(0,weight=1)
             left.grid(row=0,column=0,sticky="w")
-            self.stack_check.grid(row=1 if split else 0,column=0 if split else 1,sticky="w" if split else "e",pady=(4,0) if split else 0)
-            for widget in (self.original_check,self.update_original_button,self.frame_all_button):
-                widget.pack_forget()
-            self.tools.columnconfigure(1,weight=1)
-            self.original_check.grid(row=0,column=0,sticky="w")
-            self.update_original_button.grid(row=0,column=1,sticky="w",padx=(8,0))
-            self.frame_all_button.grid(row=1 if split_tools else 0,column=0 if split_tools else 2,
-                                      sticky="w" if split_tools else "e",pady=(4,0) if split_tools else 0)
-        self.footer.configure(wraplength=max(180,self.winfo_width()-6))
+            self.checks.grid(row=1 if split else 0,column=0 if split else 1,sticky="w" if split else "e",pady=self._px((10,0)) if split else 0)
+            if self.tools is not None:
+                for widget in (self.update_original_button,self.frame_all_button):
+                    widget.pack_forget()
+                self.tools.columnconfigure(0,weight=1)
+                self.update_original_button.grid(row=0,column=0,sticky="w")
+                self.frame_all_button.grid(row=1 if split_tools else 0,column=0 if split_tools else 1,
+                                          sticky="w" if split_tools else "e",pady=self._px((4,0)) if split_tools else 0)
+        self.footer.configure(wraplength=max(self._px(180),self.winfo_width()-self._px(6)))
         self._schedule_measure()
 
     def _size_body(self,_event=None):
+        if self.scroll_canvas is None:
+            # Fixed lanes: the workspace asks for their height and the page scrolls.
+            if self.on_geometry is not None:
+                self.on_geometry()
+            return
         available=max(1,self.scroll_canvas.winfo_height())
-        minimum_graph=5*self.graph_font.metrics("linespace")+40
+        minimum_graph=5*self.graph_font.metrics("linespace")+self._px(40)
         minimums=self._lane_minimums(minimum_graph)
         minimum=sum(minimums[group] for group in self.visible_groups())
         if self._scroll_owner is not None and self.grid_rowconfigure(2)['minsize'] != minimum:
@@ -1291,15 +1467,23 @@ class CameraCurveWorkspace(ttk.Frame):
             self.graphs_button.pack_forget()
             self.graphs_button.grid_remove()
         for group,button in enumerate(self.tab_buttons):
-            button.configure(style="Curve.Selected.Axis.TButton" if group==self.group else "Curve.Axis.TButton")
+            button.configure(style=TAB_STYLES[1 if group==self.group else 0])
         for lane in self.lanes:
             lane.grid_remove()
-        for row in range(3):
+        for row in range(4):
             self.body.rowconfigure(row,weight=0)
         groups=self.visible_groups()
+        fixed = bool(self.fixed_lane_height) and not self.fill_lanes
         for row,group in enumerate(groups):
-            self.body.rowconfigure(row,weight=1)
-            self.lanes[group].grid(row=row,column=0,sticky="nsew",pady=(0,8 if row<len(groups)-1 else 0))
+            self.body.rowconfigure(row,weight=0 if fixed else 1)
+            self.lanes[group].grid(row=row,column=0,sticky="nsew",pady=self._px((0,15 if row<len(groups)-1 else 0)))
+        if self.modes_row is not None:
+            # Between the graph and the hint of the one lane; under the last lane when stacked.
+            self.modes_row.grid_forget()
+            if self.stack_var.get():
+                self.modes_row.grid(in_=self.body,row=len(groups),column=0,sticky="w",pady=self._px((15,0)))
+            else:
+                self.modes_row.grid(in_=self.lanes[groups[0]],row=2,column=0,sticky="w",pady=self._px((15,0)))
         self._size_body()
         self.redraw()
         self._responsive()
@@ -1344,14 +1528,18 @@ class CameraCurveWorkspace(ttk.Frame):
         if self._redraw_after is not None:
             self.after_cancel(self._redraw_after)
             self._redraw_after=None
-        self.update_original_button.configure(state="normal" if self.state.original is not None else "disabled")
+        if self.update_original_button is not None:
+            self.update_original_button.configure(state="normal" if self.state.original is not None else "disabled")
         legend = " | Solid: current; dashed: original" if self.state.show_original else ""
         if self.stack_var.get() and 1 in self.visible_groups():
             legend += " | Dotted: captured rotation; Reset restores this channel"
         if 0 in self.visible_groups() and self.state.project.interpolation == "smooth":
             legend += " | Round handles: arrival/departure; right-click or Escape cancels"
-        self.footer.configure(text="Drag keys | Up/Down fine tune | Wheel zoom | Right-drag pan"+legend,
-                              wraplength=max(180,self.winfo_width()-6))
+        legend = "Drag keys | Up/Down fine tune | Wheel zoom | Right-drag pan"+legend
+        self.footer.configure(text=legend,wraplength=max(self._px(180),self.winfo_width()-self._px(6)))
+        if self.on_legend is not None and legend != self._legend:
+            self._legend = legend
+            self.on_legend(legend)
         for group,lane in enumerate(self.lanes):
             if group in self.visible_groups() and self.winfo_ismapped():
                 lane._redraw()

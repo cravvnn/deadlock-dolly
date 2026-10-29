@@ -22,9 +22,8 @@
 Capture views from a local replay, shape a camera path and play it back with
 animated framing and effects. Edit through the desktop or directly in the game.
 
-**Current source: 0.6.80-alpha development · Windows x64 · DirectX 11.**
-The source includes unreleased changes that may not be in the latest download;
-native source changes need a matching rebuilt helper. The portable app includes
+**Current source: 0.6.82-alpha · Windows x64 · DirectX 11.**
+Native source changes need a matching rebuilt helper. The portable app includes
 Python and Tcl/Tk; no separate installation is needed.
 
 > **Local replays only — use at your own risk.** Dolly injects a native DLL
@@ -61,8 +60,8 @@ See the
 - **Camera paths and curves.** Shared desktop/in-game editing for position,
   rotation and aspect ratio, position tangent handles, Undo/Redo and live path guides.
 - **Follow and Bone Picker.** Follow a replay participant with the game's camera,
-  adjust framing, or attach a camera to a selected bone. Current source adds a
-  per-camera vertical-aim lock and camera-relative movement in attached preview.
+  adjust framing, or attach a camera to a selected bone. Use the per-camera
+  vertical-aim lock and camera-relative movement in attached preview.
   See the [Bone Picker guide](docs/BONE_PICKER.md).
 - **Framing and depth of field.** Animate aspect ratio and supported DOF controls
   alongside the camera path.
@@ -196,5 +195,7 @@ separate terms in [assets/README.md](assets/README.md).
 ## Releases
 
 - [Downloads and published release notes](https://github.com/cravvnn/deadlock-dolly/releases)
+- [0.6.82-alpha release notes](docs/RELEASE_NOTES_0.6.82-alpha.md)
+- [0.6.81-alpha release notes](docs/RELEASE_NOTES_0.6.81-alpha.md)
 - [0.6.80-alpha release notes](docs/RELEASE_NOTES_0.6.80-alpha.md)
 - [Complete changelog](docs/CHANGELOG.md)

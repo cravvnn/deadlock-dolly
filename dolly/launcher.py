@@ -54,7 +54,7 @@ EDITING_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "assets" 
 CONFETTI_PACK = NATIVE_ROOT / "assets" / "confetti" / "pak01_dir.vpk"
 CONFETTI_PACK_SHA256 = "99c0325fe333bfa12c3f23a2808767c2fd27b49fe0e5abe4531fa472519f8ae6"
 UI_OVERRIDE_PACK = NATIVE_ROOT / "assets" / "ui" / "pak02_dir.vpk"
-UI_OVERRIDE_PACK_SHA256 = "0af30912a471efc984e653ebc57a4c05f210e07f707f42d3bec997fc945b2fe1"
+UI_OVERRIDE_PACK_SHA256 = "1f6619324ebccebe0a88c47e1b7754703ed090e3ddff57a68873bc49eddccfc5"
 UNLOCKER_SHA256 = _Unlocker.SHA256
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.

@@ -341,9 +341,10 @@ void dispatch_key_press(unsigned vk) noexcept {
         }
         return;
     }
-    // Escape closes the Dolly panel exactly like F8. An active ImGui text edit
-    // keeps Escape for itself, and the game UI/console own their own Escape.
+    // The first Escape closes rail drawers. With none open it behaves like F8.
+    // Text edits and modal popups keep Escape; game UI/console own their Escape.
     if (vk == VK_ESCAPE && gOwner.load() == EditorOwner::Panel && !gTextInput.load()) {
+        if (overlay_close_drawers_on_escape()) return;
         dispatch(EditorAction::Panel);
         return;
     }
