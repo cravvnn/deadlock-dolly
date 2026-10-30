@@ -120,7 +120,7 @@ def poll(app):
             app._native_editor_dropped = status["dropped_events"]
             app.status_text.set("The editor was busy; an in-game action was ignored. Retry the action.")
         for event in status.get("events", ()):
-            if app.busy:
+            if app.busy and event.get("action") != "save_shot":
                 break
             try:
                 accepted = dispatch(app, event, bridge)

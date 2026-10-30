@@ -65,7 +65,11 @@
       "INTRO_GLOBAL": {
         "module": "client",
         "kind": "rva",
-        "value": "0x3e80bd8"
+        "value": "0x3e80b48",
+        "rip_reference": {
+          "rva": "0x1bd2f63",
+          "bytes": "488935dedb2a02"
+        }
       },
       "INTRO_VTABLE": {
         "module": "client",
@@ -130,6 +134,11 @@
             "rva": "0x1bdb170",
             "size": 554,
             "sha256": "c4b87a73089b2a5b36b838dca505c7292296d815343ac3a18a1c11f23b01ea62"
+          },
+          {
+            "rva": "0x1c0ec77",
+            "size": 12,
+            "sha256": "fc6f37cc519aafef3b7e6d86c5d688a1f6f9b107af2e73c402f7cdfe0e304207"
           }
         ]
       },

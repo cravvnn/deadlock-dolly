@@ -233,7 +233,7 @@ struct ColorFrame {
     MatteCapture capture;
     CaptureImageClock clock;
     std::uint64_t generation = 0;
-    bool prepared = false, sealed = false, truncated = false;
+    bool prepared = false, sealed = false, truncated = false, sceneObserved = false;
     unsigned draws = 0;
     std::uint64_t first = 0, last = 0, epoch = 0;
     std::uint64_t header[8]{};
@@ -253,6 +253,8 @@ bool sequenceCadenceLost = false;
 // Set only when a fixed-step capture waited past its scratch-write budget.
 // Kept separate from cadence loss so the status names the real cause.
 bool sequenceWriterSlow = false;
+unsigned sequenceSlotWaits = 0, sequenceSlotTimeouts = 0;
+ULONGLONG sequenceSlotWaitMax = 0;
 struct ImageAdmissionFailure {
     const char* reason = nullptr;
     double phase = -1, pinned_phase = -1, previous = -1;
@@ -295,9 +297,14 @@ void release_frame_slots(unsigned ring) noexcept {
     }
 }
 CapturePendingImage pending_image(const ColorFrame& slot) noexcept {
-    return {slot.clock, slot.generation, slot.epoch, slot.draws,
-            slot.prepared, slot.sealed,
-            slot.truncated || sequenceStall.load(std::memory_order_acquire) || sequenceCadenceLost};
+    return {slot.clock,
+            slot.generation,
+            slot.epoch,
+            slot.draws,
+            slot.prepared,
+            slot.sealed,
+            slot.truncated || sequenceStall.load(std::memory_order_acquire) || sequenceCadenceLost,
+            slot.sceneObserved};
 }
 // Present owns these fields while its callback pin is held; the terminal
 // report reads them only after all admitted callbacks have left.
@@ -1017,6 +1024,8 @@ void stall_report() noexcept {
             ++tableNow;
     f << " players " << players << " producers " << producerTableCount << " tableNow " << tableNow
       << "\n";
+    f << "slotWaits " << sequenceSlotWaits << " slotWaitMaxMs " << sequenceSlotWaitMax
+      << " slotWaitTimeouts " << sequenceSlotTimeouts << "\n";
     f << "blends over " << blendOver << " darken " << blendDarken << " other " << blendOther
       << " skipped " << blendSkip << " records valid " << recordValid << " invalid "
       << recordInvalid << " validateStall " << validateStall << "\n";
@@ -1107,6 +1116,8 @@ void reset_capture() noexcept {
     sequenceStall = false;
     sequenceCadenceLost = false;
     sequenceWriterSlow = false;
+    sequenceSlotWaits = sequenceSlotTimeouts = 0;
+    sequenceSlotWaitMax = 0;
     firstImageFailure = {};
     firstSeal = lastSeal = drainStarted = 0;
     lastSealedReplayTime = -1.0;
@@ -1688,6 +1699,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     slot.capture.recycle(c);
                     slot.sealed = false;
                     slot.prepared = false;
+                    slot.sceneObserved = false;
                     slot.draws = 0;
                     slot.truncated = false;
                     slot.first = slot.last = slot.epoch = 0;
@@ -1749,6 +1761,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             slot.capture.recycle(c);
             slot.sealed = false;
             slot.prepared = false;
+            slot.sceneObserved = false;
             slot.draws = 0;
             slot.truncated = false;
             slot.first = slot.last = slot.epoch = 0;
@@ -1883,6 +1896,38 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
         if (e->w[45])
             draw_probe("shape", e);
         return;
+    }
+    if (sequenceV3 && e->w[7] == D3D11_DEVICE_CONTEXT_IMMEDIATE && e->w[130]) {
+        // Establish the image from a real scene pass before filtering owners.
+        // A camera may look away from every player for part of a shot; that
+        // interval still needs one transparent frame per rendered scene view.
+        auto& image = colorFrames[colorIndex];
+        const double phase = authoredReplayTime.load(std::memory_order_acquire);
+        if (!image.clock.accept(e->w[135], phase)) {
+            sequenceCadenceLost = sequenceStall = true;
+            return;
+        }
+        if (!image.prepared) {
+            if (!image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
+                                            static_cast<unsigned>(e->w[133])) &&
+                !image.capture.prepare(c, static_cast<unsigned>(e->w[132]),
+                                       static_cast<unsigned>(e->w[133]), nullptr, true, true)) {
+                sequenceStall = true;
+                return;
+            }
+            image.generation = captureGeneration.load(std::memory_order_acquire);
+            image.epoch = e->w[135];
+            image.prepared = true;
+            image.sceneObserved = true;
+            captureOwnership.retain_prepared();
+        }
+        if (image.epoch != e->w[135] || image.capture.width != e->w[132] ||
+            image.capture.height != e->w[133] ||
+            !image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
+                                        static_cast<unsigned>(e->w[133]))) {
+            sequenceStall = true;
+            return;
+        }
     }
     draw_probe("color", e);
     // Ownership is decided where each producer is stored (players are
@@ -2518,6 +2563,8 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
             out->w[36] = 1;
             if (captured) {
                 ++colorDraws;
+                if (!colorFirst)
+                    colorFirst = selected;
                 colorLast = selected;
             }
 
@@ -2724,6 +2771,40 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
                     meshFrame = meshProducerFrame = 0;
                 }
             }
+        }
+    }
+    if (sequenceV3 && !sequenceStall && framesSealed < sequenceCap && c &&
+        c->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE) {
+        // Empty scene frames can render faster than GPU readbacks retire.
+        // Free the next ring slot before returning Present and allowing the
+        // fixed-step replay to advance. Never skip a phase or grow the ring.
+        const auto waitStart = GetTickCount64();
+        bool waiting = false;
+        for (;;) {
+            gpu_poll(c);
+            if (sequenceStall)
+                break;
+            const auto& next = colorFrames[colorIndex];
+            const bool busy = next.sealed || next.capture.pending || next.capture.complete;
+            const auto elapsed = GetTickCount64() - waitStart;
+            const auto action = capture_slot_wait(busy, captureOwnership.draining(), elapsed);
+            if (action != CaptureSlotWait::wait) {
+                if (waiting && elapsed > sequenceSlotWaitMax)
+                    sequenceSlotWaitMax = elapsed;
+                if (action == CaptureSlotWait::timeout) {
+                    ++sequenceSlotTimeouts;
+                    note_image_failure("capture_slot_timeout",
+                                       authoredReplayTime.load(std::memory_order_acquire), next);
+                    sequenceStall = true;
+                }
+                break;
+            }
+            if (!waiting) {
+                waiting = true;
+                ++sequenceSlotWaits;
+                c->Flush();
+            }
+            Sleep(1);
         }
     }
     const auto prior = presentEpoch.fetch_add(1, std::memory_order_acq_rel);

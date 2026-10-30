@@ -176,6 +176,22 @@ class StorageTests(unittest.TestCase):
 
 
 class BundleTests(unittest.TestCase):
+    def test_empty_scene_between_player_frames_preserves_frame_count_and_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / player_layer.BUNDLE_NAME
+            foreground = struct.pack('<4e', .5, .25, .125, 1)
+            clear = bytes(8)
+            def frame(draws, pixels, first=0, last=0):
+                return struct.pack('<8Q', player_layer.BUNDLE_MAGIC, 1, 1, draws, first, last, 12, 8) + pixels
+            path.write_bytes(frame(1, foreground) + frame(0, clear) + frame(1, foreground))
+            self.assertEqual(list(player_layer.iter_frames(path)),
+                             [(1, 1, foreground), (1, 1, clear), (1, 1, foreground)])
+            # Empty records cannot smuggle unvalidated pixels or draw provenance.
+            for invalid in (frame(0, foreground), frame(0, clear, first=2), frame(0, clear, last=3)):
+                path.write_bytes(invalid)
+                with self.assertRaises(RuntimeError):
+                    list(player_layer.iter_frames(path))
+
     def bundle(self, width, height, pixels, magic=None):
         folder = tempfile.mkdtemp()
         path = Path(folder) / player_layer.BUNDLE_NAME

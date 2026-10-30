@@ -18,8 +18,19 @@ struct CapturePendingImage {
     std::uint64_t epoch = 0;
     unsigned draws = 0;
     bool prepared = false, sealed = false, unsupported = false;
+    // A validated scene pass can contain no selected players. Its cleared
+    // target is a real transparent image, not a missing render callback.
+    bool scene_observed = false;
 };
 enum class CaptureSeal { skip, seal, reject };
+enum class CaptureSlotWait { ready, wait, stopped, timeout };
+inline CaptureSlotWait capture_slot_wait(bool busy, bool draining, std::uint64_t elapsed_ms) noexcept {
+    if (draining)
+        return CaptureSlotWait::stopped;
+    if (!busy)
+        return CaptureSlotWait::ready;
+    return elapsed_ms < 1500 ? CaptureSlotWait::wait : CaptureSlotWait::timeout;
+}
 inline bool capture_seal_permission(bool shot_aligned, CaptureSeal action) noexcept {
     // Stop may start after validation. Permission belongs to the validated
     // image, rather than to the earlier snapshot of the draining flag.
@@ -113,7 +124,8 @@ inline CaptureSeal capture_seal_image(const CapturePendingImage& image,
     if (!image.prepared || image.sealed)
         return CaptureSeal::skip;
     if (!generation || image.generation != generation || image.epoch != epoch ||
-        image.clock.epoch != epoch || image.unsupported || !image.draws ||
+        image.clock.epoch != epoch || image.unsupported ||
+        (!image.draws && !image.scene_observed) ||
         !capture_phase_advances(previous, image.clock.phase))
         return CaptureSeal::reject;
     return draining || phase == CompletedCapturePhase || image.clock.matches(epoch, phase)

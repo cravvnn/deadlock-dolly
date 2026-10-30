@@ -457,7 +457,7 @@ class ConsoleClient:
 
     def _send_commands_locked(self, commands: tuple[str, ...]) -> None:
         # Validate every command before writing any bytes. Keep the individual
-        # protocol frames intact, but submit a request's begin/command/end in
+        # protocol frames intact, but submit a request's delimiters/command in
         # one write so separate sends do not introduce extra polling delays.
         encoded = [encode_command(command, self.version) for command in commands]
         data = (b"".join(encoded) if self.protocol == "vconsole" else
@@ -512,7 +512,11 @@ class ConsoleClient:
             with self._condition:
                 cursor = self._sequence
             deadline = time.monotonic() + timeout
-            self._send_commands_locked(("echo " + begin, command, "echo " + end))
+            # Panorama can print warnings without a terminating newline.
+            # Put each printed marker on its own line instead of accepting
+            # arbitrary prefixes (which would also accept command echoes).
+            self._send_commands_locked(('echo ""', "echo " + begin, command,
+                                        'echo ""', "echo " + end))
             output = ""
             began = False
             ended = False

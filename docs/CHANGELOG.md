@@ -4,6 +4,20 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
+## Unreleased
+
+- Wait for capture readbacks before advancing a Players shot when the bounded frame ring fills, preserving empty views at high export FPS.
+
+- Prevent game UI warnings without a final newline from swallowing console acknowledgements and leaving export restoration pending.
+
+- **Verified startup progress.** *Before:* the current game build could remain stuck waiting for preload because Dolly read the hideout intro from the wrong address. *After:* the reviewed intro address matches the game's own constructor and reader, while normal preload checks stay active.
+
+- **Players leaving the frame.** *Before:* a rendered scene without selected player draws could stop the whole Players take. *After:* observed empty scenes keep their transparent frames while missing or unsupported capture data still stops the export.
+
+- **Longer fixed-step render work.** *Before:* a render hitch over three seconds could interrupt high-FPS exports. *After:* fixed-step exports allow up to fifteen seconds for rendering to resume, while retaining the hang and replay checks.
+
+- **Save Path during background work.** *Before:* Save could return without opening a file picker while Dolly was busy. *After:* desktop and in-game Save preserve the visible shot, keep newer edits marked as unsaved, and log save outcomes for diagnostics.
+
 ## 0.6.84-alpha
 
 - **Audio export with content mods.** *Before:* both fixed-step audio options could stop before recording with a movie-audio path error when content mods were installed. *After:* Dolly verifies the complete launched configuration so game and reconstructed audio can start with those mods enabled, while retaining session and cleanup safeguards.

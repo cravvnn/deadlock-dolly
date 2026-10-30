@@ -5031,6 +5031,8 @@ class DollyApp:
         self._guard("Redo shot edit", lambda: self._move_shot_history(True))
 
     def _allow_discard(self):
+        if getattr(self, "_saving_shot", False):
+            return False
         if self.playing or self.busy:
             messagebox.showinfo("Finish the current operation", "Stop path playback and wait for the current operation before changing projects.", parent=self.root)
             return False
@@ -5086,29 +5088,43 @@ class DollyApp:
         self._guard("Open shot", operation)
 
     def save(self, save_as=False):
-        if self.busy:
-            self.status_text.set("Finish the current operation before saving the shot.")
+        if getattr(self, "_saving_shot", False):
+            LOG.info("Save shot ignored: a save dialog is already open.")
             return False
+        # Worker operations publish edits on Tk's thread. Saving the currently
+        # visible shot does not require an idle game or worker queue.
+        self._saving_shot = True
+        LOG.info("Save shot requested: save_as=%s busy=%s existing_file=%s",
+                 save_as, self.busy, self.file_path is not None)
         try:
             self._sync_options()
+            project = copy.deepcopy(self.project)
             path = self.file_path
             if save_as or path is None:
-                filename = "".join(character if character.isalnum() or character in "-_ " else "_" for character in self.project.name).strip() or "shot"
+                filename = "".join(character if character.isalnum() or character in "-_ " else "_" for character in project.name).strip() or "shot"
+                LOG.info("Opening Save camera shot dialog.")
                 chosen = filedialog.asksaveasfilename(parent=self.root, title="Save camera shot", defaultextension=".json",
                                                        initialfile=filename + ".json", filetypes=(("Dolly shot", "*.json"),))
                 if not chosen:
+                    LOG.info("Save shot cancelled.")
                     return False
                 path = Path(chosen)
-            self.project.save(path)
-            self.shot_history.mark_saved(self.project)
+            project.save(path)
+            self.shot_history.mark_saved(project)
             self.file_path = path
-            self.dirty = False
+            # Native events/worker completions can edit the shot while Tk's
+            # modal picker is running. Those later changes remain unsaved.
+            self.dirty = self.shot_history.is_dirty(self.project)
             self._title()
-            self.status_text.set(f"Saved {path.name}.")
+            self.status_text.set(f"Saved {path.name}." + (" Newer edits are still unsaved." if self.dirty else ""))
+            LOG.info("Saved camera shot: %s; newer_edits=%s", path, self.dirty)
             return True
         except Exception as exc:
+            LOG.exception("Save shot failed")
             self._error("Save shot", exc)
             return False
+        finally:
+            self._saving_shot = False
 
     def rename(self):
         if self.busy or self.playing:

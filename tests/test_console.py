@@ -21,10 +21,11 @@ def print_packet(text):
 
 class Peer:
     def __init__(self, protocol="vconsole", silent=False, disconnect=False, responses=None,
-                 marker_prefix="", echo_only=False):
+                 marker_prefix="", echo_only=False, unterminated_warning=""):
         self.protocol, self.silent, self.disconnect = protocol, silent, disconnect
         self.responses = responses or {}
         self.marker_prefix, self.echo_only = marker_prefix, echo_only
+        self.unterminated_warning = unterminated_warning
         self.end_written = threading.Event()
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
@@ -58,16 +59,21 @@ class Peer:
                             break
                         line, pending = pending.split(b"\n", 1)
                         cmd = line.decode()
+                    previous = self.commands[-1] if self.commands else None
                     self.commands.append(cmd)
                     if self.disconnect:
                         self.socket.close()
                         return
                     if self.silent:
                         continue
-                    if cmd.startswith("echo "):
+                    if cmd == 'echo ""':
+                        response = "\n"
+                    elif cmd.startswith("echo "):
                         # Include an echoed command first: it must not delimit.
                         response = "> " + cmd + "\n"
                         if not self.echo_only:
+                            if previous != 'echo ""':
+                                response += self.unterminated_warning
                             response += self.marker_prefix + cmd[5:] + "\n"
                     elif cmd in self.responses:
                         response = self.responses[cmd]
@@ -149,9 +155,9 @@ class ConsoleTests(unittest.TestCase):
                     client.close()
                     peer.close()
 
-    def test_request_writes_all_three_protocol_frames_together(self):
+    def test_request_writes_all_delimiter_protocol_frames_together(self):
         # TCP can still fragment a single write. Verify the application makes
-        # one write while retaining three correctly framed commands; the peer
+        # one write while retaining correctly framed commands; the peer
         # then fragments its response to exercise the normal reader as well.
         for protocol in ("netcon", "vconsole"):
             with self.subTest(protocol=protocol):
@@ -177,10 +183,12 @@ class ConsoleTests(unittest.TestCase):
                     output = client.request("demo_info; echo café")
                     self.assertEqual(parse_demo_info(output)["tick"], 123)
                     self.assertEqual(len(writes), 1)
-                    self.assertEqual(len(peer.commands), 3)
-                    self.assertTrue(peer.commands[0].startswith("echo DOLLY_BEGIN_"))
-                    self.assertEqual(peer.commands[1], "demo_info; echo café")
-                    self.assertTrue(peer.commands[2].startswith("echo DOLLY_END_"))
+                    self.assertEqual(len(peer.commands), 5)
+                    self.assertEqual(peer.commands[0], 'echo ""')
+                    self.assertTrue(peer.commands[1].startswith("echo DOLLY_BEGIN_"))
+                    self.assertEqual(peer.commands[2], "demo_info; echo café")
+                    self.assertEqual(peer.commands[3], 'echo ""')
+                    self.assertTrue(peer.commands[4].startswith("echo DOLLY_END_"))
                     expected = (b"".join(encode_command(command) for command in peer.commands)
                                 if protocol == "vconsole" else
                                 b"".join((command + "\n").encode("utf-8") for command in peer.commands))
@@ -317,6 +325,23 @@ class ConsoleTests(unittest.TestCase):
                     controller._demo = Path("replays/different.dem")
                     with self.assertRaisesRegex(RuntimeError, "different"):
                         controller._require_demo()
+                finally:
+                    client.close()
+                    peer.close()
+
+    def test_unterminated_ui_warning_does_not_hide_fresh_response_markers(self):
+        warning = ('Invalid content height (flChildHeight = inf) calculated during child panel '
+                   '"HudMinimap#hud_minimap > Panel.active.player.team2.map_button.PlayerDead"; '
+                   'this panel "HudMinimap#hud_minimap.HudMinimap.dl_midtown @ panorama\\layout\\hud.xml" '
+                   '(reverting to 281.831665)')
+        for protocol in ("netcon", "vconsole"):
+            with self.subTest(protocol=protocol):
+                peer = Peer(protocol, unterminated_warning=warning, responses={
+                    "demo_goto": "Currently playing 3802 of 48142 ticks. Minutes:12.54 File:replays/test.dem\n"})
+                client = ConsoleClient(protocol)
+                try:
+                    client.connect(port=peer.port)
+                    self.assertEqual(parse_demo_tick(client.request("demo_goto", timeout=.5))["tick"], 3802)
                 finally:
                     client.close()
                     peer.close()

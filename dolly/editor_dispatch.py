@@ -175,6 +175,9 @@ def dispatch(app, event, bridge, *, publish):
 def _dispatch(app, event, bridge, *, publish):
     """Dispatch one event on Tk's thread. False means leave it queued."""
     action = event["action"]
+    if action == "save_shot":
+        app.save()
+        return True
     if action in ("preview_camera_curve_value", "preview_camera_position_tangents", "clear_camera_curve_preview"):
         from . import curve_preview
         if action == "clear_camera_curve_preview":
@@ -451,8 +454,6 @@ def _dispatch(app, event, bridge, *, publish):
 
         if not app._submit("Preparing cinematic", prepare, prepared):
             bridge.configure_editor_cinematic(token, revision, 3)
-    elif action == "save_shot":
-        app.save()
     elif action == "seek_replay_tick":
         value = event["value"]
         if (isinstance(value, bool) or not math.isfinite(value) or value != int(value)

@@ -111,6 +111,75 @@ class ShotHistoryTests(unittest.TestCase):
 
 
 class HistoryEditorTests(unittest.TestCase):
+    def test_busy_save_opens_picker_from_desktop_and_native_action(self):
+        from dolly import editor_dispatch
+        with tempfile.TemporaryDirectory() as directory:
+            for native in (False, True):
+                with self.subTest(native=native):
+                    app = self.app()
+                    app.busy = True
+                    app.file_path = None
+                    app.root = Mock()
+                    app._error = Mock()
+                    path = Path(directory) / ('native.json' if native else 'desktop.json')
+                    before = app.project.to_dict()
+                    with patch('dolly.gui.filedialog.asksaveasfilename', return_value=str(path)) as picker:
+                        if native:
+                            editor_dispatch.dispatch(app, {'action': 'save_shot'}, Mock(), publish=Mock())
+                        else:
+                            self.assertTrue(app.save())
+                    picker.assert_called_once()
+                    app._error.assert_not_called()
+                    self.assertEqual(Project.load(path).to_dict(), before)
+                    self.assertEqual(app.file_path, path)
+                    self.assertFalse(app.dirty)
+
+    def test_save_picker_keeps_later_edits_dirty_and_blocks_reentrant_save(self):
+        app = self.app()
+        app.file_path = None
+        app.root = Mock()
+        app._error = Mock()
+        before = app.project.to_dict()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'shot.json'
+            def choose(**_kwargs):
+                self.assertFalse(app.save())
+                self.assertFalse(app._allow_discard())
+                app.project.name = 'Edited while choosing a file'
+                app.shot_history.record(app.project)
+                return str(path)
+            with patch('dolly.gui.filedialog.asksaveasfilename', side_effect=choose) as picker:
+                self.assertTrue(app.save())
+            picker.assert_called_once()
+            self.assertEqual(Project.load(path).to_dict(), before)
+            self.assertTrue(app.dirty)
+            self.assertFalse(app._saving_shot)
+            # Saving again updates the existing file, with no new picker.
+            with patch('dolly.gui.filedialog.asksaveasfilename') as picker:
+                self.assertTrue(app.save())
+            picker.assert_not_called()
+            self.assertEqual(Project.load(path).to_dict(), app.project.to_dict())
+            self.assertFalse(app.dirty)
+
+    def test_cancel_and_failed_save_keep_unsaved_shot_and_allow_retry(self):
+        app = self.app()
+        app.file_path = None
+        app.root = Mock()
+        app._error = Mock()
+        app.dirty = True
+        with patch('dolly.gui.filedialog.asksaveasfilename', return_value=''):
+            self.assertFalse(app.save())
+        self.assertTrue(app.dirty)
+        self.assertIsNone(app.file_path)
+        self.assertFalse(app._saving_shot)
+        with patch('dolly.gui.filedialog.asksaveasfilename', return_value='shot.json'), \
+                patch.object(Project, 'save', side_effect=OSError('read only')):
+            self.assertFalse(app.save())
+        app._error.assert_called_once()
+        self.assertTrue(app.dirty)
+        self.assertIsNone(app.file_path)
+        self.assertFalse(app._saving_shot)
+
     def test_delete_undo_save_reopen_preserves_lens_attachment_and_effects(self):
         app = self.app()
         # A valid mixed free/bone shot exercises data lost by pose-only undo.

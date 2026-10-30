@@ -276,14 +276,16 @@ def iter_frames(bundle: Path):
                 return
             if len(header) != 64:
                 raise RuntimeError("The player layer bundle is truncated.")
-            magic, width, height, draws, _, _, _, bpp = struct.unpack("<8Q", header)
+            magic, width, height, draws, first, last, _, bpp = struct.unpack("<8Q", header)
             if (magic != BUNDLE_MAGIC or not 0 < width <= 8192 or not 0 < height <= 8192
-                    or not draws or bpp != 8):
+                    or (not draws and (first or last)) or bpp != 8):
                 raise RuntimeError("The player layer bundle is not a reviewed capture.")
             size = width * height * 8
             pixels = source.read(size)
             if len(pixels) != size:
                 raise RuntimeError("The player layer bundle is truncated.")
+            if not draws and any(pixels):
+                raise RuntimeError("The player layer's empty scene frame contains unexpected pixels.")
             yield width, height, pixels
 
 

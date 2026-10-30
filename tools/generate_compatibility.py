@@ -45,6 +45,22 @@ def require(condition, message):
         raise ContractError(message)
 
 
+def rip_reference(entry, entries, image_size):
+    """Bind a reviewed RVA to a pinned x64 RIP-relative MOV/LEA operand."""
+    reference = entry['rip_reference']
+    raw = bytes.fromhex(reference['bytes'])
+    require(entry['kind'] == 'rva' and len(raw) == 7 and raw[0] in (0x48, 0x4c)
+            and raw[1] in (0x89, 0x8b, 0x8d) and raw[2] & 0xc7 == 0x05,
+            'Unsupported reviewed RIP-relative instruction')
+    rva = bounded(reference['rva'], image_size, size=len(raw))
+    target = rva + len(raw) + struct.unpack_from('<i', raw, 3)[0]
+    require(target == integer(entry['value']), 'Reviewed RIP reference does not resolve to its RVA')
+    require(any(integer(span['rva']) <= rva and rva + len(raw) <= integer(span['rva']) + span['size']
+                for audit in entries.values() if audit['kind'] == 'spans' and audit['module'] == entry['module']
+                for span in audit['value']), 'Reviewed RIP reference is outside the pinned code spans')
+    return rva, raw
+
+
 def unique_object(pairs):
     result = {}
     for key, value in pairs:
@@ -201,6 +217,9 @@ def load_contract(root=ROOT):
             else:
                 raise ContractError('Unknown contract value kind: ' + str(kind))
             values[group][name] = value
+        for entry in entries.values():
+            if 'rip_reference' in entry:
+                rip_reference(entry, entries, modules[entry['module']]['image_size'])
     fields = data['attach_fields']
     require(fields and len({f['purpose'] for f in fields}) == len(fields), 'Duplicate/empty attach field contract')
     for f in fields:
@@ -461,6 +480,10 @@ def verify_game(root, game_dir):
             report['modules'][name] = dict(sha256=image.sha256, image_size=image.image_size, code_spans=0)
         for entries in data['groups'].values():
             for entry in entries.values():
+                if 'rip_reference' in entry:
+                    rva, expected = rip_reference(entry, entries, modules[entry['module']]['image_size'])
+                    require(images[entry['module']].read(rva, len(expected)) == expected,
+                            'Reviewed RIP reference instruction differs from the installed module')
                 if entry['kind'] != 'spans':
                     continue
                 image = images[entry['module']]

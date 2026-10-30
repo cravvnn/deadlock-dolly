@@ -954,6 +954,18 @@ class EditorSessionTests(unittest.TestCase):
         session.poll(self.app)
         self.app._capture_view.assert_called_once()
 
+    def test_busy_editor_saves_the_visible_shot_but_retains_camera_mutations(self):
+        self.app.native_editor_active = True
+        self.app.busy = True
+        self.app.save = Mock()
+        self.bridge.editor_status.return_value = {'events': [
+            {'sequence': 1, 'action': 'save_shot', 'value': 0},
+            {'sequence': 2, 'action': 'capture', 'value': 0}]}
+        session.poll(self.app)
+        self.app.save.assert_called_once_with()
+        self.bridge.acknowledge_editor_event.assert_called_once_with(1)
+        self.app._capture_view.assert_not_called()
+
     def test_capture_and_replace_forward_the_input_frame_lens(self):
         for action in ('capture', 'replace'):
             with self.subTest(action=action):

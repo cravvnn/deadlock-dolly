@@ -5219,7 +5219,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     last_fresh = now
                     if first_frame is None:
                         first_frame = frame_count
-                elif now - last_fresh > 3:
+                elif now - last_fresh > (15 if getattr(self, "_export_timing", None) is not None else 3):
+                    # Fixed-step Players/encoder work can hold the render
+                    # thread for several seconds without losing a shot frame.
+                    # Keep a bounded hang guard, but allow that work to finish.
                     raise RuntimeError("The native camera stopped receiving rendered views. Restore the game window and export diagnostics.")
                 if now >= next_identity:
                     try:

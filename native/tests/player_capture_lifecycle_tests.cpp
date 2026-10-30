@@ -27,6 +27,16 @@ static bool complete(unsigned written = 24, unsigned dropped = 0, unsigned seale
                                      cap, refused, writer_error, true, cadence_lost);
 }
 int main() {
+    require(capture_slot_wait(true, false, 0) == CaptureSlotWait::wait,
+            "full capture ring holds Present rather than losing the next shot phase");
+    require(capture_slot_wait(true, false, 1499) == CaptureSlotWait::wait,
+            "readback retains its bounded completion window");
+    require(capture_slot_wait(false, false, 1500) == CaptureSlotWait::ready,
+            "retired slot may be reused at the deadline");
+    require(capture_slot_wait(true, false, 1500) == CaptureSlotWait::timeout,
+            "stalled GPU or writer cannot wait without a bound");
+    require(capture_slot_wait(true, true, 0) == CaptureSlotWait::stopped,
+            "Stop interrupts capture-slot waiting");
     const auto owned = image();
     // Actual production consumers share these decisions: tick must not close
     // this prepared image, and Present must be able to issue its one seal after
@@ -88,6 +98,18 @@ int main() {
     bad = owned; bad.draws = 0;
     require(capture_seal_image(bad, 7, 12, .1, .2, true) == CaptureSeal::reject,
             "no blank image manufactured");
+    bad.scene_observed = true;
+    require(capture_seal_image(bad, 7, 12, .1, .2, false) == CaptureSeal::seal,
+            "observed scene with no player draws seals a transparent image");
+    require(capture_seal_image(bad, 7, 13, .1, .2, false) == CaptureSeal::reject,
+            "empty scene cannot reuse another Present epoch");
+    require(capture_seal_image(bad, 8, 12, .1, .2, false) == CaptureSeal::reject,
+            "empty scene cannot reuse another capture generation");
+    require(capture_seal_image(bad, 7, 12, .1, .3, false) == CaptureSeal::reject,
+            "empty scene cannot be relabeled to another camera phase");
+    bad.unsupported = true;
+    require(capture_seal_image(bad, 7, 12, .1, .2, false) == CaptureSeal::reject,
+            "scene evidence cannot hide an unsupported selected draw");
     bad = owned; bad.prepared = false;
     require(capture_seal_image(bad, 7, 12, .1, .2, true) == CaptureSeal::skip,
             "absent selected image cannot seal");

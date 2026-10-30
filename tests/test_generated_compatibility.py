@@ -40,6 +40,37 @@ class GeneratedCompatibilityTests(unittest.TestCase):
         with patch.object(generate.camera,'Image',side_effect=AssertionError('No game binary needed')):
             generate.check_generated(ROOT)
 
+    def test_preload_singleton_rva_must_match_its_reviewed_constructor_store(self):
+        namespace = {}
+        exec(generate.generated_outputs(self.root)['dolly/_runtime_generated.py'], namespace)
+        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3e80b48)
+        original = deepcopy(self.data['groups']['Preload']['INTRO_GLOBAL'])
+        # The old copied address stays in range and leaves every saved code
+        # hash unchanged. The instruction/target relation must catch it.
+        cases = [dict(original, value='0x3e80bd8'),
+                 dict(original, rip_reference=dict(rva='0x1bd2f63', bytes='908935dedb2a02')),
+                 dict(original, value='0x3e80b49',
+                      rip_reference=dict(rva='0x1bd2f64', bytes=original['rip_reference']['bytes'])),
+                 dict(original, value='0x38adbe5',
+                      rip_reference=dict(rva='0x1600000', bytes=original['rip_reference']['bytes']))]
+        for entry in cases:
+            with self.subTest(entry=entry):
+                self.data['groups']['Preload']['INTRO_GLOBAL'] = entry
+                self.save()
+                with self.assertRaises(generate.ContractError):
+                    generate.generated_outputs(self.root)
+
+    def test_installed_verification_checks_the_rip_instruction_bytes(self):
+        _, modules, _ = generate.load_contract(self.root)
+        def image(path):
+            module = next(m for m in modules.values() if path.as_posix().endswith(m['path']))
+            return SimpleNamespace(sha256=module['sha256'], image_size=module['image_size'],
+                                   read=lambda _rva, size: b'\x90' * size, close=Mock())
+        with patch.object(generate.camera, 'resolve_game_dir', return_value=self.root), \
+                patch.object(generate.camera, 'Image', side_effect=image), \
+                self.assertRaisesRegex(generate.ContractError, 'RIP reference instruction differs'):
+            generate.verify_game(self.root, self.root)
+
     def test_unlocker_metadata_emits_one_artifact_contract_for_both_languages(self):
         artifact = (self.unlocker/'bin/win64/server.dll').read_bytes()
         metadata = generate.read_json(self.unlocker/'THIRD_PARTY.json')
