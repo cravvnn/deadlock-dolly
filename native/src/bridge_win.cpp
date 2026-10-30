@@ -25,6 +25,7 @@
 #include "dolly_effects.hpp"
 #include "dolly_protocol.hpp"
 #include "dolly_module_residency.hpp"
+#include "dolly_minimap_guard.hpp"
 #include "dolly_replay_clock.hpp"
 #include "dolly_editor.hpp"
 #include "dolly_bone_picker.hpp"
@@ -779,6 +780,7 @@ static bool read_demo(DemoState& result) noexcept {
     result.interval = interval;
     return true;
 }
+#include "native_minimap_win.hpp"
 static bool same_demo(const char* expected, const char* actual) noexcept {
     auto basename = [](const char* s) {
         const char* b = s;
@@ -1639,6 +1641,11 @@ static DWORD WINAPI worker(void*) {
             startup_status(State::Fault, 23, "Could not prepare the native view hook.");
             return 0;
         }
+        if (!install_minimap_guard(client)) {
+            startup_status(State::Unsupported, 48,
+                           "The replay minimap guard could not be verified; restart with a compatible Dolly build.");
+            return 0;
+        }
         // Follow owns its reviewed correction independently of the core camera.
         // Failed/partially installed callbacks remain resident pass-through;
         // the editor must refuse Follow before any rig/target writes.
@@ -1708,6 +1715,7 @@ static DWORD WINAPI worker(void*) {
         ULONGLONG next_sound_probe = 0;
         unsigned sound_attempts = 0;
         for (;;) {
+            minimap_guard_diagnostics();
             publish_follow_anchor(gMemory);
             if (WaitForSingleObject(gEditor, 0) != WAIT_TIMEOUT) {
                 gWorkerError = 30;

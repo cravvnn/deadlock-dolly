@@ -135,6 +135,27 @@ def profile_at(root, name, manifest):
     return read_json(root / 'native/profiles' / name)
 
 
+def byte_reference(entry, entries, image_size):
+    """Bind a runtime byte guard to its named address, including relocations."""
+    name = entry.get('at')
+    require(entry.get('kind') == 'bytes' and isinstance(name, str) and name in entries,
+            'Reviewed bytes require a named address')
+    target = entries[name]
+    require(target.get('kind') == 'rva' and target.get('module') == entry.get('module'),
+            'Reviewed byte address must belong to the same module')
+    offset = integer(entry.get('at_offset', 0))
+    require(0 <= offset <= 4096, 'Invalid reviewed byte address offset')
+    raw = bytes.fromhex(entry['value'])
+    require(0 < len(raw) < 4096, 'Invalid reviewed byte span')
+    return bounded(integer(target['value']) + offset, image_size, size=len(raw)), raw
+
+
+def verify_byte_reference(image, entry, entries, image_size):
+    rva, expected = byte_reference(entry, entries, image_size)
+    require(image.read(rva, len(expected)) == expected,
+            'Reviewed runtime guard bytes differ from the installed module')
+
+
 def load_contract(root=ROOT):
     root = Path(root)
     data = read_json(root / CONTRACT)
@@ -212,8 +233,7 @@ def load_contract(root=ROOT):
                 require(len(set(spans)) == len(spans), 'Duplicate code audit span')
                 value = tuple(spans)
             elif kind == 'bytes':
-                value = bytes.fromhex(value)
-                require(0 < len(value) < 4096, 'Invalid reviewed byte span')
+                _rva, value = byte_reference(entry, entries, module['image_size'])
             else:
                 raise ContractError('Unknown contract value kind: ' + str(kind))
             values[group][name] = value
@@ -480,6 +500,9 @@ def verify_game(root, game_dir):
             report['modules'][name] = dict(sha256=image.sha256, image_size=image.image_size, code_spans=0)
         for entries in data['groups'].values():
             for entry in entries.values():
+                if entry['kind'] == 'bytes':
+                    verify_byte_reference(images[entry['module']], entry, entries,
+                                          modules[entry['module']]['image_size'])
                 if 'rip_reference' in entry:
                     rva, expected = rip_reference(entry, entries, modules[entry['module']]['image_size'])
                     require(images[entry['module']].read(rva, len(expected)) == expected,

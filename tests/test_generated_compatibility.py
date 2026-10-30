@@ -43,14 +43,16 @@ class GeneratedCompatibilityTests(unittest.TestCase):
     def test_preload_singleton_rva_must_match_its_reviewed_constructor_store(self):
         namespace = {}
         exec(generate.generated_outputs(self.root)['dolly/_runtime_generated.py'], namespace)
-        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3e80b48)
+        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3ec88b8)
         original = deepcopy(self.data['groups']['Preload']['INTRO_GLOBAL'])
         # The old copied address stays in range and leaves every saved code
         # hash unchanged. The instruction/target relation must catch it.
         cases = [dict(original, value='0x3e80bd8'),
-                 dict(original, rip_reference=dict(rva='0x1bd2f63', bytes='908935dedb2a02')),
-                 dict(original, value='0x3e80b49',
-                      rip_reference=dict(rva='0x1bd2f64', bytes=original['rip_reference']['bytes'])),
+                 dict(original, rip_reference=dict(rva=original['rip_reference']['rva'],
+                                                   bytes='90'+original['rip_reference']['bytes'][2:])),
+                 dict(original, value='0x3ec88b9',
+                      rip_reference=dict(rva=hex(int(original['rip_reference']['rva'],16)+1),
+                                         bytes=original['rip_reference']['bytes'])),
                  dict(original, value='0x38adbe5',
                       rip_reference=dict(rva='0x1600000', bytes=original['rip_reference']['bytes']))]
         for entry in cases:
@@ -70,6 +72,24 @@ class GeneratedCompatibilityTests(unittest.TestCase):
                 patch.object(generate.camera, 'Image', side_effect=image), \
                 self.assertRaisesRegex(generate.ContractError, 'RIP reference instruction differs'):
             generate.verify_game(self.root, self.root)
+
+    def test_runtime_byte_guard_rejects_stale_displacement_and_invalid_address(self):
+        # This complete instruction prefix is the reviewed live01 failure:
+        # only the final RIP displacement changed, so whole-body evidence alone
+        # must not stand in for checking the separate runtime guard literal.
+        actual = bytes.fromhex('488bc45553564154415541564157488d68a14881ecf0000000448b0520431e02')
+        entries = {'Update': {'kind': 'rva', 'module': 'client', 'value': '0x1000'}}
+        entry = {'kind': 'bytes', 'module': 'client', 'at': 'Update', 'value': actual.hex()}
+        image = SimpleNamespace(read=Mock(return_value=actual))
+        generate.verify_byte_reference(image, entry, entries, 0x2000)
+        image.read.assert_called_once_with(0x1000, 32)
+        stale = dict(entry, value=actual[:-4].hex()+'70331c02')
+        with self.assertRaisesRegex(generate.ContractError, 'runtime guard bytes differ'):
+            generate.verify_byte_reference(image, stale, entries, 0x2000)
+        for invalid in (dict(entry, at='missing'), dict(entry, at_offset=-1),
+                        dict(entry, module='tier0'), dict(entry, at_offset=4096)):
+            with self.subTest(entry=invalid), self.assertRaises(generate.ContractError):
+                generate.byte_reference(invalid, entries, 0x2000)
 
     def test_unlocker_metadata_emits_one_artifact_contract_for_both_languages(self):
         artifact = (self.unlocker/'bin/win64/server.dll').read_bytes()
@@ -248,7 +268,7 @@ class GeneratedCompatibilityTests(unittest.TestCase):
                   for a in self.data['follow_anchors'] for span in a['spans']}
         self.assertEqual(actual,expected)
         anchors={a['build']:a for a in self.data['follow_anchors']}
-        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821'})
+        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831'})
         for build in ('6722','6723','6726'):
             self.assertEqual(anchors[build]['values']['observer_services_offset'],'0xe40')
             self.assertNotIn('local_player_table',anchors[build]['values'])
@@ -269,6 +289,16 @@ class GeneratedCompatibilityTests(unittest.TestCase):
         self.assertEqual(int(anchors['6807']['values']['local_player_table'],16),0x276c3d8)
         self.assertEqual(anchors['6821']['values']['observer_services_offset'],'0xe98')
         self.assertEqual(int(anchors['6821']['values']['local_player_table'],16),0x276d3d8)
+        self.assertEqual(anchors['6826']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6826']['values']['local_player_table'],16),0x279a180)
+        self.assertEqual(anchors['6827']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6827']['values']['local_player_table'],16),0x279b310)
+        self.assertEqual(anchors['6828']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6828']['values']['local_player_table'],16),0x279b310)
+        self.assertEqual(anchors['6829']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6829']['values']['local_player_table'],16),0x279b310)
+        self.assertEqual(anchors['6831']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6831']['values']['local_player_table'],16),0x279b310)
         loaded,_,_=generate.load_contract(self.root)
         current=next(a for a in loaded['follow_anchors'] if a['build']=='6796')
         self.assertEqual(current['_sha256'],'8dff04c139d20b78d8d2c7a3039b691cfc221b8460438ec6fc6107c315741a5c')

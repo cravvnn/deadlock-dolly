@@ -353,12 +353,15 @@ class CleanupTests(unittest.TestCase):
 
     def test_game_exit_saves_native_graphics_evidence_before_cleanup(self):
         evidence = {"graphics": {"latest": {"pending_count": 32767}}}
+        minimap = b"DOLLY_MINIMAP_GUARD_1\ninstalled 1\nskipped 7\n"
+        (self.session.overlay_dir / "cvar_unlocker/bin/win64/dolly_minimap_guard.txt").write_bytes(minimap)
         self.session.native = MagicMock()
         self.session.native.diagnostics.return_value = evidence
         self.session.process.poll.return_value = 1
         self.session.close()
         saved = self.session.session_dir / "native_diagnostics.json"
         self.assertEqual(json.loads(saved.read_text()), evidence)
+        self.assertEqual((self.session.session_dir / "dolly_minimap_guard.txt").read_bytes(), minimap)
         self.assertFalse(self.session.overlay_dir.exists())
         self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO.encode())
 

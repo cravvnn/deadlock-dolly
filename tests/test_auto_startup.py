@@ -696,7 +696,7 @@ class AutoStartupTests(unittest.TestCase):
             self.controller._startup_wait(lambda: None, "waiting for the selected replay", None)
         message = str(caught.exception)
         self.assertIn("0xC0000005", message)
-        self.assertIn("cannot reconstruct", message)
+        self.assertIn("does not establish", message)
         self.assertIn("9-21Routers2.dem", message)
         self.assertIn("game build 10725", message)
 
@@ -716,7 +716,7 @@ class AutoStartupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Deadlock closed while waiting for the selected replay"):
             self.controller._startup_wait(lambda: None, "waiting for the selected replay", None)
 
-    def test_replay_recorded_on_this_build_reports_the_file_not_a_mismatch(self):
+    def test_same_build_crash_preserves_identity_without_diagnosing_the_file(self):
         self.controller._session = self.session
         self.session.process = SimpleNamespace(poll=lambda: 3221225477)
         self.controller._replay_requested = True
@@ -727,15 +727,15 @@ class AutoStartupTests(unittest.TestCase):
             self.controller._startup_wait(lambda: None, "waiting for the selected replay", None)
         message = str(caught.exception)
         self.assertIn("0xC0000005", message)
-        self.assertIn("recorded on this build", message)
+        self.assertIn("Installed game build: 10931", message)
         self.assertIn("cines.dem", message)
         self.assertIn("game build 10931", message)
-        self.assertIn("directly in Deadlock", message)
-        self.assertIn("experimental repair", message)
+        self.assertIn("Export diagnostics", message)
+        self.assertNotIn("experimental repair", message)
         self.assertNotIn("likely incomplete", message)
         self.assertNotIn("cannot reconstruct", message)
 
-    def test_replay_from_a_different_build_keeps_the_mismatch_guidance(self):
+    def test_different_build_crash_preserves_both_builds_without_guessing_cause(self):
         self.controller._session = self.session
         self.session.process = SimpleNamespace(poll=lambda: 3221225477)
         self.controller._replay_requested = True
@@ -745,7 +745,9 @@ class AutoStartupTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as caught:
             self.controller._startup_wait(lambda: None, "waiting for the selected replay", None)
         message = str(caught.exception)
-        self.assertIn("cannot reconstruct", message)
+        self.assertIn("recorded on game build 10725", message)
+        self.assertIn("Installed game build: 10931", message)
+        self.assertNotIn("cannot reconstruct", message)
         self.assertNotIn("The selected replay was recorded on this build", message)
 
     def test_installed_build_is_captured_from_the_console_banner(self):

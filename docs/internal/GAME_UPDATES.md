@@ -32,6 +32,22 @@ Keep these release-locked unless the corresponding reviews are rerun:
 - Any new layout, field or call-chain change that still needs the normal native
   test cycle. Publishing a hash alone does not qualify a build.
 
+## October 30 local runtime qualification
+
+Build 6833 uses the reviewed 6831 game DLLs. A bounded local check passed normal
+Dolly startup, replay camera handoff/editor readiness and four exact seeks in one
+replay, with normal exit and configuration/runtime restoration. The minimap guard
+remains active: it skipped 150 incomplete updates. That count does not establish
+how many would crash without the guard or that Valve fixed the underlying fault.
+No recording, direct camera movement, path playback or visual output was qualified
+by this check; no new package was produced.
+
+The first run correctly refused a stale separate runtime byte prefix before replay
+load. The prefix is corrected, and all byte-valued runtime contracts now require
+named address anchors and comparison with installed PE bytes. The generated
+compatibility owner suite (29 checks) and native suite (39 enabled checks) pass.
+Earlier full-suite results refer to the source snapshot before that narrow repair.
+
 ## Shared reviewed contracts
 
 `native/profiles/manifest.json` controls accepted module fingerprints and the
@@ -44,6 +60,93 @@ Older Follow correction profiles keep their own layouts and exact checked bytes.
 Player capture profiles also keep the scene fingerprint, producer address and
 calling convention, record layout, and exact renderer pairing together. This
 avoids enabling a new scene build with an older producer entry point.
+
+### Build 6833 (2026-10-30 content update)
+
+Client, server and all seven support modules are byte-identical to the reviewed
+6831 install, so no duplicate native profile, unlocker gate or rebuild is needed.
+Current Steam manifests independently verify unchanged stock cfg/video/UI. Its
+new content-depot identity is appended to the retained history, avoiding a
+launch-time dependence on cached manifests. No 6832 module review is implied.
+The 6831 code candidate passes 3555 full source tests (19 standard skips) and
+39 enabled native checks; the final metadata/doc-only update has separate
+owning and actual-launcher-gate proof. In-game qualification remains pending.
+
+### Build 6831 (2026-10-30)
+
+Installed 6831 is reviewed directly against frozen 6829; no 6830 review is
+implied. All 132 client regions, consumed layouts and interfaces match,
+including the minimap initializer's indexed references and jump table.
+Server Config001 owners and tuple still match; the rebuilt exact gate passes
+862 actual-function pair/table checks and three compiled tests. Stock payloads
+and support modules are unchanged.
+
+Repeated updates also exposed a real startup failure: nine saved depot maps
+exceeded the reader's eight-map cap. The bounded history now admits up to 64
+reviewed maps while retaining the independent 64 KiB asset limit and all map,
+identity, content and video validation. The regression exercises nine and 64
+valid maps, rejects 65 maps, malformed identities and oversized assets, and
+fails with the old cap. The actual installed editing-configuration gate is
+verified after updating the saved history; binary checks alone are insufficient.
+
+### Build 6829 (2026-10-30 third hotfix)
+
+The next client/server update retains the consumed layouts and hook interfaces.
+All 132 reviewed client regions are accounted for, including separate indexed-
+address and 34-entry jump-table relocation checks for the minimap initializer.
+The server Config001 table and complete method bodies still match 6828. Its
+new exact fingerprint has an additive rebuilt unlocker gate; 837 actual-function
+pair/table checks and three compiled lifecycle/adapter/pair tests pass.
+Stock cfg/video/UI and the seven support modules remain unchanged. Current
+owning/native checks and earlier full-suite evidence are recorded separately;
+in-game qualification is pending.
+
+### Build 6828 (2026-10-30 second hotfix)
+
+The next same-day update changes the client/server again. All 132 reviewed
+client regions are accounted for: 131 retain their instruction layouts, and
+the minimap initializer's indexed references and 34-entry jump table have a
+separate relocation proof. Consumed field offsets and hook interfaces are
+unchanged. The server Config001 table and complete method bodies are identical
+to 6827, while its exact fingerprint requires a rebuilt additive unlocker gate.
+The current pair passes 812 actual-function checks and three compiled tests.
+Stock cfg/video/UI and the seven support modules remain unchanged.
+
+The full Python suite passed on the preceding 6827 source candidate before this
+hotfix arrived. Current-build compatibility/native checks remain separate;
+no 6828 game-runtime or new-replay output claim follows from either.
+
+### Build 6827 (2026-10-30 hotfix)
+
+The same-day hotfix changes the client and server again. All 132 reviewed
+client regions map from the frozen 6826 evidence; three regions require
+explicit indexed-address/jump-table relocation checks. Dolly's consumed
+layouts and hook ABIs are unchanged. The exact server interface tuple was
+independently re-reviewed, and the rebuilt unlocker passes 787 actual-function
+pair/table checks plus lifecycle and adapter tests. Stock cfg/video/UI and
+the seven reviewed support modules remain unchanged. Automatic startup uses
+6827; the intermediate 6826 camera/Follow/unlocker records remain separate.
+No game-runtime or output qualification is claimed yet.
+
+### Build 6826 (2026-10-30)
+
+The October 30 patch changes the client and server. The reviewed engine,
+Tier0, scene, sound, resource, renderer and filesystem modules are unchanged.
+Current Steam depot metadata confirms the bundled stock cfg/video payloads;
+the shader-loading UI resources also remain byte-identical.
+
+Camera, startup, replay handoff, observer-services, Follow and attachment
+consumers have been reviewed at their new addresses. Stock pawn members and
+modifier tokens changed in several consumers; those changes are recorded
+separately from Dolly's unchanged typed observer-services layout. The minimap
+update and initializer were reviewed, including their changed panel members
+and relocated jump table, to carry the null-child seek guard forward.
+
+The rebuilt unlocker adds the exact server/Tier0 pair and reviewed
+Source2ServerConfig001 table and methods, retaining prior pairs and shutdown
+guards. Particle wrappers, gameplay-effect consumers and Follow composition
+have separate reviews. These are offline proofs; bounded runtime and output
+qualification are still pending.
 
 ### Build 6821 (2026-10-26)
 

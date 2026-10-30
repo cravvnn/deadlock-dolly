@@ -56,7 +56,7 @@ MAX_ENGINE_FPS = 600.0
 # bundles, raw process/GPU events, or arbitrary files from the game directory.
 DIAGNOSTIC_NAMES = (STATUS_NAME, MARKER_NAME, "dolly_owner_stall.txt",
                     "dolly_owner_draws.txt", "dolly_owner_captures.txt",
-                    "dolly_owner_producers.txt")
+                    "dolly_owner_producers.txt", "dolly_minimap_guard.txt")
 DIAGNOSTIC_LIMIT = 64 * 1024
 
 

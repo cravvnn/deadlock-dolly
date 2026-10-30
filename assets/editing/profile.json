@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "Build6821 reviewed offline: relocated current camera/startup/schema/Follow and named death-effect consumers; unchanged configuration consumers and stock cfg/video payloads; rebuilt exact-pair unlocker passes737 actual-function checks. No6821 runtime qualification yet.",
+  "description": "Build6833 uses byte-identical reviewed6831 client/server/support modules. Current Steam cfg/video/UI provenance verified; retained history reader supports bounded patch series. No6833 game-runtime qualification yet.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "8da25ddcd11c1146eeb9770bca24fb25c594c7abdb28947035a44ec8f2945843",
+    "citadel/bin/win64/client.dll": "9fd12e81f4587f0f42a99cb8668eafb3fa25f15dadfd49d7d502003aa3d01160",
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433"
   },
-  "unlocker_server_sha256": "1cc0a966a89dac2bf93c78315b2202a9ebb81c371fac7746162d8c345a786696",
+  "unlocker_server_sha256": "a5dbb635c06a254ae70be2c8c2398aafc2ef38a51556043b557ff5add3861dcd",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "04bc78a730b9623c8b69db6b00a5aa3790ddfd08",
-  "stock_gameinfo_depot": "1422456_2676828593797519091",
-  "stock_provenance_sha256": "5aa2077dcbcf42795d7f4f2ff1c244de81e6a8c6f249af76b0dfcee362629055",
+  "stock_gameinfo_depot": "1422456_3184097847819834534",
+  "stock_provenance_sha256": "793e12fa1219ac7bd3d28175dff83f362d5415e530566c5074b2241db0dff64d",
   "configuration_modules": {
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433",

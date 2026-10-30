@@ -613,16 +613,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             raise RuntimeError("The console is disconnected. Use Connect after Deadlock finishes loading.")
 
     def _game_death_message(self, context):
-        """Reason and likely cause for a game process that is no longer alive.
+        """Report a dead game process without inferring replay damage.
 
         The console socket is closed by the operating system when Deadlock
-        crashes, so a raw WinError 10054 hides the real event. A replay that
-        cannot be reconstructed by the installed build fatals the game during
-        demo load; report the crash and the likely cause instead. When the
-        replay was recorded on the installed build (verifiable from the game's
-        console banner) the file itself is the problem, so the wording does not
-        suggest a build mismatch. The recorded map/build from the replay header
-        is included when it was read.
+        crashes, so a raw WinError 10054 hides the real event. Neither that
+        socket error, an access violation nor unequal replay/client build
+        numbers establishes the cause. Include known identities for diagnosis;
+        a current, complete replay can also expose a game UI fault during seek.
         """
         exit_code = self._session.process.poll() if self._session else None
         if exit_code is None:
@@ -643,23 +640,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             return message + self._crash_suffix()
         header = self._replay_header
         recorded_build = header.get("build_num")
-        if (recorded_build is not None and self._game_build is not None
-                and recorded_build == self._game_build):
-            message = (f"{reason} while {context}. The selected replay was recorded on this build "
-                       f"({self._game_build}), but that does not establish why it crashed. Try opening the "
-                       "same replay directly in Deadlock. Dolly's Replays & Shots page also offers an "
-                       "experimental repair for a specific startup crash; it saves a separate copy and "
-                       "does not guarantee playback.")
-        else:
-            message = (f"{reason} while {context}. A replay that this game build cannot "
-                       "reconstruct (for example an incompatible or incomplete .dem) can fatal Deadlock as soon as "
-                       "it starts playing. Try the latest replay recorded on this build, then launch again through Dolly.")
+        message = (f"{reason} while {context}. This does not establish that the replay is "
+                   "damaged or incompatible. Export diagnostics so the game dump and session logs "
+                   "can be checked. Your shot remains available.")
         details = ", ".join(str(part) for part in (
             header.get("name"),
             f"recorded on game build {recorded_build}" if recorded_build is not None else None,
             f"map {header['map_name']}" if header.get("map_name") else None) if part)
         if details:
             message += f" Selected replay: {details}."
+        if self._game_build is not None:
+            message += f" Installed game build: {self._game_build}."
         return message + self._crash_suffix()
 
     def _session_start_epoch(self):

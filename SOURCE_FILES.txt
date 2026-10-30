@@ -150,6 +150,7 @@ docs/RELEASE_NOTES_0.6.82-alpha.md
 docs/RELEASE_NOTES_0.6.83-alpha.md
 docs/RELEASE_NOTES_0.6.84-alpha.md
 docs/RELEASE_NOTES_0.6.85-alpha.md
+docs/RELEASE_NOTES_0.6.86-alpha.md
 docs/DISCORD_PRESENCE.md
 docs/SCREENSHOTS.md
 docs/SUPPORTED_CAMERA_CVARS.json
@@ -332,6 +333,7 @@ native/include/dolly_hero_portrait.hpp
 native/include/dolly_hide.hpp
 native/include/dolly_lite.hpp
 native/include/dolly_media.hpp
+native/include/dolly_minimap_guard.hpp
 native/include/dolly_module_residency.hpp
 native/include/dolly_object_picker.hpp
 native/include/dolly_object_runtime.hpp
@@ -487,6 +489,7 @@ native/src/native_effects_win.hpp
 native/src/native_feature_status_win.hpp
 native/src/native_follow_anchor_win.hpp
 native/src/native_gameplay_effects_win.hpp
+native/src/native_minimap_win.hpp
 native/src/native_relief_win.hpp
 native/tests/attach_tests.cpp
 native/tests/bone_picker_tests.cpp
@@ -966,3 +969,23 @@ native/src/dolly_rail_fields.hpp
 native/src/dolly_rail_fields.cpp
 native/src/dolly_rail_drawers.cpp
 native/src/dolly_rail_transport.cpp
+
+native/profiles/deadlock-2026-10-30-6826-complete.json
+
+third_party/cvar_unlocker/unlocker-build-6826.patch
+
+native/profiles/deadlock-2026-10-30-6827-complete.json
+
+third_party/cvar_unlocker/unlocker-build-6827.patch
+
+native/profiles/deadlock-2026-10-30-6828-complete.json
+
+third_party/cvar_unlocker/unlocker-build-6828.patch
+
+native/profiles/deadlock-2026-10-30-6829-complete.json
+
+third_party/cvar_unlocker/unlocker-build-6829.patch
+
+native/profiles/deadlock-2026-10-30-6831-complete.json
+
+third_party/cvar_unlocker/unlocker-build-6831.patch

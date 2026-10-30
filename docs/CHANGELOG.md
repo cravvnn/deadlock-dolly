@@ -4,6 +4,18 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
+## Unreleased
+
+- **October 30 game updates.** *Before:* the new Deadlock builds were blocked by Dolly's compatibility checks. *After:* the local candidate includes reviewed camera, startup, Follow, effects and particle definitions, a rebuilt unlocker, and the minimap seek guard for builds 6826, 6827, 6828, 6829 and 6831. Automatic startup supports the latest reviewed update, 6833, whose game binaries match 6831. A local live check on build 6833 passed startup and four exact seeks in one replay; recording and other replays remain untested in this check.
+
+- **Repeated game updates.** *Before:* several updates in a row could make Dolly reject unchanged game configuration. *After:* verified patch history can grow without dropping earlier reviews, while malformed or oversized data is still refused.
+
+## 0.6.86-alpha
+
+- **More reliable replay seeking.** *Before:* jumping to certain parts of a current, otherwise playable replay could crash Deadlock. *After:* Dolly's Native driver guards incomplete minimap updates so affected jumps can finish without changing the replay.
+
+- **Clearer crash details.** *Before:* a seek crash could suggest that the replay was old or damaged without confirming the cause. *After:* Dolly keeps your shot available and shows diagnostic guidance with the replay and game build details.
+
 ## 0.6.85-alpha
 
 - **Players stay in sync.** *Before:* a Players export could stop when no players were visible, even with plenty of free storage. *After:* empty views keep their transparent frames, and capture waits for a free frame buffer while preserving the shot timing.

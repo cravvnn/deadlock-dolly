@@ -103,6 +103,32 @@ class StockProvenanceTests(unittest.TestCase):
         self.cache.unlink()
         self.assertEqual(self.verify()['basis'], 'reviewed_installed_depots')
 
+    def test_patch_history_accepts_ninth_identity_and_keeps_asset_and_mapping_bounds(self):
+        self.cache.unlink()  # A reviewed identity does not depend on Steam's cache.
+        path = self.editing/'stock-provenance.json'
+        original = json.loads(path.read_text(encoding='utf-8'))
+
+        def history(count, *, invalid=False, oversized=False):
+            data = dict(original, reviewed_depots=[{'1422456': str(i+1)} for i in range(count)])
+            if invalid:
+                data['reviewed_depots'][-1] = {'bad depot': '1'}
+            if oversized:
+                data['padding'] = 'x'*(64*1024)
+            raw = json.dumps(data).encode()
+            path.write_bytes(raw)
+            self.profile['stock_provenance_sha256'] = hashlib.sha256(raw).hexdigest()
+
+        for count in (9, 64):
+            with self.subTest(count=count):
+                history(count)
+                self.assertEqual(self.verify()['basis'], 'reviewed_installed_depots')
+        for values in ({'count': 65}, {'count': 9, 'invalid': True},
+                       {'count': 9, 'oversized': True}):
+            with self.subTest(values=values):
+                history(**values)
+                with self.assertRaises(ValueError):
+                    self.verify()
+
     def test_new_depot_identity_requires_and_reads_current_cache(self):
         self.unknown()
         before = {path: (path.read_bytes(), path.stat().st_mode) for path in (self.app, self.cache)}

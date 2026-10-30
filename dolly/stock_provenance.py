@@ -23,6 +23,10 @@ CONFIGURATION_MODULES = (
 )
 _MANIFEST_LIMIT = 16 * 1024 * 1024
 _TOTAL_LIMIT = 64 * 1024 * 1024
+# Retain reviewed patch identities without rejecting a run of frequent updates.
+# The provenance asset still has its independent 64 KiB read bound, and every
+# mapping retains the existing 16-depot/type/identity validation below.
+_MAX_REVIEWED_DEPOTS = 64
 _STOCK_PATH = re.compile(r'game/(?:citadel|core)/cfg/.+|game/citadel/gameinfo\.gi')
 VIDEO_RESOURCES = frozenset({f'cfg/video_defaults_{index}.txt' for index in range(4)} | {'cfg/video_version.txt'})
 
@@ -237,7 +241,7 @@ def verify(paths, editing_root, profile, steam_roots=(), extra_files=None):
         seen_depots.add(ident)
         identities[ident] = manifest
     reviewed = expected.get('reviewed_depots')
-    if not isinstance(reviewed, list) or not 1 <= len(reviewed) <= 8:
+    if not isinstance(reviewed, list) or not 1 <= len(reviewed) <= _MAX_REVIEWED_DEPOTS:
         raise ValueError('Missing reviewed Steam depot identity')
     for mapping in reviewed:
         if (not isinstance(mapping, dict) or not 1 <= len(mapping) <= 16

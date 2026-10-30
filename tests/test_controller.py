@@ -657,7 +657,7 @@ class ControllerTests(unittest.TestCase):
             self.controller._request("demo_goto")
         message = str(caught.exception)
         self.assertIn("crashed", message)
-        self.assertIn("incompatible", message)
+        self.assertIn("Export diagnostics", message)
         self.assertIn("demo_goto", message)
 
     def test_disconnected_console_with_dead_process_reports_the_crash(self):
@@ -668,7 +668,7 @@ class ControllerTests(unittest.TestCase):
             self.controller._require_connection()
         message = str(caught.exception)
         self.assertIn("crashed", message)
-        self.assertIn("incompatible", message)
+        self.assertIn("Export diagnostics", message)
 
     def test_live_process_console_failure_is_not_reported_as_a_crash(self):
         def fail(*args, **kwargs):
@@ -677,6 +677,43 @@ class ControllerTests(unittest.TestCase):
         self.console.request = fail
         with self.assertRaisesRegex(RuntimeError, "Simulated console timeout"):
             self.controller._request("demo_goto")
+
+    def test_seek_crash_does_not_diagnose_current_replay_as_old_or_damaged(self):
+        # SourceTV replay/server build 10932 and the client's 10931 banner
+        # occur together in the supplied capture-point minimap crash. The
+        # same fault on an equal or unknown client build is no file diagnosis.
+        original_request = self.console.request
+        self.controller._replay_requested = True
+        self.controller._replay_header = {"name": "127369263.dem", "build_num": 10932,
+                                          "game_directory": "/citadel_v6821/citadel"}
+
+        def die_on_seek(command, **kwargs):
+            if command.startswith("demo_gototick "):
+                self.process.poll = lambda: 3221225477
+                raise ConsoleError("The remote host forcibly closed the connection")
+            return original_request(command, **kwargs)
+
+        self.console.request = die_on_seek
+        for installed in (10931, 10932, None):
+            with self.subTest(installed=installed):
+                self.process.poll = lambda: None
+                self.controller._game_build = installed
+                with self.assertRaises(RuntimeError) as caught:
+                    self.controller._seek_tick(47587)
+                message = str(caught.exception)
+                self.assertIn("0xC0000005", message)
+                self.assertIn("demo_gototick 47587", message)
+                self.assertIn("127369263.dem", message)
+                self.assertIn("recorded on game build 10932", message)
+                self.assertIn("does not establish", message)
+                self.assertIn("Export diagnostics", message)
+                self.assertNotIn("incompatible or incomplete", message)
+                self.assertNotIn("latest replay", message)
+                self.assertNotIn("experimental repair", message)
+                if installed is not None:
+                    self.assertIn(f"Installed game build: {installed}", message)
+                else:
+                    self.assertNotIn("Installed game build:", message)
 
     def test_replay_begun_waits_until_playback_advances(self):
         self.console.tick = 0
