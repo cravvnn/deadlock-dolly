@@ -21,6 +21,23 @@ assistance is part of this result; unassisted intro dismissal, direct camera
 movement, path playback, exports and universal replay compatibility are not
 qualified by it. No readiness bypass or recording was used.
 
+## October 31 build 6837 review
+
+Build 6837 changes the client and server binaries relative to reviewed build 6835.
+Its camera, startup, Follow, attachment, gameplay-effect, particle and minimap
+consumers were reviewed directly; no intervening build review is implied.
+Indexed image-relative data references and the minimap initializer jump table
+moved with preserved structure. The typed observer member remains 0xe98. The
+exact-server unlocker was rebuilt, and current stock configuration, video and UI
+payloads were independently verified unchanged.
+
+A bounded live check passed normal preload, editor readiness and four exact
+replay seeks after bringing the owned game window to the foreground. The guard
+recorded 181 skipped incomplete minimap updates; this does not count proven
+prevented crashes. Normal exit and configuration/runtime restoration passed.
+No recording, direct camera-motion/path-playback or visual/universal replay
+qualification is implied. The foreground assistance is part of this result.
+
 ## Published build definitions
 
 Ordinary build support no longer requires a new Dolly release. Reviewed data

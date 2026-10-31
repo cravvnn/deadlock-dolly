@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "Build6835 offline reviewed: camera/startup/Follow/schema/effect consumers and indexed image-relative data relocations. Exact-pair rebuilt unlocker. Stock cfg/video/UI unchanged. Separate live startup/four-seek evidence retained; intro needed foreground assistance.",
+  "description": "Build6837 reviewed directly from6835: camera/startup/Follow/schema/effect consumers and indexed image-relative data relocations; exact-server rebuilt unlocker; stock cfg/video/UI unchanged. Separate foreground-assisted live startup/four-seek acceptance.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "3925911036c0126509bd58903a746e0cc36d368aeb25ec3044363edb48eb3f9d",
+    "citadel/bin/win64/client.dll": "5cf74c6aebf435d3566a1402251ee0e7e6e67b57cc22c62bea31c93e61061625",
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433"
   },
-  "unlocker_server_sha256": "2eb67ece03fb8322732b6bd1b7c33f9980f644e1d50c6498af50d3c683883d22",
+  "unlocker_server_sha256": "2da2f96df238b968ab8d6b5d5e327810a49b604bdeca5a893d967292556db42d",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "04bc78a730b9623c8b69db6b00a5aa3790ddfd08",
-  "stock_gameinfo_depot": "1422456_3592147562014424653",
-  "stock_provenance_sha256": "21e19b879dfc3fe273ad590c4837f357a8f8f0b4213e640e682ca3a7f7cac7db",
+  "stock_gameinfo_depot": "1422456_8920614686526412402",
+  "stock_provenance_sha256": "884cda8f569db6dc301fe0205d771d5eefc98159349197dc2438072178163e14",
   "configuration_modules": {
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433",
