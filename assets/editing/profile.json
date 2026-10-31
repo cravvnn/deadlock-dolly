@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "Build6837 reviewed directly from6835: camera/startup/Follow/schema/effect consumers and indexed image-relative data relocations; exact-server rebuilt unlocker; stock cfg/video/UI unchanged. Separate foreground-assisted live startup/four-seek acceptance.",
+  "description": "Build6839 reviewed directly from6837: camera/startup/Follow/schema/effect consumers and indexed image-relative data relocations; exact-server rebuilt unlocker; stock cfg/video/UI unchanged. Separate bounded live startup/four-seek acceptance, no external activation/key/click sent by test operator.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "5cf74c6aebf435d3566a1402251ee0e7e6e67b57cc22c62bea31c93e61061625",
+    "citadel/bin/win64/client.dll": "929a0455e510ad8bb76c26737a9c84a58ed496267b89b243f94b0699bb10855a",
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433"
   },
-  "unlocker_server_sha256": "2da2f96df238b968ab8d6b5d5e327810a49b604bdeca5a893d967292556db42d",
+  "unlocker_server_sha256": "e7db4fca4c87f2994c6e5454dfcbf7c6d055b99b82c2c0d6ee727fc05113d324",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "04bc78a730b9623c8b69db6b00a5aa3790ddfd08",
-  "stock_gameinfo_depot": "1422456_8920614686526412402",
-  "stock_provenance_sha256": "884cda8f569db6dc301fe0205d771d5eefc98159349197dc2438072178163e14",
+  "stock_gameinfo_depot": "1422456_7481470845663423297",
+  "stock_provenance_sha256": "e02a496b4a139892780453ab2de253c45b66ef967c9335ff3cd4367675271c0d",
   "configuration_modules": {
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433",

@@ -38,6 +38,23 @@ prevented crashes. Normal exit and configuration/runtime restoration passed.
 No recording, direct camera-motion/path-playback or visual/universal replay
 qualification is implied. The foreground assistance is part of this result.
 
+## October 31 build 6839 review
+
+Build 6839 changes the client and server relative to reviewed build 6837. The
+camera, startup, Follow, attachment, gameplay-effect, particle and minimap
+consumers were reviewed directly; no intervening build review is implied.
+Indexed image-relative data references and the minimap initializer jump table
+moved with preserved structure. The observer member remains 0xe98. The exact-
+server unlocker was rebuilt; current stock configuration, video and UI payloads
+were independently verified unchanged.
+
+One bounded live check passed normal preload, editor readiness and four exact
+replay seeks with normal exit and exact configuration/runtime restoration. No
+external window-activation, key or click was sent by the test operator in this
+run. The minimap guard recorded 94 skipped incomplete updates; this is not a
+count of proven prevented crashes. No recording, direct camera-motion/path-
+playback, visual or universal replay qualification is implied.
+
 ## Published build definitions
 
 Ordinary build support no longer requires a new Dolly release. Reviewed data

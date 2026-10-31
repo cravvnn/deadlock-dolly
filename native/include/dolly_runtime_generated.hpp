@@ -6,16 +6,16 @@ namespace dolly { namespace reviewed {
 struct CodeSpan { std::uintptr_t rva; std::size_t size; };
 struct NamedRva { const char* name; std::uintptr_t rva; };
 namespace Preload {
-inline constexpr char CLIENT_SHA256[] = "5cf74c6aebf435d3566a1402251ee0e7e6e67b57cc22c62bea31c93e61061625";
+inline constexpr char CLIENT_SHA256[] = "929a0455e510ad8bb76c26737a9c84a58ed496267b89b243f94b0699bb10855a";
 inline constexpr char RESOURCE_SHA256[] = "40cc08f3bf2c6bcc61baf9fb5271f333bb9fbc3b3cae501f4b9c73e8d3a2275c";
 inline constexpr std::uintptr_t MANAGER = 0x336b040;
 inline constexpr std::uintptr_t MANAGER_VTABLE = 0x27adfe8;
-inline constexpr std::uintptr_t RESOURCE_GLOBAL = 0x406b310;
+inline constexpr std::uintptr_t RESOURCE_GLOBAL = 0x406b390;
 inline constexpr std::uintptr_t RESOURCE_VTABLE = 0x3f8af8;
 inline constexpr std::uintptr_t RESOURCE_QUERY = 0x5be20;
-inline constexpr std::uintptr_t INTRO_GLOBAL = 0x3ec8938;
-inline constexpr std::uintptr_t INTRO_VTABLE = 0x2c9ed68;
-inline constexpr CodeSpan CLIENT_CODE_SPANS[] = {{0x60a7a0, 8}, {0x613860, 126}, {0x1e327a0, 266}, {0x5fbade, 51}, {0x616cb0, 10}, {0x5ecac0, 75}, {0x1bf85d5, 101}, {0x1c14df0, 230}, {0x1c3afde, 465}, {0x1c23640, 66}, {0x1c00840, 554}, {0x1c343b7, 12}};
+inline constexpr std::uintptr_t INTRO_GLOBAL = 0x3ec89b8;
+inline constexpr std::uintptr_t INTRO_VTABLE = 0x2c9ed48;
+inline constexpr CodeSpan CLIENT_CODE_SPANS[] = {{0x60a7a0, 8}, {0x613860, 126}, {0x1e32880, 266}, {0x5fbade, 51}, {0x616cb0, 10}, {0x5ecac0, 75}, {0x1bf86b5, 101}, {0x1c14ed0, 230}, {0x1c3b0be, 465}, {0x1c23720, 66}, {0x1c00920, 554}, {0x1c34497, 12}};
 inline constexpr std::uintptr_t MANAGER_SIZE = 0x40;
 inline constexpr std::uintptr_t COMPLETED = 0x24;
 inline constexpr std::uintptr_t RESOURCE = 0x30;
@@ -29,41 +29,41 @@ inline constexpr std::uintptr_t INTRO_PHASE = 0x80;
 inline constexpr char RESOURCE_RENDERER_SHA256[] = "cc1473b6f89e28420f4ef1795c382131a1dc670653d5019e9719e2ca291ff1c0";
 }
 namespace ReplayCamera {
-inline constexpr char CLIENT_SHA256[] = "5cf74c6aebf435d3566a1402251ee0e7e6e67b57cc22c62bea31c93e61061625";
-inline constexpr std::uintptr_t MANAGER = 0x3843240;
+inline constexpr char CLIENT_SHA256[] = "929a0455e510ad8bb76c26737a9c84a58ed496267b89b243f94b0699bb10855a";
+inline constexpr std::uintptr_t MANAGER = 0x38432c0;
 inline constexpr std::uintptr_t MANAGER_VTABLE = 0x27aaf30;
 inline constexpr std::uintptr_t GAMEPLAY_CAMERA_VTABLE = 0x27b2998;
-inline constexpr std::uintptr_t RULES_GLOBAL = 0x3ea8b40;
+inline constexpr std::uintptr_t RULES_GLOBAL = 0x3ea8bc0;
 inline constexpr std::uintptr_t RULES_VTABLE = 0x27e7ec0;
-inline constexpr CodeSpan CODE_SPANS[] = {{0x5ecd40, 685}, {0x5c6bf0, 181}, {0x1952550, 261}, {0x1967560, 5}, {0x196b680, 6}, {0x1c53080, 1642}, {0x19f6800, 88}, {0x1c02530, 17}, {0x1c34c07, 112}, {0x1c4c5a0, 91}, {0x1c52d30, 118}};
+inline constexpr CodeSpan CODE_SPANS[] = {{0x5ecd40, 685}, {0x5c6bf0, 181}, {0x1952630, 261}, {0x1967640, 5}, {0x196b760, 6}, {0x1c53160, 1642}, {0x19f68e0, 88}, {0x1c02610, 17}, {0x1c34ce7, 112}, {0x1c4c680, 91}, {0x1c52e10, 118}};
 inline constexpr std::uintptr_t RULES_STATE = 0x74;
 inline constexpr std::uintptr_t MANAGER_SIZE = 0x48;
 inline constexpr std::uintptr_t CURRENT_CAMERA = 0x28;
 inline constexpr std::uintptr_t BLENDING = 0x38;
 inline constexpr std::uintptr_t BLEND_WEIGHT = 0x44;
-inline constexpr std::uintptr_t HUD_ROOT = 0x3ec7cf8;
-inline constexpr std::uintptr_t HUD_ROOT_VTABLE = 0x2c9af90;
+inline constexpr std::uintptr_t HUD_ROOT = 0x3ec7d78;
+inline constexpr std::uintptr_t HUD_ROOT_VTABLE = 0x2c9af70;
 inline constexpr std::uintptr_t HUD_TAKEOVER_COUNT = 0x284;
 inline constexpr std::uintptr_t MINIMAP_CLIENT_IMAGE_SIZE = 0x440c000;
-inline constexpr std::uintptr_t MINIMAP_UPDATE = 0x1e88a50;
-inline constexpr std::uintptr_t MINIMAP_CALLERS[] = {0x1e70100, 0x1e701a8, 0x1e70634};
-inline constexpr std::uintptr_t MINIMAP_VTABLE = 0x2d0e680;
+inline constexpr std::uintptr_t MINIMAP_UPDATE = 0x1e88b30;
+inline constexpr std::uintptr_t MINIMAP_CALLERS[] = {0x1e701e0, 0x1e70288, 0x1e70714};
+inline constexpr std::uintptr_t MINIMAP_VTABLE = 0x2d0e660;
 inline constexpr std::uintptr_t MINIMAP_ICON_TYPE = 0x4;
 inline constexpr std::uintptr_t MINIMAP_ICON_CAST_RANGE = 0x80;
-inline constexpr unsigned char MINIMAP_UPDATE_PREFIX[] = {0x48, 0x8b, 0xc4, 0x55, 0x53, 0x56, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8d, 0x68, 0xa1, 0x48, 0x81, 0xec, 0xf0, 0x0, 0x0, 0x0, 0x44, 0x8b, 0x5, 0xb0, 0x42, 0x1e, 0x2};
-inline constexpr std::uintptr_t MINIMAP_RANGE_READ = 0x1e88cc1;
+inline constexpr unsigned char MINIMAP_UPDATE_PREFIX[] = {0x48, 0x8b, 0xc4, 0x55, 0x53, 0x56, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8d, 0x68, 0xa1, 0x48, 0x81, 0xec, 0xf0, 0x0, 0x0, 0x0, 0x44, 0x8b, 0x5, 0x50, 0x42, 0x1e, 0x2};
+inline constexpr std::uintptr_t MINIMAP_RANGE_READ = 0x1e88da1;
 inline constexpr unsigned char MINIMAP_RANGE_READ_BYTES[] = {0x48, 0x8b, 0x86, 0x80, 0x0, 0x0, 0x0, 0xf3, 0xf, 0x5e, 0xf0, 0x48, 0x8b, 0x48, 0x8};
-inline constexpr CodeSpan MINIMAP_CODE_SPANS[] = {{0x1e88a50, 6303}, {0x1e73380, 6381}, {0x1e70070, 312}, {0x1e70580, 227}};
+inline constexpr CodeSpan MINIMAP_CODE_SPANS[] = {{0x1e88b30, 6303}, {0x1e73460, 6381}, {0x1e70150, 312}, {0x1e70660, 227}};
 }
 namespace FollowCapabilities {
 inline constexpr char TIER0_SHA256[] = "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433";
-inline constexpr CodeSpan CLIENT_SPANS[] = {{0x8faf0, 3430}, {0x913c0, 166}, {0x243db0, 115}, {0x2523680, 129}, {0x261eb0, 10}, {0x622816, 11}};
+inline constexpr CodeSpan CLIENT_SPANS[] = {{0x8faf0, 3430}, {0x913c0, 166}, {0x243db0, 115}, {0x2523760, 129}, {0x261eb0, 10}, {0x622816, 11}};
 inline constexpr CodeSpan TIER0_SPANS[] = {{0x20fea0, 633}};
-inline constexpr NamedRva REFS[] = {{"pivot_x_offset", 0x3844c90}, {"pivot_y_offset", 0x3844ca0}, {"pivot_z_offset", 0x3844cb0}, {"pivot_x_offset_crouching", 0x3844cc0}, {"pivot_y_offset_crouching", 0x3844cd0}, {"pivot_z_offset_crouching", 0x3844ce0}, {"x_offset", 0x3844cf0}, {"y_offset", 0x3844d00}, {"z_offset", 0x3844d10}, {"x_worst_case_offset", 0x3844d20}, {"y_worst_case_offset", 0x3844d30}, {"z_worst_case_offset", 0x3844d40}, {"ads_x_offset", 0x3844d50}, {"ads_y_offset", 0x3844d60}, {"ads_z_offset", 0x3844d70}, {"fov", 0x3844d80}, {"ads_fov", 0x3844d90}};
-inline constexpr CodeSpan OWN_HEALTH_SPANS[] = {{0x1bc1a0, 174}, {0x1c3f570, 803}, {0x1c213a0, 47}};
-inline constexpr std::uintptr_t ENABLED_REF = 0x3844c80;
-inline constexpr std::uintptr_t FOLLOW_AIM_REF = 0x38449b0;
-inline constexpr std::uintptr_t OWN_HEALTH_REF = 0x3ec86a8;
+inline constexpr NamedRva REFS[] = {{"pivot_x_offset", 0x3844d10}, {"pivot_y_offset", 0x3844d20}, {"pivot_z_offset", 0x3844d30}, {"pivot_x_offset_crouching", 0x3844d40}, {"pivot_y_offset_crouching", 0x3844d50}, {"pivot_z_offset_crouching", 0x3844d60}, {"x_offset", 0x3844d70}, {"y_offset", 0x3844d80}, {"z_offset", 0x3844d90}, {"x_worst_case_offset", 0x3844da0}, {"y_worst_case_offset", 0x3844db0}, {"z_worst_case_offset", 0x3844dc0}, {"ads_x_offset", 0x3844dd0}, {"ads_y_offset", 0x3844de0}, {"ads_z_offset", 0x3844df0}, {"fov", 0x3844e00}, {"ads_fov", 0x3844e10}};
+inline constexpr CodeSpan OWN_HEALTH_SPANS[] = {{0x1bc1a0, 174}, {0x1c3f650, 803}, {0x1c21480, 47}};
+inline constexpr std::uintptr_t ENABLED_REF = 0x3844d00;
+inline constexpr std::uintptr_t FOLLOW_AIM_REF = 0x3844a30;
+inline constexpr std::uintptr_t OWN_HEALTH_REF = 0x3ec8728;
 inline constexpr std::uintptr_t CLIENT_IMAGE_SIZE = 0x440c000;
 inline constexpr std::uintptr_t TIER0_IMAGE_SIZE = 0x401000;
 inline constexpr std::uintptr_t CVAR_DATA_SIZE = 0x5c;
@@ -72,21 +72,21 @@ inline constexpr std::uintptr_t CVAR_FLAGS = 0x30;
 inline constexpr std::uintptr_t CVAR_VALUE = 0x58;
 }
 namespace FollowTarget {
-inline constexpr CodeSpan TARGET_SPANS[] = {{0x1761270, 121}, {0x8815a0, 5}, {0x8815b0, 92}, {0x8528c0, 193}, {0x833010, 17}, {0x833030, 17}};
-inline constexpr CodeSpan HEALTH_CONTEXT_SPANS[] = {{0x951b60, 33}, {0x1761250, 23}, {0x595110, 252}, {0x833010, 17}, {0x833030, 17}, {0x881640, 137}, {0x1c829d0, 297}, {0x1c83020, 65}, {0x831ce0, 55}, {0x4bd850, 5}, {0x7248c0, 3}, {0x16af3b6, 3}, {0x548720, 3}, {0x5a33e0, 3}, {0x86aa20, 381}};
+inline constexpr CodeSpan TARGET_SPANS[] = {{0x1761350, 121}, {0x8815a0, 5}, {0x8815b0, 92}, {0x8528c0, 193}, {0x833010, 17}, {0x833030, 17}};
+inline constexpr CodeSpan HEALTH_CONTEXT_SPANS[] = {{0x951b40, 33}, {0x1761330, 23}, {0x595110, 252}, {0x833010, 17}, {0x833030, 17}, {0x881640, 137}, {0x1c82ab0, 297}, {0x1c83100, 65}, {0x831ce0, 55}, {0x4bd850, 5}, {0x7248c0, 3}, {0x16af496, 3}, {0x548720, 3}, {0x5a33e0, 3}, {0x86aa20, 381}};
 inline constexpr std::uintptr_t CONTROLLER_VTABLE = 0x2812a70;
 inline constexpr std::uintptr_t OBSERVER_PAWN_VTABLE = 0x278f0f0;
 inline constexpr std::uintptr_t PLAYER_PAWN_VTABLE = 0x279b2e0;
-inline constexpr std::uintptr_t FAMILIAR_CLONE_PAWN_VTABLE = 0x29ac1f8;
-inline constexpr std::uintptr_t SERVICES_VTABLES[] = {0x28134b8, 0x2c0f168};
+inline constexpr std::uintptr_t FAMILIAR_CLONE_PAWN_VTABLE = 0x29ac1d8;
+inline constexpr std::uintptr_t SERVICES_VTABLES[] = {0x28134b8, 0x2c0f148};
 inline constexpr std::uintptr_t CONTROLLER_FINAL_VTABLE = 0x2812a40;
 inline constexpr std::uintptr_t OBSERVER_SERVICES_OFFSET = 0xe98;
-inline constexpr std::uintptr_t ENTITY_LIST = 0x362ee78;
-inline constexpr std::uintptr_t CONTROLLER = 0x3e61240;
+inline constexpr std::uintptr_t ENTITY_LIST = 0x362eef8;
+inline constexpr std::uintptr_t CONTROLLER = 0x3e612b0;
 inline constexpr std::uintptr_t OBSERVER_PREDICATE = 0x548590;
 inline constexpr std::uintptr_t GET_OBSERVER_MODE = 0x8815a0;
 inline constexpr std::uintptr_t GET_OBSERVER_TARGET = 0x8815b0;
-inline constexpr std::uintptr_t PLAYER_PREDICATE = 0x173b8e0;
+inline constexpr std::uintptr_t PLAYER_PREDICATE = 0x173b9c0;
 inline constexpr std::uintptr_t PLAYER_DATA_PREDICATE = 0x5a33c0;
 inline constexpr std::uintptr_t CONTROLLER_PREDICATE = 0x7248c0;
 inline constexpr std::uintptr_t IDENTITY_STRIDE = 0x70;
@@ -106,17 +106,17 @@ inline constexpr std::uintptr_t CONTROLLER_PREDICATE_SLOT = 0x4e8;
 inline constexpr std::uintptr_t CONTROLLER_FINAL_DATA = 0x908;
 }
 namespace AttachRuntime {
-inline constexpr char CLIENT_SHA256[] = "5cf74c6aebf435d3566a1402251ee0e7e6e67b57cc22c62bea31c93e61061625";
+inline constexpr char CLIENT_SHA256[] = "929a0455e510ad8bb76c26737a9c84a58ed496267b89b243f94b0699bb10855a";
 inline constexpr std::uintptr_t CLIENT_IMAGE_SIZE = 0x440c000;
-inline constexpr std::uintptr_t INITIALIZER = 0x2182b60;
-inline constexpr std::uintptr_t ENTITY_VTABLE = 0x2bfdb70;
-inline constexpr std::uintptr_t ENTITY_GLOBAL = 0x3fe7ca0;
+inline constexpr std::uintptr_t INITIALIZER = 0x2182c40;
+inline constexpr std::uintptr_t ENTITY_VTABLE = 0x2bfdb50;
+inline constexpr std::uintptr_t ENTITY_GLOBAL = 0x3fe7d20;
 inline constexpr unsigned char INITIALIZER_BYTES[] = {0xff, 0xff, 0x8b, 0x42, 0x30, 0xf, 0xba, 0xe0, 0xb, 0x73, 0xf, 0x48, 0x8b, 0x5c, 0x24, 0x30, 0x48, 0x83, 0xc4, 0x20, 0x5f};
 }
 namespace Unlocker {
-inline constexpr char SHA256[] = "7548ac38fb8fc3a9ea89a1c131fcad373ea714b2a3286f9fc98b9747180c0c62";
-inline constexpr std::uintptr_t SIZE = 0x4b600;
-inline constexpr char VERSION[] = "v0.5.2-dolly-build-6837";
+inline constexpr char SHA256[] = "ecf5885287c6adc3d34b573dd1b9b7bcf09cd378cd4cdf1d3a9a08e2bd02481f";
+inline constexpr std::uintptr_t SIZE = 0x4b800;
+inline constexpr char VERSION[] = "v0.5.2-dolly-build-6839";
 }
 enum class AttachFieldIndex : unsigned { scene_node, owner, player_origin, player_angles, eye_offset, eye_angles, scene_child, scene_sibling };
 inline constexpr std::size_t kViewOffsetComponents[] = {16, 24, 32};
