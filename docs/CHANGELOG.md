@@ -4,6 +4,12 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
+## 0.6.88-alpha
+
+- **Support for Deadlock build 6835.** *Before:* the latest game patch was blocked by Dolly's compatibility checks. *After:* reviewed game definitions and a rebuilt unlocker restore support for the updated game.
+
+- **Replay protection kept current.** *Before:* the patch moved code used by Dolly's camera, Follow controls and minimap protection. *After:* those integrations are updated, with live startup and four exact replay seeks verified in the tested replay.
+
 ## 0.6.87-alpha
 
 - **Support for the latest Deadlock update.** *Before:* the October 30 patches prevented Dolly from starting. *After:* updated compatibility checks and a rebuilt unlocker restore support for game build 6833.

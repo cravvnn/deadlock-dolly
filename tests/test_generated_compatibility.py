@@ -43,7 +43,7 @@ class GeneratedCompatibilityTests(unittest.TestCase):
     def test_preload_singleton_rva_must_match_its_reviewed_constructor_store(self):
         namespace = {}
         exec(generate.generated_outputs(self.root)['dolly/_runtime_generated.py'], namespace)
-        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3ec88b8)
+        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3ec89b8)
         original = deepcopy(self.data['groups']['Preload']['INTRO_GLOBAL'])
         # The old copied address stays in range and leaves every saved code
         # hash unchanged. The instruction/target relation must catch it.
@@ -268,7 +268,7 @@ class GeneratedCompatibilityTests(unittest.TestCase):
                   for a in self.data['follow_anchors'] for span in a['spans']}
         self.assertEqual(actual,expected)
         anchors={a['build']:a for a in self.data['follow_anchors']}
-        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831'})
+        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831','6835'})
         for build in ('6722','6723','6726'):
             self.assertEqual(anchors[build]['values']['observer_services_offset'],'0xe40')
             self.assertNotIn('local_player_table',anchors[build]['values'])
@@ -299,6 +299,8 @@ class GeneratedCompatibilityTests(unittest.TestCase):
         self.assertEqual(int(anchors['6829']['values']['local_player_table'],16),0x279b310)
         self.assertEqual(anchors['6831']['values']['observer_services_offset'],'0xe98')
         self.assertEqual(int(anchors['6831']['values']['local_player_table'],16),0x279b310)
+        self.assertEqual(anchors['6835']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6835']['values']['local_player_table'],16),0x279b2e0)
         loaded,_,_=generate.load_contract(self.root)
         current=next(a for a in loaded['follow_anchors'] if a['build']=='6796')
         self.assertEqual(current['_sha256'],'8dff04c139d20b78d8d2c7a3039b691cfc221b8460438ec6fc6107c315741a5c')

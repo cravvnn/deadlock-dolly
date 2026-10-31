@@ -5,6 +5,22 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## October 30 build 6835 review
+
+Build 6835 changes the client and server binaries. Its camera, startup, Follow,
+attachment, gameplay effects and particle consumers were reviewed against the
+previous build. Indexed image-relative data references moved; the typed observer
+member remains 0xe98. The exact-server unlocker was rebuilt. Current stock
+configuration, video and UI content were independently verified unchanged.
+
+One live attempt stopped at intro/preload before replay. A second attempt reached
+verified preload and editor readiness after the owned game window was brought to
+the foreground, then passed four exact replay seeks with normal exit and restored
+settings. The minimap guard recorded 152 skipped incomplete updates. Foreground
+assistance is part of this result; unassisted intro dismissal, direct camera
+movement, path playback, exports and universal replay compatibility are not
+qualified by it. No readiness bypass or recording was used.
+
 ## Published build definitions
 
 Ordinary build support no longer requires a new Dolly release. Reviewed data
