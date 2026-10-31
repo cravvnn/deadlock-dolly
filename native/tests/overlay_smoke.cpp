@@ -830,6 +830,9 @@ EditorSnapshot editor_snapshot() noexcept {
 bool editor_framing_grid_enabled() noexcept {
     return framing_grid_enabled_stub;
 }
+bool editor_environment_enabled() noexcept {
+    return false;
+}
 bool editor_request_framing_factor(double factor) noexcept {
     observed_framing_factor=factor;
     return std::isfinite(factor) && factor > 0;
@@ -1237,6 +1240,45 @@ static void panel_option_regressions() {
     frame(); frame();
     require(observed_actions.size() == 1 && observed_actions[0].action == dolly::EditorAction::AttachSnap,
             "Bone layout changes its existing Snap action");
+    const auto snap_rect = attach_target->NavRectRel[ImGuiNavLayer_Main];
+    require(snap_rect.GetWidth() > 0 && snap_rect.GetHeight() > 0,
+            "Snap button has no pointer rectangle");
+    snapshot.attach_preview = true;
+    frame(); frame();
+    observed_actions.clear();
+    const auto snap_point = snap_rect.GetCenter();
+    io.AddMousePosEvent(attach_target->Pos.x + snap_point.x, attach_target->Pos.y + snap_point.y);
+    frame(); frame();
+    io.AddMouseButtonEvent(0, true); frame();
+    io.AddMouseButtonEvent(0, false); frame(); frame();
+    require(observed_actions.empty(), "Attached preview queued a free-camera snap");
+    snapshot.attach_preview = false;
+    snapshot.attach_point = 2;
+    snapshot.camera_count = 2;
+    snapshot.selected_camera = 1;
+    frame(); frame();
+    observed_actions.clear();
+    test_context->NavNextActivateId = attach_framing->GetID("Lock vertical aim");
+    frame(); frame();
+    require(observed_actions.size() == 1 &&
+                observed_actions[0].action == dolly::EditorAction::SetAttachVerticalAimLock &&
+                observed_actions[0].value == 1 && observed_actions[0].pose[0] == camera_revision_stub &&
+                observed_actions[0].pose[1] == snapshot.selected_camera,
+            "Bone framing lost the selected-camera level-aim request");
+    const auto aim_rect = attach_framing->NavRectRel[ImGuiNavLayer_Main];
+    require(aim_rect.GetWidth() > 0 && aim_rect.GetHeight() > 0,
+            "Vertical aim lock has no pointer rectangle");
+    snapshot.attach_preview = true;
+    frame(); frame();
+    observed_actions.clear();
+    const auto aim_point = aim_rect.GetCenter();
+    io.AddMousePosEvent(attach_framing->Pos.x + aim_point.x, attach_framing->Pos.y + aim_point.y);
+    frame(); frame();
+    io.AddMouseButtonEvent(0, true); frame();
+    io.AddMouseButtonEvent(0, false); frame(); frame();
+    require(observed_actions.empty(), "Attached preview accepted a vertical-aim change");
+    snapshot.attach_preview = false;
+    frame(); frame();
     observed_actions.clear();
     test_context->NavNextActivateId = attach_framing->GetID("##attach-offset-0");
     test_context->NavNextActivateFlags = ImGuiActivateFlags_PreferInput;
@@ -1251,6 +1293,28 @@ static void panel_option_regressions() {
                 observed_actions[0].value == 0 && observed_actions[0].pose[0] == 5.5 &&
                 observed_actions[0].pose[2] == snapshot.attach_offsets[2],
             "Bone framing changes its existing six-axis offset payload");
+    // A snapped camera can be farther than the small slider's ten-unit range.
+    // Exact entry must keep that distance and all other authored offsets.
+    snapshot.attach_offsets[0] = 17.5;
+    snapshot.attach_offsets[1] = -31.25;
+    snapshot.attach_offsets[2] = 8.75;
+    frame(); frame();
+    observed_actions.clear();
+    test_context->NavNextActivateId = attach_framing->GetID("##attach-offset-0");
+    test_context->NavNextActivateFlags = ImGuiActivateFlags_PreferInput;
+    frame(); frame();
+    require(test_context->InputTextState.ID == test_context->ActiveId && test_context->ActiveId,
+            "A snapped offset cannot be edited as an exact number");
+    io.AddInputCharactersUTF8("75.25");
+    frame();
+    io.AddKeyEvent(ImGuiKey_Enter, true); frame();
+    io.AddKeyEvent(ImGuiKey_Enter, false); frame(); frame();
+    require(observed_actions.size() == 1 &&
+                observed_actions[0].action == dolly::EditorAction::SetAttachOffsets &&
+                observed_actions[0].pose[0] == 75.25 &&
+                observed_actions[0].pose[1] == -31.25 &&
+                observed_actions[0].pose[2] == 8.75,
+            "Editing a snapped offset truncated it or changed another axis");
     test_context->NavNextActivateId = main->GetID("Export###EXPORT");
     frame(); frame();
     observed_actions.clear();
@@ -4057,9 +4121,21 @@ static void shader_notice_regressions(float scale) {
     camera_first_stub=original_first;
     std::printf("Shader notice scale %.2f: three viewports, complete padded text, phase/focus gate, disabled-menu fallback, no input/focus/persistence, and balanced theme/fonts passed.\n",scale);
 }
+#include "rail_regressions.hpp"
 int main(int argc, char** argv) {
     std::setvbuf(stdout,nullptr,_IONBF,0);
     try {
+        if (argc>=2 && std::strcmp(argv[1],"--rail-check")==0) {
+            rail_regressions(argc==3 ? argv[2] : nullptr);
+            return 0;
+        }
+        if (argc == 3 && std::strcmp(argv[1], "--rail-motion") == 0) {
+            rail_regressions(argv[2], true);
+            return 0;
+        }
+        const bool rail_hook = argc==2 && std::strcmp(argv[1],"--rail-hook-check")==0;
+        // Existing geometry/curve regressions exercise the supported classic fallback.
+        SetEnvironmentVariableA("DOLLY_OVERLAY_UI", rail_hook ? nullptr : "classic");
         if(argc==2 && std::strcmp(argv[1],"--layout-crash-fixture")==0)layout_crash_child();
         SetEnvironmentVariableA("DOLLY_UI_LAYOUT_FILE", "none");
         const bool lite_flight_screenshot = argc == 3 && std::strcmp(argv[1], "--screenshot-lite-flight") == 0;
@@ -4081,8 +4157,8 @@ int main(int argc, char** argv) {
             (std::getenv("DOLLY_UI_TEST_POSITION_GRAPH") || std::getenv("DOLLY_UI_TEST_CURVES"));
         double screenshot_curve_step=3;
         bool screenshot_tangents=false;unsigned screenshot_tangent_mode=0;
-        unsigned render_width = lite_screenshot ? 1920 : 800;
-        unsigned render_height = lite_screenshot ? 1080 : (screenshot ? 1100 : 600);
+        unsigned render_width = lite_screenshot || rail_hook ? 1920 : 800;
+        unsigned render_height = lite_screenshot || rail_hook ? 1080 : (screenshot ? 1100 : 600);
         if (layout_screenshot) {
             if (const auto* width = std::getenv("DOLLY_UI_TEST_WIDTH"))
                 render_width = unsigned(std::clamp(std::atoi(width), 640, 3840));
@@ -4105,7 +4181,7 @@ int main(int argc, char** argv) {
             CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, wc.lpszClassName, L"Dolly graphics smoke", WS_OVERLAPPEDWINDOW, 32,
                             32, 800, screenshot ? 1100 : 600, nullptr, nullptr, instance, nullptr);
         require(window != nullptr, "Could not create synthetic window");
-        if(lite_screenshot || layout_screenshot){RECT r{0,0,LONG(render_width),LONG(render_height)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);SetWindowPos(window,nullptr,0,0,r.right-r.left,r.bottom-r.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);}
+        if(lite_screenshot || layout_screenshot || rail_hook){RECT r{0,0,LONG(render_width),LONG(render_height)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);SetWindowPos(window,nullptr,0,0,r.right-r.left,r.bottom-r.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);}
         // Overlay discovery requires a visible window. Offline runs move this
         // non-activating test surface off screen instead of taking game focus.
         if (GetEnvironmentVariableA("DOLLY_UI_TEST_HIDDEN", nullptr, 0))
@@ -4290,7 +4366,7 @@ int main(int argc, char** argv) {
             context->OMSetRenderTargets(1, &target, nullptr);
             context->RSSetViewports(1, &original_viewport);
             require(SUCCEEDED(chain->Present(0, 0)), "Synthetic Present failed");
-            if (i == 0 && !object_screenshot && (!lite_screenshot || layout_screenshot)) {
+            if (!rail_hook && i == 0 && !object_screenshot && (!lite_screenshot || layout_screenshot)) {
                 // All camera tools must be present in the default editor.
                 ImGui::SetCurrentContext(screenshot_context);
                 require(ImGui::FindWindowByName("Deadlock Dolly") != nullptr,
@@ -4311,6 +4387,28 @@ int main(int argc, char** argv) {
                     (follow_screenshot ? "Follow###FOLLOW" : (bone_screenshot ? "Bone Picker###BONE PICKER" : "Camera###CAMERA")));
                 screenshot_context->NavNextActivateId = panel->GetID(label);
             }
+        }
+        if (rail_hook) {
+            ImGui::SetCurrentContext(screenshot_context);
+            require(ImGui::FindWindowByName("##rail-status") && ImGui::FindWindowByName("##lite-timeline"),
+                "Real rail hook lost status or transport");
+            require(!dolly::overlay_close_drawers_on_escape(),"Closed rail consumed Escape");
+            auto* tab=ImGui::FindWindowByName("##rail-tab2");require(tab!=nullptr,"Real rail tab missing");
+            screenshot_context->NavNextActivateId=tab->GetID("##rail-button");
+            for(int n=0;n<3;++n)require(SUCCEEDED(chain->Present(0,0)),"Rail activation Present failed");
+            require(dolly::overlay_close_drawers_on_escape(),"First Escape did not close real rail drawer");
+            require(SUCCEEDED(chain->Present(0,0)),"Rail Escape Present failed");
+            require(!dolly::overlay_close_drawers_on_escape(),"Second Escape must reach the editor's flight action");
+            auto* drawer=ImGui::FindWindowByName("##rail-drawer");
+            require(!drawer || !drawer->Active,"Escape left a live rail drawer");
+            snapshot.owner=dolly::EditorOwner::Flight;
+            require(SUCCEEDED(chain->Present(0,0)),"Rail flight Present failed");
+            require(!ImGui::FindWindowByName("##rail-status")->Active,"Flight failed to hide the rail");
+            dolly::shutdown_overlay();
+            target->Release();backbuffer->Release();context->Release();device->Release();chain->Release();
+            DestroyWindow(window);UnregisterClassW(wc.lpszClassName,instance);
+            std::puts("Real WARP rail hook: embedded assets, first/second Escape and flight ownership passed.");
+            return 0;
         }
         if (layout_screenshot && lite_replay_screenshot) {
             auto* transport=ImGui::FindWindowByName("##lite-timeline");

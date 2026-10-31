@@ -160,7 +160,8 @@ void picker_publish(std::shared_ptr<const PickerCatalog> value) noexcept {
 bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested, bool permitted,
                    CameraPose& pose, double fov, const std::array<double, 6>& offsets,
                    PickerSampler sampler, void* context, bool* attached_preview,
-                   bool auto_clearance, int paused_tick) noexcept {
+                   bool auto_clearance, int paused_tick, bool rigid_orientation,
+                   bool lock_vertical_aim) noexcept {
     if (attached_preview)
         *attached_preview = false;
     std::unique_lock<std::mutex> lock(guard, std::try_to_lock);
@@ -262,7 +263,8 @@ bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested,
         segment.point = AttachPoint::bone;
         segment.bone_hash = attach_bone_hash(catalog->bones[frame.selected].name);
         segment.offset = offsets;
-        segment.flags = auto_clearance ? 4u : 0u;
+        segment.flags = (auto_clearance ? 4u : 0u) | (rigid_orientation ? 8u : 0u) |
+                        (lock_vertical_aim ? 16u : 0u);
         if (!picker_position(frame.sample, catalog->bones[frame.selected], sample.origin) ||
             !resolve_attach_pose(sample, segment, pose)) {
             std::snprintf(frame.error, sizeof(frame.error),

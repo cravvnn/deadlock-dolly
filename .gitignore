@@ -9,6 +9,7 @@ venv/
 /logs/
 /_internal/
 /MANIFEST.json
+/DOLLY_DEFINITIONS.json
 *.exe
 !native/bin/win64/DollyGameAudio.exe
 *.zip

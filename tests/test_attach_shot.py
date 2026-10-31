@@ -106,12 +106,57 @@ class AttachProjectTests(unittest.TestCase):
         del old["clearance_mode"]
         self.assertEqual(Project.from_dict(data).keyframes[0].attach.clearance_mode, "exact")
 
+    def test_rigid_snap_persists_without_changing_legacy_files(self):
+        project = project_with([(0.0, "attach", {"point": "bone", "bone": "head"}),
+                                (1.0, "free")])
+        legacy = project.to_dict()
+        self.assertEqual(legacy["version"], 5)
+        self.assertNotIn("orientation_mode", legacy["keyframes"][0]["attach"])
+        self.assertEqual(Project.from_dict(legacy).keyframes[0].attach.orientation_mode, "legacy")
+        project.keyframes[0].attach.orientation_mode = "rigid"
+        data = project.to_dict()
+        self.assertEqual(data["version"], 13)
+        self.assertEqual(Project.from_dict(data).to_dict(), data)
+        block = compile_attach(project)
+        self.assertEqual(ATTACH_HEADER.unpack_from(block)[1:], (4, 0, 1))
+        segment = ATTACH_SEGMENT3.unpack_from(block, ATTACH_HEADER.size)
+        self.assertEqual(segment[2] & 8, 8)
+        self.assertEqual(segment[-2:], (model_token("head"), 0))
+        data["version"] = 12
+        with self.assertRaisesRegex(ValueError, "Unknown attach key field"):
+            Project.from_dict(data)
+
     def test_attach_file_round_trip(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "attach.dolly"
             project = project_with([(0.0, "free"), (1.0, "attach"), (2.0, "free")])
             project.save(path)
             self.assertEqual(Project.load(path).to_dict(), project.to_dict())
+
+    def test_vertical_aim_lock_is_per_camera_and_versioned(self):
+        project = project_with([(0.0, "attach", {"point": "bone", "bone": "head"}),
+                                (1.0, "attach", {"point": "weapon"})])
+        original = project.to_dict()
+        self.assertNotIn("lock_vertical_aim", original["keyframes"][0]["attach"])
+        self.assertFalse(Project.from_dict(original).keyframes[0].attach.lock_vertical_aim)
+        project.keyframes[0].attach.lock_vertical_aim = True
+        project.keyframes[1].source_blend = .5
+        data = project.to_dict()
+        self.assertEqual(data["version"], 13)
+        self.assertEqual(Project.from_dict(data).to_dict(), data)
+        self.assertTrue(data["keyframes"][0]["attach"]["lock_vertical_aim"])
+        self.assertNotIn("lock_vertical_aim", data["keyframes"][1]["attach"])
+        block = compile_attach(project)
+        self.assertEqual(ATTACH_HEADER.unpack_from(block)[1], 4)
+        self.assertTrue(ATTACH_SEGMENT3.unpack_from(block, ATTACH_HEADER.size)[2] & 16)
+        self.assertFalse(ATTACH_SEGMENT3.unpack_from(block, ATTACH_HEADER.size + ATTACH_SEGMENT3.size)[2] & 16)
+        project.keyframes[1].attach.lock_vertical_aim = True
+        terminal = compile_attach(project)
+        self.assertTrue(ATTACH_SEGMENT3.unpack_from(
+            terminal, ATTACH_HEADER.size + ATTACH_SEGMENT3.size)[2] & 16)
+        data["version"] = 12
+        with self.assertRaisesRegex(ValueError, "Unknown attach key field"):
+            Project.from_dict(data)
 
     def test_free_key_with_attach_data_is_refused(self):
         key = Keyframe(0.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, source="free", attach=attach_target())
@@ -135,6 +180,8 @@ class AttachProjectTests(unittest.TestCase):
             {"smoothing": -1.0},
             {"hide_body": 1},
             {"clearance_mode": "unsafe"},
+            {"orientation_mode": "unsafe"},
+            {"lock_vertical_aim": 1},
             {"entity_id": -1},
             {"handle": True},
         )

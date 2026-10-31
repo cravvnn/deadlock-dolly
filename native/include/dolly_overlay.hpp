@@ -38,6 +38,8 @@ const char* overlay_last_error() noexcept;
 // the queue falls well below the threshold. Camera control is unaffected.
 void overlay_set_renderer_pressure(bool high) noexcept;
 bool overlay_renderer_pressure() noexcept;
+// Presentation-only Escape handoff; never changes the shared-memory action ABI.
+bool overlay_close_drawers_on_escape() noexcept;
 
 // Raw-input games may suppress legacy window mouse/key messages. Input hooks
 // enqueue these events; only the render/window callback accesses ImGui.

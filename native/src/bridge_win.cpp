@@ -40,6 +40,7 @@
 #include "dolly_video.hpp"
 #include "dolly_confetti.hpp"
 #include "dolly_prop_runtime.hpp"
+#include "dolly_remote_definitions.hpp"
 // Pulled in again (as a no-op) by dolly_compat_runtime.hpp from inside the
 // anonymous namespace below. Declaring it here first keeps `#pragma once` from
 // introducing a `dolly` namespace in that anonymous namespace, which would
@@ -121,6 +122,9 @@ constexpr EngineLayout kEngine6726Layout{0x5b92b0, 0x4d7e88, 0x4e2790, 0x2d590, 
 constexpr EngineLayout kEngine6728Layout{0x5b92b0, 0x4d7e88, 0x4e2790, 0x2d590, 0x732c0,
                                          0x34ea0,  0x28b40,  0x34ee0,  0x73310};
 EngineLayout gEngineLayout = kLegacyEngineLayout;
+// Movie-audio capture stays reviewed per exact engine identity. A published
+// definitions entry cannot widen it.
+bool gReviewedMovieAudioEngine = false;
 // Identical across every reviewed client build; the exact-hash path re-checks it.
 constexpr unsigned char kSetupPrologue[] = {
     0x48, 0x8b, 0xc4, 0x48, 0x89, 0x58, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56,
@@ -409,6 +413,19 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
     return module && hash_file(module_path(module)) == expected &&
            module_image_size(module) == image_size;
 }
+// Definitions published on the repository's default branch and cached by the
+// editor. Loaded once in the worker; everything else only reads it. Declared
+// before the behaviour headers below because they consult it during setup.
+dolly_remote::Definitions gRemoteDefinitions;
+
+static void load_remote_definitions() {
+    dolly_remote::Definitions parsed;
+    if (!dolly_remote::load(beside_module(L"dolly_definitions.txt").c_str(), parsed))
+        return;
+    if (parsed.abi != kBridgeAbi)
+        return;
+    gRemoteDefinitions = parsed;
+}
 #include "dolly_compat_runtime.hpp"
 #include "native_camera_view.hpp"
 camera_view::Cache gCameraCache;
@@ -416,6 +433,57 @@ camera_view::Cache gCameraCache;
 #include "native_relief_win.hpp"
 #include "native_gameplay_effects_win.hpp"
 #include "dolly_attach_runtime.hpp"
+
+// Reviewed engine2 identities select one of the compiled replay layouts. A
+// published definitions entry may add another accepted engine identity that
+// reuses a named layout, but it can never override a compiled one.
+static bool resolve_engine_layout(HMODULE engine, EngineLayout& layout) {
+    const bool engine6726 = module_matches(engine, kBuild6726EngineHash, 0x906000);
+    const bool engine6728 = module_matches(engine, kBuild6728EngineHash, 0x906000);
+    const bool engine6739 = module_matches(engine, kBuild6739EngineHash, 0x906000);
+    const bool engine6753 = module_matches(engine, kBuild6753EngineHash, 0x906000);
+    const bool engine6757 = module_matches(engine, kBuild6757EngineHash, 0x906000);
+    const bool engine6779 = module_matches(engine, kBuild6779EngineHash, 0x906000);
+    const bool engine6782 = module_matches(engine, kBuild6782EngineHash, 0x906000);
+    const bool engine6793 = module_matches(engine, kBuild6793EngineHash, 0x906000);
+    const bool engine6801 = module_matches(engine, kBuild6801EngineHash, 0x906000);
+    const bool engine6769 = module_matches(engine, kBuild6769EngineHash, 0x906000);
+    const bool september_engine = module_matches(engine, kSeptemberEngineHash, 0x906000);
+    if (engine6801 || engine6793 || engine6782 || engine6779 || engine6769 || engine6757 ||
+        engine6753 || engine6739 || engine6728) {
+        layout = kEngine6728Layout;
+        gReviewedMovieAudioEngine = engine6801 || engine6793;
+        return true;
+    }
+    if (engine6726) {
+        layout = kEngine6726Layout;
+        return true;
+    }
+    if (september_engine) {
+        layout = kSeptemberEngineLayout;
+        return true;
+    }
+    if (module_matches(engine, kEngineHash, 0x969000) ||
+        module_matches(engine, kUpdatedEngineHash, 0x969000)) {
+        layout = kLegacyEngineLayout;
+        return true;
+    }
+    if (!gRemoteDefinitions.loaded)
+        return false;
+    for (std::size_t i = 0; i < gRemoteDefinitions.engine_count; ++i) {
+        const auto& profile = gRemoteDefinitions.engines[i];
+        if (!module_matches(engine, profile.sha256, profile.image_size))
+            continue;
+        const auto* found = dolly_remote::detail::engine_layout(gRemoteDefinitions, profile.layout);
+        if (!found)
+            return false;
+        layout = EngineLayout{found->demo_global, found->demo_table, found->engine_table,
+                              found->playing,    found->active,     found->paused,
+                              found->seeking,    found->tick,       found->filename};
+        return true;
+    }
+    return false;
+}
 
 // Attach preview state resolved by the worker from the published selection.
 // The render callback only reads this immutable snapshot: it never walks
@@ -432,6 +500,51 @@ struct AttachPreview {
     std::uint32_t handle = 0, entity_index = 0;
     std::uint64_t model = 0;
     std::uint64_t bone_hash = 0;
+};
+
+// Offset publications can advance the config sequence while the same camera
+// is still moving. Preserve its viewing direction and smoothing across those
+// updates, but never across a changed target, mode or selected view.
+struct AttachPreviewIdentity {
+    std::uint32_t command = 0, selected = 0, handle = 0, entity = 0, point = 0, modes = 0;
+    std::uint64_t model = 0, bone = 0;
+    std::uintptr_t pawn = 0, identity = 0, node = 0, model_object = 0, bone_array = 0;
+    std::array<std::uint32_t, 8> schema{};
+    bool operator==(const AttachPreviewIdentity& other) const noexcept {
+        return command == other.command && selected == other.selected && handle == other.handle &&
+               entity == other.entity && point == other.point && modes == other.modes &&
+               model == other.model && bone == other.bone && pawn == other.pawn &&
+               identity == other.identity && node == other.node && model_object == other.model_object &&
+               bone_array == other.bone_array && schema == other.schema;
+    }
+};
+
+struct AttachPreviewContinuity {
+    bool active = false;
+    AttachPreviewIdentity previous{};
+    void reset() noexcept { active = false; }
+    bool observe(const AttachPreview& preview, const EditorAttachConfig& config,
+                 std::uint32_t selected) noexcept {
+        AttachPreviewIdentity next{};
+        next.command = preview.camera_command;
+        next.selected = selected;
+        next.handle = preview.handle;
+        next.entity = preview.entity_index;
+        next.point = static_cast<std::uint32_t>(preview.point);
+        next.modes = config.hide & 14;
+        next.model = preview.model;
+        next.bone = preview.bone_hash;
+        next.pawn = preview.cache.pawn;
+        next.identity = preview.cache.identity;
+        next.node = preview.cache.node;
+        next.model_object = preview.cache.model_object;
+        next.bone_array = preview.cache.bone_array;
+        std::copy(std::begin(config.offsets), std::end(config.offsets), next.schema.begin());
+        const bool continued = active && previous == next;
+        previous = next;
+        active = true;
+        return continued;
+    }
 };
 std::shared_ptr<const AttachPreview> gAttachPreview;
 
@@ -1000,6 +1113,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         static PausedAttachSample<AttachSample> preview_paused_sample;
         static CameraPose preview_offsets;
         static std::uint32_t preview_seed = 0;
+        static AttachPreviewContinuity preview_continuity;
         static std::array<double, 6> preview_published{};
         static std::uint32_t snap_seen = 0;
         const bool snap_requested = preview_config.snap_request != snap_seen;
@@ -1032,7 +1146,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                               !picker_editor.playing && !picker_editor.busy,
                           manual_pose, picker_fov, picker_offsets, sample_picker,
                           preview_current ? const_cast<AttachPreview*>(preview.get()) : nullptr,
-                          &picker_attached_preview, (preview_config.hide & 2) != 0, demo.tick);
+                          &picker_attached_preview, (preview_config.hide & 2) != 0, demo.tick,
+                          (preview_config.hide & 4) != 0, (preview_config.hide & 8) != 0);
         if (picker_active)
             player_capture::set_hidden_handle(
                 picker_attached_preview && (preview_config.hide & 1) ? preview_config.handle : 0,
@@ -1051,40 +1166,51 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         }
         const bool preview_active =
             preview_current && preview->cache.ready && preview_flag && manual_mode;
-        if (!preview_active)
+        if (!preview_active) {
             preview_paused_sample.reset();
+            preview_continuity.reset();
+        }
         if (snap_requested && !picker_active && !preview_active && preview_current &&
-            preview->cache.ready && manual_mode) {
+            preview->cache.ready && manual_mode && demo.paused && !demo.seeking) {
             snap_seen = preview_config.snap_request;
             AttachSample snap_sample{};
             const char* snap_error = nullptr;
             AttachSegment snap_segment{};
             snap_segment.point = preview->point;
+            snap_segment.bone_hash = preview->bone_hash;
             if (attach_runtime::sample(preview->schema, preview->cache, snap_segment, snap_sample,
                                        snap_error)) {
                 std::array<double, 6> snapped{};
-                if (attach_snap_offsets(snap_sample, manual_pose, snapped))
+                if (attach_snap_offsets(snap_sample, manual_pose, snapped, true,
+                                        (preview_config.hide & 8) != 0))
                     publish_attach_result(*preview, snapped);
             }
         }
         if (preview_active) {
             bool preview_dirty = false;
-            if (preview_seed != preview->sequence) {
+            const bool continued = preview_continuity.observe(*preview, preview_config,
+                                                               picker_editor.selected_camera);
+            const bool preview_reseeded = !continued || preview_seed != preview->sequence;
+            if (preview_reseeded) {
                 preview_seed = preview->sequence;
                 for (int index = 0; index < 6; ++index)
                     preview_offsets[index] = preview->authored[index];
                 preview_offsets[6] = manual_pose[6];
-                preview_smoothing.reset();
-                preview_paused_sample.reset();
+                if (!continued) {
+                    preview_smoothing.reset();
+                    preview_paused_sample.reset();
+                }
                 preview_dirty = true;
             }
-            editor_integrate_flight(preview_offsets, real_delta);
             AttachSample preview_sample{};
             const char* preview_error = nullptr;
             AttachSegment segment{};
             segment.point = preview->point;
             segment.bone_hash = preview->bone_hash;
-            segment.flags = (preview_config.hide & 2) ? 4u : 0u;
+            segment.flags = ((preview_config.hide & 2) ? 4u : 0u) |
+                            ((preview_config.hide & 4) ? 8u : 0u) |
+                            ((preview_config.hide & 8) ? 16u : 0u);
+            segment.smoothing = preview->smoothing;
             for (int index = 0; index < 6; ++index)
                 segment.offset[index] = preview_offsets[index];
             if (!attach_runtime::sample(preview->schema, preview->cache, segment, preview_sample,
@@ -1098,16 +1224,38 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             rendered_attach_sample(0, preview, &preview->cache, preview->schema, segment,
                                    preview_sample, now, status.frame_count, demo.tick, demo.paused);
             preview_paused_sample.apply(preview_sample, demo.paused, demo.tick);
+            {
+                CameraPose pre_flight = manual_pose;
+                if (!resolve_attach_pose(preview_sample, segment, pre_flight)) {
+                    fault = 42;
+                    finish(State::Fault, fault, "The attach preview pose check failed.");
+                    return;
+                }
+                // Movement follows the view the user actually saw, including
+                // smoothing, while only input deltas change authored offsets.
+                CameraPose flight_before = pre_flight;
+                if (continued)
+                    for (int axis = 3; axis < 6; ++axis)
+                        flight_before[axis] = manual_pose[axis];
+                flight_before[6] = preview_offsets[6];
+                CameraPose flight_after = flight_before;
+                editor_integrate_flight(flight_after, real_delta);
+                if (!attach_apply_camera_motion(preview_sample, segment, flight_before, flight_after,
+                                                preview_offsets)) {
+                    fault = 42;
+                    finish(State::Fault, fault, "The attach preview motion check failed.");
+                    return;
+                }
+                for (int index = 0; index < 6; ++index)
+                    segment.offset[index] = preview_offsets[index];
+            }
             CameraPose composed = manual_pose;
-            if (!resolve_attach_pose(preview_sample, segment, composed)) {
+            if (!resolve_attach_view(preview_sample, segment, composed, preview_smoothing,
+                                     real_delta)) {
                 fault = 42;
                 finish(State::Fault, fault, "The attach preview pose check failed.");
                 return;
             }
-            preview_smoothing.apply_anchored(composed, preview_sample.motion_anchor, real_delta,
-                                             preview->smoothing,
-                                             attach_smoothing_error_limit(segment));
-            enforce_attach_clearance(preview_sample, segment, composed);
             manual_pose = composed;
             player_capture::set_hidden_handle(
                 (preview_config.hide & 1) ? preview_sample.target.handle : 0, 3);
@@ -1301,15 +1449,12 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                demo.paused);
         paused_samples[segment_index].apply(attach_sample, demo.paused, demo.tick);
         CameraPose resolved = applied;
-        if (!resolve_attach_pose(attach_sample, *attach_segment, resolved)) {
+        if (!resolve_attach_view(attach_sample, *attach_segment, resolved,
+                                 attach_smoothing[segment_index], real_delta)) {
             fault = 42;
             finish(State::Fault, fault, "The attach camera identity or pose check failed.");
             return;
         }
-        attach_smoothing[segment_index].apply_anchored(
-            resolved, attach_sample.motion_anchor, real_delta, attach_segment->smoothing,
-            attach_smoothing_error_limit(*attach_segment));
-        enforce_attach_clearance(attach_sample, *attach_segment, resolved);
         applied = resolved;
         hidden_current = (attach_segment->flags & 2) ? attach_sample.target.handle : 0;
     }
@@ -1336,15 +1481,12 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                    *arriving, sample, now, status.frame_count, demo.tick,
                                    demo.paused);
             paused_samples[index].apply(sample, demo.paused, demo.tick);
-            if (!resolve_attach_pose(sample, *arriving, destination)) {
+            if (!resolve_attach_view(sample, *arriving, destination, attach_smoothing[index],
+                                     real_delta)) {
                 fault = 42;
                 finish(State::Fault, fault, "The arriving camera pose check failed.");
                 return;
             }
-            attach_smoothing[index].apply_anchored(destination, sample.motion_anchor, real_delta,
-                                                   arriving->smoothing,
-                                                   attach_smoothing_error_limit(*arriving));
-            enforce_attach_clearance(sample, *arriving, destination);
             hidden_arriving = (arriving->flags & 2) ? sample.target.handle : 0;
         }
         applied = blend_attach_poses(applied, destination, blend_weight);
@@ -1447,6 +1589,9 @@ static DWORD WINAPI worker(void*) {
             return 0;
         }
         startup_status(State::Starting, 0, "Waiting for Deadlock client and engine modules.");
+        // Published build definitions, cached beside this DLL by the editor.
+        // A missing or malformed file simply leaves the bundled table active.
+        load_remote_definitions();
         // Environment-edition opt-in. Collect only reviewed shader metadata
         // before client/preload creation; no private engine layout or draw work.
         // Owned config/editor and -dev/-insecure were already verified.
@@ -1472,20 +1617,7 @@ static DWORD WINAPI worker(void*) {
                 break;
             Sleep(20);
         }
-        const bool engine6726 = module_matches(engine, kBuild6726EngineHash, 0x906000);
-        const bool engine6728 = module_matches(engine, kBuild6728EngineHash, 0x906000);
-        const bool engine6739 = module_matches(engine, kBuild6739EngineHash, 0x906000);
-        const bool engine6753 = module_matches(engine, kBuild6753EngineHash, 0x906000);
-        const bool engine6757 = module_matches(engine, kBuild6757EngineHash, 0x906000);
-        const bool engine6779 = module_matches(engine, kBuild6779EngineHash, 0x906000);
-        const bool engine6782 = module_matches(engine, kBuild6782EngineHash, 0x906000);
-        const bool engine6793 = module_matches(engine, kBuild6793EngineHash, 0x906000);
-        const bool engine6801 = module_matches(engine, kBuild6801EngineHash, 0x906000);
-        const bool engine6769 = module_matches(engine, kBuild6769EngineHash, 0x906000);
-        const bool september_engine = module_matches(engine, kSeptemberEngineHash, 0x906000);
-        if (!engine6801 && !engine6793 && !engine6782 && !engine6779 && !engine6769 && !engine6757 && !engine6753 && !engine6739 && !engine6728 && !engine6726 && !september_engine &&
-            !module_matches(engine, kEngineHash, 0x969000) &&
-            !module_matches(engine, kUpdatedEngineHash, 0x969000)) {
+        if (!resolve_engine_layout(engine, gEngineLayout)) {
             startup_status(
                 State::Unsupported, 21,
                 "The installed engine2.dll does not match this native build. Use Console camera and provide the updated DLL.");
@@ -1493,15 +1625,7 @@ static DWORD WINAPI worker(void*) {
         }
         gClient = reinterpret_cast<std::uintptr_t>(client);
         gEngine = reinterpret_cast<std::uintptr_t>(engine);
-        gEngineLayout = (engine6801 || engine6793 || engine6782 || engine6779 || engine6769) ? kEngine6728Layout
-                        : engine6757       ? kEngine6728Layout
-                        : engine6753       ? kEngine6728Layout
-                        : engine6739       ? kEngine6728Layout
-                        : engine6728       ? kEngine6728Layout
-                        : engine6726       ? kEngine6726Layout
-                        : september_engine ? kSeptemberEngineLayout
-                                           : kLegacyEngineLayout;
-        gCompat = resolve_client_profile(client, true);
+        gCompat = resolve_client_profile(client, true, &gRemoteDefinitions);
         if (!gCompat.resolved) {
             startup_status(
                 State::Unsupported, 21,
@@ -1609,7 +1733,7 @@ static DWORD WINAPI worker(void*) {
         // The movie-WAV owner, virtual methods and host_framerate registration
         // are reviewed for these exact engines. The hook only changes the movie
         // clock while host_framerate is positive; real-time recording is unchanged.
-        if (engine6793 || engine6801)
+        if (gReviewedMovieAudioEngine)
             movie_audio_install(engine);
         // Hook and original trampoline remain resident until process exit. Losing
         // the editor only releases ownership, avoiding code-unload races in a view.

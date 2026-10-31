@@ -681,6 +681,8 @@ std::wstring quote_arg(const std::wstring& value) {
 std::wstring build_ffmpeg_command(const Session& s) {
     const bool mp4 =
         s.path.size() >= 4 && _wcsicmp(s.path.c_str() + s.path.size() - 4, L".mp4") == 0;
+    const bool mov =
+        s.path.size() >= 4 && _wcsicmp(s.path.c_str() + s.path.size() - 4, L".mov") == 0;
     const Codec codec = s.codec == Codec::auto_select ? Codec::h264_nvenc : s.codec;
     std::wstring cmd = quote_arg(s.ffmpeg);
     cmd += L" -hide_banner -loglevel error -nostdin -n";
@@ -719,8 +721,21 @@ std::wstring build_ffmpeg_command(const Session& s) {
         cmd += L" -b:v " + std::to_wstring(s.bitrate);
         break;
     }
-    if (codec != Codec::lossless)
-        cmd += L" -pix_fmt yuv420p";
+    if (codec != Codec::lossless) {
+        // Raw game RGB has no color metadata. Set both the actual conversion
+        // and the frame/output tags; output options alone can leave primaries
+        // and transfer characteristics unspecified in the encoded file.
+        cmd += L" -vf scale=out_color_matrix=bt709:out_range=tv,"
+               L"setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+               L" -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709"
+               L" -color_trc bt709 -color_range tv";
+    }
+    if (mov && codec == Codec::h264_mf) {
+        // The MF H.264 encoder can omit the range flag, and QuickTime MOV
+        // does not otherwise preserve it. Signal the actual limited range in
+        // the H.264 stream itself so editors do not have to guess.
+        cmd += L" -bsf:v h264_metadata=video_full_range_flag=0";
+    }
     if (mp4)
         cmd += L" -movflags +faststart";
     cmd += L" ";
@@ -1382,7 +1397,10 @@ bool start(const Options& options) noexcept {
         const auto length = std::wcslen(path);
         const bool mp4 = length >= 4 && _wcsicmp(path + length - 4, L".mp4") == 0;
         const bool mkv = length >= 4 && _wcsicmp(path + length - 4, L".mkv") == 0;
-        if (!absolute_path(path, length) || length < 4 || (!mp4 && !mkv))
+        const bool mov = length >= 4 && _wcsicmp(path + length - 4, L".mov") == 0;
+        if (!absolute_path(path, length) || length < 4 || (!mp4 && !mkv && !mov))
+            return false;
+        if (mov && options.encoder != Encoder::ffmpeg)
             return false;
         if (options.encoder == Encoder::ffmpeg) {
             const wchar_t* ffmpeg = options.ffmpeg;

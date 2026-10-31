@@ -7,6 +7,7 @@
 #include <d3d11sdklayers.h>
 #include <wrl/client.h>
 #include <vector>
+#include <algorithm>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -407,6 +408,20 @@ int main() {
     }
     CHECK(reuseResult == 1);
     CHECK(reuse.pixels == expectedRed);
+    CHECK(reuse.recycle(c.Get()));
+    // A moving shot can leave every player behind and later see one again.
+    // Seal the actual cleared scene image without any selected draw between.
+    CHECK(reuse.finish(c.Get()));
+    c->Flush();
+    reuseResult = 0;
+    const auto emptyDeadline = GetTickCount64() + 2000;
+    while (!reuseResult && GetTickCount64() < emptyDeadline) {
+        reuseResult = reuse.poll(c.Get());
+        if (!reuseResult)
+            Sleep(1);
+    }
+    CHECK(reuseResult == 1);
+    CHECK(std::all_of(reuse.pixels.begin(), reuse.pixels.end(), [](auto x) { return x == 0; }));
     CHECK(reuse.recycle(c.Get()));
     c->PSSetShader(greenFrame.Get(), nullptr, 0);
     CHECK(reuse.append(c.Get(), [&] { c->Draw(3, 0); }, false, true, true));

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from collections import deque
+import argparse
 import importlib.metadata
 import json
 import os
@@ -136,7 +137,19 @@ def run_regression_tests(root: Path, log_path: Path) -> None:
         raise
 
 
-def main() -> int:
+def distribution_dir(output_dir: Path | None, version: str) -> Path:
+    """Allow a separate candidate folder without overwriting its artifacts."""
+    if output_dir is None:
+        return ROOT / "dist"
+    destination = Path(output_dir)
+    for name in (f"Deadlock_Dolly_{version}_Windows_x64.zip",
+                 f"Deadlock_Dolly_{version}_Source.zip", "SHA256SUMS.txt"):
+        if (destination / name).exists():
+            raise FileExistsError(f"Release output already exists: {destination / name}")
+    return destination
+
+
+def main(output_dir: Path | None = None) -> int:
     build_edition = os.environ.get("DOLLY_BUILD_EDITION", "standard")
     if build_edition not in ("standard", "environment"):
         raise ValueError("Unknown build edition")
@@ -152,6 +165,13 @@ def main() -> int:
         raise RuntimeError("Install the pinned requirements-build.txt in the build environment")
     notes = ROOT / "docs" / f"RELEASE_NOTES_{__version__}.md"
     validate_publish_body(notes.read_text(encoding="utf-8-sig"), __version__)
+    prefix = (f"Dolly_Environment_Capture_{__version__}_Experimental"
+              if environment else f"Deadlock_Dolly_{__version__}")
+    dist = distribution_dir(output_dir, __version__)
+    if environment:
+        for name in (f"{prefix}_Windows_x64.zip", f"{prefix}_Source.zip", "SHA256SUMS.txt"):
+            if (dist / name).exists():
+                raise FileExistsError(f"Environment output already exists: {dist / name}")
     build = ROOT / "build"
     checks = build / "checks"
     checks.mkdir(parents=True, exist_ok=True)
@@ -169,22 +189,29 @@ def main() -> int:
         if not bundle.resolve().is_relative_to(ROOT.resolve()) or bundle.is_symlink() or bundle.is_junction():
             raise RuntimeError("Unexpected bundle cleanup path")
         shutil.rmtree(bundle)
-    shutil.copytree(build / "frozen/DollyAppRuntime", bundle / "_internal")
-    print("Building Dolly.exe with embedded startup/update recovery...", flush=True)
-    subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
-                    "--name", "Dolly", "--paths", str(ROOT), "--distpath", str(build / "bootstrap"),
-                    "--workpath", str(build / "bootstrap-work"), "--specpath", str(build / "bootstrap-spec"),
-                    "--icon", str(ROOT / "assets/dolly.ico"), "--version-file", str(build / "windows-version.txt"),
-                    "--add-data", str(ROOT / "assets/dolly.ico") + ";assets",
-                    str(ROOT / "packaging/bootstrap_entrypoint.py")], cwd=ROOT, check=True)
-    shutil.copy2(build / "bootstrap/Dolly.exe", bundle / "Dolly.exe")
-    if not environment:
-        subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test",
-                        str(checks / "updater-smoke.json")], check=True, timeout=60)
-        if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
-            raise RuntimeError("Embedded updater smoke test failed")
+    if environment:
+        shutil.copytree(build / "frozen/DollyAppRuntime", bundle)
+    else:
+        shutil.copytree(build / "frozen/DollyAppRuntime", bundle / "_internal")
+        print("Building Dolly.exe with embedded startup/update recovery...", flush=True)
+        subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
+                        "--name", "Dolly", "--paths", str(ROOT), "--distpath", str(build / "bootstrap"),
+                        "--workpath", str(build / "bootstrap-work"), "--specpath", str(build / "bootstrap-spec"),
+                        "--icon", str(ROOT / "assets/dolly.ico"), "--version-file", str(build / "windows-version.txt"),
+                        "--add-data", str(ROOT / "assets/dolly.ico") + ";assets",
+                        str(ROOT / "packaging/bootstrap_entrypoint.py")], cwd=ROOT, check=True)
+        shutil.copy2(build / "bootstrap/Dolly.exe", bundle / "Dolly.exe")
+        if not environment:
+            subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test",
+                            str(checks / "updater-smoke.json")], check=True, timeout=60)
+            if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
+                raise RuntimeError("Embedded updater smoke test failed")
     third_party = bundle / "_internal" / "third_party"
-    shutil.copytree(ROOT / "third_party", third_party, dirs_exist_ok=True)
+    if environment:
+        shutil.copytree(ROOT / "third_party/cvar_unlocker", third_party / "cvar_unlocker")
+        shutil.copytree(ROOT / "third_party/notices", third_party / "notices")
+    else:
+        shutil.copytree(ROOT / "third_party", third_party, dirs_exist_ok=True)
     print("Staging bundled FFmpeg (LGPL)...", flush=True)
     ffmpeg_archive = download_ffmpeg(ROOT / "build" / "ffmpeg-cache")
     stage_ffmpeg(ffmpeg_archive, third_party / "ffmpeg")
@@ -193,6 +220,9 @@ def main() -> int:
         raise RuntimeError("The official unlocker changed during packaging")
     copy_runtime_licenses(third_party / "notices")
     native_report = copy_native_runtime(ROOT, bundle / "_internal" / "native")
+    if environment:
+        (bundle / "_internal/native/bin/win64/DollyGameAudio.exe").unlink()
+
     shutil.copy2(ROOT / "native" / "vendor" / "minhook" / "LICENSE.txt",
                  third_party / "notices" / "MinHook-LICENSE.txt")
     shutil.copy2(ROOT / "native" / "vendor" / "imgui" / "LICENSE.txt",
@@ -210,9 +240,9 @@ def main() -> int:
         (bundle / "Start_Here.txt").write_text(
             "Dolly Environment Capture (experimental)\n\n"
             "Capture panorama is available in Controls, unbound by default. A matching Capture "
-            "panorama button is in Export. Read Environment_Capture.md.\n"
+            "panorama button is in Capture. Read Environment_Capture.md.\n"
             "Select a square render size, open a replay, pause and position the camera before capture.\n"
-            "Depth and character cutouts are optional for screenshots; the HDR panorama needs a "
+            "PNG stills and HDR panoramas are the only output types. A panorama needs a "
             "square game view at 100% render scale (turn off FSR/DLSS upscaling if capture says the "
             "game is rendering below the HDR size).\n"
             "Settings are separate from regular Dolly. Standard Dolly auto-updates are disabled; new "
@@ -222,10 +252,9 @@ def main() -> int:
         shutil.copy2(ROOT / "docs" / "ENVIRONMENT_CAPTURE.md", bundle / "Environment_Capture.md")
         (bundle / "Release_Notes.md").write_text(
             "# Dolly Environment Capture (experimental)\n\n"
-            "Slim capture-only edition of Deadlock Dolly on the current 0.6.75 runtime.\n\n"
-            "- Desktop Export shows only Screenshot and Environment panorama.\n"
-            "- Screenshot: lossless PNG at native or larger render size; depth and character "
-            "cutouts are optional.\n"
+            f"Slim capture-only edition of Deadlock Dolly on the {__version__} runtime.\n\n"
+            "- Kara desktop and in-game capture rail; Viewpoints, Scene and Capture pages.\n"
+            "- Screenshot: lossless PNG at native or larger render size.\n"
             "- Environment panorama: six overlapping HDR faces assembled into an EXR reference, "
             "with camera, HUD and display resolution restored afterwards.\n"
             "- Capture panorama is bindable in Controls and is unbound by default.\n"
@@ -281,8 +310,7 @@ def main() -> int:
     else:
         from dolly.updater import write_manifest
         write_manifest(bundle, __version__)
-    dist = ROOT / "dist"
-    dist.mkdir(exist_ok=True)
+    dist.mkdir(parents=True, exist_ok=True)
     prefix = (f"Dolly_Environment_Capture_{__version__}_Experimental"
               if environment else f"Deadlock_Dolly_{__version__}")
     windows_zip = dist / f"{prefix}_Windows_x64.zip"
@@ -294,8 +322,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, help="Save release files in a separate directory")
+    arguments = parser.parse_args()
     try:
-        raise SystemExit(main())
+        from build_desktop import isolate_build
+        status = isolate_build()
+        if status is not None:
+            raise SystemExit(status)
+        raise SystemExit(main(arguments.output_dir))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)
         raise SystemExit(1)

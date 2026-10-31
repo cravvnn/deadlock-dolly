@@ -255,3 +255,25 @@ class StockProvenanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Ambiguous'):
             stock.verify(self.paths, self.editing, self.profile, [other])
         self.assertFalse((self.paths.citadel_dir/'cfg').exists())
+
+    def test_published_stock_variants_are_additive_and_bounded(self):
+        changed = b'published stock cfg'
+        files = dict(self.files, **{'game/citadel/gameinfo.gi': changed})
+        self.unknown(files)
+        with self.assertRaisesRegex(ValueError, 'stock GameInfo/cfg changed'):
+            self.verify()
+        extra = {'game/citadel/gameinfo.gi': ((len(changed), hashlib.sha1(changed).hexdigest()),)}
+        receipt = stock.verify(self.paths, self.editing, self.profile, extra_files=extra)
+        self.assertEqual(receipt['basis'], 'current_cached_manifests')
+        self.assertIn({'stock_snapshot': 'published definitions'}, receipt['depots'])
+        # A published row cannot invent a stock path that is not in the bundle.
+        with self.assertRaisesRegex(ValueError, 'unreviewed path'):
+            stock.verify(self.paths, self.editing, self.profile,
+                         extra_files={'game/citadel/cfg/invented.cfg': ((1, 'a' * 40),)})
+        # A published variant cannot widen a different file's content.
+        with self.assertRaisesRegex(ValueError, 'stock GameInfo/cfg changed'):
+            stock.verify(self.paths, self.editing, self.profile,
+                         extra_files={'game/citadel/gameinfo.gi': ((1, 'a' * 40),)})
+        # The bundled reviewed row stays accepted when the install matches it.
+        self.unknown(self.files)
+        self.assertEqual(self.verify()['basis'], 'current_cached_manifests')

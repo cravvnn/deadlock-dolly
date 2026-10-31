@@ -87,6 +87,9 @@ class DesktopLayoutTests(unittest.TestCase):
         page.yview_moveto(0); self.root.update()
         before = page.yview()
         combo.event_generate("<MouseWheel>", delta=-120); self.root.update()
+        # The page wheel eases (PLAN-5 N5); its end state is what matters here.
+        from dolly.ui.tween import Animator
+        Animator.of(self.root).finish(); self.root.update()
         self.assertEqual(combo.get(), value)
         self.assertGreater(page.yview()[0], before[0])
         # Explicit dropdown selection remains available.
@@ -94,33 +97,94 @@ class DesktopLayoutTests(unittest.TestCase):
         self.assertEqual(self.app.video_fps.get(), "120")
 
     def test_export_cards_align_when_encoder_options_expand(self):
+        # One column like Replay's (USER-ADDITIONS UPDATE 13): a growing card (the Player POV
+        # row) pushes the cards below it down by exactly its growth and moves none sideways.
         from dolly.gui_layout import Disclosure
         self.root.deiconify(); self.root.geometry("1180x800")
         self.app.notebook.select(self.app.export_tab); self.root.update()
-        left, right = self.app.export_passes_card, self.app.export_capture_card
-        for expanded in (False, True):
-            for child in right.winfo_children():
-                if isinstance(child, Disclosure): child.set_open(expanded)
-            self.root.update()
-            self.assertEqual(left.winfo_rooty(), right.winfo_rooty())
-            self.assertEqual(left.winfo_height(), right.winfo_height())
+        page = self.app.export_page
+        page.layout_now()
+        def rects():
+            page.layout_now()
+            return (page.rect_of(self.app.camera_source_card), page.rect_of(self.app.export_capture_card),
+                    page.rect_of(self.app.export_passes_card))
+        source, capture, passes = rects()
+        self.assertFalse(page.two_columns)
+        self.assertEqual(len({source[0], capture[0], passes[0]}), 1)
+        self.assertLess(source[3], capture[1])
+        self.assertLess(capture[3], passes[1])
+        self.app.video_source.set("Player POV"); self.app._video_source_changed(); self.root.update()
+        grown, still, below = rects()
+        growth = (grown[3] - grown[1]) - (source[3] - source[1])
+        self.assertGreater(growth, 0)
+        for old, new in ((capture, still), (passes, below)):
+            self.assertEqual((new[0], new[2], new[3] - new[1]), (old[0], old[2], old[3] - old[1]))
+            self.assertEqual(new[1] - old[1], growth)
+        def children(parent):
+            for child in parent.winfo_children():
+                yield child
+                yield from children(child)
+        self.assertFalse([child for child in children(page) if isinstance(child, Disclosure)])
 
     def test_launch_setup_inherits_card_surface_through_nested_fields(self):
-        from dolly.gui_layout import Disclosure
+        # Launch Setup is a card of its own in the redesign (Figma [design reference]), no
+        # longer a disclosure: every frame up to the card body is on the card.
         from tkinter import ttk
         combo = self.app.home_camera_driver_combo
+        body = self.app.library_view.launch_card.body
         frame = combo.master
-        while not isinstance(frame, Disclosure):
+        while True:
+            self.assertIsInstance(frame, ttk.Frame)
             self.assertEqual(ttk.Style(frame).lookup(frame.cget("style"), "background"),
                              ttk.Style(frame).lookup("Card.TFrame", "background"))
+            if frame is body:
+                break
             frame = frame.master
-        self.assertEqual(str(frame.toggle.cget("style")), "Disclosure.Card.TButton")
+        # The kit's 30 px card dropdown, still drawn on the card surface.
+        self.assertEqual(str(combo.cget("style")), "Stage.Card.TCombobox")
+        self.assertEqual(ttk.Style(combo).lookup("Stage.Card.TCombobox", "background"),
+                         ttk.Style(combo).lookup("Card.TFrame", "background"))
 
     def test_graphics_profile_selector_is_available_with_current_settings_default(self):
         from dolly.graphics_profiles import CURRENT
         self.assertEqual(self.app.graphics_profiles.selection.get(), CURRENT)
         self.assertEqual(tuple(self.app.graphics_profiles.combo.cget("values")), (CURRENT,))
         self.assertIn("next launch", self.app.graphics_profiles.status.get())
+
+
+class WindowSizeTests(unittest.TestCase):
+    def test_editor_opens_at_the_figma_frame_and_keeps_the_design_minimum(self):
+        # A 1200 x 810 design px page area (1800 x 1215 screen pixels at 150 %, clamped to the
+        # work area) under the 26 px title bar and above the 29 px link bar (USER-ADDITIONS UPDATE 20).
+        try:
+            root = tk.Tk()
+        except tk.TclError as error:
+            self.skipTest(str(error))
+        root.withdraw()
+        app = None
+        try:
+            with patch.object(DollyApp, '_submit'), \
+                 patch.object(DollyApp, '_load_app_settings', return_value=AppSettings()), \
+                 patch('dolly.graphics_profiles.load_library', return_value={"format": 1, "selected": "", "profiles": []}), \
+                 patch.object(DollyApp, '_main_size', autospec=True, side_effect=DollyApp._main_size) as size:
+                app = DollyApp(root)
+            first = size.call_args_list[0]
+            self.assertEqual((first.args[1:], first.kwargs), ((1200, 810), {"centered": True}))
+            self.assertEqual(root.wm_minsize(), app._main_dimensions(1000, 700))
+            # The whole client is Dolly's: no native menu bar comes out of it, and the stage gets
+            # the design's page area between the bars.
+            root.deiconify()
+            root.update()
+            self.assertEqual(str(root.cget("menu")), "")
+            self.assertEqual((root.winfo_width(), root.winfo_height()), app._main_dimensions(1200, 810))
+            self.assertEqual(app.stage.winfo_height(), root.winfo_height() - app._bars_px())
+        finally:
+            if app is not None:
+                app.closed = True
+                app.jobs.put(None)
+            for timer in root.tk.splitlist(root.tk.call('after', 'info')):
+                root.tk.call('after', 'cancel', timer)
+            root.destroy()
 
 
 class GraphicsProfileStartupFailureTests(unittest.TestCase):

@@ -46,7 +46,7 @@ struct AttachTarget {
 
 struct AttachSegment {
     double begin = 0, end = 0; // Shot seconds; coverage is contiguous from zero.
-    std::uint32_t flags = 0;   // 1 enabled, 2 hide the target body, 4 auto clearance.
+    std::uint32_t flags = 0;   // 1 enabled, 2 hide, 4 clearance, 8 rigid, 16 vertical aim lock.
     AttachPoint point = AttachPoint::eyes;
     AttachTarget target;
     // Local XYZ and pitch/yaw/roll offsets in the resolved frame.
@@ -172,13 +172,24 @@ bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segmen
 void enforce_attach_clearance(const AttachSample& sample, const AttachSegment& segment,
                               CameraPose& pose) noexcept;
 
+// Resolve the visible attached view and its smoothing together. Rigid snaps
+// smooth the target frame first so position and orientation remain paired.
+bool resolve_attach_view(const AttachSample& sample, const AttachSegment& segment,
+                         CameraPose& out, AttachSmoothing& smoothing, double dt) noexcept;
+
 // Authored offsets that place the attached camera exactly at ``camera`` for the
-// given live sample (position in the resolved frame, angles relative to the
-// resolved orientation). Returns false on nonfinite data or out-of-range
-// offsets. resolve_attach_pose(sample, segment with these offsets) reproduces
-// the camera pose up to angle wrapping.
+// given live sample. Rigid orientation composes the target and camera frames;
+// the default keeps the component-wise convention used by older saved shots.
+// Returns false on nonfinite data or out-of-range offsets.
 bool attach_snap_offsets(const AttachSample& sample, const CameraPose& camera,
-                         std::array<double, 6>& out) noexcept;
+                         std::array<double, 6>& out, bool rigid_orientation = false,
+                         bool lock_vertical_aim = false) noexcept;
+// Transfer camera-space flight to the authored target-relative offsets. The
+// selected segment supplies the same aim-lock and rotation mode as playback.
+// Invalid input is refused without partially changing the offsets.
+bool attach_apply_camera_motion(const AttachSample& sample, const AttachSegment& segment,
+                                const CameraPose& before, const CameraPose& after,
+                                CameraPose& offsets) noexcept;
 // Quintic easing gives zero slope and acceleration at both ends. Angles take
 // their shortest route; aspect stays with the existing authored lens curve.
 double attach_blend_weight(double phase, double begin, double end) noexcept;

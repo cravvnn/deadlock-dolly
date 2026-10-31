@@ -210,6 +210,70 @@ class SeekOvershootTests(unittest.TestCase):
         self.assertGreaterEqual(self.console.status_samples.count(15301),6)
         self.assertNotIn('demo_resume',self.console.operations)
 
+    def test_reported_six_tick_forward_overshoot_recovers_exact_target(self):
+        # 0.6.80 reporter: 94 -> request 97, engine reports forward skip
+        # with matching game clock, but settles paused at 103. The correction
+        # may retry 97 once; 103 must never be accepted as the capture start.
+        self.console.tick = 94
+        self.console.overshoot = 6
+        self.console.goto_seek_output = (
+            'Demo Skipping: skipping forward to demo tick 97 (game tick 38982) '
+            'from current 94 (38979)')
+        info = self.controller._seek_tick(97)
+        self.assertEqual(info['tick'], 97)
+        self.assertEqual([(s['target'], s['landed']) for s in self.console.seek_attempts],
+                         [(97, 103), (97, 97)])
+        self.assertEqual(self.controller._last_seek_details['corrections'][0]['from_tick'], 103)
+        self.assertTrue(self.controller._last_seek_details['verified'])
+        self.assertNotIn('demo_resume', self.console.operations)
+
+    def test_six_tick_correction_requires_consistent_forward_report(self):
+        # An unreported overshoot, a different requested target, an inconsistent
+        # game clock, or a backward/no-op report must not authorize another seek.
+        for report in ('',
+                       'Demo Skipping: skipping forward to demo tick 98 (game tick 38983) from current 94 (38979)',
+                       'Demo Skipping: skipping forward to demo tick 97 (game tick 38982) from current 94 (38978)',
+                       'Demo Skipping: skipping forward to demo tick 97 (game tick 38982) from current 103 (38988)'):
+            with self.subTest(report=report):
+                self.console.tick = 94
+                self.console.overshoot = 6
+                self.console.goto_seek_output = report
+                self.console.seek_attempts.clear()
+                self.controller._stop_event.clear()
+                with self.assertRaisesRegex(RuntimeError, 'did not reach tick 97'):
+                    self.controller._seek_tick(97)
+                self.assertEqual([s['target'] for s in self.console.seek_attempts], [97])
+                self.assertFalse(self.controller._last_seek_details['verified'])
+
+    def test_reported_six_tick_overshoot_still_fails_if_correction_cannot_reach_target(self):
+        self.console.tick = 94
+        self.console.overshoot = 6
+        self.console.permanent = True
+        self.console.goto_seek_output = (
+            'Demo Skipping: skipping forward to demo tick 97 (game tick 38982) '
+            'from current 94 (38979)')
+        with self.assertRaisesRegex(RuntimeError, 'did not reach tick 97'):
+            self.controller._seek_tick(97)
+        self.assertEqual([s['target'] for s in self.console.seek_attempts], [97, 97])
+        self.assertFalse(self.controller._last_seek_details['verified'])
+        self.assertNotIn('demo_resume', self.console.operations)
+
+    def test_cancel_while_reported_six_tick_overshoot_settles_prevents_correction(self):
+        self.console.tick = 94
+        self.console.overshoot = 6
+        self.console.goto_seek_output = (
+            'Demo Skipping: skipping forward to demo tick 97 (game tick 38982) '
+            'from current 94 (38979)')
+        def cancel(tick):
+            if len(self.console.status_samples) == 3:
+                self.controller._stop_event.set()
+        self.console.on_status = cancel
+        with self.assertRaisesRegex(RuntimeError, 'cancel'):
+            self.controller._seek_tick(97)
+        self.assertEqual([s['target'] for s in self.console.seek_attempts], [97])
+        self.assertFalse(self.controller._last_seek_details['verified'])
+        self.assertFalse(self.console.camera_writes)
+
     def test_four_tick_overshoot_still_allows_only_one_correction(self):
         self.console.tick=15300
         self.console.overshoot=4

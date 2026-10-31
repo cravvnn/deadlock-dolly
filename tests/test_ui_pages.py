@@ -44,7 +44,11 @@ class PageBoundaryTests(unittest.TestCase):
             for child in widget.winfo_children():
                 yield child
                 yield from walk(child)
-        return next(w for w in walk(self.root) if isinstance(w, ttk.Button) and w.cget('text') == text)
+        # ttk buttons first (the legacy CameraFeel), then the canvas-drawn kit buttons (N21).
+        from dolly.ui import kit_controls
+        found = [w for w in walk(self.root) if isinstance(w, ttk.Button) and w.cget('text') == text]
+        found += [b for b in kit_controls.buttons(self.root) if b.cget('text') == text]
+        return found[0]
 
     def test_library_owns_widgets_and_routes_named_operations_without_controller(self):
         def tree(parent, columns, labels, widths, height):
@@ -59,27 +63,33 @@ class PageBoundaryTests(unittest.TestCase):
         self.assertEqual(view.selected_replay_text.get(), 'example.dem')
         state.replay_search.set('example')
         view.play_replay_button.invoke()
-        self.button('Stop / restore').invoke()
-        self.button('Save as...').invoke()
-        self.assertEqual([c[0] for c in self.calls], ['filter_replays', 'start_editing_session', 'stop_session', 'save_as'])
+        # Stop / restore and Cancel startup are footer stickers; shot files are in the File menu.
         self.assertEqual(str(view.cancel_startup_button.cget('state')), 'disabled')
+        view.cancel_startup_button.configure(state='normal')
+        view.cancel_startup_button.invoke()
+        self.assertEqual([c[0] for c in self.calls], ['filter_replays', 'start_editing_session', 'cancel_startup'])
         self.assertEqual(tuple(view.home_camera_driver_combo.cget('values')), ('Native (experimental)', 'Console (legacy)'))
 
     def test_settings_owns_preferences_and_routes_to_dedicated_controls(self):
         state = self.variables(SettingsState, auto_updates_initial=True,
                                allow_mod_overrides_initial=False,
+                               discord_presence_initial=True, nvidia_dlss_initial=False,
                                show_log=tk.BooleanVar(self.root, False))
         with patch('dolly.graphics_profiles.load_library', return_value={'format': 1, 'selected': '', 'profiles': []}):
             view = SettingsPage(self.root, state, self.callbacks(SettingsActions), root=self.root,
                                 on_error=lambda *args: self.fail(str(args)))
         self.assertEqual(self.calls, [])
         self.assertTrue(view.auto_updates.get())
+        self.assertTrue(view.discord_presence.get())
         self.assertFalse(hasattr(view, 'controls_disclosure'))
         self.button('Save paths').invoke()
         self.button('Menu shortcut...').invoke()
         self.button('Browse FX library...').invoke()
         self.assertEqual([c[0] for c in self.calls],
                          ['save_layout_paths', 'show_reshade_keybinds', 'browse_reshade_library'])
+        view.discord_presence_checkbox.invoke()
+        self.assertFalse(view.discord_presence.get())
+        self.assertEqual(self.calls[-1][0], 'save_discord_preference')
         self.assertEqual(str(view.reshade_path_entry.cget('textvariable')), str(state.reshade_runtime_path))
         self.assertEqual(str(view.reshade_disable_button.cget('state')), 'disabled')
         self.assertFalse(hasattr(view.graphics_profiles, 'app'))
@@ -128,7 +138,8 @@ class PageBoundaryTests(unittest.TestCase):
         import subprocess
         import sys
         result = subprocess.run([sys.executable, '-c',
-            'import sys; from dolly.ui import library_page, settings_page, export_page; '
+            'import sys; from dolly.ui import library_page, settings_page, export_page, controls_page, camera_page, '
+            'look_page, playback_card, camera_feel, kit_page, kit_card, kit_controls, kit_fields, kit_styles, fade, tween; '
             'forbidden={"dolly.gui", "dolly.gui_layout", "dolly.controller", "dolly.video_export", "dolly.launcher"}; '
             'assert not forbidden.intersection(sys.modules), sorted(forbidden.intersection(sys.modules))'],
             capture_output=True, text=True, timeout=15)

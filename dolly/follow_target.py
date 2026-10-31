@@ -12,9 +12,9 @@ from ._runtime_generated import FollowTarget as _profile
 # review must not enable stale player-target data. The FollowTarget group and
 # observer schema, typed objects and target/health HUD consumers were reviewed
 # together for build 6812; the 6813/6814 relocations, the 6817 span moves and
-# the 6819 hotfix carry that review forward. Update only with an independent
+# the 6819 and 6821 hotfixes carry that review forward. Update only with an independent
 # target review.
-REVIEWED_CLIENT_SHA256 = 'c09143cf9cd722909404c64e3ffa05157afc15e8a3519b49a1396a627af8ca85'
+REVIEWED_CLIENT_SHA256 = '8da25ddcd11c1146eeb9770bca24fb25c594c7abdb28947035a44ec8f2945843'
 
 TARGET_SPANS = _profile.TARGET_SPANS
 # Exact stock HUD getter chain and its entity predicates. Camera mode alone

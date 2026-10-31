@@ -72,6 +72,13 @@ workflows and the [changelog](CHANGELOG.md) for release history.
 **Cancel startup** stops the automatic sequence; it does not kill Deadlock.
 The launched process remains open. Close it before launching another session.
 
+If a locally recorded replay crashes while loading, select it in **Replay**
+and choose **Try replay repair...**. Dolly can make a separate copy when it
+recognizes a specific incomplete resource-loading pattern in the recording.
+The original is kept, and an existing output is never overwritten. This is
+experimental: a completed copy still needs to be tested in Deadlock and may
+not fix other replay problems or every seek position.
+
 **WinError 740 / administrator permission:** Windows is requiring elevation for
 `deadlock.exe`. Open that executable's **Properties → Compatibility**, including
 **Change settings for all users**, and disable **Run this program as an
@@ -494,6 +501,16 @@ startup. The portable launcher opens the editor without a Python console window.
 **Controls** contains shortcuts, camera sensitivity and movement speed.
 **Settings** contains saved paths, ReShade and troubleshooting.
 
+**Settings → NVIDIA DLSS**, directly below Replay Graphics Profiles, has an optional
+**Enable NVIDIA DLSS support** switch. It applies to the next launch. On a compatible
+NVIDIA GPU, choose NVIDIA DLSS and the scaling mode in the game's Video settings;
+that selection affects both the preview and recorded Color video. It starts off.
+Turn it off before launching again to restore standard game output capture when
+diagnosing a startup issue. With it on, Dolly retains game stderr, an engine console
+file, received console text and native-hook diagnostics, but cannot guarantee output
+written only to stdout before engine logging starts. Export diagnostics includes the
+new logs and preserves their startup and latest output if they need to be shortened.
+
 **Camera** keeps the saved-camera list, Position/Rotation/Framing curves,
 selected-camera controls and XY path overview.
 Look contains DOF and numeric camera-variable tracks. Coordinate entry and
@@ -521,8 +538,10 @@ connected Native replay with validated attachment data.
 
 In-game, choose the player and point in the **BONE PICKER** tab. Enter
 **Fly camera**, frame your view, then use **Snap** to calculate offsets that
-reproduce it. **Attach here** previews the source; moving while attached edits
-its offsets. **Detach** ends live preview. **Hide this hero** suppresses the
+reproduce it and keep that framing relative to the selected point as it moves.
+**Attach here** previews the source; moving while attached edits
+its offsets, with flight movement following the displayed camera direction.
+**Detach** ends live preview. **Hide this hero** suppresses the
 identified body draws during preview and playback. Export follows the saved
 sources and offsets, including edits made in preview.
 
@@ -530,6 +549,15 @@ From a paused **FOLLOW** view, opening **Bone Picker** or choosing **Attach here
 transfers camera control automatically. You do not need **Restore rig** first.
 **Snap** still requires **Fly camera**, because it calculates offsets from your
 current free-camera view.
+Detach an attached preview before snapping. Existing attached cameras retain
+their original behavior until you snap them again.
+
+For Bone or Weapon, **Lock vertical aim** in the framing card follows the
+point and the player's yaw without tilting with their pitch and roll. It is off
+for existing cameras and saved with each camera. Detach, change the setting,
+then Snap again to keep your current view. The desktop Camera inspector has the
+same option; apply it before snapping. It does not eliminate every animation or
+camera jitter.
 
 Attachment uses replay character models; it does not create first-person arms.
 For a head camera, open **Bone Picker...**, choose **head**, then **Use this bone**.

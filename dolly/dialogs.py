@@ -147,6 +147,11 @@ def _font_and_metrics(user32, gdi32, window):
     user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.c_void_p, wintypes.UINT]
     if not user32.SystemParametersInfoW(_SPI_GETNONCLIENTMETRICS, metrics.cbSize, ctypes.byref(metrics), 0):
         raise OSError("Could not read the system message font")
+    from . import ui_theme
+    if ui_theme.FONT_FAMILY != ui_theme.FONT_FALLBACK:
+        # Dolly's UI face (Inter), registered privately for this process by dolly.ui.fonts;
+        # the message font's size and weight stay. Before the UI is up: the system face.
+        metrics.lfMessageFont.lfFaceName = ui_theme.FONT_FAMILY
     gdi32.CreateFontIndirectW.argtypes = [_LOGFONTW]
     gdi32.CreateFontIndirectW.restype = wintypes.HFONT
     font = gdi32.CreateFontIndirectW(metrics.lfMessageFont)
@@ -428,7 +433,8 @@ def _run_native_dialog(owner, title: str, message: str, details: str) -> bool:
         user32.SendMessageW(control, _WM_SETFONT, font, True)
 
     icon_path = str(ASSETS / "dolly.ico")
-    for size, which in ((16, _ICON_SMALL), (32, _ICON_BIG)):
+    # Title-bar and Alt+Tab icons at the dialog's DPI (24/48 px at 150 %), not stretched 16/32 px frames.
+    for size, which in ((int(round(16 * scale)), _ICON_SMALL), (int(round(32 * scale)), _ICON_BIG)):
         handle = user32.LoadImageW(None, icon_path, _IMAGE_ICON, size, size, _LR_LOADFROMFILE)
         if handle:
             user32.SendMessageW(window, _WM_SETICON, which, handle)

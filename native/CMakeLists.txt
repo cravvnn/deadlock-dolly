@@ -28,6 +28,9 @@ if(BUILD_TESTING)
     add_executable(reviewed_contract_tests tests/reviewed_contract_tests.cpp)
     target_include_directories(reviewed_contract_tests PRIVATE include src)
     add_test(NAME native_reviewed_contract_tests COMMAND reviewed_contract_tests)
+    add_executable(definitions_tests tests/definitions_tests.cpp)
+    target_include_directories(definitions_tests PRIVATE src)
+    add_test(NAME native_definitions_tests COMMAND definitions_tests)
     add_executable(capability_tests tests/capability_tests.cpp)
     target_include_directories(capability_tests PRIVATE include)
     add_test(NAME native_capability_tests COMMAND capability_tests)
@@ -172,6 +175,8 @@ if(WIN32)
     # online dependency fetches or third-party installer are needed to build.
     add_library(dolly_overlay STATIC
         src/dolly_overlay_win.cpp
+        src/dolly_rail_panel.cpp src/dolly_rail_icons.cpp src/dolly_overlay_assets.cpp
+        src/dolly_rail_kit.cpp src/dolly_rail_fields.cpp src/dolly_rail_drawers.cpp src/dolly_rail_transport.cpp
         src/dolly_overlay_panel.cpp src/dolly_lite_panel.cpp src/dolly_curve_panel.cpp src/dolly_ui_layout.cpp src/dolly_ui_storage.cpp
         src/dolly_bone_picker_ui.cpp
         src/dolly_object_picker_ui.cpp
@@ -190,10 +195,14 @@ if(WIN32)
     target_include_directories(dolly_overlay PRIVATE include vendor/imgui vendor/imgui/backends)
     target_compile_definitions(dolly_overlay PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
         IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
-    target_link_libraries(dolly_overlay PUBLIC dolly_path dolly_depth_scene minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32 shell32)
+    target_link_libraries(dolly_overlay PUBLIC dolly_path dolly_depth_scene minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32 shell32 bcrypt)
 
     add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp
         src/dolly_confetti.cpp src/dolly_prop_runtime.cpp)
+    set(DOLLY_ASSET_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../assets")
+    set(DOLLY_NATIVE_ASSET_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+    configure_file(src/dolly_overlay_assets.rc.in "${CMAKE_CURRENT_BINARY_DIR}/dolly_overlay_assets.rc" @ONLY)
+    target_sources(DollyNative PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dolly_overlay_assets.rc")
     target_include_directories(DollyNative PRIVATE include)
     target_link_libraries(DollyNative PRIVATE dolly_path dolly_overlay minhook bcrypt shell32)
     target_compile_definitions(DollyNative PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -220,11 +229,19 @@ if(WIN32)
         add_test(NAME native_bridge_callback_smoke COMMAND bridge_smoke)
         set_tests_properties(native_bridge_callback_smoke PROPERTIES TIMEOUT 30)
         add_executable(overlay_smoke tests/overlay_smoke.cpp)
+        target_sources(overlay_smoke PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dolly_overlay_assets.rc")
         target_include_directories(overlay_smoke PRIVATE include vendor/imgui)
         target_link_libraries(overlay_smoke PRIVATE dolly_overlay minhook)
         add_executable(depth_video_smoke tests/depth_video_smoke.cpp)
         target_link_libraries(depth_video_smoke PRIVATE dolly_overlay)
+        # Invoked with an explicit FFmpeg path by the color integration check.
+        add_executable(video_color_smoke tests/video_color_smoke.cpp)
+        target_link_libraries(video_color_smoke PRIVATE dolly_overlay)
         add_test(NAME native_dx11_overlay_smoke COMMAND overlay_smoke)
+        add_test(NAME native_dx11_rail COMMAND overlay_smoke --rail-check)
+        set_tests_properties(native_dx11_rail PROPERTIES TIMEOUT 30)
+        add_test(NAME native_dx11_rail_hook COMMAND overlay_smoke --rail-hook-check)
+        set_tests_properties(native_dx11_rail_hook PROPERTIES TIMEOUT 15)
         add_test(NAME native_dx11_lite_campaths COMMAND overlay_smoke --screenshot-lite "${CMAKE_CURRENT_BINARY_DIR}/lite-campaths-test.ppm")
         set_tests_properties(native_dx11_lite_campaths PROPERTIES TIMEOUT 45)
         set_tests_properties(native_dx11_overlay_smoke PROPERTIES TIMEOUT 45)

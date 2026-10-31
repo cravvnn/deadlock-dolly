@@ -225,6 +225,8 @@ def smoke(target, work):
 
 
 def notify(text):
+    from .ui.scale import enable_dpi_awareness
+    enable_dpi_awareness()  # a sharp message box on scaled displays
     ctypes.windll.user32.MessageBoxW(None, text, "Dolly update", 0x40)
 
 
@@ -236,10 +238,16 @@ class UpdateWindow:
     relaunch smoke test briefly paints a window, which reads as random flashing.
     This keeps a single steady window on screen across the whole handoff.
     """
+    scale = 1.0  # display scale; sizes below are design px
 
     def __init__(self):
         from . import ui_theme
+        from .ui.scale import enable_dpi_awareness, ui_scale
+        # Before the window exists, like the editor: drawn sharp at the display's DPI.
+        enable_dpi_awareness()
         self.root = tk.Tk()
+        self.scale = ui_scale(self.root)
+        dp = self._dp
         self.root.title("Deadlock Dolly - Updating")
         self.root.resizable(False, False)
         self.root.configure(background=ui_theme.TOKENS["bg"])
@@ -252,33 +260,42 @@ class UpdateWindow:
         style = ttk.Style(self.root)
         style.theme_use("clam")
         style.configure("Update.TFrame", background=ui_theme.TOKENS["bg"])
+        # FONT_FAMILY stays the Segoe UI fallback here on purpose: this process replaces Dolly's
+        # files, and a privately registered font file (Inter, dolly.ui.fonts) stays open until exit.
         style.configure("Update.TLabel", background=ui_theme.TOKENS["bg"],
                         foreground=ui_theme.TOKENS["text"], font=(ui_theme.FONT_FAMILY, ui_theme.FONT_SIZES["body"]))
         style.configure("Title.Update.TLabel", font=(ui_theme.FONT_FAMILY, 16, "bold"))
+        # clam draws the bar -arrowsize thick (14 px at 100 %, in screen pixels at any DPI).
         style.configure("Update.Horizontal.TProgressbar", background=ui_theme.TOKENS["accent"],
                         troughcolor=ui_theme.TOKENS["button"], bordercolor=ui_theme.TOKENS["button"],
-                        lightcolor=ui_theme.TOKENS["accent"], darkcolor=ui_theme.TOKENS["accent"], borderwidth=0)
-        style.configure("Update.TButton", padding=(12, 7), background=ui_theme.TOKENS["button"],
+                        lightcolor=ui_theme.TOKENS["accent"], darkcolor=ui_theme.TOKENS["accent"], borderwidth=0,
+                        arrowsize=dp(14))
+        style.configure("Update.TButton", padding=dp((12, 7)), background=ui_theme.TOKENS["button"],
                         foreground=ui_theme.TOKENS["text"], font=(ui_theme.FONT_FAMILY, ui_theme.FONT_SIZES["body"]),
                         borderwidth=0)
-        body = ttk.Frame(self.root, style="Update.TFrame", padding=24)
+        body = ttk.Frame(self.root, style="Update.TFrame", padding=dp(24))
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="DEADLOCK DOLLY", style="Title.Update.TLabel").pack(anchor="w")
         self.status = tk.StringVar(value="Updating Dolly...")
-        self.message = ttk.Label(body, textvariable=self.status, style="Update.TLabel", wraplength=390)
-        self.message.pack(anchor="w", pady=(18, 14))
-        self.progress = ttk.Progressbar(body, mode="indeterminate", length=390, style="Update.Horizontal.TProgressbar")
+        self.message = ttk.Label(body, textvariable=self.status, style="Update.TLabel", wraplength=dp(390))
+        self.message.pack(anchor="w", pady=dp((18, 14)))
+        self.progress = ttk.Progressbar(body, mode="indeterminate", length=dp(390), style="Update.Horizontal.TProgressbar")
         self.progress.pack(fill="x")
         self.progress.start(15)
         self.close_button = ttk.Button(body, text="Close", style="Update.TButton", command=self._close)
         # The window is not cancellable during install; the Close button appears
         # only if the update fails, so a stuck window can still be dismissed.
         self.closed = False
-        self.root.protocol("WM_DELETE_WINDOW", self._close)
+        self._close_allowed = False
+        self.root.protocol("WM_DELETE_WINDOW", self._request_close)
         self.root.update_idletasks()
         width, height = self.root.winfo_reqwidth(), self.root.winfo_reqheight()
         self.root.geometry(f"+{max(0, (self.root.winfo_screenwidth()-width)//2)}"
                            f"+{max(0, (self.root.winfo_screenheight()-height)//2)}")
+
+    def _dp(self, value):
+        from .ui.scale import px
+        return px(self.scale, value)
 
     def set_status(self, text):
         self.status.set(str(text))
@@ -287,7 +304,18 @@ class UpdateWindow:
         self.progress.stop()
         self.progress.pack_forget()
         self.status.set(str(text))
-        self.close_button.pack(anchor="e", pady=(20, 0))
+        self._close_allowed = True
+        self.close_button.pack(anchor="e", pady=self._dp((20, 0)))
+
+    def _request_close(self):
+        """Ignore a user close while the transaction is running.
+
+        The worker is a daemon thread, so destroying its window can terminate
+        the helper in the middle of replacing files. The failure screen is
+        dismissible; successful installs close themselves after the hold.
+        """
+        if self._close_allowed:
+            self._close()
 
     def _close(self):
         if not self.closed:
@@ -341,8 +369,19 @@ def _progress_helper_window(work, target, *, recover, parent_pid):
                     window.show_failure(value)
                 elif kind == "passed":
                     window.set_status("Update installed. Opening Dolly...")
-                    launch_program([str(target / "Dolly.exe"), "--updated"], target)
-                    hold_then_close()
+                    try:
+                        launch_program([str(target / "Dolly.exe"), "--updated"], target)
+                    except (OSError, RuntimeError) as error:
+                        # The transaction already succeeded. Don't report an
+                        # install failure or leave an undismissable progress
+                        # window when only the subsequent launch failed.
+                        result["passed"] = False
+                        window.show_failure(
+                            "Dolly was updated, but could not reopen automatically. "
+                            "Close this window and open Dolly.exe from its folder.\n\n"
+                            + str(error))
+                    else:
+                        hold_then_close()
         except queue.Empty:
             pass
         window.root.after(100, poll)

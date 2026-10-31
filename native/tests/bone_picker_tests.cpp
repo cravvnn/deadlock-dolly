@@ -154,6 +154,22 @@ int main() {
                 "Paused markers use the same held sample as the attached preview");
         picker_camera(46, 12, true, true, view, 90, head_offset, sample, &pose, nullptr, false, 1);
         require(std::abs(view[0] - 12) < .001, "New paused tick updates picker pose");
+        pose.aim = {45, 0, 0};
+        const std::array<double, 6> face_offset = {100, 0, 0, 0, 180, 0};
+        picker_camera(46, 12, true, true, view, 90, face_offset, sample, &pose, nullptr,
+                      false, 2, true);
+        require(std::abs(view[3] + 45) < .001 && std::abs(std::abs(view[4]) - 180) < .001,
+                "Picker preview preserves rigid snap orientation");
+        picker_camera(46, 12, true, true, view, 90, face_offset, sample, &pose, nullptr,
+                      false, 2, false);
+        require(std::abs(view[3] - 45) < .001,
+                "Picker preview retains legacy attached-camera orientation");
+        picker_camera(46, 12, true, true, view, 90, face_offset, sample, &pose, nullptr,
+                      false, 2, true, true);
+        require(std::abs(view[3]) < .001 && std::abs(std::abs(view[4]) - 180) < .001 &&
+                    std::abs(view[0] - 112) < .001,
+                "Picker preview must use the same level-aim frame as playback");
+        pose.aim = {0, 0, 0};
         pose.transforms[13][0] = 10;
         picker_camera(48, 12, false, true, view, 90, {}, nullptr, nullptr);
         picker_publish(catalog);

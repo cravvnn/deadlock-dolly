@@ -347,9 +347,10 @@ void dispatch_key_press(unsigned vk) noexcept {
         }
         return;
     }
-    // Escape closes the Dolly panel exactly like F8. An active ImGui text edit
-    // keeps Escape for itself, and the game UI/console own their own Escape.
+    // The first Escape closes rail drawers. With none open it behaves like F8.
+    // Text edits and modal popups keep Escape; game UI/console own their Escape.
     if (vk == VK_ESCAPE && gOwner.load() == EditorOwner::Panel && !gTextInput.load()) {
+        if (overlay_close_drawers_on_escape()) return;
         dispatch(EditorAction::Panel);
         return;
     }
@@ -690,6 +691,7 @@ EditorSnapshot editor_snapshot() noexcept {
         result.bone_picker = (attach->flags & 8) != 0;
         result.attach_hide = (attach->hide & 1) != 0;
         result.attach_auto_clearance = (attach->hide & 2) != 0;
+        result.attach_lock_vertical_aim = (attach->hide & 8) != 0;
         result.attach_point = attach->point;
         std::memcpy(result.attach_bone, attach->bone_name, 64);
         result.attach_target_index = attach->target_index;
@@ -877,6 +879,8 @@ video::Status editor_recording_status() noexcept {
     return video::status();
 }
 bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_override) noexcept {
+    if (editor_environment_enabled() && !environment_action_allowed(action))
+        return false;
     // Menu requests may originate from a render-thread button. They only queue
     // adapter work here; the worker changes input/cursor ownership afterwards.
     if (action == EditorAction::ReShade)
@@ -910,7 +914,7 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         action == EditorAction::SeekCamera ||
         (action >= EditorAction::SetAttachTarget && action <= EditorAction::AttachReset) ||
         action == EditorAction::AttachSnap || action == EditorAction::SetAttachBone ||
-        action == EditorAction::SetSourceBlend;
+        action == EditorAction::SetSourceBlend || action == EditorAction::SetAttachVerticalAimLock;
     if ((camera_mutation || preview_action) && editor_recording_locks_cameras(editor_recording_status().state))
         return false;
     if(clear_preview && (!pose_override || (*pose_override)[1]!=0 || (*pose_override)[2]!=0 ||
@@ -1110,6 +1114,18 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
           action != EditorAction::AttachCycleTarget) ||
          state.owner != EditorOwner::Panel))
         return false;
+    if (action == EditorAction::SetAttachVerticalAimLock) {
+        EditorCameraList list{};
+        if (!state.attach_available || !state.attach_selected || state.attach_point == 0 ||
+            !state.ready || !state.paused || state.playing || state.busy || state.attach_preview ||
+            state.bone_picker || state.owner != EditorOwner::Panel ||
+            (value != 0 && value != 1) || !pose_override || !editor_camera_list(list) ||
+            list.total != state.camera_count || state.selected_camera >= list.total ||
+            (*pose_override)[0] != list.revision || (*pose_override)[1] != state.selected_camera)
+            return false;
+        for (double component : *pose_override)
+            if (!std::isfinite(component)) return false;
+    }
     if (action == EditorAction::SetAttachTarget &&
         (value != std::floor(value) || value < 0 || value >= state.roster_count))
         return false;
@@ -1129,7 +1145,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
     if (action == EditorAction::AttachSnap && value != 0)
         return false;
     if (action == EditorAction::AttachSnap &&
-        (!state.attach_selected || !state.manual_active || !state.paused || state.playing))
+        (!state.attach_selected || !state.manual_active || !state.paused || state.playing ||
+         state.attach_preview))
         return false;
     if (action == EditorAction::StepReplayTicks &&
         (!state.ready || state.playing || state.busy || state.attach_preview ||
@@ -1179,7 +1196,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
             if (!std::isfinite(component))
                 return false;
     } else if (pose_override && action != EditorAction::SetAttachOffsets &&
-               action != EditorAction::SetAttachBone && action != EditorAction::FinishBonePicker &&
+               action != EditorAction::SetAttachBone && action != EditorAction::SetAttachVerticalAimLock &&
+               action != EditorAction::FinishBonePicker &&
                action != EditorAction::StartGameFollow && action != EditorAction::ObjectPlace &&
                action != EditorAction::ObjectTransform && action != EditorAction::ClearCameraPath &&
                action != EditorAction::PrepareCinematic && action != EditorAction::SetCameraPosition && !camera_action && !curve_action && !clear_preview)
@@ -1838,11 +1856,13 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             bool valid =
                 attach_first == InterlockedCompareExchange(attach_sequence, 0, 0) &&
                 std::memcmp(attach.magic, "DLYATTC1", 8) == 0 &&
-                (attach.abi == 2 || attach.abi == 3 || attach.abi == 4 || attach.abi == 5) &&
+                (attach.abi == 2 || attach.abi == 3 || attach.abi == 4 || attach.abi == 5 ||
+                 attach.abi == 6) &&
                 attach.flags <= (attach.abi >= 4 ? 15u : 7u) && attach.reserved == 0 &&
                 (!(attach.flags & 8) || (attach.flags & 3) == 3) &&
                 (attach.reserved2 == 0 || (attach.abi >= 3 && attach.reserved2 <= 10000)) &&
-                attach.point <= 2 && attach.hide <= (attach.abi == 5 ? 3u : 1u) &&
+                attach.point <= 2 &&
+                attach.hide <= (attach.abi >= 6 ? 15u : attach.abi == 5 ? 3u : 1u) &&
                 (attach.point == 2 ? attach.bone_hash != 0 : attach.bone_hash == 0);
             for (std::uint32_t offset : attach.offsets)
                 valid = valid && offset >= 8 && offset <= 0x8000;

@@ -6,7 +6,9 @@ from tkinter import ttk
 import time
 
 from .. import ui_theme
+from .scale import even_px, scaler, ui_scale
 
+# Spacing is in design px (100 %); builders convert it with the window's display scale.
 GAP = 14
 
 
@@ -254,7 +256,8 @@ class ScrollPage(ttk.Frame):
         # width. Otherwise a small/high-DPI page can allocate the gutter 0px.
         self.scroll_gutter.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.body = ttk.Frame(self.canvas, padding=(16, 12))
+        self.ui_scale = ui_scale(self)
+        self.body = ttk.Frame(self.canvas, padding=even_px(self.ui_scale, (16, 12)))
         self.window = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
         self.canvas.bind("<Configure>", self._viewport_changed)
         self.body.bind("<Configure>", self._resize)
@@ -305,12 +308,12 @@ class ScrollPage(ttk.Frame):
 
     def scroll_page_wheel(self, event):
         # Keep subpixel input, without quantizing precision wheels into large
-        # jumps. A normal Windows wheel notch still travels 60 pixels.
+        # jumps. A normal Windows wheel notch still travels 60 design pixels.
+        notch = WHEEL_PIXELS_PER_NOTCH * self.ui_scale
         if event.delta:
-            pixels = -event.delta / 120 * WHEEL_PIXELS_PER_NOTCH
+            pixels = -event.delta / 120 * notch
         else:
-            pixels = (-WHEEL_PIXELS_PER_NOTCH if getattr(event, "num", 0) == 4
-                      else WHEEL_PIXELS_PER_NOTCH)
+            pixels = -notch if getattr(event, "num", 0) == 4 else notch
         first, last = self.canvas.yview()
         if (pixels < 0 and first <= 0.0) or (pixels > 0 and last >= 1.0):
             # Outward input at an edge must not become debt that delays the
@@ -342,7 +345,8 @@ class ScrollPage(ttk.Frame):
         bottom=y+widget.winfo_height()
         if y>=top and bottom<=top+viewport:
             return
-        target=y-GAP if y<top or widget.winfo_height()>viewport else bottom+GAP-viewport
+        gap=even_px(self.ui_scale,GAP)
+        target=y-gap if y<top or widget.winfo_height()>viewport else bottom+gap-viewport
         self.canvas.yview_moveto(max(0,min(target,height-viewport))/height)
 
 
@@ -362,7 +366,7 @@ class Disclosure(ttk.Frame):
         self.opened = False
         self.toggle = ttk.Button(self, text=">  " + title, command=self.flip, style="Disclosure.Card.TButton" if frame_style == "Card.TFrame" else "Disclosure.TButton")
         self.toggle.pack(anchor="w")
-        self.body = ttk.Frame(self, style=frame_style, padding=(0, 8, 0, 0))
+        self.body = ttk.Frame(self, style=frame_style, padding=even_px(ui_scale(self), (0, 8, 0, 0)))
 
     def flip(self):
         self.set_open(not self.opened)
@@ -377,16 +381,18 @@ class Disclosure(ttk.Frame):
 
 
 def card(parent, title):
-    frame = ttk.Frame(parent, style="Rounded.Card.TFrame", padding=14)
-    frame.pack(fill="x", pady=(0, GAP))
-    ttk.Label(frame, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, GAP))
+    dp = scaler(parent)
+    frame = ttk.Frame(parent, style="Rounded.Card.TFrame", padding=dp(14))
+    frame.pack(fill="x", pady=dp((0, GAP)))
+    ttk.Label(frame, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=dp((0, GAP)))
     return frame
 
 
 def field(parent, label, variable, *, values=None):
+    dp = scaler(parent)
     frame = ttk.Frame(parent, style=surface_style(parent))
-    frame.pack(fill="x", pady=(0, GAP))
-    ttk.Label(frame, text=label, style="CardMuted.TLabel" if surface_style(parent) == "Card.TFrame" else "Muted.TLabel").pack(anchor="w", pady=(0, 6))
+    frame.pack(fill="x", pady=dp((0, GAP)))
+    ttk.Label(frame, text=label, style="CardMuted.TLabel" if surface_style(parent) == "Card.TFrame" else "Muted.TLabel").pack(anchor="w", pady=dp((0, 6)))
     widget = (ttk.Combobox(frame, textvariable=variable, values=values, state="readonly",
                             style="Card.TCombobox" if surface_style(parent) == "Card.TFrame" else "TCombobox")
               if values is not None else ttk.Entry(frame, textvariable=variable,
@@ -397,6 +403,7 @@ def field(parent, label, variable, *, values=None):
 
 def actions(parent, specs, columns=3):
     """Bounded wrapping rows, never an unbounded horizontal pack of buttons."""
+    dp = scaler(parent)
     frame = ttk.Frame(parent, style=surface_style(parent))
     frame.pack(fill="x")
     buttons = []
@@ -406,7 +413,7 @@ def actions(parent, specs, columns=3):
         if surface_style(parent) == "Card.TFrame":
             button_style = "Card." + button_style
         b = ttk.Button(frame, text=label, command=command, style=button_style)
-        b.grid(row=i // columns, column=i % columns, sticky="w", padx=(0, 10 if i % columns < columns-1 else 0), pady=(0, 10))
+        b.grid(row=i // columns, column=i % columns, sticky="w", padx=dp((0, 10 if i % columns < columns-1 else 0)), pady=dp((0, 10)))
         frame.columnconfigure(i % columns, weight=0)
         buttons.append(b)
     return buttons
@@ -414,7 +421,7 @@ def actions(parent, specs, columns=3):
 
 def disclosure(parent, title):
     d = Disclosure(parent, title)
-    d.pack(fill="x", pady=(0, GAP))
+    d.pack(fill="x", pady=even_px(ui_scale(parent), (0, GAP)))
     return d
 
 

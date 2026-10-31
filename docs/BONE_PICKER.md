@@ -53,7 +53,23 @@ that starting view but discards the bone choice.
 Opening Bone Picker from paused **Game Follow** transfers camera control
 automatically; you do not need **Restore rig** first. **Attach here** also
 supports that transfer. **Snap** is different: enter **Fly camera** first so
-Dolly can calculate offsets from your free-camera view.
+Dolly can calculate offsets from your free-camera view. If attached preview is
+active, choose **Detach** first. Snap keeps the camera's framing relative to
+the selected point as the player moves and changes aim. Existing saved
+attachments keep their earlier behavior; snap an old camera again to use the
+updated framing. The change to the camera is saved with the shot.
+Shots saved with the updated Snap need a Dolly version that supports it.
+
+The **Frame the camera** card has **Lock vertical aim** for Bone and Weapon.
+With it on, the camera follows the point's position and yaw without tilting as
+the player aims up or down or rolls. Eyes keeps its normal aim. The setting is
+saved per camera and defaults off for existing shots. Detach before changing it,
+then use **Snap** again to keep your current view with the new setting. This can
+help with unwanted tilt; it does not remove all animation or motion jitter.
+Shots using this option require a Dolly version that supports it.
+The desktop Camera inspector offers the same setting; apply it to the camera
+before snapping. Thanks to [@ExoCalibra](https://github.com/ExoCalibra) for the
+original vertical-aim lock contribution.
 
 Overview dots and attached previews hold one validated pose at each paused tick.
 Stepping or resuming refreshes the pose; character/model identity is still
@@ -73,6 +89,13 @@ that a crouched, folded, hidden, or wall-obstructed character will read clearly.
 Cancel and choose a better replay moment when needed. There is no verified
 mesh collision query; orbiting near walls can put the camera behind scenery.
 
+During attached preview, flight movement follows the camera's displayed view.
+With the default bindings, **W/S** move forward or backward along the view,
+**A/D** move sideways, and the vertical controls move up and down. These movements update the
+selected camera's attachment offsets. The view and target frames can differ
+while smoothing; Dolly uses the displayed view for movement and keeps the
+selected camera's aim-lock setting.
+
 The picker uses the selected model's verified named skeleton. Extra merged pose
 entries without names are not invented as selectable bones. If the model cannot
 provide a complete validated name table, the picker reports that limitation and
@@ -82,7 +105,8 @@ does not guess indices or silently switch players. Cancel remains available.
 Bone and Weapon attachment sample the completed animation at the reviewed
 mesh-submission hook. The next view follows that local pose with bounded
 one-view prediction (maximum 50 ms of age and 2 units of extrapolation), rebased
-onto the current scene position. Aim remains unchanged. Missing or stale
+onto the current scene position. Prediction itself leaves aim unchanged; the
+optional vertical-aim lock changes the camera frame as described above. Missing or stale
 samples fall back to the validated live provider. History resets on target,
 mode, paused-tick changes and backwards replay movement. This works independently
 of the Smooth setting; it does not turn off the game's animation interpolation.

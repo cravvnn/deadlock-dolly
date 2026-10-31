@@ -205,9 +205,69 @@ class BonePickerTests(unittest.TestCase):
             picker=True))
         self.assertEqual(spaced[2], 5)
         self.assertEqual(spaced[18], 2)
+        rigid = wire.ATTACH_CONFIG.unpack(wire.pack_attach(
+            2, offsets, {**attach, "orientation_mode": "rigid"}, picker=True))
+        self.assertEqual(rigid[2], 6)
+        self.assertEqual(rigid[18], 5)
+        locked = wire.ATTACH_CONFIG.unpack(wire.pack_attach(
+            2, offsets, {**attach, "lock_vertical_aim": True}, picker=True))
+        self.assertEqual((locked[2], locked[18]), (6, 9))
+        with self.assertRaisesRegex(ValueError, "true or false"):
+            wire.pack_attach(2, offsets, {**attach, "lock_vertical_aim": 1})
         self.assertGreaterEqual(wire.PICKER_OFFSET, CONFETTI_DIAGNOSTICS_OFFSET + CONFETTI_DIAGNOSTICS.size)
         self.assertEqual(wire.PICKER_RESULT.size, 168)
         self.assertLessEqual(wire.PICKER_OFFSET + 168, 2 * 1024 * 1024 + 24576)
+
+    def test_snap_result_sets_rigid_mode_only_for_current_free_camera(self):
+        self.bridge._editor_attach_sequence = 20
+        self.app._mark_dirty = Mock()
+        self.app._refresh_attach_card = Mock()
+        self.app._attach_snap_pending = True
+        self.app._attach_snap_context = dict(project=self.app.project, index=0,
+                                             key=copy.deepcopy(self.app.project.keyframes[0]),
+                                             bridge=self.bridge)
+        original = copy.deepcopy(self.app.project)
+        result = dict(config_sequence=18, handle=11, entity_index=11,
+                      model=model_token(self.key.attach.model),
+                      point=0, offset=self.key.attach.offset)
+        gui.DollyApp._attach_result_changed(self.app, result)
+        self.assertEqual(self.app.project, original)
+        self.assertTrue(self.app._attach_snap_pending)
+        gui.DollyApp._attach_result_changed(
+            self.app, {**result, "config_sequence": 20, "entity_index": 12})
+        self.assertEqual(self.app.project, original)
+        self.assertTrue(self.app._attach_snap_pending)
+        gui.DollyApp._attach_result_changed(self.app, {**result, "config_sequence": 20})
+        self.assertFalse(self.app._attach_snap_pending)
+        self.assertEqual(self.app.project.keyframes[0].attach.orientation_mode, "rigid")
+        self.assertEqual(self.app.project.keyframes[0].attach.offset, self.key.attach.offset)
+        self.app.preview_attach = True
+        gui.DollyApp._attach_result_changed(self.app, {
+            **result, "config_sequence": 20, "offset": (7, 8, 9, 10, 11, 12)})
+        self.assertEqual(self.app.project.keyframes[0].attach.offset, (7, 8, 9, 10, 11, 12))
+        self.assertEqual(self.app.project.keyframes[0].attach.orientation_mode, "rigid")
+
+    def test_snap_result_cannot_modify_a_different_camera_with_the_same_target(self):
+        second = copy.deepcopy(self.app.project.keyframes[0])
+        second.time = 1
+        self.app.project.keyframes.append(second)
+        self.app._attach_snap_pending = True
+        self.app._attach_snap_context = dict(project=self.app.project, index=0,
+                                             key=copy.deepcopy(self.app.project.keyframes[0]),
+                                             bridge=self.bridge)
+        self.app._selection_index = lambda _: 1
+        self.app._mark_dirty = Mock()
+        self.bridge._editor_attach_sequence = 20
+        original = copy.deepcopy(self.app.project)
+        result = dict(config_sequence=20, handle=11, entity_index=11,
+                      model=model_token(self.key.attach.model), point=0,
+                      offset=(7, 8, 9, 10, 11, 12))
+        gui.DollyApp._attach_result_changed(self.app, result)
+        self.assertEqual(self.app.project, original)
+        self.assertFalse(self.app._attach_snap_pending)
+        self.app._mark_dirty.assert_not_called()
+        self.app.status_text.set.assert_called_with(
+            "Snap cancelled because the selected camera changed.")
 
     @patch("dolly.editor_session.configure")
     def test_finish_timeout_unblocks_cancel_and_keeps_shot(self, configure):
@@ -283,6 +343,36 @@ class DesktopBonePickerCallTests(unittest.TestCase):
         app = SimpleNamespace()
         gui.DollyApp._publish_editor(app)
         configure.assert_called_once_with(app)
+
+    def test_desktop_apply_keeps_a_snapped_cameras_orientation_mode(self):
+        key = Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+                       attach=AttachKey(handle=11, entity_id=11,
+                                        model="models/heroes/astro/astro.vmdl",
+                                        point="bone", bone="head", orientation_mode="rigid"))
+        app = self.fake_app([key])
+        app._selection_index = lambda _: 0
+        app.camera_tree = object()
+        app.attach_enabled = SimpleNamespace(get=lambda: True)
+        app.attach_point = SimpleNamespace(get=lambda: "Bone")
+        app.attach_bone = SimpleNamespace(get=lambda: "head")
+        app.attach_vars = {name: SimpleNamespace(get=lambda: "1")
+                           for name in ("x", "y", "z", "pitch", "yaw", "roll")}
+        app.attach_smoothing = SimpleNamespace(get=lambda: "0")
+        app.attach_lock_vertical_aim = SimpleNamespace(get=lambda: True)
+        app._shot_edit_ready = lambda: True
+        app.attach_hide = SimpleNamespace(get=lambda: True)
+        app.attach_clearance = SimpleNamespace(get=lambda: "Exact offset")
+        app.source_blend = SimpleNamespace(get=lambda: "0")
+        app._mark_dirty = Mock()
+        app._refresh_keys = Mock()
+        gui.DollyApp._apply_attach(app, False)
+        self.assertEqual(app.project.keyframes[0].attach.orientation_mode, "rigid")
+        self.assertTrue(app.project.keyframes[0].attach.lock_vertical_aim)
+        app.attach_lock_vertical_aim = SimpleNamespace(get=lambda: False)
+        app._shot_edit_ready = lambda: False
+        with self.assertRaisesRegex(ValueError, "Detach"):
+            gui.DollyApp._apply_attach(app, False)
+        self.assertTrue(app.project.keyframes[0].attach.lock_vertical_aim)
 
 
 if __name__ == "__main__":

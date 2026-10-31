@@ -247,7 +247,7 @@ struct ColorFrame {
     MatteCapture capture;
     CaptureImageClock clock;
     std::uint64_t generation = 0;
-    bool prepared = false, sealed = false, truncated = false;
+    bool prepared = false, sealed = false, truncated = false, sceneObserved = false;
     unsigned draws = 0;
     std::uint64_t first = 0, last = 0, epoch = 0;
     std::uint64_t header[8]{};
@@ -264,6 +264,11 @@ std::uint32_t ownerFieldOffset = 0;
 std::uint32_t sceneNodeFieldOffset = 0;
 std::atomic<bool> sequenceStall{false};
 bool sequenceCadenceLost = false;
+// Set only when a fixed-step capture waited past its scratch-write budget.
+// Kept separate from cadence loss so the status names the real cause.
+bool sequenceWriterSlow = false;
+unsigned sequenceSlotWaits = 0, sequenceSlotTimeouts = 0;
+ULONGLONG sequenceSlotWaitMax = 0;
 struct ImageAdmissionFailure {
     const char* reason = nullptr;
     double phase = -1, pinned_phase = -1, previous = -1;
@@ -306,9 +311,14 @@ void release_frame_slots(unsigned ring) noexcept {
     }
 }
 CapturePendingImage pending_image(const ColorFrame& slot) noexcept {
-    return {slot.clock, slot.generation, slot.epoch, slot.draws,
-            slot.prepared, slot.sealed,
-            slot.truncated || sequenceStall.load(std::memory_order_acquire) || sequenceCadenceLost};
+    return {slot.clock,
+            slot.generation,
+            slot.epoch,
+            slot.draws,
+            slot.prepared,
+            slot.sealed,
+            slot.truncated || sequenceStall.load(std::memory_order_acquire) || sequenceCadenceLost,
+            slot.sceneObserved};
 }
 // Present owns these fields while its callback pin is held; the terminal
 // report reads them only after all admitted callbacks have left.
@@ -1010,7 +1020,8 @@ void stall_report() noexcept {
         return;
     f << "framesSealed " << framesSealed << " framesWritten " << framesWritten << " framesDropped "
       << framesDropped << " colorIndex " << colorIndex << " used " << used.load() << " dropped "
-      << dropped.load() << " stall " << (sequenceStall ? 1 : 0) << " refused "
+      << dropped.load() << " stall " << (sequenceStall ? 1 : 0) << " slow "
+      << (sequenceWriterSlow ? 1 : 0) << " refused "
       << sequence_writer().refused() << " writerErr " << (sequence_writer().error() ? 1 : 0)
       << " firstSeal " << (firstSeal ? firstSeal - started : 0) << " lastSeal "
       << (lastSeal ? lastSeal - started : 0) << " link " << linkOffset << " delta " << linkDelta
@@ -1027,6 +1038,8 @@ void stall_report() noexcept {
             ++tableNow;
     f << " players " << players << " producers " << producerTableCount << " tableNow " << tableNow
       << "\n";
+    f << "slotWaits " << sequenceSlotWaits << " slotWaitMaxMs " << sequenceSlotWaitMax
+      << " slotWaitTimeouts " << sequenceSlotTimeouts << "\n";
     f << "blends over " << blendOver << " darken " << blendDarken << " other " << blendOther
       << " skipped " << blendSkip << " records valid " << recordValid << " invalid "
       << recordInvalid << " validateStall " << validateStall << "\n";
@@ -1075,7 +1088,7 @@ void arm_capture() noexcept {
     startPresent = presentEpoch.load(std::memory_order_acquire);
     started = GetTickCount64();
     if (sequenceV2 && !sequenceWriterReady) {
-        sequenceWriterReady = sequence_writer().open(captureDirectory + L"dolly_owner_color_frame.bin", 2, sequenceV4);
+        sequenceWriterReady = sequence_writer().open(captureDirectory + L"dolly_owner_color_frame.bin", 4, sequenceV4);
         if (!sequenceWriterReady) {
             status("rejected sequence writer open");
             captured = true;
@@ -1116,6 +1129,9 @@ void reset_capture() noexcept {
     colorIndex = framesSealed = framesWritten = framesDropped = 0;
     sequenceStall = false;
     sequenceCadenceLost = false;
+    sequenceWriterSlow = false;
+    sequenceSlotWaits = sequenceSlotTimeouts = 0;
+    sequenceSlotWaitMax = 0;
     firstImageFailure = {};
     firstSeal = lastSeal = drainStarted = 0;
     lastSealedReplayTime = -1.0;
@@ -1391,6 +1407,9 @@ void tick() noexcept {
                 "failed player layer exceeded %u draws per image; incomplete output rejected",
                 AggregateDrawLimit);
             status(buf);
+        } else if (saved && sequenceWriterSlow) {
+            status(
+                "failed players capture could not write to the scratch drive fast enough; choose a faster scratch folder or a lower FPS");
         } else if (saved && sequenceV3 && (sequenceCadenceLost || framesWritten != sequenceCap)) {
             status(
                 "failed player capture missed shot frames; keep capture data and retry at a lower FPS or a higher export speed (closer to 1x)");
@@ -1731,6 +1750,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     slot.capture.recycle(c);
                     slot.sealed = false;
                     slot.prepared = false;
+                    slot.sceneObserved = false;
                     slot.draws = 0;
                     slot.truncated = false;
                     slot.first = slot.last = slot.epoch = 0;
@@ -1773,13 +1793,15 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             // reject the whole take, so retry for a bounded window while the
             // writer drains. The capture is fixed-step: a longer pause costs
             // wall time, not replay alignment.
-            bool pushed = sequenceWriterReady &&
-                          sequence_writer().push(slot.header, std::move(slot.capture.pixels));
-            for (int retry = 0; !pushed && sequenceWriterReady && retry < 20; ++retry) {
-                Sleep(5);
-                pushed = sequence_writer().push(slot.header, std::move(slot.capture.pixels));
-            }
+            // Fixed-step capture: waiting for the scratch drive costs wall time,
+            // never replay alignment. Only a real timeout (or a writer error)
+            // ends the take.
+            const bool pushed = sequenceWriterReady &&
+                                sequence_writer().push_blocking(slot.header,
+                                                                std::move(slot.capture.pixels), 1500);
             if (!pushed) {
+                if (sequenceWriterReady && !sequence_writer().error())
+                    sequenceWriterSlow = true;
                 sequenceStall = true;
                 break;
             }
@@ -1790,6 +1812,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             slot.capture.recycle(c);
             slot.sealed = false;
             slot.prepared = false;
+            slot.sceneObserved = false;
             slot.draws = 0;
             slot.truncated = false;
             slot.first = slot.last = slot.epoch = 0;
@@ -1924,6 +1947,38 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
         if (e->w[45])
             draw_probe("shape", e);
         return;
+    }
+    if (sequenceV3 && e->w[7] == D3D11_DEVICE_CONTEXT_IMMEDIATE && e->w[130]) {
+        // Establish the image from a real scene pass before filtering owners.
+        // A camera may look away from every player for part of a shot; that
+        // interval still needs one transparent frame per rendered scene view.
+        auto& image = colorFrames[colorIndex];
+        const double phase = authoredReplayTime.load(std::memory_order_acquire);
+        if (!image.clock.accept(e->w[135], phase)) {
+            sequenceCadenceLost = sequenceStall = true;
+            return;
+        }
+        if (!image.prepared) {
+            if (!image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
+                                            static_cast<unsigned>(e->w[133])) &&
+                !image.capture.prepare(c, static_cast<unsigned>(e->w[132]),
+                                       static_cast<unsigned>(e->w[133]), nullptr, true, true)) {
+                sequenceStall = true;
+                return;
+            }
+            image.generation = captureGeneration.load(std::memory_order_acquire);
+            image.epoch = e->w[135];
+            image.prepared = true;
+            image.sceneObserved = true;
+            captureOwnership.retain_prepared();
+        }
+        if (image.epoch != e->w[135] || image.capture.width != e->w[132] ||
+            image.capture.height != e->w[133] ||
+            !image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
+                                        static_cast<unsigned>(e->w[133]))) {
+            sequenceStall = true;
+            return;
+        }
     }
     draw_probe("color", e);
     // Ownership is decided where each producer is stored (players are
@@ -2559,6 +2614,8 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
             out->w[36] = 1;
             if (captured) {
                 ++colorDraws;
+                if (!colorFirst)
+                    colorFirst = selected;
                 colorLast = selected;
             }
 
@@ -2765,6 +2822,40 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
                     meshFrame = meshProducerFrame = 0;
                 }
             }
+        }
+    }
+    if (sequenceV3 && !sequenceStall && framesSealed < sequenceCap && c &&
+        c->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE) {
+        // Empty scene frames can render faster than GPU readbacks retire.
+        // Free the next ring slot before returning Present and allowing the
+        // fixed-step replay to advance. Never skip a phase or grow the ring.
+        const auto waitStart = GetTickCount64();
+        bool waiting = false;
+        for (;;) {
+            gpu_poll(c);
+            if (sequenceStall)
+                break;
+            const auto& next = colorFrames[colorIndex];
+            const bool busy = next.sealed || next.capture.pending || next.capture.complete;
+            const auto elapsed = GetTickCount64() - waitStart;
+            const auto action = capture_slot_wait(busy, captureOwnership.draining(), elapsed);
+            if (action != CaptureSlotWait::wait) {
+                if (waiting && elapsed > sequenceSlotWaitMax)
+                    sequenceSlotWaitMax = elapsed;
+                if (action == CaptureSlotWait::timeout) {
+                    ++sequenceSlotTimeouts;
+                    note_image_failure("capture_slot_timeout",
+                                       authoredReplayTime.load(std::memory_order_acquire), next);
+                    sequenceStall = true;
+                }
+                break;
+            }
+            if (!waiting) {
+                waiting = true;
+                ++sequenceSlotWaits;
+                c->Flush();
+            }
+            Sleep(1);
         }
     }
     const auto prior = presentEpoch.fetch_add(1, std::memory_order_acq_rel);

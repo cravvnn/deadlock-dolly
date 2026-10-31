@@ -157,10 +157,44 @@ enum class EditorAction : std::uint32_t {
     SeekCamera,
     SetVideoAeCamera,
     SetVideoUsdCamera,
+    SetAttachVerticalAimLock,
     // Environment edition: panorama capture. Appended so every earlier action
     // ID (including TakeScreenshot at 98 and Object Picker at 99+) is unchanged.
     CaptureEnvironment
 };
+static_assert(static_cast<std::uint32_t>(EditorAction::CaptureEnvironment) == 123,
+              "Panorama action follows all current main actions");
+inline bool environment_action_allowed(EditorAction action) noexcept {
+    // Preserve the transport ABI while refusing removed tools and stale hotkeys.
+    const auto id = static_cast<std::uint32_t>(action);
+    if (id <= 30)
+        return action != EditorAction::PlayPath;
+    if ((id >= 39 && id <= 51) || (id >= 57 && id <= 62))
+        return true; // fixed scene and DOF controls
+    switch (action) {
+    case EditorAction::StepReplayTicks:
+    case EditorAction::SetReplayHud:
+    case EditorAction::SelectCamera:
+    case EditorAction::ViewCamera:
+    case EditorAction::DeleteCamera:
+    case EditorAction::UndoShot:
+    case EditorAction::RedoShot:
+    case EditorAction::CameraPage:
+    case EditorAction::FramingGrid:
+    case EditorAction::TakeScreenshot:
+    case EditorAction::SaveShot:
+    case EditorAction::SeekReplayTick:
+    case EditorAction::ClearCameraPath:
+    case EditorAction::SetPauseAfterCapture:
+    case EditorAction::SetCameraPosition:
+    case EditorAction::LevelView:
+    case EditorAction::SeekCamera:
+    case EditorAction::CaptureEnvironment:
+        return true;
+    default:
+        return false;
+    }
+}
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::LevelView)==118,
@@ -182,6 +216,8 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoAeCamera) == 120,
               "Stable After Effects camera export action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoUsdCamera) == 121,
               "Stable USD camera export action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetAttachVerticalAimLock) == 122,
+              "Stable per-camera vertical aim lock action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&
@@ -299,6 +335,7 @@ struct EditorAttachConfig {
     // ABI 3 uses reserved2 for source blend milliseconds (0..10000).
     std::uint32_t handle, entity_id, target_index, point, hide, reserved2;
     // ABI 5: hide bit 0 hides the model; bit 1 enables approximate clearance.
+    // ABI 6: bit 2 uses composed orientation; bit 3 locks vertical aim.
     double offset[6];
     double smoothing;
     std::uint32_t attached_keys, key_count;
@@ -639,7 +676,7 @@ struct EditorSnapshot {
          replay_show_hud = false;
     double follow_distance = 135, follow_shoulder = 34, follow_height = 0;
     bool attach_available = false, attach_selected = false, attach_hide = true;
-    bool attach_auto_clearance = false;
+    bool attach_auto_clearance = false, attach_lock_vertical_aim = false;
     bool attach_preview = false, bone_picker = false;
     std::uint32_t attach_point = 0, attach_target_index = 0, roster_count = 0;
     char attach_bone[65]{};

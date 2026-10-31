@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "dolly_pattern_scan.hpp"
+#include "dolly_remote_definitions.hpp"
 #include "dolly_compat_generated.hpp"
 
 struct CompatResolution {
@@ -214,7 +215,8 @@ inline std::uintptr_t locate_engine_client(std::uintptr_t setup, std::size_t set
 
 }  // namespace compat_detail
 
-inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signature) {
+inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signature,
+                                              const dolly_remote::Definitions* remote = nullptr) {
     CompatResolution result;
     std::uintptr_t text = 0;
     std::size_t text_size = 0;
@@ -238,8 +240,60 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
         result.note = "exact reviewed hash";
         return result;
     }
+    if (remote && remote->loaded) {
+        for (std::size_t i = 0; i < remote->client_count; ++i) {
+            const auto& profile = remote->clients[i];
+            if (!module_matches(client, profile.sha256, profile.image_size))
+                continue;
+            result.resolved = true;
+            result.exact = true;
+            result.setup = profile.main_view_setup;
+            result.caller = profile.main_view_caller;
+            result.view_table = profile.primary_vtable;
+            result.globals = profile.globals;
+            result.engine_client = profile.engine_client;
+            result.render_fraction = profile.render_fraction;
+            result.camera_layout_revision = profile.camera_layout_revision;
+            result.view_setup_delegate = profile.view_setup_delegate;
+            result.setup_prologue = profile.setup_prologue;
+            result.note = "exact hash from published definitions";
+            return result;
+        }
+    }
     if (!allow_signature)
         return result;
+    // A published profile's own signature is checked before the legacy bundled
+    // fallback: it identifies this exact build, while the bundled patterns only
+    // describe older builds with the same code shape.
+    if (remote && remote->loaded) {
+        for (std::size_t i = 0; i < remote->client_count; ++i) {
+            const auto& profile = remote->clients[i];
+            if (!profile.signature_size)
+                continue;
+            std::size_t offset = 0;
+            const std::size_t matches = dolly::find_pattern(
+                reinterpret_cast<const unsigned char*>(text), text_size, profile.signature,
+                profile.signature_mask, profile.signature_size, offset);
+            if (matches != 1 || text + offset != text + profile.main_view_setup)
+                continue;
+            if (std::memcmp(reinterpret_cast<const void*>(text + offset), profile.setup_prologue,
+                            sizeof(profile.setup_prologue)) != 0)
+                continue;
+            result.resolved = true;
+            result.exact = false;
+            result.setup = profile.main_view_setup;
+            result.caller = profile.main_view_caller;
+            result.view_table = profile.primary_vtable;
+            result.globals = profile.globals;
+            result.engine_client = profile.engine_client;
+            result.render_fraction = profile.render_fraction;
+            result.camera_layout_revision = profile.camera_layout_revision;
+            result.view_setup_delegate = profile.view_setup_delegate;
+            result.setup_prologue = profile.setup_prologue;
+            result.note = "published signature, reviewed offsets";
+            return result;
+        }
+    }
     for (std::size_t i = 0; i < dolly_compat::kCompatClientProfileCount; ++i) {
         const auto& profile = dolly_compat::kCompatClientProfiles[i];
         // The September 29 virtual wrapper and moved view fields have only an

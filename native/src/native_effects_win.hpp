@@ -224,18 +224,63 @@ struct NativeEffectState {
     }
 };
 NativeEffectState gEffects;
-static bool init_cvar_interface() {
-    auto tier0 = GetModuleHandleW(L"tier0.dll");
+// One reviewed tier0 cvar layout. A definitions entry may add another accepted
+// tier0 identity that reuses a published layout, but a compiled layout always
+// wins for a compiled identity.
+struct CvarLayout {
+    std::uintptr_t table = 0;
+    std::uintptr_t setter = 0;
+    std::uintptr_t find = 0;
+    std::uintptr_t data = 0;
+    unsigned data_slot = 0;
+    bool extended = false;
+};
+
+static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
     const bool build6801 = module_matches(tier0, kBuild6801Tier0Hash, 0x401000);
     const bool current_setter = build6801 || module_matches(tier0, kBuild6779Tier0Hash, 0x401000) ||
     module_matches(tier0, kBuild6793Tier0Hash, 0x401000) ||
                                 module_matches(tier0, kBuild6782Tier0Hash, 0x401000);
     const bool september = current_setter || module_matches(tier0, kSeptemberTier0Hash, 0x401000) ||
                            module_matches(tier0, kBuild6726Tier0Hash, 0x401000);
-    if (!september && !module_matches(tier0, kTier0Hash, 0x400000) &&
-        !module_matches(tier0, kUpdatedTier0Hash, 0x400000))
+    if (september || module_matches(tier0, kTier0Hash, 0x400000) ||
+        module_matches(tier0, kUpdatedTier0Hash, 0x400000)) {
+        layout.table = september ? 0x313208u : kCvarTable;
+        layout.setter = build6801 ? 0x20fea0u
+                        : current_setter ? 0x20fe80u
+                                         : (september ? 0x20fd40u : kCvarSet);
+        layout.find = september ? 0x6c6b0u : 0x6bef0u;
+        layout.data = september ? 0x6c5f0u : 0x6be30u;
+        layout.data_slot = september ? 41 : 43;
+        layout.extended = september || module_matches(tier0, kUpdatedTier0Hash, 0x400000);
+        return true;
+    }
+    if (!gRemoteDefinitions.loaded)
         return false;
-    gExtendedCvarSupported = september || module_matches(tier0, kUpdatedTier0Hash, 0x400000);
+    for (std::size_t i = 0; i < gRemoteDefinitions.tier0_count; ++i) {
+        const auto& profile = gRemoteDefinitions.tier0[i];
+        if (!module_matches(tier0, profile.sha256, profile.image_size))
+            continue;
+        const auto* found = dolly_remote::detail::cvar_layout(gRemoteDefinitions, profile.layout);
+        if (!found)
+            return false;
+        layout.table = found->table;
+        layout.setter = found->setter;
+        layout.find = found->find;
+        layout.data = found->data;
+        layout.data_slot = found->data_slot;
+        layout.extended = found->extended;
+        return true;
+    }
+    return false;
+}
+
+static bool init_cvar_interface() {
+    auto tier0 = GetModuleHandleW(L"tier0.dll");
+    CvarLayout layout;
+    if (!resolve_cvar_layout(tier0, layout))
+        return false;
+    gExtendedCvarSupported = layout.extended;
     gTier0 = reinterpret_cast<std::uintptr_t>(tier0);
     auto factory = reinterpret_cast<Factory>(GetProcAddress(tier0, "CreateInterface"));
     if (!factory)
@@ -244,22 +289,19 @@ static bool init_cvar_interface() {
     std::uintptr_t table = 0, find = 0, data = 0;
     // The interface name did not change, but GetConVarData moved from slot 43
     // to 41. Select only by exact reviewed module identity, then verify slots.
-    const auto table_rva = september ? 0x313208u : kCvarTable;
-    const auto setter_rva = build6801 ? 0x20fea0u
-                           : current_setter ? 0x20fe80u : (september ? 0x20fd40u : kCvarSet);
-    if (!read_value(gCvar, table) || table != gTier0 + table_rva ||
-        !read_value(table + 11 * 8, find) || find != gTier0 + (september ? 0x6c6b0u : 0x6bef0u) ||
-        !read_value(table + (september ? 41 : 43) * 8, data) ||
-        data != gTier0 + (september ? 0x6c5f0u : 0x6be30u))
+    if (!read_value(gCvar, table) || table != gTier0 + layout.table ||
+        !read_value(table + 11 * 8, find) || find != gTier0 + layout.find ||
+        !read_value(table + layout.data_slot * 8, data) ||
+        data != gTier0 + layout.data)
         return false;
     const unsigned char expected[] = {0x4c, 0x89, 0x44, 0x24, 0x18, 0x48, 0x89, 0x4c,
                                       0x24, 0x08, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41};
     unsigned char actual[sizeof(expected)]{};
-    if (!read_memory(gTier0 + setter_rva, actual, sizeof(actual)) ||
+    if (!read_memory(gTier0 + layout.setter, actual, sizeof(actual)) ||
         std::memcmp(actual, expected, sizeof(actual)))
         return false;
     gFindCvar = reinterpret_cast<FindCvarFn>(find);
     gGetCvarData = reinterpret_cast<CvarDataFn>(data);
-    gSetCvar = reinterpret_cast<SetCvarFn>(gTier0 + setter_rva);
+    gSetCvar = reinterpret_cast<SetCvarFn>(gTier0 + layout.setter);
     return true;
 }

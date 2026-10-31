@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <iostream>
 #include <chrono>
+#include <thread>
 
 #define CHECK(x) do { if (!(x)) { std::cerr << "Failed line " << __LINE__ << '\n'; return 1; } } while (0)
 int main() {
@@ -70,6 +71,53 @@ int main() {
     CHECK(!collision.open(bundle.wstring(),2,true));
     CHECK(fs::file_size(bundle)==72);
     fs::remove(bundle);
+    // A fixed-step capture waits for scratch space instead of rejecting a
+    // frame. The blocked call must hand off after the worker drains and must
+    // keep the caller's buffer when a real timeout expires.
+    {
+        SequenceWriter paced;
+        paced.hold_worker_for_tests(true);
+        auto pacedPath = root / "paced.bin";
+        CHECK(paced.open(pacedPath.wstring(), 2, false));
+        {
+            SequenceWriter::Buffer first(8, 5);
+            CHECK(paced.push_blocking(header, std::move(first), 500));
+            const auto ready = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (!paced.in_flight() && std::chrono::steady_clock::now() < ready)
+                std::this_thread::yield();
+            CHECK(paced.in_flight() == 1);
+            SequenceWriter::Buffer second(8, 6), third(8, 7);
+            CHECK(paced.push_blocking(header, std::move(second), 500));
+            CHECK(paced.push_blocking(header, std::move(third), 500));
+            std::thread release([&] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                paced.hold_worker_for_tests(false);
+            });
+            SequenceWriter::Buffer fourth(8, 8);
+            CHECK(paced.push_blocking(header, std::move(fourth), 2000));
+            release.join();
+            CHECK(paced.refused() == 0);
+        }
+        CHECK(paced.finish());
+        CHECK(paced.written() == 4 && fs::file_size(pacedPath) == 4 * 72);
+    }
+    {
+        SequenceWriter stuck;
+        stuck.hold_worker_for_tests(true);
+        auto stuckPath = root / "stuck.bin";
+        CHECK(stuck.open(stuckPath.wstring(), 1, false));
+        SequenceWriter::Buffer first(8, 1), second(8, 2);
+        CHECK(stuck.push_blocking(header, std::move(first), 500));
+        CHECK(stuck.push_blocking(header, std::move(second), 500));
+        SequenceWriter::Buffer rejected(8, 9);
+        const auto* retained = rejected.data();
+        CHECK(!stuck.push_blocking(header, std::move(rejected), 50));
+        CHECK(rejected.size() == 8 && rejected.data() == retained);
+        CHECK(rejected == SequenceWriter::Buffer(8, 9));
+        CHECK(stuck.refused() == 1);
+        CHECK(stuck.finish());
+        CHECK(stuck.written() == 2 && fs::file_size(stuckPath) == 2 * 72);
+    }
     CHECK(scratch_directory(hex,request,path));
     std::ofstream(folder / ".dolly-players-owner",std::ios::app) << 'x';
     CHECK(!scratch_directory(hex,request,path));

@@ -7,9 +7,11 @@ methods; these tests do not claim compatibility with a running game build.
 
 from collections import deque
 from dataclasses import replace
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -59,6 +61,86 @@ class MovieOutputContextTests(unittest.TestCase):
         self.assertEqual(context.root,self.mod/'movie')
         context.verify_owner(self.c)
         self.assertEqual(self.paths.gameinfo.read_bytes().decode('utf-8').count('citadel_dolly_'),0)
+
+    def configure_content_mods(self, addon_config=False):
+        from dolly import launcher
+        from test_launcher import DMM_GAMEINFO
+        original=DMM_GAMEINFO
+        if addon_config:
+            original=original.replace('    FileSystem', '    AddonConfig { VpkDirectories "addons" }\n    FileSystem')
+        original=original.encode('utf-8')
+        self.paths.gameinfo.write_bytes(original)
+        (self.directory/'original.gameinfo.gi').write_bytes(original)
+        self.record['original_sha256']=hashlib.sha256(original).hexdigest()
+        marker=json.loads((self.overlay/'.dolly-session.json').read_text())
+        marker['original_sha256']=self.record['original_sha256']
+        (self.overlay/'.dolly-session.json').write_text(json.dumps(marker),encoding='utf-8')
+        pairs=launcher.mod_search_paths(original.decode('utf-8'))
+        self.record['carried_addon_mounts']=[dict(key=key,path=path) for key,path in pairs]
+        baseline=(launcher.EDITING_ROOT/'gameinfo.gi').read_bytes().decode('utf-8')
+        merged=launcher.merge_addon_mounts(original.decode('utf-8'),baseline,pairs)
+        patched=launcher.make_gameinfo(merged,self.overlay.name,isolated_settings=True)
+        self.record['patched_sha256']=hashlib.sha256(patched.encode('utf-8')).hexdigest()
+        self.save()
+
+    def test_both_fixed_step_audio_options_accept_carried_mods_and_keep_original_files(self):
+        from dolly.clip_audio import ClipAudioCapture
+        for reconstructed in (False,True):
+            with self.subTest(reconstructed=reconstructed):
+                self.configure_content_mods(addon_config=reconstructed)
+                before=self.paths.gameinfo.read_bytes()
+                self.c.game_pid=MagicMock(return_value=None)
+                self.c._native_bridge=MagicMock(return_value=SimpleNamespace(status=lambda:{'engine_time':0}))
+                self.c._request=MagicMock(side_effect=lambda command,**kwargs: (
+                    'Started recording movie: movie/2026_10_29_12_00_00/take.*: framerate 30'
+                    if command.startswith('startmovie ') else 'Finishing movie' if command=='endmovie' else ''))
+                vpk=self.paths.citadel_dir/'pak01_dir.vpk';vpk.write_bytes(b'test sound archive')
+                with patch('dolly.clip_audio._ffmpeg',return_value=self.folder/'ffmpeg.exe'), \
+                        patch('dolly.clip_audio._viewer',return_value=self.folder/'viewer.exe'):
+                    capture=ClipAudioCapture(self.folder/'shot.mkv',game_audio=not reconstructed,
+                        reconstructed=reconstructed,bridge=MagicMock(),game=self.paths.executable,
+                        game_pid=4321,controller=self.c,fixed_step=True)
+                try:
+                    capture.start()
+                    capture.start_movie()
+                    self.assertEqual(capture.movie.folder,self.mod/'movie/2026_10_29_12_00_00')
+                finally:
+                    capture.cancel()
+                self.assertEqual([call.args[0].split()[0] for call in self.c._request.call_args_list],
+                                 ['hideconsole','startmovie','endmovie'])
+                self.assertEqual(self.paths.gameinfo.read_bytes(),before)
+                self.assertEqual((self.directory/'original.gameinfo.gi').read_bytes(),before)
+
+    def test_modded_context_refuses_missing_changed_or_oversized_original_backup(self):
+        self.configure_content_mods()
+        backup=self.directory/'original.gameinfo.gi'
+        original=backup.read_bytes()
+        backup.unlink()
+        with self.assertRaisesRegex(RuntimeError,'original configuration'):
+            self.c.movie_output_context()
+        for content in (original+b'changed',b'',b'x'*(1024*1024+1)):
+            with self.subTest(size=len(content)):
+                backup.write_bytes(content)
+                with self.assertRaisesRegex(RuntimeError,'original configuration'):
+                    self.c.movie_output_context()
+
+    def test_modded_context_refuses_malformed_launch_mounts(self):
+        for mounts in (None,{},[None],[{'key':'Game'}],[{'key':1,'path':'citadel/addons'}]):
+            with self.subTest(mounts=mounts):
+                self.record['carried_addon_mounts']=mounts
+                self.save()
+                with self.assertRaisesRegex(RuntimeError,'launch mounts'):
+                    self.c.movie_output_context()
+
+    def test_modded_context_refuses_mount_changes_before_and_after_creation(self):
+        self.configure_content_mods()
+        context=self.c.movie_output_context()
+        self.record['carried_addon_mounts'][0]['path']='citadel/addons2'
+        self.save()
+        with self.assertRaisesRegex(RuntimeError,'output owner changed'):
+            context.verify_owner(self.c)
+        with self.assertRaisesRegex(RuntimeError,'primary MOD'):
+            self.c.movie_output_context()
 
     def test_context_refuses_same_pid_replacement_session_and_wrong_controller(self):
         context=self.c.movie_output_context()
@@ -1219,6 +1301,64 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(int(result["tick"]), 125)
         self.assertEqual(self.console.requests.count("demo_resume"), 1)
 
+    def test_seek_nudges_a_forward_skip_undershoot_to_the_exact_tick(self):
+        self.controller._stop_event.clear()
+        self.console.goto_seek_output = (
+            "Demo Skipping: skipping forward to demo tick 125 (game tick 1000)"
+            " from current 50 (925)")
+        self.console.goto_outputs.extend([124] * 3 + [125] * 8)
+        result = self.controller._seek_tick(125)
+        self.assertNotIn("seek_boundary", result)
+        self.assertEqual(int(result["tick"]), 125)
+        self.assertEqual(self.console.requests.count("demo_resume"), 1)
+        nudges = self.controller._last_seek_details["undershoot_nudges"]
+        self.assertEqual([(n["from_tick"], n["target_tick"], n["packet_floor_reported"])
+                          for n in nudges], [(124, 125, False)])
+
+    def test_forward_skip_undershoot_is_never_silently_accepted_as_a_floor(self):
+        self.controller._stop_event.clear()
+        self.console.goto_seek_output = (
+            "Demo Skipping: skipping forward to demo tick 125 (game tick 1000)"
+            " from current 50 (925)")
+        self.console.goto_outputs.extend([124] * 500)
+        with self.assertRaisesRegex(RuntimeError, "did not reach tick 125"):
+            self.controller._seek_tick(125)
+        self.assertFalse(self.controller._last_seek_details["verified"])
+        self.assertEqual(self.console.requests.count("demo_resume"), 1)
+
+    def test_forward_undershoot_nudge_requires_a_consistent_seek_report(self):
+        # A partial, inconsistent or duplicated console line is not enough to
+        # resume playback: require the same validated report used by overshoot.
+        reports = (
+            "Demo Skipping: skipping forward to demo tick 125",
+            "Demo Skipping: skipping forward to demo tick 125 (game tick 1001) from current 50 (925)",
+            "Demo Skipping: skipping forward to demo tick 126 (game tick 1001) from current 50 (925)",
+            ("Demo Skipping: skipping forward to demo tick 125 (game tick 1000) from current 50 (925)\n" * 2),
+        )
+        for report in reports:
+            with self.subTest(report=report):
+                self.clock.now = 0
+                self.controller._stop_event.clear()
+                self.console.requests.clear()
+                self.console.goto_outputs.clear()
+                self.console.goto_seek_output = report
+                self.console.goto_outputs.extend([124] * 500)
+                with self.assertRaisesRegex(RuntimeError, "did not reach tick 125"):
+                    self.controller._seek_tick(125)
+                self.assertFalse(self.controller._last_seek_details["verified"])
+                self.assertNotIn("demo_resume", self.console.requests)
+
+    def test_cancelled_forward_undershoot_does_not_resume(self):
+        self.controller._stop_event.limit = 2
+        self.console.goto_seek_output = (
+            "Demo Skipping: skipping forward to demo tick 125 (game tick 1000)"
+            " from current 50 (925)")
+        self.console.goto_outputs.extend([124] * 20)
+        with self.assertRaisesRegex(RuntimeError, "cancelled"):
+            self.controller._seek_tick(125)
+        self.assertFalse(self.controller._last_seek_details["verified"])
+        self.assertNotIn("demo_resume", self.console.requests)
+
     def test_seek_shot_time_holds_the_first_camera_at_a_floor_tick(self):
         project = make_project()
         info = {"tick": 99, "seek_boundary": {"requested_tick": 100, "actual_tick": 99,
@@ -1837,11 +1977,13 @@ class ControllerTests(unittest.TestCase):
             session_dir = Path(directory)/"session"
             session_dir.mkdir()
             self.controller._session.session_dir = session_dir
-            for name in ("session.json", "launch.log", "game_stdout.log"):
+            names = ("session.json", "launch.log", "game_stdout.log", "native_diagnostics.json",
+                     "engine_console.log", "console_transcript.log")
+            for name in names:
                 (session_dir/name).write_text("fixture")
             destination = self.controller.export_diagnostics(Path(directory)/"report.zip")
             with zipfile.ZipFile(destination) as archive:
-                for name in ("session.json", "launch.log", "game_stdout.log"):
+                for name in names:
                     self.assertIn("session/" + name, archive.namelist())
 
     def test_diagnostics_list_temporary_mount_entries_without_reading_them(self):
@@ -1876,6 +2018,39 @@ class ControllerTests(unittest.TestCase):
                 self.assertIn("crashes/" + crash.name, archive.namelist())
                 report = json.loads(archive.read("diagnostics.json"))
             self.assertEqual(report["crash_dumps"], [{"name": crash.name, "bytes": 12}])
+
+    def test_crash_message_does_not_attribute_older_dump_to_current_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            game = Path(directory) / 'Deadlock' / 'game'
+            binaries = game / 'bin' / 'win64'
+            binaries.mkdir(parents=True)
+            old = binaries / 'deadlock_2026_1023_000650_0_accessviolation.mdmp'
+            old.write_bytes(b'old dump')
+            previous = datetime(2026, 10, 23, 0, 6, 50, tzinfo=timezone.utc).timestamp()
+            os.utime(old, (previous, previous))
+            self.controller._session.command = (str(binaries / 'deadlock.exe'),)
+            self.controller._session.session_dir = Path(directory) / '20261028_073722_f12f8fb1ef'
+            self.controller._session.session_dir.mkdir()
+            self.controller._launch_attempt = {'game_path': str(binaries)}
+            report = {'faulting_module': 'client.dll', 'module_offset': '0x123', 'access_address': '0x60'}
+            with patch('dolly.crash_dumps.analyse', return_value=report):
+                self.assertEqual(self.controller._crash_suffix(), '')
+                archive_path = self.controller.export_diagnostics(Path(directory) / 'diagnostics.zip')
+                with zipfile.ZipFile(archive_path) as archive:
+                    diagnostic = json.loads(archive.read('diagnostics.json'))
+                self.assertFalse(diagnostic['crash_analysis'][0]['after_session_start'])
+                self.assertEqual(diagnostic['crash_analysis'][0]['modified_utc'],
+                                 '2026-10-23T00:06:50+00:00')
+
+                recent = binaries / 'deadlock_2026_1028_073733_0_accessviolation.mdmp'
+                recent.write_bytes(b'new dump')
+                current = datetime(2026, 10, 28, 7, 37, 33, tzinfo=timezone.utc).timestamp()
+                os.utime(recent, (current, current))
+                suffix = self.controller._crash_suffix()
+                self.assertIn(recent.name, suffix)
+                self.assertNotIn(old.name, suffix)
+                self.controller._session.session_dir = Path(directory) / 'unknown-session'
+                self.assertEqual(self.controller._crash_suffix(), '')
 
     def test_crash_dump_search_resolves_executable_and_install_folder_selections(self):
         from test_launcher import fake_game

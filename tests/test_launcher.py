@@ -5,6 +5,7 @@ import socket
 import shutil
 import stat
 import struct
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -321,6 +322,44 @@ class LauncherTests(unittest.TestCase):
             self._launched_session()
         self.assertEqual(self.paths.gameinfo.read_bytes(), before)
         self.assertFalse(list(self.paths.game_dir.glob('citadel_dolly_*')))
+
+    def test_published_definitions_extend_editing_pins_additively(self):
+        from dolly import definitions
+        target = self.paths.game_dir / 'bin/win64/filesystem_stdio.dll'
+        target.write_bytes(b'updated filesystem consumer')
+        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(launcher.LaunchError, 'not been reviewed'):
+            launcher._editing_gameinfo(self.paths)
+        published = definitions.parse({
+            "format": 1, "native_abi": 4,
+            "editing": {"configuration_modules": {"bin/win64/filesystem_stdio.dll": [digest]}},
+        })
+        with patch.object(definitions, "current", return_value=published):
+            self.assertEqual(launcher._editing_gameinfo(self.paths), GAMEINFO)
+        # A published pin for a different file must not widen this one.
+        wrong = definitions.parse({
+            "format": 1, "native_abi": 4,
+            "editing": {"configuration_modules": {"bin/win64/filesystem_stdio.dll": ["a" * 64]}},
+        })
+        with patch.object(definitions, "current", return_value=wrong):
+            with self.assertRaisesRegex(launcher.LaunchError, 'not been reviewed'):
+                launcher._editing_gameinfo(self.paths)
+
+    def test_published_definitions_cannot_widen_the_unlocker_server_pin(self):
+        from dolly import definitions
+        target = self.paths.game_dir / 'citadel/bin/win64/server.dll'
+        target.write_bytes(b'updated named server')
+        with self.assertRaisesRegex(launcher.LaunchError, 'not been reviewed'):
+            launcher._editing_gameinfo(self.paths)
+        # The bundled unlocker is built from the reviewed server binary, so a
+        # definitions document is not allowed to name a new server identity.
+        with self.assertRaises(definitions.DefinitionsError):
+            definitions.parse({
+                "format": 1, "native_abi": 4,
+                "editing": {"unlocker_server_sha256": ["a" * 64]},
+            })
+        with self.assertRaisesRegex(launcher.LaunchError, 'not been reviewed'):
+            launcher._editing_gameinfo(self.paths)
 
     def test_unknown_client_console_launch_keeps_user_cfg_exact_and_uses_private_root(self):
         (self.paths.game_dir/'citadel/bin/win64/client.dll').write_bytes(b'unknown private camera layout')
@@ -848,6 +887,39 @@ class LauncherTests(unittest.TestCase):
         with patch.object(launcher, "_check_runtime"), patch.object(launcher, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.subprocess, "Popen", return_value=process), patch.object(launcher.threading, "Thread"):
             return launcher.launch(self.paths.root)
 
+    def test_dlss_switch_uses_gui_handles_and_owned_log_only_when_enabled(self):
+        from dolly import game_logging
+        original = self.paths.gameinfo.read_bytes()
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                process = MagicMock(pid=6789)
+                process.poll.return_value = None
+                with patch.object(launcher, '_check_runtime'), \
+                     patch.object(launcher, 'running_processes', return_value={'steam.exe'}), \
+                     patch.object(launcher, 'PACKAGE_ROOT', self.package), \
+                     patch.object(launcher.threading, 'Thread'), \
+                     patch.object(game_logging, 'spawn', return_value=process) as gui_spawn, \
+                     patch.object(launcher.subprocess, 'Popen', return_value=process) as ordinary:
+                    session = launcher.launch(self.paths.root, nvidia_dlss=enabled)
+                self.assertIs(session.nvidia_dlss, enabled)
+                record = json.loads((session.session_dir / 'session.json').read_text())
+                self.assertIs(record['nvidia_dlss'], enabled)
+                if enabled:
+                    ordinary.assert_not_called()
+                    args = gui_spawn.call_args.args[0]
+                    self.assertEqual(args[-3:], ['-condebug', '-con_logfile', str((session.session_dir / 'engine_console.log').resolve())])
+                    self.assertNotIn('stdout', gui_spawn.call_args.kwargs)
+                    self.assertNotIn('stderr', gui_spawn.call_args.kwargs)
+                    self.assertIn('stdout-only', record['game_logging']['limitation'])
+                else:
+                    gui_spawn.assert_not_called()
+                    self.assertNotIn('-condebug', ordinary.call_args.args[0])
+                    self.assertEqual(ordinary.call_args.kwargs['stderr'], subprocess.STDOUT)
+                    self.assertIsNotNone(ordinary.call_args.kwargs['stdout'])
+                process.poll.return_value = 0
+                session.close()
+                self.assertEqual(self.paths.gameinfo.read_bytes(), original)
+
     def _skin_mount(self):
         addons = self.paths.game_dir / "citadel" / "addons"
         (addons / "skin" / "models").mkdir(parents=True)
@@ -1015,7 +1087,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), meta["bundled_file_sha256"])
         self.assertEqual(meta["bundled_file_sha256"], launcher.UNLOCKER_SHA256)
         self.assertEqual(meta["license"], "MIT")
-        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6819")
+        self.assertEqual(meta["version"], "v0.5.2-dolly-build-6821")
         self.assertEqual(dll.stat().st_size, meta["bundled_file_size"])
         self.assertIn("unlocker-build-6712.patch", meta["patches"])
         self.assertIn("unlocker-build-6722.patch", meta["patches"])
@@ -1039,6 +1111,7 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("unlocker-build-6815.patch", meta["patches"])
         self.assertIn("unlocker-build-6817.patch", meta["patches"])
         self.assertIn("unlocker-build-6819.patch", meta["patches"])
+        self.assertIn("unlocker-build-6821.patch", meta["patches"])
         for patch in meta["patches"]:
             self.assertTrue((launcher.UNLOCKER_ROOT / patch).is_file(), patch)
 
@@ -1202,6 +1275,9 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual((target / "server.dll").read_bytes(), dll.read_bytes())
         self.assertEqual(hashlib.sha256((target / "dolly_cvar_unlocker.dll").read_bytes()).hexdigest(), launcher.UNLOCKER_SHA256)
         self.assertEqual((target / "dolly_native.cfg").read_bytes(), b"DOLLY_NATIVE_1\n" + b"a" * 32 + b"\n5432\n")
+        published = (target / "dolly_definitions.txt").read_text(encoding="ascii")
+        self.assertTrue(published.startswith("DOLLY_DEFINITIONS 1\nabi 4\n"))
+        self.assertTrue(published.endswith("end\n"))
         self.assertEqual(hashlib.sha256((target.parents[1] / "pak01_dir.vpk").read_bytes()).hexdigest(),
                          launcher.CONFETTI_PACK_SHA256)
         self.assertEqual(hashlib.sha256((target.parents[1] / "pak02_dir.vpk").read_bytes()).hexdigest(),

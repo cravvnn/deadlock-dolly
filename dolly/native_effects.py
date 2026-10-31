@@ -35,6 +35,7 @@ TRACK_HEADER = struct.Struct("<4I5d")
 ATTACH_HEADER = struct.Struct("<8s3I")
 ATTACH_SEGMENT = struct.Struct("<2d4IQ6dd")
 # Version 2 appends the bone-name hash; version 3 appends eased-arrival seconds.
+# Version 4 uses the same stride and adds the rigid-orientation flag.
 ATTACH_SEGMENT2 = struct.Struct("<2d4IQ6ddQ")
 ATTACH_SEGMENT3 = struct.Struct("<2d4IQ6ddQd")
 MAX_EFFECT_KEYS = 4096
@@ -87,7 +88,10 @@ def compile_attach(project):
         if governing is not None and governing.source == "attach":
             attach = governing.attach
             segments.append((begin, end, 1 | (2 if attach.hide_body else 0) |
-                             (4 if attach.clearance_mode == "auto" else 0), attach, governing.source_blend))
+                             (4 if attach.clearance_mode == "auto" else 0) |
+                             (8 if attach.orientation_mode == "rigid" else 0) |
+                             (16 if attach.lock_vertical_aim else 0),
+                             attach, governing.source_blend))
         else:
             segments.append((begin, end, 0, None, governing.source_blend if governing else 0))
     if blended and project.duration > 0 and float(keys[-1].time) == float(project.duration):
@@ -95,14 +99,18 @@ def compile_attach(project):
         attach = last.attach if last.source == "attach" else None
         segments.append((float(project.duration), float(project.duration),
                          (1 | (2 if attach.hide_body else 0) |
-                          (4 if attach.clearance_mode == "auto" else 0)) if attach else 0,
+                          (4 if attach.clearance_mode == "auto" else 0) |
+                          (8 if attach.orientation_mode == "rigid" else 0) |
+                          (16 if attach.lock_vertical_aim else 0)) if attach else 0,
                          attach, last.source_blend))
     if not any(flags & 1 for _, _, flags, _, _ in segments):
         return b""
     if len(segments) > MAX_ATTACH_SEGMENTS:
         raise ValueError(f"Attach keys support at most {MAX_ATTACH_SEGMENTS} native segments")
     bones = any(attach is not None and attach.point == "bone" for _, _, _, attach, _ in segments)
-    result = bytearray(ATTACH_HEADER.pack(b"DLYATT01", 3 if blended else 2 if bones else 1, 0, len(segments)))
+    extended = any(flags & 24 for _, _, flags, _, _ in segments)
+    version = 4 if extended else 3 if blended else 2 if bones else 1
+    result = bytearray(ATTACH_HEADER.pack(b"DLYATT01", version, 0, len(segments)))
     for begin, end, flags, attach, blend in segments:
         point = 0 if attach is None else ATTACH_POINTS[attach.point]
         handle = 0 if attach is None else attach.handle
@@ -111,7 +119,7 @@ def compile_attach(project):
         offset = (0.0,) * 6 if attach is None else tuple(float(value) for value in attach.offset)
         smoothing = 0.0 if attach is None else float(attach.smoothing)
         bone_hash = model_token(attach.bone) if attach is not None and attach.point == "bone" else 0
-        if blended:
+        if version >= 3:
             result.extend(ATTACH_SEGMENT3.pack(begin, end, flags, point, handle, entity_id,
                                                identity, *offset, smoothing, bone_hash, blend))
         elif bones:

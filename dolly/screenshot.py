@@ -1,7 +1,7 @@
 """High-resolution stills: one settled frame of color, depth and the players layer.
 
 A still is a very short fixed-step layered take of the current paused view.
-The camera holds one pose while the replay creeps forward at the slowest
+The camera holds one pose while the replay creeps forward at a slow
 export speed, so temporal anti-aliasing and other history-based effects settle
 on frames from one near-frozen moment. One settled frame is then pulled out of
 each pass and written as Photoshop-ready files:
@@ -36,8 +36,9 @@ from .path import Keyframe, Project
 from .runtime import external_program_environment
 
 STILL_FPS = 60
-# Slowest supported export speed: the replay advances ~1/1200 s per frame.
-STILL_SPEED = 0.05
+# Stay within the Players capture's 600 Hz engine clock while keeping each
+# frame near the captured moment: the replay advances ~1/600 s per frame.
+STILL_SPEED = 0.1
 STILL_FRAMES = 12
 # Late enough for temporal effects to converge, early enough that a take
 # ending one frame short still contains it.
@@ -163,6 +164,13 @@ def settled_index(take_folder: Path, video_name: str) -> int:
 
 
 SHORT_CAPTURE_STATUS = "failed player capture missed shot frames"
+# A fixed-step capture can also stop because the scratch drive could not keep
+# up. A still only needs its settled frame, so both shorthands share the same
+# alignment check.
+SHORT_CAPTURE_STATUSES = (
+    SHORT_CAPTURE_STATUS,
+    "failed players capture could not write to the scratch drive fast enough",
+)
 FRAME_TIME_TOLERANCE = 1e-6  # seconds of replay time
 
 

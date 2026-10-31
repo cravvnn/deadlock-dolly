@@ -30,7 +30,12 @@ class CleanupTests(unittest.TestCase):
         process.pid = 9876
         process._handle = 1234
         process.poll.return_value = None
-        with patch.object(launcher, "_check_runtime"), patch.object(game_processes, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.subprocess, "Popen", return_value=process), patch.object(launcher.threading, "Thread"):
+        # The fake launch is only fixture setup: it deploys dozens of config
+        # files before the cleanup operation under test begins. Preserve real
+        # writes and atomic replacement, but avoid forcing them to physical disk
+        # here. The patch ends before each recovery/restore operation, and the
+        # launcher/file-ops suites independently exercise durable writes.
+        with patch.object(launcher, "_check_runtime"), patch.object(game_processes, "running_processes", return_value={"steam.exe"}), patch.object(launcher, "PACKAGE_ROOT", self.package), patch.object(launcher.subprocess, "Popen", return_value=process), patch.object(launcher.threading, "Thread"), patch("dolly.file_ops.os.fsync"):
             self.session = launcher.launch(self.paths.root)
 
     def recover(self, root=None):
@@ -380,23 +385,6 @@ class CleanupTests(unittest.TestCase):
         self.recover()
         self.assertFalse(self.session.overlay_dir.exists())
 
-    def test_controller_close_hands_off_even_if_restore_reports_conflict(self):
-        controller = Controller.__new__(Controller)
-        controller.disconnect = MagicMock()
-        controller._session = MagicMock()
-        controller._session.restore_gameinfo.side_effect = launcher.LaunchError("conflict")
-        with self.assertRaisesRegex(launcher.LaunchError, "conflict"):
-            controller.close()
-        controller.disconnect.assert_called_once()
-        controller._session.handoff_cleanup.assert_called_once()
-
-    def test_controller_close_restores_before_handoff(self):
-        controller = Controller.__new__(Controller)
-        controller.disconnect = MagicMock()
-        controller._session = MagicMock()
-        controller.close()
-        self.assertEqual([call[0] for call in controller._session.method_calls], ["restore_gameinfo", "handoff_cleanup"])
-
     def test_detached_waiter_only_removes_after_exact_handle_signals(self):
         self.session.restore_gameinfo()
         api = MagicMock()
@@ -482,6 +470,26 @@ class CleanupTests(unittest.TestCase):
         process.wait(timeout=10)
         self.assertEqual(helpers[0].wait(timeout=10), 0, self.session.read_log())
         self.assertFalse(self.session.overlay_dir.exists(), self.session.read_log())
+
+
+class ControllerCloseTests(unittest.TestCase):
+    # These controller tests use mocked sessions and need no fake game launch.
+    def test_controller_close_hands_off_even_if_restore_reports_conflict(self):
+        controller = Controller.__new__(Controller)
+        controller.disconnect = MagicMock()
+        controller._session = MagicMock()
+        controller._session.restore_gameinfo.side_effect = launcher.LaunchError("conflict")
+        with self.assertRaisesRegex(launcher.LaunchError, "conflict"):
+            controller.close()
+        controller.disconnect.assert_called_once()
+        controller._session.handoff_cleanup.assert_called_once()
+
+    def test_controller_close_restores_before_handoff(self):
+        controller = Controller.__new__(Controller)
+        controller.disconnect = MagicMock()
+        controller._session = MagicMock()
+        controller.close()
+        self.assertEqual([call[0] for call in controller._session.method_calls], ["restore_gameinfo", "handoff_cleanup"])
 
 
 if __name__ == "__main__":

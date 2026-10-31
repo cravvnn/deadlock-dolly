@@ -43,8 +43,10 @@ from .compatibility import (
     SUPPORTED,
     UNSUPPORTED,
     accepted_pins,
+    merged_pins,
     scan_game_modules,
 )
+from . import definitions
 
 PACKAGE_ROOT = application_root(Path(__file__).resolve().parent.parent)
 UNLOCKER_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "third_party" / "cvar_unlocker"
@@ -53,7 +55,7 @@ EDITING_ROOT = resource_root(Path(__file__).resolve().parent.parent) / "assets" 
 CONFETTI_PACK = NATIVE_ROOT / "assets" / "confetti" / "pak01_dir.vpk"
 CONFETTI_PACK_SHA256 = "99c0325fe333bfa12c3f23a2808767c2fd27b49fe0e5abe4531fa472519f8ae6"
 UI_OVERRIDE_PACK = NATIVE_ROOT / "assets" / "ui" / "pak02_dir.vpk"
-UI_OVERRIDE_PACK_SHA256 = "0af30912a471efc984e653ebc57a4c05f210e07f707f42d3bec997fc945b2fe1"
+UI_OVERRIDE_PACK_SHA256 = "1f6619324ebccebe0a88c47e1b7754703ed090e3ddff57a68873bc49eddccfc5"
 UNLOCKER_SHA256 = _Unlocker.SHA256
 # Accepted game-module SHA-256 pins come from native/profiles/manifest.json, the
 # single source of truth shared with the native bridge and its build tests.
@@ -61,6 +63,13 @@ try:
     NATIVE_GAME_SHA256 = accepted_pins()
 except CompatibilityError:
     NATIVE_GAME_SHA256 = {}
+
+
+def game_pins() -> dict[str, tuple[str, ...]]:
+    """Reviewed module pins plus published definitions. Reviewed values win."""
+    return merged_pins(NATIVE_GAME_SHA256, definitions.module_pins())
+
+
 STEAM_APP_ID = "1422450"
 # Mod managers (Deadlock Mod Manager, Grimoire, the manual guide) mount their
 # addon folders with ordinary SearchPaths entries. The reviewed editing baseline
@@ -98,16 +107,23 @@ def _editing_gameinfo(paths: GamePaths, *, provenance: dict | None = None) -> st
                 or set(profile.get("configuration_modules", {})) != set(CONFIGURATION_MODULES)
                 or hashlib.sha256(data).hexdigest() != profile.get("gameinfo_sha256")):
             raise ValueError("Editing configuration failed its integrity check")
+        # Published definitions may accept an updated module identity. They are
+        # additive: the bundled pin always stays accepted.
+        published = definitions.current()
         for relative in CONFIGURATION_MODULES:
             expected = profile["configuration_modules"][relative]
             if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
                 raise ValueError("Invalid editing configuration consumer fingerprint")
-            if hash_file(paths.game_dir / relative) != expected:
+            accepted = {expected, *published.editing_modules.get(relative, ())}
+            if hash_file(paths.game_dir / relative) not in accepted:
                 raise LaunchError("Dolly's editing configuration has not been reviewed for this game build. "
                                   "Update Dolly before launching. Your gameinfo.gi was not changed.")
         server_hash = profile.get("unlocker_server_sha256")
         if not isinstance(server_hash, str) or re.fullmatch(r"[0-9a-f]{64}", server_hash) is None:
             raise ValueError("Invalid editing unlocker server fingerprint")
+        # The bundled cvar unlocker is a patched copy of this exact server
+        # binary, so a new server.dll always needs a matching Dolly release.
+        # Published definitions must not widen this gate.
         if hash_file(paths.game_dir / "citadel/bin/win64/server.dll") != server_hash:
             raise LaunchError("Dolly's cvar unlocker has not been reviewed for this server build. "
                               "Update Dolly before launching. Your gameinfo.gi was not changed.")
@@ -115,7 +131,8 @@ def _editing_gameinfo(paths: GamePaths, *, provenance: dict | None = None) -> st
         roots = _named(_parse(text), "GameInfo")
         if len(roots) != 1 or roots[0].children is None:
             raise ValueError("Invalid editing GameInfo block")
-        receipt = verify(paths, EDITING_ROOT, profile, _steam_roots())
+        receipt = verify(paths, EDITING_ROOT, profile, _steam_roots(),
+                         extra_files=published.stock_provenance_files)
         if provenance is not None:
             provenance.update(receipt)
         return text
@@ -328,7 +345,7 @@ def _already_running_message(details, selected_executable: Path) -> str:
             different_install = True
         session = ("session " + str(process.session_id)
                    if process.session_id is not None else "session unavailable")
-        window = (f'visible window "{process.window_title}"'
+        window = (f'visible window "{" ".join(str(process.window_title).split())}"'
                   if process.window_title else "no visible window")
         parts.append(f"PID {process.pid}, {path}, {session}, {window}")
     if not parts:
@@ -589,7 +606,7 @@ def _verified_unlocker() -> Path:
 def _verified_native(paths: GamePaths) -> Path:
     """Fail closed on changed game binaries or a missing native release build."""
     try:
-        report = scan_game_modules(paths.game_dir, pins=NATIVE_GAME_SHA256).camera_report()
+        report = scan_game_modules(paths.game_dir, pins=game_pins()).camera_report()
     except CompatibilityError as exc:
         raise LaunchError(str(exc)) from exc
     if report.state == UNSUPPORTED:
@@ -719,6 +736,7 @@ class Session:
     port: int
     protocol: str = "netcon"
     native: NativeBridge | None = field(default=None, repr=False)
+    nvidia_dlss: bool = False
     _log_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _restore_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _cleanup_handed_off: bool = field(default=False, repr=False)
@@ -829,7 +847,7 @@ class Session:
             return False
 
 
-def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "", graphics_profile: str = "", allow_mod_overrides: bool = False) -> Session:
+def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "", graphics_profile: str = "", allow_mod_overrides: bool = False, nvidia_dlss: bool = False) -> Session:
     _check_runtime()
     from .replays import parse_launch_options
     parse_launch_options(launch_options)  # Validate before changing game files.
@@ -846,6 +864,8 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         raise LaunchError("Native camera selection must be a boolean.")
     if type(allow_mod_overrides) is not bool:
         raise LaunchError("The mixed-mod allowance must be a boolean.")
+    if type(nvidia_dlss) is not bool:
+        raise LaunchError("NVIDIA DLSS support must be a boolean.")
     native_dll = _verified_native(paths) if native else None
     # Recover any unfinished previous session first, so the original we back up
     # and journal is the user's true file, not a still-mounted Dolly session.
@@ -922,15 +942,27 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             (target / "dolly_native.cfg").write_text(
                 f"DOLLY_NATIVE_1\n{bridge.token}\n{bridge.editor_pid}\n",
                 encoding="ascii", newline="\n")
+            # Published build definitions travel beside the deployed DLL. The
+            # bridge parses them fail-closed; an empty document leaves the
+            # bundled reviewed table active.
+            definitions.write_native(target / definitions.NATIVE_NAME)
         command = build_command(paths, overlay, port, demo, protocol, launch_options, native=native)
+        if nvidia_dlss:
+            from .game_logging import ENGINE_LOG
+            command.extend(["-condebug", "-con_logfile", str((session_dir / ENGINE_LOG).resolve())])
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": _Unlocker.VERSION, "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared", "editing_configuration_provenance": configuration_provenance}
+        metadata["nvidia_dlss"] = nvidia_dlss
+        if nvidia_dlss:
+            metadata["game_logging"] = {"stdout": "unavailable", "stderr": "game_stdout.log",
+                "engine": "engine_console.log", "console": "console_transcript.log",
+                "limitation": "stdout-only output before engine logging starts is unavailable"}
         metadata["editing_gameinfo_sha256"] = hashlib.sha256(editing.encode("utf-8")).hexdigest()
         metadata["carried_addon_mounts"] = carried_mounts
         metadata["excluded_addon_mounts"] = excluded_mounts
         metadata["allow_mod_overrides"] = allow_mod_overrides
         metadata["configuration_mode"] = "isolated_editing"
         if native:
-            metadata["native_camera"] = {"abi": NATIVE_ABI, "game_sha256": NATIVE_GAME_SHA256,
+            metadata["native_camera"] = {"abi": NATIVE_ABI, "game_sha256": game_pins(),
                                          "dll_sha256": hashlib.sha256(native_dll.read_bytes()).hexdigest()}
         # Durably save the original and journal before touching the installed file.
         _atomic_write(session_dir / "original.gameinfo.gi", original_data)
@@ -972,7 +1004,11 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                         environment["DOLLY_ENVIRONMENT_METADATA"] = "1"
                 options = {} if environment is None else {"env": environment}
                 try:
-                    process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
+                    if nvidia_dlss:
+                        from .game_logging import spawn
+                        process = spawn(command, output, cwd=str(paths.game_dir), shell=False, **options)
+                    else:
+                        process = subprocess.Popen(command, cwd=str(paths.game_dir), stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, shell=False, **options)
                 except OSError as exc:
                     if getattr(exc, "winerror", None) != 740:
                         raise
@@ -984,7 +1020,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                         "If administrator access is required on this computer, close Dolly and use "
                         "Run as administrator on Dolly.exe before retrying.\n\n"
                         f"Launch log: {log_path}") from exc
-        session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge)
+        session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge, nvidia_dlss=nvidia_dlss)
 
         def watch() -> None:
             while True:

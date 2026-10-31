@@ -143,6 +143,8 @@ def attach_state(project, roster, selected, count):
             "point": ("eyes", "weapon", "bone").index(attach.point),
             "bone": attach.bone,
             "hide_body": bool(attach.hide_body), "clearance_mode": attach.clearance_mode,
+            "orientation_mode": attach.orientation_mode,
+            "lock_vertical_aim": attach.lock_vertical_aim,
             "offset": tuple(attach.offset),
             "smoothing": float(attach.smoothing),
             "attached_keys": sum(1 for item in project.keyframes

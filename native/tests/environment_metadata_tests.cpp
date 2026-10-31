@@ -6,6 +6,8 @@
 #include "dolly_player_capture.hpp"
 #include "dolly_environment_source.hpp"
 #include "dolly_hook_init.hpp"
+#include "dolly_editor.hpp"
+static_assert(static_cast<unsigned>(dolly::EditorAction::CaptureEnvironment) == 123);
 using Microsoft::WRL::ComPtr;
 namespace capture=dolly::player_capture;
 #define CHECK(x) do { if (!(x)) {std::fprintf(stderr,"FAILED %d: %s\n",__LINE__,#x);std::exit(1);} } while(0)
@@ -16,6 +18,15 @@ using CameraFn=int(*)(int);
 CameraFn original_camera=nullptr;
 int camera_test_hook(int value) { return original_camera(value)+1; }
 int main() {
+    CHECK(dolly::environment_action_allowed(dolly::EditorAction::CaptureEnvironment));
+    CHECK(dolly::environment_action_allowed(dolly::EditorAction::TakeScreenshot));
+    CHECK(dolly::environment_action_allowed(dolly::EditorAction::Flight));
+    CHECK(!dolly::environment_action_allowed(dolly::EditorAction::PlayPath));
+    CHECK(!dolly::environment_action_allowed(dolly::EditorAction::StartVideo));
+    CHECK(!dolly::environment_action_allowed(dolly::EditorAction::OpenBonePicker));
+    CHECK(!dolly::environment_action_allowed(dolly::EditorAction::SetAttachTarget));
+    CHECK(!dolly::environment_action_allowed(dolly::EditorAction::PrepareCinematic));
+    CHECK(!dolly::environment_action_allowed(dolly::EditorAction::PreviewCameraCurveValue));
     ComPtr<ID3D11Device> discovery,actual;
     CHECK(SUCCEEDED(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,
         D3D11_SDK_VERSION,&discovery,nullptr,nullptr)));

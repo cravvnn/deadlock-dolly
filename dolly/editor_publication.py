@@ -75,6 +75,9 @@ def visualization_session(app):
 
 
 def _configure_visualization(app, bridge, active, selected):
+    from . import edition
+    if edition.is_environment():
+        active = False
     publish = getattr(bridge, "publish_visualization", None)
     if publish is None:
         return
@@ -148,6 +151,11 @@ def configure(app):
         video_ae_camera=bool(_value(app, "video_ae_camera", False)),
         video_usd_camera=bool(_value(app, "video_usd_camera", False)),
     )
+    from . import edition
+    if edition.is_environment():
+        values['bindings'] = {name: binding if edition.action_allowed(name) else None
+                              for name, binding in values['bindings'].items()}
+        values['reshade_binding'] = None
     # A UI refresh must not overwrite an owner chosen by F7/F8/F9 in-game.
     # Explicit owner changes are handled only by command transitions below.
     if getattr(app, "_native_editor_config_cache", None) != values or getattr(app, "_native_editor_bridge", None) is not bridge:
@@ -193,7 +201,7 @@ def configure(app):
             publish_environment(enabled=environment[0], binding=environment[1])
             app._native_environment_bridge, app._native_environment_cache = bridge, environment
     publish_events = getattr(bridge, 'configure_replay_events', None)
-    if callable(publish_events) and active:
+    if callable(publish_events) and active and not edition.is_environment():
         from .replay_events import ReplayEventReader
         reader = getattr(app, '_replay_event_reader', None)
         if reader is None:

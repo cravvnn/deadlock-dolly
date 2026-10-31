@@ -797,6 +797,38 @@ class EditorSessionTests(unittest.TestCase):
         self.assertFalse(self.app.preview_attach)
         self.assertFalse(self.app._attach_snap_pending)
 
+    def test_vertical_aim_lock_edits_only_the_current_valid_camera(self):
+        from dolly.path import AttachKey
+        self.app.project.keyframes = [
+            Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+                     attach=AttachKey(handle=11, model="models/x/x.vmdl", point="bone", bone="head",
+                                      offset=(5, 6, 7, 8, 9, 10))),
+            Keyframe(1, 1, 2, 3, 4, 5, 6, source="attach",
+                     attach=AttachKey(handle=11, model="models/x/x.vmdl", point="weapon"))]
+        self.app._selection_index = lambda _: 0
+        self.app.shot_history = SimpleNamespace(revision=17)
+        self.app._shot_edit_ready = Mock(return_value=True)
+        self.app._commit_camera = Mock()
+        event = {"action": "set_attach_vertical_aim_lock", "value": 1,
+                 "pose": (17, 0, 0, 0, 0, 0, 0)}
+        self.assertTrue(session.dispatch(self.app, event, self.bridge))
+        keys, _ = self.app._commit_camera.call_args.args
+        self.assertTrue(keys[0].attach.lock_vertical_aim)
+        self.assertFalse(keys[1].attach.lock_vertical_aim)
+        self.assertEqual(keys[0].attach.offset, (5, 6, 7, 8, 9, 10))
+        self.app._commit_camera.reset_mock()
+        for pose in ((16, 0, 0, 0, 0, 0, 0), (17, 1, 0, 0, 0, 0, 0)):
+            with self.assertRaisesRegex(ValueError, "camera changed"):
+                session.dispatch(self.app, dict(event, pose=pose), self.bridge)
+        self.app._shot_edit_ready.return_value = False
+        self.assertTrue(session.dispatch(self.app, event, self.bridge))
+        self.app._commit_camera.assert_not_called()
+        self.app._shot_edit_ready.return_value = True
+        self.app._attach_snap_pending = True
+        with self.assertRaisesRegex(ValueError, "Snap"):
+            session.dispatch(self.app, event, self.bridge)
+        self.app._commit_camera.assert_not_called()
+
     def test_source_blend_edits_free_key_without_enabling_attachment(self):
         self.app.project.keyframes = [Keyframe(0, 1, 2, 3, 4, 5, 6)]
         self.app._selection_index = lambda _: 0
@@ -836,10 +868,67 @@ class EditorSessionTests(unittest.TestCase):
         self.assertEqual(self.app.project.keyframes, before)
 
     def test_attach_snap_marks_a_pending_request(self):
+        from dolly.path import AttachKey
+        self.app.project.keyframes = [Keyframe(
+            0, 1, 2, 3, 4, 5, 6, source="attach",
+            attach=AttachKey(handle=11, model="models/hero.vmdl"))]
+        self.app._selection_index = lambda _: 0
+        self.app.preview_attach = False
         self.assertTrue(session.dispatch(self.app, {"action": "attach_snap", "value": 0},
                                          self.bridge))
         self.assertTrue(self.app._attach_snap_pending)
         self.assertEqual(self.app._attach_snap_request, 1)
+        with self.assertRaisesRegex(ValueError, "Wait for Snap"):
+            session.dispatch(self.app, {"action": "attach_preview", "value": 1}, self.bridge)
+        self.app._attach_snap_pending = False
+        self.app.preview_attach = True
+        with self.assertRaisesRegex(ValueError, "Detach"):
+            session.dispatch(self.app, {"action": "attach_snap", "value": 0}, self.bridge)
+        self.assertEqual(self.app._attach_snap_request, 1)
+
+    def test_unanswered_snap_times_out_without_overwriting_the_camera(self):
+        from unittest.mock import patch
+        from dolly.path import AttachKey
+        self.app.project.keyframes = [Keyframe(
+            0, 1, 2, 3, 4, 5, 6, source="attach",
+            attach=AttachKey(handle=11, model="models/hero.vmdl"))]
+        self.app._selection_index = lambda _: 0
+        self.app.native_editor_active = True
+        self.app.preview_attach = False
+        with patch("dolly.editor_dispatch.time.monotonic", return_value=10):
+            session.dispatch(self.app, {"action": "attach_snap", "value": 0}, self.bridge)
+        self.bridge.editor_attach_result.return_value = None
+        original = self.app.project.to_dict()
+        with patch("dolly.editor_session.time.monotonic", return_value=16):
+            session.poll(self.app)
+        self.assertFalse(self.app._attach_snap_pending)
+        self.assertIsNone(self.app._attach_snap_started)
+        self.assertEqual(self.app.project.to_dict(), original)
+        self.app.status_text.set.assert_any_call(
+            "Snap did not finish. Pause, check the player, and try again.")
+
+    def test_snap_request_is_cancelled_when_the_selected_camera_changes(self):
+        from copy import deepcopy
+        from dolly.path import AttachKey
+        first = Keyframe(0, 1, 2, 3, 4, 5, 6, source="attach",
+                         attach=AttachKey(handle=11, model="models/hero.vmdl"))
+        second = deepcopy(first)
+        second.time = 1
+        self.app.project.keyframes = [first, second]
+        selection = [0]
+        self.app._selection_index = lambda _: selection[0]
+        self.app.preview_attach = False
+        self.app.native_editor_active = True
+        self.bridge.editor_attach_result.return_value = None
+        session.dispatch(self.app, {"action": "attach_snap", "value": 0}, self.bridge)
+        original = deepcopy(self.app.project)
+        selection[0] = 1
+        session.poll(self.app)
+        self.assertFalse(self.app._attach_snap_pending)
+        self.assertIsNone(self.app._attach_snap_context)
+        self.assertEqual(self.app.project, original)
+        self.app.status_text.set.assert_any_call(
+            "Snap cancelled because the selected camera changed.")
 
     def test_poll_forwards_native_attach_results(self):
         self.app.native_editor_active = True
@@ -864,6 +953,18 @@ class EditorSessionTests(unittest.TestCase):
         self.bridge.editor_status.return_value = {"events": []}
         session.poll(self.app)
         self.app._capture_view.assert_called_once()
+
+    def test_busy_editor_saves_the_visible_shot_but_retains_camera_mutations(self):
+        self.app.native_editor_active = True
+        self.app.busy = True
+        self.app.save = Mock()
+        self.bridge.editor_status.return_value = {'events': [
+            {'sequence': 1, 'action': 'save_shot', 'value': 0},
+            {'sequence': 2, 'action': 'capture', 'value': 0}]}
+        session.poll(self.app)
+        self.app.save.assert_called_once_with()
+        self.bridge.acknowledge_editor_event.assert_called_once_with(1)
+        self.app._capture_view.assert_not_called()
 
     def test_capture_and_replace_forward_the_input_frame_lens(self):
         for action in ('capture', 'replace'):

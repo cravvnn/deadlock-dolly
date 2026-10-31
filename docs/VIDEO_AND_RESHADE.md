@@ -47,7 +47,8 @@ export effects may deliberately change graphics later in the session.
 
 1. Open a replay through Dolly using DirectX 11 and Native camera mode.
 2. On the desktop **Export** tab, choose **Camera path** or **Player POV** under
-   **Camera source**, then choose a new output file. Most encoders write `.mp4`;
+   **Camera source**, then choose a new output file. Compressed FFmpeg encoders
+   support `.mp4`, `.mkv`, and `.mov`; the built-in encoder uses `.mp4` and
    **Lossless FFV1 (.mkv)** requires `.mkv`. Set **Video FPS**, **Export speed**
    and, under **Encoder & quality**, the encoder and bitrate. Defaults are
    60 FPS, 20 Mbps, Auto and real-time capture.
@@ -68,6 +69,10 @@ Capture uses the current game backbuffer, with even dimensions up to 8192 on
 each axis and a separate bounded memory budget. SDR RGBA/BGRA is supported;
 HDR is not. Depth and Players have additional resource limits. Change the
 resolution before capture; resizing ends the current recording.
+
+Compressed SDR color videos and ProRes alpha masters use limited-range Rec. 709
+and carry its color metadata for editing applications. Lossless FFV1 keeps the
+captured RGB values; numerical depth exports retain their own depth mapping.
 
 By default this is real-time, video-only H.264 recording. Playback speed
 controls how fast the replay moves; export FPS controls how often frames are

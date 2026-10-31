@@ -31,6 +31,7 @@ LENS_FORMAT_VERSION = 9
 SPLINE_FORMAT_VERSION = 10
 OBJECTS_FORMAT_VERSION = 11
 TANGENTS_FORMAT_VERSION = 12
+RIGID_ATTACH_FORMAT_VERSION = 13
 MAX_OBJECTS = 64
 CONFETTI_SPAWN_HEIGHT_DEFAULT = 250.0
 CONFETTI_SPAWN_HEIGHT_MIN = 100.0
@@ -186,6 +187,11 @@ class AttachKey:
     smoothing: float = 0.0
     hide_body: bool = True
     clearance_mode: str = "exact"
+    # Old projects use component-wise angle offsets. Snap uses a composed
+    # target-relative orientation without changing previously authored shots.
+    orientation_mode: str = "legacy"
+    # Per-camera option: keep bone/weapon yaw but ignore its pitch and roll.
+    lock_vertical_aim: bool = False
 
 
 def _validate_attach(attach: Any, label: str) -> None:
@@ -212,6 +218,9 @@ def _validate_attach(attach: Any, label: str) -> None:
     if type(attach.hide_body) is not bool:
         raise ValueError(f"{label}.hide_body must be true or false")
     _choice(attach.clearance_mode, ("exact", "auto"), f"{label}.clearance_mode")
+    _choice(attach.orientation_mode, ("legacy", "rigid"), f"{label}.orientation_mode")
+    if type(attach.lock_vertical_aim) is not bool:
+        raise ValueError(f"{label}.lock_vertical_aim must be true or false")
     if attach.point == "bone":
         name = attach.bone
         if not isinstance(name, str) or not 1 <= len(name) <= ATTACH_BONE_LIMIT \
@@ -229,6 +238,10 @@ def _attach_dict(attach: AttachKey) -> dict[str, Any]:
             "clearance_mode": attach.clearance_mode}
     if attach.bone:
         data["bone"] = attach.bone
+    if attach.orientation_mode != "legacy":
+        data["orientation_mode"] = attach.orientation_mode
+    if attach.lock_vertical_aim:
+        data["lock_vertical_aim"] = True
     return data
 
 
@@ -900,6 +913,11 @@ class Project:
         if any(_authored_tangents(key) for key in self.keyframes):
             version = TANGENTS_FORMAT_VERSION
             particles_used = True
+        if any(key.attach is not None and (key.attach.orientation_mode == "rigid" or
+                                           key.attach.lock_vertical_aim)
+               for key in self.keyframes):
+            version = RIGID_ATTACH_FORMAT_VERSION
+            particles_used = True
         return {
             "format": FORMAT_NAME,
             "version": version,
@@ -936,9 +954,10 @@ class Project:
                                    ROTATION_FORMAT_VERSION, BLEND_FORMAT_VERSION,
                                    CONFETTI_FORMAT_VERSION, PARTICLE_FORMAT_VERSION,
                                    LENS_FORMAT_VERSION, SPLINE_FORMAT_VERSION,
-                                   OBJECTS_FORMAT_VERSION, TANGENTS_FORMAT_VERSION):
+                                   OBJECTS_FORMAT_VERSION, TANGENTS_FORMAT_VERSION,
+                                   RIGID_ATTACH_FORMAT_VERSION):
             raise ValueError(f"Unsupported project version: {version!r}; expected 1 through "
-                             f"{TANGENTS_FORMAT_VERSION}")
+                             f"{RIGID_ATTACH_FORMAT_VERSION}")
         allowed = ("format", "version", "name", "interpolation", "rotation_mode",
                    "start_tick", "tick_rate", "setup_values", "keyframes", "tracks")
         if version >= FORMAT_VERSION:
@@ -987,8 +1006,11 @@ class Project:
             raw_attach = key.get("attach")
             if raw_attach is not None:
                 target = _object(raw_attach, f"Camera keyframe {i} attach")
-                _members(target, ("handle", "entity_id", "model", "point", "bone", "offset",
-                                  "smoothing", "hide_body", "clearance_mode"), "attach key")
+                attach_members = ("handle", "entity_id", "model", "point", "bone", "offset",
+                                  "smoothing", "hide_body", "clearance_mode")
+                if version >= RIGID_ATTACH_FORMAT_VERSION:
+                    attach_members += ("orientation_mode", "lock_vertical_aim")
+                _members(target, attach_members, "attach key")
                 offset = target.get("offset")
                 if isinstance(offset, list):
                     offset = tuple(offset)

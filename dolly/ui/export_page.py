@@ -1,4 +1,13 @@
-"""Export page view: explicit variables/actions, with locally owned widgets."""
+"""Export page (Figma [design reference]): explicit variables/actions, with locally owned widgets.
+
+The page is a :class:`.kit_page.KitPage` of kit cards in one column like Replay's
+(USER-ADDITIONS UPDATE 13): Camera Source, Destination, Encoder & Quality, Capture,
+Output Passes, Screenshot, FFmpeg Runtime and Recording, 613 design px wide, 15 apart.
+The whole page scrolls as one (no pinned card). Every card button is canvas-drawn
+(N21); fields, dropdowns and checkboxes are kit ttk widgets placed on their card. The
+old help labels are info bubbles with the same text. ``screenshot_ui.build`` fills the
+Screenshot card, so this module never imports the export backend.
+"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -6,7 +15,34 @@ from dataclasses import dataclass
 import tkinter as tk
 from tkinter import ttk
 
-from .widgets import GAP, ScrollPage, actions, card, disclosure, field
+from .. import edition
+from . import kit_fields
+from .kit_page import KitPage
+
+TITLE = "Export"
+SUBTITLE = "Set the camera source, output file and passes, then record the shot as video or take a high-res still."
+
+POV_INFO = ("Select a hero with Game Follow or F9, then pause at the start. F8: return to Export. "
+            "HUD hides automatically.")
+AUDIO_INFO = "Reconstructed audio installs a verified helper automatically on first use."
+PROCESSING_INFO = ("Background leaves more CPU time for editing while building the Players MOV. "
+                   "Faster modes use more CPU.")
+SCRATCH_INFO = ("Blank uses the output folder. Raw Players files need a fast drive with free space. "
+                "Failed or cancelled captures are kept in their own folders.")
+SCREENSHOT_INFO = ("Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
+                   "hero_isolated.png and depth.exr in one folder beside the output file. "
+                   "Hero = every player and their equipment, no NPCs.")
+PASSES_INFO = "Color video always records first. Ticked passes are extra takes recorded automatically after it."
+DEPTH_INFO = ("Depth and its extra passes use 100% render scale; your scale is restored afterward. "
+              "This can make export slower.")
+RECORDING_INFO = ("With passes ticked: Record video records the color take. When it finishes, Dolly records "
+                  "each ticked pass in turn; you do not need to press Finish again.")
+
+SOURCES = ("Camera path", "Player POV")
+POV_SECONDS = ("1", "2", "5", "10", "15", "30", "60", "120")
+PROCESSING_MODES = ("Background", "Balanced", "Fast")
+FPS_CHOICES = ("30", "60", "120", "300", "600")
+SPEED_CHOICES = ("0.05", "0.1", "0.25", "0.5", "1", "2", "4")
 
 
 @dataclass(frozen=True)
@@ -55,109 +91,142 @@ class ExportActions:
     discard_recording: Callable[..., object]
 
 
+def _dropdown(row, variable, values, width="fill"):
+    return row.widget(ttk.Combobox(row.host, textvariable=variable, values=values, state="readonly",
+                                   style="Kit.TCombobox"), width=width)
+
+
+def _check(row, text, variable, command=None):
+    options = {"command": command} if command is not None else {}
+    return row.widget(ttk.Checkbutton(row.host, text=text, variable=variable, style="Kit.TCheckbutton", **options))
+
+
+def _entry(row, variable):
+    entry = row.widget(ttk.Entry(row.host, textvariable=variable, style="Kit.TEntry"), width="fill")
+    kit_fields.elide_at_rest(entry, variable)
+    return entry
+
+
 class ExportPage:
     def __init__(self, parent, state: ExportState, commands: ExportActions):
-        recording_holder = ttk.Frame(parent, padding=(16, GAP, 16, 0))
-        recording_holder.pack(side="bottom", fill="x")
-        self.recording_holder = recording_holder
-        page = ScrollPage(parent)
+        page = self.export_page = KitPage(parent)
         page.pack(fill="both", expand=True)
-        self.export_page = page
-        recording_holder.configure(padding=(16, GAP, 16 + page.scrollbar.winfo_reqwidth(), 0))
-        body = page.body
-        ttk.Label(body, text="EXPORT", style="Section.TLabel").pack(anchor="w", pady=(0, GAP))
-        source = card(body, "Camera source")
-        self.video_source_combo = field(source, "Source", state.video_source, values=("Camera path", "Player POV"))
+
+        card = self.camera_source_card = page.add_card("Camera Source")
+        row = card.row()
+        row.label("Source")
+        row.gap(10)
+        self.video_source_combo = _dropdown(row, state.video_source, SOURCES)
         self.video_source_combo.bind("<<ComboboxSelected>>", commands.video_source_changed)
-        self.video_pov_controls = ttk.Frame(source)
-        self.video_pov_duration_combo = field(self.video_pov_controls, "Replay seconds", state.video_pov_duration,
-                                           values=("1", "2", "5", "10", "15", "30", "60", "120"))
-        ttk.Label(self.video_pov_controls,
-                  text="Select a hero with Game Follow or F9, then pause at the start. F8: return to Export. HUD hides automatically.",
-                  style="CardMuted.TLabel", wraplength=760).pack(fill="x")
-        camera_options = self.video_camera_options = ttk.Frame(source, style="Card.TFrame")
-        camera_options.pack(anchor="w", pady=(0, GAP))
-        self.video_ae_camera_check = ttk.Checkbutton(camera_options, style="Card.TCheckbutton", text="Export After Effects camera (.jsx)", variable=state.video_ae_camera)
-        self.video_ae_camera_check.pack(side="left", padx=(0, 18))
-        self.video_usd_camera_check = ttk.Checkbutton(camera_options, style="Card.TCheckbutton", text="Export USD camera (.usda)", variable=state.video_usd_camera)
-        self.video_usd_camera_check.pack(side="left")
-        destination = card(body, "Destination")
-        self.video_destination_card = destination
-        self.video_path_entry = field(destination, "Output file", state.video_path)
-        self.video_browse_button = actions(destination, (("Browse...", commands.browse_video),
-                                  ("Open output folder", commands.open_output_folder)), 2)[0]
-        audio_options = ttk.Frame(destination, style="Card.TFrame")
-        audio_options.pack(anchor="w", pady=(0, GAP))
-        self.video_game_audio_check = ttk.Checkbutton(
-            audio_options, style="Card.TCheckbutton", text="Include game audio",
-            variable=state.video_game_audio)
-        self.video_game_audio_check.pack(side="left", padx=(0, 18))
-        self.video_reconstructed_audio_check = ttk.Checkbutton(
-            audio_options, style="Card.TCheckbutton", text="Include reconstructed audio",
-            variable=state.video_reconstructed_audio)
-        self.video_reconstructed_audio_check.pack(side="left")
-        ttk.Label(destination,
-                  text="Reconstructed audio installs a verified helper automatically on first use.",
-                  style="CardMuted.TLabel", wraplength=420).pack(anchor="w", pady=(0, GAP))
-        options = ttk.Frame(body)
-        options.pack(fill="x", pady=(0, GAP))
-        for i in (0, 1):
-            options.columnconfigure(i, weight=1, uniform="export")
-        left = ttk.Frame(options)
-        right = ttk.Frame(options)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
-        right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
-        passes = card(left, "Output passes")
-        ttk.Label(passes, text="Color video always records first. Ticked passes are extra takes recorded automatically after it.",
-                  style="CardMuted.TLabel", wraplength=320).pack(anchor="w", pady=(0, GAP))
-        self.video_depth_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="Depth master (.mov)", variable=state.video_depth, command=commands.depth_toggled)
-        self.video_depth_checkbox.pack(anchor="w", pady=(0, GAP))
-        ttk.Label(passes, text="Depth and its extra passes use 100% render scale; your scale is restored afterward. This can make export slower.",
-                  style="CardMuted.TLabel", wraplength=320).pack(anchor="w", pady=(0, GAP))
-        self.video_depth_exr_checkbox = ttk.Checkbutton(passes, style="Card.TCheckbutton", text="EXR sequence (float)", variable=state.video_depth_exr)
-        self.video_depth_exr_checkbox.pack(anchor="w", pady=(0, GAP))
+        # Shown by the app for Player POV (or a single attach key) through pack()/pack_forget().
+        row = self.video_pov_controls = card.row()
+        row.label("Replay seconds", info=POV_INFO)
+        row.gap(10)
+        self.video_pov_duration_combo = _dropdown(row, state.video_pov_duration, POV_SECONDS, width=80)
+        row.set_visible(False)
+        row = self.video_camera_options = card.row(height=18)
+        self.video_ae_camera_check = _check(row, "Export After Effects camera (.jsx)", state.video_ae_camera)
+        row.gap(20)
+        self.video_usd_camera_check = _check(row, "Export USD camera (.usda)", state.video_usd_camera)
+
+        card = self.video_destination_card = page.add_card("Destination")
+        row = card.row()
+        row.label("Format")
+        row.gap(10)
+        self.video_format_combo = _dropdown(row, state.video_format, state.format_choices)
+        row = card.row()
+        row.label("Output file")
+        row.gap(10)
+        self.video_path_entry = _entry(row, state.video_path)
+        row.gap(10)
+        self.video_browse_button = row.button("Browse...", commands.browse_video)
+        row.gap(10)
+        row.button("Open output folder", commands.open_output_folder)
+        row = card.row(height=18)
+        self.video_game_audio_check = _check(row, "Include game audio", state.video_game_audio)
+        row.gap(20)
+        self.video_reconstructed_audio_check = _check(row, "Include reconstructed audio",
+                                                      state.video_reconstructed_audio)
+        row.gap(5)
+        row.info(AUDIO_INFO)
+
+        card = self.encoder_card = page.add_card("Encoder & Quality")
+        combos = []
+        for label, info, variable, values in (("Encoder", None, state.video_codec, state.codec_choices),
+                                              ("Bitrate", None, state.video_bitrate, state.bitrate_choices),
+                                              ("Players processing", PROCESSING_INFO, state.player_processing,
+                                               PROCESSING_MODES)):
+            row = card.row()
+            row.label(label, width=145, info=info)
+            row.gap(10)
+            combos.append(_dropdown(row, variable, values))
+        self.video_codec_combo, self.video_bitrate_combo, self.player_processing_combo = combos
+        row = card.row()
+        row.label("Players scratch folder", width=145, info=SCRATCH_INFO)
+        row.gap(10)
+        self.players_scratch_entry = _entry(row, state.players_scratch)
+        # Blank means the output folder; the hint never becomes the value.
+        kit_fields.placeholder(self.players_scratch_entry, state.players_scratch, "Output folder")
+        row.gap(10)
+        self.players_scratch_browse = row.button("Browse scratch folder...", commands.browse_players_scratch)
+
+        card = self.export_capture_card = page.add_card("Capture")
+        combos = []
+        for label, variable, values in (("Video FPS", state.video_fps, FPS_CHOICES),
+                                        ("Export speed", state.video_export_speed, SPEED_CHOICES)):
+            row = card.row()
+            row.label(label, width=80)
+            row.gap(10)
+            combos.append(_dropdown(row, variable, values))
+        self.video_fps_combo, self.video_speed_combo = combos
+        self.video_fixed_checkbox = _check(card.row(height=18), "Fixed-step export (frame-accurate)",
+                                           state.video_fixed_step)
+
+        card = self.export_passes_card = page.add_card("Output Passes", info=PASSES_INFO)
+        row = card.row(height=18)
+        self.video_depth_checkbox = _check(row, "Depth master (.mov)", state.video_depth, commands.depth_toggled)
+        row.gap(5)
+        row.info(DEPTH_INFO)
+        row = card.row(height=18)
+        row.gap(17)
+        self.video_depth_exr_checkbox = _check(row, "EXR sequence (float)", state.video_depth_exr)
         # The sequence needs the depth master; the app keeps this in step with
         # depth changes from either UI.
         self.video_depth_exr_checkbox.configure(state="normal" if state.video_depth.get() else "disabled")
         self.video_layer_checkboxes = []
-        for title, var in (("World layer", state.video_layer_world), ("Players layer (alpha)", state.video_layer_players), ("Effects layer (alpha)", state.video_layer_effects)):
-            cb = ttk.Checkbutton(passes, style="Card.TCheckbutton", text=title, variable=var, command=commands.layer_toggled)
-            cb.pack(anchor="w", pady=(0, GAP))
-            self.video_layer_checkboxes.append(cb)
-        capture = card(right, "Capture")
-        passes.pack_configure(fill="both", expand=True)
-        capture.pack_configure(fill="both", expand=True)
-        self.export_passes_card, self.export_capture_card = passes, capture
-        self.video_format_combo = field(capture, "Format", state.video_format, values=state.format_choices)
-        self.video_fps_combo = field(capture, "Video FPS", state.video_fps, values=("30", "60", "120", "300", "600"))
-        self.video_speed_combo = field(capture, "Export speed", state.video_export_speed, values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"))
-        self.video_fixed_checkbox = ttk.Checkbutton(capture, style="Card.TCheckbutton", text="Fixed-step export (frame-accurate)", variable=state.video_fixed_step)
-        self.video_fixed_checkbox.pack(anchor="w", pady=(0, GAP))
-        quality = disclosure(capture, "Encoder & quality")
-        self.video_codec_combo = field(quality.body, "Encoder", state.video_codec, values=state.codec_choices)
-        self.video_bitrate_combo = field(quality.body, "Bitrate", state.video_bitrate, values=state.bitrate_choices)
-        self.player_processing_combo = field(quality.body, "Players processing", state.player_processing,
-                                             values=("Background", "Balanced", "Fast"))
-        ttk.Label(quality.body, text="Background leaves more CPU time for editing while building the Players MOV. Faster modes use more CPU.",
-                  style="CardMuted.TLabel", wraplength=320).pack(fill="x")
-        self.players_scratch_entry = field(quality.body, "Players scratch folder", state.players_scratch)
-        self.players_scratch_browse = actions(quality.body, (("Browse scratch folder...", commands.browse_players_scratch),), 1)[0]
-        ttk.Label(quality.body, text="Blank uses the output folder. Raw Players files need a fast drive with free space. Failed or cancelled captures are kept in their own folders.",
-                  style="CardMuted.TLabel", wraplength=320).pack(fill="x")
-        controls = card(recording_holder, "Recording")
-        buttons = actions(controls, (("Play shot", commands.play), ("Record video", commands.start_video_recording, "Primary.TButton"),
-                                     ("Finish recording", commands.stop_video_recording),
-                                     ("Discard recording", commands.discard_recording)), 4)
-        self.video_start_button, self.video_stop_button, self.video_cancel_button = buttons[1:]
-        self.video_stop_button.configure(state="disabled")
-        self.video_cancel_button.configure(state="disabled")
-        ttk.Label(controls, textvariable=state.video_status_text, style="CardMuted.TLabel", wraplength=760).pack(fill="x")
-        self.export_camera_note = ttk.Label(controls, text="Camera: Free path", style="CardMuted.TLabel",
-                                           wraplength=760)
-        self.export_camera_note.pack(fill="x")
-        ttk.Label(controls, text="With passes ticked: Record video records the color take. When it finishes, Dolly records each ticked pass in turn; you do not need to press Finish again.",
-                  style="CardMuted.TLabel", wraplength=760).pack(fill="x")
-        runtime = disclosure(body, "FFmpeg runtime")
-        self.ffmpeg_path_entry = field(runtime.body, "Executable", state.ffmpeg_path)
-        self.ffmpeg_browse_button = actions(runtime.body, (("Browse FFmpeg...", commands.browse_ffmpeg), ("Save path", commands.save_ffmpeg_preference),
-            ("Use bundled FFmpeg", commands.use_bundled_ffmpeg)), 3)[0]
+        for index, (title, variable) in enumerate((("World layer", state.video_layer_world),
+                                                   ("Players layer (alpha)", state.video_layer_players),
+                                                   ("Effects layer (alpha)", state.video_layer_effects))):
+            row = card.row(height=18, top=15 if index == 0 else None)
+            self.video_layer_checkboxes.append(_check(row, title, variable, commands.layer_toggled))
+
+        # Filled by screenshot_ui.build (it owns the still's widgets and variables).
+        self.screenshot_card = page.add_card("Screenshot" if edition.is_environment() else "Screenshot (High-Res Still)",
+                                             info="Capture a PNG of the paused view." if edition.is_environment() else SCREENSHOT_INFO)
+
+        card = self.ffmpeg_card = page.add_card("FFmpeg Runtime")
+        row = card.row()
+        row.label("Executable")
+        row.gap(10)
+        self.ffmpeg_path_entry = _entry(row, state.ffmpeg_path)
+        flow = card.flow()
+        self.ffmpeg_browse_button = flow.button("Browse FFmpeg...", commands.browse_ffmpeg)
+        flow.button("Save path", commands.save_ffmpeg_preference)
+        flow.button("Use bundled FFmpeg", commands.use_bundled_ffmpeg)
+
+        # The last card of the page: it scrolls with the rest (N1).
+        card = self.recording_card = page.add_card("Recording", info=RECORDING_INFO)
+        row = card.row()
+        row.button("Play shot", commands.play)
+        row.gap(10)
+        self.video_start_button = row.button("Record video", commands.start_video_recording, kind="primary")
+        row.gap(10)
+        self.video_stop_button = row.button("Finish recording", commands.stop_video_recording, state="disabled")
+        row.gap(10)
+        self.video_cancel_button = row.button("Discard recording", commands.discard_recording, state="disabled")
+        card.text(textvariable=state.video_status_text, top=15)
+        self.export_camera_note = card.text("Camera: Free path", top=4)
+
+        # gui_layout still hands screenshot_ui.build "export_page.body" until it passes card= (PLAN-5 3.3).
+        page.body = self.screenshot_card
+        page.watch_focus()

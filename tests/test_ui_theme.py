@@ -1,4 +1,5 @@
-"""The desktop and in-game UI must share exactly one palette (dolly/ui_theme.py)."""
+"""Every Dolly UI colour lives in dolly/ui_theme.py: the frozen in-game palette and the desktop one."""
+import importlib.util
 from pathlib import Path
 import re
 import subprocess
@@ -11,12 +12,71 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class UiThemeTests(unittest.TestCase):
     def test_tokens_are_valid_hex(self):
-        self.assertTrue(ui_theme.TOKENS)
-        for name, value in ui_theme.TOKENS.items():
-            with self.subTest(token=name):
-                self.assertRegex(name, r"^[a-z][a-z0-9_]*$")
-                self.assertRegex(value, r"^#[0-9a-f]{6}$")
-                ui_theme.rgb(value)
+        for palette in ("TOKENS", "NATIVE_TOKENS"):
+            tokens = getattr(ui_theme, palette)
+            self.assertTrue(tokens)
+            for name, value in tokens.items():
+                with self.subTest(palette=palette, token=name):
+                    self.assertRegex(name, r"^[a-z][a-z0-9_]*$")
+                    self.assertRegex(value, r"^#[0-9a-f]{6}$")
+                    ui_theme.rgb(value)
+
+    def test_native_palette_is_frozen_and_desktop_extends_it(self):
+        native, desktop = ui_theme.NATIVE_TOKENS, ui_theme.TOKENS
+        # The in-game panel keeps exactly its 36 colours; the desktop carries
+        # every native key (overridden or not) plus its own additions.
+        self.assertEqual(len(native), 36)
+        self.assertLessEqual(set(native), set(desktop))
+        self.assertEqual(ui_theme.required_tokens(), tuple(sorted(native)))
+        for name in ("tab_dim", "curve_rotation", "warn", "keycap"):
+            self.assertEqual(desktop[name], native[name], "Colours outside Dolly Blue stay shared")
+        # The desktop Camera curve draws X in the Redesign frame's blue ([design reference]); the overlay keeps its own.
+        self.assertEqual(desktop["curve_x"], "#50aaff")
+        self.assertNotEqual(desktop["curve_x"], native["curve_x"])
+        spec = importlib.util.spec_from_file_location("dolly_generate_ui_tokens", ROOT / "tools" / "generate_ui_tokens.py")
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        rendered = re.findall(r"constexpr unsigned (\w+) = 0x([0-9a-f]{6});", generator.render())
+        self.assertEqual([name for name, _ in rendered], [name.upper() for name in sorted(native)])
+        self.assertEqual([value for _, value in rendered], [native[name][1:] for name in sorted(native)])
+        self.assertFalse({name.lower() for name, _ in rendered} & (set(desktop) - set(native)),
+                         "Desktop-only keys never reach the header")
+        # Card auto-detection compares backgrounds: the surfaces must differ.
+        self.assertNotEqual(desktop["panel"], desktop["bg"])
+        self.assertNotIn(desktop["selected"], (desktop["panel"], desktop["bg"]))
+        for name in ("dim", "card_edge", "rail", "rail_hover", "status_ready", "status_busy", "status_error",
+                     "sidebar_top", "sidebar_edge_top", "sidebar_edge_bottom", "stage_top", "nav_selected_to",
+                     "nav_idle_to", "backdrop_shard", "backdrop_rim", "backdrop"):
+            self.assertIn(name, desktop)
+            self.assertNotIn(name, native)
+
+    def test_display_fonts_name_sizes_and_fallbacks(self):
+        self.assertEqual(ui_theme.FONT_SIZES["body"], 9)
+        self.assertEqual(ui_theme.FONT_SIZES["title"], 18)
+        for key, candidates in ui_theme.DISPLAY_FONTS.items():
+            with self.subTest(font=key):
+                self.assertTrue(candidates)
+                for family, size, style in candidates:
+                    self.assertIsInstance(family, str)
+                    self.assertGreater(size, 0)
+                    self.assertIn(style, ("", "bold"))
+                if key != "icon":
+                    self.assertTrue(candidates[-1][0].startswith("Segoe UI"),
+                                    "Every display face ends in a system fallback")
+                    families = [family for family, _size, _style in candidates]
+                    self.assertTrue(any(family.startswith("Inter") for family in families),
+                                    "Inter, shipped with Dolly, comes before the Segoe UI fallback")
+                    first_segoe = min(i for i, family in enumerate(families) if family.startswith("Segoe"))
+                    self.assertTrue(all(not family.startswith("Inter") for family in families[first_segoe:]))
+        for family in ui_theme.TRUE_DESCENT_EM:
+            self.assertTrue(family.startswith("VALVE "))
+        # UPDATE 23: text is Inter. UPDATE 25: one card title size, 15 px, on every page (no 18 px role).
+        self.assertEqual(ui_theme.DISPLAY_FONTS["body"][0], (ui_theme.UI_FACE, 12, ""))
+        self.assertEqual(ui_theme.DISPLAY_FONTS["small"][0], (ui_theme.UI_FACE, 11, ""))
+        self.assertEqual(ui_theme.DISPLAY_FONTS["card_title"][0], ("VALVE Oracle SemiBold", 15, ""))
+        self.assertEqual(sorted(key for key in ui_theme.DISPLAY_FONTS if "title" in key), ["card_title", "page_title"])
+        self.assertEqual((ui_theme.UI_FACE, ui_theme.UI_FACE_VALUE, ui_theme.FONT_FALLBACK),
+                         ("Inter", "Inter Medium", "Segoe UI"))
 
     def test_native_header_is_current(self):
         result = subprocess.run(
@@ -28,9 +88,13 @@ class UiThemeTests(unittest.TestCase):
             + result.stdout + result.stderr)
 
     def test_desktop_has_no_hardcoded_colours(self):
-        for name in ("dolly/gui.py", "dolly/gui_theme.py", "dolly/gui_layout.py",
-                     "dolly/curve.py", "dolly/release_launcher.py", "dolly/ui/widgets.py", "dolly/ui/library_page.py",
-                     "dolly/ui/settings_page.py", "dolly/ui/export_page.py"):
+        names = {"dolly/gui.py", "dolly/gui_theme.py", "dolly/gui_layout.py",
+                 "dolly/curve.py", "dolly/release_launcher.py", "dolly/ui/widgets.py", "dolly/ui/library_page.py",
+                 "dolly/ui/settings_page.py", "dolly/ui/export_page.py", "dolly/curve_workspace.py",
+                 "dolly/screenshot_ui.py", "dolly/graphics_profiles_ui.py"}
+        # Every shared UI module, including the redesigned shell as it lands.
+        names.update(path.relative_to(ROOT).as_posix() for path in ROOT.glob("dolly/ui/*.py"))
+        for name in sorted(names):
             text = (ROOT / name).read_text(encoding="utf-8")
             found = re.findall(r"#[0-9a-fA-F]{6}", text)
             self.assertEqual(found, [], f"{name} must take colours from dolly/ui_theme.py: {found}")
@@ -136,6 +200,170 @@ class DesktopThemeInitializationTests(unittest.TestCase):
                 self.assertEqual(layout[0][1]["children"][0][0],
                                  "Dolly." + direction + ".Scrollbar.thumb")
 
+        with self.subTest(contract='Dolly Blue kit values on shared styles'):
+            style = ttk.Style(self.root)
+            t = ui_theme.TOKENS
+            self.assertEqual(self.root.tk.splitlist(style.lookup(".", "font")),
+                             (ui_theme.FONT_FAMILY, str(ui_theme.FONT_SIZES["body"])))
+            self.assertNotIn("bold", self.root.tk.splitlist(style.lookup("Primary.TButton", "font")))
+            self.assertEqual(style.lookup("Primary.TButton", "foreground"), t["accent_ink"])
+            for name in ("TEntry", "TCombobox"):
+                self.assertEqual(style.lookup(name, "foreground"), t["muted"])
+                self.assertEqual(style.lookup(name, "foreground", ("readonly",)), t["muted"])
+                self.assertEqual(style.lookup(name, "insertcolor"), t["text"])
+            self.assertEqual(style.lookup("Treeview", "foreground"), t["muted"])
+            self.assertEqual(style.lookup("Treeview", "background", ("selected",)), t["selected"])
+            self.assertEqual(style.lookup("Treeview.Heading", "background", ("active",)), t["panel"])
+            self.assertEqual(style.lookup("Treeview.Heading", "foreground"), t["dim"])
+            self.assertEqual(style.lookup("Accent.TLabel", "foreground"), t["text"])
+            self.assertEqual(style.lookup("TCheckbutton", "foreground"), t["text"])
+            self.assertEqual(tuple(map(int, self.root.tk.splitlist(
+                style.lookup("Navigation.TNotebook", "tabmargins")))), (0, 0, 0, 0))
+
+        with self.subTest(contract='replay page styles'):
+            from dolly.ui import fonts
+            style = ttk.Style(self.root)
+            t = ui_theme.TOKENS
+            scale = max(1, self.root.winfo_fpixels("1i") / 96)
+            px = lambda value: int(value * scale + .5)
+            self.assertEqual(style.layout("Library.Treeview.Row"), [("Dolly.tree.row", {"sticky": "nswe"})])
+            self.assertEqual(int(style.lookup("Library.Treeview", "rowheight")), px(36))
+            self.assertEqual(style.lookup("Library.Treeview", "background", ("selected",)), t["panel"])
+            self.assertEqual(style.lookup("Library.Treeview", "foreground", ("selected",)), t["text"])
+            self.assertEqual(style.lookup("Library.Treeview", "foreground"), t["muted"])
+            self.assertEqual(style.lookup("Library.Treeview.Heading", "foreground"), t["dim"])
+            self.assertEqual(style.lookup("Library.Treeview.Heading", "background", ("active",)), t["panel"])
+            chip = style.layout("Chip.Card.TLabel")
+            self.assertEqual(chip[0][0], "Dolly.field.card")
+            self.assertEqual([child[0] for child in chip[0][1]["children"]][-1], "Label.padding")
+            self.assertEqual(style.lookup("Chip.Card.TLabel", "background"), t["panel"])
+            self.assertEqual(style.lookup("Chip.Card.TLabel", "fieldbackground"), t["field"])
+            self.assertEqual(style.lookup("Chip.Card.TLabel", "foreground"), t["muted"])
+            self.assertEqual(style.layout("Search.Card.TEntry"), style.layout("Card.TEntry"))
+            self.assertEqual(tuple(map(int, self.root.tk.splitlist(style.lookup("Search.Card.TEntry", "padding")))),
+                             (px(26), 5, 10, 5))
+            self.assertEqual(style.lookup("Search.Card.TEntry", "background", ("focus",)), t["panel"])
+            self.assertEqual(style.lookup("Placeholder.TLabel", "background"), t["field"])
+            self.assertEqual(style.lookup("Placeholder.TLabel", "foreground"), t["dim"])
+            self.assertEqual(style.lookup("CardTitle.TLabel", "font"), fonts.NAMES["card_title"])
+            self.assertEqual(style.lookup("CardTitle.TLabel", "foreground"), t["text"])
+            self.assertEqual(tuple(map(int, self.root.tk.splitlist(style.lookup("CardTitle.TLabel", "padding")))),
+                             (0, 0, 0, fonts.descent_shortfall(self.root, "card_title")))
+
+        with self.subTest(contract='kit styles and focus-less Replay fields'):
+            # The five ported pages' Kit.* styles exist once the theme is up (PLAN-5 2.3), and
+            # Replay's fields and dropdowns draw the kit's field: no focus or hover face (N4).
+            from dolly.ui import kit_styles
+            style = ttk.Style(self.root)
+            t = ui_theme.TOKENS
+            for name in ("Kit.TEntry", "Kit.TCombobox", "Kit.TMenubutton"):
+                self.assertEqual(style.layout(name)[0][0], "Kit.combo" if "Combobox" in name else "Kit.field")
+            self.assertEqual(style.layout("Kit.Tab.Selected.TButton")[0][0], "Kit.tab")
+            self.assertEqual(style.layout("Kit.Keycap.TButton")[0][0], "Kit.keycap")
+            self.assertEqual(style.layout("Kit.Treeview"), style.layout("Library.Treeview"))
+            self.assertIn("Kit.Checkbutton.indicator", str(style.layout("Kit.TCheckbutton")))
+            self.assertLessEqual(set(kit_styles.ELEMENTS), set(style.element_names()))
+            for name in ("Stage.Card.TEntry", "Stage.Card.TCombobox"):
+                with self.subTest(style=name):
+                    self.assertEqual(style.layout(name)[0][0], "Kit.field")
+                    self.assertNotIn("Dolly.field", str(style.layout(name)))
+                    for option in ("fieldbackground", "bordercolor", "lightcolor", "darkcolor"):
+                        self.assertEqual(style.lookup(name, option), t["field"])
+                        for state in (("focus",), ("active",), ("active", "focus"), ("readonly", "focus"),
+                                      ("readonly", "active", "focus")):
+                            self.assertEqual(style.lookup(name, option, state), t["field"], (option, state))
+                        self.assertEqual(style.lookup(name, option, ("disabled",)), t["field_disabled"])
+                    self.assertEqual(style.lookup(name, "foreground"), t["muted"])
+                    self.assertEqual(style.lookup(name, "foreground", ("readonly", "focus")), t["muted"])
+                    self.assertEqual(style.lookup(name, "background", ("focus",)), t["panel"])
+            # Replay keeps its paddings and chevron; its search field keeps its keyboard ring (Q5).
+            self.assertIn("Dolly.Combobox.downarrow", str(style.layout("Stage.Card.TCombobox")))
+            self.assertEqual(style.lookup("Search.Card.TEntry", "bordercolor", ("focus",)), t["accent"])
+
+        with self.subTest(contract='named display fonts'):
+            from dolly.ui import fonts
+            names = set(self.root.tk.splitlist(self.root.tk.call("font", "names")))
+            self.assertLessEqual(set(fonts.NAMES.values()), names)
+            self.assertEqual(str(fonts.font(self.root, "card_title")), fonts.NAMES["card_title"])
+            for key in fonts.NAMES:
+                self.assertLess(int(fonts.font(self.root, key).cget("size")), 0, "Display sizes are pixels")
+
+    def test_display_font_changes_re_measure_card_titles(self):
+        from tkinter import ttk
+        from dolly.ui import fonts
+        style = ttk.Style(self.root)
+        fonts.install(self.root, 2.0)  # A reconfigured named font notifies the theme.
+        self.assertEqual(int(fonts.font(self.root, "card_title").cget("size")), -30)
+        self.assertEqual(tuple(map(int, self.root.tk.splitlist(style.lookup("CardTitle.TLabel", "padding")))),
+                         (0, 0, 0, fonts.descent_shortfall(self.root, "card_title")))
+        self.assertEqual(style.lookup("CardTitle.TLabel", "font"), fonts.NAMES["card_title"])
+
+    def test_styles_take_inter_once_it_resolves(self):
+        # UPDATE 23: with the shipped faces listed, text styles draw Inter and value styles
+        # (fields, chips, table cells, keycaps, dropdown buttons) Inter Medium, like Figma.
+        import os
+        import tkinter as tk
+        from tkinter import ttk
+        from unittest.mock import patch
+        from dolly import gui_theme
+        from dolly.ui import fonts
+        listed = ("Segoe UI", "Segoe UI Semibold", "Inter", "Inter Medium", "Inter SemiBold", "Segoe MDL2 Assets")
+        root = tk.Tk()
+        self.addCleanup(root.destroy)
+        root.withdraw()
+        with patch.object(ui_theme, "FONT_FAMILY", ui_theme.FONT_FAMILY), \
+                patch.object(ui_theme, "FONT_VALUE", ui_theme.FONT_VALUE), \
+                patch.dict(os.environ, {"DOLLY_UI_FONTS": ""}), \
+                patch.object(fonts, "load_bundled", return_value=[]), \
+                patch.object(fonts.tkfont, "families", return_value=listed):
+            gui_theme.initialize(root)
+            style = ttk.Style(root)
+
+            def face(name):
+                return root.tk.splitlist(style.lookup(name, "font"))[0]
+            for name in (".", "Title.TLabel", "Placeholder.TLabel", "Library.Treeview.Heading"):
+                self.assertEqual(face(name), "Inter", name)
+            for name in ("FieldValue.TLabel", "Chip.Card.TLabel", "Library.Treeview", "Kit.Treeview",
+                         "Kit.Keycap.TButton", "Kit.TMenubutton"):
+                self.assertEqual(face(name), "Inter Medium", name)
+            self.assertEqual(root.tk.call("font", "configure", "TkTextFont", "-family"), "Inter Medium")
+            self.assertEqual(root.tk.call("font", "configure", "TkMenuFont", "-family"), "Inter")
+
+    def test_library_rows_draw_through_the_divider_sublayout(self):
+        from tkinter import ttk
+        style = ttk.Style(self.root)
+        # Tk 8.6 draws each row through "<style>.Row"; its stock layout proves the lookup exists.
+        self.assertEqual(style.layout("Treeview.Row")[0][0], "Treeitem.row")
+        frame = ttk.Frame(self.root, style="Card.TFrame")
+        frame.pack(fill="both", expand=True)
+        tree = ttk.Treeview(frame, columns=("name", "size"), show="headings", height=3, style="Library.Treeview")
+        for column, title in (("name", "Replay"), ("size", "Size")):
+            tree.heading(column, text=title, anchor="w")
+        for index in range(4):
+            tree.insert("", "end", iid=str(index), values=(f"{index}.dem", "1.0 MB"))
+        tree.selection_set("1")
+        tree.pack(fill="both", expand=True)
+        self.root.deiconify(); self.root.update()
+        self.assertEqual(tree.identify_region(20, tree.winfo_height() // 2), "cell")
+        self.assertEqual(tree.selection(), ("1",))
+
+    def test_library_row_divider_is_one_tile_per_row(self):
+        # ttk tiles an image element's centre. A divider image of a few pixels cost
+        # thousands of image draws per row: every scroll, selection or search in the
+        # replay list took over a second at 150 %. The image is a whole row instead.
+        from tkinter import ttk
+        from dolly.ui.scale import hairline, px, ui_scale
+        from dolly.ui.stage_page import StagePage
+        t = ui_theme.TOKENS
+        scale = ui_scale(self.root)
+        height = int(ttk.Style(self.root).lookup("Library.Treeview", "rowheight"))
+        line = hairline(scale)
+        rows = [image for image in self.root._dolly_theme_images if image.height() == height
+                and tuple(image.get(0, 0)) == ui_theme.rgb(t["card_edge"])
+                and tuple(image.get(0, line)) == ui_theme.rgb(t["panel"])]
+        self.assertEqual(len(rows), 1, "the replay table's divider row image")
+        self.assertGreaterEqual(rows[0].width(), px(scale, StagePage.CARD_MAX))
+
     def test_generated_images_remain_alive_after_collection(self):
         import gc
         gc.collect()
@@ -194,21 +422,20 @@ class DesktopThemeInitializationTests(unittest.TestCase):
         self.assertEqual(self.root.focus_get(), combo)
         self.assertTrue(combo.instate(("focus",)), "Focus still selects the rounded focus asset")
         combo.event_generate("<Down>"); self.root.update()
-        popdown = str(combo) + ".popdown"
-        listing = popdown + ".f.l"
-        self.assertTrue(self.root.tk.call("winfo", "ismapped", listing))
-        self.root.tk.call(listing, "selection", "clear", 0, "end")
-        self.root.tk.call(listing, "selection", "set", 2)
-        self.root.tk.call(listing, "activate", 2)
-        self.root.tk.call("event", "generate", listing, "<Return>")
+        popup = self.root._dolly_combo_popup
+        self.assertTrue(popup.top.winfo_ismapped())
+        popup._goto(2)
+        popup.list.event_generate("<Return>")
         self.root.update()
         self.assertEqual(combo.get(), "2")
-        self.assertFalse(self.root.tk.call("winfo", "ismapped", popdown))
+        self.assertIsNone(self.root._dolly_combo_popup)
+        combo.focus_force(); self.root.update()
         combo.event_generate("<Down>"); self.root.update()
-        self.root.tk.call("event", "generate", listing, "<Escape>")
-        self.root.update()
+        popup = self.root._dolly_combo_popup
+        self.assertIsNotNone(popup)
+        popup.list.event_generate("<Escape>"); self.root.update()
         self.assertEqual(combo.get(), "2")
-        self.assertFalse(self.root.tk.call("winfo", "ismapped", popdown))
+        self.assertIsNone(self.root._dolly_combo_popup)
         combo.focus_force(); combo.event_generate("<Tab>"); self.root.update()
         self.assertEqual(self.root.focus_get(), following)
 

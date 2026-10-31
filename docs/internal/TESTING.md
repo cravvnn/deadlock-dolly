@@ -56,6 +56,10 @@ part of this workflow.
 & $py tools/build_windows.py
 ```
 
+When an older local candidate already uses the intended version number, pass
+`--output-dir <new-folder>` to keep both candidates. An explicit output folder
+refuses to overwrite an existing release archive or checksum file.
+
 For new regressions, name the observable contract, a credible failing change,
 and why existing proof misses it. Prefer one strong owning test with independent
 expected values. Before consolidating, carry every unique case into its keeper
@@ -65,6 +69,25 @@ keep real timing, process and filesystem proof in the tests that own it.
 
 Record elapsed time for changed suites and preserve failed attempts. Do not add
 retries, broaden mocks or remove failure checks merely to get a passing run.
+
+For FFmpeg color changes on Windows, build the small WARP recorder fixture and
+provide the pinned FFmpeg path to the native integration test. This checks real
+H.264 and lossless recordings, including the audio remux; it does not launch the
+game. The Players and video-export suites also check alpha masters when bundled
+FFmpeg is available. To include the Auto H.264 and HEVC NVENC paths on a system
+with NVIDIA encoding available, set `DOLLY_TEST_NVENC=1` before the color test.
+
+```powershell
+cmake -S native -B build/color-check -DBUILD_TESTING=ON
+cmake --build build/color-check --config Release --target video_color_smoke --parallel 2
+$env:DOLLY_TEST_VIDEO_COLOR_SMOKE = (Resolve-Path build/color-check/Release/video_color_smoke.exe).Path
+$env:DOLLY_TEST_FFMPEG = (Resolve-Path third_party/ffmpeg/bin/ffmpeg.exe).Path
+& $py -m unittest discover -s tests -p 'test_video_color_integration.py' -q
+& $py -m unittest discover -s tests -p 'test_player_layer.py' -q
+& $py -m unittest discover -s tests -p 'test_video_export.py' -q
+Remove-Item Env:DOLLY_TEST_VIDEO_COLOR_SMOKE, Env:DOLLY_TEST_FFMPEG
+if (Test-Path Env:DOLLY_TEST_NVENC) { Remove-Item Env:DOLLY_TEST_NVENC }
+```
 
 ## Manual integration checks
 

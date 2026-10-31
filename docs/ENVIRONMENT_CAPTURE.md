@@ -1,17 +1,32 @@
 # Dolly Environment Capture
 
 This separate edition adds an experimental HDR panorama workflow for map
-reference and Blender backgrounds. It is built on the current 0.6.75 runtime
-(Deadlock build 6819 supported) with the slim capture-only desktop. The
+reference and Blender backgrounds. This tester uses the 0.6.85 runtime and the
+current Kara UI integration, copied from the local main source on October 29.
+The desktop and in-game interface are reduced around panoramic screenshots. The
 six-face HDR capture and restoration path passed a local 1024-square check on
 an earlier base; higher resolutions and the packaged keypress-to-output path
 still need live acceptance checks. Earlier prototype ZIPs are superseded.
 
-## Current build (0.6.75 base)
+## Current Windows tester (0.6.85 base)
 
-The 0.6.75 runtime brings the current container/codec selector, mixed skin-pack
-handling, crash reporting and the 6819 camera/attach fixes to this edition. The
-desktop is still slim: **Replay, Export, Controls and Settings** only.
+The desktop contains **Replay, Viewpoints, Scene, Capture, Controls and Settings**.
+Viewpoints saves and recalls camera positions. Scene keeps fixed camera/scene
+settings and depth of field. Capture contains PNG screenshots and HDR panoramas.
+F8 opens a small in-game capture strip with pause, flight, level-view and panorama
+controls, using Kara's fonts and palette. Choose the destination and size on the
+desktop first. F7 remains the console; F8 returns to flying.
+
+Video export, path/curve editing and playback, Follow/Bone Picker, particles,
+Players/Depth output passes, ReShade setup, Discord and standard Dolly updates
+are unavailable in this edition. A shared single-frame capture engine and one
+FFmpeg executable remain for PNG stills. The package omits the separate updater
+launcher/runtime, duplicate FFmpeg distribution and game-audio helper. Shared
+native render hooks remain because HDR acquisition depends on them.
+
+This package is qualified offline only. Earlier live panorama results do not
+qualify this rebuilt DLL against the current installed game. Start at 1024 and
+inspect a new capture before using larger sizes or relying on the output.
 Panorama capture still forces 100% render scale for the capture, so it works when
 the game uses FSR/DLSS upscaling or a reduced render scale. Previously capture
 could fail with **"HDR source dimensions were not established"** because the
@@ -24,14 +39,13 @@ session, so the next normal launch is not left at the square size.
 
 ## Earlier 0.1.x prototype builds
 
-Export contains only Screenshot and Environment panorama. The Camera and Look
-pages (and the full editor) are hidden. The in-game F8 panel still contains some
-inherited Dolly controls; use freecam and capture for this map-reference workflow.
+The older prototype's Export page and inherited in-game editor were replaced by
+the focused Capture page and in-game strip in the current tester.
 
 For screenshots, choose **Game window (no change)** to use the game's normal
 resolution, or select a larger render size before reopening the replay. PNG is
-lossless; there is no lossy quality slider. Depth and character cutouts are optional
-and off by default. Both tools use the capture folder shown below the Screenshot
+lossless; there is no lossy quality slider. Depth and character cutouts are absent.
+Both tools use the capture folder in the Environment panorama
 card. Screenshot resolution options do not imply tested 4K/8K capture support.
 
 Panoramas still require square render dimensions. Native widescreen panorama
@@ -64,7 +78,7 @@ and final clean-map/lighting qualification remain outstanding.
 
 Open **Controls**, select **Capture panorama**, and assign an unused key or
 combination. The action starts unbound. **F8 continues to open Dolly.**
-The **Capture panorama** button runs the same operation.
+The desktop and in-game **Capture panorama** buttons run the same operation.
 
 In the Environment panorama section, choose an existing output folder. Select
 a square render size and press **Apply size** before opening the replay.

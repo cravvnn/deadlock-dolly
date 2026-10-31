@@ -131,6 +131,28 @@ def accepted_pins(manifest: dict[str, Any] | None = None) -> dict[str, tuple[str
     return {relative: tuple(document["modules"][relative]["accepted"]) for relative in MODULE_RELATIVES}
 
 
+def merged_pins(
+    base: dict[str, Iterable[str]] | None = None,
+    extra: dict[str, Iterable[str]] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    """Union reviewed pins with published definitions, reviewed values first.
+
+    Additive only: an extra entry can add an accepted hash for a module but can
+    never drop or reorder a hash that shipped with the release.
+    """
+    result = {relative: ((value,) if isinstance(value, str) else tuple(value))
+              for relative, value in (base or {}).items()}
+    for relative, values in (extra or {}).items():
+        if relative not in MODULE_RELATIVES:
+            raise CompatibilityError(f"Unknown module in published definitions: {relative}")
+        additions = (values,) if isinstance(values, str) else tuple(values)
+        existing = result.get(relative, ())
+        for digest in additions:
+            _as_sha256(digest, f"published hash for {relative}")
+        result[relative] = tuple(dict.fromkeys(existing + additions))
+    return result
+
+
 @dataclass(frozen=True)
 class ModuleStatus:
     relative: str

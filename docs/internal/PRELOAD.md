@@ -32,6 +32,17 @@ by Dolly, checks the launch arguments and console ownership, then validates the
 live executable and loaded module paths. It never injects, calls engine functions,
 or writes game memory. It adds no third-party Python dependency.
 
+For the reviewed 6821 client (`8da25ddc...`), the hideout constructor at
+client+`0x1bd2f05` installs the `CCitadel_Hud_Hideout` vtable `0x2c6ab38`.
+Its store at `0x1bd2f63` (`48 89 35 de db 2a 02`) resolves to the singleton
+at `0x3e80b48`. The stock load at `0x1c0ec77` reads that same singleton and
+calls the phase getter at `0x1bef6d0`. The previous `0x3e80bd8` value points
+to unrelated data and could make every preload observation unreadable.
+The contract now records the constructor's RIP-relative instruction and pins
+the stock reader span. Generation checks that the instruction resolves to the
+declared singleton inside a saved code span; installed-module verification also
+checks the instruction bytes. No preload readiness condition is relaxed.
+
 Intro advancement uses one window-targeted WM_KEYDOWN/WM_KEYUP Escape pair, only
 after the reviewed intro object's phase is 2 (interactive intro), with no preload
 manifest yet. The window must be the unique visible Deadlock window belonging to

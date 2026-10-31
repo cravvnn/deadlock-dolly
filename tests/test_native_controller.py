@@ -477,6 +477,49 @@ class NativeControllerTests(unittest.TestCase):
         self.assertEqual(self.console.values["citadel_hud_visible"], 1)
         self.assertTrue(self.controller._native_active)
 
+    def test_fixed_step_export_survives_a_render_hitch_longer_than_three_seconds(self):
+        self.prepare()
+        self.controller._export_timing = {'fps': 300, 'speed': 1}
+        original_status = self.bridge.status
+        began = self.clock.now
+        def status():
+            self.bridge.freeze_frames = self.clock.now - began < 4
+            return original_status()
+        with patch.object(self.bridge, 'status', side_effect=status):
+            self.run_native()
+        self.assertIsNone(self.controller.status()['playback_error'])
+        self.assertAlmostEqual(self.controller.status()['time'], self.project.duration)
+        self.assertGreater(self.clock.now - began, 4)
+
+    def test_fixed_step_export_still_stops_a_sustained_render_hang(self):
+        self.prepare()
+        self.controller._export_timing = {'fps': 300, 'speed': 1}
+        self.bridge.freeze_frames = True
+        began = self.clock.now
+        finish = self.controller._finish_native_playback
+        stopped_at = []
+        def finishing(**kwargs):
+            stopped_at.append(self.clock.now)
+            return finish(**kwargs)
+        with patch.object(self.controller, '_finish_native_playback', side_effect=finishing):
+            self.run_native()
+        self.assertIn('stopped receiving rendered views', self.controller.status()['playback_error'])
+        self.assertGreaterEqual(stopped_at[0] - began, 15)
+        self.assertLess(stopped_at[0] - began, 16)
+
+    def test_fixed_step_hitch_does_not_relax_replay_identity(self):
+        self.prepare()
+        self.controller._export_timing = {'fps': 300, 'speed': 1}
+        original_status = self.bridge.status
+        def status():
+            result = original_status()
+            result['demo_name'] = 'another.dem'
+            return result
+        with patch.object(self.bridge, 'status', side_effect=status):
+            self.run_native()
+        self.assertIsNotNone(self.controller.status()['playback_error'])
+        self.assertNotIn('stopped receiving', self.controller.status()['playback_error'])
+
     def test_console_session_still_reports_legacy_backend(self):
         self.controller._session.native = None
         self.assertEqual(self.controller.status()["camera_backend"], "console")

@@ -187,8 +187,13 @@ def _video(paths, pins):
         raise ValueError('Stock video archive changed during verification')
 
 
-def verify(paths, editing_root, profile, steam_roots=()):
-    """Refuse changed stock provenance before journaling/deployment; return receipt."""
+def verify(paths, editing_root, profile, steam_roots=(), extra_files=None):
+    """Refuse changed stock provenance before journaling/deployment; return receipt.
+
+    ``extra_files`` may add further accepted ``(bytes, sha1)`` variants per
+    stock path from published build definitions. It can never remove the
+    bundled snapshot, so the release remains the floor.
+    """
     editing_root = Path(editing_root).absolute()
     raw, _stamp = _read(editing_root/'stock-provenance.json', 64 * 1024)
     if hashlib.sha256(raw).hexdigest() != profile.get('stock_provenance_sha256'):
@@ -264,7 +269,22 @@ def verify(paths, editing_root, profile, steam_roots=()):
         actual.update(current)
         receipt.append({'depot': ident, 'manifest': manifest, 'sha256': hashlib.sha256(chosen).hexdigest()})
     if not known and actual != files:
-        raise ValueError('Current stock GameInfo/cfg changed; update Dolly before launching')
+        published = {}
+        for name, variants in (extra_files or {}).items():
+            if name not in files:
+                raise ValueError('Published stock inventory describes an unreviewed path')
+            published[name] = tuple(variants)
+        for name, row in actual.items():
+            allowed = set(published.get(name, ()))
+            pinned = files.get(name)
+            if pinned is not None:
+                allowed.add((pinned['bytes'], pinned['sha1']))
+            if (row['bytes'], row['sha1']) not in allowed:
+                raise ValueError('Current stock GameInfo/cfg changed; update Dolly before launching')
+        if set(actual) != set(files):
+            raise ValueError('Current stock GameInfo/cfg changed; update Dolly before launching')
+    if extra_files and not known:
+        receipt.append({'stock_snapshot': 'published definitions'})
     _video(paths, expected.get('video_resources'))
     if _read(app, 1024 * 1024) != (app_raw, app_stamp) or any(not _plain_ancestors(path) or _identity(path.stat()) != stamp for path, stamp in snapshots.items()):
         raise ValueError('Steam install changed during stock verification')

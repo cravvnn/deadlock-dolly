@@ -9,7 +9,9 @@ the people and projects behind it, from the original camera editor onward.
 | Contributor | Contribution |
 | --- | --- |
 | [Cravvnn](https://github.com/cravvnn) | Project creation, direction, ongoing development, game-update compatibility research, testing and releases. |
-| [**@SamuelCurrid**](https://github.com/SamuelCurrid) | After Effects and USD camera exports, recorded camera tracks for path, attached and POV recordings, and export controls. See [PR #25](https://github.com/cravvnn/deadlock-dolly/pull/25). |
+| [**@Moelandblue**](https://github.com/Moelandblue) | Reported missing DLSS options and identified redirected game stdout as the trigger, informing Dolly's optional DLSS-compatible startup and retained diagnostic logs. See [issue #18](https://github.com/cravvnn/deadlock-dolly/issues/18). |
+| [**@ExoCalibra**](https://github.com/ExoCalibra) | Bone and Weapon vertical-aim lock and camera-relative movement during attached preview. See [PR #29](https://github.com/cravvnn/deadlock-dolly/pull/29) and the [original aim-lock contribution](https://github.com/cravvnn/deadlock-dolly/commit/f8e23dbdb811ccf76e51f88f72e8ff6086d317ed). |
+| [**@SamuelCurrid**](https://github.com/SamuelCurrid) | After Effects and USD camera exports, recorded camera tracks for path, attached and POV recordings, export controls, and forward-seek undershoot recovery. See [PR #25](https://github.com/cravvnn/deadlock-dolly/pull/25) and [PR #28](https://github.com/cravvnn/deadlock-dolly/pull/28). |
 | [**@paralin**](https://github.com/paralin) | Linux/Proton compatibility: Wine mount-point handling, Steam-library discovery and recovery from interrupted plugin cleanup. See merged [PR #10](https://github.com/cravvnn/deadlock-dolly/pull/10), [#11](https://github.com/cravvnn/deadlock-dolly/pull/11) and [#12](https://github.com/cravvnn/deadlock-dolly/pull/12). |
 | [**@tbhtho**](https://github.com/tbhtho) | The in-game UI rework and saved panel layouts that later editor updates build on. See the [original contribution](https://github.com/cravvnn/deadlock-dolly/commit/8521b341d78b26bbb1a3897d23eefb89d15b8363). |
 | [**@s34532**](https://github.com/s34532) | Custom native particle effects, beginning with confetti rain, plus game-only audio capture and reconstructed clip audio. See the [particle contribution](https://github.com/cravvnn/deadlock-dolly/commit/dee932e24411656ea0f13c624e189797ae80b5e8) and [audio PR #9](https://github.com/cravvnn/deadlock-dolly/pull/9). |
@@ -54,6 +56,12 @@ The early workflow research is recorded in
 | [Capstone](https://www.capstone-engine.org/) and [pefile](https://github.com/erocarrera/pefile) | Compatibility research, disassembly and inspection of Windows executables and libraries. |
 | [CMake](https://cmake.org/), [Visual Studio C++ tools](https://visualstudio.microsoft.com/vs/features/cplusplus/) and [clang-format](https://clang.llvm.org/docs/ClangFormat.html) | Building and maintaining the native helper. |
 | [OpenAI ChatGPT](https://openai.com/chatgpt/) and [Codex](https://openai.com/codex/) | Reverse-engineering assistance for analyzing Deadlock binaries and researching camera, rendering and game-update compatibility. |
+
+## Interface design
+
+**Kara** designed the desktop interface, artwork treatments and in-game top rail.
+The bundled [**Inter**](https://github.com/rsms/inter) typefaces are by The Inter Project Authors, under the
+[SIL Open Font License 1.1](assets/fonts/inter/LICENSE.txt).
 
 ## Licenses, provenance and artwork
 

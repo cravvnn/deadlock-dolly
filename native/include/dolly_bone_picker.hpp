@@ -70,7 +70,8 @@ void picker_publish(std::shared_ptr<const PickerCatalog>) noexcept;
 bool picker_camera(std::uint32_t request, std::uint32_t command, bool requested, bool permitted,
                    CameraPose& pose, double fov, const std::array<double, 6>& offsets,
                    PickerSampler sample, void* context, bool* attached_preview = nullptr,
-                   bool auto_clearance = false, int paused_tick = 0) noexcept;
+                   bool auto_clearance = false, int paused_tick = 0,
+                   bool rigid_orientation = false, bool lock_vertical_aim = false) noexcept;
 bool picker_snapshot(PickerFrame&) noexcept;
 bool picker_select(std::uint32_t request, int index) noexcept;
 bool picker_preview(std::uint32_t request, bool preview) noexcept;

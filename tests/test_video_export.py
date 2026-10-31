@@ -3,6 +3,8 @@ from datetime import datetime
 import json
 from pathlib import Path
 import queue
+import struct
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -1966,6 +1968,47 @@ class VideoGuiTests(unittest.TestCase):
         self.assertFalse((layer_dir / "players_white.mp4").exists())
         self.assertEqual(json.loads((layer_dir / "shot.json").read_text(encoding="utf-8"))["video_file"],
                          "players.mov")
+
+    def test_real_matte_combine_writes_rec709_and_preserves_alpha(self):
+        from dolly.video_export import bundled_ffmpeg_path
+        ffmpeg = bundled_ffmpeg_path()
+        if ffmpeg is None:
+            self.skipTest("Bundled FFmpeg is unavailable")
+        base = Path(self.folder.name) / "shot.mkv"
+        folder = base.with_suffix("") / "effects"
+        folder.mkdir(parents=True)
+        # Opaque red, half-opaque green, transparent, and opaque blue.
+        blocks = (((255, 0, 0), (255, 0, 0)), ((0, 128, 0), (127, 255, 127)),
+                  ((0, 0, 0), (255, 255, 255)), ((0, 0, 255), (0, 0, 255)))
+        for variant in (0, 1):
+            frame = bytes(c for y in range(64) for x in range(64)
+                          for c in (*blocks[(y // 32) * 2 + x // 32][variant], 255))
+            path = folder / ("effects_white.mkv" if variant else "effects.mkv")
+            subprocess.run([str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+                            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", "64x64",
+                            "-r", "30", "-i", "pipe:0", "-c:v", "ffv1", "-pix_fmt", "bgra",
+                            str(path)], input=frame, capture_output=True, check=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.app._base_capture = SimpleNamespace(path=base, ffmpeg_path=ffmpeg)
+        self.app.controller = Mock()
+        self.app._combine_layer("effects")
+        master = folder / "effects.mov"
+        info = subprocess.run(
+            [str(ffmpeg), "-hide_banner", "-i", str(master), "-vf", "showinfo",
+             "-frames:v", "1", "-f", "null", "-"], capture_output=True, check=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stderr.decode(errors="replace")
+        self.assertIn("color_range:tv color_space:bt709 color_primaries:bt709 color_trc:bt709", info)
+        pixels = subprocess.run(
+            [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-i", str(master),
+             "-frames:v", "1", "-pix_fmt", "yuva444p10le", "-f", "rawvideo", "pipe:1"],
+            capture_output=True, check=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        self.assertEqual(len(pixels), 64 * 64 * 8)
+        # Red's 10-bit limited-range luma is ~250 with 709 and ~326 with 601.
+        self.assertLessEqual(abs(struct.unpack_from("<H", pixels, (16 * 64 + 16) * 2)[0] - 250), 4)
+        for x, y, expected in ((16, 16, 1023), (48, 16, 518), (16, 48, 0), (48, 48, 1023)):
+            alpha = struct.unpack_from("<H", pixels, 64 * 64 * 6 + (y * 64 + x) * 2)[0]
+            self.assertLessEqual(abs(alpha - expected), 6)
 
     def test_completed_layer_take_advances_then_restores_scene_layers(self):
         self.app.video_export.output_path = None

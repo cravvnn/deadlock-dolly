@@ -401,6 +401,7 @@ class PreferenceTests(unittest.TestCase):
             raw.pop("ffmpeg_path"); raw.pop("auto_updates"); raw.pop("framing_grid_enabled"); raw.pop("export_folder")
             raw.pop("pause_after_capture")
             raw.pop("allow_mod_overrides")
+            raw.pop("discord_presence"); raw.pop("nvidia_dlss")
             path.write_text(json.dumps(raw)); before = path.read_bytes()
             self.assertEqual(load_settings(path), original)
             self.assertEqual(path.read_bytes(), before)
@@ -460,6 +461,65 @@ class UpdateUITests(unittest.TestCase):
 
 
 class UpdateProgressWindowTests(unittest.TestCase):
+    def test_successful_install_with_failed_relaunch_shows_dismissible_diagnostic(self):
+        from unittest.mock import Mock
+
+        class ImmediateThread:
+            def __init__(self, *, target, **_kwargs):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        callbacks = []
+        window = Mock()
+        window.closed = False
+        window.root.after.side_effect = lambda _delay, callback: callbacks.append(callback)
+        window.root.mainloop.side_effect = lambda: callbacks.pop(0)()
+        target = Path("Dolly install")
+        with patch.object(w, "UpdateWindow", return_value=window), \
+                patch.object(w.threading, "Thread", ImmediateThread), \
+                patch.object(w, "_apply_plan"), \
+                patch.object(w, "launch_program", side_effect=OSError("access denied")):
+            code = w._progress_helper_window(target / "work", target, recover=False, parent_pid=0)
+        self.assertEqual(code, 1)
+        message = window.show_failure.call_args.args[0]
+        self.assertIn("updated, but could not reopen", message)
+        self.assertIn("open Dolly.exe", message)
+        self.assertIn("access denied", message)
+        window._close.assert_not_called()
+
+    def test_user_close_waits_until_failure_but_success_can_close_programmatically(self):
+        from unittest.mock import Mock
+        window = w.UpdateWindow.__new__(w.UpdateWindow)
+        window.closed = False
+        window._close_allowed = False
+        window.root = Mock()
+        window.status = Mock()
+        window.progress = Mock()
+        window.close_button = Mock()
+        window.scale = 1.0
+
+        # A window-manager close while the worker is replacing files must not
+        # terminate the daemon worker or abandon its transaction.
+        window._request_close()
+        self.assertFalse(window.closed)
+        window.root.destroy.assert_not_called()
+
+        # After a failure, both the close button and the window manager can
+        # dismiss the diagnostic. Success retains the internal _close path.
+        window.show_failure("Update failed")
+        window._request_close()
+        self.assertTrue(window.closed)
+        window.root.destroy.assert_called_once()
+        success = w.UpdateWindow.__new__(w.UpdateWindow)
+        success.closed = False
+        success._close_allowed = False
+        success.root = Mock()
+        success._close()
+        self.assertTrue(success.closed)
+        success.root.destroy.assert_called_once()
+
     def test_launch_worker_requests_the_progress_window_for_a_normal_install(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory); work = target / ".dolly-update-abc"; work.mkdir()

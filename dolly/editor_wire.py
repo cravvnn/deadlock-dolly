@@ -67,6 +67,7 @@ EXTRA_ACTIONS += ("level_view",)
 EXTRA_ACTIONS += ("seek_camera",)
 EXTRA_ACTIONS += ("set_video_ae_camera",)
 EXTRA_ACTIONS += ("set_video_usd_camera",)
+EXTRA_ACTIONS += ("set_attach_vertical_aim_lock",)
 # Environment edition only: appended so every earlier action ID is unchanged.
 EXTRA_ACTIONS += ("capture_environment",)
 
@@ -368,6 +369,14 @@ def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0, p
         if mode not in ("exact", "auto"):
             raise ValueError("Unknown attach clearance mode")
         hide |= 2 if mode == "auto" else 0
+        orientation_mode = attach.get("orientation_mode", "legacy")
+        if orientation_mode not in ("legacy", "rigid"):
+            raise ValueError("Unknown attach orientation mode")
+        hide |= 4 if orientation_mode == "rigid" else 0
+        lock_vertical_aim = attach.get("lock_vertical_aim", False)
+        if type(lock_vertical_aim) is not bool:
+            raise ValueError("Vertical aim lock must be true or false")
+        hide |= 8 if lock_vertical_aim else 0
         model = attach.get("model", 0)
         if (isinstance(model, bool) or not isinstance(model, int)
                 or not 0 <= model <= 0xFFFFFFFFFFFFFFFF):
@@ -383,7 +392,7 @@ def pack_attach(sequence, offsets, attach=None, preview=False, snap_request=0, p
         key_count = _uint(attach.get("key_count", 0), "shot key count")
         if attached_keys > key_count or key_count > 100000:
             raise ValueError("Attach key counts are inconsistent")
-    return ATTACH_CONFIG.pack(b"DLYATTC1", _uint(sequence, "sequence"), 5 if hide & 2 else 4 if picker else (3 if blend_ms else 2), flags, 0, model,
+    return ATTACH_CONFIG.pack(b"DLYATTC1", _uint(sequence, "sequence"), 6 if hide & 12 else 5 if hide & 2 else 4 if picker else (3 if blend_ms else 2), flags, 0, model,
                               *values, handle, entity_id, target_index, point, hide, blend_ms,
                               *numbers, attached_keys, key_count,
                               _uint(snap_request, "snap request"), bone_hash, bone_name)

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknowledgementRequired,
                               StartupTimeout)
+from dolly.console import ConsoleTimeout
 from tests.test_native_flight_controller import configured_controller
 
 
@@ -83,6 +84,132 @@ class AutoStartupTests(unittest.TestCase):
         self.assertEqual(connect.call_count, 1)
         self.assertNotIn('cvar_unhide', self.console.requests)
         self.assertFalse(any(command.startswith('playdemo ') for command in self.console.sent))
+
+    def test_status_timeout_as_game_exits_reports_crash_before_replay(self):
+        state = {'timeout': False, 'polls': 0}
+        original_request = self.console.request
+
+        def poll():
+            if state['timeout']:
+                state['polls'] += 1
+                if state['polls'] >= 2:
+                    return 3221226505
+            return None
+
+        def request(command, *args, **kwargs):
+            if command == 'status':
+                state['timeout'] = True
+                raise ConsoleTimeout("No complete netcon response to 'status' within 3s.")
+            return original_request(command, *args, **kwargs)
+
+        self.session.process = SimpleNamespace(pid=1234, poll=poll)
+        self.console.request = request
+        with self.assertRaises(RuntimeError) as caught:
+            self.start()
+        message = str(caught.exception)
+        self.assertIn('0xC0000409', message)
+        self.assertIn('before the selected replay was loaded', message)
+        self.assertIn('Console (legacy)', message)
+        self.assertIn('U.GG', message)
+        self.assertIn('system tray', message)
+        self.assertNotIn('incompatible or incomplete', message)
+        self.assertNotIn('cvar_unhide', self.console.requests)
+        self.assertFalse(any(command.startswith('playdemo ') for command in self.console.sent))
+
+    def test_console_drop_wait_can_be_cancelled_without_unlocking(self):
+        class CancelOnWait:
+            cancelled = False
+            def is_set(self):
+                return self.cancelled
+            def wait(self, _seconds):
+                self.cancelled = True
+                return True
+
+        self.controller._session = self.session
+        checks = []
+
+        def failed_check():
+            checks.append('status')
+            raise ConsoleTimeout("No complete netcon response to 'status' within 3s.")
+
+        with self.assertRaisesRegex(RuntimeError, 'startup cancelled'):
+            self.controller._startup_wait(failed_check, 'waiting for hideout readiness', CancelOnWait())
+        self.assertEqual(checks, ['status'])
+        self.assertNotIn('cvar_unhide', self.console.requests)
+        self.assertFalse(any(command.startswith('playdemo ') for command in self.console.sent))
+
+    def test_disconnected_console_as_process_exits_reports_actual_crash(self):
+        state = {'disconnected': False, 'polls': 0}
+
+        def poll():
+            if state['disconnected']:
+                state['polls'] += 1
+                if state['polls'] >= 2:
+                    return 3221226505
+            return None
+
+        def failed_check():
+            state['disconnected'] = True
+            raise RuntimeError('The console is disconnected. Use Connect after Deadlock finishes loading.')
+
+        self.controller._session = self.session
+        self.session.process = SimpleNamespace(pid=1234, poll=poll)
+        with self.assertRaisesRegex(RuntimeError, '0xC0000409') as caught:
+            self.controller._startup_wait(failed_check, 'waiting for hideout readiness', None)
+        self.assertIn('before the selected replay was loaded', str(caught.exception))
+        self.assertNotIn('cvar_unhide', self.console.requests)
+
+    def test_console_backend_crash_does_not_suggest_relaunching_with_the_same_backend(self):
+        self.controller._session = self.session
+        self.session.native = None
+        self.session.process = SimpleNamespace(poll=lambda: 3221226505)
+        message = self.controller._game_death_message('waiting for hideout readiness')
+        self.assertIn('before the selected replay was loaded', message)
+        self.assertNotIn('Console (legacy)', message)
+        self.assertNotIn('U.GG', message)
+
+    def test_timeout_with_a_live_game_keeps_original_error_after_bounded_wait(self):
+        class ClockEvent:
+            now = 0.0
+            def is_set(self):
+                return False
+            def wait(self, seconds):
+                self.now += seconds
+                return False
+
+        clock = ClockEvent()
+        self.controller._session = self.session
+        calls = []
+
+        def failed_check():
+            calls.append('status')
+            raise ConsoleTimeout("No complete netcon response to 'status' within 3s.")
+
+        with patch('dolly.controller.time.monotonic', side_effect=lambda: clock.now):
+            with self.assertRaisesRegex(ConsoleTimeout, 'No complete netcon response'):
+                self.controller._startup_wait(failed_check, 'waiting for hideout readiness', clock)
+        self.assertEqual(calls, ['status'])
+        self.assertGreaterEqual(clock.now, 3.0)
+        self.assertLess(clock.now, 3.1)
+
+    def test_console_drop_never_reports_a_replacement_session_crash(self):
+        controller = self.controller
+        replacement = SimpleNamespace(process=SimpleNamespace(poll=lambda: 3221226505))
+
+        class ReplaceOnWait:
+            def is_set(self):
+                return False
+            def wait(self, _seconds):
+                controller._session = replacement
+                return False
+
+        controller._session = self.session
+
+        def failed_check():
+            raise ConsoleTimeout("No complete netcon response to 'status' within 3s.")
+
+        with self.assertRaisesRegex(ConsoleTimeout, 'No complete netcon response'):
+            controller._startup_wait(failed_check, 'waiting for hideout readiness', ReplaceOnWait())
 
     def test_panorama_notice_keeps_native_duplicate_clear_without_changing_stages(self):
         self.controller._session = self.session
@@ -603,6 +730,9 @@ class AutoStartupTests(unittest.TestCase):
         self.assertIn("recorded on this build", message)
         self.assertIn("cines.dem", message)
         self.assertIn("game build 10931", message)
+        self.assertIn("directly in Deadlock", message)
+        self.assertIn("experimental repair", message)
+        self.assertNotIn("likely incomplete", message)
         self.assertNotIn("cannot reconstruct", message)
 
     def test_replay_from_a_different_build_keeps_the_mismatch_guidance(self):
@@ -923,11 +1053,15 @@ class AutoStartupTests(unittest.TestCase):
         self.assertNotIn("playdemo", str(launch.call_args))
 
     def test_selected_graphics_profile_reaches_normal_launcher(self):
+        self.session.nvidia_dlss = True
         with patch("dolly.controller.launcher.launch", return_value=self.session) as launch, \
-             patch("dolly.controller.ConsoleClient", return_value=self.console):
-            self.controller.start_editing("installation", self.demo, graphics_profile="selected-profile-id")
+             patch("dolly.controller.ConsoleClient", return_value=self.console) as console:
+            self.controller.start_editing("installation", self.demo, graphics_profile="selected-profile-id", nvidia_dlss=True)
         self.assertEqual(launch.call_args.kwargs["graphics_profile"], "selected-profile-id")
         self.assertEqual(self.controller._launch_attempt["graphics_profile"], "selected-profile-id")
+        self.assertIs(launch.call_args.kwargs['nvidia_dlss'], True)
+        self.assertIs(self.controller._launch_attempt['nvidia_dlss'], True)
+        self.assertEqual(console.call_args.kwargs['transcript_path'], self.session.session_dir / 'console_transcript.log')
 
 
 if __name__ == "__main__":

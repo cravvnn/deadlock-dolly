@@ -96,13 +96,13 @@ class CaptureHarness:
         self.selected = None
         app.camera_tree = SimpleNamespace(selection=lambda: () if self.selected is None else (str(self.selected),))
         app.root = SimpleNamespace(grab_current=lambda: None)
-        app.notebook = SimpleNamespace(select=lambda _tab: None)
+        # Like ttk.Notebook.select: a tab selects it, no argument reads the selection (none here).
+        app.notebook = SimpleNamespace(select=lambda *_tab: "")
         app.camera_tab = object()
         app._mark_dirty = Mock()
         app._refresh_keys = Mock()
         app._refresh_project = Mock()
         app._set_time = Mock()
-        app._draw_path = Mock()
         app._log = Mock()
         self.errors = []
         self.pending = None

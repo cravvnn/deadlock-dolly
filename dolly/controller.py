@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from collections import deque
 from copy import deepcopy
 from dataclasses import asdict
+from datetime import datetime, timezone
 import json
 import logging
 import math
@@ -167,7 +168,12 @@ def _write_diagnostics_archive(destination, report, history, session_files, sess
             for name in session_files:
                 file = session.session_dir / name
                 if file.is_file():
-                    archive.writestr("session/" + name, _tail_file(file))
+                    if name in ("engine_console.log", "console_transcript.log"):
+                        from .game_logging import diagnostic_log
+                        content = diagnostic_log(file)
+                    else:
+                        content = _tail_file(file)
+                    archive.writestr("session/" + name, content)
         # A successful retry must not hide the previous crashed launch.
         journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:8]
         for journal in journals:
@@ -177,7 +183,12 @@ def _write_diagnostics_archive(destination, report, history, session_files, sess
             for name in session_files:
                 file = folder / name
                 if file.is_file():
-                    archive.writestr("previous_sessions/" + folder.name + "/" + name, _tail_file(file, 512_000))
+                    if name in ("engine_console.log", "console_transcript.log"):
+                        from .game_logging import diagnostic_log
+                        content = diagnostic_log(file, limit=512_000)
+                    else:
+                        content = _tail_file(file, 512_000)
+                    archive.writestr("previous_sessions/" + folder.name + "/" + name, content)
         for path in dumps:
             try:
                 archive.write(path, "crashes/" + path.name)
@@ -239,6 +250,11 @@ CAMERA_HEIGHT_PROBE = 16.0
 CAMERA_CORRECTION_LIMIT = 12
 SEEK_SETTLE_INTERVAL = .04
 SEEK_SETTLE_SAMPLES = 3
+SEEK_FORWARD_OVERSHOOT_TICKS = 4
+# The engine reported an adjacent forward seek to tick 97, but paused at 103.
+# Expand only the existing exact-target correction when the fresh seek response
+# identifies a consistent forward movement in both replay and game ticks.
+SEEK_REPORTED_FORWARD_OVERSHOOT_TICKS = 6
 CAMERA_DRIFT_LIMIT = 64.0
 CAMERA_DRIFT_SAMPLES = 3
 NATIVE_PAUSE_TIMEOUT = 8.0
@@ -299,6 +315,20 @@ REPLAY_CLEANUP_COMMANDS = (
     "cl_ent_remove_all citadel_artist_solidblocker",
     "cl_ent_remove_all C_Citadel_Artist_SolidBlocker",
 )
+
+
+def _reported_forward_seek(output, target):
+    """Recognize one consistent engine report for the commanded forward seek."""
+    reports = re.findall(
+        r"Demo Skipping:\s*skipping forward to demo tick (\d+)\s+"
+        r"\(game tick (\d+)\)\s+from current (\d+)\s+\((\d+)\)",
+        output, re.IGNORECASE)
+    if len(reports) != 1:
+        return False
+    requested, game_target, previous, game_previous = map(int, reports[0])
+    return (requested == target and 0 <= previous < requested <= 0x7fffffff
+            and 0 <= game_previous <= game_target <= 0x7fffffff
+            and game_target - game_previous == requested - previous)
 
 
 class CameraPositionError(RuntimeError):
@@ -518,14 +548,38 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     or Path(record['overlay_dir']) != overlay
                     or demo is None or record.get('selected_demo') != str(demo)):
                 raise RuntimeError("The movie audio launch identity could not be verified.")
-            patched = launcher.make_gameinfo(baseline.decode('utf-8'), overlay.name, isolated_settings=True)
+            editing = baseline.decode('utf-8')
+            mounts = record.get('carried_addon_mounts', [])
+            if (not isinstance(mounts, list) or any(
+                    not isinstance(entry, dict) or not isinstance(entry.get('key'), str)
+                    or not isinstance(entry.get('path'), str) for entry in mounts)):
+                raise RuntimeError("The movie audio launch mounts could not be verified.")
+            if mounts:
+                # Recreate the launcher's exact input, including carried content
+                # mounts and AddonConfig. The live gameinfo has already been
+                # restored and may have changed since this session was launched.
+                backup = directory / record['backup_name']
+                try:
+                    if not _plain_ancestors(backup) or not 0 < backup.stat().st_size <= 1024 * 1024:
+                        raise ValueError('unavailable original configuration')
+                    with backup.open('rb') as stream:
+                        original = stream.read(1024 * 1024 + 1)
+                    if (len(original) > 1024 * 1024
+                            or hashlib.sha256(original).hexdigest() != record['original_sha256']):
+                        raise ValueError('changed original configuration')
+                    editing = launcher.merge_addon_mounts(
+                        original.decode('utf-8'), editing,
+                        [(entry['key'], entry['path']) for entry in mounts])
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError("The movie audio original configuration could not be verified.") from exc
+            patched = launcher.make_gameinfo(editing, overlay.name, isolated_settings=True)
             mods = [entry for entry in launcher._search_paths_entries(launcher._parse(patched))
                     if entry.key.value.casefold() == 'mod']
             if (hashlib.sha256(patched.encode('utf-8')).hexdigest() != record['patched_sha256']
                     or not mods or mods[0].value.value != overlay.name + '/cvar_unlocker'):
                 raise RuntimeError("The movie audio primary MOD path could not be verified.")
             fields = ('pid', 'command', 'overlay_dir', 'original_sha256', 'patched_sha256',
-                      'editing_gameinfo_sha256', 'configuration_mode', 'selected_demo')
+                      'editing_gameinfo_sha256', 'configuration_mode', 'selected_demo', 'carried_addon_mounts')
             identity = {name: record.get(name) for name in fields}
 
             def verify_owner(controller):
@@ -579,17 +633,23 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             reason = f"Deadlock crashed (exit code {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X})"
         if (not self._replay_requested or
                 context in ("waiting for the game console", "waiting for hideout readiness")):
-            return (f"{reason} while {context}. The game exited before the selected replay "
-                    "was loaded. Inspect the startup error or game dump before retrying."
-                    + self._crash_suffix())
+            message = (f"{reason} while {context}. The game exited before the selected replay "
+                       "was loaded. Inspect the startup error or game dump before retrying.")
+            if self._session is not None and getattr(self._session, "native", None) is not None:
+                message += (" If you use an in-game overlay such as U.GG, try fully exiting it "
+                            "(including from the system tray) before the next launch. To compare, "
+                            "select Console (legacy) as the camera driver before a new "
+                            "session; Native camera, in-game editor and layers are unavailable in that mode.")
+            return message + self._crash_suffix()
         header = self._replay_header
         recorded_build = header.get("build_num")
         if (recorded_build is not None and self._game_build is not None
                 and recorded_build == self._game_build):
             message = (f"{reason} while {context}. The selected replay was recorded on this build "
-                       f"({self._game_build}), so the .dem itself is likely incomplete or from a match whose "
-                       "content this build does not include (for example a private or experimental recording). "
-                       "Try another replay, or re-record it on this install, then launch again through Dolly.")
+                       f"({self._game_build}), but that does not establish why it crashed. Try opening the "
+                       "same replay directly in Deadlock. Dolly's Replays & Shots page also offers an "
+                       "experimental repair for a specific startup crash; it saves a separate copy and "
+                       "does not guarantee playback.")
         else:
             message = (f"{reason} while {context}. A replay that this game build cannot "
                        "reconstruct (for example an incompatible or incomplete .dem) can fatal Deadlock as soon as "
@@ -602,18 +662,32 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             message += f" Selected replay: {details}."
         return message + self._crash_suffix()
 
-    def _crash_suffix(self):
-        """Name the newest crash dump's module and offset when one exists."""
+    def _session_start_epoch(self):
+        """UTC launch-directory timestamp, or None when it cannot be verified."""
         try:
             session = self._session
-            if session is None or not session.command:
+            name = Path(session.session_dir).name if session is not None else ""
+            match = re.fullmatch(r"(\d{8}_\d{6})_[0-9a-f]{10}", name, re.IGNORECASE)
+            if match is None:
+                return None
+            return datetime.strptime(match[1], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc).timestamp()
+        except (AttributeError, OSError, TypeError, ValueError, OverflowError):
+            return None
+
+    def _crash_suffix(self):
+        """Name a recent dump without attributing an old one to this launch."""
+        try:
+            session = self._session
+            started = self._session_start_epoch()
+            if session is None or not session.command or started is None:
                 return ""
             executable = Path(session.command[0])
             game = executable.parents[2] if len(executable.parents) > 2 else executable.parent
             candidates = []
             for folder in (game / "bin" / "win64", game / "citadel" / "crash"):
                 if folder.is_dir():
-                    candidates.extend(folder.glob("*.mdmp"))
+                    candidates.extend(path for path in folder.glob("*.mdmp")
+                                      if path.is_file() and path.stat().st_mtime >= started)
             if not candidates:
                 return ""
             newest = max(candidates, key=lambda path: path.stat().st_mtime)
@@ -624,7 +698,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             module = str(report.get("faulting_module") or "unknown module")
             offset = report.get("module_offset")
             access = report.get("access_address")
-            parts = [f"Crash dump {newest.name}: {module}" + (f"+{offset}" if offset else "")]
+            parts = [f"Recent dump {newest.name} (not matched to this process): {module}"
+                     + (f"+{offset}" if offset else "")]
             if access:
                 parts.append(f"read at {access}")
             return " " + ", ".join(parts) + "."
@@ -641,17 +716,26 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         match = re.search(r"citadel_v(\d+)", str(header.get("game_directory") or ""), re.IGNORECASE)
         return int(match.group(1)) if match else None
 
-    def _wait_for_crash_after_console_drop(self, context):
+    def _wait_for_crash_after_console_drop(self, context, *, cancel_event=None, session=None):
         """Give a dying game time to report its exit after the console socket drops."""
-        session = self._session
-        if session is None:
+        session = self._session if session is None else session
+        if session is None or self._session is not session:
             return None
         deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            if session.process.poll() is not None:
+        waiter = cancel_event if cancel_event is not None else threading.Event()
+        while True:
+            self._check_startup_cancelled(cancel_event)
+            if self._session is not session:
+                return None
+            exit_code = session.process.poll()
+            if self._session is not session:
+                return None
+            if exit_code is not None:
                 return self._game_death_message(context)
-            time.sleep(0.05)
-        return None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            waiter.wait(min(0.05, remaining))
 
     def _request(self, command, timeout=3.0, allow_error=False, completion_patterns=None,
                  allow_truncated=False):
@@ -826,7 +910,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             return None
         return info
 
-    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False):
+    def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False, nvidia_dlss=False):
         with self._op_lock:
             self._launch_attempt = {
                 "game_path": str(game_path),
@@ -842,11 +926,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._launch_attempt["camera_backend"] = "native"
             if allow_mod_overrides:
                 self._launch_attempt["allow_mod_overrides"] = True
+            if nvidia_dlss:
+                self._launch_attempt["nvidia_dlss"] = True
             LOG.info("Launch requested: %s", self._launch_attempt)
             try:
                 result = self._launch(game_path, demo_path, protocol, native=native, launch_options=launch_options,
                                       graphics_profile=graphics_profile,
-                                      allow_mod_overrides=allow_mod_overrides)
+                                      allow_mod_overrides=allow_mod_overrides, nvidia_dlss=nvidia_dlss)
             except Exception as exc:
                 self._launch_attempt.update(status="failed", error=str(exc), error_type=type(exc).__name__)
                 LOG.exception("Launch failed")
@@ -855,7 +941,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._launch_attempt.update(status="started", pid=result["pid"], session_dir=result["session_dir"])
             return result
 
-    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False):
+    def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False, nvidia_dlss=False):
         with self._op_lock:
             if protocol not in ("vconsole", "netcon"):
                 raise ValueError("Unknown console protocol.")
@@ -876,6 +962,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 options["allow_mod_overrides"] = True
             if graphics_profile:
                 options["graphics_profile"] = graphics_profile
+            if nvidia_dlss:
+                options["nvidia_dlss"] = True
             self._recording_replay = None
             self._recording_warmup = None
             self._session = launcher.launch(game_path, str(path), port=self._port, protocol=protocol, **options)
@@ -926,7 +1014,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if not self._session.owns_console_port():
                 self._console = None
                 raise RuntimeError("The launched Deadlock process does not yet own the console port. Wait for loading to finish and retry. If it persists, export diagnostics and test the other console protocol in a new launch.")
-            console = ConsoleClient(protocol=self._protocol)
+            console_options = {}
+            if getattr(self._session, "nvidia_dlss", False) is True:
+                from .game_logging import CONSOLE_LOG
+                console_options["transcript_path"] = self._session.session_dir / CONSOLE_LOG
+            console = ConsoleClient(protocol=self._protocol, **console_options)
             try:
                 console.connect(host="127.0.0.1", port=self._port, timeout=3)
                 self._console = console
@@ -966,7 +1058,20 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 if exit_code not in (None, 0):
                     raise RuntimeError(self._game_death_message(label) + " Export diagnostics to inspect startup.")
                 raise RuntimeError("Deadlock closed while " + label + ". Export diagnostics to inspect startup.")
-            result = check()
+            session = self._session
+            try:
+                result = check()
+            except RuntimeError as exc:
+                self._check_startup_cancelled(cancel_event)
+                text = str(exc).lower()
+                if (self._session is session and
+                        (isinstance(exc, ConsoleError) or "console is disconnected" in text
+                         or "game closed the console" in text)):
+                    message = self._wait_for_crash_after_console_drop(
+                        label, cancel_event=cancel_event, session=session)
+                    if message:
+                        raise RuntimeError(message + " Export diagnostics to inspect startup.") from exc
+                raise
             self._check_startup_cancelled(cancel_event)
             if result is not None and result is not False:
                 return result
@@ -1378,7 +1483,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
                       launch_options="", cancel_event=None, graphics_profile="",
-                      allow_mod_overrides=False):
+                      allow_mod_overrides=False, nvidia_dlss=False):
         """Launch, initialize once before the demo, and enter paused editing.
 
         Every transition uses process, console or rendered-view evidence.
@@ -1389,6 +1494,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             try:
                 self._check_startup_cancelled(cancel_event)
                 profile_options = {"graphics_profile": graphics_profile} if graphics_profile else {}
+                if nvidia_dlss:
+                    profile_options["nvidia_dlss"] = True
                 self.launch(game_path, demo_path, protocol, native=native, launch_options=launch_options,
                             allow_mod_overrides=allow_mod_overrides, **profile_options)
                 self._message("Starting Deadlock. Waiting for its console connection…", startup_stage="waiting_console")
@@ -4295,7 +4402,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             raise ValueError("Shot time must be finite.")
         return max(0.0, min(project.duration, value))
 
-    def _seek(self, project, shot_time):
+    def _seek(self, project, shot_time, *, paused=False):
         target = int(round(project.start_tick + shot_time * project.tick_rate))
         # SourceTV recordings may store one packet per several simulation
         # ticks. Normal pausing can expose a tick between those records, but
@@ -4312,7 +4419,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     # A same-named file may have been replaced since playback
                     # loaded it. Its new index cannot adjust this live replay.
                     return self._seek_tick(target, allow_start_boundary=True)
-                if (actual - project.start_tick) / project.tick_rate > project.duration:
+                if not paused and (actual - project.start_tick) / project.tick_rate > project.duration:
                     raise RuntimeError(f"The next recorded replay packet is tick {actual}, after this shot ends. "
                                        "Extend the shot or preview its camera without seeking.")
                 self._check_position_cancelled()
@@ -4324,12 +4431,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     "actual_tick": actual, "reason": "recorded_packet"})
         return self._seek_tick(target, allow_start_boundary=True)
 
-    def _seek_shot_time(self, project, shot_time, info):
+    def _seek_shot_time(self, project, shot_time, info, *, paused=False):
         """Sample the original shot timeline at an explicit reconstruction tick."""
         if not info.get("seek_boundary"):
             return shot_time
         actual_time = (info["tick"] - project.start_tick) / project.tick_rate
         boundary = info["seek_boundary"]
+        if paused and actual_time > project.duration:
+            # A paused endpoint preview needs no remaining playback interval.
+            # Reconstruct the verified packet and hold the authored final pose
+            # and effects. Play/export must still reject an empty interval.
+            return project.duration
         if boundary.get("reason") == "recorded_packet":
             if actual_time > project.duration:
                 raise RuntimeError(f"The next recorded replay packet is tick {info['tick']}, after this shot ends. "
@@ -4409,6 +4521,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._request("demo_pause")
         self._check_position_cancelled()
         seek_output = self._request(f"demo_gototick {target} 0 1", timeout=6)
+        forward_skip_reported = _reported_forward_seek(seek_output, target)
+        correction_limit = (SEEK_REPORTED_FORWARD_OVERSHOOT_TICKS
+                            if forward_skip_reported
+                            else SEEK_FORWARD_OVERSHOOT_TICKS)
         # Some replays initially expose tick 0, but their first reconstructible
         # full packet is tick 1. Recognize only that explicitly reported floor;
         # a nearby tick alone is never sufficient evidence to change a target.
@@ -4504,7 +4620,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._request("demo_pause")
                 pause_confirmed = True
                 stable = 0
-            if target < observed <= target + 4:
+            if target < observed <= target + correction_limit:
                 overshoot_samples = overshoot_samples + 1 if observed == overshoot_tick else 1
                 overshoot_tick = observed
             else:
@@ -4517,13 +4633,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 undershoot_tick = None
                 undershoot_samples = 0
             if undershoot_tick == target - 1 and undershoot_samples >= SEEK_SETTLE_SAMPLES \
-                    and packet_floor_reported:
+                    and (packet_floor_reported or forward_skip_reported):
                 if not undershoot_nudged and time.perf_counter() < end:
-                    # A paused skip can stop one tick before a packet-start
-                    # target without loading that packet. Nudge playback across
-                    # the boundary once, then demand the exact tick again.
                     undershoot_nudged = True
                     undershoot_samples = 0
+                    # The same bounded nudge covers a reported packet floor
+                    # and a verified forward seek that stopped one tick short.
+                    self._last_seek_details.setdefault("undershoot_nudges", []).append(
+                        {"from_tick": undershoot_tick, "target_tick": target,
+                         "packet_floor_reported": packet_floor_reported,
+                         "forward_skip_reported": forward_skip_reported,
+                         "at": time.perf_counter()})
                     self._check_position_cancelled()
                     self._request("demo_resume", allow_error=True)
                     self._stop_event.wait(min(.05, max(.001, end - time.perf_counter())))
@@ -4533,20 +4653,22 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     pause_confirmed = False
                     wait_for_view = False
                     continue
-                # The engine cannot reconstruct the requested tick. Start at
-                # the recorded tick just before it instead of failing the shot;
-                # the caller holds the first camera over the short pre-roll.
-                self._last_seek_details.update(verified=True, actual_tick=undershoot_tick,
-                                               boundary="recorded_packet",
-                                               boundary_delta_ticks=undershoot_tick - target)
-                return dict(self._require_demo(require_tick=False),
-                            seek_boundary={"requested_tick": target,
-                                           "actual_tick": undershoot_tick,
-                                           "reason": "recorded_packet"})
+                if packet_floor_reported:
+                    # Start at the recorded tick just before the target instead of
+                    # failing the shot. A forward-skip undershoot is never accepted
+                    # here - it keeps trying for the exact tick.
+                    self._last_seek_details.update(verified=True, actual_tick=undershoot_tick,
+                                                   boundary="recorded_packet",
+                                                   boundary_delta_ticks=undershoot_tick - target)
+                    return dict(self._require_demo(require_tick=False),
+                                seek_boundary={"requested_tick": target,
+                                               "actual_tick": undershoot_tick,
+                                               "reason": "recorded_packet"})
             if overshoot_samples >= SEEK_SETTLE_SAMPLES and not corrections:
-                # Native forward seeks can stop up to four ticks late (6774:
-                # request15301 settled at15305). Reissuing the
-                # SAME target from there takes the backward-seek route. Do not
+                # A small forward seek can stop late. Reissuing the SAME target
+                # from there takes the backward-seek route. The wider six-tick
+                # case requires the engine's matching forward/clock report;
+                # neither case accepts an incorrect tick as the target. Do not
                 # react to a transient ahead sample or chase an unrelated seek.
                 self._check_position_cancelled()
                 self._request("demo_pause")
@@ -4573,6 +4695,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     packet_floor_reported = bool(re.search(
                         r"Demo Skipping:[^\n]*from full packet\s+\d+", correction_output,
                         re.IGNORECASE))
+                    forward_skip_reported = _reported_forward_seek(correction_output, target)
                     self._check_position_cancelled()
                     stable = 0
                     overshoot_tick = None
@@ -4601,8 +4724,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             shot_time = self._shot_time(project, shot_time)
             bridge = self._native_bridge() if self._supports_native_flight() else None
             before_frame = int(bridge.status().get("frame_count", 0)) if bridge else 0
-            positioned_demo = self._seek(project, shot_time)
-            shot_time = self._seek_shot_time(project, shot_time, positioned_demo)
+            positioned_demo = self._seek(project, shot_time, paused=True)
+            shot_time = self._seek_shot_time(project, shot_time, positioned_demo, paused=True)
             if bridge is None:
                 self._position_direct_frame(project.evaluate(shot_time), positioned_demo["tick"])
             else:
@@ -4626,9 +4749,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 bridge.configure_editor(owner="panel")
             boundary = positioned_demo.get("seek_boundary")
             if boundary:
+                endpoint = ((positioned_demo["tick"] - project.start_tick) / project.tick_rate
+                            > project.duration)
+                held = "Final camera held at the saved shot end. " if endpoint else ""
                 self._message(f"Replay paused at recorded tick {positioned_demo['tick']} "
                               f"({shot_time:.6f} shot seconds); requested tick {boundary['requested_tick']}. "
-                              "Saved camera and effect times are unchanged.", time=shot_time)
+                              f"{held}Saved camera and effect times are unchanged.", time=shot_time)
             else:
                 self._message("Replay paused at the requested path time.", time=shot_time)
 
@@ -5097,7 +5223,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     last_fresh = now
                     if first_frame is None:
                         first_frame = frame_count
-                elif now - last_fresh > 3:
+                elif now - last_fresh > (15 if getattr(self, "_export_timing", None) is not None else 3):
+                    # Fixed-step Players/encoder work can hold the render
+                    # thread for several seconds without losing a shot frame.
+                    # Keep a bounded hang guard, but allow that work to finish.
                     raise RuntimeError("The native camera stopped receiving rendered views. Restore the game window and export diagnostics.")
                 if now >= next_identity:
                     try:
@@ -5697,7 +5826,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             deployment = self.deployment_directory()
             if deployment is not None:
                 preserve_diagnostics(deployment, self._session.session_dir)
-        session_files = ("session.json", "launch.log", "game_stdout.log",
+        from .game_logging import SESSION_LOGS
+        session_files = SESSION_LOGS + ("session.json", "launch.log", "game_stdout.log",
                          "native_diagnostics.json", "graphics-session.json", "graphics-runtime.json",
                          "editing-session.json") + DIAGNOSTIC_NAMES
         destination = Path(destination)
@@ -5705,6 +5835,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                   "motion_clock": motion_clock_info(),
                   "launch_attempt": self._launch_attempt,
                   "startup_evidence": self._startup_evidence,
+                  "console_transcript_error": getattr(self._console, "transcript_error", None),
                   "replay_recovery": deepcopy(self._replay_recovery),
                   "game_exit_code": self._session.process.poll() if self._session else None,
                   "lens_control": self.lens_cvar, "standard_aspect": self.standard_aspect,
@@ -5764,12 +5895,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 continue
         report["crash_dumps"] = [{"name": path.name, "bytes": path.stat().st_size} for path in dumps]
         crash_reports = []
+        started = self._session_start_epoch()
         for path in dumps:
+            age = {}
             try:
                 from .crash_dumps import analyse
-                crash_reports.append({"name": path.name, **analyse(path)})
-            except (OSError, ValueError) as exc:
-                crash_reports.append({"name": path.name, "error": str(exc)})
+                modified = path.stat().st_mtime
+                age = {"modified_utc": datetime.fromtimestamp(modified, timezone.utc).isoformat(),
+                       "after_session_start": modified >= started if started is not None else None}
+                crash_reports.append({"name": path.name, **age, **analyse(path)})
+            except (OSError, OverflowError, ValueError) as exc:
+                crash_reports.append({"name": path.name, **age, "error": str(exc)})
         report["crash_analysis"] = crash_reports
         try:
             # A blocked/deferred temporary-file cleanup is only explainable by

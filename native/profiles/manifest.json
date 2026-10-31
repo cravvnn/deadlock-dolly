@@ -1,14 +1,14 @@
 {
   "manifest_format": 1,
   "native_abi": 4,
-  "generated_utc": "2026-10-22",
+  "generated_utc": "2026-10-26",
   "generator": "tools/generate_profile.py",
-  "reviewed_client_utc": "2026-10-20",
+  "reviewed_client_utc": "2026-10-26",
   "modules": {
     "citadel/bin/win64/client.dll": {
       "role": "client",
-      "reviewed_utc": "2026-10-22",
-      "latest_timestamp": 1792706908,
+      "reviewed_utc": "2026-10-26",
+      "latest_timestamp": 1793038164,
       "accepted": [
         "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
         "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
@@ -54,11 +54,12 @@
         "c00bfdfc045f99584c5faefc532327f6a65b01c2bfa5d031ef6cabae1fa79d9e",
         "52ee3077035808598eb66b64f2b1c2ae40c8753ce4f2044d4f4738e42ff07548",
         "2f6946bf369dc3cd442fb98267956067c9cf2a531785e22a01342c37d5c42e78",
-        "c09143cf9cd722909404c64e3ffa05157afc15e8a3519b49a1396a627af8ca85"
+        "c09143cf9cd722909404c64e3ffa05157afc15e8a3519b49a1396a627af8ca85",
+        "8da25ddcd11c1146eeb9770bca24fb25c594c7abdb28947035a44ec8f2945843"
       ],
       "feature_pins": {
         "automatic preload": [
-          "c09143cf9cd722909404c64e3ffa05157afc15e8a3519b49a1396a627af8ca85"
+          "8da25ddcd11c1146eeb9770bca24fb25c594c7abdb28947035a44ec8f2945843"
         ]
       }
     },
@@ -235,6 +236,7 @@
     "deadlock-2026-10-22-6814-complete.json",
     "deadlock-2026-10-22-6815-complete.json",
     "deadlock-2026-10-22-6817-complete.json",
-    "deadlock-2026-10-22-6819-complete.json"
+    "deadlock-2026-10-22-6819-complete.json",
+    "deadlock-2026-10-26-6821-complete.json"
   ]
 }

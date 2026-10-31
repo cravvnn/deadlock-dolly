@@ -15,6 +15,31 @@ class ReplayEntry:
     modified_ns: int
 
 
+# Displayed ordering applies only to the library; source entries and their
+# stable indices remain unchanged so selection still identifies the same file.
+REPLAY_SORTS = {
+    "Name ↑": ("name", False),
+    "Name ↓": ("name", True),
+    "Size ↑": ("size_bytes", False),
+    "Size ↓": ("size_bytes", True),
+    "Modified ↑": ("modified_ns", False),
+    "Modified ↓": ("modified_ns", True),
+}
+DEFAULT_REPLAY_SORT = "Name ↑"
+
+
+def sorted_replay_indices(entries, sort=DEFAULT_REPLAY_SORT):
+    """Return source indices in the requested order, using raw sizes and timestamps."""
+    field, descending = REPLAY_SORTS.get(sort, REPLAY_SORTS[DEFAULT_REPLAY_SORT])
+    def key(index):
+        entry = entries[index]
+        value = getattr(entry, field)
+        if field == "name":
+            value = value.casefold()
+        return value, entry.name.casefold(), str(entry.path).casefold()
+    return sorted(range(len(entries)), key=key, reverse=descending)
+
+
 def same_replay_name(selected: str | os.PathLike[str], reported: str | None) -> bool:
     """Match an engine basename with or without the final .dem extension.
 

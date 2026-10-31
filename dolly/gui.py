@@ -18,13 +18,22 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, ttk
 
-from dolly import (attach_camera, dialogs, dof_preflight, edition, editor_session, gui_layout,
-                   player_layer, screenshot_ui, ui_theme)
-from .ui import shot_commands
+from dolly import edition, __version__, attach_camera, dialogs, dof_preflight, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
+from .ui import (art, camera_page, chrome, controls_page, export_page, fonts, library_page as replay_page, look_page,
+                 settings_page, shot_commands, window_bars, window_chrome)
+from .ui.action_proxy import ActionProxy
+from .ui.backdrop import Backdrop
+from .ui.boil import BoilClock
+from .ui.chrome import FooterLink, Stage
 from .ui.confirm import ask_reconstructed_helper
-from .ui.widgets import NavigationMarker
+from .ui import text_dialog as simpledialog
+from .ui import question_dialog as messagebox
+from .ui.kit_page import KitPage
+from .ui.scale import chars, enable_dpi_awareness, even_px, px, ui_scale
+from .ui.stage_page import end_gap
+from .ui.sidebar import Sidebar
 from dolly.editor_actions import ACTION_LABELS, ACTION_ORDER, OBJECT_PICKER_ENABLED, default_action_bindings
 from dolly.replays import discover_replays, find_replay_folder, parse_launch_options
 from dolly.bindings import CaptureBinding, DEFAULT_BINDING
@@ -33,8 +42,8 @@ from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknow
                               tick_rate_advice, tick_rates_match)
 from dolly.clip_audio import ClipAudioCapture
 from dolly.curve import AspectCurve, PositionCurve, POSITION_CHANNELS, POSITION_LIMIT, RotationCurve, TimelineView
-from dolly.curve_workspace import CameraCurveColumn, CameraCurveWorkspace
 from dolly.display import focus_window
+from dolly.ffmpeg_color import REC709_FRAME_TAGS, REC709_OUTPUT_ARGS, REC709_SCALE
 from dolly.hotkey import CaptureHotkey
 # Compatibility import for existing callback users.
 from .gui_theme import _clear_committed_combobox_selection
@@ -82,10 +91,19 @@ DISABLED_FG = _T["disabled_fg"]
 SELECTED = _T["selected"]
 SELECTED_INK = _T["selected_ink"]
 TRACK = _T["track"]
-WARN = _T["warn"]
 WARN_BG = _T["warn_bg"]
 LOG = logging.getLogger("dolly")
 ASPECT_PRESETS = {"16:9": 16 / 9, "16:10": 16 / 10, "21:9": 21 / 9, "4:3": 4 / 3}
+# Header game-status tones: resting states read dim, trouble reads as an error.
+_QUIET_SESSION = {"Game not connected", "Game not launched", "Game closed"}
+
+
+def _session_tone(text):
+    if text in _QUIET_SESSION:
+        return "dim"
+    if text == "Session needs attention" or text.startswith("Disconnected"):
+        return "error"
+    return "muted"
 
 
 
@@ -272,16 +290,21 @@ class DollyApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
+        # USER-ADDITIONS UPDATE 20: Dolly's own title bar replaces the Windows caption. Tk has to
+        # know the window is frameless before its Windows frame exists, so this comes before
+        # anything that creates it: setting the window icon does (hidden test windows keep their
+        # native frame).
+        self.window_chrome = window_chrome.WindowChrome(self.root)
+        self.window_chrome.prepare()
         apply_window_icon(root)
-        self.root.title(edition.application_name() + " - Untitled shot")
-        self.ui_scale = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96 / 72))
-        self.root.geometry(self._window_size(1180, 800))
-        self.root.minsize(*self._window_dimensions(1000, 700))
+        self.root.title("Deadlock Dolly — Untitled shot")
+        self.ui_scale = ui_scale(self.root)
         self._operations = OperationQueue()
         self._memory_watch = PausedMemoryWatch()
         self._take_audit_seen: set[str] = set()
         self._take_audit_reported = False
         self.closed = False
+        self._discord_presence = None
         self._closing = False
         self.busy = False
         self._error_dialog_open = False
@@ -297,7 +320,7 @@ class DollyApp:
         self.demo_path = tk.StringVar()
         self.protocol = tk.StringVar(value="Netconsole")
         self.camera_driver = tk.StringVar(value="Native (experimental)")
-        self.status_text = tk.StringVar(value="Choose a replay and press Play replay to begin editing.")
+        self.status_text = tk.StringVar(value="Choose a replay and press START to begin editing.")
         self.session_text = tk.StringVar(value="Game not connected")
         self.driver_indicator = tk.StringVar(value="DRIVER · NATIVE")
         self.project_text = tk.StringVar(value="Untitled shot")
@@ -394,6 +417,8 @@ class DollyApp:
         self.editor_move_speed = tk.StringVar(value=_number(self.app_settings.movement_speed))
         self.editor_sensitivity = tk.StringVar(value=_number(self.app_settings.mouse_sensitivity))
         self.replay_search = tk.StringVar()
+        from dolly.replays import DEFAULT_REPLAY_SORT
+        self.replay_sort = tk.StringVar(value=DEFAULT_REPLAY_SORT)
         self.replay_summary = tk.StringVar(value="Choose your replay folder.")
         self.startup_progress = tk.StringVar(value="Ready when you are.")
         self.startup_cancel = None
@@ -421,9 +446,25 @@ class DollyApp:
         self._last_controller_message = ""
         self._style()
         self._build_menu()
+        # The Figma frame: a 1200 x 810 design px page area (1800 x 1215 screen pixels at
+        # 150 %) between the 26 px title bar and the 29 px link bar (Frame 79, [design reference]).
+        self.root.geometry(self._main_size(1200, 810, centered=True))
+        self.root.minsize(*self._main_dimensions(1000, 700))
         self._build_window()
         self._refresh_project()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # The title bar's menus open from the keyboard as the native menu bar's did.
+        for key, name in (("f", "File"), ("F", "File"), ("e", "Edit"), ("E", "Edit")):
+            self.root.bind(f"<Alt-KeyPress-{key}>", lambda _event, name=name: self.title_bar.open_menu(name))
+        # The custom frame takes over once the window has mapped (the page builders may
+        # already have mapped it, unseen: it stays transparent until then). Bound on the
+        # window's own tag (not on every child's <Map>), and unbound once it has run.
+        self._window_chrome_map = None
+        if self.root.winfo_ismapped():
+            self._finish_window_chrome()
+        else:
+            tag = window_chrome.window_tag(self.root)
+            self._window_chrome_map = (tag, self.root.bind_class(tag, "<Map>", self._finish_window_chrome, add="+"))
         self.root.bind("<Control-s>", lambda _event: self.save())
         self.root.bind("<Control-o>", lambda _event: self.open())
         self.root.bind("<Control-n>", lambda _event: self.new())
@@ -433,21 +474,133 @@ class DollyApp:
         self.root.after(80, self._poll)
         self._submit("Looking for Deadlock", discover_game, self._discovered)
 
-    def _window_dimensions(self, width, height):
-        return (min(round(width * self.ui_scale), self.root.winfo_screenwidth() - 40),
-                min(round(height * self.ui_scale), self.root.winfo_screenheight() - 80))
+    def _px(self, value):
+        """Design pixels (a number or a padding tuple) at this window's display scale."""
+        # Bare test objects (DollyApp.__new__) draw at 100 %.
+        return even_px(getattr(self, "ui_scale", 1.0), value)
 
-    def _window_size(self, width, height):
+    def _chars(self, count):
+        """A ttk ``width`` of ``count`` characters, kept at its 100 % size in design px."""
+        return chars(self.root, count) if getattr(self, "ui_scale", 1.0) != 1.0 else count
+
+    def _window_dimensions(self, width, height):
+        """A dialog's design-px client size in screen pixels, clamped so its framed window fits the work area."""
+        left, top, right, bottom = chrome.work_area(self.root)
+        frame_width, frame_height = chrome.frame_size(menu=False)
+        # Tk reports the primary display size even when the owner is on a
+        # larger monitor. Do not let that smaller size cap the chosen work area.
+        screen_width = max(self.root.winfo_screenwidth(), right - left)
+        screen_height = max(self.root.winfo_screenheight(), bottom - top)
+        return (min(self._px(width), right - left - frame_width, screen_width - self._px(40)),
+                min(self._px(height), bottom - top - frame_height, screen_height - self._px(80)))
+
+    def _window_size(self, width, height, *, centered=False):
+        """Tk geometry for a dialog's design-px client size; ``centered`` also centres it on the work area."""
         width, height = self._window_dimensions(width, height)
-        return f"{width}x{height}"
+        if not centered:
+            return f"{width}x{height}"
+        left, top, right, bottom = chrome.work_area(self.root)
+        frame_width, frame_height = chrome.frame_size(menu=False)
+        x = left + max(0, (right - left - width - frame_width) // 2)
+        y = top + max(0, (bottom - top - height - frame_height) // 2)
+        return f"{width}x{height}+{x}+{y}"
+
+    def _frameless(self):
+        """Whether Dolly draws the main window's whole frame (its own title bar, no Windows caption)."""
+        window = getattr(self, "window_chrome", None)
+        return bool(window is not None and window.frameless)
+
+    def _frame_size(self):
+        """Width and height the main window's frame adds round its client area (none when frameless)."""
+        return (0, 0) if self._frameless() else chrome.frame_size(menu=False)
+
+    def _bars_px(self):
+        """Screen px of the title bar and the link bar (USER-ADDITIONS UPDATE 20)."""
+        return window_bars.bars_px(getattr(self, "ui_scale", 1.0))
+
+    def _main_dimensions(self, width, height):
+        """The main window's client size for a ``width`` x ``height`` design-px page area.
+
+        The client is the stage plus the title and link bars (USER-ADDITIONS UPDATE 20), so
+        every page keeps the area it had under the native caption. Clamped so the window with
+        its frame fits the monitor's work area; a framed window also keeps clear of the screen
+        edges, as before (the frameless one fits its work area exactly).
+        """
+        left, top, right, bottom = chrome.work_area(self.root)
+        frame_width, frame_height = self._frame_size()
+        width = min(self._px(width), right - left - frame_width)
+        height = min(self._px(height) + self._bars_px(), bottom - top - frame_height)
+        if not self._frameless():
+            width = min(width, max(self.root.winfo_screenwidth(), right - left) - self._px(40))
+            height = min(height, max(self.root.winfo_screenheight(), bottom - top) - self._px(80))
+        return width, height
+
+    def _main_size(self, width, height, *, centered=False):
+        """Tk geometry of the main window for a design-px page area; ``centered`` centres it on the work area."""
+        width, height = self._main_dimensions(width, height)
+        if not centered:
+            return f"{width}x{height}"
+        left, top, right, bottom = chrome.work_area(self.root)
+        frame_width, frame_height = self._frame_size()
+        x = left + max(0, (right - left - width - frame_width) // 2)
+        y = top + max(0, (bottom - top - height - frame_height) // 2)
+        return f"{width}x{height}+{x}+{y}"
+
+    def _caption_buttons_shown(self):
+        """Whether the title bar draws minimize/maximize/close: not beside a native caption.
+
+        Hidden test and capture windows (and the hidden bundle self-test) keep a native frame
+        nobody sees; they draw the buttons too, so they look like the real window.
+        """
+        window = getattr(self, "window_chrome", None)
+        return window is None or window.frameless or window.skipped in ("quiet", "withdrawn")
+
+    def _finish_window_chrome(self, event=None):
+        """On the first map: the custom frame takes over, or the window keeps its native one."""
+        if event is not None and event.widget is not self.root:
+            return
+        if getattr(self, "_window_chrome_done", False):
+            return
+        self._window_chrome_done = True
+        binding, self._window_chrome_map = getattr(self, "_window_chrome_map", None), None
+        if binding is not None:
+            window_chrome.unbind_tag(self.root, binding[0], "<Map>", binding[1])
+        window = self.window_chrome
+        if window.frameless:
+            if window.finish():
+                self._edge_resizer = window_chrome.EdgeResizer(self.root, window)
+                self._edge_resizer.attach()
+                return
+            # The native frame is back: its caption has the buttons, and it takes its own space.
+            # The window was sized and centred for no frame (it may fill the work area exactly):
+            # size it again so the framed window fits the work area.
+            self.title_bar.set_caption_buttons(False)
+            self.root.minsize(*self._main_dimensions(1000, 700))
+            self.root.geometry(self._main_size(1200, 810, centered=True))
+            chrome.style_title_bar(self.root)
 
     def _style(self):
         from . import gui_theme
         gui_theme.initialize(self.root)
+        # Valve's display faces load privately from the user's own game install
+        # when it has them; the named fonts update in place, so a later game
+        # path (discovery, Browse) can still upgrade them.
+        fonts.request_private_fonts(self.root, self.game_path.get())
+        fonts.on_change(self.root, lambda: gui_theme.apply_display_fonts(self.root))
+
+    def _request_display_fonts(self):
+        """Look for the display faces in a newly chosen game folder, once per burst of edits."""
+        if getattr(self, "_font_request_job", None) is not None:
+            return
+
+        def request():
+            self._font_request_job = None
+            fonts.request_private_fonts(self.root, self.game_path.get())
+        self._font_request_job = self.root.after_idle(request)
 
     def _build_menu(self):
-        menu = tk.Menu(self.root)
-        file_menu = tk.Menu(menu, tearoff=False)
+        """The File and Edit menus, opened from the title bar (USER-ADDITIONS UPDATE 20)."""
+        file_menu = self.file_menu = tk.Menu(self.root, tearoff=False)
         file_menu.add_command(label="New shot", accelerator="Ctrl+N", command=self.new)
         file_menu.add_command(label="Open shot…", accelerator="Ctrl+O", command=self.open)
         file_menu.add_command(label="Save", accelerator="Ctrl+S", command=self.save)
@@ -460,42 +613,44 @@ class DollyApp:
         file_menu.add_command(label="Recover game configuration…", command=self._recover_game_config)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._on_close)
-        menu.add_cascade(label="File", menu=file_menu)
-        self.edit_menu = tk.Menu(menu, tearoff=False, postcommand=self._refresh_history_menu)
+        self.edit_menu = tk.Menu(self.root, tearoff=False, postcommand=self._refresh_history_menu)
         self.edit_menu.add_command(label="Undo shot edit", accelerator="Ctrl+Z", command=self.undo_shot)
         self.edit_menu.add_command(label="Redo shot edit", accelerator="Ctrl+Y", command=self.redo_shot)
-        menu.add_cascade(label="Edit", menu=self.edit_menu)
-        self.root.config(menu=menu)
 
     def _build_window(self):
-        outer = ttk.Frame(self.root, padding=(16, 12, 16, 9))
-        outer.pack(fill="both", expand=True)
-        outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(1, weight=1)
-        heading = ttk.Frame(outer)
-        heading.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        heading.columnconfigure(0, weight=1)
-        self.update_notice_parent = heading
-        ttk.Label(heading, text=edition.application_name().upper(), style="Title.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(heading, textvariable=self.project_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
-        status_row = ttk.Frame(heading)
-        status_row.grid(row=0, column=1, sticky="e")
-        self.driver_indicator_label = ttk.Label(status_row, textvariable=self.driver_indicator, style="Pill.TLabel")
-        self.driver_indicator_label.pack(side="left", padx=(0, 10))
-        ttk.Label(status_row, textvariable=self.session_text, style="Accent.TLabel").pack(side="left")
-        ttk.Label(heading, textvariable=self.busy_text, style="Muted.TLabel").grid(row=1, column=1, sticky="e")
-        workspace = ttk.Frame(outer)
-        workspace.grid(row=1, column=0, sticky="nsew")
-        workspace.columnconfigure(1, weight=1)
-        workspace.rowconfigure(0, weight=1)
-        # The fading selection outlines sit outside the real button hitboxes.
-        nav_margin = max(6, round(2 * self.ui_scale) + math.ceil(max(1, round(self.ui_scale)) / 2) + 1)
-        self.sidebar = ttk.Frame(workspace, padding=(nav_margin, 12, nav_margin, 0))
-        self.sidebar.grid(row=0, column=0, sticky="ns")
+        # The title bar on top and the link bar at the bottom span the window (UPDATE 20); between
+        # them the sidebar column sits beside the stage canvas. Pages stay in the hidden-tab
+        # notebook placed on the stage, so notebook.select() still switches them.
+        self.root.columnconfigure(1, weight=1)
+        self.root.rowconfigure(1, weight=1)
+        self.title_bar = window_bars.TitleBar(self.root, scale=self.ui_scale, chrome=self.window_chrome,
+                                              menus=(("File", self.file_menu), ("Edit", self.edit_menu)),
+                                              on_close=self._on_close)
+        self.title_bar.set_caption_buttons(self._caption_buttons_shown())
+        self.title_bar.set_title("Untitled shot")
+        self.title_bar.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.link_bar = window_bars.LinkBar(self.root, scale=self.ui_scale)
+        self.link_bar.grid(row=2, column=0, columnspan=2, sticky="ew")
+        # One posterized clock per window moves the backdrop, stickers, busy dot
+        # and progress line together; the backdrop registers first.
+        self.boil = BoilClock.of(self.root)
+        assets = art.load(self.root)
+        self.backdrop = Backdrop(self.root, scale=self.ui_scale, assets=assets)
+        self.backdrop.install()
+        self.sidebar = Sidebar(self.root, scale=self.ui_scale, version=__version__,
+                               driver_var=self.driver_indicator, assets=assets)
+        self.sidebar.grid(row=1, column=0, sticky="ns")
+        self.stage = Stage(self.root, scale=self.ui_scale, backdrop=self.backdrop)
+        self.stage.grid(row=1, column=1, sticky="nsew")
+        self.update_notice_parent = self.stage.notice_host
+        workspace = self.stage.workspace
         style = ttk.Style(self.root)
         style.layout("Navigation.TNotebook.Tab", [])
+        # No client element either: clam's draws a fixed 2 px border, which
+        # would frame the Replay page's backdrop in the window colour.
+        style.layout("Navigation.TNotebook", [])
         self.notebook = ttk.Notebook(workspace, style="Navigation.TNotebook")
-        self.notebook.grid(row=0, column=1, sticky="nsew")
+        self.notebook.grid(row=0, column=0, sticky="nsew")
         self.setup_tab = ttk.Frame(self.notebook)
         self.camera_tab = ttk.Frame(self.notebook)
         self.cvar_tab = ttk.Frame(self.notebook)
@@ -503,81 +658,125 @@ class DollyApp:
         self.controls_tab = ttk.Frame(self.notebook)
         self.export_tab = ttk.Frame(self.notebook)
         self.replays_tab = self.setup_tab
+        # Shot Playback host cards by notebook tab (the docks of Camera and Look).
+        self._playback_hosts = {}
         self.navigation = {}
-        for title, tab in (("Replay", self.setup_tab), ("Camera", self.camera_tab),
-                           ("Look", self.cvar_tab), ("Export", self.export_tab),
-                           ("Controls", self.controls_tab),
-                           ("Settings", self.settings_tab)):
+        for title, icon, tab in (("Replay", "replay", self.setup_tab), ("Camera", "camera", self.camera_tab),
+                                 ("Look", "look", self.cvar_tab), ("Export", "export", self.export_tab),
+                                 ("Controls", "controls", self.controls_tab),
+                                 ("Settings", "settings", self.settings_tab)):
+            if edition.is_environment():
+                title = {"Camera": "Viewpoints", "Look": "Scene", "Export": "Capture"}.get(title, title)
             self.notebook.add(tab, text=title)
-            if edition.is_environment() and tab in (self.camera_tab, self.cvar_tab):
-                # The slim capture edition has no curve/Look editor; hide the
-                # page and its navigation button rather than deleting the tabs
-                # that later layout code still references.
-                self.notebook.tab(tab, state="hidden")
-                continue
-            button = ttk.Button(self.sidebar, text=title, width=12,
-                                command=lambda page=tab: self.notebook.select(page))
-            button.pack(fill="x", pady=(0, 8))
-            self.navigation[str(tab)] = button
-        self.navigation_marker = NavigationMarker(self.sidebar, scale=self.ui_scale)
+            self.navigation[str(tab)] = self.sidebar.add_item(
+                str(tab), title, icon, lambda page=tab: self._select_page(page))
         self._build_setup()
         gui_layout.build_settings(self)
         self._build_keybinds()
-        self._build_camera()
-        self._build_cvars()
+        gui_layout.build_camera(self)
+        self._build_fixed_dialog()
+        gui_layout.build_look(self)
+        self._refresh_citadel_dof()
         self._build_export()
         self._apply_editor_mode()
-        self._build_timeline(outer)
+        # Shot Playback is built after the notebook so it stacks above every page.
+        gui_layout.build_playback(self, workspace)
+        if edition.is_environment():
+            from .environment_ui import simplify
+            simplify(self)
+        self._build_shell()
+        if edition.is_environment():
+            for tab, title, subtitle in (
+                    (self.camera_tab, "Viewpoints", "Save the current camera position and return to it."),
+                    (self.cvar_tab, "Scene", "Adjust fixed scene settings for the capture."),
+                    (self.export_tab, "Capture", "Capture HDR panoramas and PNG stills from a paused replay.")):
+                self.stage.register_page(str(tab), title=title, subtitle=subtitle)
         self.notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._tab_changed()
-        footer = ttk.Frame(outer)
-        footer.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        footer.columnconfigure(0, weight=1)
-        self.status_label = ttk.Label(footer, textvariable=self.status_text, style="Muted.TLabel", wraplength=680)
-        self.status_label.grid(row=0, column=0, sticky="w", padx=(0, 12))
-        def fit_status(event):
-            width = max(250, event.width - 390)
-            if int(self.status_label.cget("wraplength")) != width:
-                self.status_label.configure(wraplength=width)
-        footer.bind("<Configure>", fit_status)
-        ttk.Button(footer, text="Stop / restore", command=lambda: self._session_operation("Stopping", self.controller.stop)).grid(row=0, column=3, padx=(10, 0))
-        ttk.Checkbutton(footer, text="Log", variable=self.show_log, command=self._toggle_log).grid(row=0, column=1)
-        ttk.Button(footer, text="Export diagnostics", command=self._diagnostics, style="Quiet.TButton").grid(row=0, column=2, padx=(10, 0))
         self.log_dialog = tk.Toplevel(self.root)
+        chrome.style_title_bar(self.log_dialog)
         self.log_dialog.title("Dolly activity log")
-        self.log_dialog.geometry(self._window_size(850, 300))
+        self.log_dialog.geometry(self._window_size(880, 458))
         self.log_dialog.configure(bg=BG)
         self.log_dialog.transient(self.root)
         self.log_dialog.protocol("WM_DELETE_WINDOW", self._close_log)
-        self.log_frame = ttk.Frame(self.log_dialog, padding=12)
+        self.log_frame = ttk.Frame(self.log_dialog, padding=self._px((24, 22, 24, 24)))
         self.log_frame.pack(fill="both", expand=True)
-        self.log_widget = tk.Text(self.log_frame, height=3, bg=FIELD, fg=MUTED, relief="flat",
-                                  font=(MONO, _F["small"]), wrap="word", state="disabled")
+        tk.Label(self.log_frame, text="Dolly activity log", bg=BG, fg=TEXT,
+                 font=fonts.font(self.log_dialog, "page_title"), anchor="w").pack(
+                     fill="x", pady=self._px((0, 15)))
+        log_card = ttk.Frame(self.log_frame, style="Rounded.Card.TFrame", padding=self._px(20))
+        log_card.pack(fill="both", expand=True)
+        self.log_widget = tk.Text(log_card, height=3, bg=FIELD, fg=TEXT, relief="flat",
+                                  padx=self._px(14), pady=self._px(12),
+                                  font=(MONO, -self._px(12)), wrap="word", state="disabled")
         self.log_widget.pack(side="left", fill="both", expand=True)
-        scroll = ttk.Scrollbar(self.log_frame, command=self.log_widget.yview)
+        scroll = ttk.Scrollbar(log_card, command=self.log_widget.yview)
         scroll.pack(side="right", fill="y")
         self.log_widget.configure(yscrollcommand=scroll.set)
+        for entry in getattr(self, "_early_log", ()):
+            self._log(entry)
+        self._early_log = []
         self.log_dialog.withdraw()
+        if not self._frameless():
+            chrome.style_title_bar(self.root)   # the native caption stays: recolour it
+
+    def _build_shell(self):
+        """Header, footer links, status line and stickers on the stage (Figma [design reference], [design reference])."""
+        self.stop_action = ActionProxy("Stop / restore",
+                                       lambda: self._session_operation("Stopping", self.controller.stop),
+                                       label="STOP/RESTORE")
+        self.stage.set_secondary(self.stop_action)
+        self.stage.register_page(str(self.setup_tab), title=replay_page.TITLE, subtitle=replay_page.SUBTITLE,
+                                 primary=self.play_replay_button)
+        # START stays Replay's; the other pages take their header copy from their modules.
+        for tab, page in ((self.camera_tab, camera_page), (self.cvar_tab, look_page), (self.export_tab, export_page),
+                          (self.controls_tab, controls_page), (self.settings_tab, settings_page)):
+            self.stage.register_page(str(tab), title=page.TITLE, subtitle=page.SUBTITLE)
+        # The kit pages' rail sits in a gutter right of the page column (PLAN-5 N8).
+        self.stage.set_rail_gutter(KitPage.GUTTER)
+        # CANCEL follows cancel_startup_button exactly: the poll enables it while
+        # a startup can still be cancelled, and pressing it disables it again.
+        self.stage.set_cancel(self.cancel_startup_button)
+        self._log_link_text = tk.StringVar(value="Show log")
+        self.show_log.trace_add("write", lambda *_args: self._log_link_text.set(
+            "Hide log" if self.show_log.get() else "Show log"))
+        self.stage.set_links((FooterLink("Open output folder", self._open_output_folder),
+                              FooterLink(self._log_link_text, self._toggle_log_link),
+                              FooterLink("Export Diagnostics", self._diagnostics)))
+        self.stage.bind_progress(self.startup_bar)
+        self.stage.bind_status(self._footer_status, (self.status_text, self.startup_progress, self.busy_text))
+        self.stage.bind_session(self.session_text, _session_tone)
+        self.stage.bind_context(self._shell_context, (self.busy_text,))
+        self.status_label = self.stage.status_label
+        self.game_path.trace_add("write", lambda *_args: self._request_display_fonts())
+
+    def _footer_status(self):
+        """(text, dot state): startup progress while starting, otherwise the status message."""
+        starting = getattr(self, "startup_cancel", None) is not None
+        text = self.startup_progress.get() if starting else self.status_text.get()
+        if starting or getattr(self, "busy", False):
+            return text, "busy"
+        if self.status_text.get() and self.status_text.get() == getattr(self, "_status_error_text", None):
+            return text, "error"
+        return text, "ready"
+
+    def _shell_context(self):
+        """Header right, second line: the current work, if any (the shot name is the window title)."""
+        return self.busy_text.get()
+
+    def _toggle_log_link(self):
+        self.show_log.set(not self.show_log.get())
+        self._toggle_log()
 
     def _build_setup(self):
         gui_layout.build_library(self)
 
     def _apply_editor_mode(self):
-        if edition.is_environment():
-            # Capture-only navigation: Replay, Export, Controls and Settings.
-            for tab in (self.camera_tab, self.cvar_tab):
-                self.notebook.tab(tab, state="hidden")
-            if self.notebook.select() in (str(self.camera_tab), str(self.cvar_tab)):
-                self.notebook.select(self.setup_tab)
-            self._tab_changed()
-            return
         # Old saved full_editor=False values must not hide desktop tools.
         self.full_editor.set(True)
         for tab in (self.camera_tab, self.cvar_tab):
             self.notebook.tab(tab, state="normal")
-        for button in self.navigation.values():
-            if not button.winfo_manager():
-                button.pack(fill="x", pady=(0, 8))
         self._tab_changed()
 
     def _toggle_full_editor(self):
@@ -594,6 +793,11 @@ class DollyApp:
         self._guard("Save paths", save)
 
     def _open_output_folder(self):
+        if edition.is_environment():
+            folder = Path(self.environment_folder.get()).expanduser()
+            if folder.is_dir():
+                os.startfile(folder)
+            return
         def open_folder():
             path = Path(self.video_path.get()).expanduser().resolve().parent
             if not path.is_dir():
@@ -601,23 +805,222 @@ class DollyApp:
             os.startfile(str(path))
         self._guard("Open output folder", open_folder)
 
+    def _select_page(self, tab):
+        """Switch to ``tab`` with Shot Playback already in that page's host card.
+
+        Camera and Look pin the shared playback frame in their docks and show in a
+        window tall enough for their cards. Adopting the frame and sizing the window
+        before the switch lets the page lay out once at its final size;
+        ``<<NotebookTabChanged>>`` (still the fallback) would lay it out twice. The page
+        already shown keeps the window as it is.
+        """
+        self._host_timeline(tab)
+        if str(tab) == self.notebook.select():
+            return
+        self._fit_window_to_page(tab)
+        self.notebook.select(tab)
+
+    def _tall_page(self, tab):
+        """The kit page of ``tab`` when it is Camera or Look (shown in a taller window), else None."""
+        for name, page in (("camera_tab", "camera_page"), ("cvar_tab", "look_page")):
+            if hasattr(self, name) and str(tab) == str(getattr(self, name)):
+                return getattr(self, page, None)
+        return None
+
+    def _height_page(self, tab):
+        """The page whose cards set ``tab``'s window height: Camera takes Look's, Look its own.
+
+        USER-ADDITIONS UPDATE 19: Camera opens as tall as Look (Look shows every card), and
+        Camera's bento scrolls inside that height.
+        """
+        if hasattr(self, "camera_tab") and str(tab) == str(self.camera_tab):
+            return getattr(self, "look_page", None) or self._tall_page(tab)
+        return self._tall_page(tab)
+
+    def _page_height(self, tab):
+        """Client height (px) for Camera or Look: every card of Look with no page scroll; None elsewhere.
+
+        USER-ADDITIONS UPDATE 17.3 and 19. The shell's header rows, the cards of
+        :meth:`_height_page` as laid out now (adopting Shot Playback lays the page out,
+        :meth:`_host_timeline`), the pinned Shot Playback card (the same card on both pages)
+        with Replay's gap under it, and the footer rows; the stage uses its design rows from
+        ``chrome.DESIGN_HEIGHT`` up, its compact rows below. The client is that stage plus
+        the rows outside it: the title and link bars (USER-ADDITIONS UPDATE 20).
+        """
+        page, stage = self._height_page(tab), getattr(self, "stage", None)
+        if page is None or stage is None:
+            return None
+        s = self.ui_scale
+        host = getattr(self, "_playback_hosts", {}).get(str(tab))
+        # Unpinned (a very short window) the card is the last card of the content instead.
+        docked = 0
+        if host is not None and host.adopted is not None and host.mode == "dock":
+            docked = px(s, page.DOCK_TOP_GAP) + host.card_height()
+        notice = stage.notice_host.winfo_reqheight()
+
+        def height(row):
+            top = px(s, chrome.PAGE_TOP[row])
+            if notice > 1:
+                top = max(top, px(s, chrome.NOTICE_TOP[row]) + notice + px(s, chrome.NOTICE_GAP))
+            return top + page.content_height + docked + end_gap(s, row == 1) + px(s, chrome.PAGE_BOTTOM[row])
+        needed = height(0)
+        if needed < px(s, chrome.DESIGN_HEIGHT):
+            needed = height(1)
+        if stage.winfo_height() > 1:
+            needed += max(0, self.root.winfo_height() - stage.winfo_height())
+        else:
+            needed += self._bars_px()
+        return needed
+
+    def _laid_out_for_switch(self, page):
+        """Whether ``page`` (hidden) was laid out at the width it gets when shown.
+
+        Hidden notebook pages keep the width they last had; one never shown lays out at
+        its design width. A window resized on another page leaves it stale until shown.
+        """
+        width = self.notebook.winfo_width()
+        if page.winfo_width() > 1:
+            return page.winfo_width() == width
+        spec = page.spec
+        design = spec.main + spec.gap + spec.side if spec is not None else 613
+        return px(self.ui_scale, design) + px(self.ui_scale, page.GUTTER) == width
+
+    def _fit_window_to_page(self, tab, *, shown=False):
+        """Camera and Look get a window tall enough for all of Look's cards; other pages give the height back.
+
+        USER-ADDITIONS UPDATE 10, 17.3 and 19: Look shows all its cards with no page scroll,
+        and Camera opens at that same height, its bento scrolling inside (:meth:`_page_height`,
+        clamped to the work area). One geometry change per switch: the width stays, and so does
+        the top edge unless the taller window would leave the work area. A size the user
+        chose by hand is kept: the window only grows while it is shorter than the page's
+        height, and a height changed by hand while grown is never taken back. Only a shown
+        window in its normal state changes (a withdrawn one reports a stale size; a
+        maximized one is sized by Windows). ``shown``: ``tab`` already shows, laid out at its width.
+        Heights are client heights, title and link bars included; Dolly's own frame
+        (USER-ADDITIONS UPDATE 20) needs no room round them (:meth:`_frame_size`).
+        """
+        root = getattr(self, "root", None)
+        if root is None or not hasattr(self, "camera_tab") or not hasattr(self, "cvar_tab"):
+            return   # a bare test app without the editor pages
+        self._fitted_tab = str(tab)
+        try:
+            if root.wm_state() != "normal" or not root.winfo_ismapped():
+                return
+            width, height = root.winfo_width(), root.winfo_height()
+            if width <= 1 or height <= 1:
+                return
+            page = self._tall_page(tab)
+            if page is not None and not shown and hasattr(self, "notebook") and not self._laid_out_for_switch(page):
+                # Its cards follow the new width only once it shows: measured then, at idle.
+                self._schedule_refit(tab)
+                return
+            source = self._height_page(tab)
+            if source is not None and source.winfo_width() <= 1:
+                # Never shown: its placed widgets take their sizes at idle, and some (the curve
+                # workspace's tab row) only then know their own height. Settle, then measure.
+                root.update_idletasks()
+                source.layout_now()
+            x, y = root.winfo_x(), root.winfo_y()
+            grown = getattr(self, "_grown_window", None)
+            if grown is not None and height != grown[1]:
+                grown = self._grown_window = None   # resized by hand while grown: that height is the user's
+            before = height if grown is None else grown[0]
+            target = self._page_height(tab)
+            _left, top, _right, bottom = chrome.work_area(root)
+            frame_height = self._frame_size()[1]
+            if target is not None:
+                # As much of the page as the work area holds (the framed window fits it), and
+                # no more than Tk lets the window reach.
+                target = min(target, bottom - top - frame_height)
+                try:
+                    target = min(target, int(root.wm_maxsize()[1]))
+                except (TypeError, ValueError, IndexError):
+                    pass
+            if target is None or target <= before:
+                if grown is None:
+                    return   # nothing to give back, or the window already shows the whole page
+                self._grown_window = None
+                _before, _target, old_y, moved = grown
+                # Back to the height it had; also back down if growing moved it up and it is still there.
+                root.geometry(f"{width}x{before}" if old_y == moved or y != moved else f"{width}x{before}+{x}+{old_y}")
+                return
+            if grown is not None and target == grown[1]:
+                return   # Camera and Look at one height (both clamped to the work area)
+            # The top edge stays (where it was before growing, unless the user moved the window
+            # since); the window moves up only as far as the work area needs.
+            anchor = grown[2] if grown is not None and y == grown[3] else y
+            moved = min(anchor, max(top, bottom - frame_height - target))
+            self._grown_window = (before, target, anchor, moved)
+            root.geometry(f"{width}x{target}" if moved == y else f"{width}x{target}+{x}+{moved}")
+        except tk.TclError:
+            pass   # the window is closing
+
+    def _schedule_refit(self, tab, passes=3):
+        """Fit the window to ``tab`` once it shows at its width (a few idle passes at most)."""
+        self._refit_tab = (str(tab), passes)
+        if getattr(self, "_refit_job", None) is None:
+            self._refit_job = self.root.after_idle(self._refit)
+
+    def _refit(self):
+        self._refit_job = None
+        tab, passes = self._refit_tab
+        try:
+            if self.notebook.select() != tab:
+                return   # left before it ran
+            page = self._tall_page(tab)
+            if page.winfo_width() != self.notebook.winfo_width() and passes > 1:
+                self._schedule_refit(tab, passes - 1)
+                return
+            page.layout_now()
+        except tk.TclError:
+            return   # closed before it ran
+        self._fit_window_to_page(tab, shown=True)
+
+    def _host_timeline(self, tab):
+        """Hand ``timeline_frame`` to ``tab``'s Shot Playback card, or hide it (PLAN-5 N10).
+
+        One host at a time: the frame is released from the page that held it, and the
+        handover is one ``place`` and one ``place_forget`` (nothing is created).
+        """
+        frame = getattr(self, "timeline_frame", None)
+        if frame is None:
+            return
+        host = getattr(self, "_playback_hosts", {}).get(str(tab))
+        current = getattr(frame, "_kit_host", None)
+        if current is not None and current is not host:
+            current.release(frame)
+        if host is not None:
+            host.adopt(frame)
+
     def _tab_changed(self, _event=None):
         if not hasattr(self, "timeline_frame"):
             return
         selected = self.notebook.select()
-        for tab, button in self.navigation.items():
-            button.configure(style="Current.Nav.TButton" if selected == tab else "Nav.TButton")
-        if selected in self.navigation:
-            self.navigation_marker.select(self.navigation[selected])
-        if selected in (str(self.camera_tab), str(self.cvar_tab)):
-            self.timeline_frame.grid()
-        else:
-            self.timeline_frame.grid_remove()
+        sidebar = getattr(self, "sidebar", None)
+        if sidebar is not None:
+            sidebar.select(selected)
+        stage = getattr(self, "stage", None)
+        if stage is not None:
+            stage.show_page(selected)
+        # Direct notebook.select() callers land here. The window is sized once Tk has
+        # applied any geometry that is still pending, so the size read is the real one.
+        self._host_timeline(selected)
+        if selected != getattr(self, "_fitted_tab", None) and getattr(self, "_fit_job", None) is None:
+            def fit():
+                self._fit_job = None
+                try:
+                    page = self.notebook.select()
+                except tk.TclError:
+                    return   # closed before it ran
+                self._fit_window_to_page(page)
+            self._fit_job = self.root.after_idle(fit)
 
     def _build_export(self):
         gui_layout.build_export(self)
 
     def _video_source_changed(self, _event=None):
+        if edition.is_environment():
+            return
         pov = self.video_source.get() == "Player POV"
         single_attach = len(self.project.keyframes) == 1 and self.project.keyframes[0].source == "attach"
         if pov or single_attach:
@@ -758,6 +1161,61 @@ class DollyApp:
             self.app_settings = settings
         self._guard("Save update preference", save)
 
+    def start_discord_presence(self):
+        if edition.is_environment():
+            return
+        # Real desktop entry only. Bundle self-tests and constructed test UIs
+        # must never publish activity to a maintainer's Discord account.
+        if self._discord_presence is None and not self.closed:
+            try:
+                from .discord_presence import RichPresence
+                self._discord_presence = RichPresence()
+                self._refresh_discord_presence()
+                self._discord_presence.start()
+            except Exception:
+                LOG.debug("Discord presence startup unavailable", exc_info=True)
+
+    def _save_discord_preference(self):
+        # Sharing controls remain available during playback and exports.
+        try:
+            settings = replace(self.app_settings, discord_presence=self.discord_presence.get())
+            save_settings(settings)
+        except Exception as exc:
+            self.discord_presence.set(self.app_settings.discord_presence)
+            self._error("Save Discord preference", exc)
+            return
+        self.app_settings = settings
+        self._refresh_discord_presence()
+
+    def _refresh_discord_presence(self, status=None):
+        service = getattr(self, "_discord_presence", None)
+        if service is None:
+            return
+        try:
+            if status is not None:
+                self._discord_controller_status = status
+            else:
+                status = getattr(self, "_discord_controller_status", {})
+            from .discord_presence import activity_for
+            service.update(activity_for(status, {"state": getattr(self, "_last_video_state", "idle")},
+                cameras=len(self.project.keyframes),
+                processing_players=bool(getattr(self, "_player_encode_cancel", None))),
+                enabled=self.app_settings.discord_presence)
+            _set_var(self.discord_status, service.status)
+        except Exception:
+            LOG.debug("Discord activity update unavailable", exc_info=True)
+
+    def _save_dlss_preference(self):
+        try:
+            settings = replace(self.app_settings, nvidia_dlss=self.nvidia_dlss.get())
+            save_settings(settings)
+        except Exception as exc:
+            self.nvidia_dlss.set(self.app_settings.nvidia_dlss)
+            self._error("Save NVIDIA DLSS preference", exc)
+            return
+        self.app_settings = settings
+        self.status_text.set("NVIDIA DLSS support preference saved for the next launch.")
+
     def _save_mod_preference(self):
         def save():
             settings = replace(self.app_settings,
@@ -835,6 +1293,9 @@ class DollyApp:
             self.video_path.set(str(chosen.with_suffix(wanted)))
 
     def _start_video_recording(self):
+        if edition.is_environment():
+            self.status_text.set("This edition captures panoramas and PNG stills.")
+            return False
         if getattr(self, "_bone_picker_context", None):
             self.status_text.set("Finish or cancel Bone Picker before recording.")
             return
@@ -1422,10 +1883,10 @@ class DollyApp:
                 "[1:v]scale=in_range=tv:out_range=pc,format=gbrp[w];"
                 "[w][b]blend=all_mode=difference[d];"
                 "[d]format=gray,negate[a];"
-                "[b][a]alphamerge,format=yuva444p10le[out]",
+                f"[b][a]alphamerge,{REC709_SCALE},format=yuva444p10le,{REC709_FRAME_TAGS}[out]",
                 "-map", "[out]", "-an",
                 "-c:v", "prores_ks", "-profile:v", "4444",
-                "-pix_fmt", "yuva444p10le", "-vendor", "apl0", str(master)]
+                "-pix_fmt", "yuva444p10le", *REC709_OUTPUT_ARGS, "-vendor", "apl0", str(master)]
         from dolly.runtime import external_program_environment
         with external_program_environment() as environment:
             result = subprocess.run(args, capture_output=True, text=True,
@@ -1537,11 +1998,13 @@ class DollyApp:
         screenshot_ui.refresh(self, ready and not active and not self.busy)
         can_stop = state in ("starting", "recording") and not self.busy
         _set_widget_state(self.video_stop_button, "normal" if can_stop else "disabled")
-        self.video_cancel_button.configure(text="Discard recording")
-        _set_widget_state(self.video_cancel_button, "normal" if can_stop else "disabled")
-        if getattr(self, '_player_encode_cancel', None) is not None:
-            _set_widget_state(self.video_cancel_button, "normal")
-            self.video_cancel_button.configure(text="Cancel processing")
+        # While Players frames are still encoding the same button cancels that instead.
+        processing = getattr(self, '_player_encode_cancel', None) is not None
+        cancel_text = "Cancel processing" if processing else "Discard recording"
+        if str(self.video_cancel_button.cget("text")) != cancel_text:
+            self.video_cancel_button.configure(text=cancel_text)
+        _set_widget_state(self.video_cancel_button, "normal" if can_stop or processing else "disabled")
+        if processing:
             _set_var(self.video_status_text,
                      "Building Players MOV: %d frames converted (%s)." %
                      (self._player_encode_progress, getattr(self, '_player_resource_mode', 'Background')))
@@ -1629,7 +2092,7 @@ class DollyApp:
                           "normal" if ready and state in (1, 2) and not self.busy and not video_active else "disabled")
         # A selected runtime is opt-in and remembered across launches. Make one
         # attempt per bridge; a bad DLL must never create a retry/modal loop.
-        if (ready and not self.busy and not self.playing and not video_active
+        if (not edition.is_environment() and ready and not self.busy and not self.playing and not video_active
                 and self.app_settings.reshade_runtime_path
                 and getattr(self, "_auto_reshade_bridge", None) is not bridge):
             self._auto_reshade_bridge = bridge
@@ -1706,6 +2169,8 @@ class DollyApp:
         self._submit("Choosing the ReShade FX library", operation, complete)
 
     def _configure_reshade(self, automatic=False):
+        if edition.is_environment():
+            return False
         def operation():
             from dolly.reshade_setup import runtime_issue
             from dolly.runtime import application_root
@@ -1791,14 +2256,14 @@ class DollyApp:
     def _check_game_build(self):
         """Hash the installed modules and report Native camera compatibility."""
         from dolly import compatibility
-        from dolly.launcher import LaunchError, validate_game
+        from dolly.launcher import LaunchError, game_pins, validate_game
         path = self.game_path.get().strip()
         if not path:
             self.native_status_text.set("Choose the Deadlock folder first.")
             return
         try:
             paths = validate_game(path)
-            report = compatibility.scan_game_modules(paths.game_dir)
+            report = compatibility.scan_game_modules(paths.game_dir, pins=game_pins())
         except (compatibility.CompatibilityError, LaunchError, OSError) as exc:
             self.native_status_text.set(str(exc))
             return
@@ -1808,77 +2273,81 @@ class DollyApp:
     def _build_advanced_startup(self):
         dialog = tk.Toplevel(self.root)
         self.advanced_startup_dialog = dialog
+        chrome.style_title_bar(dialog)
         dialog.title("Advanced launch · Deadlock Dolly")
         dialog.configure(bg=BG)
-        dialog.geometry(self._window_size(1050, 650))
+        dialog.geometry(self._window_size(1080, 662))
         dialog.transient(self.root)
         dialog.protocol("WM_DELETE_WINDOW", dialog.withdraw)
-        tab = ttk.Frame(dialog, padding=16)
+        tab = ttk.Frame(dialog, padding=self._px((24, 22, 24, 24)))
         tab.pack(fill="both", expand=True)
         tab.columnconfigure(0, weight=1)
-        intro = ttk.Frame(tab, style="Card.TFrame", padding=16)
-        intro.grid(row=0, column=0, sticky="ew")
+        tk.Label(tab, text="Advanced launch · Deadlock Dolly", bg=BG, fg=TEXT,
+                 font=fonts.font(dialog, "page_title"), anchor="w").grid(
+                     row=0, column=0, sticky="ew", pady=self._px((0, 15)))
+        intro = ttk.Frame(tab, style="Rounded.Card.TFrame", padding=self._px(20))
+        intro.grid(row=1, column=0, sticky="ew")
         intro.columnconfigure(1, weight=1)
-        ttk.Label(intro, text="LOCAL REPLAY SESSION", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 13))
-        ttk.Label(intro, text="Deadlock executable", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 14))
-        ttk.Entry(intro, textvariable=self.game_path).grid(row=1, column=1, sticky="ew")
-        ttk.Button(intro, text="Browse…", command=self._browse_game).grid(row=1, column=2, padx=(9, 0))
-        ttk.Label(intro, text="Replay file · .dem", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 14), pady=(10, 0))
-        ttk.Entry(intro, textvariable=self.demo_path).grid(row=2, column=1, sticky="ew", pady=(10, 0))
-        ttk.Button(intro, text="Browse…", command=self._browse_demo).grid(row=2, column=2, padx=(9, 0), pady=(10, 0))
+        ttk.Label(intro, text="Local Replay Session", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=self._px((0, 13)))
+        ttk.Label(intro, text="Deadlock executable", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w", padx=self._px((0, 14)))
+        ttk.Entry(intro, textvariable=self.game_path, style="Card.TEntry").grid(row=1, column=1, sticky="ew")
+        ttk.Button(intro, text="Browse…", style="Card.TButton", command=self._browse_game).grid(row=1, column=2, padx=self._px((9, 0)))
+        ttk.Label(intro, text="Replay file · .dem", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=self._px((0, 14)), pady=self._px((10, 0)))
+        ttk.Entry(intro, textvariable=self.demo_path, style="Card.TEntry").grid(row=2, column=1, sticky="ew", pady=self._px((10, 0)))
+        ttk.Button(intro, text="Browse…", style="Card.TButton", command=self._browse_demo).grid(row=2, column=2, padx=self._px((9, 0)), pady=self._px((10, 0)))
         connection = ttk.Frame(intro, style="Card.TFrame")
-        connection.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        ttk.Label(connection, text="Console link", style="CardMuted.TLabel").pack(side="left", padx=(0, 9))
-        ttk.Combobox(connection, textvariable=self.protocol, values=("Netconsole", "VConsole"), state="readonly", width=13).pack(side="left")
+        connection.grid(row=3, column=0, columnspan=3, sticky="ew", pady=self._px((12, 0)))
+        ttk.Label(connection, text="Console link", style="CardMuted.TLabel").pack(side="left", padx=self._px((0, 9)))
+        ttk.Combobox(connection, textvariable=self.protocol, values=("Netconsole", "VConsole"), state="readonly", width=self._chars(13), style="Card.TCombobox").pack(side="left")
         ttk.Label(connection, text="Developer mode  ·  -insecure", style="CardMuted.TLabel").pack(side="right")
         driver = ttk.Frame(intro, style="Card.TFrame")
-        driver.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(10, 0))
-        ttk.Label(driver, text="Camera driver", style="CardMuted.TLabel").pack(side="left", padx=(0, 9))
+        driver.grid(row=4, column=0, columnspan=3, sticky="ew", pady=self._px((10, 0)))
+        ttk.Label(driver, text="Camera driver", style="CardMuted.TLabel").pack(side="left", padx=self._px((0, 9)))
         self.camera_driver_combo = ttk.Combobox(driver, textvariable=self.camera_driver,
-            values=("Native (experimental)", "Console (legacy)"), state="readonly", width=23)
+            values=("Native (experimental)", "Console (legacy)"), state="readonly", width=self._chars(23), style="Card.TCombobox")
         self.camera_driver_combo.pack(side="left")
         ttk.Label(driver, text="Choose before launch. Native follows rendered views.",
-                  style="CardMuted.TLabel").pack(side="left", padx=(12, 0))
+                  style="CardMuted.TLabel").pack(side="left", padx=self._px((12, 0)))
         compat = ttk.Frame(intro, style="Card.TFrame")
-        compat.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        compat.grid(row=5, column=0, columnspan=3, sticky="ew", pady=self._px((10, 0)))
         self.native_status_text = tk.StringVar(
             value="Check the installed Deadlock build against Dolly's reviewed Native camera profiles.")
         ttk.Label(compat, textvariable=self.native_status_text, style="CardMuted.TLabel",
-                  wraplength=790, justify="left").pack(side="left", fill="x", expand=True)
-        ttk.Button(compat, text="Check game build", command=self._check_game_build).pack(side="right", padx=(12, 0))
-        flow = ttk.Frame(tab, padding=(0, 14))
-        flow.grid(row=1, column=0, sticky="ew")
+                  wraplength=self._px(790), justify="left").pack(side="left", fill="x", expand=True)
+        ttk.Button(compat, text="Check game build", style="Card.TButton", command=self._check_game_build).pack(side="right", padx=self._px((12, 0)))
+        flow = ttk.Frame(tab, padding=self._px((0, 14)))
+        flow.grid(row=2, column=0, sticky="ew")
         for column in range(3):
             flow.columnconfigure(column, weight=1, uniform="startup")
         steps = (
             ("01  Open the hideout", "Launch, then wait for the pre-lobby to load.",
-             (("launch_button", "Launch hideout", self._launch, "Primary.TButton"),
-              ("connect_button", "Connect", self._connect, "TButton"))),
+             (("launch_button", "Launch hideout", self._launch, "Card.Primary.TButton"),
+              ("connect_button", "Connect", self._connect, "Card.TButton"))),
             ("02  Prepare the replay", "Initialize the unlocker before loading a demo.",
-             (("initialize_button", "Initialize unlocker", self._initialize_unlocker, "TButton"),
-              ("load_replay_button", "Load replay", self._load_replay, "TButton"))),
+             (("initialize_button", "Initialize unlocker", self._initialize_unlocker, "Card.TButton"),
+              ("load_replay_button", "Load replay", self._load_replay, "Card.TButton"))),
             ("03  Start creating", "Once the replay loads, check camera support.",
-             (("probe_button", "Check camera support", self._probe, "TButton"),
-              ("disconnect_button", "Disconnect", lambda: self._session_operation("Disconnecting", self.controller.disconnect), "Quiet.TButton"))),
+             (("probe_button", "Check camera support", self._probe, "Card.TButton"),
+              ("disconnect_button", "Disconnect", lambda: self._session_operation("Disconnecting", self.controller.disconnect), "Card.TButton"))),
         )
         for column, (title, subtitle, buttons) in enumerate(steps):
-            card = ttk.Frame(flow, style="Card.TFrame", padding=13)
-            card.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 5, 0 if column == 2 else 5))
+            card = ttk.Frame(flow, style="Rounded.Card.TFrame", padding=self._px(20))
+            card.grid(row=0, column=column, sticky="nsew", padx=self._px((0 if column == 0 else 5, 0 if column == 2 else 5)))
             card.columnconfigure(0, weight=1)
             ttk.Label(card, text=title, style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
-            ttk.Label(card, text=subtitle, style="CardMuted.TLabel", wraplength=240).grid(row=1, column=0, sticky="w", pady=(6, 12))
+            ttk.Label(card, text=subtitle, style="CardMuted.TLabel", wraplength=self._px(240)).grid(row=1, column=0, sticky="w", pady=self._px((6, 12)))
             for row, (attribute, label, command, style) in enumerate(buttons, 2):
                 button = ttk.Button(card, text=label, command=command, style=style,
                                     state="normal" if attribute == "launch_button" else "disabled")
-                button.grid(row=row, column=0, sticky="ew", pady=(0, 6))
+                button.grid(row=row, column=0, sticky="ew", pady=self._px((0, 6)))
                 setattr(self, attribute, button)
-        note = ttk.Frame(tab, style="Card.TFrame", padding=(16, 12))
-        note.grid(row=2, column=0, sticky="ew")
-        tab.bind("<Configure>", lambda event: note.grid() if event.height >= round(465 * self.ui_scale) else note.grid_remove())
-        ttk.Label(note, text="FRAME → CAPTURE → FLY → CAPTURE", style="CardTitle.TLabel").pack(anchor="w")
+        note = ttk.Frame(tab, style="Rounded.Card.TFrame", padding=self._px(20))
+        note.grid(row=3, column=0, sticky="ew")
+        tab.bind("<Configure>", lambda event: note.grid() if event.height >= self._px(465) else note.grid_remove())
+        ttk.Label(note, text="Frame → Capture → Fly → Capture", style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(note, text="Open Cameras to capture your free-camera view, shape the framing curve, and play the complete shot.\n"
                   "The replay resumes with the path; HUD visibility returns after playback. Close this session before playing normally.",
-                  style="CardMuted.TLabel", wraplength=900, justify="left").pack(anchor="w", pady=(6, 0))
+                  style="CardMuted.TLabel", wraplength=self._px(900), justify="left").pack(anchor="w", pady=self._px((6, 0)))
 
         dialog.withdraw()
 
@@ -1895,15 +2364,17 @@ class DollyApp:
         self._submit("Reading replay folder", lambda: discover_replays(folder), finished)
 
     def _filter_replays(self):
+        from dolly.replays import sorted_replay_indices
         search = self.replay_search.get().strip().casefold()
         selected_path = self.demo_path.get()
         self.replay_tree.delete(*self.replay_tree.get_children())
         total = 0
-        for index, entry in enumerate(self.replay_entries):
+        for index in sorted_replay_indices(self.replay_entries, self.replay_sort.get()):
+            entry = self.replay_entries[index]
             if search and search not in entry.name.casefold():
                 continue
             size = f"{entry.size_bytes / (1024 * 1024):.1f} MB"
-            modified = datetime.fromtimestamp(entry.modified_ns / 1e9).strftime("%Y-%m-%d  %H:%M")
+            modified = datetime.fromtimestamp(entry.modified_ns / 1e9).strftime("%Y-%m-%d, %H:%M")
             self.replay_tree.insert("", "end", iid=str(index), values=(entry.name, size, modified))
             if str(entry.path) == selected_path:
                 self.replay_tree.selection_set(str(index))
@@ -1918,8 +2389,8 @@ class DollyApp:
     def _use_selected_replay(self):
         self._select_replay()
         if self.demo_path.get().strip():
-            self.notebook.select(self.setup_tab)
-            self.status_text.set("Replay selected. Press Play replay to begin.")
+            self._select_page(self.setup_tab)
+            self.status_text.set("Replay selected. Press START to begin.")
 
     def _browse_replay_folder(self):
         folder = filedialog.askdirectory(parent=self.root, title="Choose replay folder", initialdir=self.replay_folder.get() or None)
@@ -1939,7 +2410,8 @@ class DollyApp:
         }
         records = [(action, "Toggle ReShade menu" if action == "reshade" else ACTION_LABELS[action], group)
                    for group, actions in groups.items() for action in actions
-                   if action != "object_picker" or OBJECT_PICKER_ENABLED]
+                   if (action != "object_picker" or OBJECT_PICKER_ENABLED)
+                   and edition.action_allowed(action)]
         commands = ControlsActions(
             change_binding=self._record_binding, clear_binding=self._clear_editor_binding,
             reset_binding=self._reset_editor_binding, reset_all=self._reset_editor_bindings,
@@ -1982,6 +2454,16 @@ class DollyApp:
         default = DEFAULT_RESHADE_BINDING if action == "reshade" else default_action_bindings()[action]
         self._save_editor_binding(action, default)
 
+    def _show_listening(self, action):
+        """The Controls keycap of ``action`` in its Listening face (None: no keycap listens)."""
+        view = getattr(self, "controls_view", None)
+        if view is None:
+            return
+        try:
+            view.set_listening(action)
+        except tk.TclError:
+            pass   # the page is closing with the window
+
     def _record_binding(self, action="capture"):
         from .ui.binding_capture import BindingCapture, SideMouseCapture, key_from_event, modifiers_from_event
         if self.busy or self.playing:
@@ -1995,30 +2477,46 @@ class DollyApp:
         capture = BindingCapture(self.app_settings, action)
         self._binding_capture = capture
         dialog = self.binding_dialog = tk.Toplevel(self.root)
+        chrome.style_title_bar(dialog)
         dialog.title("Change shortcut")
         dialog.configure(bg=BG)
-        width, height = self._window_dimensions(500, 420)
-        x = max(0, min(self.root.winfo_rootx() + (self.root.winfo_width()-width)//2,
-                       self.root.winfo_screenwidth()-width))
-        y = max(0, min(self.root.winfo_rooty() + (self.root.winfo_height()-height)//2,
-                       self.root.winfo_screenheight()-height-40))
+        # The shortcut's keycap on Controls shows Listening while this dialog is open.
+        self._show_listening(action)
+        dialog.bind("<Destroy>", lambda event: self._show_listening(None)
+                    if event.widget is dialog and self.binding_dialog in (None, dialog) else None, add="+")
+        width, height = self._window_dimensions(480, 358)
+        # Centred on the editor, kept with its frame inside the monitor's work area.
+        left, top, right, bottom = chrome.work_area(self.root)
+        frame_width, frame_height = chrome.frame_size(menu=False)
+        x = max(left, min(self.root.winfo_rootx() + (self.root.winfo_width()-width)//2,
+                          right-width-frame_width))
+        y = max(top, min(self.root.winfo_rooty() + (self.root.winfo_height()-height)//2,
+                         bottom-height-frame_height))
         dialog.geometry(f"{width}x{height}+{x}+{y}")
         dialog.resizable(False, False)
         dialog.transient(self.root)
-        body = ttk.Frame(dialog, padding=22)
+        body = ttk.Frame(dialog, padding=self._px((24, 22, 24, 20)))
         body.pack(fill="both", expand=True)
         label = "Toggle ReShade menu" if action == "reshade" else ACTION_LABELS[action]
-        ttk.Label(body, text=label, style="Section.TLabel").pack(anchor="w", pady=(0, 12))
-        value = tk.StringVar(dialog)
-        feedback = tk.StringVar(dialog)
-        ttk.Label(body, textvariable=value, style="Title.TLabel").pack(anchor="w", pady=(0, 12))
-        feedback_box = ttk.Frame(body, height=round(80*self.ui_scale))
-        feedback_box.pack(fill="x", pady=(0, 12))
-        feedback_box.pack_propagate(False)
-        ttk.Label(feedback_box, textvariable=feedback, style="Muted.TLabel",
-                  wraplength=round(430*self.ui_scale)).pack(fill="both", expand=True)
+        tk.Label(body, text="Change shortcut", bg=BG, fg=TEXT,
+                 font=fonts.font(dialog, "page_title"), anchor="w").pack(fill="x", pady=self._px((0, 15)))
         buttons = ttk.Frame(body)
         buttons.pack(side="bottom", fill="x")
+        card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20))
+        card.pack(fill="x")
+        ttk.Label(card, text=label, style="CardTitle.TLabel").pack(anchor="w", pady=self._px((0, 15)))
+        value = tk.StringVar(dialog)
+        feedback = tk.StringVar(dialog)
+        keycap = tk.Frame(card, bg=FIELD, highlightbackground=ui_theme.TOKENS["accent"],
+                          highlightthickness=max(1, self._px(1)))
+        keycap.pack(fill="x", pady=self._px((0, 15)))
+        tk.Label(keycap, textvariable=value, bg=FIELD, fg=TEXT,
+                 font=fonts.font(dialog, "body"), anchor="center").pack(fill="x", pady=self._px(8))
+        feedback_box = ttk.Frame(card, style="Card.TFrame", height=self._px(45))
+        feedback_box.pack(fill="x", pady=self._px((0, 15)))
+        feedback_box.pack_propagate(False)
+        ttk.Label(feedback_box, textvariable=feedback, style="CardMuted.TLabel",
+                  wraplength=self._px(390)).pack(fill="both", expand=True)
         capture_tag = "DollyBindingCapture" + str(dialog.winfo_id())
         side_mouse = None
         escape_modifiers = 0
@@ -2037,6 +2535,7 @@ class DollyApp:
             dialog.unbind_class(capture_tag, "<ButtonPress>")
             if self.binding_dialog is dialog:
                 self.binding_dialog = None
+                self._show_listening(None)
             if dialog.winfo_exists():
                 dialog.destroy()
         def refresh():
@@ -2080,11 +2579,13 @@ class DollyApp:
                 close()
             else:
                 feedback.set("Finish the current operation and stop playback before saving.")
-        ttk.Button(buttons, text="Cancel", command=close, style="Quiet.TButton").pack(side="right")
         save = ttk.Button(buttons, text="Save shortcut", command=save_shortcut, style="Primary.TButton")
-        save.pack(side="right", padx=(0, 8))
-        again = ttk.Button(body, text="Record again", command=record_again, style="Quiet.TButton")
-        again.pack(anchor="w", pady=(0, 8))
+        save.pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=close).pack(side="right", padx=self._px((0, 10)))
+        capture_actions = ttk.Frame(card, style="Card.TFrame")
+        capture_actions.pack(anchor="w")
+        again = ttk.Button(capture_actions, text="Record again", command=record_again, style="Card.TButton")
+        again.pack(side="left", padx=self._px((0, 10)))
         def use_escape():
             nonlocal capture, escape_modifiers
             modifiers, escape_modifiers = escape_modifiers, 0
@@ -2096,9 +2597,9 @@ class DollyApp:
                 capture = self._binding_capture = BindingCapture(self.app_settings, action)
             capture.bind_escape(modifiers)
             refresh()
-        escape_button = ttk.Button(body, text="Use Escape as the shortcut", command=use_escape,
-                                   style="Quiet.TButton")
-        escape_button.pack(anchor="w")
+        escape_button = ttk.Button(capture_actions, text="Use Escape as the shortcut", command=use_escape,
+                                   style="Card.TButton")
+        escape_button.pack(side="left")
         def escape_pressed(event):
             nonlocal escape_modifiers
             escape_modifiers = modifiers_from_event(event)
@@ -2207,19 +2708,31 @@ class DollyApp:
 
     def _open_launch_options(self):
         dialog = tk.Toplevel(self.root)
+        chrome.style_title_bar(dialog)
         dialog.title("Launch options · Deadlock Dolly")
         dialog.configure(bg=BG)
-        dialog.geometry(self._window_size(690, 350))
+        dialog.geometry(self._window_size(720, 354))
         dialog.transient(self.root)
-        body = ttk.Frame(dialog, padding=22)
+        body = ttk.Frame(dialog, padding=self._px((24, 22, 24, 20)))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        ttk.Label(body, text="LAUNCH OPTIONS", style="Section.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(body, text="Always included: -dev  -insecure  -console  -dx11", style="Accent.TLabel").grid(row=1, column=0, sticky="w", pady=(12, 8))
-        ttk.Label(body, text="Additional display options", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=(6, 5))
+        tk.Label(body, text="Launch options · Deadlock Dolly", bg=BG, fg=TEXT,
+                 font=fonts.font(dialog, "page_title"), anchor="w").grid(
+                     row=0, column=0, sticky="ew", pady=self._px((0, 15)))
+        card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20))
+        card.grid(row=1, column=0, sticky="ew")
+        card.columnconfigure(0, weight=1)
+        ttk.Label(card, text="Launch Options", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+        flags = ttk.Frame(card, style="Card.TFrame")
+        flags.grid(row=1, column=0, sticky="w", pady=self._px((15, 15)))
+        ttk.Label(flags, text="Always included:", style="Card.TLabel").pack(side="left", padx=self._px((0, 6)))
+        for flag in ("-dev", "-insecure", "-console", "-dx11"):
+            tk.Label(flags, text=flag, bg=FIELD, fg=TEXT, font=(MONO, -self._px(12)),
+                     padx=self._px(8), pady=self._px(3)).pack(side="left", padx=self._px((0, 6)))
+        ttk.Label(card, text="Additional display options", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", pady=self._px((0, 8)))
         value = tk.StringVar(value=self.launch_options.get())
-        ttk.Entry(body, textvariable=value).grid(row=3, column=0, sticky="ew")
-        ttk.Label(body, text="Examples: -windowed -w 1920 -h 1080\nReplay loading, console connection and security settings are managed by Dolly.", style="Muted.TLabel", wraplength=620).grid(row=4, column=0, sticky="w", pady=(9, 16))
+        ttk.Entry(card, textvariable=value, style="Card.TEntry").grid(row=3, column=0, sticky="ew")
+        ttk.Label(card, text="Examples: -windowed -w 1920 -h 1080\nReplay loading, console connection and security settings are managed by Dolly.", style="CardMuted.TLabel", wraplength=self._px(620)).grid(row=4, column=0, sticky="w", pady=self._px((15, 0)))
         def save():
             def operation():
                 text = value.get().strip()
@@ -2229,7 +2742,7 @@ class DollyApp:
                 if self._persist_preferences(candidate, "Launch options saved for the next session."):
                     dialog.destroy()
             self._guard("Launch options", operation)
-        ttk.Button(body, text="Save options", style="Primary.TButton", command=save).grid(row=5, column=0, sticky="e")
+        ttk.Button(body, text="Save options", style="Primary.TButton", command=save).grid(row=2, column=0, sticky="e", pady=self._px((24, 0)))
 
     def _start_editing_session(self):
         def operation():
@@ -2254,6 +2767,8 @@ class DollyApp:
                           if hasattr(self, "allow_mod_overrides")
                           else bool(getattr(self.app_settings, "allow_mod_overrides", False)))
             mod_options = {"allow_mod_overrides": True} if allow_mods else {}
+            if getattr(self.app_settings, "nvidia_dlss", False):
+                mod_options["nvidia_dlss"] = True
             self._disable_external_input()
             self.attach_fields = None
             def start():
@@ -2314,7 +2829,7 @@ class DollyApp:
         self._submit("Preparing attach camera fields", self._query_attach_fields,
                      self._attach_fields_complete)
         if not hasattr(self, "full_editor") or self.full_editor.get():
-            self.notebook.select(self.camera_tab)
+            self._select_page(self.camera_tab)
 
     def _query_attach_fields(self):
         """Worker: read the attach schema offsets once; failure only disables attach."""
@@ -2345,293 +2860,41 @@ class DollyApp:
             self.capture_hotkey = None
 
     def _tree(self, parent, columns, labels, widths=None, height=6):
-        """Only data lists scroll; editor panels retain their available width."""
-        frame = ttk.Frame(parent, style="Card.TFrame")
+        """Only data lists scroll; editor panels retain their available width.
+
+        The holder is a plain panel frame (a ttk frame repaints its whole area on
+        every expose, PLAN-5 PR4). On a kit card no ttk ``Card.`` frame sits above
+        the rail for the theme's surface matching to find, so the rail names its
+        card style itself.
+        """
+        frame = tk.Frame(parent, background=PANEL, borderwidth=0, highlightthickness=0, takefocus=0)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
         tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse", height=height)
         for index, (column, label) in enumerate(zip(columns, labels)):
             tree.heading(column, text=label)
-            width = widths[index] if widths else 80
-            tree.column(column, width=width, minwidth=45, anchor="e", stretch=True)
+            width = widths[index] if widths else self._px(80)
+            tree.column(column, width=width, minwidth=self._px(45), anchor="e", stretch=True)
         tree.grid(row=0, column=0, sticky="nsew")
-        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview, style="Card.Vertical.TScrollbar")
         yscroll.grid(row=0, column=1, sticky="ns")
         tree.configure(yscrollcommand=yscroll.set)
         return frame, tree
 
-    def _build_camera(self):
-        tab = self.camera_tab
-        tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(2, weight=1)
-        capture = ttk.Frame(tab)
-        capture.grid(row=0, column=0, sticky="ew", pady=(2, 9))
-        self.capture_buttons = []
-        for text, command, style in (("Start path here", self._start_path_here, "TButton"),
-                                      ("+ Capture camera", self.capture_here, "Primary.TButton"),
-                                      ("Replace selected", self._replace_camera_here, "TButton")):
-            button = ttk.Button(capture, text=text, command=command, style=style)
-            button.pack(side="left", padx=(0, 7))
-            self.capture_buttons.append(button)
-        self.capture_hotkey_checkbox = ttk.Checkbutton(capture, textvariable=self.hotkey_label, variable=self.hotkey_enabled,
-                        command=self._toggle_capture_hotkey)
-        self.capture_hotkey_checkbox.pack(side="right")
-        self.capture_hotkey_checkboxes.append(self.capture_hotkey_checkbox)
-        timing = ttk.Frame(tab)
-        timing.grid(row=1, column=0, sticky="ew", pady=(0, 11))
-        ttk.Label(timing, text="Capture timing", style="Muted.TLabel").pack(side="left", padx=(0, 7))
-        mode = ttk.Combobox(timing, textvariable=self.capture_mode,
-                           values=("Replay timing", "Timed shot"), state="readonly", width=13)
-        mode.pack(side="left")
-        mode.bind("<<ComboboxSelected>>", self._capture_mode_changed)
-        ttk.Label(timing, text="Spacing", style="Muted.TLabel").pack(side="left", padx=(14, 6))
-        self.segment_entry = ttk.Entry(timing, textvariable=self.segment_seconds, width=5,
-                                       state="disabled" if self.capture_mode.get() == "Replay timing" else "normal")
-        self.segment_entry.pack(side="left")
-        ttk.Label(timing, text="s", style="Muted.TLabel").pack(side="left", padx=(4, 12))
-        ttk.Label(timing, textvariable=self.path_summary, style="Muted.TLabel").pack(side="right")
-        ttk.Button(timing, text="Controls…", style="Quiet.TButton",
-                   command=self._show_keybinds).pack(side="right", padx=(0, 14))
-        workspace = ttk.Frame(tab)
-        workspace.grid(row=2, column=0, sticky="nsew")
-        workspace.columnconfigure(0, weight=1)
-        workspace.columnconfigure(1, weight=0, minsize=280)
-        workspace.rowconfigure(0, weight=1)
-        left_page = CameraCurveColumn(workspace)
-        left_page.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
-        self.camera_left_page = left_page
-        left = left_page.body
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(0, weight=0)
-        left.rowconfigure(1, weight=1)
-        table_frame, self.camera_tree = self._tree(left, ("view", *FIELDS),
-                                                  ("Camera", *FIELD_LABELS), height=3)
-        table_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
-        self.camera_tree.configure(displaycolumns=("view", "time", "aspect_ratio", "roll"))
-        self.camera_tree.column("view", anchor="w", width=145, minwidth=95)
-        self.camera_tree.column("time", width=110, minwidth=88)
-        self.camera_tree.column("aspect_ratio", width=110, minwidth=84)
-        self.camera_tree.column("roll", width=85, minwidth=60)
-        self.camera_tree.heading("time", text="Arrive · seconds")
-        self.camera_tree.heading("aspect_ratio", text="Aspect ratio")
-        self.camera_tree.heading("roll", text="Bank °")
-        self.camera_tree.bind("<<TreeviewSelect>>", self._select_key)
-        self.camera_tree.bind("<Double-1>", lambda _event: self.lens_entry.focus_set())
-        self.camera_tree.bind("<Delete>", lambda _event: self._delete_key())
-        graph = ttk.Frame(left, style="Card.TFrame", padding=(10, 8, 10, 5))
-        graph.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
-        graph.columnconfigure(0, weight=1)
-        graph.rowconfigure(1, weight=1, minsize=112)
-        graph_header = ttk.Frame(graph, style="Card.TFrame")
-        graph_header.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        graph_title = ttk.Label(graph_header, text="CAMERA CURVES", style="CardTitle.TLabel")
-        curve_mode = ttk.Combobox(graph_header, textvariable=self.lens_interpolation,
-                                 values=("smooth", "linear", "step"), state="readonly", width=9)
-        curve_mode.bind("<<ComboboxSelected>>", lambda _event: self._apply_options())
-        framing_label = ttk.Label(graph_header, text="Framing", style="CardMuted.TLabel")
-        self.path_curve_mode = ttk.Combobox(graph_header, textvariable=self.interpolation,
-                                            values=("smooth", "spline", "linear"), state="readonly", width=9)
-        self.path_curve_mode.bind("<<ComboboxSelected>>", lambda _event: self._apply_options())
-        path_label = ttk.Label(graph_header, text="Path curve", style="CardMuted.TLabel")
-        header_items = (graph_title, path_label, self.path_curve_mode, framing_label, curve_mode)
-        header_layout = None
-        def layout_curve_header(_event=None):
-            nonlocal header_layout
-            sizes = [item.winfo_reqwidth() for item in header_items]
-            narrow = graph_header.winfo_width() < sum(sizes)+32
-            pairs_fit = graph_header.winfo_width() >= sum(sizes[1:])+22
-            mode = (narrow, pairs_fit)
-            if mode == header_layout:
-                return
-            header_layout = mode
-            for column in range(5):
-                graph_header.columnconfigure(column, weight=0)
-            if narrow:
-                graph_title.grid(row=0,column=0,columnspan=5,sticky="w",pady=(0,4))
-                path_label.grid(row=1,column=0,sticky="w",padx=(0,4))
-                self.path_curve_mode.grid(row=1,column=1,sticky="w")
-                framing_label.grid(row=1 if pairs_fit else 2,column=2 if pairs_fit else 0,
-                                   sticky="w",padx=(10 if pairs_fit else 0,4),pady=0 if pairs_fit else (4,0))
-                curve_mode.grid(row=1 if pairs_fit else 2,column=3 if pairs_fit else 1,sticky="w",pady=0 if pairs_fit else (4,0))
-                graph_header.columnconfigure(4,weight=1)
-            else:
-                for column,item in enumerate(header_items):
-                    item.grid(row=0,column=column,columnspan=1,sticky="w",padx=(10,4) if column in (1,3) else 0,pady=0)
-                graph_header.columnconfigure(0,weight=1)
-            left_page.resize_content()
-        graph_header.bind("<Configure>",layout_curve_header)
-        layout_curve_header()
-        self.timeline_view = TimelineView()
-        self.camera_curve_workspace = CameraCurveWorkspace(
-            graph, on_change=self._change_unified_curve, on_select=self._select_curve_key,
-            on_reset=self._reset_rotation_curve, view=self.timeline_view,
-            on_tangent_change=self._change_camera_tangent,
-            on_preview=self._preview_camera_curve,
-            context=lambda: (self.shot_history.session_id, self.shot_history.revision))
-        self.camera_curve_workspace.grid(row=1, column=0, sticky="nsew")
-        self.position_curve, self.rotation_curve, self.aspect_curve = self.camera_curve_workspace.lanes
-        self.camera_curve_tabs = self.camera_curve_workspace.tabs
-        left_page.set_panels(table_frame,graph,graph_header,self.camera_curve_workspace)
-        inspector_page = gui_layout.ScrollPage(workspace)
-        inspector_page.grid(row=0, column=1, sticky="nsew")
-        self.inspector_page = inspector_page
-        inspector = inspector_page.body
-        inspector.columnconfigure(0, weight=1)
-        selected = ttk.Frame(inspector, style="Card.TFrame", padding=12)
-        selected.grid(row=0, column=0, sticky="ew")
-        selected.columnconfigure(1, weight=1)
-        title = ttk.Frame(selected, style="Card.TFrame")
-        title.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        ttk.Label(title, textvariable=self.selected_text, style="CardTitle.TLabel").pack(side="left")
-        more = ttk.Menubutton(title, text="More")
-        more.pack(side="right")
-        actions_menu = tk.Menu(more, tearoff=False, bg=PANEL, fg=TEXT, activebackground=SELECTED, activeforeground=TEXT)
-        actions_menu.add_command(label="Coordinates / timing…", command=self._open_coordinates)
-        actions_menu.add_separator()
-        actions_menu.add_command(label="Delete selected camera", command=self._delete_key)
-        more.configure(menu=actions_menu)
-        ttk.Label(selected, text="Aspect ratio", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 9))
-        self.lens_entry = ttk.Entry(selected, textvariable=self.key_vars["aspect_ratio"], width=11)
-        self.lens_entry.grid(row=1, column=1, sticky="ew")
-        self.lens_entry.bind("<Return>", lambda _event: self._update_key())
-        pair = ttk.Frame(selected, style="Card.TFrame")
-        pair.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        pair.columnconfigure(0, weight=1)
-        pair.columnconfigure(1, weight=1)
-        for column, (field, label) in enumerate((("time", "Arrive · seconds"), ("roll", "Bank · degrees"))):
-            ttk.Label(pair, text=label, style="CardMuted.TLabel").grid(row=0, column=column, sticky="w", pady=(0, 4), padx=(0, 8 if column == 0 else 0))
-            entry = ttk.Entry(pair, textvariable=self.key_vars[field], width=10)
-            entry.grid(row=1, column=column, sticky="ew", padx=(0, 8 if column == 0 else 0))
-            entry.bind("<Return>", lambda _event: self._update_key())
-        standard = ttk.Frame(selected, style="Card.TFrame")
-        standard.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 8))
-        ttk.Label(standard, text="Normal", style="CardMuted.TLabel").pack(side="left", padx=(0, 7))
-        standard_combo = ttk.Combobox(standard, textvariable=self.standard_aspect, values=tuple(ASPECT_PRESETS), width=8)
-        standard_combo.pack(side="left")
-        standard_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_options())
-        standard_combo.bind("<Return>", lambda _event: self._apply_options())
-        ttk.Button(standard, text="Reset", style="Quiet.TButton", command=self._reset_aspect).pack(side="right")
-        buttons = ttk.Frame(selected, style="Card.TFrame")
-        buttons.grid(row=4, column=0, columnspan=2, sticky="ew")
-        buttons.columnconfigure(0, weight=1)
-        buttons.columnconfigure(1, weight=1)
-        ttk.Button(buttons, text="Update camera", command=self._update_key).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(buttons, text="Preview", command=self._apply_selected).grid(row=0, column=1, sticky="ew", padx=(4, 0))
-        view = ttk.Frame(inspector, style="Card.TFrame", padding=(10, 8))
-        view.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(view, text="PATH · TOP DOWN", style="CardMuted.TLabel").pack(anchor="w", pady=(0, 5))
-        self.canvas = tk.Canvas(view, width=230, height=55, background=PANEL, highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
-        self.canvas.bind("<Configure>", self._schedule_draw_path)
-        citadel = ttk.Frame(inspector, style="Card.TFrame", padding=(10, 8))
-        citadel.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(citadel, text="CITADEL DEPTH OF FIELD", style="CardMuted.TLabel").pack(anchor="w", pady=(0, 5))
-        self.citadel_enabled = tk.BooleanVar(value=False)
-        self.citadel_dof_checkbox = ttk.Checkbutton(
-            citadel, text="Enable DOF", variable=self.citadel_enabled,
-            style="Card.TCheckbutton", command=self._toggle_citadel_dof)
-        self.citadel_dof_checkbox.pack(anchor="w", pady=(0, 6))
-        self.citadel_sensor = tk.DoubleVar(value=1.0)
-        self.citadel_sensor_text = tk.StringVar(value="Sensor size · 1.00")
-        ttk.Label(citadel, textvariable=self.citadel_sensor_text, style="CardMuted.TLabel").pack(anchor="w")
-        sensor = ttk.Scale(citadel, from_=.5, to=3.0, variable=self.citadel_sensor,
-                           command=lambda _value: self._citadel_sensor_changed())
-        sensor.pack(fill="x")
-        sensor.bind("<ButtonRelease-1>", lambda _event: self._citadel_sensor_commit())
-        self.citadel_sensor_scale = sensor
-        self.citadel_focus_internal = tk.DoubleVar(value=0.0)
-        self.citadel_focus_text = tk.StringVar(value="Focus distance · 200 in")
-        ttk.Label(citadel, textvariable=self.citadel_focus_text, style="CardMuted.TLabel").pack(anchor="w", pady=(6, 0))
-        focus = ttk.Scale(citadel, from_=0.0, to=1.0, variable=self.citadel_focus_internal,
-                          command=lambda _value: self._citadel_focus_changed())
-        focus.pack(fill="x")
-        focus.bind("<ButtonRelease-1>", lambda _event: self._citadel_focus_commit())
-        self.citadel_focus_scale = focus
-        self._refresh_citadel_dof()
-        attach = ttk.Frame(inspector, style="Rounded.Card.TFrame", padding=(13, 12))
-        attach.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(attach, text="Attach camera", style="CardTitle.TLabel").pack(anchor="w")
-        ttk.Label(attach, text="Player point of view or weapon camera",
-                  style="CardMuted.TLabel").pack(anchor="w", pady=(2, 8))
-        self.attach_enabled = tk.BooleanVar(value=False)
-        self.attach_checkbox = ttk.Checkbutton(attach, text="Attach to player", variable=self.attach_enabled,
-                                               style="Card.TCheckbutton")
-        self.attach_checkbox.pack(anchor="w", pady=(0, 6))
-        self.attach_player = tk.StringVar(value="")
-        self._attach_players = {}
-        self.attach_player_combo = ttk.Combobox(attach, textvariable=self.attach_player,
-                                                values=(), state="readonly")
-        self.attach_player_combo.pack(fill="x", pady=(0, 6))
-        self.attach_point = tk.StringVar(value="Eyes")
-        attach_point_combo = ttk.Combobox(attach, textvariable=self.attach_point,
-                                          values=("Eyes", "Weapon", "Bone Picker..."), state="readonly", width=10)
-        attach_point_combo.pack(fill="x", pady=(0, 6))
-        picker_row = ttk.Frame(attach, style="Card.TFrame")
-        picker_row.pack(fill="x", pady=(0, 6))
-        ttk.Button(picker_row, text="Bone Picker...", command=self._open_bone_picker).pack(side="left")
-        ttk.Button(picker_row, text="Cancel picker", command=self._cancel_bone_picker).pack(side="left", padx=(6, 0))
-        bone_row = ttk.Frame(attach, style="Card.TFrame")
-        ttk.Label(bone_row, text="Bone name", style="CardMuted.TLabel").pack(anchor="w")
-        self.attach_bone = tk.StringVar(value="head")
-        self.attach_bone_combo = ttk.Combobox(bone_row, textvariable=self.attach_bone, values=())
-        self.attach_bone_combo.pack(fill="x", pady=(0, 6))
-        def update_bone_field(*_):
-            if self.attach_point.get() == "Bone Picker...":
-                index = self._selection_index(self.camera_tree)
-                point = "Eyes"
-                if index is not None and 0 <= index < len(self.project.keyframes):
-                    current = self.project.keyframes[index].attach
-                    if current:
-                        point = current.point.title()
-                self.attach_point.set(point)
-                self.root.after_idle(self._open_bone_picker)
-                return
-            if self.attach_point.get() == "Bone":
-                bone_row.pack(fill="x", after=attach_point_combo)
-            else:
-                bone_row.pack_forget()
-        self.attach_point.trace_add("write", update_bone_field)
-        update_bone_field()
-        from dolly.gui_theme import compact_slider
-        ttk.Label(attach, text="Offsets", style="Card.TLabel").pack(anchor="w", pady=(2, 2))
-        self.attach_vars = {}
-        for name, label in (("x", "Forward"), ("y", "Sideways"), ("z", "Up"),
-                            ("pitch", "Pitch")):
-            variable = tk.StringVar(value="0")
-            self.attach_vars[name] = variable
-            compact_slider(attach, label, variable, -10 if name in ("x", "y", "z") else -180,
-                           10 if name in ("x", "y", "z") else 180, PANEL, MUTED, ACCENT)
-        self.attach_smoothing = tk.StringVar(value="0")
-        compact_slider(attach, "Smooth", self.attach_smoothing, 0, 1, PANEL, MUTED, ACCENT)
-        self.attach_hide = tk.BooleanVar(value=True)
-        ttk.Checkbutton(attach, text="Hide this hero", variable=self.attach_hide,
-                        style="Card.TCheckbutton").pack(anchor="w", pady=(0, 6))
-        self.attach_clearance = tk.StringVar(value="Exact offset")
-        ttk.Combobox(attach, textvariable=self.attach_clearance, state="readonly",
-                     values=("Exact offset", "Automatic clearance")).pack(fill="x", pady=(0, 4))
-        ttk.Label(attach, text="Automatic clearance keeps head POV close and forward; other bones use wider spacing. Animated limbs may still cross the view.",
-                  style="CardMuted.TLabel", wraplength=240).pack(anchor="w", pady=(0, 6))
-        self.attach_note = ttk.Label(attach, text="Load a replay to list players.",
-                                     style="CardMuted.TLabel", wraplength=240)
-        self.attach_note.pack(anchor="w", pady=(0, 6))
-        advanced = gui_layout.disclosure(attach, "Rotation & transition")
-        for name, label in (("yaw", "Yaw"), ("roll", "Roll")):
-            variable = tk.StringVar(value="0")
-            self.attach_vars[name] = variable
-            compact_slider(advanced.body, label, variable, -180, 180, PANEL, MUTED, ACCENT)
-        self.source_blend = tk.StringVar(value="0")
-        compact_slider(advanced.body, "Blend in", self.source_blend, 0, 10, PANEL, MUTED, ACCENT)
-        ttk.Label(advanced.body, text="Seconds; zero keeps a cut.",
-                  style="CardMuted.TLabel").pack(anchor="w", pady=(2, 4))
-        attach_buttons = ttk.Frame(attach, style="Card.TFrame")
-        attach_buttons.pack(fill="x")
-        attach_buttons.columnconfigure(0, weight=1)
-        attach_buttons.columnconfigure(1, weight=1)
-        ttk.Button(attach_buttons, text="Apply to camera", style="Card.Primary.TButton",
-                   command=lambda: self._apply_attach(False)).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(attach_buttons, text="Apply to all",
-                   command=lambda: self._apply_attach(True)).grid(row=0, column=1, sticky="ew", padx=(4, 0))
-        self.attach_card = attach
+    def _attach_point_picker(self):
+        """"Bone Picker..." chosen as the attach point: keep the key's own point, open the picker.
+
+        The Camera page calls this from its ``attach_point`` trace; the dropdown goes back
+        to the selected camera's current point (or Eyes) while the picker runs.
+        """
+        index = self._selection_index(self.camera_tree)
+        point = "Eyes"
+        if index is not None and 0 <= index < len(self.project.keyframes):
+            current = self.project.keyframes[index].attach
+            if current:
+                point = current.point.title()
+        self.attach_point.set(point)
+        self.root.after_idle(self._open_bone_picker)
 
     # Citadel DOF (the game's own depth of field) authors the same shot values
     # as the Effects tracks and applies them through the existing preview.
@@ -2747,29 +3010,43 @@ class DollyApp:
             return
         dialog = tk.Toplevel(self.root)
         self.restore_guidance_dialog = dialog
+        chrome.style_title_bar(dialog)
         dialog.title("Restore the game health panel")
         dialog.configure(bg=BG)
         dialog.transient(self.root)
-        body = ttk.Frame(dialog, padding=18)
+        body = ttk.Frame(dialog, padding=self._px((24, 22, 24, 20)))
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="ONE MORE STEP TO RESTORE", style="Section.TLabel").pack(anchor="w")
-        ttk.Label(body, wraplength=self._window_dimensions(460, 0)[0], justify="left", text=(
+        tk.Label(body, text="Restore the game health panel", bg=BG, fg=TEXT,
+                 font=fonts.font(dialog, "page_title"), anchor="w").pack(
+                     fill="x", pady=self._px((0, 15)))
+        card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20))
+        card.pack(fill="x")
+        ttk.Label(card, text="One More Step to Restore", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(card, wraplength=self._px(448), justify="left", style="Card.TLabel", text=(
             "The health and ability panel is still hidden because the game is in free camera. "
-            "Dolly is keeping your original setting until a hero view is ready.\n\n"
-            "1. Open replay controls below.\n"
-            "2. Select a hero and wait for the camera to follow that hero.\n"
-            "3. Return to Dolly and click Restore after selection."
-        )).pack(fill="x", pady=(12, 16))
+            "Dolly is keeping your original setting until a hero view is ready."
+        )).pack(fill="x", pady=self._px((14, 14)))
+        for number, instruction in enumerate((
+            "Open replay controls below.",
+            "Select a hero and wait for the camera to follow that hero.",
+            "Return to Dolly and click Restore after selection.",
+        ), start=1):
+            row = ttk.Frame(card, style="Card.TFrame")
+            row.pack(fill="x", pady=self._px((0, 8 if number < 3 else 0)))
+            tk.Label(row, text=f"{number}.", bg=ui_theme.TOKENS["button"], fg=TEXT,
+                     font=fonts.font(dialog, "small"), width=2).pack(side="left", padx=self._px((0, 10)))
+            ttk.Label(row, text=instruction, style="CardMuted.TLabel", wraplength=self._px(410),
+                      justify="left").pack(side="left", fill="x", expand=True)
+        ttk.Label(body, wraplength=self._px(490), style="Muted.TLabel", text=(
+            "You can leave this window open. Restore checks the hero view before showing the panel."
+        )).pack(fill="x", pady=self._px((15, 20)))
         actions = ttk.Frame(body)
-        actions.pack(fill="x")
+        actions.pack(anchor="e")
         ttk.Button(actions, text="Open replay controls",
                    command=self._open_restore_replay_controls).pack(side="left")
-        ttk.Button(actions, text="Restore after selection", command=lambda:
+        ttk.Button(actions, text="Restore after selection", style="Primary.TButton", command=lambda:
                    self._session_operation("Restoring game controls", self.controller.stop)
-                   ).pack(side="left", padx=(10, 0))
-        ttk.Label(body, wraplength=self._window_dimensions(460, 0)[0], style="Muted.TLabel", text=(
-            "You can leave this window open. Restore checks the hero view before showing the panel."
-        )).pack(fill="x", pady=(12, 0))
+                   ).pack(side="left", padx=self._px((10, 0)))
 
     def _open_restore_replay_controls(self):
         def open_controls():
@@ -2788,48 +3065,61 @@ class DollyApp:
             return
         dialog = tk.Toplevel(self.root)
         self.coordinates_dialog = dialog
+        chrome.style_title_bar(dialog)
         dialog.title("Camera coordinates & shot timing")
         dialog.configure(bg=BG)
-        dialog.geometry(self._window_size(560, 530))
-        dialog.minsize(*self._window_dimensions(530, 500))
+        dialog.geometry(self._window_size(620, 658))
+        dialog.minsize(*self._window_dimensions(580, 600))
         dialog.transient(self.root)
-        body = ttk.Frame(dialog, padding=18)
+        body = ttk.Frame(dialog, padding=self._px((24, 22, 24, 20)))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
-        ttk.Label(body, text="CAMERA COORDINATES", style="Section.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        tk.Label(body, text="Camera coordinates & shot timing", bg=BG, fg=TEXT,
+                 font=fonts.font(dialog, "page_title"), anchor="w").grid(
+                     row=0, column=0, sticky="ew", pady=self._px((0, 15)))
+        camera_card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20))
+        camera_card.grid(row=1, column=0, sticky="ew", pady=self._px((0, 15)))
+        camera_card.columnconfigure((0, 1), weight=1, uniform="coordinate")
+        ttk.Label(camera_card, text="Camera Coordinates", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=self._px((0, 15)))
         self.key_entries = {}
         for index, (field, label) in enumerate(zip(FIELDS, FIELD_LABELS)):
-            cell = ttk.Frame(body)
-            cell.grid(row=1 + index // 2, column=index % 2, sticky="ew", padx=(0, 14 if index % 2 == 0 else 0), pady=(0, 8))
+            cell = ttk.Frame(camera_card, style="Card.TFrame")
+            cell.grid(row=1 + index // 2, column=index % 2, sticky="ew", padx=self._px((0, 20 if index % 2 == 0 else 0)), pady=self._px((0, 10)))
+            cell.columnconfigure(0, minsize=self._px(104))
             cell.columnconfigure(1, weight=1)
-            ttk.Label(cell, text=label, style="Muted.TLabel", width=13).grid(row=0, column=0, sticky="w")
-            entry = ttk.Entry(cell, textvariable=self.key_vars[field], width=12)
+            ttk.Label(cell, text=label, style="CardMuted.TLabel").grid(row=0, column=0, sticky="w", padx=self._px((0, 10)))
+            entry = ttk.Entry(cell, textvariable=self.key_vars[field], width=1, style="Card.TEntry")
             entry.grid(row=0, column=1, sticky="ew")
             self.key_entries[field] = entry
-        actions = ttk.Frame(body)
-        actions.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 14))
-        ttk.Button(actions, text="Update selected", command=self._update_key).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Add entered camera", command=self._add_key).pack(side="left")
-        ttk.Label(body, text="SHOT TIMING & MOVEMENT", style="Section.TLabel").grid(row=6, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        actions = ttk.Frame(camera_card, style="Card.TFrame")
+        actions.grid(row=5, column=0, columnspan=2, sticky="w", pady=self._px((4, 14)))
+        ttk.Button(actions, text="Update selected", style="Card.TButton", command=self._update_key).pack(side="left", padx=self._px((0, 10)))
+        ttk.Button(actions, text="Add entered camera", style="Card.TButton", command=self._add_key).pack(side="left")
+        timing_card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20))
+        timing_card.grid(row=2, column=0, sticky="ew")
+        timing_card.columnconfigure((0, 1), weight=1, uniform="timing")
+        ttk.Label(timing_card, text="Shot Timing & Movement", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=self._px((0, 15)))
         for index, (label, variable, values) in enumerate((("Start replay tick", self.start_tick, None), ("Ticks / second", self.tick_rate, None),
                                                          ("Position curve", self.interpolation, ("smooth", "spline", "linear")),
                                                          ("Rotation", self.rotation, ("shortest", "unwrapped")))):
-            cell = ttk.Frame(body)
-            cell.grid(row=7 + index // 2, column=index % 2, sticky="ew", padx=(0, 14 if index % 2 == 0 else 0), pady=(0, 8))
+            cell = ttk.Frame(timing_card, style="Card.TFrame")
+            cell.grid(row=1 + index // 2, column=index % 2, sticky="ew", padx=self._px((0, 20 if index % 2 == 0 else 0)), pady=self._px((0, 10)))
+            cell.columnconfigure(0, minsize=self._px(104))
             cell.columnconfigure(1, weight=1)
-            ttk.Label(cell, text=label, style="Muted.TLabel", width=13).grid(row=0, column=0, sticky="w")
-            widget = (ttk.Combobox(cell, textvariable=variable, values=values, state="readonly", width=11)
-                      if values else ttk.Entry(cell, textvariable=variable, width=12))
+            ttk.Label(cell, text=label, style="CardMuted.TLabel").grid(row=0, column=0, sticky="w", padx=self._px((0, 10)))
+            widget = (ttk.Combobox(cell, textvariable=variable, values=values, state="readonly", width=1, style="Card.TCombobox")
+                      if values else ttk.Entry(cell, textvariable=variable, width=1, style="Card.TEntry"))
             widget.grid(row=0, column=1, sticky="ew")
-        actions = ttk.Frame(body)
-        actions.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(5, 0))
-        ttk.Button(actions, text="Use current replay tick", command=self._use_current_tick).pack(side="left")
-        ttk.Button(actions, text="Retime to replay", command=self._retime_to_replay).pack(side="left", padx=8)
-        ttk.Button(actions, text="Apply settings", command=self._apply_options).pack(side="left")
-        ttk.Button(actions, text="Done", command=dialog.destroy).pack(side="right")
+        actions = ttk.Frame(timing_card, style="Card.TFrame")
+        actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=self._px((5, 0)))
+        ttk.Button(actions, text="Use current replay tick", style="Card.TButton", command=self._use_current_tick).pack(side="left")
+        ttk.Button(actions, text="Retime to replay", style="Card.TButton", command=self._retime_to_replay).pack(side="left", padx=self._px(10))
+        ttk.Button(actions, text="Apply settings", style="Card.TButton", command=self._apply_options).pack(side="left")
         ttk.Label(body, text="Captured positions stay in view coordinates. Height is Z.\nBank uses Dolly’s last applied value; capture starts with bank 0.",
-                  style="Muted.TLabel", wraplength=510).grid(row=10, column=0, columnspan=2, sticky="w", pady=(14, 0))
+                  style="Muted.TLabel", wraplength=self._px(570)).grid(row=3, column=0, sticky="w", pady=self._px((15, 20)))
+        ttk.Button(body, text="Done", style="Primary.TButton", command=dialog.destroy).grid(row=4, column=0, sticky="e")
 
     def _toggle_coordinates(self):
         self._open_coordinates()
@@ -2842,112 +3132,42 @@ class DollyApp:
             if replay_timing else "Timed shot: fly between views; spacing sets their arrival times.")
         self.status_text.set(self.capture_hint.get())
 
-    def _build_cvars(self):
-        tab = self.cvar_tab
-        tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(2, weight=1)
-        intro = ttk.Frame(tab)
-        intro.grid(row=0, column=0, sticky="ew", pady=(2, 10))
-        ttk.Label(intro, text="CAMERA VARIABLES", style="Section.TLabel").pack(side="left")
-        ttk.Button(intro, text="Fixed values…", command=self._show_fixed_values).pack(side="right", padx=(8, 0))
-        ttk.Button(intro, text="+ Citadel DOF", command=self._dof_preset).pack(side="right", padx=(8, 0))
-        ttk.Button(intro, text="+ Range DOF", command=self._range_dof_preset).pack(side="right")
-        particles = ttk.Frame(tab, style="Card.TFrame", padding=(10, 8))
-        particles.grid(row=1, column=0, sticky="ew", pady=(0, 10))
-        ttk.Label(particles, text="PARTICLES", style="CardMuted.TLabel").pack(side="left")
-        ttk.Checkbutton(particles, text="Enable", variable=self.confetti_enabled,
-                        command=self._particles_changed).pack(side="left", padx=(16, 0))
-        preset = ttk.Combobox(particles, textvariable=self.particles_preset, width=17,
-                              state="readonly",
-                              values=[PARTICLE_LABELS[name] for name in PARTICLE_LABELS])
-        preset.pack(side="left", padx=(10, 0))
-        preset.bind("<<ComboboxSelected>>", lambda _event: self._particles_changed())
-        ttk.Label(particles, text="Intensity", style="CardMuted.TLabel").pack(side="left", padx=(10, 5))
-        intensity = ttk.Entry(particles, textvariable=self.particles_intensity, width=5)
-        intensity.pack(side="left")
-        intensity.bind("<Return>", lambda _event: self._particles_changed())
-        intensity.bind("<FocusOut>", lambda _event: self._particles_changed())
-        ttk.Label(particles, text=f"x ({PARTICLE_INTENSITY_MIN:g}–{PARTICLE_INTENSITY_MAX:g})",
-                  style="CardMuted.TLabel").pack(side="left", padx=(4, 10))
-        ttk.Label(particles, text="Height", style="CardMuted.TLabel").pack(side="left", padx=(0, 5))
-        height = ttk.Entry(particles, textvariable=self.confetti_spawn_height, width=7)
-        height.pack(side="left")
-        height.bind("<Return>", lambda _event: self._particles_changed())
-        height.bind("<FocusOut>", lambda _event: self._particles_changed())
-        ttk.Label(particles, text="units (100–1500)", style="CardMuted.TLabel").pack(side="left", padx=(4, 12))
-        ttk.Checkbutton(particles, text="Despawn on ground",
-                        variable=self.confetti_despawn_on_ground,
-                        command=self._particles_changed).pack(side="left")
-        body = ttk.Frame(tab)
-        body.grid(row=2, column=0, sticky="nsew")
-        body.columnconfigure(0, weight=2, minsize=255)
-        body.columnconfigure(1, weight=4, minsize=485)
-        body.rowconfigure(0, weight=1)
-        left = ttk.Frame(body, style="Card.TFrame", padding=10)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(1, weight=1)
-        ttk.Label(left, text="ANIMATED TRACKS", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
-        frame, self.track_tree = self._tree(left, ("name",), ("Variable",), (240,), height=3)
-        self.track_tree.column("name", anchor="w", minwidth=120)
-        frame.grid(row=1, column=0, sticky="nsew")
-        ttk.Button(left, text="Remove track", style="Quiet.TButton", command=self._remove_track).grid(row=2, column=0, sticky="w", pady=(7, 0))
-        right = ttk.Frame(body, style="Card.TFrame", padding=12)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(3, weight=1)
-        properties = ttk.Frame(right, style="Card.TFrame")
-        properties.grid(row=0, column=0, sticky="ew")
-        properties.columnconfigure(0, weight=1)
-        ttk.Label(properties, text="Variable name", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
-        ttk.Entry(properties, textvariable=self.track_name, width=30).grid(row=1, column=0, sticky="ew")
-        settings = ttk.Frame(right, style="Card.TFrame")
-        settings.grid(row=1, column=0, sticky="ew", pady=8)
-        ttk.Label(settings, text="Curve", style="CardMuted.TLabel").pack(side="left", padx=(0, 6))
-        ttk.Combobox(settings, textvariable=self.track_mode, values=("step", "linear", "smooth"), state="readonly", width=8).pack(side="left")
-        ttk.Label(settings, text="Restore · optional", style="CardMuted.TLabel").pack(side="left", padx=(15, 6))
-        ttk.Entry(settings, textvariable=self.restore_value, width=18).pack(side="left")
-        track_controls = ttk.Frame(right, style="Card.TFrame")
-        track_controls.grid(row=2, column=0, sticky="w", pady=(0, 8))
-        ttk.Button(track_controls, text="Create track", command=self._create_track).pack(side="left")
-        ttk.Button(track_controls, text="Update settings", command=self._update_track).pack(side="left", padx=7)
-        frame, self.value_tree = self._tree(right, ("time", "value"), ("Shot seconds", "Value"), (115, 180), height=2)
-        frame.grid(row=3, column=0, sticky="nsew")
-        value_controls = ttk.Frame(right, style="Card.TFrame")
-        value_controls.grid(row=4, column=0, sticky="ew", pady=(8, 0))
-        value_controls.columnconfigure(1, weight=1)
-        ttk.Label(value_controls, text="Time", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Entry(value_controls, textvariable=self.track_time, width=9).grid(row=0, column=1, sticky="w", padx=(8, 12), pady=(0, 6))
-        ttk.Label(value_controls, text="Value", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w")
-        ttk.Entry(value_controls, textvariable=self.track_value, width=23).grid(row=1, column=1, sticky="ew", padx=(8, 12))
-        ttk.Button(value_controls, text="Add / replace", command=self._put_value).grid(row=0, column=2, sticky="ew", pady=(0, 6))
-        ttk.Button(value_controls, text="Delete", style="Quiet.TButton", command=self._delete_value).grid(row=1, column=2, sticky="ew")
-        ttk.Label(right, text="Range DOF: near blurry · near crisp · far crisp · far blurry. Enter four numbers separated by spaces.",
-                  style="CardMuted.TLabel", wraplength=430).grid(row=5, column=0, sticky="w", pady=(8, 0))
-        self.track_tree.bind("<<TreeviewSelect>>", self._select_track)
-        self.value_tree.bind("<<TreeviewSelect>>", self._select_value)
-        self.value_tree.bind("<Delete>", lambda _event: self._delete_value())
+    def _build_fixed_dialog(self):
+        """The Fixed camera values window (opened from Look's "Fixed values…")."""
         self.fixed_dialog = tk.Toplevel(self.root)
+        chrome.style_title_bar(self.fixed_dialog)
         self.fixed_dialog.title("Fixed camera values")
-        self.fixed_dialog.geometry(self._window_size(780, 300))
-        self.fixed_dialog.minsize(*self._window_dimensions(740, 270))
+        self.fixed_dialog.geometry(self._window_size(820, 360))
+        self.fixed_dialog.minsize(*self._window_dimensions(740, 300))
         self.fixed_dialog.configure(bg=BG)
         self.fixed_dialog.transient(self.root)
         self.fixed_dialog.protocol("WM_DELETE_WINDOW", self.fixed_dialog.withdraw)
-        setup = ttk.Frame(self.fixed_dialog, style="Card.TFrame", padding=12)
-        setup.pack(fill="both", expand=True)
+        body = ttk.Frame(self.fixed_dialog, padding=self._px((24, 22, 24, 24)))
+        body.pack(fill="both", expand=True)
+        body.rowconfigure(1, weight=1)
+        body.columnconfigure(0, weight=1)
+        tk.Label(body, text="Fixed camera values", bg=BG, fg=TEXT,
+                 font=fonts.font(self.fixed_dialog, "page_title"), anchor="w").grid(
+                     row=0, column=0, columnspan=2, sticky="ew", pady=self._px((0, 15)))
+        setup = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20))
+        setup.grid(row=1, column=0, sticky="nsew", padx=self._px((0, 15)))
         setup.rowconfigure(1, weight=1)
         setup.columnconfigure(0, weight=1)
-        ttk.Label(setup, text="FIXED VALUES", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        frame, self.setup_tree = self._tree(setup, ("name", "value"), ("Variable", "Value"), (250, 80), height=2)
+        ttk.Label(setup, text="Fixed Values", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", pady=self._px((0, 15)))
+        frame, self.setup_tree = self._tree(setup, ("name", "value"), ("Variable", "Value"), self._px((250, 80)), height=6)
         self.setup_tree.column("name", anchor="w")
-        frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
-        fixed_form = ttk.Frame(setup, style="Card.TFrame")
-        fixed_form.grid(row=1, column=1, sticky="n")
-        ttk.Entry(fixed_form, textvariable=self.setup_name, width=26).grid(row=0, column=0, columnspan=2, sticky="ew")
-        ttk.Entry(fixed_form, textvariable=self.setup_value, width=26).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
-        ttk.Button(fixed_form, text="Set value", command=self._set_fixed).grid(row=2, column=0, sticky="w", pady=(7, 0))
-        ttk.Button(fixed_form, text="Remove", style="Quiet.TButton", command=self._remove_fixed).grid(row=2, column=1, pady=(7, 0))
+        frame.grid(row=1, column=0, sticky="nsew")
+        fixed_form = ttk.Frame(body, style="Rounded.Card.TFrame", padding=self._px(20),
+                               width=self._px(280), height=self._px(152))
+        fixed_form.grid(row=1, column=1, sticky="new")
+        fixed_form.grid_propagate(False)
+        fixed_form.columnconfigure(0, weight=1)
+        ttk.Entry(fixed_form, textvariable=self.setup_name, width=1, style="Card.TEntry").grid(row=0, column=0, sticky="ew")
+        ttk.Entry(fixed_form, textvariable=self.setup_value, width=1, style="Card.TEntry").grid(row=1, column=0, sticky="ew", pady=self._px((10, 0)))
+        actions = ttk.Frame(fixed_form, style="Card.TFrame")
+        actions.grid(row=2, column=0, sticky="e", pady=self._px((10, 0)))
+        ttk.Button(actions, text="Remove", style="Card.TButton", command=self._remove_fixed).pack(side="left")
+        ttk.Button(actions, text="Set value", style="Card.Primary.TButton", command=self._set_fixed).pack(side="left", padx=self._px((10, 0)))
         self.setup_tree.bind("<<TreeviewSelect>>", self._select_fixed)
         self.fixed_dialog.withdraw()
 
@@ -2977,56 +3197,6 @@ class DollyApp:
     def _show_fixed_values(self):
         self.fixed_dialog.deiconify()
         self.fixed_dialog.lift()
-
-    def _build_timeline(self, parent):
-        frame = ttk.Frame(parent, padding=(0, 10, 0, 0))
-        self.timeline_frame = frame
-        frame.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        frame.columnconfigure(0, weight=1)
-        timeline = ttk.Frame(frame)
-        timeline.pack(fill="x", pady=(0, 12))
-        self.slider = ttk.Scale(timeline, from_=0, to=10, variable=self.shot_time, command=self._slide)
-        self.slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
-        self.slider.bind("<ButtonPress-1>", lambda _event: setattr(self, "dragging", True))
-        self.slider.bind("<ButtonRelease-1>", lambda _event: setattr(self, "dragging", False))
-        ttk.Entry(timeline, textvariable=self.time_text, width=9).pack(side="left")
-        ttk.Label(timeline, text="s").pack(side="left", padx=6)
-        controls = ttk.Frame(frame)
-        controls.pack(fill="x", pady=(0, 12))
-        for text, command in (("Play shot", self._play),
-                              ("Pause", lambda: self._session_operation("Pausing", self.controller.pause)),
-                              ("Stop / restore", lambda: self._session_operation("Stopping", self.controller.stop))):
-            ttk.Button(controls, text=text, command=command).pack(side="left", padx=(0, 10))
-        ttk.Label(controls, text="Playback speed").pack(side="left", padx=(12, 8))
-        self.speed_combo = ttk.Combobox(controls, textvariable=self.speed,
-            values=("0.05", "0.1", "0.25", "0.5", "1", "2", "4"), width=6)
-        self.speed_combo.pack(side="left")
-        self.speed_combo.bind("<<ComboboxSelected>>",
-                              lambda _event: self._apply_playback_speed())
-        self.speed_combo.bind("<Return>", lambda _event: self._apply_playback_speed())
-        self.playback_disclosure = gui_layout.disclosure(frame, "Playback options")
-        options = self.playback_disclosure.body
-        row = ttk.Frame(options)
-        row.pack(fill="x", pady=(0, 12))
-        for title, var in (("Hide HUD", self.hide_hud), ("Frozen preview", self.frozen)):
-            ttk.Checkbutton(row, text=title, variable=var).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(row, text="Renderer relief during seeks", variable=self.seek_relief,
-                        command=self._set_seek_relief).pack(side="left")
-        row = ttk.Frame(options)
-        row.pack(fill="x", pady=(0, 12))
-        ttk.Button(row, text="Preview frame", command=self._apply_frame).pack(side="left", padx=(0, 10))
-        ttk.Button(row, text="Seek replay", command=self._seek).pack(side="left", padx=(0, 18))
-        ttk.Label(row, text="Updates / s").pack(side="left", padx=(0, 8))
-        self.rate_combo = ttk.Combobox(row, textvariable=self.rate, values=("30", "60", "120"), state="readonly", width=6)
-        self.rate_combo.pack(side="left")
-        self.smoothing_row = ttk.Frame(options)
-        self.smoothing_row.pack(fill="x", pady=(0, 10))
-        self._smoothing_packed = True
-        ttk.Label(self.smoothing_row, text="Console smoothing").pack(side="left", padx=(0, 8))
-        self.smoothing_combo = ttk.Combobox(self.smoothing_row, textvariable=self.smoothing,
-            values=("Off", "Light", "Balanced", "Strong"), state="readonly", width=12)
-        self.smoothing_combo.pack(side="left")
-        ttk.Label(self.smoothing_row, text="Light 80 ms / Balanced 160 ms / Strong 280 ms", style="Muted.TLabel").pack(side="left", padx=12)
 
     def _worker_loop(self):
         self.operations.run(self._operation_failure_kind)
@@ -3072,6 +3242,14 @@ class DollyApp:
         self.operations.enqueue_log(*parts)
 
     def _log(self, text):
+        # An idle callback can report a startup error before the activity-log
+        # window exists (for example when the window manager processes idle
+        # work while a Toplevel is being created). Preserve it until then.
+        if not hasattr(self, "log_widget"):
+            if not hasattr(self, "_early_log"):
+                self._early_log = []
+            self._early_log.append(text)
+            return
         self.log_widget.configure(state="normal")
         self.log_widget.insert("end", str(text).rstrip() + "\n")
         if int(self.log_widget.index("end-1c").split(".")[0]) > 1200:
@@ -3201,7 +3379,8 @@ class DollyApp:
                 self.smoothing_row.pack_forget()
                 self._smoothing_packed = False
             elif not native and not getattr(self, "_smoothing_packed", False):
-                self.smoothing_row.pack(fill="x", pady=(0, 10))
+                # Back in its place in Playback options: 10 px below the row above it.
+                self.smoothing_row.pack(fill="x", pady=(self._px(10), 0))
                 self._smoothing_packed = True
             if hasattr(self, "camera_curve_workspace"):
                 recording = self.video_export.status().get("state") if self.video_export is not None else None
@@ -3241,6 +3420,7 @@ class DollyApp:
         else:
             try:
                 self._refresh_video(status)
+                self._refresh_discord_presence(status)
                 self._last_video_poll_error = None
             except (RuntimeError, ValueError, TypeError, OSError) as exc:
                 message = "Media status unavailable: " + str(exc)
@@ -3254,13 +3434,13 @@ class DollyApp:
             editor_session.poll(self)
             capture_state = "disabled" if self.native_editor_active else "normal"
             for checkbox in getattr(self, "capture_hotkey_checkboxes", ()):
-                checkbox.configure(state=capture_state)
+                _set_widget_state(checkbox, capture_state)
             if self.native_editor_active:
                 binding = self.app_settings.action_bindings.get("capture")
-                self.hotkey_enabled.set(binding is not None)
-                self.hotkey_label.set("Native capture · " + (binding.label if binding else "Unbound"))
+                _set_var(self.hotkey_enabled, binding is not None)
+                _set_var(self.hotkey_label, "Native capture · " + (binding.label if binding else "Unbound"))
             else:
-                self.hotkey_label.set(self._capture_binding_label())
+                _set_var(self.hotkey_label, self._capture_binding_label())
         except Exception as exc:
             self._log("Editor connection unavailable: " + str(exc))
         if getattr(self, "_dropped_logs", 0):
@@ -3328,11 +3508,13 @@ class DollyApp:
             self.preview_attach = False
             self._bone_picker_context = None
             self._attach_snap_pending = False
+            self._attach_snap_started = None
+            self._attach_snap_context = None
             self.native_editor_active = False
             self._native_editor_bridge = self._native_visualization_bridge = None
             self._native_visualization_cache = None
             if self.root.state() == 'iconic':
-                self.root.deiconify()
+                self._restore_from_taskbar()
             if self.startup_cancel is not None:
                 self.startup_cancel.set()
         if not self.busy and getattr(self,'_game_exit_cleanup',None) is not session:
@@ -3340,6 +3522,19 @@ class DollyApp:
                 self._clear_layer_pipeline()
             if self._submit('Clearing closed game session',self.controller.recover_dead_session):
                 self._game_exit_cleanup = session
+
+    def _restore_from_taskbar(self):
+        """Bring the minimized window back, activated as a click on its taskbar button does.
+
+        USER-ADDITIONS UPDATE 20: Tk still treats Dolly's frameless window as override-redirect
+        and would show it without activating it, so Windows restores it
+        (:meth:`.window_chrome.WindowChrome.restore`); a window with the native frame deiconifies.
+        """
+        window = getattr(self, "window_chrome", None)
+        if window is not None and window.active:
+            window.restore()
+        else:
+            self.root.deiconify()
 
     def _set_driver_indicator(self, backend, running):
         """Show the camera driver actually in use, live once a session runs."""
@@ -3403,6 +3598,8 @@ class DollyApp:
         Dolly is closing, the message is only logged and shown in the status.
         """
         text = str(exc) or type(exc).__name__
+        # Remembered first, so the footer status trace already sees an error.
+        self._status_error_text = text[:240]
         self.status_text.set(text[:240])
         self._log(f"{title}: {text}")
         if self.closed:
@@ -3433,7 +3630,8 @@ class DollyApp:
             self.game_path.set(str(path))
         if self.game_path.get() and not self.replay_folder.get():
             self.replay_folder.set(str(find_replay_folder(self.game_path.get())))
-        self.status_text.set("Choose a replay and press Play replay to begin.")
+        self._request_display_fonts()
+        self.status_text.set("Choose a replay and press START to begin.")
         if self.replay_folder.get() and Path(self.replay_folder.get()).is_dir():
             self._refresh_replays()
 
@@ -3450,6 +3648,34 @@ class DollyApp:
         if path:
             self.demo_path.set(path)
             self.replay_folder.set(str(Path(path).parent))
+
+    def _repair_selected_replay(self):
+        """Offer an experimental repair as a new file; leave the source alone."""
+        if self.busy:
+            self.status_text.set("Please wait for the current operation to finish.")
+            return
+        selected = self.demo_path.get().strip()
+        if not selected:
+            self._error("Replay repair", ValueError("Choose a replay to repair first."))
+            return
+        source = Path(selected)
+        destination = filedialog.asksaveasfilename(
+            parent=self.root, title="Save experimental repaired replay",
+            initialdir=str(source.parent), initialfile=source.stem + "-repaired.dem",
+            defaultextension=".dem", filetypes=(("Deadlock replay", "*.dem"),))
+        if not destination:
+            return
+        from .replay_repair import repair_replay
+
+        def finished(path):
+            self.status_text.set("Replay copy saved. Select it to try it in Deadlock.")
+            messagebox.showinfo(
+                "Replay copy saved",
+                "The experimental copy was saved to:\n" + str(path) +
+                "\n\nThe original replay was not changed. Open the copy to test whether it plays.",
+                parent=self.root)
+
+        self._submit("Repairing replay", lambda: repair_replay(source, Path(destination)), finished)
 
     def _launch(self):
         game, demo = self.game_path.get().strip(), self.demo_path.get().strip()
@@ -3468,6 +3694,8 @@ class DollyApp:
                       if hasattr(self, "allow_mod_overrides")
                       else bool(getattr(self.app_settings, "allow_mod_overrides", False)))
         mod_options = {"allow_mod_overrides": True} if allow_mods else {}
+        if getattr(self.app_settings, "nvidia_dlss", False):
+            mod_options["nvidia_dlss"] = True
         self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol, native=native,
                      **mod_options, **graphics_options), self._session_result)
 
@@ -3783,7 +4011,6 @@ class DollyApp:
             candidate.validate()
             self.project = candidate
             self._mark_dirty()
-            self._draw_path()
             self._refresh_curve()
         self.controller.standard_aspect = self.project.standard_aspect
         self.status_text.set("Shot timing and framing are ready.")
@@ -3898,6 +4125,7 @@ class DollyApp:
             for variable in self.attach_vars.values():
                 variable.set("0")
             self.attach_smoothing.set("0")
+            self.attach_lock_vertical_aim.set(False)
             self.attach_hide.set(True)
             self.attach_clearance.set("Exact offset")
             self.attach_point.set("Eyes")
@@ -3907,6 +4135,7 @@ class DollyApp:
         for variable, value in zip(self.attach_vars.values(), attach.offset):
             variable.set(_number(value))
         self.attach_smoothing.set(_number(attach.smoothing))
+        self.attach_lock_vertical_aim.set(attach.lock_vertical_aim)
         self.attach_hide.set(bool(attach.hide_body))
         self.attach_clearance.set("Automatic clearance" if attach.clearance_mode == "auto" else "Exact offset")
         self.attach_point.set(attach.point.title())
@@ -3961,7 +4190,9 @@ class DollyApp:
 
     def _attach_result_changed(self, result):
         """Apply native snap / attached-fly offsets to the selected attach key."""
-        if not (getattr(self, "preview_attach", False) or getattr(self, "_attach_snap_pending", False)):
+        preview = bool(getattr(self, "preview_attach", False))
+        snap_pending = bool(getattr(self, "_attach_snap_pending", False))
+        if not (preview or snap_pending) or (preview and snap_pending):
             return
         index = self._selection_index(self.camera_tree)
         if index is None or not 0 <= index < len(self.project.keyframes):
@@ -3971,17 +4202,29 @@ class DollyApp:
             return
         from .native_effects import model_token
         bridge = self.controller._native_bridge()
+        if snap_pending and not editor_session.snap_is_current(self, bridge):
+            editor_session.cancel_snap(self, "Snap cancelled because the selected camera changed.")
+            return
         if (not bridge or result.get("config_sequence") != bridge._editor_attach_sequence or
                 result.get("handle") != key.attach.handle or
+                (key.attach.entity_id and result.get("entity_index") != key.attach.entity_id) or
                 result.get("model") != model_token(key.attach.model) or
                 result.get("point") != ("eyes", "weapon", "bone").index(key.attach.point)):
             return
         self._attach_snap_pending = False
+        self._attach_snap_started = None
+        self._attach_snap_context = None
         offsets = tuple(float(value) for value in result.get("offset") or ())
-        if len(offsets) != 6 or offsets == tuple(key.attach.offset):
+        if len(offsets) != 6:
+            return
+        if snap_pending:
+            self.status_text.set("Snap complete. Choose Attach here to preview.")
+        if offsets == tuple(key.attach.offset) and (not snap_pending or key.attach.orientation_mode == "rigid"):
             return
         candidate = copy.deepcopy(self.project)
         candidate.keyframes[index].attach.offset = offsets
+        if snap_pending:
+            candidate.keyframes[index].attach.orientation_mode = "rigid"
         candidate.validate()
         self.project = candidate
         self._mark_dirty()
@@ -4004,6 +4247,15 @@ class DollyApp:
                     raise ValueError("The selected player has no readable model identity yet.")
                 offsets = tuple(_finite(self.attach_vars[name].get(), "Attach offset")
                                 for name in ("x", "y", "z", "pitch", "yaw", "roll"))
+                selected_attach = candidate.keyframes[index].attach
+                lock_vertical_aim = bool(self.attach_lock_vertical_aim.get())
+                changing_lock = any(
+                    isinstance(candidate.keyframes[target].attach, AttachKey) and
+                    candidate.keyframes[target].attach.lock_vertical_aim != lock_vertical_aim
+                    for target in targets)
+                if changing_lock and (getattr(self, "_attach_snap_pending", False) or
+                                      not self._shot_edit_ready()):
+                    raise ValueError("Detach and finish Snap or recording before changing vertical aim lock.")
                 attach = AttachKey(handle=int(player.get("handle", 0)),
                                    entity_id=int(player.get("entity_index", 0) or 0),
                                    model=model_path,
@@ -4012,7 +4264,10 @@ class DollyApp:
                                    offset=offsets,
                                    smoothing=_finite(self.attach_smoothing.get(), "Attach smoothing"),
                                    hide_body=bool(self.attach_hide.get()),
-                                   clearance_mode="auto" if self.attach_clearance.get() == "Automatic clearance" else "exact")
+                                   clearance_mode="auto" if self.attach_clearance.get() == "Automatic clearance" else "exact",
+                                   orientation_mode=selected_attach.orientation_mode
+                                   if isinstance(selected_attach, AttachKey) else "legacy",
+                                   lock_vertical_aim=lock_vertical_aim)
             for target in targets:
                 candidate.keyframes[target].source_blend = float(self.source_blend.get())
                 candidate.keyframes[target].source = "attach" if attach else "free"
@@ -4083,7 +4338,7 @@ class DollyApp:
         return "In-game capture · " + self.capture_binding.label
 
     def _show_keybinds(self, action="capture"):
-        self.notebook.select(self.controls_tab)
+        self._select_page(self.controls_tab)
         self.controls_view.reveal_action(action)
 
     def _open_capture_binding(self):
@@ -4341,7 +4596,7 @@ class DollyApp:
                 self._refresh_keys(key.time)
                 self._set_time(key.time)
                 if not hasattr(self, "full_editor") or self.full_editor.get():
-                    self.notebook.select(self.camera_tab)
+                    self._select_page(self.camera_tab)
                 verb = "Replaced" if action == "replace" else "Captured"
                 self.status_text.set(f"{verb} view {candidate.keyframes.index(key) + 1} at {key.time:g} seconds. "
                                      "Fly to the next position and use Add camera here.")
@@ -4444,6 +4699,9 @@ class DollyApp:
             self._live_playback_speed = speed
 
     def _play(self, *, project=None):
+        if edition.is_environment() and getattr(self, '_still_run', None) is None:
+            self.status_text.set('Path playback is unavailable in Environment Capture.')
+            return False
         def operation():
             # One last chance to repair a shot authored at another replay rate
             # before the path runs; the controller only warns from here.
@@ -4471,7 +4729,6 @@ class DollyApp:
 
     def _slide(self, value):
         self.time_text.set(f"{float(value):.3f}".rstrip("0").rstrip("."))
-        self._draw_path()
         if hasattr(self, "aspect_curve"):
             self.aspect_curve.set_current_time(float(value))
         if hasattr(self, "rotation_curve"):
@@ -4490,12 +4747,6 @@ class DollyApp:
         self.slider.configure(to=self._timeline_limit(time))
         self.shot_time.set(time)
         self.time_text.set(_number(time))
-        # Moving the playhead must not rebuild the whole path overview; the
-        # full redraw only happens when the project itself changed.
-        if getattr(self, "_path_project", None) is self.project:
-            self._draw_path_playhead(time)
-        else:
-            self._draw_path()
         if hasattr(self, "aspect_curve"):
             self.aspect_curve.set_current_time(float(time))
         if hasattr(self, "rotation_curve"):
@@ -4707,7 +4958,9 @@ class DollyApp:
             self.path_summary.set(f"{len(self.project.keyframes)} cameras · {self.project.duration:.2f} s")
         if hasattr(self, "selected_text") and not self.camera_tree.selection():
             self.selected_text.set("No camera selected")
-        self._draw_path()
+        view = getattr(self, "camera_view", None)
+        if view is not None:
+            view.fit_camera_rows()   # the Cameras table follows the shot (3 to 8 rows, as the bento allows)
         self._refresh_curve()
         self._update_export_camera_note()
         if selected_time is not None:
@@ -4729,90 +4982,12 @@ class DollyApp:
             self.setup_tree.insert("", "end", iid=str(index), values=(name, format_cvar_value(value)))
         self._refresh_citadel_dof()
 
-    def _schedule_draw_path(self, _event=None):
-        """Coalesce resize-driven path redraws into one idle pass."""
-        if getattr(self, "_path_draw_scheduled", False):
-            return
-        schedule = getattr(self.root, "after_idle", None)
-        if not callable(schedule):
-            self._draw_path()
-            return
-        self._path_draw_scheduled = True
-        schedule(self._run_scheduled_draw_path)
-
-    def _run_scheduled_draw_path(self):
-        self._path_draw_scheduled = False
-        self._draw_path()
-
-    def _draw_path(self):
-        if not hasattr(self, "canvas"):
-            return
-        canvas = self.canvas
-        self._path_projection = None
-        self._path_project = None
-        canvas.delete("all")
-        width, height = canvas.winfo_width(), canvas.winfo_height()
-        if width < 20 or height < 20:
-            return
-        if height < 80:
-            canvas.create_text(width / 2, height / 2, text="Enlarge the window for a path overview",
-                               fill=MUTED, font=(FAMILY, _F["small"]), width=max(100, width - 20), justify="center")
-            return
-        keys = self.project.keyframes
-        if not keys:
-            canvas.create_text(width / 2, height / 2, text="Capture a view\nto begin a path", fill=MUTED,
-                               font=(FAMILY, _F["body"]), justify="center")
-            return
-        points = [(key.x, key.y) for key in keys]
-        sample = []
-        if len(keys) > 1:
-            start, end = keys[0].time, keys[-1].time
-            try:
-                for i in range(81):
-                    state = self.project.evaluate(start + (end - start) * i / 80)
-                    sample.append((state["x"], state["y"]))
-            except (ValueError, KeyError, TypeError):
-                sample = points
-        all_points = points + sample
-        x0, x1 = min(p[0] for p in all_points), max(p[0] for p in all_points)
-        y0, y1 = min(p[1] for p in all_points), max(p[1] for p in all_points)
-        scale = min(max(1, width - 44) / max(1, x1 - x0), max(1, height - 44) / max(1, y1 - y0))
-        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        self._path_projection = (cx, cy, scale, width, height)
-        self._path_project = self.project
-        def xy(point):
-            return (width / 2 + (point[0] - cx) * scale, height / 2 - (point[1] - cy) * scale)
-        if len(sample) > 1:
-            canvas.create_line(*[coordinate for point in sample for coordinate in xy(point)], fill=ACCENT, width=2)
-        for i, point in enumerate(points):
-            x, y = xy(point)
-            canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill=ACCENT, outline="")
-            canvas.create_text(x + 8, y - 8, text=str(i + 1), fill=TEXT, anchor="w", font=(FAMILY, _F["small"]))
-        self._draw_path_playhead(self.shot_time.get())
-
-    def _draw_path_playhead(self, time):
-        """Move the playhead marker without rebuilding the path overview."""
-        canvas = getattr(self, "canvas", None)
-        projection = getattr(self, "_path_projection", None)
-        if canvas is None or projection is None:
-            return
-        cx, cy, scale, width, height = projection
-        canvas.delete("path_playhead")
-        try:
-            state = self.project.evaluate(time)
-            x = width / 2 + (state["x"] - cx) * scale
-            y = height / 2 - (state["y"] - cy) * scale
-        except (ValueError, KeyError, TypeError):
-            return
-        canvas.create_oval(x - 6, y - 6, x + 6, y + 6, outline=WARN, width=2, tags="path_playhead")
-        yaw = math.radians(state["yaw"])
-        canvas.create_line(x, y, x + math.cos(yaw) * 18, y - math.sin(yaw) * 18,
-                           fill=WARN, width=2, arrow="last", tags="path_playhead")
-
     def _title(self):
         marker = " *" if self.dirty else ""
         self.project_text.set(self.project.name + marker)
-        self.root.title(f"{edition.application_name()} - {self.project.name}{marker}")
+        self.root.title(f"{edition.application_name()} — {self.project.name}{marker}")
+        if getattr(self, "title_bar", None) is not None:
+            self.title_bar.set_title(self.project.name + marker)
 
     def _mark_dirty(self):
         history = getattr(self, "shot_history", None)
@@ -4886,6 +5061,8 @@ class DollyApp:
         self._guard("Redo shot edit", lambda: self._move_shot_history(True))
 
     def _allow_discard(self):
+        if getattr(self, "_saving_shot", False):
+            return False
         if self.playing or self.busy:
             messagebox.showinfo("Finish the current operation", "Stop path playback and wait for the current operation before changing projects.", parent=self.root)
             return False
@@ -4932,7 +5109,7 @@ class DollyApp:
             self._refresh_project()
             self._set_time(0)
             if self.full_editor.get():
-                self.notebook.select(self.camera_tab)
+                self._select_page(self.camera_tab)
             if legacy_project:
                 self.status_text.set("Shot imported: camera positions and timing are preserved. Framing starts at normal aspect; old FOV values are kept as inactive metadata.")
             else:
@@ -4941,29 +5118,43 @@ class DollyApp:
         self._guard("Open shot", operation)
 
     def save(self, save_as=False):
-        if self.busy:
-            self.status_text.set("Finish the current operation before saving the shot.")
+        if getattr(self, "_saving_shot", False):
+            LOG.info("Save shot ignored: a save dialog is already open.")
             return False
+        # Worker operations publish edits on Tk's thread. Saving the currently
+        # visible shot does not require an idle game or worker queue.
+        self._saving_shot = True
+        LOG.info("Save shot requested: save_as=%s busy=%s existing_file=%s",
+                 save_as, self.busy, self.file_path is not None)
         try:
             self._sync_options()
+            project = copy.deepcopy(self.project)
             path = self.file_path
             if save_as or path is None:
-                filename = "".join(character if character.isalnum() or character in "-_ " else "_" for character in self.project.name).strip() or "shot"
+                filename = "".join(character if character.isalnum() or character in "-_ " else "_" for character in project.name).strip() or "shot"
+                LOG.info("Opening Save camera shot dialog.")
                 chosen = filedialog.asksaveasfilename(parent=self.root, title="Save camera shot", defaultextension=".json",
                                                        initialfile=filename + ".json", filetypes=(("Dolly shot", "*.json"),))
                 if not chosen:
+                    LOG.info("Save shot cancelled.")
                     return False
                 path = Path(chosen)
-            self.project.save(path)
-            self.shot_history.mark_saved(self.project)
+            project.save(path)
+            self.shot_history.mark_saved(project)
             self.file_path = path
-            self.dirty = False
+            # Native events/worker completions can edit the shot while Tk's
+            # modal picker is running. Those later changes remain unsaved.
+            self.dirty = self.shot_history.is_dirty(self.project)
             self._title()
-            self.status_text.set(f"Saved {path.name}.")
+            self.status_text.set(f"Saved {path.name}." + (" Newer edits are still unsaved." if self.dirty else ""))
+            LOG.info("Saved camera shot: %s; newer_edits=%s", path, self.dirty)
             return True
         except Exception as exc:
+            LOG.exception("Save shot failed")
             self._error("Save shot", exc)
             return False
+        finally:
+            self._saving_shot = False
 
     def rename(self):
         if self.busy or self.playing:
@@ -5045,6 +5236,12 @@ class DollyApp:
         self._destroy()
 
     def _destroy(self):
+        presence = getattr(self, "_discord_presence", None)
+        if presence is not None:
+            try:
+                presence.close()
+            except Exception:
+                LOG.debug("Discord presence shutdown unavailable", exc_info=True)
         editor_session.close(self)
         self.capture_generation += 1
         self.hotkey_enabled.set(False)
@@ -5056,15 +5253,36 @@ class DollyApp:
             self.capture_hotkey = None
         self.closed = True
         self.operations.shutdown()
+        # A page switch may still have its window fit waiting for idle.
+        for name in ("_fit_job", "_refit_job"):
+            job = getattr(self, name, None)
+            if job is not None:
+                try:
+                    self.root.after_cancel(job)
+                except tk.TclError:
+                    pass
+                setattr(self, name, None)
         self.root.destroy()
 
 
 def main():
+    # Before the first window: Windows then draws Dolly at the display's real
+    # DPI (sharp) and Tk reports it, so every design size scales by ui_scale.
+    LOG.info("DPI aware: %s", enable_dpi_awareness())
     root = tk.Tk()
-    app = DollyApp(root)
-    from .update_ui import UpdateUI
-    app.update_manager = UpdateUI(app, skip_startup="--updated" in sys.argv)
-    root.mainloop()
+    app = None
+    try:
+        app = DollyApp(root)
+        app.start_discord_presence()
+        from .update_ui import UpdateUI
+        app.update_manager = UpdateUI(app, skip_startup="--updated" in sys.argv)
+        root.mainloop()
+    finally:
+        # USER-ADDITIONS UPDATE 20: Windows must never call Dolly's window procedure once Python
+        # stops running the window, and a failed start must not leave it invisible.
+        window_chrome.release(root)
+        if app is not None and app._discord_presence is not None:
+            app._discord_presence.close()
 
 
 if __name__ == "__main__":

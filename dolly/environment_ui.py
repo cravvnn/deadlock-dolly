@@ -7,36 +7,76 @@ from . import edition
 from .environment_job import PanoramaJob
 
 
-def build(app, parent):
+def build(app, page):
     if not edition.is_environment():
         return
-    from .ui.widgets import card
-    box = card(parent, 'Environment panorama')
+    box = page.add_card('Environment panorama')
     app.environment_job = PanoramaJob()
     pictures=Path.home()/'Pictures'
     app.environment_folder = tk.StringVar(value=str(pictures if pictures.is_dir() else Path.home()))
     app.environment_size = tk.StringVar(value='1024')
-    ttk.Label(box, text='Capture folder (screenshots and panoramas). Assign Capture panorama in Keybinds. '
-                       'Pause the replay and position the camera before capturing.',
-              style='CardMuted.TLabel', wraplength=760).pack(anchor='w')
-    row = ttk.Frame(box, style='Card.TFrame'); row.pack(fill='x', pady=8)
-    ttk.Entry(row, textvariable=app.environment_folder).pack(side='left', fill='x', expand=True)
+    app.environment_card = box
+    box.text('Pause the replay and position the camera. The capture folder is shared with PNG stills.')
+    row = box.row()
+    row.widget(ttk.Entry(row.host, textvariable=app.environment_folder, style='Kit.TEntry'), width='fill')
+    row.gap(10)
     def browse():
         folder = filedialog.askdirectory(parent=app.root, title='Capture output folder',
                                          initialdir=app.environment_folder.get())
         if folder: app.environment_folder.set(folder)
-    ttk.Button(row, text='Browse', command=browse).pack(side='right', padx=6)
-    size_row=ttk.Frame(box,style='Card.TFrame');size_row.pack(fill='x',pady=6)
-    ttk.Label(size_row,text='Square render size (next launch)',style='CardMuted.TLabel').pack(side='left')
-    ttk.Combobox(size_row,textvariable=app.environment_size,values=('1024','2048','4096'),
-                 state='readonly',width=8).pack(side='left',padx=8)
-    ttk.Button(size_row,text='Apply size',command=lambda:apply_size(app)).pack(side='left')
-    ttk.Button(box, text='Capture panorama', command=lambda: start(app)).pack(side='right')
-    ttk.Button(box, text='Cancel capture', command=app.environment_job.cancelled.set).pack(side='right',padx=6)
-    ttk.Button(box, text='Set capture key', command=lambda: app._show_keybinds('capture_environment')).pack(side='left')
-    ttk.Label(box, text='Experimental HDR reference: animated units and effects are filtered. '
-                       'Check the result for remaining attachments, shadows and seams.',
-              style='CardMuted.TLabel', wraplength=760).pack(anchor='w', pady=8)
+    row.button('Browse', browse)
+    row = box.row()
+    row.label('Square size (next launch)')
+    row.gap(10)
+    app.environment_size_combo = row.widget(ttk.Combobox(
+        row.host, textvariable=app.environment_size, values=('1024','2048','4096'),
+        state='readonly', style='Kit.TCombobox'), width=100)
+    row.gap(10)
+    row.button('Apply size', lambda: app._guard('Panorama size', lambda: apply_size(app)))
+    row = box.row()
+    row.button('Set capture key', lambda: app._show_keybinds('capture_environment'))
+    row.push()
+    row.button('Cancel', app.environment_job.cancelled.set)
+    row.gap(10)
+    app.environment_capture_button = row.button('Capture panorama', lambda: start(app), kind='primary')
+    box.text('Six overlapping HDR faces become an EXR panorama. Inspect for remaining objects and seams.')
+
+
+def simplify(app):
+    """Present only still capture, viewpoints and fixed scene controls in Kara's kit."""
+    for card in app.export_page.cards:
+        card.set_visible(card in (app.screenshot_card, app.environment_card))
+    # Saved viewpoints have no authored path timing. Retain the internal
+    # variables for old files, but remove their editable rows from this UI.
+    app.capture_mode.set('Replay timing')
+    app.capture_buttons[0].configure(text='New viewpoints')
+    for card, widget in ((app.camera_view.capture_card, app.camera_view.capture_mode_combo),
+                         (app.camera_view.selected_card, app.camera_view.key_entries['time'])):
+        for element in card.elements:
+            widgets = getattr(element, 'widgets', None)
+            if callable(widgets) and widget in widgets():
+                element.set_visible(False)
+                break
+    app.camera_tree.configure(displaycolumns=('view', 'aspect_ratio', 'roll'))
+    for card in (app.camera_view.curves_card, app.camera_view.attach_card,
+                 app.look_view.tracks_card, app.look_view.editor_card, app.look_view.particles_card,
+                 app.settings_view.updates_card, app.settings_view.reshade_card,
+                 app.settings_view.presence_card):
+        card.set_visible(False)
+    app.look_page.spec = None
+    app.look_page._bento = None
+    for card in app.look_page.cards:
+        card.column = None
+    app.look_page.layout()
+    # The shared shot transport is retained internally for saved-view compatibility.
+    # No page adopts it in this edition, so path playback is never offered.
+    app._playback_hosts.clear()
+    app.screenshot_depth.set(False)
+    app.screenshot_players.set(False)
+    app.screenshot_depth_check.configure(state='disabled')
+    app.screenshot_depth_check.place_forget()
+    # File/Edit remain useful for saving viewpoints and undoing camera changes.
+    app.full_editor.set(True)
 
 
 def apply_size(app):
@@ -45,7 +85,8 @@ def apply_size(app):
     if app.busy or app.playing:return False
     size=int(app.environment_size.get())
     if size not in (1024,2048,4096):raise ValueError('Unsupported panorama size')
-    options=f'-windowed -noborder -w {size} -h {size}'
+    from .screenshot import apply_render_size
+    options=apply_render_size(app.launch_options.get(), (size, size))
     parse_launch_options(options)
     settings=replace(app.app_settings,launch_options=options)
     app.launch_options.set(options)

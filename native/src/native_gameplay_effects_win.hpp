@@ -38,10 +38,15 @@ struct GameplayEffectsProfile {
     std::array<unsigned char, 5> screen_call;
 };
 constexpr GameplayEffectsProfile kGameplayEffectsProfiles[] = {
-    // Build6819: hotfix relocates the weight function and its caller by +0xA0;
-    // the controller, option and screen-space call are byte-identical.
+    // Build6821: named initialized controller, complete weight/update and option
+    // owners, named death events and complete screen-option caller fragment.
+    {"8da25ddcd11c1146eeb9770bca24fb25c594c7abdb28947035a44ec8f2945843",
+     0x43bf000, 0x334d790, 0x8731b0, 0x886505, 0x5c7450, 0x627da9, 36,
+     {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x40, 0x48, 0x8b, 0xd9, 0x33}, {0xe8, 0xab, 0xcc, 0xfe, 0xff}, {0x66, 0x0f, 0x6e, 0xca, 0x4c, 0x8d, 0x1d, 0x15, 0xe3, 0xeb, 0x02, 0x66, 0x0f, 0x70, 0xc9, 0x00}, {0xe8, 0xa7, 0xf6, 0xf9, 0xff}},
+    // Build6819: weight/caller move +0xA0; the named initialized controller
+    // moves +0x1010. Factory/RTTI and named event consumers prove its identity.
     {"c09143cf9cd722909404c64e3ffa05157afc15e8a3519b49a1396a627af8ca85",
-     0x43bf000, 0x334c770, 0x873210, 0x886565, 0x5c7450, 0x627da9, 36,
+     0x43bf000, 0x334d780, 0x873210, 0x886565, 0x5c7450, 0x627da9, 36,
      {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x40, 0x48, 0x8b, 0xd9, 0x33}, {0xe8, 0xab, 0xcc, 0xfe, 0xff}, {0x66, 0x0f, 0x6e, 0xca, 0x4c, 0x8d, 0x1d, 0x85, 0xe3, 0xeb, 0x02, 0x66, 0x0f, 0x70, 0xc9, 0x00}, {0xe8, 0xa7, 0xf6, 0xf9, 0xff}},
     // Build6807: complete named controller/weight/update/option/diagnostic and render owner proof.
     {"96ee2a334a93a6a0f40ed56c0cedf441b882681b9605deeb46d83d62d4a3e4b9",
@@ -332,6 +337,14 @@ __declspec(noinline) static float __fastcall gameplay_effect_weight_hook(void* e
     return gameplay_effect_weight(effect, caller);
 }
 
+static bool gameplay_controller_matches(std::uintptr_t client,
+                                        const GameplayEffectsProfile& profile,
+                                        std::uintptr_t expected_vtable) noexcept {
+    std::uintptr_t actual = 0;
+    return expected_vtable && read_value(client + profile.controller, actual) &&
+           actual == expected_vtable;
+}
+
 static CapabilityResult install_gameplay_effect_filter(HMODULE client) {
     // Optional for older reviewed camera profiles. Never use these addresses
     // for a signature-only camera match or a different client fingerprint.
@@ -344,6 +357,12 @@ static CapabilityResult install_gameplay_effect_filter(HMODULE client) {
     }
     if (!selected)
         return {CapabilityState::NotRequired, CapabilityReason::None};
+    // Hook prologues can remain valid after the event queues relocate. Check
+    // the actual named object as well, before installing either callback.
+    const auto controller_vtable =
+        compat_detail::locate_vtable(client, "CCitadelPostProcessingController");
+    if (!gameplay_controller_matches(gClient, *selected, controller_vtable))
+        return {CapabilityState::Unavailable, CapabilityReason::SignatureMismatch};
     unsigned char weight[sizeof(kGameplayEffectWeightBytes)]{};
     unsigned char caller[sizeof(kGameplayEffectCallBytes)]{};
     unsigned char option[sizeof(kGameplayRenderOptionBytes)]{};

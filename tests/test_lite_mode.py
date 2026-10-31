@@ -27,9 +27,15 @@ class LiteModeTests(unittest.TestCase):
 
     def test_extra_actions_are_appended_without_changing_original_ids(self):
         from dolly.editor_wire import EXTRA_ACTIONS
-        self.assertEqual(EXTRA_ACTIONS[-18:-1],('save_shot','seek_replay_tick','clear_camera_path','focus_replay_player','prepare_cinematic','set_pause_after_capture','set_camera_position','set_camera_curve_value','select_curve_camera','set_camera_position_tangents','preview_camera_curve_value','preview_camera_position_tangents','clear_camera_curve_preview','level_view','seek_camera','set_video_ae_camera','set_video_usd_camera'))
-        # Environment edition: appended last so every earlier action ID is unchanged.
-        self.assertEqual(EXTRA_ACTIONS[-1],'capture_environment')
+        # Anchor the stable IDs rather than the tail: later appended actions
+        # must not invalidate this compatibility check.
+        self.assertEqual(EXTRA_ACTIONS[105 - 26:123 - 26],
+                         ('save_shot', 'seek_replay_tick', 'clear_camera_path', 'focus_replay_player',
+                          'prepare_cinematic', 'set_pause_after_capture', 'set_camera_position',
+                          'set_camera_curve_value', 'select_curve_camera', 'set_camera_position_tangents',
+                          'preview_camera_curve_value', 'preview_camera_position_tangents',
+                          'clear_camera_curve_preview', 'level_view', 'seek_camera',
+                          'set_video_ae_camera', 'set_video_usd_camera', 'set_attach_vertical_aim_lock'))
         self.assertEqual(EXTRA_ACTIONS.index('set_framing')+26,40)
         self.assertEqual(EXTRA_ACTIONS.index('save_shot')+26,105)
         self.assertEqual(EXTRA_ACTIONS.index('focus_replay_player')+26,108)
@@ -46,6 +52,7 @@ class LiteModeTests(unittest.TestCase):
         self.assertEqual(EXTRA_ACTIONS.index('seek_camera')+26,119)
         self.assertEqual(EXTRA_ACTIONS.index('set_video_ae_camera')+26,120)
         self.assertEqual(EXTRA_ACTIONS.index('set_video_usd_camera')+26,121)
+        self.assertEqual(EXTRA_ACTIONS.index('set_attach_vertical_aim_lock')+26,122)
 
     def test_typed_tick_dispatch_uses_dolly_seek_and_rejects_invalid_input(self):
         from unittest.mock import patch

@@ -7,6 +7,7 @@ older screenshots and per-version notes may show controls that have changed.
 
 | Task | Current guide |
 | --- | --- |
+| Find controls in Kara's desktop redesign and the in-game top rail | [Redesigned interface](UI_REDESIGN.md) |
 | Install, open a replay, capture cameras, use shortcuts and recover a session | [User guide](USER_GUIDE.md) |
 | Use Camera, Follow, Bone Picker, Look, Export, Campaths and the timelines | [In-game editor](UI_REWORK.md) |
 | Attach a camera to a replay participant's bone | [Bone Picker](BONE_PICKER.md) |
@@ -17,6 +18,7 @@ older screenshots and per-version notes may show controls that have changed.
 | Use paired camera metadata and float depth in compositing | [Camera bundle](CAMERA_BUNDLE.md) |
 | Check the framing and depth-of-field controls Dolly exposes | [Camera control reference](SUPPORTED_CAMERA_CVARS.md) |
 | Check for updates, install an update or recover an interrupted update | [Updating and recovery](UPDATING.md) |
+| Understand, publish or diagnose game-build definitions | [Published build definitions](DEFINITIONS.md) |
 
 The [repository README](../README.md) is the quick start. The Windows ZIP also
 includes `Start_Here.txt` and selected export and update guides. Settings,

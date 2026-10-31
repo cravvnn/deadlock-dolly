@@ -68,6 +68,13 @@ class StillProjectTests(unittest.TestCase):
         self.assertLess(screenshot.SETTLED_INDEX, frames)
         self.assertGreaterEqual(frames, player_layer.MIN_FRAMES)
 
+    def test_still_clock_is_accepted_for_players_capture(self):
+        # A still must reach the Players pass without exceeding its engine
+        # clock limit, while the held view advances by at most 20 ms in total.
+        rate = player_layer.validate_engine_rate(screenshot.STILL_FPS, screenshot.STILL_SPEED)
+        self.assertLessEqual(rate, 600.0)
+        self.assertLessEqual(screenshot.STILL_DURATION, 0.020000001)
+
     def test_rejects_missing_tick(self):
         with self.assertRaises(ValueError):
             screenshot.still_project(Project(), Keyframe(0, 0, 0, 0, 0, 0, 0), None)
@@ -170,7 +177,7 @@ class AssemblyTests(unittest.TestCase):
         pixels = [0.0] * (64 * 36 * 4)
         pixels[3::4] = [1.0] * (64 * 36)
         screenshot.write_hero_stills(64, 36, struct.pack("<%de" % len(pixels), *pixels), folder)
-        run = screenshot.StillRun(None, SimpleNamespace(path=path), True)
+        run = screenshot.StillRun(None, SimpleNamespace(path=path, layers=("players",)), True)
 
         outputs = screenshot.finish(Path(FFMPEG), run)
 
@@ -180,6 +187,20 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(self.probe(folder / "hero_rgba.png"),
                          {"width": 64, "height": 36, "pix_fmt": "rgba64be"})
         self.assertEqual((folder / "depth.exr").read_bytes(), b"exr")
+
+    def test_color_only_still_keeps_only_the_png(self):
+        path = self.parent / "Dolly_Still_color.mkv"
+        folder = path.with_suffix("")
+        folder.mkdir()
+        subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=60",
+                        "-frames:v", "12", "-pix_fmt", "bgra", "-c:v", "ffv1", str(folder / path.name)],
+                       check=True)
+        (folder / "shot.json").write_text(json.dumps({"video_file": path.name, "frames_written": 12}))
+        run = screenshot.StillRun(None, SimpleNamespace(path=path, layers=()), False)
+        outputs = screenshot.finish(Path(FFMPEG), run)
+        self.assertEqual([p.name for p in outputs], ["plate.png"])
+        self.assertEqual([p.name for p in folder.iterdir()], ["plate.png"])
+        self.assertEqual(self.probe(outputs[0]), {"width": 64, "height": 36, "pix_fmt": "rgb24"})
 
     def test_merged_alpha_keeps_16_bit_coverage(self):
         plate, alpha, output = (self.parent / n for n in ("p.png", "hero_alpha.png", "o.png"))
@@ -242,7 +263,7 @@ class DesktopFlowTests(unittest.TestCase):
             frames += bundle_frame(8, 4, [0.5, 0.5, 0.5, value] * 32)
         (deployment / player_layer.BUNDLE_NAME).write_bytes(frames)
         (deployment / player_layer.STATUS_NAME).write_text("complete\n")
-        options = SimpleNamespace(path=path, ffmpeg_path=Path(FFMPEG))
+        options = SimpleNamespace(path=path, ffmpeg_path=Path(FFMPEG), layers=("players",))
         restored = []
         app = SimpleNamespace(
             _still_run=screenshot.StillRun(None, options, False), _base_capture=options,
@@ -340,6 +361,13 @@ class ShortPlayersCaptureTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             module.finish_player_capture(app, "players")
         self.assertFalse((self.folder / "hero_alpha.png").exists())
+
+    def test_slow_scratch_status_also_uses_the_settled_frame(self):
+        (self.deployment / player_layer.STATUS_NAME).write_text(
+            screenshot.SHORT_CAPTURE_STATUSES[1] + "; keep capture data\nrequest x\n")
+        (self.deployment / player_layer.META_NAME).write_bytes(frame_meta(self.color_times[:13]))
+        module, app = self.app()
+        self.assertEqual(module.finish_player_capture(app, "players")["state"], "completed")
 
 
 class FfmpegLaunchTests(unittest.TestCase):

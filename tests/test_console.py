@@ -4,6 +4,8 @@ import struct
 import threading
 import time
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from dolly.console import (ConsoleClient, ConsoleError, ConsoleTimeout,
@@ -18,9 +20,12 @@ def print_packet(text):
 
 
 class Peer:
-    def __init__(self, protocol="vconsole", silent=False, disconnect=False, responses=None):
+    def __init__(self, protocol="vconsole", silent=False, disconnect=False, responses=None,
+                 marker_prefix="", echo_only=False, unterminated_warning=""):
         self.protocol, self.silent, self.disconnect = protocol, silent, disconnect
         self.responses = responses or {}
+        self.marker_prefix, self.echo_only = marker_prefix, echo_only
+        self.unterminated_warning = unterminated_warning
         self.end_written = threading.Event()
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
@@ -54,15 +59,22 @@ class Peer:
                             break
                         line, pending = pending.split(b"\n", 1)
                         cmd = line.decode()
+                    previous = self.commands[-1] if self.commands else None
                     self.commands.append(cmd)
                     if self.disconnect:
                         self.socket.close()
                         return
                     if self.silent:
                         continue
-                    if cmd.startswith("echo "):
+                    if cmd == 'echo ""':
+                        response = "\n"
+                    elif cmd.startswith("echo "):
                         # Include an echoed command first: it must not delimit.
-                        response = "> " + cmd + "\n" + cmd[5:] + "\n"
+                        response = "> " + cmd + "\n"
+                        if not self.echo_only:
+                            if previous != 'echo ""':
+                                response += self.unterminated_warning
+                            response += self.marker_prefix + cmd[5:] + "\n"
                     elif cmd in self.responses:
                         response = self.responses[cmd]
                     elif cmd.startswith("help "):
@@ -143,9 +155,9 @@ class ConsoleTests(unittest.TestCase):
                     client.close()
                     peer.close()
 
-    def test_request_writes_all_three_protocol_frames_together(self):
+    def test_request_writes_all_delimiter_protocol_frames_together(self):
         # TCP can still fragment a single write. Verify the application makes
-        # one write while retaining three correctly framed commands; the peer
+        # one write while retaining correctly framed commands; the peer
         # then fragments its response to exercise the normal reader as well.
         for protocol in ("netcon", "vconsole"):
             with self.subTest(protocol=protocol):
@@ -171,10 +183,12 @@ class ConsoleTests(unittest.TestCase):
                     output = client.request("demo_info; echo café")
                     self.assertEqual(parse_demo_info(output)["tick"], 123)
                     self.assertEqual(len(writes), 1)
-                    self.assertEqual(len(peer.commands), 3)
-                    self.assertTrue(peer.commands[0].startswith("echo DOLLY_BEGIN_"))
-                    self.assertEqual(peer.commands[1], "demo_info; echo café")
-                    self.assertTrue(peer.commands[2].startswith("echo DOLLY_END_"))
+                    self.assertEqual(len(peer.commands), 5)
+                    self.assertEqual(peer.commands[0], 'echo ""')
+                    self.assertTrue(peer.commands[1].startswith("echo DOLLY_BEGIN_"))
+                    self.assertEqual(peer.commands[2], "demo_info; echo café")
+                    self.assertEqual(peer.commands[3], 'echo ""')
+                    self.assertTrue(peer.commands[4].startswith("echo DOLLY_END_"))
                     expected = (b"".join(encode_command(command) for command in peer.commands)
                                 if protocol == "vconsole" else
                                 b"".join((command + "\n").encode("utf-8") for command in peer.commands))
@@ -278,6 +292,87 @@ class ConsoleTests(unittest.TestCase):
         finally:
             client.close()
             peer.close()
+
+    def test_replay_warning_flood_keeps_fresh_identity_and_raw_history(self):
+        # Reporter logs repeat these two warnings without a separator after the
+        # first. The real status is surrounded by more than the response limit.
+        first = "Ignoring CSVCMsg_UserCommands_t with no command data"
+        second = "Ignoring CSVCMsg_UserCommands_t: Missing command to delta from"
+        flood = (first + second + "\r\n") * 12
+        status = "Currently playing 6 of 115753 ticks. Minutes:30.14 File:replays/test.dem\r\n"
+        # Force the known strings to be split at every character boundary as
+        # well as exercising the real TCP transports below.
+        from dolly.console import _ReplayWarningFilter
+        split_filter = _ReplayWarningFilter()
+        self.assertEqual("".join(split_filter.feed(char) for char in first + second + "\r\n" + status),
+                         "\r\n" + status)
+        ordinary = "Ignoring a different warning.\nImportant replay status.\n"
+        split_filter = _ReplayWarningFilter()
+        self.assertEqual("".join(split_filter.feed(char) for char in ordinary), ordinary)
+        from dolly.controller import Controller
+        for protocol in ("netcon", "vconsole"):
+            with self.subTest(protocol=protocol):
+                peer = Peer(protocol, responses={"demo_goto": flood + status + flood})
+                client = ConsoleClient(protocol, max_response_bytes=2048)
+                try:
+                    client.connect(port=peer.port)
+                    controller = Controller()
+                    controller._session = SimpleNamespace(process=SimpleNamespace(poll=lambda: None))
+                    controller._console = client
+                    controller._demo = Path("replays/test.dem")
+                    self.assertEqual(controller._require_demo()["tick"], 6)
+                    self.assertIn(second, client.recent_output())
+                    controller._demo = Path("replays/different.dem")
+                    with self.assertRaisesRegex(RuntimeError, "different"):
+                        controller._require_demo()
+                finally:
+                    client.close()
+                    peer.close()
+
+    def test_unterminated_ui_warning_does_not_hide_fresh_response_markers(self):
+        warning = ('Invalid content height (flChildHeight = inf) calculated during child panel '
+                   '"HudMinimap#hud_minimap > Panel.active.player.team2.map_button.PlayerDead"; '
+                   'this panel "HudMinimap#hud_minimap.HudMinimap.dl_midtown @ panorama\\layout\\hud.xml" '
+                   '(reverting to 281.831665)')
+        for protocol in ("netcon", "vconsole"):
+            with self.subTest(protocol=protocol):
+                peer = Peer(protocol, unterminated_warning=warning, responses={
+                    "demo_goto": "Currently playing 3802 of 48142 ticks. Minutes:12.54 File:replays/test.dem\n"})
+                client = ConsoleClient(protocol)
+                try:
+                    client.connect(port=peer.port)
+                    self.assertEqual(parse_demo_tick(client.request("demo_goto", timeout=.5))["tick"], 3802)
+                finally:
+                    client.close()
+                    peer.close()
+
+    def test_replay_warning_suffix_does_not_hide_markers_or_spoof_echoes(self):
+        # The captured warning had no trailing newline before the begin marker;
+        # only its final bytes may arrive after a request's history cursor.
+        for prefix in ("a", "data", "Ignoring CSVCMsg_UserCommands_t with no command data"):
+            with self.subTest(prefix=prefix):
+                peer = Peer("netcon", marker_prefix=prefix, responses={
+                    "seed": "Currently playing 77 of 200 ticks. Minutes:0.05 File:replays/old.dem\n",
+                    "demo_goto": "Error - Not currently playing back a demo.\n"})
+                client = ConsoleClient("netcon")
+                try:
+                    client.connect(port=peer.port)
+                    self.assertEqual(parse_demo_tick(client.request("seed"))["tick"], 77)
+                    self.assertFalse(parse_demo_tick(client.request("demo_goto", timeout=0.5))["playing"])
+                finally:
+                    client.close()
+                    peer.close()
+        for options in ({"echo_only": True}, {"marker_prefix": "unexpected-prefix"}):
+            with self.subTest(options=options):
+                peer = Peer("netcon", **options)
+                client = ConsoleClient("netcon")
+                try:
+                    client.connect(port=peer.port)
+                    with self.assertRaises(ConsoleTimeout):
+                        client.request("demo_goto", timeout=0.15)
+                finally:
+                    client.close()
+                    peer.close()
 
     def test_allow_truncated_returns_a_bounded_tail_without_raising(self):
         # A developer build can flood the console with its own data dump; the

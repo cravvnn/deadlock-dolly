@@ -145,6 +145,64 @@ void gameplay_effect_filter_checks(const GameplayEffectsProfile& profile) {
 void gameplay_effect_filter_checks() {
     for (const auto& profile : kGameplayEffectsProfiles)
         gameplay_effect_filter_checks(profile);
+    Allocation image(0x1000);
+    GameplayEffectsProfile profile{};
+    profile.controller = 0x100;
+    const auto table = image.address() + 0x800;
+    put(image.address() + profile.controller, table);
+    require(gameplay_controller_matches(image.address(), profile, table),
+            "Verified gameplay controller was refused");
+    auto stale = profile;
+    stale.controller += 0x100;
+    require(!gameplay_controller_matches(image.address(), stale, table),
+            "Relocated gameplay controller silently accepted stale queues");
+    require(!gameplay_controller_matches(image.address(), profile, 0),
+            "Missing named controller vtable was accepted");
+    put(image.address() + profile.controller, table + 8);
+    require(!gameplay_controller_matches(image.address(), profile, table),
+            "Another gameplay object type was accepted");
+}
+
+void attach_preview_continuity_checks() {
+    AttachPreview preview{};
+    preview.camera_command = 7;
+    preview.handle = 11;
+    preview.entity_index = 4;
+    preview.model = 123;
+    preview.point = AttachPoint::bone;
+    preview.bone_hash = 456;
+    preview.cache.pawn = 1000;
+    preview.cache.identity = 2000;
+    preview.cache.node = 3000;
+    preview.cache.model_object = 4000;
+    preview.cache.bone_array = 5000;
+    EditorAttachConfig config{};
+    config.sequence = 2;
+    config.hide = 4;
+    std::fill(std::begin(config.offsets), std::end(config.offsets), 8u);
+    AttachPreviewContinuity continuity{};
+    require(!continuity.observe(preview, config, 1), "A new preview reused an old camera view");
+    config.sequence = 4;
+    config.offset[0] = 25;
+    preview.authored[0] = 25;
+    preview.smoothing = .5;
+    config.hide |= 1; // Visibility changes do not change the camera frame.
+    require(continuity.observe(preview, config, 1),
+            "An offset acknowledgement reset the same camera's smoothing");
+    require(!continuity.observe(preview, config, 2), "A different selected camera reused smoothing");
+    require(continuity.observe(preview, config, 2), "Unchanged camera lost continuity");
+    config.hide |= 8;
+    require(!continuity.observe(preview, config, 2), "A different aim mode reused smoothing");
+    preview.bone_hash++;
+    require(!continuity.observe(preview, config, 2), "A different bone reused smoothing");
+    preview.cache.node++;
+    require(!continuity.observe(preview, config, 2), "A reconstructed target reused smoothing");
+    config.offsets[0]++;
+    require(!continuity.observe(preview, config, 2), "A different schema reused smoothing");
+    preview.camera_command++;
+    require(!continuity.observe(preview, config, 2), "A different camera command reused smoothing");
+    continuity.reset();
+    require(!continuity.observe(preview, config, 2), "A detached preview reused its old view");
 }
 
 void bone_string_bounds() {
@@ -1688,6 +1746,70 @@ void editor_framing_checks() {
         require(editor_enqueue(EditorAction::AttachPreview, 1) &&
                     editor_enqueue(EditorAction::AttachSnap, 0),
                 "Attach preview or snap was rejected by the action range");
+        attach.flags = 7;
+        attach.sequence = 4;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        require(editor_snapshot().attach_preview && !editor_enqueue(EditorAction::AttachSnap, 0),
+                "Attached preview accepted a free-camera snap");
+        attach.flags = 3;
+        attach.sequence = 6;
+        attach.abi = 6;
+        attach.hide = 7;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        EditorAttachConfig rigid_config{};
+        require(editor_attach_config(rigid_config) && rigid_config.abi == 6 && rigid_config.hide == 7,
+                "Rigid orientation was lost from the attachment editor config");
+        const auto saved_camera_list = std::atomic_load(&dolly::gCameraList);
+        auto aim_list = std::make_shared<EditorCameraList>();
+        aim_list->revision = 37;
+        aim_list->total = config->camera_count;
+        std::atomic_store(&dolly::gCameraList, std::shared_ptr<const EditorCameraList>(aim_list));
+        attach.hide = 15;
+        attach.sequence = 8;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        require(editor_snapshot().attach_lock_vertical_aim,
+                "The version-six level-aim option did not reach the editor");
+        attach.abi = 5;
+        attach.sequence = 10;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        require(editor_attach_config(rigid_config) && rigid_config.sequence == 8,
+                "An older editor ABI accepted the new option");
+        CameraPose aim_request{};
+        aim_request[0] = 37;
+        aim_request[1] = config->selected_camera;
+        dolly::gAcknowledged = dolly::gLastEvent;
+        require(editor_enqueue(EditorAction::SetAttachVerticalAimLock, 1, &aim_request),
+                "A valid level-aim change was rejected");
+        const auto& aim_event = dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount];
+        require(aim_event.action == std::uint32_t(EditorAction::SetAttachVerticalAimLock) &&
+                    aim_event.pose[0] == 37 && aim_event.pose[1] == config->selected_camera,
+                "Level-aim event lost the selected-camera identity");
+        aim_request[0] = 36;
+        require(!editor_enqueue(EditorAction::SetAttachVerticalAimLock, 1, &aim_request),
+                "A stale level-aim change was accepted");
+        aim_request[0] = 37;
+        aim_request[1] = 0;
+        require(!editor_enqueue(EditorAction::SetAttachVerticalAimLock, 1, &aim_request),
+                "A level-aim change for another camera was accepted");
+        aim_request[1] = config->selected_camera;
+        attach.abi = 6;
+        attach.flags = 7;
+        attach.sequence = 12;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
+        require(!editor_enqueue(EditorAction::SetAttachVerticalAimLock, 1, &aim_request),
+                "Attached preview accepted a level-aim change");
+        std::atomic_store(&dolly::gCameraList, saved_camera_list);
+        attach.abi = 2;
+        attach.hide = 0;
+        attach.flags = 3;
+        attach.sequence = 16;
+        std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
+        editor_worker_tick(attach_memory.data(), true);
         const auto saved_follow = std::atomic_load(&dolly::gFollowConfig);
         auto active_follow = std::make_shared<EditorFollowConfig>();
         active_follow->flags = 3;
@@ -1751,12 +1873,12 @@ void editor_framing_checks() {
                     !editor_enqueue(EditorAction::SetAttachBone, .5, &bone_version) &&
                     !editor_enqueue(EditorAction::SetAttachBone, 1),
                 "Invalid or unversioned bone selection was accepted");
-        attach.sequence = 4;
+        attach.sequence = 18;
         attach.bone_hash ^= 1;
         std::memcpy(attach_memory.data() + kEditorAttachOffset, &attach, sizeof(attach));
         editor_worker_tick(attach_memory.data(), true);
         EditorAttachConfig accepted{};
-        require(editor_attach_config(accepted) && accepted.sequence == 2,
+        require(editor_attach_config(accepted) && accepted.sequence == 16,
                 "Mismatched bone name/hash replaced the valid preview");
         std::atomic_store(&dolly::gAttachConfig, std::shared_ptr<const EditorAttachConfig>{});
         dolly::gAcknowledged = dolly::gLastEvent;
@@ -2325,6 +2447,7 @@ void run() {
     gameplay_effect_filter_checks();
     confetti_control_updates();
     confetti_diagnostics_publish();
+    attach_preview_continuity_checks();
     bone_string_bounds();
     owned_model_bones();
     camera_cache_decoder();

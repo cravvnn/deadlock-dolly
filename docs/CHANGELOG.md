@@ -4,6 +4,98 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
+## 0.6.85-alpha
+
+- **Players stay in sync.** *Before:* a Players export could stop when no players were visible, even with plenty of free storage. *After:* empty views keep their transparent frames, and capture waits for a free frame buffer while preserving the shot timing.
+
+- **More reliable high-FPS exports.** *Before:* longer render work or a game UI warning could interrupt an export or leave restoration pending. *After:* fixed-step exports allow rendering time to finish, and console replies stay readable so preparation and restoration can complete.
+
+- **Save Path during background work.** *Before:* desktop and in-game Save could do nothing while Dolly was busy. *After:* Save preserves the visible path, keeps any newer edits marked as unsaved, and records useful diagnostics if saving fails.
+
+- **Reliable replay startup.** *Before:* Dolly could remain waiting for preload on the current game build. *After:* startup reads the verified hideout state correctly and continues through the normal replay checks.
+
+## 0.6.84-alpha
+
+- **Audio export with content mods.** *Before:* both fixed-step audio options could stop before recording with a movie-audio path error when content mods were installed. *After:* Dolly verifies the complete launched configuration so game and reconstructed audio can start with those mods enabled, while retaining session and cleanup safeguards.
+
+- **Complete drawer padding.** *Before:* drawer scrollbars could cut off labels, shortcuts and buttons. *After:* scrolling keeps complete rows with clear space beside the scrollbar.
+
+- **Smoother tab animations.** *Before:* text appeared too early, brightness jumped and interrupted transitions felt uneven. *After:* tabs follow Kara's intended hover, opening and closing motion, with smooth fading and stable drawer sizes and edges. Reduce motion remains available.
+
+- **Complete desktop lettering.** *Before:* the bottoms of letters such as y, p, g and j could be clipped in desktop headings and stickers. *After:* Dolly gives the same font shapes enough room to display their tails at different display scales, without changing the game's font files.
+
+Full details: [0.6.84 release notes](RELEASE_NOTES_0.6.84-alpha.md).
+
+## 0.6.83-alpha
+
+- **Optional NVIDIA DLSS support.** *Before:* Dolly's redirected game output could hide NVIDIA DLSS in Deadlock's Video settings. *After:* an opt-in Settings switch makes the game's DLSS controls available for previews and Color recordings. Turn it off before a new launch to use standard output capture again.
+- **Retained launch diagnostics.** *Before:* dropping all redirected streams to enable DLSS lost useful game error output. *After:* DLSS startup retains stderr, an engine console file, received console text and native-hook diagnostics. Support exports keep startup and recent output; stdout-only messages before engine logging begins remain unavailable.
+- **Quiet Windows builds.** *Before:* automated UI checks could open windows over the desktop. *After:* build commands keep all checks on a verified private desktop, retaining their logs and exit status.
+
+Full details: [0.6.83 release notes](RELEASE_NOTES_0.6.83-alpha.md).
+
+## 0.6.82-alpha
+
+- Integrate Kara's desktop redesign and in-game top rail with Dolly's current replay, camera, attachment, curve and export controls. Keep per-camera vertical-aim lock, the current export options and the handoff's animation pace. Escape closes drawers before returning to flight; F8 toggles the full editor.
+- Group **Seek camera**, **Replace selected** and **Save Path** in Campaths, with matching spacing. Paused saved-camera seeks can reconstruct the next recorded replay packet while holding the final camera and effects; playback and export retain their shot-range checks.
+- Restore clickable scene joint circles in the Bone Picker with blue fills and contrasting rings. Keep the upper overview/attached-preview switcher and remove the duplicate lower button.
+- Report a game exit that races with a startup console timeout or disconnect, and distinguish older crash dumps from files written after the current session started. Native startup errors suggest closing overlays such as U.GG and comparing Console mode, without automatically relaunching.
+
+Full details: [0.6.82 release notes](RELEASE_NOTES_0.6.82-alpha.md) and [redesigned interface guide](UI_REDESIGN.md).
+
+## 0.6.81-alpha
+
+- Add a per-camera **Lock vertical aim** option for Bone and Weapon attachments, based on [@ExoCalibra's contribution](https://github.com/cravvnn/deadlock-dolly/commit/f8e23dbdb811ccf76e51f88f72e8ff6086d317ed). Existing cameras leave it off.
+- Keep newly snapped attachment framing together as the player moves and changes aim, and allow exact position offsets beyond the small slider range. Existing attached cameras retain their original behavior until snapped again.
+- Move attached-preview flight relative to the displayed camera view, based on [@ExoCalibra's PR #29](https://github.com/cravvnn/deadlock-dolly/pull/29).
+- Recover a verified forward seek that settles one tick short, based on [@SamuelCurrid's PR #28](https://github.com/cravvnn/deadlock-dolly/pull/28). Require an exact tick unless the engine reported a full-packet floor.
+- Correct a reported small forward-seek overshoot before Players capture, filter repeated known console warnings without hiding raw diagnostics, and keep Players still captures within the native clock limit.
+
+Full details: [0.6.81 release notes](RELEASE_NOTES_0.6.81-alpha.md).
+
+## 0.6.80-alpha
+
+- Offer an experimental, opt-in repair for completed replays with duplicated incomplete spawn-group loads and a later completed manifest update. It changes only the matching manifest flags, verifies the replay index, and leaves the original untouched. One previously crashing replay was tested successfully; other repaired copies still require testing in Deadlock.
+- Report a same-build replay crash without assuming that the recording is incomplete; suggest a direct game comparison and the experimental copy when applicable.
+- Convert compressed SDR video and ProRes alpha masters to limited-range Rec. 709 and write matching color information. Keep lossless RGB and numerical depth data on their existing paths.
+- Accept FFmpeg MOV color recordings and explicitly signal the range for H.264 via FFmpeg Media Foundation.
+
+Full details: [0.6.80 release notes](RELEASE_NOTES_0.6.80-alpha.md).
+
+## 0.6.79-alpha
+
+- Add reviewed support for Deadlock build 6821: relocate the camera, replay, preload, Follow, observer schema and attachment contracts while retaining exact module, code and named-type checks.
+- Rebuild the command unlocker for the new server interface and retain earlier reviewed pairs, secure-mode refusal and owned shutdown. The current pair passes 737 compiled build-pair/interface checks and the earlier unlocker rejects it.
+- Refresh the named death-effect controller and particle wrappers. Preserve normal campath filtering, Player POV effects, Discord presence and Players scratch-drive backpressure.
+
+Full details: [0.6.79 release notes](RELEASE_NOTES_0.6.79-alpha.md).
+
+## 0.6.78-alpha
+
+- Add optional Discord Rich Presence for editing, previewing, exporting and Players processing, with a session timer and links to Dolly and the editing community. The Windows editor uses local IPC without account tokens or a new runtime dependency.
+- Add a saved Settings switch, background reconnects, bounded requests and shutdown cleanup. Presence shares fixed activity phrases and camera counts; replay names, project names and paths remain private. Bundle self-tests do not publish activity.
+- Correct the build 6819 death-effect controller address so selected-player damage and death grading is filtered while Dolly owns a normal campath or free camera. Player POV and the game-owned replay view keep their normal effects.
+- Verify the named controller object before installing the effect filter; stale event-queue addresses now stop camera admission instead of silently leaving death effects enabled.
+- Keep Players layer exports running when the scratch drive briefly falls behind: the fixed-step capture now waits for the ordered writer instead of rejecting the frame and reporting "missed shot frames". A real timeout names the scratch drive, and stills keep using the aligned settled frame.
+
+Full details: [0.6.78 release notes](RELEASE_NOTES_0.6.78-alpha.md) and [Discord Rich Presence](DISCORD_PRESENCE.md).
+
+## 0.6.77-alpha
+
+- Support Deadlock updates without always rebuilding Dolly: reviewed build definitions are published on GitHub and fetched in the background, covering the native camera hook, module pins, replay/ConVar layouts and the editing-configuration pins. Published entries are additive and fail closed, so existing builds keep their release-reviewed data. A `server.dll` change still needs a release because the bundled cvar unlocker is built from that exact binary.
+- Report published support in **Check game build**, cache the accepted file beside `Dolly.exe`, and document the maintainer publish step in [published build definitions](DEFINITIONS.md).
+- Keep Players layer exports running when the scratch drive briefly falls behind: the fixed-step capture now waits for the ordered writer instead of rejecting the frame and reporting "missed shot frames", and a real timeout names the scratch drive.
+
+Full details: [0.6.77 release notes](RELEASE_NOTES_0.6.77-alpha.md).
+
+## 0.6.76-alpha
+
+- Fix the desktop Bone Picker entry point: starting a first bone camera or opening the picker from the desktop now supplies the required editor publication callback instead of raising `start_attached_view() missing ... 'publish'`.
+- Name the blocking game process when Dolly refuses to launch: PID, executable path, Windows session and visible window, plus whether it belongs to a different installation than the one selected in Dolly.
+- Keep the 0.6.75 stuck-effect cleanup, 0.6.74 mixed skin-pack loading and the 0.6.73 audio/campath/6819 fixes.
+
+Full details: [0.6.76 release notes](RELEASE_NOTES_0.6.76-alpha.md).
+
 ## 0.6.75-alpha
 
 - Clear stuck replay effects from the in-game Scene appearance card. The renamed **Clear stuck effects** button now removes ragdolls, decals, screen post-processing and Violet's ink constructs left behind when changing replay frames, instead of only ragdolls.

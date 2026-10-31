@@ -96,6 +96,19 @@ class ReleasePackagingTests(unittest.TestCase):
         missing = [name for name in shipped if name not in listed]
         self.assertEqual(missing, [], "SOURCE_FILES.txt is missing shipped source files: %s" % missing)
 
+    def test_separate_release_folder_refuses_to_replace_existing_outputs(self):
+        destination = self.root / "candidate"
+        destination.mkdir()
+        self.assertEqual(build_windows.distribution_dir(destination, "0.6.80-alpha"), destination)
+        for name in ("Deadlock_Dolly_0.6.80-alpha_Windows_x64.zip",
+                     "Deadlock_Dolly_0.6.80-alpha_Source.zip", "SHA256SUMS.txt"):
+            path = destination / name
+            path.write_bytes(b"existing")
+            with self.subTest(name=name), self.assertRaises(FileExistsError):
+                build_windows.distribution_dir(destination, "0.6.80-alpha")
+            self.assertEqual(path.read_bytes(), b"existing")
+            path.unlink()
+
     def test_windows_bundle_zip_prefixes_and_never_archives_runtime_data(self):
         for name in ["Dolly.exe", "BUILD_INFO.json", "_internal/base_library.zip",
                      "_internal/python312.dll", "logs/Dolly.log",

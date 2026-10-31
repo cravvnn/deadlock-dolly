@@ -3,6 +3,7 @@
 // handed off in capture order and flushed by one worker. A full queue or a
 // failed write is reported to the caller; memory never grows past the bound.
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -85,6 +86,30 @@ public:
         return true;
     }
 
+    // Wait for queue space, then hand off. A temporary slow destination is a
+    // pause, not a failed frame: this is only used by fixed-step captures whose
+    // replay clock does not advance while the writer drains. Only a timeout is
+    // counted as refused, so a completed retry cannot fail the take later.
+    bool push_blocking(const std::uint64_t header[8], Buffer&& pixels, unsigned timeout_ms) {
+        if (!opened_ || closing_ || error_.load()) return false;
+        if (synchronous_) return push(header, std::move(pixels));
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (queue_.size() >= maxQueued_) {
+            const bool ready = space_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] {
+                return !opened_ || closing_ || error_.load() || queue_.size() < maxQueued_;
+            });
+            if (!ready || !opened_ || closing_ || error_.load()) {
+                if (opened_ && !closing_ && !error_.load()) refused_.fetch_add(1);
+                return false;
+            }
+        }
+        queue_.emplace_back();
+        std::memcpy(queue_.back().header, header, sizeof(queue_.back().header));
+        queue_.back().pixels = std::move(pixels);
+        wake_.notify_one();
+        return true;
+    }
+
     // Drains accepted frames and closes the file. Returns false on any write
     // failure; the caller must also check refused() for rejected frames.
     bool finish() {
@@ -93,6 +118,7 @@ public:
             if (!opened_ || closed_) return opened_ && !error_.load();
             closing_ = true;
             wake_.notify_all();
+            space_.notify_all();
         }
         hold_worker_for_tests(false);
         if (worker.joinable()) worker.join();
@@ -141,6 +167,7 @@ private:
                 item = std::move(queue_.front());
                 queue_.pop_front();
             }
+            space_.notify_all();
             inFlight_.fetch_add(1);
             {
                 std::unique_lock<std::mutex> hold(holdMutex_);
@@ -157,6 +184,7 @@ private:
     std::thread worker;
     std::mutex mutex_;
     std::condition_variable wake_;
+    std::condition_variable space_; // Wakes a fixed-step caller waiting for queue room.
     std::mutex holdMutex_;
     std::condition_variable holdCv_;
     std::deque<Item> queue_;

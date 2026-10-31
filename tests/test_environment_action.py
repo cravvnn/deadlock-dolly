@@ -35,10 +35,14 @@ class EnvironmentActionTests(unittest.TestCase):
         app=SimpleNamespace(busy=False,playing=False,environment_size=Mock(),
                             launch_options=Mock(),app_settings=AppSettings(),_persist_preferences=Mock(return_value=True))
         app.environment_size.get.return_value='1024'
+        app.launch_options.get.return_value=''
         self.assertTrue(environment_ui.apply_size(app))
         options='-windowed -noborder -w 1024 -h 1024'
         app.launch_options.set.assert_called_once_with(options)
         self.assertEqual(app._persist_preferences.call_args.args[0].launch_options,options)
+        app.launch_options.get.return_value='-refresh 144 -w 1920 -h 1080'
+        environment_ui.apply_size(app)
+        self.assertEqual(app.launch_options.set.call_args.args[0], '-refresh 144 '+options)
 
     def test_standard_edition_never_dispatches_panorama(self):
         app=Mock()

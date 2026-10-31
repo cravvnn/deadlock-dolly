@@ -30,6 +30,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from .ffmpeg_color import REC709_FILTER, REC709_OUTPUT_ARGS
 from .runtime import external_program_environment
 
 CAPTURE_MODE = "color-sequence-v3"
@@ -275,14 +276,16 @@ def iter_frames(bundle: Path):
                 return
             if len(header) != 64:
                 raise RuntimeError("The player layer bundle is truncated.")
-            magic, width, height, draws, _, _, _, bpp = struct.unpack("<8Q", header)
+            magic, width, height, draws, first, last, _, bpp = struct.unpack("<8Q", header)
             if (magic != BUNDLE_MAGIC or not 0 < width <= 8192 or not 0 < height <= 8192
-                    or not draws or bpp != 8):
+                    or (not draws and (first or last)) or bpp != 8):
                 raise RuntimeError("The player layer bundle is not a reviewed capture.")
             size = width * height * 8
             pixels = source.read(size)
             if len(pixels) != size:
                 raise RuntimeError("The player layer bundle is truncated.")
+            if not draws and any(pixels):
+                raise RuntimeError("The player layer's empty scene frame contains unexpected pixels.")
             yield width, height, pixels
 
 
@@ -341,7 +344,8 @@ def encode_layer(ffmpeg: Path, previews: list[Path], output: Path, *, fps: int =
                "-framerate", str(fps), "-start_number", "0",
                "-i", str(previews[0].with_name(previews[0].name.replace("000", "%03d"))),
                "-frames:v", str(len(previews)), "-an", "-c:v", "prores_ks", "-profile:v", "4444",
-               "-pix_fmt", "yuva444p10le", "-vendor", "apl0", "-threads", "2", str(output)]
+               "-vf", REC709_FILTER, "-pix_fmt", "yuva444p10le", *REC709_OUTPUT_ARGS,
+               "-vendor", "apl0", "-threads", "2", str(output)]
     with external_program_environment() as environment:
         result = subprocess.run(command, capture_output=True, timeout=max(120, 30 * len(previews)),
                                 env=environment,
@@ -384,7 +388,8 @@ def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60,
                "-filter_threads", str(threads), "-filter_complex_threads", str(threads),
                "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{width}x{height}",
                "-framerate", str(fps), "-i", "pipe:0", "-an", "-c:v", "prores_ks",
-               "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-vendor", "apl0",
+               "-profile:v", "4444", "-vf", REC709_FILTER, "-pix_fmt", "yuva444p10le",
+               *REC709_OUTPUT_ARGS, "-vendor", "apl0",
                "-threads", str(threads), str(temporary)]
     import itertools
     process = None; timer = None

@@ -22,17 +22,38 @@ def _dispatch(app, event, bridge):
     return editor_dispatch._dispatch(app, event, bridge, publish=lambda: configure(app))
 
 
+def snap_is_current(app, bridge):
+    context = getattr(app, "_attach_snap_context", None)
+    if not context or context["bridge"] is not bridge or context["project"] is not app.project:
+        return False
+    index = context["index"]
+    return (app._selection_index(app.camera_tree) == index and
+            0 <= index < len(app.project.keyframes) and
+            app.project.keyframes[index] == context["key"])
+
+
+def cancel_snap(app, message):
+    app._attach_snap_pending = False
+    app._attach_snap_started = None
+    app._attach_snap_context = None
+    if message:
+        app.status_text.set(message)
+
+
 def poll(app):
     if getattr(app, "closed", False):
         return
     bridge = _bridge(app)
     if bridge is None:
         app.native_editor_active = False
+        cancel_snap(app, None)
         app._native_editor_bridge = None
         app._native_visualization_bridge = None
         app._native_visualization_cache = None
         return
     try:
+        if getattr(app, "_attach_snap_pending", False) and not snap_is_current(app, bridge):
+            cancel_snap(app, "Snap cancelled because the selected camera changed.")
         # Flight can fail before the controller marks the editor active even
         # though DX11/input finish initializing afterwards. Keep that live
         # panel's console/stop/retry actions connected to the launcher. Do not
@@ -89,13 +110,17 @@ def poll(app):
                     handler = getattr(app, "_attach_result_changed", None)
                     if callable(handler):
                         handler(attach_result)
+        snap_started = getattr(app, "_attach_snap_started", None)
+        if (getattr(app, "_attach_snap_pending", False) and snap_started is not None
+                and time.monotonic() - snap_started > 5):
+            cancel_snap(app, "Snap did not finish. Pause, check the player, and try again.")
         status = bridge.editor_status()
         app._native_editor_status = status
         if status.get("dropped_events", 0) > getattr(app, "_native_editor_dropped", 0):
             app._native_editor_dropped = status["dropped_events"]
             app.status_text.set("The editor was busy; an in-game action was ignored. Retry the action.")
         for event in status.get("events", ()):
-            if app.busy:
+            if app.busy and event.get("action") != "save_shot":
                 break
             try:
                 accepted = dispatch(app, event, bridge)

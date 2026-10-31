@@ -318,6 +318,17 @@ def build_profile(client: Image, engine: Image, tier0: Image, previous: dict, la
             "caller_rva": int(reviewed["view_setup_abi"]["caller_return_rva"], 16),
             "image": client,
         }
+    # The general path carries the engine/tier0 blocks forward unchanged. Refuse
+    # a changed identity instead of silently publishing stale engine data.
+    for role, image, size_key in (("engine", engine, "image_size"),
+                                  ("tier0", tier0, "size_of_image")):
+        block = previous.get(role, {})
+        expected_size = block.get(size_key, "0")
+        expected_size = int(expected_size, 16) if isinstance(expected_size, str) else expected_size
+        if (image is None or image.sha256 != block.get("sha256") or
+                image.image_size != expected_size):
+            raise ProfileError(
+                f"{role} changed; use tools/update_game.py for a new exact-build review")
     setup_rva = locate_setup(client)
     try:
         caller_rva = locate_caller(client, setup_rva)

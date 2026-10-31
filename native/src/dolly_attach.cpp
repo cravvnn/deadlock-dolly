@@ -10,7 +10,6 @@ namespace dolly {
 namespace {
 
 constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
-
 class Reader {
 public:
     explicit Reader(const void* data) : cursor_(static_cast<const std::uint8_t*>(data)) {}
@@ -71,6 +70,45 @@ void rotate(const double basis[3][3], const std::array<double, 3>& local,
             std::array<double, 3>& out) noexcept {
     for (int i = 0; i < 3; ++i)
         out[i] = basis[i][0] * local[0] + basis[i][1] * local[1] + basis[i][2] * local[2];
+}
+
+// Source's columns are forward, right and up, with right = -Y at zero
+// angles. Flip that column before composing the two proper orientations.
+void compose_orientation(const double base[3][3], const double local[3][3],
+                         double world[3][3]) noexcept {
+    constexpr double sign[3] = {1, -1, 1};
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3; ++col) {
+            world[row][col] = 0;
+            for (int axis = 0; axis < 3; ++axis)
+                world[row][col] += base[row][axis] * sign[axis] * local[axis][col];
+        }
+}
+
+void relative_orientation(const double base[3][3], const double world[3][3],
+                          double local[3][3]) noexcept {
+    constexpr double sign[3] = {1, -1, 1};
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3; ++col) {
+            local[row][col] = 0;
+            for (int axis = 0; axis < 3; ++axis)
+                local[row][col] += sign[row] * base[axis][row] * world[axis][col];
+        }
+}
+
+std::array<double, 3> basis_angles(const double basis[3][3]) noexcept {
+    const double horizontal = std::hypot(basis[0][0], basis[1][0]);
+    const double pitch = std::atan2(-basis[2][0], horizontal);
+    double yaw = 0, roll = 0;
+    if (horizontal > 1e-8) {
+        yaw = std::atan2(basis[1][0], basis[0][0]);
+        roll = std::atan2(-basis[2][1], basis[2][2]);
+    } else {
+        // At a vertical view yaw and roll are coupled; choose yaw zero and
+        // preserve the full orientation through the remaining roll.
+        roll = std::atan2(basis[0][1] * basis[2][0], -basis[1][1]);
+    }
+    return {pitch / kDegreesToRadians, yaw / kDegreesToRadians, roll / kDegreesToRadians};
 }
 
 } // namespace
@@ -261,16 +299,28 @@ const char* attach_hero_name(const char* model_path) noexcept {
     return nullptr;
 }
 
+// ExoCalibra's level-aim option uses the target's yaw while retaining its live
+// position. Eyes always follows the full aim; the option applies to bone/weapon.
+static std::array<double, 3> effective_attach_angles(const AttachSample& sample,
+                                                     AttachPoint point, bool locked) noexcept {
+    auto angles = point == AttachPoint::eyes ? sample.aim : sample.angles;
+    if (locked && point != AttachPoint::eyes) {
+        angles[0] = 0;
+        angles[2] = 0;
+    }
+    return angles;
+}
+
 bool attach_snap_offsets(const AttachSample& sample, const CameraPose& camera,
-                         std::array<double, 6>& out) noexcept {
+                         std::array<double, 6>& out, bool rigid_orientation,
+                         bool lock_vertical_aim) noexcept {
     if (!sample.valid || !finite3(sample.origin, 1e8) || !finite3(sample.angles, 1e6) ||
         !finite3(sample.aim, 1e6) || !finite3(sample.eye_local, kAttachViewOffsetLimit))
         return false;
     for (int i = 0; i < 6; ++i)
         if (!std::isfinite(camera[i]))
             return false;
-    const std::array<double, 3> base_angles =
-        sample.point == AttachPoint::eyes ? sample.aim : sample.angles;
+    const auto base_angles = effective_attach_angles(sample, sample.point, lock_vertical_aim);
     std::array<double, 3> base_position = sample.origin;
     if (sample.point == AttachPoint::eyes) {
         double body[3][3];
@@ -292,8 +342,18 @@ bool attach_snap_offsets(const AttachSample& sample, const CameraPose& camera,
             return false;
         out[axis] = value;
     }
+    std::array<double, 3> angles{};
+    if (rigid_orientation) {
+        double camera_basis[3][3], local_basis[3][3];
+        source_basis({camera[3], camera[4], camera[5]}, camera_basis);
+        relative_orientation(basis, camera_basis, local_basis);
+        angles = basis_angles(local_basis);
+    } else {
+        for (int axis = 0; axis < 3; ++axis)
+            angles[axis] = std::remainder(camera[3 + axis] - base_angles[axis], 360.0);
+    }
     for (int axis = 0; axis < 3; ++axis) {
-        const double value = std::remainder(camera[3 + axis] - base_angles[axis], 360.0);
+        const double value = angles[axis];
         if (!std::isfinite(value) || std::abs(value) > kAttachOffsetLimit)
             return false;
         out[3 + axis] = value;
@@ -314,8 +374,7 @@ bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segmen
     if (!finite3(sample.origin, 1e8) || !finite3(sample.angles, 1e6) || !finite3(sample.aim, 1e6) ||
         !finite3(sample.eye_local, kAttachViewOffsetLimit))
         return false;
-    const std::array<double, 3> base_angles =
-        segment.point == AttachPoint::eyes ? sample.aim : sample.angles;
+    const auto base_angles = effective_attach_angles(sample, segment.point, (segment.flags & 16) != 0);
     std::array<double, 3> base_position = sample.origin;
     if (segment.point == AttachPoint::eyes) {
         double body[3][3];
@@ -331,11 +390,78 @@ bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segmen
     rotate(basis, {segment.offset[0], segment.offset[1], segment.offset[2]}, position_offset);
     for (int i = 0; i < 3; ++i)
         out[i] = base_position[i] + position_offset[i];
-    for (int i = 0; i < 3; ++i)
-        out[i + 3] = base_angles[i] + segment.offset[i + 3];
+    if (segment.flags & 8) {
+        double local_basis[3][3], world_basis[3][3];
+        source_basis({segment.offset[3], segment.offset[4], segment.offset[5]}, local_basis);
+        compose_orientation(basis, local_basis, world_basis);
+        const auto world_angles = basis_angles(world_basis);
+        for (int i = 0; i < 3; ++i)
+            out[i + 3] = world_angles[i];
+    } else {
+        for (int i = 0; i < 3; ++i)
+            out[i + 3] = base_angles[i] + segment.offset[i + 3];
+    }
     for (int i = 0; i < 6; ++i)
         if (!std::isfinite(out[i]) || std::abs(out[i]) > 1e8)
             return false;
+    return true;
+}
+
+bool attach_apply_camera_motion(const AttachSample& sample, const AttachSegment& segment,
+                                const CameraPose& before, const CameraPose& after,
+                                CameraPose& offsets) noexcept {
+    // Resolve the same target frame used for preview and playback. Keep the
+    // update transactional if the target or any of the input values is invalid.
+    CameraPose current = offsets;
+    if (!resolve_attach_pose(sample, segment, current))
+        return false;
+    for (int i = 0; i < 7; ++i)
+        if (!std::isfinite(before[i]) || !std::isfinite(after[i]) || !std::isfinite(offsets[i]) ||
+            (i < 6 && offsets[i] != segment.offset[i]))
+            return false;
+    const std::array<double, 3> delta{after[0] - before[0], after[1] - before[1],
+                                      after[2] - before[2]};
+    if (!finite3(delta, kAttachOffsetLimit))
+        return false;
+    const bool locked = (segment.flags & 16) != 0;
+    const auto base_angles = effective_attach_angles(sample, segment.point, locked);
+    double basis[3][3];
+    source_basis(base_angles, basis);
+    CameraPose next = offsets;
+    for (int axis = 0; axis < 3; ++axis) {
+        double local_delta = 0;
+        for (int i = 0; i < 3; ++i)
+            local_delta += delta[i] * basis[i][axis];
+        next[axis] = std::clamp(offsets[axis] + local_delta, -kAttachOffsetLimit,
+                                kAttachOffsetLimit);
+    }
+    bool turned = false;
+    std::array<double, 3> angle_delta{};
+    for (int axis = 0; axis < 3; ++axis) {
+        const double difference = after[axis + 3] - before[axis + 3];
+        if (!std::isfinite(difference))
+            return false;
+        angle_delta[axis] = std::remainder(difference, 360.0);
+        turned = turned || std::abs(angle_delta[axis]) > 1e-10;
+    }
+    if (turned) {
+        const std::array<double, 3> desired_angles{
+            current[3] + angle_delta[0], current[4] + angle_delta[1], current[5] + angle_delta[2]};
+        std::array<double, 3> local_angles{};
+        if (segment.flags & 8) {
+            double camera_basis[3][3], local_basis[3][3];
+            source_basis(desired_angles, camera_basis);
+            relative_orientation(basis, camera_basis, local_basis);
+            local_angles = basis_angles(local_basis);
+        } else {
+            for (int axis = 0; axis < 3; ++axis)
+                local_angles[axis] = std::remainder(desired_angles[axis] - base_angles[axis], 360.0);
+        }
+        for (int axis = 0; axis < 3; ++axis)
+            next[axis + 3] = local_angles[axis];
+    }
+    next[6] = after[6];
+    offsets = next;
     return true;
 }
 
@@ -343,7 +469,7 @@ void enforce_attach_clearance(const AttachSample& sample, const AttachSegment& s
                               CameraPose& pose) noexcept {
     if (!(segment.flags & 4) || !sample.valid)
         return;
-    const auto base_angles = segment.point == AttachPoint::eyes ? sample.aim : sample.angles;
+    const auto base_angles = effective_attach_angles(sample, segment.point, (segment.flags & 16) != 0);
     double basis[3][3];
     source_basis(base_angles, basis);
     std::array<double, 3> center = sample.origin;
@@ -384,6 +510,39 @@ void enforce_attach_clearance(const AttachSample& sample, const AttachSegment& s
         pose[i] += correction * basis[i][0];
 }
 
+bool resolve_attach_view(const AttachSample& sample, const AttachSegment& segment,
+                         CameraPose& out, AttachSmoothing& smoothing, double dt) noexcept {
+    if (segment.flags & 8) {
+        // Filter the point and its orientation together before composing the
+        // authored camera. Filtering the resulting camera separately makes a
+        // long offset sweep across the screen while its angle trails behind.
+        AttachSegment point = segment;
+        point.offset.fill(0);
+        point.flags = segment.flags & 16;
+        CameraPose frame = out;
+        if (!resolve_attach_pose(sample, point, frame))
+            return false;
+        smoothing.apply_anchored(frame, sample.motion_anchor, dt, segment.smoothing,
+                                 attach_smoothing_error_limit(segment));
+        AttachSample filtered = sample;
+        for (int i = 0; i < 3; ++i) {
+            filtered.origin[i] = frame[i];
+            filtered.angles[i] = filtered.aim[i] = frame[i + 3];
+            filtered.eye_local[i] = 0;
+        }
+        if (!resolve_attach_pose(filtered, segment, out))
+            return false;
+        enforce_attach_clearance(filtered, segment, out);
+    } else {
+        if (!resolve_attach_pose(sample, segment, out))
+            return false;
+        smoothing.apply_anchored(out, sample.motion_anchor, dt, segment.smoothing,
+                                 attach_smoothing_error_limit(segment));
+        enforce_attach_clearance(sample, segment, out);
+    }
+    return true;
+}
+
 bool AttachTrack::load(const void* data, std::size_t bytes, double duration, std::string& error) {
     auto fail = [&error](const char* reason) {
         error = reason;
@@ -407,9 +566,10 @@ bool AttachTrack::load(const void* data, std::size_t bytes, double duration, std
     const auto version = reader.u32();
     const auto reserved = reader.u32();
     const auto count = reader.u32();
-    if ((version != 1 && version != 2 && version != 3) || reserved != 0 || count > max_segments)
+    if ((version != 1 && version != 2 && version != 3 && version != 4) ||
+        reserved != 0 || count > max_segments)
         return fail("Attach block header is invalid");
-    const std::size_t stride = version == 3   ? segment_bytes3
+    const std::size_t stride = version >= 3   ? segment_bytes3
                                : version == 2 ? segment_bytes2
                                               : segment_bytes;
     if (bytes != header_bytes + std::size_t(count) * stride)
@@ -432,14 +592,15 @@ bool AttachTrack::load(const void* data, std::size_t bytes, double duration, std
             segment.smoothing = reader.number();
             if (version >= 2)
                 segment.bone_hash = reader.u64();
-            if (version == 3)
+            if (version >= 3)
                 segment.source_blend = reader.number();
             if (!std::isfinite(segment.begin) || !std::isfinite(segment.end) ||
                 segment.begin != previous_end ||
                 (segment.end < segment.begin ||
                  (segment.end == segment.begin &&
-                  !(version == 3 && index + 1 == count && segment.begin == duration))) ||
-                segment.end > duration + 1e-6 || segment.flags > 7 ||
+                  !(version >= 3 && index + 1 == count && segment.begin == duration))) ||
+                segment.end > duration + 1e-6 || segment.flags > (version >= 4 ? 31u : 7u) ||
+                ((segment.flags & 24) && !(segment.flags & 1)) ||
                 point > static_cast<std::uint32_t>(version >= 2 ? AttachPoint::bone
                                                                 : AttachPoint::weapon))
                 return fail("Attach segments are not ordered and contiguous");

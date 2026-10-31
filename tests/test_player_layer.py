@@ -176,6 +176,22 @@ class StorageTests(unittest.TestCase):
 
 
 class BundleTests(unittest.TestCase):
+    def test_empty_scene_between_player_frames_preserves_frame_count_and_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / player_layer.BUNDLE_NAME
+            foreground = struct.pack('<4e', .5, .25, .125, 1)
+            clear = bytes(8)
+            def frame(draws, pixels, first=0, last=0):
+                return struct.pack('<8Q', player_layer.BUNDLE_MAGIC, 1, 1, draws, first, last, 12, 8) + pixels
+            path.write_bytes(frame(1, foreground) + frame(0, clear) + frame(1, foreground))
+            self.assertEqual(list(player_layer.iter_frames(path)),
+                             [(1, 1, foreground), (1, 1, clear), (1, 1, foreground)])
+            # Empty records cannot smuggle unvalidated pixels or draw provenance.
+            for invalid in (frame(0, foreground), frame(0, clear, first=2), frame(0, clear, last=3)):
+                path.write_bytes(invalid)
+                with self.assertRaises(RuntimeError):
+                    list(player_layer.iter_frames(path))
+
     def bundle(self, width, height, pixels, magic=None):
         folder = tempfile.mkdtemp()
         path = Path(folder) / player_layer.BUNDLE_NAME
@@ -311,6 +327,46 @@ class BundleEncodingTests(unittest.TestCase):
         self.assertTrue(any(decoded[0::4]))
         self.assertEqual(self.bundle.read_bytes(), self.raw)
         self.assertEqual(list(self.root.glob("*.partial.mov")), [])
+
+    def test_real_bundled_encoder_writes_rec709_color_and_preserves_alpha(self):
+        from dolly.video_export import bundled_ffmpeg_path
+        ffmpeg = bundled_ffmpeg_path()
+        if ffmpeg is None:
+            self.skipTest("Bundled FFmpeg is unavailable")
+        # Blocks survive ProRes quantization while exercising both RGB-to-YUV
+        # matrix choice and nontrivial alpha in the actual Players encoder.
+        blocks = ((1000, 0, 0, 1), (0, 500, 0, .5), (0, 0, 1000, 1), (0, 0, 0, 0))
+        with self.bundle.open("wb") as stream:
+            stream.write(struct.pack("<8Q", player_layer.BUNDLE_MAGIC, 64, 64, 1, 0, 0, 0, 8))
+            for y in range(64):
+                for x in range(64):
+                    stream.write(struct.pack("<4e", *blocks[(y // 32) * 2 + x // 32]))
+        previews = player_layer.write_previews(self.bundle, self.root / "previews")
+        for method in ("bundle", "preview"):
+            with self.subTest(method=method):
+                if method == "bundle":
+                    player_layer.encode_bundle(ffmpeg, self.bundle, self.output, fps=30)
+                else:
+                    player_layer.encode_layer(ffmpeg, previews, self.output, fps=30)
+                info = subprocess.run(
+                    [str(ffmpeg), "-hide_banner", "-i", str(self.output), "-vf", "showinfo",
+                     "-frames:v", "1", "-f", "null", "-"],
+                    capture_output=True, check=True, timeout=30,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stderr.decode(errors="replace")
+                self.assertIn("color_range:tv color_space:bt709 color_primaries:bt709 color_trc:bt709", info)
+                pixels = subprocess.run(
+                    [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-i", str(self.output),
+                     "-frames:v", "1", "-pix_fmt", "yuva444p10le", "-f", "rawvideo", "pipe:1"],
+                    capture_output=True, check=True, timeout=30,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+                self.assertEqual(len(pixels), 64 * 64 * 8)
+                for x, y, expected_y, expected_alpha in ((16, 16, 250, 1023), (48, 16, 691, 514),
+                                                          (16, 48, 127, 1023), (48, 48, 64, 0)):
+                    index = (y * 64 + x) * 2
+                    luma = struct.unpack_from("<H", pixels, index)[0]
+                    alpha = struct.unpack_from("<H", pixels, 64 * 64 * 6 + index)[0]
+                    self.assertLessEqual(abs(luma - expected_y), 4)
+                    self.assertLessEqual(abs(alpha - expected_alpha), 4)
 
 
 class LayerEncodeEnvironmentTests(unittest.TestCase):

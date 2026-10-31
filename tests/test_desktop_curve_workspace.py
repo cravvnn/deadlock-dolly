@@ -360,6 +360,49 @@ class WorkspaceTkTests(unittest.TestCase):
         self.workspace._lanes_changed(2)
         self.assertEqual(self.workspace.visible_groups(),(2,))
 
+    def test_unchanged_status_poll_reconfigures_no_lane_widget(self):
+        # The status poll calls set_enabled several times a second. Re-applying equal
+        # options re-laid out and redrew every lane each time (most of the idle CPU).
+        lanes = self.workspace.lanes
+        def widgets(lane):
+            items = [lane.hint, lane.value_entry, *lane.axis_buttons.values()]
+            items += [lane.reset_button] if lane.reset_button is not None else []
+            if lane.tangent_panel is not None:
+                items += [lane.tangent_mode_box, *lane.tangent_entries.values()]
+            return items
+        def variables(lane):
+            return [lane.value_text] + ([lane.tangent_mode, *lane.tangent_texts.values()]
+                                        if lane.tangent_panel is not None else [])
+        def snapshot():
+            return [(lane.value_text.get(), str(lane.hint.cget("text")), str(lane.hint.cget("foreground")),
+                     lane.hint.winfo_manager(), [str(widget.cget("state")) for widget in widgets(lane)
+                                                 if widget is not lane.hint],
+                     [str(button.cget("style")) for button in lane.axis_buttons.values()])
+                    for lane in lanes]
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                self.workspace.set_enabled(enabled)
+                self.root.update_idletasks()
+                before = snapshot()
+                spies = [patch.object(widget, name, wraps=getattr(widget, name))
+                         for lane in lanes for widget in widgets(lane) for name in ("configure", "grid", "grid_remove")
+                         if hasattr(widget, name)]
+                spies += [patch.object(variable, "set", wraps=variable.set) for lane in lanes for variable in variables(lane)]
+                mocks = [spy.start() for spy in spies]
+                try:
+                    self.workspace.set_enabled(enabled)
+                finally:
+                    for spy in spies:
+                        spy.stop()
+                self.assertEqual([mock for mock in mocks if mock.called], [])
+                self.assertEqual(snapshot(), before)
+        # A real change still reaches every lane.
+        self.assertEqual({str(lane.hint.cget("text")) for lane in lanes}, {"Pause playback or finish recording to edit"})
+        self.assertEqual({str(lane.value_entry.cget("state")) for lane in lanes}, {"disabled"})
+        self.workspace.set_enabled(True)
+        self.assertEqual({str(lane.value_entry.cget("state")) for lane in lanes}, {"normal"})
+        self.assertNotIn("Pause playback", str(lanes[0].hint.cget("text")))
+
     def test_pending_measure_is_cancelled_when_workspace_is_destroyed(self):
         self.workspace._schedule_measure()
         self.workspace.schedule_redraw()
@@ -511,6 +554,114 @@ class WorkspaceTkTests(unittest.TestCase):
         self.assertFalse(self.workspace.original_var.get())
 
 
+class WorkspaceKitModeTests(unittest.TestCase):
+    """The Camera page's options (PLAN-5 3.1): fixed lanes, title-row tools, the modes row, the legend."""
+    def setUp(self):
+        try:
+            self.root=tk.Tk()
+        except tk.TclError as error:
+            self.skipTest(str(error))
+        self.root.withdraw()
+        self.addCleanup(self.root.destroy)
+        self.errors=[]
+        self.root.report_callback_exception=lambda *args:self.errors.append(args)
+        self.legends=[]
+        self.applied=[]
+        self.interpolation,self.framing=tk.StringVar(self.root,"smooth"),tk.StringVar(self.root,"linear")
+        from dolly.ui.kit_controls import RowLayout
+        self.tools=tk.Canvas(self.root)
+        from dolly.ui.scale import ui_scale
+        self.row=RowLayout(self.tools,scale=ui_scale(self.root))
+        self.workspace=CameraCurveWorkspace(
+            self.root,on_change=Mock(),on_select=Mock(),on_reset=Mock(),context=lambda:(1,1),
+            fixed_lane_height=240,tool_parent=self.row,on_legend=self.legends.append,
+            modes=(("Interpolation",self.interpolation,("smooth","spline","linear"),lambda:self.applied.append("i")),
+                   ("Framing",self.framing,("smooth","linear","step"),lambda:self.applied.append("f"))))
+        self.workspace.pack(fill="x")
+        self.workspace.set_project(shot(),0)
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        if hasattr(self,"errors"):
+            self.assertEqual(self.errors,[])
+
+    def test_fixed_lanes_have_no_inner_scroll_and_ask_for_their_height(self):
+        from dolly.ui.scale import px, ui_scale
+        workspace,lane=self.workspace,self.workspace.lanes[0]
+        self.assertIsNone(workspace.scroll_canvas)
+        self.assertIsNone(workspace.scrollbar)
+        self.assertIs(lane.master,workspace.body)
+        self.assertEqual(lane.canvas.winfo_reqheight(),px(ui_scale(self.root),240))
+        self.assertGreaterEqual(workspace.winfo_reqheight(),lane.canvas.winfo_reqheight()+lane.header.winfo_reqheight())
+        workspace.stack_var.set(True);workspace._layout()
+        self.root.update_idletasks()
+        self.assertEqual([int(lane.grid_info()["row"]) for lane in workspace.lanes[:2]],[0,1])
+        self.assertEqual(workspace.modes_row.grid_info()["in"],workspace.body)
+
+    def test_tools_go_to_the_title_row_and_the_legend_to_its_callback(self):
+        from dolly.ui.kit_controls import CanvasButton
+        workspace=self.workspace
+        self.assertIsNone(workspace.tools)
+        self.assertEqual([control.cget("text") for control in self.row.controls()],["Update original","Frame all"])
+        for button in (workspace.update_original_button,workspace.frame_all_button):
+            self.assertIsInstance(button,CanvasButton)
+            self.assertIn(workspace._settle_view_press,button.bind("<ButtonPress-1>"))
+        self.assertEqual(workspace.update_original_button.cget("state"),"disabled")
+        workspace.update_original_button.configure(state="normal")
+        workspace.update_original_button.invoke()
+        self.assertTrue(workspace.original_var.get())
+        self.assertEqual(workspace.update_original_button.cget("state"),"normal")
+        self.assertEqual(workspace.footer.winfo_manager(),"")
+        self.assertTrue(self.legends)
+        self.assertIn("Solid: current; dashed: original",self.legends[-1])
+        count=len(self.legends)
+        workspace.redraw()
+        self.assertEqual(len(self.legends),count)   # only changes are reported
+
+    def test_the_modes_row_sits_between_the_graph_and_the_hint(self):
+        workspace,lane=self.workspace,self.workspace.lanes[0]
+        self.assertEqual(len(workspace.mode_combos),2)
+        self.assertEqual(workspace.modes_row.grid_info()["in"],lane)
+        self.assertEqual([int(widget.grid_info()["row"]) for widget in (lane.canvas,workspace.modes_row,lane.hint)],[1,2,3])
+        self.assertEqual(str(workspace.mode_combos[1].cget("textvariable")),str(self.framing))
+        workspace.mode_combos[0].event_generate("<<ComboboxSelected>>")
+        workspace.mode_combos[1].event_generate("<<ComboboxSelected>>")
+        self.assertEqual(self.applied,["i","f"])
+        workspace.select_group(2)
+        self.assertEqual(workspace.modes_row.grid_info()["in"],workspace.lanes[2])
+
+    def test_kit_look_styles_and_the_graph_plate(self):
+        from dolly import ui_theme
+        from dolly.ui.kit_controls import KitButton
+        workspace,lane=self.workspace,self.workspace.lanes[0]
+        self.assertEqual([str(button.cget("style")) for button in workspace.tab_buttons],
+                         ["Kit.Tab.Selected.TButton","Kit.Tab.TButton","Kit.Tab.TButton"])
+        self.assertEqual(str(lane.axis_buttons["x"].cget("style")),"Kit.Tab.Selected.TButton")
+        self.assertEqual(str(lane.value_entry.cget("style")),"Kit.TEntry")
+        self.assertEqual(str(workspace.original_check.cget("text")),"Show Original")
+        self.assertEqual(str(workspace.stack_check.cget("style")),"Kit.Muted.TCheckbutton")
+        self.assertIsInstance(workspace.lanes[1].reset_button,KitButton)
+        self.assertEqual(workspace.lanes[1].reset_button.button.kind,"quiet")
+        self.assertEqual(lane.canvas.cget("background"),ui_theme.TOKENS["panel"])
+        with patch.object(lane.canvas,"winfo_width",return_value=571),patch.object(lane.canvas,"winfo_height",return_value=240):
+            lane._redraw()
+        canvas=lane.canvas
+        self.assertEqual(len(canvas.find_withtag("plate-corner")),4)
+        # The gutter mask covers the plate's left corners; the corners are drawn again above it.
+        order=canvas.find_all()
+        self.assertTrue(all(order.index(corner)>order.index(canvas.find_withtag("mask")[0])
+                            for corner in canvas.find_withtag("plate-corner")))
+        s=lane.scale
+        bounds=lane._bounds
+        self.assertEqual((bounds.left,bounds.top,571-bounds.right,240-bounds.bottom),
+                         tuple(round(value*s) for value in (52,16,14,40)))
+        keys=canvas.find_withtag("keys")
+        self.assertTrue(keys)
+        self.assertEqual({canvas.itemcget(key,"outline") for key in keys[1:]},{ui_theme.TOKENS["curve_key"]})
+        dash=lane._px((3,3))
+        self.assertEqual(canvas.itemcget(canvas.find_withtag("playhead")[0],"dash"),f"{dash[0]} {dash[1]}")
+
+
 class WorkspaceAppGestureTests(unittest.TestCase):
     """Real canvas bindings, selection queues and GUI commits through playback input."""
     def setUp(self):
@@ -528,8 +679,8 @@ class WorkspaceAppGestureTests(unittest.TestCase):
             self.app = DollyApp(self.root)
         # Map transparent widgets so event_generate follows Tk's real binding
         # precedence, without displaying a test window or running app polling.
-        for timer in self.root.tk.splitlist(self.root.tk.call("after", "info")):
-            self.root.tk.call("after", "cancel", timer)
+        # Keep the redesigned page's pending map/layout callbacks; only polling is idle.
+        self.app._poll = lambda: None
         self.root.attributes("-alpha", 0.0)
         self.root.geometry("1400x900+0+0")
         self.app.notebook.select(self.app.camera_tab)
@@ -553,6 +704,10 @@ class WorkspaceAppGestureTests(unittest.TestCase):
         self.root.update()
 
     def event(self, lane, sequence, x, y, time):
+        # On the kit Camera page the lanes scroll with the page: bring the graph into view first.
+        page = getattr(self.app, "camera_page", None)
+        if page is not None and hasattr(page, "reveal"):
+            page.reveal(lane.canvas)
         lane.canvas.event_generate(sequence, x=round(x), y=round(y), time=time)
         self.root.update()
 

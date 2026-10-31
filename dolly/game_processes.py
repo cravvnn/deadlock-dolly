@@ -168,8 +168,13 @@ def running_game_processes() -> list[GameProcess]:
         return []
     if not entries:
         return []
-    titles = _window_titles()
-    return [
-        GameProcess(pid, name, _process_path(pid), _session_id(pid), titles.get(pid))
-        for pid, name in entries
-    ]
+    try:
+        titles = _window_titles()
+        return [
+            GameProcess(pid, name, _process_path(pid), _session_id(pid), titles.get(pid))
+            for pid, name in entries
+        ]
+    except (OSError, AttributeError, ValueError):
+        # The extra context is diagnostic only; never replace the refusal with
+        # a ctypes failure on an older or restricted Windows host.
+        return []

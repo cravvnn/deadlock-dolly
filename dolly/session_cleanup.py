@@ -27,6 +27,7 @@ GENERATED_FILES = frozenset({
     ".dolly-session.json", "cvar_unlocker/bin/win64/server.dll",
     "cvar_unlocker/bin/win64/dolly_cvar_unlocker.dll",
     "cvar_unlocker/bin/win64/dolly_native.cfg",
+    "cvar_unlocker/bin/win64/dolly_definitions.txt",
     "cvar_unlocker/bin/win64/dolly_hide_report.txt",
     *(_CAPTURE_BIN + name for name in (
         "dolly_owner_start.txt", "dolly_owner_start.tmp", "dolly_owner_status.txt",

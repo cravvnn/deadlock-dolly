@@ -1,10 +1,11 @@
 """Report what a Deadlock update changed, before running the compatibility pipeline.
 
-Reads the installed build id from ``game/citadel/steam.inf`` and hashes the
-reviewed modules against ``native/profiles/manifest.json`` (plus the unlocker's
-``server.dll`` against ``assets/editing/profile.json``). Prints the new build id
-and exactly which modules changed, so the update pipeline can be scoped in
-seconds instead of guessed.
+Reads the installed build id from ``game/citadel/steam.inf``, hashes the
+reviewed modules against ``native/profiles/manifest.json`` plus the checked-in
+``definitions.json`` feed, and reports the unlocker's ``server.dll`` against
+``assets/editing/profile.json``. Prints the new build id and exactly which
+modules changed, so a data-only publish and a required release are told apart
+in seconds instead of guessed.
 
 Offline only: reads files, launches nothing.
 """
@@ -20,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 from dolly import compatibility  # noqa: E402
+from dolly import definitions  # noqa: E402
 from dolly import launcher  # noqa: E402
 
 STEAM_INF = "citadel/steam.inf"
@@ -61,6 +63,14 @@ def editing_server_pin() -> str | None:
     return pin if isinstance(pin, str) else None
 
 
+def published_definitions() -> tuple[definitions.Definitions | None, str]:
+    """The checked-in feed document, never the per-install cache."""
+    try:
+        return definitions.load(ROOT / definitions.DEFINITIONS_PATH), ""
+    except definitions.DefinitionsError as error:
+        return None, str(error)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--game-dir", type=Path, default=None,
@@ -83,9 +93,21 @@ def main(argv: list[str] | None = None) -> int:
     version_date = steam.get("VersionDate", "?")
     version_time = steam.get("VersionTime", "")
 
-    report = compatibility.scan_game_modules(game_dir)
+    published, published_error = published_definitions()
+    try:
+        pins = compatibility.merged_pins(
+            compatibility.accepted_pins(), published.modules if published else None)
+    except compatibility.CompatibilityError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    report = compatibility.scan_game_modules(game_dir, pins=pins)
     changed = [m for m in report.modules if m.installed and not m.matched]
     missing = [m for m in report.modules if not m.installed]
+    bundled = compatibility.accepted_pins()
+    published_only = {m.relative for m in report.modules
+                      if m.installed and m.matched
+                      and m.observed_sha256 not in bundled.get(m.relative, ())}
 
     server_path = game_dir / SERVER
     server_hash = compatibility.hash_file(server_path) if server_path.is_file() else None
@@ -118,12 +140,29 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  ClientVersion: {client_version}   ServerVersion: {server_version}   "
           f"VersionDate: {version_date} {version_time}".rstrip())
     print()
-    print("Reviewed modules (vs native/profiles/manifest.json):")
+    print("Reviewed modules (vs native/profiles/manifest.json + definitions.json):")
     for module in report.modules:
         state = "MISSING" if not module.installed else ("ok" if module.matched else "CHANGED")
         digest = (module.observed_sha256 or "n/a")[:16]
         extra = "" if module.matched or not module.installed else "  <- not in the accepted list"
-        print(f"  {state:8s} {module.name:22s} {digest}  reviewed={module.reviewed_utc}{extra}")
+        source = "  via published definitions" if module.relative in published_only else ""
+        print(f"  {state:8s} {module.name:22s} {digest}  reviewed={module.reviewed_utc}{extra}{source}")
+    print()
+    print(f"Published definitions ({definitions.DEFINITIONS_PATH}):")
+    if published is None:
+        print(f"  INVALID  {published_error}")
+    else:
+        print(f"  updated: {published.updated or 'unknown'}   covers: {published.describe()}")
+        client_digest = compatibility.hash_file(client_path) if client_path.is_file() else None
+        covered = ({row.sha256 for row in published.client_profiles}
+                   | {row.sha256 for row in published.engine_profiles}
+                   | {row.sha256 for row in published.tier0_profiles})
+        if client_digest in covered:
+            print("  installed client/engine/tier0 is named by a published build record")
+        elif published.empty:
+            print("  no published builds yet; release pins only")
+        else:
+            print("  no published record for the installed camera modules")
     print()
     print("Unlocker target:")
     print(f"  {server_state:8s} server.dll             "
@@ -137,18 +176,33 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SUMMARY: {len(missing)} reviewed module(s) missing: "
               + ", ".join(m.name for m in missing))
         return 2
-    if changed or server_state == "CHANGED" or particle_state in ("STALE", "ERROR"):
-        names = ", ".join(m.name for m in changed)
-        detail = names or ""
-        if server_state == "CHANGED":
-            detail = (detail + ", " if detail else "") + "server.dll"
-        if particle_state == "STALE":
-            detail = (detail + ", " if detail else "") + "confetti particle table"
-        if particle_state == "ERROR":
-            detail = (detail + ", " if detail else "") + "confetti table (scan failed)"
-        print(f"SUMMARY: update detected — {detail} changed. Run the compatibility pipeline "
-              "(tools/update_game.py).")
+    camera_changed = [m for m in changed
+                      if m.relative in compatibility.CAMERA_MODULE_RELATIVES]
+    other_changed = [m for m in changed if m not in camera_changed]
+    blockers = []
+    if server_state == "CHANGED":
+        blockers.append("server.dll changed, so the bundled cvar unlocker must be rebuilt")
+    if particle_state in ("STALE", "ERROR"):
+        blockers.append("the confetti/particle table is stale")
+
+    if blockers:
+        print("SUMMARY: Dolly release required - " + "; ".join(blockers) + ".")
+        if camera_changed or other_changed:
+            print("         Run the update pipeline so that release also carries the reviewed data.")
         return 1
+    if camera_changed:
+        print("SUMMARY: camera modules changed ("
+              + ", ".join(m.name for m in camera_changed)
+              + "). Review them, then publish definitions if the camera shape is unchanged.")
+        return 1
+    if other_changed:
+        print("SUMMARY: optional feature modules changed ("
+              + ", ".join(m.name for m in other_changed)
+              + "). Native camera can still be published; those features need their own review.")
+        return 1
+    if published_only:
+        print("SUMMARY: covered by published definitions; no Dolly rebuild needed.")
+        return 0
     print(f"SUMMARY: build {client_version} matches a reviewed Dolly profile; no update needed.")
     return 0
 

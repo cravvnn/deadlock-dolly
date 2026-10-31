@@ -1,16 +1,16 @@
 {
   "format": 1,
-  "reviewed": "2026-10-22",
+  "reviewed": "2026-10-26",
   "modules": {
     "client": {
-      "profile": "deadlock-2026-10-22-6819-complete.json",
+      "profile": "deadlock-2026-10-26-6821-complete.json",
       "section": "client",
       "hash_key": "client_sha256",
       "size_key": "size_of_image",
       "path": "citadel/bin/win64/client.dll"
     },
     "tier0": {
-      "profile": "deadlock-2026-10-22-6819-complete.json",
+      "profile": "deadlock-2026-10-26-6821-complete.json",
       "section": "tier0",
       "hash_key": "sha256",
       "size_key": "size_of_image",
@@ -40,17 +40,17 @@
       "MANAGER": {
         "module": "client",
         "kind": "rva",
-        "value": "0x3330960"
+        "value": "0x3330970"
       },
       "MANAGER_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x2781250"
+        "value": "0x2781240"
       },
       "RESOURCE_GLOBAL": {
         "module": "client",
         "kind": "rva",
-        "value": "0x4023510"
+        "value": "0x4023490"
       },
       "RESOURCE_VTABLE": {
         "module": "renderer",
@@ -65,12 +65,16 @@
       "INTRO_GLOBAL": {
         "module": "client",
         "kind": "rva",
-        "value": "0x3e80c58"
+        "value": "0x3e80b48",
+        "rip_reference": {
+          "rva": "0x1bd2f63",
+          "bytes": "488935dedb2a02"
+        }
       },
       "INTRO_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x2c6ab98"
+        "value": "0x2c6ab38"
       },
       "CLIENT_CODE_SPANS": {
         "module": "client",
@@ -79,22 +83,22 @@
           {
             "rva": "0x5fe450",
             "size": 8,
-            "sha256": "d3aefcab84f5cc46f31bb050cc7e5399721bc757d844eb7eac7d035feb22fea7"
+            "sha256": "e4c8205e38d45cc573712b5cf874abd80621b55a63500028f9e226ae3893d3fc"
           },
           {
             "rva": "0x607500",
             "size": 126,
-            "sha256": "766392f0a4914b06ff3229c115ecdcc725ed398508ab5c60fccf328cbdd61a38"
+            "sha256": "850c16020f51015a41d4b821ebd189a6c3d713908a7ed792b45b0b13175fb421"
           },
           {
-            "rva": "0x1e0c550",
+            "rva": "0x1e0c540",
             "size": 266,
-            "sha256": "8dcbd5c9a646ab4ac0e6ef5ac941356a3b984fb0e9cd7462fa503a576fef5d7c"
+            "sha256": "dcaf1faa66f6ac74e99098d59a83478b82936e8c4381ae329bc779e39dd35009"
           },
           {
             "rva": "0x5ef82e",
             "size": 51,
-            "sha256": "4067d4192272405b7488687a7d322d59b55b3cd93affc01542e4c9904ce22400"
+            "sha256": "044cb252db522c399832535f687db66176ec47bcc3473e40aff1df2dfc9d51f2"
           },
           {
             "rva": "0x60a950",
@@ -104,32 +108,37 @@
           {
             "rva": "0x5e1420",
             "size": 75,
-            "sha256": "2a9119ee95dd599fa37f6c3fc5dc8d31210b6846d208095f17a3700e8031ff1f"
+            "sha256": "5aabb222d8ebd685ddab2d31a56eb31976a8be9dea2633c2d0e5e80b898901b4"
           },
           {
-            "rva": "0x1bd2ef5",
+            "rva": "0x1bd2f05",
             "size": 101,
-            "sha256": "4a6d46cf4fa93e1c1ce6b3b574ebd3d1fce28f811f3ef593c0880c12d669f3af"
+            "sha256": "ffc90fa3fb0a34b0e577b9315c8090ab4a8ff784e036d2cc0595411209512732"
           },
           {
-            "rva": "0x1bef6c0",
+            "rva": "0x1bef6d0",
             "size": 230,
-            "sha256": "ef2a0c10b504885d6ddc9a8a11235718e3924f6d359116afbd3b7feccc9ebc49"
+            "sha256": "1409cd8f5384eff6eee7cb1f29b1a3d85a22c32817e9ef46a33d1c336f363599"
           },
           {
-            "rva": "0x1c1588e",
+            "rva": "0x1c1589e",
             "size": 465,
-            "sha256": "0f48875d93fa977f535c30083423464d4bc88173b251676babee402b8af09ae0"
+            "sha256": "d93efd192c9b45176f7a75f1d7de63ba380d9d9cd5870c5892a497bcb957c857"
           },
           {
-            "rva": "0x1bfdef0",
+            "rva": "0x1bfdf00",
             "size": 66,
-            "sha256": "62dd2ad624217cdf3fdb577d8a080e34fb696e0f90bbb86deddb9d7fe01ba50d"
+            "sha256": "1a58ca469e919aa8f74490fc28eb68780e25935b4db7342774b49373767b3d33"
           },
           {
-            "rva": "0x1bdb160",
+            "rva": "0x1bdb170",
             "size": 554,
-            "sha256": "563f24dafd32d06910d15a010bc6119f8d857c6f13d34f15a210296fc3ee9fa4"
+            "sha256": "c4b87a73089b2a5b36b838dca505c7292296d815343ac3a18a1c11f23b01ea62"
+          },
+          {
+            "rva": "0x1c0ec77",
+            "size": 12,
+            "sha256": "fc6f37cc519aafef3b7e6d86c5d688a1f6f9b107af2e73c402f7cdfe0e304207"
           }
         ]
       },
@@ -196,12 +205,12 @@
       "MANAGER": {
         "module": "client",
         "kind": "rva",
-        "value": "0x3803b90"
+        "value": "0x3803b10"
       },
       "MANAGER_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x277d030"
+        "value": "0x277d020"
       },
       "GAMEPLAY_CAMERA_VTABLE": {
         "module": "client",
@@ -211,12 +220,12 @@
       "RULES_GLOBAL": {
         "module": "client",
         "kind": "rva",
-        "value": "0x3e63f68"
+        "value": "0x3e63ee8"
       },
       "RULES_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x27b9418"
+        "value": "0x27b9340"
       },
       "CODE_SPANS": {
         "module": "client",
@@ -225,57 +234,57 @@
           {
             "rva": "0x5e2ce0",
             "size": 685,
-            "sha256": "8ac50065ac17794b3f4b5eccb491dfa15ce0c2f1f220c6e115735d003d438278"
+            "sha256": "4714cf41f65ceda4de5d9dbaa8546e4d15ffd1bebb461f0f4fcd1cf53045f172"
           },
           {
             "rva": "0x5baa40",
             "size": 181,
-            "sha256": "03bb635ad9f04118e4a42f6a2986eab3aa40f685a08940d66f71bba71c21813a"
+            "sha256": "551615083682f6eba8fc80825990c4267e0fd4a248016431b738a41cacc4c103"
           },
           {
-            "rva": "0x192e520",
+            "rva": "0x192e530",
             "size": 261,
             "sha256": "8cf35733f23987bae0ebb26f0c19ff26e8078831bfa157a58c5d5e52d515216f"
           },
           {
-            "rva": "0x1943530",
+            "rva": "0x1943540",
             "size": 5,
             "sha256": "65040a475cbc284b30a6717ac7b2100df0a76073a263841fe754d2e27c2de90f"
           },
           {
-            "rva": "0x1947650",
+            "rva": "0x1947660",
             "size": 6,
             "sha256": "227707a7be321c721db4b8a5f987779e948f14b9d2ca4874596398e76ef852d6"
           },
           {
-            "rva": "0x1c2d640",
+            "rva": "0x1c2d630",
             "size": 1642,
-            "sha256": "7d23f27d0599c51bcd3451c0c40e3ec9fa9b5da671314388f0bee3f3706822d2"
+            "sha256": "75c3493ec4d70ae3cf61cbbf8048f9a5666b3784e180a70b17a19b97042fb063"
           },
           {
-            "rva": "0x19d27d0",
+            "rva": "0x19d27e0",
             "size": 88,
             "sha256": "ab72639d18a9838c2721bda5ce47534e953ee71d6c8096dbc7bec3f24142c0df"
           },
           {
-            "rva": "0x1bdce40",
+            "rva": "0x1bdce50",
             "size": 17,
             "sha256": "7e5c47d0bebda21cab80ad5023e7171b10976ddd4be72a7e3b3c63c24cc0b18a"
           },
           {
-            "rva": "0x1c0f4b7",
+            "rva": "0x1c0f4c7",
             "size": 112,
-            "sha256": "fc2a6069b3b31fe27d4feb991c1911b26466d302292273405f7818dee5e9e654"
+            "sha256": "7210eff8251de6c9a2c2f0bd782a101d6e3f90ed280bcf264e6280508ece628c"
           },
           {
-            "rva": "0x1c26e70",
+            "rva": "0x1c26e60",
             "size": 91,
-            "sha256": "0caf379cd82f935306405a0bfd9173a7da8b99fccea683f51482736aacb21d4d"
+            "sha256": "cd6c6a4afc1fa965a0e95e81d46e49f5df194ace5132d533bda2b07d42aca2b7"
           },
           {
-            "rva": "0x1c2d2f0",
+            "rva": "0x1c2d2e0",
             "size": 118,
-            "sha256": "824ff82ec5087241e068c42afa7699be2ffa67e8112198f1d91ced8401eaf00f"
+            "sha256": "4da65ce5235ead69ba823022444f96767cdaa62b9a8710d1c86e0cebba689255"
           }
         ]
       },
@@ -307,12 +316,12 @@
       "HUD_ROOT": {
         "module": "client",
         "kind": "rva",
-        "value": "0x3e7ff08"
+        "value": "0x3e7fe88"
       },
       "HUD_ROOT_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x2c66db8"
+        "value": "0x2c66d58"
       },
       "HUD_TAKEOVER_COUNT": {
         "module": "client",
@@ -332,22 +341,22 @@
           {
             "rva": "0x8efa0",
             "size": 3430,
-            "sha256": "abcb27d5979dcd8b7b627898489a6bbe3e3b0637ed76fe48a3e0609406882e5b"
+            "sha256": "f3ebd8efc6f874444562670360ade7e6d410d484199166ba693d57fef932547c"
           },
           {
             "rva": "0x90870",
             "size": 166,
-            "sha256": "5d27f9528c1778aaa1bf8580206c7f987117c0766ee058968005085ff7362427"
+            "sha256": "a3ee5baa2b516863b8ef53ffd53adb1a4458af9231ea8d155b5a723d5803583a"
           },
           {
             "rva": "0x242720",
             "size": 115,
-            "sha256": "fe5f5f3c418af2bf1ff98a5406bc18d4a08e4c319817de67977f13bda96cacad"
+            "sha256": "c612becfa606d68b3cd85bd3be5491638487993002b86722f682e71b3c668087"
           },
           {
-            "rva": "0x24fb290",
+            "rva": "0x24fb280",
             "size": 129,
-            "sha256": "ba4aa009e86b66b8bd631ce0733df6a36051efa5e1f1fef72337a841e8afba8d"
+            "sha256": "7922f211df123d37c12259d309e3ae4a64e8b0276f9da4a284872f11e81009d2"
           },
           {
             "rva": "0x2601d0",
@@ -357,7 +366,7 @@
           {
             "rva": "0x616696",
             "size": 11,
-            "sha256": "01530244d485c8506824f0fa259e587b0d7bf8d59d18d39f33dbbaa0d665a9d5"
+            "sha256": "bfff69e32054c3e9fe75ef6085644b8e361856e7c9bf69acef89d90008ef7621"
           }
         ]
       },
@@ -376,23 +385,23 @@
         "module": "client",
         "kind": "rva_map",
         "value": {
-          "pivot_x_offset": "0x3805610",
-          "pivot_y_offset": "0x3805620",
-          "pivot_z_offset": "0x3805630",
-          "pivot_x_offset_crouching": "0x3805640",
-          "pivot_y_offset_crouching": "0x3805650",
-          "pivot_z_offset_crouching": "0x3805660",
-          "x_offset": "0x3805670",
-          "y_offset": "0x3805680",
-          "z_offset": "0x3805690",
-          "x_worst_case_offset": "0x38056a0",
-          "y_worst_case_offset": "0x38056b0",
-          "z_worst_case_offset": "0x38056c0",
-          "ads_x_offset": "0x38056d0",
-          "ads_y_offset": "0x38056e0",
-          "ads_z_offset": "0x38056f0",
-          "fov": "0x3805700",
-          "ads_fov": "0x3805710"
+          "pivot_x_offset": "0x3805590",
+          "pivot_y_offset": "0x38055a0",
+          "pivot_z_offset": "0x38055b0",
+          "pivot_x_offset_crouching": "0x38055c0",
+          "pivot_y_offset_crouching": "0x38055d0",
+          "pivot_z_offset_crouching": "0x38055e0",
+          "x_offset": "0x38055f0",
+          "y_offset": "0x3805600",
+          "z_offset": "0x3805610",
+          "x_worst_case_offset": "0x3805620",
+          "y_worst_case_offset": "0x3805630",
+          "z_worst_case_offset": "0x3805640",
+          "ads_x_offset": "0x3805650",
+          "ads_y_offset": "0x3805660",
+          "ads_z_offset": "0x3805670",
+          "fov": "0x3805680",
+          "ads_fov": "0x3805690"
         }
       },
       "OWN_HEALTH_SPANS": {
@@ -402,34 +411,34 @@
           {
             "rva": "0x1baf40",
             "size": 174,
-            "sha256": "cfcb12ff631f2f8d5125514f14b773cc3e6d3dcacceaf9687d8cb19dc0686e60"
+            "sha256": "7e5f872b5b97ae4fd782e6f0889bcc2be1b8d456f8574e079cfa3608a3573749"
           },
           {
-            "rva": "0x1c19e40",
+            "rva": "0x1c19e30",
             "size": 803,
-            "sha256": "ad3438d6f79aac6cbbe0ac82ab5e2e277103425c0471314bb0ee48d488846e69"
+            "sha256": "8999286383c3a977eeb46c82567ddd571ac143c85a1c896f4e143808df183804"
           },
           {
-            "rva": "0x1bfbc50",
+            "rva": "0x1bfbc60",
             "size": 47,
-            "sha256": "1943364817b724bfb92bf1fcf173bf6ecea12e96f52bfaf9e1c6b9ef0b28cb66"
+            "sha256": "f16d5257a65ad57855e2ba424fb93146a59d20516523a0ba6ce1ff129652e040"
           }
         ]
       },
       "ENABLED_REF": {
         "kind": "rva",
         "module": "client",
-        "value": "0x3805600"
+        "value": "0x3805580"
       },
       "FOLLOW_AIM_REF": {
         "kind": "rva",
         "module": "client",
-        "value": "0x3805330"
+        "value": "0x38052b0"
       },
       "OWN_HEALTH_REF": {
         "kind": "rva",
         "module": "client",
-        "value": "0x3e80938"
+        "value": "0x3e808b8"
       },
       "CLIENT_IMAGE_SIZE": {
         "kind": "module_size",
@@ -466,32 +475,32 @@
         "kind": "spans",
         "value": [
           {
-            "rva": "0x173e100",
+            "rva": "0x173e110",
             "size": 121,
-            "sha256": "ad8a6053d5a2806e9e6ed1962d01d3321b32ad8d936f823592a4e4333d1f6b2d"
+            "sha256": "2a6711a4252c2fd72867f7d86075902f0aa3e715ae1b7f667c51a8ef0ab811b0"
           },
           {
-            "rva": "0x875380",
+            "rva": "0x875320",
             "size": 5,
             "sha256": "ec570840fc39861c9310b17d397eca0b61da5d806b79edd4c04f18586aaf6fe2"
           },
           {
-            "rva": "0x875390",
+            "rva": "0x875330",
             "size": 92,
-            "sha256": "6a940c1cb600c6f60c5f2a062737eb4800b8ac2e90c356dbf859648c3069af25"
+            "sha256": "b094960f44fd449a347e560bbae60460c4f76240732518633cb3f640f6192cad"
           },
           {
-            "rva": "0x846380",
+            "rva": "0x846320",
             "size": 193,
-            "sha256": "454970fae2a5aafd747ea856da6f19b3ef7cf61a160c11e7ead22053f92af25d"
+            "sha256": "d62d30b6dccee35dc5c784d2669cf6d5ddb5631ea7623abb3953a422159292b3"
           },
           {
-            "rva": "0x826320",
+            "rva": "0x8262c0",
             "size": 17,
             "sha256": "f01ab0e29ffd2376f18134f0302fa70d76027db664593ba5faaa636d45982a1e"
           },
           {
-            "rva": "0x826340",
+            "rva": "0x8262e0",
             "size": 17,
             "sha256": "bae583882071a1886725f72a7c53f8f3a4cdaaf4a6c36108087cdaf0a1afb5b0"
           }
@@ -502,49 +511,49 @@
         "kind": "spans",
         "value": [
           {
-            "rva": "0x945a60",
+            "rva": "0x945a20",
             "size": 33,
-            "sha256": "fafaf23a757b2c980407c2105f0fc9d7e35447b28708d2b22952be4f8603832d"
+            "sha256": "83c346c1f12d8e0404ba1cc09dbcb6e3462bffd2e57ca4fc4c07168607e08404"
           },
           {
-            "rva": "0x173e0e0",
+            "rva": "0x173e0f0",
             "size": 23,
-            "sha256": "ba8137d250512e453025aa0a917e9cd77ddd45e0d58a02267915c70ef436051b"
+            "sha256": "99c461ac017d33756c0cc7143d46cf19bc4c80dafd70684588bb7c4a7f777259"
           },
           {
             "rva": "0x588f50",
             "size": 252,
-            "sha256": "953fc18d2eaba58b9d57bd3e00f25185111e3b2a1b3336aaba2914d84f1eb7d9"
+            "sha256": "662e2329968369632d10edadb1ba47e0f910b0c6a7cad30912b5dda84c0735de"
           },
           {
-            "rva": "0x826320",
+            "rva": "0x8262c0",
             "size": 17,
             "sha256": "f01ab0e29ffd2376f18134f0302fa70d76027db664593ba5faaa636d45982a1e"
           },
           {
-            "rva": "0x826340",
+            "rva": "0x8262e0",
             "size": 17,
             "sha256": "bae583882071a1886725f72a7c53f8f3a4cdaaf4a6c36108087cdaf0a1afb5b0"
           },
           {
-            "rva": "0x875420",
+            "rva": "0x8753c0",
             "size": 137,
-            "sha256": "9c849ed321c68c11fa98a325f0bf49f83e08e8035724e658c5fff98c6cc9651c"
+            "sha256": "2c4621e0a0a67842d0e4e4eafa0180580f2ad11ab8553c103194a8971b354538"
           },
           {
-            "rva": "0x1c5ced0",
+            "rva": "0x1c5cec0",
             "size": 297,
-            "sha256": "37c139270b306ab56223708458305fa9e3f697cae64b7d57f47687cff14d5dbf"
+            "sha256": "afc91bb40ccc5f8958a87475633c7df3a6248fbe03b5244853a03cd196a5c4ed"
           },
           {
-            "rva": "0x1c5d520",
+            "rva": "0x1c5d510",
             "size": 65,
             "sha256": "df410f2d99b103f8361eed5acaa5be48b48d8794bc7602a507e1b03efd0eee28"
           },
           {
-            "rva": "0x824d10",
+            "rva": "0x824cb0",
             "size": 55,
-            "sha256": "61d7eca686e54c2eae7bd3b5397cb252382499cdde2d15e05533688061c656e4"
+            "sha256": "2977b63c9ed90ccf947182766a5e22b66e56a719f86e060c91687b2dea8c335c"
           },
           {
             "rva": "0x4b24e0",
@@ -557,7 +566,7 @@
             "sha256": "e18aacce29affcdddaa5f641ac1ec12552e0fe9d066e6408941b1792818b8619"
           },
           {
-            "rva": "0x1691956",
+            "rva": "0x1691966",
             "size": 3,
             "sha256": "e18aacce29affcdddaa5f641ac1ec12552e0fe9d066e6408941b1792818b8619"
           },
@@ -572,44 +581,44 @@
             "sha256": "01cb47d078b4841b8408ec4fe278efa83115c6f6e101972987507d2b2b57dcf0"
           },
           {
-            "rva": "0x85e600",
+            "rva": "0x85e5a0",
             "size": 381,
-            "sha256": "6cc2c57715ad793aeae10ae6273403caffdfce32b70305c7f0eadb64ade9aabe"
+            "sha256": "b26f7d0f371768ef8ab9bdcdb0770c59e24863fb2e49c6766e5369fc07f8d360"
           }
         ]
       },
       "CONTROLLER_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x27e3d68"
+        "value": "0x27e3c78"
       },
       "OBSERVER_PAWN_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x27608f0"
+        "value": "0x27608e0"
       },
       "PLAYER_PAWN_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x276d3e8"
+        "value": "0x276d3d8"
       },
       "FAMILIAR_CLONE_PAWN_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x297bd08"
+        "value": "0x297bc28"
       },
       "SERVICES_VTABLES": {
         "module": "client",
         "kind": "rvas",
         "value": [
-          "0x27e47b0",
-          "0x2bdafd8"
+          "0x27e46c0",
+          "0x2bdaf68"
         ]
       },
       "CONTROLLER_FINAL_VTABLE": {
         "module": "client",
         "kind": "rva",
-        "value": "0x27e3d38"
+        "value": "0x27e3c48"
       },
       "OBSERVER_SERVICES_OFFSET": {
         "module": "client",
@@ -619,12 +628,12 @@
       "ENTITY_LIST": {
         "kind": "rva",
         "module": "client",
-        "value": "0x35f25b8"
+        "value": "0x35f2538"
       },
       "CONTROLLER": {
         "kind": "rva",
         "module": "client",
-        "value": "0x3e1cae0"
+        "value": "0x3e1ca50"
       },
       "OBSERVER_PREDICATE": {
         "kind": "rva",
@@ -634,17 +643,17 @@
       "GET_OBSERVER_MODE": {
         "kind": "rva",
         "module": "client",
-        "value": "0x875380"
+        "value": "0x875320"
       },
       "GET_OBSERVER_TARGET": {
         "kind": "rva",
         "module": "client",
-        "value": "0x875390"
+        "value": "0x875330"
       },
       "PLAYER_PREDICATE": {
         "kind": "rva",
         "module": "client",
-        "value": "0x171a000"
+        "value": "0x171a010"
       },
       "PLAYER_DATA_PREDICATE": {
         "kind": "rva",
@@ -744,17 +753,17 @@
       "INITIALIZER": {
         "kind": "rva",
         "module": "client",
-        "value": "0x215a770"
+        "value": "0x215a760"
       },
       "ENTITY_VTABLE": {
         "kind": "rva",
         "module": "client",
-        "value": "0x2bc99b0"
+        "value": "0x2bc9940"
       },
       "ENTITY_GLOBAL": {
         "kind": "rva",
         "module": "client",
-        "value": "0x3f9fea0"
+        "value": "0x3f9fe20"
       },
       "INITIALIZER_BYTES": {
         "kind": "bytes",
@@ -767,20 +776,20 @@
     "C_BasePlayerPawn.m_pObserverServices": {
       "module": "client",
       "offset": "0xe98",
-      "record_rva": "0x3394620",
+      "record_rva": "0x3394630",
       "getters": [
         {
-          "rva": "0x826320",
+          "rva": "0x8262c0",
           "slot": "0xf0",
           "bytes": "488b89980e0000488b0148ffa0f0000000"
         },
         {
-          "rva": "0x826340",
+          "rva": "0x8262e0",
           "slot": "0x100",
           "bytes": "488b89980e0000488b0148ffa000010000"
         }
       ],
-      "evidence": "6817 named C_BasePlayerPawn record at 0x3394620; both typed getters and the 0xe98 observer-services offset remain unchanged. Offline only."
+      "evidence": "6821 unique named m_pObserverServices field record0x3394630 and both mapped stock getters independently retain the typed0xe98 offset. Offline only."
     }
   },
   "attach_fields": [
@@ -1487,6 +1496,73 @@
         {
           "rva": "0x5b4560",
           "bytes": "40534883ec20488bd9e822a63701488d05ab7a1c02c7437400000000488903ba88130000488d05357c1c02c74370ffffffff488bcb48894308e802dd3801488bc34883c4205bc3"
+        }
+      ]
+    },
+    {
+      "build": "6821",
+      "profile": "deadlock-2026-10-26-6821-complete.json",
+      "values": {
+        "image_size": "0x43bf000",
+        "rig": "0x3805580",
+        "manager": "0x3803b10",
+        "manager_table": "0x277d020",
+        "camera_table": "0x2784a98",
+        "controller_table": "0x27e3c78",
+        "entity_list": "0x35f2538",
+        "observer_table": "0x27608e0",
+        "services_table": "0x27e46c0",
+        "pawn_table": "0x276d3d8",
+        "observer_services_offset": "0xe98",
+        "controller": "0x3e1ca50",
+        "observer_base": "0x2bdaf68",
+        "composition": "0x5f1ab0",
+        "blend": "0x607650",
+        "blend_caller": "0x5f1cdc",
+        "local_player_table": "0x276d3d8"
+      },
+      "schema_field": "C_BasePlayerPawn.m_pObserverServices",
+      "evidence": "6821: complete Follow composition/blend/helper/manager consumers and exact named ConVar registration retain instruction structure and field offsets; independently named current RTTI tables, relocated globals and shared typed observer schema agree. Offline qualification only.",
+      "spans": [
+        {
+          "rva": "0x5f1ab0",
+          "bytes": "488bc4488958185556574154415541564157488da818ffffff4881ecb00100000f2970b8488bf90f2978a8488bca440f294098498bd9440f294888440f28c2440f299078ffffff488bf2440f299868ffffff0f57ff440f29a858ffffff450f57d2440f29b048ffffff440f29b838ffffffe8ba1bc7ff4885c0740c488bc8e8ed30c7ff440f28d00f104330ba46000000488bce440f102b440f107310440f107b20440f296da0440f2975b0440f297dc00f1145800f2945d0e853e44800f3440f100d960a050284c07527488b86c00e000080b8b9020000007411488b06488bceff90b80500004885c07506410f28f1eb030f57f6f3440f109f58010000440f2e1d93be12027a027422488d0d20362103e80be6c6ff0f28d0410f28d8410f28c30f28cee8585fc8010f28f00f2ef7f30f11b7580100007a1975174c8d45a033d2488d8f70040000e824ba0000e9db000000410f2ef17a1975174c8d45a0b201488d8f70040000e805ba0000e9bc000000f20f1005b02f04024c8d45e08b05ae2f0402488d8f70040000f20f1145ec33d2f20f1005302f0402f20f1145f8f20f114504f20f114510f20f104744f20f1145e00f1045808945f48b05122f0402440f296c24300f29442460f20f10474489450089450c8945188b474cf20f11442430c7451c000000008945e8440f29742440440f297c245089442438e871b900004c8d442430b201488d8f70040000e85eb90000f30f1087580100004c8d4da04c8d442430488d55e0e874590100440f2fd7764e0f10034c8d442430488bd60f104b10488bcf0f294424300f1043200f294c24400f104b300f294424500f294c2460e8abfaffff4c8bcb4c8d442430488d55a0410f28c2e8265901004c8d633ceb670f2855d04c8d633c0f284da0f20f1045ac8b45b4f20f110b660f73d908f20f11430cf20f1045b8660f7e4b08660f6fca8943148b45c0f20f114318f20f1045c4f20f115330660f73d9088943208b45cc0fc6d2fff20f114324660f7e4b38f3410f11142489432c488b0d4a2187034885c9741033d2e8267e380184c074050f57f6eb04410f28f0488d5324488d4c2470e85b710000f30f104324488d0dcf382103f30f104b2cf30f1185f8000000f30f118d08010000c785f000000000000000e8dbcdd3004c8db72802000085c07f50498b064c8d8df80000004c8d4424700f28ce498bceff5010498b064c8d8df00000004c8d85f00000000f28ce498bceff5020498b064c8d8d080100004c8d4424780f28ce498bceff50184c8d6b3ceb034d8becf30f1085f8000000488d542420f30f104c2474488d4d80f30f588df0000000f30f11442420f30f108508010000f30f11442428f30f114c2424e87fbafffff20f10008b4808f20f114324f3410f100424894b2c488d0df3372103f30f1185f8000000f30f1185f0000000e80ecdd30085c07f1a498b064c8d8df00000004c8d85f80000000f28ce498bceff5028f30f1085f0000000488d0db1372103f3410f114500e8d6ccd30085c07f30498b064c8d4c24204c8d430c410f28c8498bceff503084c074168b442428f20f10442420f20f11430c894314b001eb0232c066ba2401888708020000488bcee87ee04800f30f10a75c01000033c984c00f95c10f2e25f0ba1202660f6ec10f5bc07a027417f30f1015a1ba12020f28c80f28c4410f28d8e8b65bc8010f2fc7f30f11875c010000764f0f10034c8d4c2430488bd60f104b10488bcf0f29442430410f28d00f1043200f294c24400f104b300f294424500f294c2460e872060000f30f10875c0100004c8d4424304c8bcb488bd3e87a5601004c8bcb410f28d0488bd6488bcfe868e9ffff488b06488bceff90d80400004881c770010000440fb6f084c0743ff30f10070f57f6410f2ec17a367534660f6f05066519020f114584c7458001000000c745940000803fe8ef0128004c8d4580488bd6488bc8e8d0082700eb04410f28f1f30f10070f2e05f7b912027a027413410f28d8410f28d10f28cee8cb5ac8010f28f00f2ef7f30f11377a0274554584f674500f104b104c8bcb4c8d4424300f1003488bd30f294c24400f104b300f294424300f1043200f294c24600f294424500f28c60fc6c9fff30f590d4f050502c7442454000016c3f30f114c246ce8885501004c8d9c24b0010000498b5b50410f2873f0410f287be0450f2843d0450f284bc0450f2853b0450f285ba0450f286b90450f287380450f28bb70ffffff498be3415f415e415d415c5f5e5dc3"
+        },
+        {
+          "rva": "0x5fd620",
+          "bytes": "48895c241048897c24185541564157488d6c24b94881ecf0000000488b05467f20034533f6498bd8440fb6fa488bf9443870580f8448010000e8d20d290184c07547488b0def298603488b01ff905001000084c07533e8a583340083f8010f851d010000418bcee8840a14014885c00f840c010000488b10488bc8ff92d80a000084c00f84f8000000488d0de07e2003e81b2bc6ff488d0de47e2003f30f11442420e8092bc6ff488d0de27e2003f30f11442424e8f72ac6ff488b05e87e2003488d4d87f30f114424284584fff30f104058488b05df7e2003f30f114587f30f104858488b05de7e2003f30f114d8bf30f104058488d442420480f44c1f30f11458ff20f10008b4008f20f114318894320488b05e07e2003f30f104858488b05c47e2003f30f104058488b05a87e20038b4858f30f114328f30f114b2c894b24488b05e17e2003f30f104858488b05c57e2003f30f104058488b05a97e20038b4858f30f114334f30f114b38894b30488b05f27e20038b4858894b3ce9340300008b0f83f9ff0f840a0300004c8b0d854dff024d85c90f84fa02000083f9fe0f84f10200008bd181e2ff7f00008bc248c1e809448bc24d8b14c14d85d20f84d30200004181e0ff010000496bc0704903c20f84bf0200003948100f85b60200004889b424100100000f29b424e00000008bc248c1e8090f29bc24d0000000440f298424c00000004d8b04c14d85c0744d81e2ff010000486bf2704903f0743e394e107539488b36f30f10334c8bf64885f6742e488b06488bceff90e004000084c0741e488d5587488bcee8c192270084c0740ef20f107d878b758feb6ff30f1033498bcee8f7e24700498b8e30030000f20f10388b7008488b01f20f117c242089742428ff50704885c07440498b8e30030000488b01ff5070488bc8488d5587e87be92601f30f107c2420f30f10542424f30f10442428f30f5838f30f585004f30f5840080f14fa660f7ec6488d4d97e85b9cfefff20f10038b4308440f288424c0000000f20f11459789459ff20f117da38975ab4584ff7430807f1800745d488d4f20488d5587e8a30e00000f10100f28caf30f1155af0fc6caaa0f28c2f30f114db70fc6c255eb2e807f1900742d488d4f40488d5587e8730e00000f10180f28d3f30f115daf0fc6d3aa0f28c3f30f1155b70fc6c355f30f1145b34c8d45bb0f28ce488bcfe864f4ffff4c8d45c70f28ce488bcfe8550e00004c8b3536782003488d4dd7498b4618f30f1030f30f1175d3e8989bfeff8b4308f20f10038945df488b4710f20f117de30f28bc24d00000008975eb488bb42410010000f20f1145d74584ff7407f30f104010eb05f30f1040140f28d0f30f1145f7f30f1040080f57c90f5705554d0402f30f1145fbf30f1000f30f59d1c7450300000000f30f1145fff20f10401c8b402489450f498b4610f30f1155eff30f1155f3f20f114507f30f10100f2ed6f3410f104658f30f1155137a157513f30f5cc60f2fc17229f30f100da34b0402eb1ff30f5cc2f30f5cf2f30f5ec6f30f5fc1f30f5d05894b0402f30f58c10f28c84c8bcb4c8d4597488d55d70f28c1e8b39b0000488d8f20010000488bd3e874b8feff0f28b424e0000000eb1f488d8f20010000e8be9a000084c0740f488d9720010000488bcbe84bb8feff4c8d9c24f0000000498b5b28498b7b30498be3415f415e5dc3"
+        },
+        {
+          "rva": "0x5f2120",
+          "bytes": "4885d20f8468020000488bc44889581048896818574881ecb00000000f2978d8498bf90f28fa48897008488bea488bd9e85bf9ffff4c8bcf0f28d7488bd5488bcbe81af1ffff33c9e8a3bf1401488bf04885c00f84a7010000488b00488bceff90d80a000084c00f8493010000488bcee82b41230085c00f848301000033c9e86cbf1401488bf04885c00f8470010000488b10488bc8ff92d80a000084c00f845c0100000f29b424a0000000488bce440f29842480000000440f294c2470e8dd402300f3440f100d20040502450f57c083f8037506410f28c1eb030f57c0f30f10a3740100000f2e253bb812027a027416f30f1015f3b712020f28c80f28c40f28dfe80959c801f30f118374010000488bce488b05ef2f2003660f6e70580f5bf6e8ba0ef4ff0f57dbf3440f114c2420660f6ec00f28d60f5bc0410f28c9e86da5caff440f284c24700f28f0f30f1083780100000f2e05cdb712027a027416f30f101585b712020f28df0f28cee89e58c8010f28f0f30f108374010000410f2ec0440f28842480000000f30f11b3780100007a0274620f104f10488d0d0f2f21030f10070f294c24400f104f300f294424300f1047200f294c24600f29442450e8ebdec6fff30f104f204c8d4c24300f28d6f30f1144246c488bcbe860f3fffff30f1083740100004c8d4424304c8bcf488bd7e8385301000f28b424a00000004c8bc7488bd5488bcbe8a20300004c8bc7488bd5488bcbe8340d0000448b83b80000000f28df488bd548897c2420488bcbe84a000000448b83b40000000f28df488bd548897c2420488bcbe8700a0000488bb424c00000004c8d9c24b0000000498b5b18498b6b20410f287be0498be35fc3"
+        },
+        {
+          "rva": "0x607650",
+          "bytes": "488bc448895808488970104889781855488d68c84881ec30010000f20f100d65d50202498bd80f2970e84c8d45b0f20f114dbc488bcaf20f100dead40202498bf10f2978d8488bfa440f2940c8440f28c08b0539d50202f20f114dc8f20f114dd4f20f114de0f30f100d4eaf03028945c4f3410f5cc88b05b4d402028945d08945dc8945e8c745ec00000000e87f220000f20f1005efd402024c8d4424708b05ecd40202410f28c8f20f1144247c488bcbf20f10056fd402028945848b056ed40202f20f114588f20f114594f20f1145a089459089459c8945a8c745ac00000000e82a220000f20f10059ad402024c8d4424208b0597d40202488d542470f20f1144242c488d4db0f20f100518d40202894424348b0516d40202f20f11442438f20f11442444f20f11442450894424408944244c89442458c744245c00000000e84b38fefff20f104424208b442428f20f1106f20f1044242cf20f11460cf20f10442438f20f114618f20f104424448946088b442434f20f114624f20f104424508946148b4424408946208b44244cf20f114630f30f1044245c89462c8b442458f30f11463c894638f30f104f08f30f104308e8288cc601f30f104f040f28f8f30f104304e8168cc601f30f100f0f28f0f30f1003e8068cc6010f28df488d4c24600f28d60f28c8e873f0c3ff410f28d0488d55f0488d4c2460e8111cc4ff4c8bc0488d542460488bcfe8611cc4ff4c8d9c2430010000498b5b10498b7b20f20f1000410f2873f0410f287be0450f2843d0f20f11068b4008894608498b7318498be35dc3"
+        },
+        {
+          "rva": "0x609960",
+          "bytes": "48895c2408574883ec400f29742430488d5424200f28d10f28f1498bf8488bd9e8dbfac3ff0f28ce0f28d6f20f1000f20f11070f28c68b4008894708f30f59430cf30f594b10f30f5953140f14c10f28cef20f11470c0f28c6f30f1157140f28d6f30f594318f30f594b1cf30f5953200f14c10f28cef20f1147180f28c6f30f1157200f28d6f30f594324f30f594b28f30f59532c0f14c10f28cef20f1147240f28c6f30f11572c0f28d6f30f594330f30f594b34f30f5953380f14c1f20f114730f30f115738f30f59733c488b5c2450f30f11773c0f287424304883c4405fc3"
+        },
+        {
+          "rva": "0x5eafe0",
+          "bytes": "48895c24084889742410574883ec30498bf0488bfa4c8bc2488bd9488d542420e8bbe4c5fff20f1000f20f11068b4008894608f30f104b10f30f584f10f30f105314f30f585714f30f10470cf30f58430c0f14c1f20f11460cf30f115614f20f105f18f30f585b18f30f104f1cf30f584b1cf30f105720f30f5853200f14d9f20f115e18f30f115620f20f105f24f30f585b24f30f104f28f30f584b28f30f10572cf30f58532c0f14d9f20f115e24f30f11562cf20f105f30f30f585b30f30f104f34f30f584b34f30f105738f30f5853380f14d9f20f115e30f30f115638f30f10433cf30f58473c488b5c2440f30f11463c488b7424484883c4305fc3"
+        },
+        {
+          "rva": "0x5fbe50",
+          "bytes": "48896c24104889742418574883ec50f20f1005518d0302488bf9f2410f1100488d0d2a9320038b05448d0302498bf0440f29442420440f28c141894008f20f1005438d0302f2410f11400c8b053f8d03020f29742440418940140f297c2430e81c43c6ff0f28d8488d4e180f57d20f57c9e83aaaf3ff488d4e240f57db0f57d20f57c9e828aaf3ff488d0d71942003e8ec42c6ff488d0d559420030f28f8e8dd42c6ff488d0d369420030f28f0e8ce42c6ff488d4e300f28df0f28d60f28c8e8eca9f3ff488d0db5922003e8b042c6ff0f287c243033ed0f28742440f30f11463cf20f104744f20f11068b474c8946088b8fb000000083f9ff0f84a8000000488b15e265ff024885d20f849800000083f9fe74308bc125ff7f0000448bc048c1e8094c8b0cc24d85c974194181e0ff010000496bc0704903c17409394810480f45c5eb03488bc54885c0745b48392874564885d2744783f9fe74308bc125ff7f0000448bc048c1e8094c8b0cc24d85c974194181e0ff010000496bc0704903c17409394810480f45c5eb03488bc54885c0740a488b08e895fb4700eb11488bcde88bfb4700eb07488d05da8b0302f20f1000f20f11460c8b40088946148b8fb000000048895c246083f9ff0f848c000000488b151065ff024885d20f848300000083f9fe74308bc125ff7f0000448bc048c1e8094c8b0cc24d85c974194181e0ff010000496bc0704903c17409394810480f45c5eb03488bc54885c07446488b184885db743e488b03488bcbff90e004000084c07427488b03488bcbff90d80a000084c075174c8bce410f28d0488bd3488bcfe87860ffffe98e010000488b158464ff028b8fb000000083f9ff0f848c0000004885d20f848300000083f9fe74308bc125ff7f0000448bc048c1e8094c8b0cc24d85c974194181e0ff010000496bc0704903c17409394810480f45c5eb03488bc54885c07446488b184885db743e488b03488bcbff90e004000084c07427488b03488bcbff90d80a000084c074174c8bce410f28d0488bd3488bcfe8dd4fffffe9f3000000488b15e963ff028b8fb000000083f9ff746b4885d2746683f9fe74308bc125ff7f0000448bc048c1e8094c8b0cc24d85c974194181e0ff010000496bc0704903c17409394810480f45c5eb03488bc54885c07429488b084885c974210fb681d8050000fec83c017714488bd14c8bce488bcf410f28d0e88d4cffffeb768b87b000000083f8ff746b4885d2746683f8fe74318bc881e1ff7f0000448bc148c1e9094c8b0cca4d85c974194181e0ff010000496bc8704903c97409394110480f45cdeb03488bcd4885c97428488b094885c97420488b01ff90c80100004885c074124c8bce410f28d0488bd0488bcfe8454bffff488b5c2460488b6c2468488b742470440f284424204883c4505fc3"
+        },
+        {
+          "rva": "0x614db0",
+          "bytes": "4c8bdc574881ecf0000000488b057ee3e102488bf9807840000f85c5030000410f2973b80f57f6410f297ba8f30f1078300f2ff70f839a0300008b89b000000049895bf049896be833ed498973e04d8963d84d8973d04d897bc8450f294398450f294b88440f29542470440f295c246083f9ff0f84e70000004c8b0508d7fd024d85c00f84d700000083f9fe742e8bc125ff7f00008bd048c1e8094d8b0cc04d85c9741881e2ff010000486bc2704903c17409394810480f45c5eb03488bc54885c00f8498000000488b184885db0f848c000000488b03488bcbff90e004000084c0747c488b03488bcbff90d80a000084c0756c33c9e865921201488bf04885c07443488b10488bc8ff92d80a000084c07533483bde752e33c9e841921201488bd84885c07410488b00488bcbff90d80a000084c07403488bddb201488bcbe8ccf02b01eb17488bcbe8f2990f010f2ec67a02740b488bcbe8e3990f010f28f8488b3529e2e102ff157b75ff01f3440f1056308bc8448b665cf3440f104e34448b7e44f3440f105e50f30f117e30f30f5e7e54894e5c488bcf896e50f3440f114e34f30f583d92d60202f30f2cc7894644e8da3800008b97b0000000488d8f70040000e898d0ffff8b97b8000000488d8fb0070000e886d0ffff8b97b4000000488d8f10060000e874d0ffff488b05b5051f03403868587424488d8f70040000e81b13feff488d8fb0070000e80f13feff488d8f10060000e80313feff488bcfe8db0c0000ff15f585ff01f30f1097c40100000f57ff0f2ed64c8bb424c8000000488bac24e0000000450f57c0f20f5af87a02745a0f28cfc78424080100000000803ff30f5ccac7842410010000000000004c8d842408010000488d942410010000488d8c2418010000f30f118c2418010000e898d5c2ff488d0de9be84030f28f0440f28c0e875b1c4fff30f59f0410f28c8f30f11bfc4010000488bcfe8fd42fffff20f1005fdfa01024c8d442420f20f100d50fb0102488bcf8b054ffb0102f20f114c242c0f28ce894424348b05dcfa0102f20f1144243889442440f20f114424448944244cf20f1144245089442458c744245c00000000e8816dfeff488d542420488bcfe8649cffff0f28ce488bcfe8793f0000488bcfe8b175fdff8b4740f20f104738f20f118720010000898728010000488b0d14e4a003488b01ff9010010000488bc8488d9720010000e88c7affff488bcfe8b4230000440f28842490000000488b9c24e8000000f3440f115630440f28542470f3440f114e34440f288c2480000000f3440f115e50440f285c246044897e444c8bbc24c00000004489665c4c8ba424d0000000488bb424d80000000f28b424b00000000f28bc24a00000004881c4f00000005fc3"
+        },
+        {
+          "rva": "0x5baa40",
+          "bytes": "48895c2410574883ec2065488b042558000000488d3db69024038bd9ba680000008b0d39a4a603488b04c88b04023905149124037f4883fbff7517488b0dd6558a03488d542430488b01ff90100300008b1885db781b4863c34883f8017312486bc0784803c7488b5c24384883c4205fc3488b5c243833c04883c4205fc3488d0dc3902403e89ec3f801833db7902403ff75a3488bcfe8859affff488d0d2e6fff01e87dc7f801488d0d9a902403e809c3f801eb81"
+        },
+        {
+          "rva": "0x5b4560",
+          "bytes": "40534883ec20488bd9e8f2c23701488d05ab8a1c02c7437400000000488903ba88130000488d05358c1c02c74370ffffffff488bcb48894308e8d2f93801488bc34883c4205bc3"
         }
       ]
     }

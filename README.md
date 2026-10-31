@@ -1,3 +1,28 @@
+# Dolly Environment Capture — Windows tester
+
+This branch is the reduced panorama edition on the local 0.6.85/Kara UI source.
+Start with [Environment Capture](docs/ENVIRONMENT_CAPTURE.md). Its preferences
+are separate from regular Dolly and its standard updater is disabled.
+
+From source, install `requirements-build.txt` and run
+`python packaging/environment_entrypoint.py` from this folder. Running
+`python -m dolly` opens the inherited standard application instead.
+
+To package locally on Windows with VS 2022 C++ tools and Python 3.12:
+
+```powershell
+$env:DOLLY_BUILD_EDITION = 'environment'
+$env:DOLLY_SKIP_VIDEO_SMOKE = '1'
+python tools/build_windows.py --output-dir dist/environment-tester-new
+```
+
+Use a new output folder for each candidate. This runs the native/source checks
+and frozen GUI smoke; hardware encoder stress is excluded by that setting.
+The tester still needs capture acceptance on the current game build.
+
+The upstream Dolly reference follows; its video/path/attachment features are
+outside this edition's interface.
+
 <div align="center">
 
 <img src="assets/dolly.png" width="120" alt="Deadlock Dolly logo">
@@ -13,7 +38,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-2ea44f)
-[![Version](https://img.shields.io/badge/version-0.6.75--alpha-orange)](https://github.com/cravvnn/deadlock-dolly/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/cravvnn/deadlock-dolly?include_prereleases&label=latest%20release&color=orange)](https://github.com/cravvnn/deadlock-dolly/releases/latest)
 
 ![Deadlock Dolly demo](assets/dolly-demo.gif)
 
@@ -22,8 +47,9 @@
 Capture views from a local replay, shape a camera path and play it back with
 animated framing and effects. Edit through the desktop or directly in the game.
 
-**Current source: 0.6.75-alpha · Windows x64 · DirectX 11.** The portable app
-includes Python and Tcl/Tk; no separate installation is needed.
+**Current source: 0.6.85-alpha · Windows x64 · DirectX 11.**
+Native source changes need a matching rebuilt helper. The portable app includes
+Python and Tcl/Tk; no separate installation is needed.
 
 > **Local replays only — use at your own risk.** Dolly injects a native DLL
 > into Deadlock. Keep `-insecure` in Deadlock's launch options while using Dolly.
@@ -59,7 +85,9 @@ See the
 - **Camera paths and curves.** Shared desktop/in-game editing for position,
   rotation and aspect ratio, position tangent handles, Undo/Redo and live path guides.
 - **Follow and Bone Picker.** Follow a replay participant with the game's camera,
-  adjust framing, or attach a camera to a selected bone.
+  adjust framing, or attach a camera to a selected bone. Use the per-camera
+  vertical-aim lock and camera-relative movement in attached preview.
+  See the [Bone Picker guide](docs/BONE_PICKER.md).
 - **Framing and depth of field.** Animate aspect ratio and supported DOF controls
   alongside the camera path.
 - **Video and audio.** Real-time or fixed-step exports, 30-600 FPS output settings,
@@ -72,6 +100,12 @@ See the
   up to 8K, with optional depth within the documented readback limits.
 - **ReShade integration.** Optional color effects and verified scene depth for
   compatible depth-based effects, with a bundled crosire/prod80 shader library.
+- **Discord Rich Presence.** Show editing and export activity, a session timer
+  and links to Dolly. Turn it off in Settings; replay names and file paths stay private.
+  See the [Discord presence guide](docs/DISCORD_PRESENCE.md).
+- **Experimental replay repair.** Create a separate repair copy for a specific
+  replay manifest problem; the original replay remains untouched. Test the copy
+  in Deadlock because repairs are not guaranteed to work for every replay.
 
 ## Guides
 
@@ -91,7 +125,9 @@ Start with the [documentation index](docs/README.md) for all current guides.
 
 Native mode requires reviewed builds of Deadlock's `client.dll`, `engine2.dll`
 and `tier0.dll`. Dolly checks the installed modules before loading its native
-helper. A Deadlock update can require a matching Dolly update.
+helper. Reviewed build definitions are published separately from releases, so a
+client-only update can often be supported without downloading a new Dolly
+build. See [published build definitions](docs/DEFINITIONS.md).
 
 Use **Settings → Troubleshooting & recovery → Startup controls → Check game build**
 to check your installation. **Console (legacy)** opens the manual Startup controls
@@ -118,6 +154,11 @@ Every update requires **Update now**. Nothing downloads or installs before that
 click, and **Later** leaves the update available. If Dolly asks you to save work
 or close the game, do that and click **Update now** again. Settings, shots and
 external tool paths are preserved. See [updating and recovery](docs/UPDATING.md).
+
+Dolly also refreshes the small
+[published build definitions](docs/DEFINITIONS.md) file in the background when
+automatic checking is enabled. That file only adds game builds that are already
+reviewed, is cached beside `Dolly.exe`, and never installs or runs anything.
 
 ## Session files
 
@@ -160,6 +201,8 @@ replay names.
 
 ## Contributors
 
+- [@ExoCalibra](https://github.com/ExoCalibra) — Bone and Weapon vertical-aim lock and camera-relative movement in attached preview ([PR #29](https://github.com/cravvnn/deadlock-dolly/pull/29)).
+- [@SamuelCurrid](https://github.com/SamuelCurrid) — After Effects and USD camera exports, camera tracks and forward-seek undershoot recovery ([PR #25](https://github.com/cravvnn/deadlock-dolly/pull/25), [PR #28](https://github.com/cravvnn/deadlock-dolly/pull/28)).
 - [@paralin](https://github.com/paralin) — Linux/Proton Steam discovery, Wine mount-point handling and interrupted plugin-cleanup recovery.
 - [@tbhtho](https://github.com/tbhtho) — in-game UI rework and saved panel layouts.
 - [@s34532](https://github.com/s34532) — custom particle effects, native confetti rain, game-only audio capture and reconstructed clip audio.
@@ -177,5 +220,8 @@ separate terms in [assets/README.md](assets/README.md).
 ## Releases
 
 - [Downloads and published release notes](https://github.com/cravvnn/deadlock-dolly/releases)
-- [Current source release notes: 0.6.75-alpha](docs/RELEASE_NOTES_0.6.75-alpha.md)
+- [0.6.85-alpha release notes](docs/RELEASE_NOTES_0.6.85-alpha.md)
+- [0.6.83-alpha release notes](docs/RELEASE_NOTES_0.6.83-alpha.md)
+- [0.6.81-alpha release notes](docs/RELEASE_NOTES_0.6.81-alpha.md)
+- [0.6.80-alpha release notes](docs/RELEASE_NOTES_0.6.80-alpha.md)
 - [Complete changelog](docs/CHANGELOG.md)
