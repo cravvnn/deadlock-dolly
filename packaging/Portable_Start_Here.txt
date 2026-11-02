@@ -1,4 +1,4 @@
-DEADLOCK DOLLY 0.6.63 ALPHA - WINDOWS PORTABLE
+DEADLOCK DOLLY - WINDOWS PORTABLE
 
 A camera-path editor for local Deadlock replays.
 
@@ -153,9 +153,11 @@ slots are counted; lower
 resolution, shader cost or export FPS if the game/encoder cannot keep up.
 Dolly controls and guides are excluded. The game HUD follows playback settings.
 
-ReShade 6.8.0/API 20 with full add-on support is a separate download. Extract
-ReShade64.dll from the official full add-on setup EXE with 7-Zip into a folder
-outside the game. Select it in Settings > ReShade and enable it. F11 opens its
+ReShade 6.8.0/API 20 with full add-on support is a separate download.
+DO NOT RUN THE RESHADE SETUP OR INSTALL IT INTO DEADLOCK FOR DOLLY.
+Open the official full add-on setup EXE as an archive in 7-Zip and extract
+ReShade64.dll into a separate folder outside the game. In Settings > ReShade,
+click Browse runtime..., select the extracted DLL, then Enable ReShade. F11 opens its
 own menu; change the shortcut on the Controls page. A single-sample SDR swapchain
 and manual runtime functions are required. Add shader/texture search paths and
 presets through ReShade. Color effects and verified scene depth for compatible
