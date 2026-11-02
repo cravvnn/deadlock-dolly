@@ -268,20 +268,19 @@ Camera exports contain no map or player geometry, animation or materials.
 
 ## Set up ReShade
 
-1. Obtain a **64-bit ReShade runtime with full add-on support** from the
+1. Obtain a 64-bit ReShade **runtime** with full add-on support from the
    [official ReShade website](https://reshade.me/). Dolly's headers target
    ReShade 6.8.0/API 20; the selected runtime must support API 20 and the manual
    effect-runtime functions. A newer version number alone does not establish
    compatibility.
-2. Open the downloaded setup EXE as an archive with 7-Zip. Extract
+2. the downloaded file needs to be opened as an *archive* with 7-Zip . **DO NOT RUN THE SETUP.** Extract
    **ReShade64.dll** into a separate folder, such as `Documents\Dolly-ReShade`.
-   The setup program's appended ZIP contains this DLL; running the installer
-   against Deadlock is unnecessary.
-3. In Dolly's **Settings → ReShade** section, select that DLL and enable it.
+   The setup program's appended ZIP contains this DLL. *DO NOT* run the setup, we JUST need the .DLL file.
+4. In Dolly's **Settings → ReShade** section, select that DLL and enable it.
    The status changes from loading to ready after a game frame initializes it.
-4. Press **F11** in Deadlock to open ReShade's own menu. Rebind this action on
+5. Press **F11** in Deadlock to open ReShade's own menu. Rebind this action on
    **Settings → Controls & keybinds** if needed. **F7** continues to open the game console.
-5. Dolly registers its bundled crosire/prod80 shader and texture library and
+6. Dolly registers its bundled crosire/prod80 shader and texture library and
    copies editable presets into its private `ReShade\presets` folder. A new
    configuration selects **Deadlock-Dolly**, a neutral color-control preset.
    Open ReShade's menu to adjust its sliders or enable the other bundled effects.
