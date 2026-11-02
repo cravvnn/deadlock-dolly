@@ -221,12 +221,15 @@ class CaptureDiagnosticsTests(unittest.TestCase):
             session.mkdir()
             (deployment / player_layer.STATUS_NAME).write_text("complete")
             (deployment / "dolly_owner_draws.txt").write_bytes(b"x" * 100_000)
+            (deployment / "dolly_owner_frame_stats.txt").write_bytes(b"frame rgb alpha\n" * 10_000)
             for name in (player_layer.BUNDLE_NAME, "dolly_owner_events.bin", "private.txt"):
                 (deployment / name).write_bytes(b"not included")
             player_layer.preserve_diagnostics(deployment, session)
             self.assertEqual({p.name for p in session.iterdir()},
-                             {player_layer.STATUS_NAME, "dolly_owner_draws.txt"})
+                             {player_layer.STATUS_NAME, "dolly_owner_draws.txt", "dolly_owner_frame_stats.txt"})
             self.assertEqual((session / "dolly_owner_draws.txt").stat().st_size,
+                             player_layer.DIAGNOSTIC_LIMIT)
+            self.assertEqual((session / "dolly_owner_frame_stats.txt").stat().st_size,
                              player_layer.DIAGNOSTIC_LIMIT)
             # A subsequent cleanup/report after removal keeps the saved evidence.
             (deployment / player_layer.STATUS_NAME).unlink()

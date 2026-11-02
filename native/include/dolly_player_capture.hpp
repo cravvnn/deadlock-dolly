@@ -34,6 +34,10 @@ std::uint32_t pose_scene_frame() noexcept;
 void present_boundary(ID3D11DeviceContext*) noexcept;
 bool layout_hook_requested() noexcept;
 bool install_layout_hook(ID3D11Device*) noexcept;
+// Observe COM resource creation before client/module validation can stall.
+// This never installs scene/draw hooks or admits a capture; configure() still
+// requires the complete reviewed scene/renderer profile.
+bool prime_creation_metadata() noexcept;
 bool draw_hooks_requested() noexcept;
 void draw_hooks_result(bool installed) noexcept;
 // Invalidate submitted ownership when an unsupported writable Map succeeds.

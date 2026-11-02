@@ -1568,6 +1568,12 @@ static DWORD WINAPI worker(void*) {
             startup_status(State::Fault, 20, "Could not verify the Dolly editor process.");
             return 0;
         }
+        // The engine can create character shaders while this worker waits for
+        // client modules and verifies their images. Those COM resources cannot
+        // be reconstructed from later input layouts. Collect exact creation
+        // metadata now, without enabling any producer/draw/camera ownership.
+        // Failure remains optional: normal overlay discovery retries later.
+        player_capture::prime_creation_metadata();
         startup_status(State::Starting, 0, "Waiting for Deadlock client and engine modules.");
         // Published build definitions, cached beside this DLL by the editor.
         // A missing or malformed file simply leaves the bundled table active.
@@ -1634,7 +1640,8 @@ static DWORD WINAPI worker(void*) {
                            "Could not keep the native callback resident; no hook was installed.");
             return 0;
         }
-        if (MH_Initialize() != MH_OK ||
+        const auto hook_init = MH_Initialize();
+        if ((hook_init != MH_OK && hook_init != MH_ERROR_ALREADY_INITIALIZED) ||
             MH_CreateHook(reinterpret_cast<void*>(gClient + gCompat.setup),
                           reinterpret_cast<void*>(setup_hook),
                           reinterpret_cast<void**>(&gOriginalSetup)) != MH_OK) {

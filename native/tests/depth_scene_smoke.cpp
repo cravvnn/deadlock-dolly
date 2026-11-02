@@ -30,12 +30,16 @@ template <class T> struct Com {
     Com& operator=(const Com&) = delete;
 };
 void check_early_shader_metadata(D3D_DRIVER_TYPE driver) {
-    Com<ID3D11Device> discovery, rendering;
-    require(SUCCEEDED(D3D11CreateDevice(nullptr, driver, nullptr, 0, nullptr, 0,
-                                        D3D11_SDK_VERSION, &discovery.p, nullptr, nullptr)),
-            "Create metadata discovery device failed");
-    require(dolly::player_capture::install_layout_hook(discovery.p),
-            "Install early metadata hooks failed");
+    Com<ID3D11Device> rendering;
+    // Exercise the actual startup entry point before client validation or any
+    // reviewed scene configuration. It must collect metadata, not arm capture.
+    require(dolly::player_capture::prime_creation_metadata(),
+            "Prime early resource metadata failed");
+    require(dolly::player_capture::prime_creation_metadata(),
+            "Priming resource metadata is not idempotent");
+    require(!dolly::player_capture::draw_hooks_requested() &&
+                !dolly::player_capture::producer_hook_requested(),
+            "Passive metadata bootstrap armed game draw or producer hooks");
     require(SUCCEEDED(D3D11CreateDevice(nullptr, driver, nullptr, 0, nullptr, 0,
                                         D3D11_SDK_VERSION, &rendering.p, nullptr, nullptr)),
             "Create separate rendering device failed");

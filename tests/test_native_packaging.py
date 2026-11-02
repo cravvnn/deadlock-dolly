@@ -39,6 +39,22 @@ class NativePackagingTests(unittest.TestCase):
         section = re.search(r'namespace Unlocker \{(.*?)\}', generated, re.S).group(1)
         self.assertIn(f'SHA256[] = "{expected}";', section)
 
+    def test_passive_shader_observer_precedes_client_validation_without_arming_capture(self):
+        source = (TOOLS.parent / 'native/src/bridge_win.cpp').read_text(encoding='utf-8')
+        worker = source[source.index('static DWORD WINAPI worker(void*)'):]
+        self.assertIn('hook_init != MH_ERROR_ALREADY_INITIALIZED', worker)
+        observer = (TOOLS.parent / 'native/src/dolly_player_capture.cpp').read_text(encoding='utf-8')
+        prime = observer[observer.index('bool prime_creation_metadata() noexcept {'):]
+        prime = prime[:prime.index('bool install_layout_hook(')]
+        self.assertLess(prime.index('GET_MODULE_HANDLE_EX_FLAG_PIN'),
+                        prime.index('D3D11CreateDevice('))
+
+        ready = worker.index('player_capture::prime_creation_metadata();')
+        self.assertLess(worker.index('gEditor = OpenProcess'), ready)
+        self.assertLess(ready, worker.index('load_remote_definitions();'))
+        self.assertLess(ready, worker.index('resolve_client_profile(client'))
+        self.assertLess(ready, worker.index('player_capture::configure('))
+
     def test_declared_replay_reader_is_bundled_and_hash_checked(self):
         native,dll,metadata=self.runtime_fixture()
         reader=native/build_native.REPLAY_INDEX_RELATIVE

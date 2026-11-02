@@ -77,6 +77,11 @@ objects, while excluding NPCs and creeps. It does not promise a complete
 isolated render of every shadow, reflection, glow or transparent effect. The
 Players MOV uses a display conversion; it is not a raw linear-HDR render pass.
 Missing, transparent or dark regions need inspection in the actual take.
+If a Players layer appears blank, export diagnostics from the same editing
+session before closing the game. The bundle includes bounded pixel-coverage
+measurements linked to the capture request, so support can investigate without
+the video file.
+
 
 When the scene uses a smaller viewport inside its render-target allocation,
 Players maps that active region across the exported canvas instead of retaining

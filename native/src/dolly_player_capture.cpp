@@ -1418,6 +1418,31 @@ void tick() noexcept {
 bool layout_hook_requested() noexcept {
     return layoutRequested.exchange(false, std::memory_order_acq_rel);
 }
+bool prime_creation_metadata() noexcept {
+    if (originalLayout)
+        return true;
+    // These callbacks may outlive a rejected client profile. Keep their code
+    // resident before installing them, independently of later camera setup.
+    HMODULE resident = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_PIN,
+                           reinterpret_cast<LPCWSTR>(&prime_creation_metadata), &resident))
+        return false;
+    ID3D11Device* device = nullptr;
+    auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+                              nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr);
+    if (FAILED(hr)) {
+        if (device)
+            device->Release();
+        device = nullptr;
+        hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
+                             nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr);
+    }
+    const bool installed = SUCCEEDED(hr) && device && install_layout_hook(device);
+    if (device)
+        device->Release();
+    return installed;
+}
 bool install_layout_hook(ID3D11Device* device) noexcept {
     if (!device || originalLayout)
         return false;
@@ -1735,7 +1760,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                 if (s)
                     s << "frame " << framesWritten << " draws " << slot.draws << " rgb " << rgb
                       << " alpha " << alpha << " w " << slot.capture.width << " h "
-                      << slot.capture.height << "\n";
+                      << slot.capture.height << " request " << captureRequest << "\n";
             }
             // The writer queue is deliberately small (a 4K frame is tens of
             // megabytes). A brief disk stall used to refuse one frame and
@@ -1853,7 +1878,7 @@ void draw_probe(const char* reason, const Event* e) noexcept {
           << e->w[122] << ' ' << e->w[123] << ' ' << e->w[125] << ' ' << e->w[126] << ' '
           << e->w[127] << ' ' << e->w[128] << ' ' << e->w[129] << ' ' << e->w[131] << ' '
           << e->w[132] << ' ' << e->w[133] << ' ' << e->w[134] << ' ' << e->w[27] << ' ' << e->w[28]
-          << ' ' << e->w[29] << '\n';
+          << ' ' << e->w[29] << " request " << captureRequest << '\n';
         f.flush();
         ++count;
     } catch (...) {
@@ -2371,7 +2396,7 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
                       : blendClass == 2 ? "darken"
                                         : "other")
                   << " ps " << draw.w[120] << " target " << colorSlot.capture.width << "x"
-                  << colorSlot.capture.height << "\n";
+                  << colorSlot.capture.height << " request " << captureRequest << "\n";
             ++captureLog;
         }
     }
