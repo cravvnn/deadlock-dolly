@@ -38,6 +38,11 @@ struct GameplayEffectsProfile {
     std::array<unsigned char, 5> screen_call;
 };
 constexpr GameplayEffectsProfile kGameplayEffectsProfiles[] = {
+    // Build6842: named controller, complete weight/update and option owners;
+    // reviewed screen-option fragment and retained hook ABI.
+    {"a113c2562f521b230cb8e2a34adfb1ad5ae641603dbcfc7b64112fbb48fcd72a",
+     0x440c000, 0x33880f0, 0x87f170, 0x892a95, 0x5d35e0, 0x633f09, 36,
+     {0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x40, 0x48, 0x8b, 0xd9, 0x33}, {0xe8, 0xdb, 0xc6, 0xfe, 0xff}, {0x66, 0x0f, 0x6e, 0xca, 0x4c, 0x8d, 0x1d, 0x65, 0xd8, 0xee, 0x02, 0x66, 0x0f, 0x70, 0xc9, 0x00}, {0xe8, 0xd7, 0xf6, 0xf9, 0xff}},
     // Build6839: named controller, complete weight/update and option owners;
     // reviewed screen-option fragment and retained hook ABI.
     {"929a0455e510ad8bb76c26737a9c84a58ed496267b89b243f94b0699bb10855a",

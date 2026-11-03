@@ -4,6 +4,12 @@ Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
 
+## 0.6.92-alpha
+
+- **Support for Deadlock build 6842.** *Before:* the latest game update was blocked by Dolly's compatibility checks. *After:* reviewed game definitions and a rebuilt unlocker support the updated game.
+
+- **Replay integrations kept current.** *Before:* the update moved code and data used by camera, Follow and replay protections. *After:* those integrations use the reviewed build 6842 locations while retaining startup and restoration checks.
+
 ## 0.6.91-alpha
 
 - **Earlier shader tracking for Players.** *Before:* character shaders created while Dolly verified startup could be missed by Players capture. *After:* shader tracking starts before those waits, while the reviewed capture checks remain in place.
