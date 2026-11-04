@@ -510,11 +510,49 @@ using ConVarFloatFn = float(__fastcall*)(void*);
 ConVarFloatFn convar_float = nullptr;
 void* host_framerate_cvar = nullptr;
 std::atomic<bool> movie_installed{false};
+std::atomic<std::uintptr_t> movie_reader_base{0};
+
+// CMovieRecorder's audio-stream slot0 adjusts self by-0x10, then returns
+// output_frame / movie_fps (engine2:fe5bc -> fcf00). The sound writer rounds
+// delivery to512-sample blocks; read the stream clock, not those block edges.
+bool read_movie_audio(std::uintptr_t base, MovieAudioSample& sample) noexcept {
+    __try {
+        const auto p = reinterpret_cast<const char*>(base + 0x5ba5c0);
+        if ((*reinterpret_cast<const unsigned short*>(p + 0xec) & 2) == 0 ||
+            *reinterpret_cast<const unsigned*>(p + 0x108) <= 1)
+            return false;
+        const auto name = *reinterpret_cast<const char* const*>(p + 0xd0);
+        if (!name)
+            return false;
+        std::uint64_t take = 0;
+        for (unsigned i = 0; i < 512 && name[i]; ++i) {
+            if (std::strncmp(name + i, "dolly_audio_", 12) != 0)
+                continue;
+            for (unsigned j = 0; j < 10; ++j) {
+                const char c = name[i + 12 + j];
+                const unsigned digit = c >= '0' && c <= '9'   ? c - '0'
+                                       : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                                                              : 16;
+                if (digit == 16)
+                    return false;
+                take = take * 16 + digit;
+            }
+            break;
+        }
+        const auto frame = *reinterpret_cast<const std::uint64_t*>(p + 0xd8);
+        const auto fps = *reinterpret_cast<const float*>(p + 0xf4);
+        if (!std::isfinite(fps) || fps < 1 || fps > 10000 || fps != std::floor(fps))
+            return false;
+        return movie_audio_frame(take, frame, static_cast<unsigned>(fps), sample);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
 
 float movie_framerate(void* self) noexcept {
     if (self) {
-        const auto value = *reinterpret_cast<const float*>(
-            static_cast<const char*>(self) + kMovieFramerateOffset);
+        const auto value =
+            *reinterpret_cast<const float*>(static_cast<const char*>(self) + kMovieFramerateOffset);
         if (std::isfinite(value) && value > 0.0f && value <= 10000.0f)
             return value;
     }
@@ -531,7 +569,7 @@ float __fastcall movie_get_framerate_hook(void* self) noexcept {
 }
 } // namespace
 
-bool movie_audio_install(void* engine_module) noexcept {
+bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair) noexcept {
     if (movie_installed.load(std::memory_order_acquire))
         return true;
     if (!engine_module)
@@ -540,15 +578,26 @@ bool movie_audio_install(void* engine_module) noexcept {
     const auto slot = reinterpret_cast<void**>(base + kMovieVtableRva + 0x38);
     const auto target = reinterpret_cast<void*>(base + kMovieGetFramerateRva);
     // Exact reviewed accessor: movss xmm0, [rcx+0xf4]; ret.
-    constexpr unsigned char expected[] = {0xF3, 0x0F, 0x10, 0x81, 0xF4, 0x00,
-                                           0x00, 0x00, 0xC3};
-    if (*slot != target ||
-        std::memcmp(reinterpret_cast<const void*>(base + kMovieGetFramerateRva),
-                    expected, sizeof(expected))) {
+    constexpr unsigned char expected[] = {0xF3, 0x0F, 0x10, 0x81, 0xF4, 0x00, 0x00, 0x00, 0xC3};
+    if (*slot != target || std::memcmp(reinterpret_cast<const void*>(base + kMovieGetFramerateRva),
+                                       expected, sizeof(expected))) {
         return false;
     }
     convar_float = reinterpret_cast<ConVarFloatFn>(base + kConVarFloatAccessorRva);
     host_framerate_cvar = reinterpret_cast<void*>(base + kHostFramerateCvarRva);
+    if (exact_pcm_pair && sound_module) {
+        // Read-only clock support is restricted to the reviewed engine/sound
+        // pair. The native video frame samples this same stream clock.
+        const auto time_slot = reinterpret_cast<void**>(base + 0x4f6920);
+        const auto frame_slot = reinterpret_cast<void**>(base + kMovieVtableRva + 6 * 8);
+        constexpr unsigned char frame_getter[] = {0x48, 0x8b, 0x81, 0xd8, 0, 0, 0, 0xc3};
+        if (*time_slot != reinterpret_cast<void*>(base + 0xfe5bc) ||
+            *frame_slot != reinterpret_cast<void*>(base + 0xfc7b0) ||
+            std::memcmp(reinterpret_cast<void*>(base + 0xfc7b0), frame_getter,
+                        sizeof(frame_getter)))
+            return false;
+        movie_reader_base.store(base, std::memory_order_release);
+    }
     DWORD old = 0;
     if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old))
         return false;
@@ -565,14 +614,26 @@ bool movie_audio_install(void* engine_module) noexcept {
                                     std::to_wstring(GetCurrentProcessId()) + L".ready";
         HANDLE file = CreateFileW(marker.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (file != INVALID_HANDLE_VALUE)
+        if (file != INVALID_HANDLE_VALUE) {
+            if (movie_reader_base.load(std::memory_order_acquire)) {
+                constexpr char capability[] = "pcm-sample-map-v1";
+                DWORD written = 0;
+                WriteFile(file, capability, sizeof(capability) - 1, &written, nullptr);
+            }
             CloseHandle(file);
+        }
     }
     return true;
 }
 
 bool movie_audio_available() noexcept {
     return movie_installed.load(std::memory_order_acquire);
+}
+
+bool movie_audio_sample(MovieAudioSample& sample) noexcept {
+    sample = {};
+    const auto base = movie_reader_base.load(std::memory_order_acquire);
+    return base && read_movie_audio(base, sample);
 }
 
 void sound_capture_clock(std::int32_t tick, double engine_seconds) noexcept {

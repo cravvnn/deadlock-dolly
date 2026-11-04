@@ -1,16 +1,22 @@
-### Deadlock Dolly v0.6.96-alpha
+### Deadlock Dolly v0.6.97-alpha
 
-**0.6.96-alpha**
+**0.6.97-alpha**
 
-- **Follow player selection.** *Before:* a camera switch could make Dolly reject a valid player with a replay-changed error. *After:* Dolly settles the replay and checks the player again before starting Follow.
+- **Game audio stays with the shot.** *Before:* fixed-step exports could play sounds late because audio included preparation and skipped frames. *After:* Dolly removes that extra audio and follows the recorded frames, including slow-motion takes.
 
-- **Keep the chosen replay moment.** *Before:* the spectator switch could advance a paused replay during Follow setup. *After:* Dolly returns to the selected tick before applying the camera rig, while retaining cancellation and player-identity checks.
+- **Safer audio recovery.** *Before:* incomplete audio could be padded and attached without verifying its timing against the video. *After:* Dolly checks the alignment and keeps the original audio and silent video if it cannot verify the soundtrack.
 
 # Changes
 
 Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
+
+## 0.6.96-alpha
+
+- **Follow player selection.** *Before:* a camera switch could make Dolly reject a valid player with a replay-changed error. *After:* Dolly settles the replay and checks the player again before starting Follow.
+
+- **Keep the chosen replay moment.** *Before:* the spectator switch could advance a paused replay during Follow setup. *After:* Dolly returns to the selected tick before applying the camera rig, while retaining cancellation and player-identity checks.
 
 ## 0.6.95-alpha
 

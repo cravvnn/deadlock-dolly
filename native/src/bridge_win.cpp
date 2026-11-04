@@ -1710,7 +1710,9 @@ static DWORD WINAPI worker(void*) {
         // are reviewed for these exact engines. The hook only changes the movie
         // clock while host_framerate is positive; real-time recording is unchanged.
         if (gReviewedMovieAudioEngine)
-            movie_audio_install(engine);
+            movie_audio_install(engine, sound,
+                                module_matches(engine, kBuild6801EngineHash, 0x906000) &&
+                                    module_matches(sound, kSound6801Hash, 0x6bf000));
         // Hook and original trampoline remain resident until process exit. Losing
         // the editor only releases ownership, avoiding code-unload races in a view.
         std::shared_ptr<const NativeShot> shot;

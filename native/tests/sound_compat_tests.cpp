@@ -141,5 +141,17 @@ int main(int argc, char** argv) {
     check(!ui_voice_silenced(200, 200));
     check(!ui_voice_silenced(201, 200));
     check(!ui_voice_silenced(100, 0));
+    // The audio stream uses movie-frame/fps, even when PCM delivery is
+    // quantized to512sample blocks. Fractional sample frames share endpoints.
+    dolly::MovieAudioSample audio;
+    check(dolly::movie_audio_frame(123, 175, 60, audio));
+    check(audio.first == 128625 && audio.end == 129360 && audio.rate == 44100);
+    check(dolly::movie_audio_frame(123, 0, 120, audio));
+    check(audio.first == 0 && audio.end == 368);
+    check(dolly::movie_audio_frame(123, 1, 120, audio));
+    check(audio.first == 368 && audio.end == 735);
+    check(!dolly::movie_audio_frame(0, 0, 60, audio));
+    check(!dolly::movie_audio_frame(123, 0, 0, audio));
+    check(!dolly::movie_audio_frame(123, UINT64_MAX, 60, audio));
     std::puts("sound compatibility tests passed");
 }

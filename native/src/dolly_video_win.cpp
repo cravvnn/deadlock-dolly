@@ -27,6 +27,7 @@
 #include "dolly_capture_timing.hpp"
 #include "dolly_depth_scene.hpp"
 #include "dolly_depth_sequence.hpp"
+#include "dolly_sound_capture.hpp"
 #include <cmath>
 
 namespace dolly::video {
@@ -102,6 +103,7 @@ struct FrameStamp {
     bool has_camera = false;
     CameraSample camera{};
     double capture_time = 0;
+    MovieAudioSample audio{};
 };
 struct CameraFrame {
     std::uint64_t frame = 0;
@@ -134,7 +136,9 @@ struct Session {
     std::wstring depth_directory, depth_video_path;
     ShotRange shot;
     ShotClockTrace shot_clock;
-    std::vector<CameraFrame> camera_trace; // Touched only by the encoder thread.
+    std::vector<CameraFrame> camera_trace;     // Touched only by the encoder thread.
+    std::vector<MovieAudioSample> audio_trace; // Only successfully written frames.
+    const char* audio_partial = nullptr;
     CaptureTrace capture_trace;
     depth::Sequence depth_output; // Touched only by the encoder thread.
     std::wstring ffmpeg;
@@ -330,7 +334,18 @@ bool write_shot_sidecar(const Session& s) noexcept {
                      static_cast<unsigned long long>(t.end), t.phase, t.pending,
                      static_cast<unsigned>(t.outcome), static_cast<unsigned long long>(t.missed));
     }
-    std::fprintf(file, "\n  ]\n}\n");
+    std::fprintf(file,
+                 "\n  ],\n  \"movie_audio\": {\"version\": 1, \"complete\": %s, \"frames\": [",
+                 !s.audio_partial && s.audio_trace.size() == frames && frames ? "true" : "false");
+    for (std::size_t i = 0; i < s.audio_trace.size(); ++i) {
+        const auto& a = s.audio_trace[i];
+        std::fprintf(file, "%s\n    [%llu, %llu, %llu, %llu, %u]", i ? "," : "",
+                     static_cast<unsigned long long>(a.take),
+                     static_cast<unsigned long long>(a.first),
+                     static_cast<unsigned long long>(a.end),
+                     static_cast<unsigned long long>(a.movie_frame), a.rate);
+    }
+    std::fprintf(file, "\n  ]}\n}\n");
     std::fclose(file);
     return true;
 }
@@ -502,6 +517,19 @@ void observe_written_frame(Session& s, const FrameStamp& stamp, double video_tim
     const auto index = s.written.fetch_add(1, std::memory_order_relaxed);
     s.shot.observe(index, stamp.phase);
     s.shot_clock.observe(index, stamp.phase, stamp.native);
+    if (s.fixed_step && !s.audio_partial) {
+        if (!stamp.audio.take || stamp.audio.end <= stamp.audio.first)
+            s.audio_partial = "missing movie PCM sample";
+        else if (s.audio_trace.size() >= kCameraFrameLimit)
+            s.audio_partial = "movie audio frame limit reached";
+        else {
+            try {
+                s.audio_trace.push_back(stamp.audio);
+            } catch (...) {
+                s.audio_partial = "movie audio allocation failed";
+            }
+        }
+    }
     if (s.camera_enabled && !s.camera_partial) {
         bool valid = stamp.has_camera && std::isfinite(stamp.phase) && stamp.phase >= 0 &&
                      std::isfinite(video_time) && video_time >= 0 &&
@@ -1950,6 +1978,8 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     if (timing)
         timing->outcome = CaptureTrace::admitted;
     slot.stamp = {replay_time, native_clock};
+    if (s.fixed_step)
+        movie_audio_sample(slot.stamp.audio);
     slot.stamp.capture_time = double(pts) / 10000000.0;
     if (s.camera_enabled && native_clock) {
         // The native clock and this camera come from the same view evaluation.

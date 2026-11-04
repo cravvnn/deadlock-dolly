@@ -9,6 +9,8 @@ keeps the authored replay window.
 from __future__ import annotations
 
 import re
+import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
@@ -20,6 +22,73 @@ from .file_ops import _plain_path
 
 MOVIE_START = re.compile(
     r"Started recording movie:\s+movie/([0-9]{4}_[0-9]{2}_[0-9]{2}_[0-9]{2}_[0-9]{2}_[0-9]{2})/")
+
+
+def _movie_sample_windows(video: Path, status: dict, name: str) -> tuple[int, list[tuple[int, int]]]:
+    """Require a complete PCM map for this exact video and movie take."""
+    # VideoExporter moves the native sidecar into the bundled take folder
+    # before ClipAudioCapture finishes. Read the finalized owner's location.
+    sidecar = video.parent / 'shot.json'
+    error = 'Movie audio sample alignment is unavailable; the silent video and source WAV were kept.'
+    try:
+        if not _plain_path(sidecar) or sidecar.stat().st_size > 40 * 1024 * 1024:
+            raise ValueError('unsafe or oversized sample map')
+        data = json.loads(sidecar.read_text(encoding='utf-8'))
+        frames = status.get('frames_written')
+        fps = status.get('fps')
+        duration = float(status.get('duration', 0))
+        mapping = data['movie_audio']
+        rows = mapping['frames']
+        if (type(frames) is not int or not 0 < frames <= 262144 or
+                type(fps) is not int or fps <= 0 or
+                not math.isfinite(duration) or abs(duration - frames / fps) > 1e-5 or
+                data.get('format') != 'deadlock-dolly-shot' or data.get('version') != 1 or
+                data.get('video_file') != video.name or data.get('fps') != fps or
+                data.get('fixed_step') is not True or data.get('frames_written') != frames or
+                mapping.get('version') != 1 or mapping.get('complete') is not True or
+                not isinstance(rows, list) or len(rows) != frames):
+            raise ValueError('incomplete or foreign sample map')
+        take = int(name.removeprefix('dolly_audio_'), 16)
+        windows = []
+        previous = 0
+        previous_frame = -1
+        rate = 48000
+        for row in rows:
+            if not isinstance(row, list) or len(row) != 5 or any(type(v) is not int for v in row):
+                raise ValueError('invalid sample row')
+            identity, first, end, movie_frame, sample_rate = row
+            if (identity != take or not 0 <= first < end or first < previous or
+                    movie_frame <= previous_frame or sample_rate != 44100 or
+                    first != (movie_frame * sample_rate + fps // 2) // fps or
+                    end != ((movie_frame + 1) * sample_rate + fps // 2) // fps):
+                raise ValueError('changed movie or missing PCM interval')
+            # Resample the continuous source first. 48k divides every supported
+            # export FPS, so skipped odd/even 44.1k frames cannot accumulate a
+            # half-sample rounding error into drift or a false coverage refusal.
+            windows.append(((movie_frame * rate + fps // 2) // fps,
+                            ((movie_frame + 1) * rate + fps // 2) // fps))
+            previous, previous_frame = end, movie_frame
+        if abs(sum(b-a for a,b in windows) - round(duration * rate)) > 1:
+            raise ValueError('movie samples do not cover the video duration')
+        return rate, windows
+    except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
+        raise RuntimeError(error) from exc
+
+
+def _align_movie_samples(source: Path, target: Path, rate: int,
+                         windows: list[tuple[int, int]]) -> None:
+    """Stream exact captured intervals; preparation and skipped frames stay out."""
+    import soundfile as sf
+    with sf.SoundFile(source) as wav:
+        if wav.samplerate != rate or wav.channels != 2 or windows[-1][1] > wav.frames:
+            raise RuntimeError('Movie audio does not cover the captured frames; source WAV was kept.')
+        with sf.SoundFile(target, 'w', samplerate=rate, channels=2, subtype='FLOAT') as aligned:
+            for first, end in windows:
+                wav.seek(first)
+                block = wav.read(end - first, dtype='float32', always_2d=True)
+                if len(block) != end - first:
+                    raise RuntimeError('Movie audio ended before the captured frame; source WAV was kept.')
+                aligned.write(block)
 
 
 @dataclass(frozen=True)
@@ -97,7 +166,7 @@ class MovieWave:
             pid = None
         if pid is not None:
             marker = Path(tempfile.gettempdir()) / f"dolly_movie_audio_{pid}.ready"
-            if not marker.is_file():
+            if not marker.is_file() or marker.read_text(encoding='ascii') != 'pcm-sample-map-v1':
                 raise RuntimeError(
                     "This Dolly native build does not support fixed-step audio. "
                     "Update Dolly or turn off Fixed-step export for audio.")
@@ -147,7 +216,7 @@ class MovieWave:
 
     def finish(self, controller, duration: float, work: Path,
                start_engine_seconds: float | None = None,
-               speed: float = 1.0) -> Path:
+               speed: float = 1.0, *, video_status: dict | None = None) -> Path:
         if not self.started:
             raise RuntimeError("The movie audio take was not started.")
         self._verify_output(controller)
@@ -165,12 +234,28 @@ class MovieWave:
         duration = float(duration)
         if duration <= 0:
             raise RuntimeError("The video did not report a duration for its audio.")
+        from .clip_audio import _ffmpeg
+        if video_status is not None:
+            rate, windows = _movie_sample_windows(self.video, video_status, self.name)
+            import soundfile as sf
+            with sf.SoundFile(source) as wav:
+                if (wav.samplerate != 44100 or wav.channels != 2 or
+                        wav.frames * rate < windows[-1][1] * wav.samplerate):
+                    raise RuntimeError('Movie audio does not cover the captured frames; source WAV was kept.')
+            converted = Path(work) / 'movie_resampled.wav'
+            result = subprocess.run([str(_ffmpeg()), '-hide_banner', '-loglevel', 'error', '-y',
+                '-i', str(source), '-ar', str(rate), '-ac', '2', '-c:a', 'pcm_f32le', str(converted)],
+                capture_output=True, text=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if result.returncode or not converted.is_file():
+                raise RuntimeError('Movie audio resampling failed; source WAV was kept: ' + (result.stderr or '')[-1000:])
+            aligned = Path(work) / 'movie_aligned.wav'
+            _align_movie_samples(converted, aligned, rate, windows)
+            source = aligned
         offset = 0.0
-        if start_engine_seconds is not None and self.movie_engine_seconds is not None:
+        if video_status is None and start_engine_seconds is not None and self.movie_engine_seconds is not None:
             delta = float(start_engine_seconds) - float(self.movie_engine_seconds)
             if 0.0 <= delta <= 30.0:
                 offset = delta / max(0.05, float(speed))
-        from .clip_audio import _ffmpeg
         target = Path(work) / "movie_reference.wav"
         command = [str(_ffmpeg()), "-hide_banner", "-loglevel", "error", "-y",
                    "-i", str(source), "-ss", f"{offset:.9f}", "-t", f"{duration:.9f}",

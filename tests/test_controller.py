@@ -184,7 +184,7 @@ class MovieOutputContextTests(unittest.TestCase):
 
     def movie(self,unknown=False):
         from dolly.movie_audio import MovieWave
-        marker=self.folder/'dolly_movie_audio_4321.ready';marker.write_text('',encoding='ascii')
+        marker=self.folder/'dolly_movie_audio_4321.ready';marker.write_text('pcm-sample-map-v1',encoding='ascii')
         self.c._request=MagicMock(side_effect=lambda command,**kwargs: (
             'Started recording movie: movie/2026_10_20_18_01_38/dolly_audio_x.*: framerate 30'
             if command.startswith('startmovie ') else 'Finishing movie' if command=='endmovie' else ''))

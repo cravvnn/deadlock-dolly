@@ -261,7 +261,7 @@ class ClipAudioCapture:
         if self.reconstructed and start_engine is None:
             raise RuntimeError("Fixed-step reconstructed audio needs a camera path or POV shot.")
         self.reference = self.movie.finish(self.controller, duration, self.work,
-                                           start_engine, self.speed)
+                                           start_engine, self.speed, video_status=video_status)
         tracks = []
         if self.game_audio:
             game_clip = self.video.with_name(self.video.stem + "_game_audio.wav")

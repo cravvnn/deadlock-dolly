@@ -18,8 +18,26 @@ bool sound_capture_available() noexcept;
 // host_framerate while a Dolly fixed-step take is active. The recorder keeps
 // writing its WAV at the requested movie fps, while the engine advances at the
 // fixed-step rate, so the WAV is frame-locked to the slow-motion video.
-bool movie_audio_install(void* engine_module) noexcept;
+bool movie_audio_install(void* engine_module, void* sound_module = nullptr,
+                         bool exact_pcm_pair = false) noexcept;
 bool movie_audio_available() noexcept;
+// The movie audio-stream clock is output-frame/fps, independent of replay
+// speed. PCM writes are chunked; these sample windows intentionally are not.
+struct MovieAudioSample {
+    std::uint64_t take = 0, first = 0, end = 0, movie_frame = 0;
+    std::uint32_t rate = 0;
+};
+inline bool movie_audio_frame(std::uint64_t take, std::uint64_t frame, unsigned fps,
+                              MovieAudioSample& sample) noexcept {
+    sample = {};
+    constexpr std::uint64_t rate = 44100;
+    if (!take || !fps || fps > 10000 || frame >= (UINT64_MAX - fps) / rate - 1)
+        return false;
+    sample = {take, (frame * rate + fps / 2) / fps, ((frame + 1) * rate + fps / 2) / fps, frame,
+              static_cast<unsigned>(rate)};
+    return sample.end > sample.first;
+}
+bool movie_audio_sample(MovieAudioSample& sample) noexcept;
 void sound_capture_clock(std::int32_t tick, double engine_seconds) noexcept;
 bool sound_capture_start(const wchar_t* csv_path) noexcept;
 void sound_capture_stop() noexcept;

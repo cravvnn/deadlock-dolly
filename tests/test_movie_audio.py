@@ -26,7 +26,7 @@ class MovieWaveTests(unittest.TestCase):
         self.marker.unlink(missing_ok=True)
 
     def test_start_parses_the_engine_folder(self):
-        self.marker.write_text("", encoding="ascii")
+        self.marker.write_text("pcm-sample-map-v1", encoding="ascii")
         self.controller.replay_tick_rate.return_value = 64.0
         self.controller._request.side_effect = [
             "",
@@ -47,8 +47,14 @@ class MovieWaveTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "does not support fixed-step audio"):
             self.movie.start(self.controller, 60)
 
+    def test_start_refuses_a_legacy_marker_without_sample_alignment(self):
+        self.marker.write_text('', encoding='ascii')
+        with self.assertRaisesRegex(RuntimeError, 'does not support fixed-step audio'):
+            self.movie.start(self.controller, 60)
+        self.controller._request.assert_not_called()
+
     def test_finish_converts_the_wav_to_48k(self):
-        self.marker.write_text("", encoding="ascii")
+        self.marker.write_text("pcm-sample-map-v1", encoding="ascii")
         self.controller.replay_tick_rate.return_value = 64.0
         self.controller._request.side_effect = [
             "",
@@ -116,6 +122,149 @@ class OwnedMovieWaveTests(unittest.TestCase):
             self.assertEqual(wrong.read_bytes(),b'unrelated legacy sentinel')
             self.assertFalse(actual.exists())
             audio.temporary.cleanup()
+
+
+class MovieAlignmentTests(unittest.TestCase):
+    def setUp(self):
+        import json
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.video = self.base / 'shot.mp4'
+        self.name = 'dolly_audio_123456789a'
+        self.status = dict(frames_written=120, fps=60, duration=2.0)
+        # One second of preparation plus one unrecorded movie frame in the
+        # middle. Neither belongs in the exported soundtrack.
+        self.rows = [[int('123456789a', 16), 44100 + (i + (i >= 60))*735,
+                      44100 + (i + (i >= 60) + 1)*735, 60+i+(i >= 60), 44100]
+                     for i in range(120)]
+        self.data = dict(format='deadlock-dolly-shot', version=1,
+                         video_file=self.video.name, fps=60, fixed_step=True,
+                         frames_written=120,
+                         movie_audio=dict(version=1, complete=True, frames=self.rows))
+        self.sidecar = self.video.parent / 'shot.json'
+        self.save = lambda: self.sidecar.write_text(json.dumps(self.data), encoding='utf-8')
+        self.save()
+
+    def test_exact_intervals_exclude_preroll_and_a_skipped_movie_frame(self):
+        from dolly.movie_audio import _movie_sample_windows, _align_movie_samples
+        import numpy as np
+        import soundfile as sf
+        rate, windows = _movie_sample_windows(self.video, self.status, self.name)
+        # Every source sample carries its source index as an independent oracle.
+        raw = np.arange(windows[-1][1] + 1000, dtype='float32')[:, None]
+        source = self.base / 'original.wav'
+        target = self.base / 'aligned.wav'
+        sf.write(source, np.repeat(raw, 2, axis=1), rate, subtype='FLOAT')
+        _align_movie_samples(source, target, rate, windows)
+        result, actual_rate = sf.read(target, always_2d=True, dtype='float32')
+        expected = np.concatenate([np.arange(row[3]*800, (row[3]+1)*800, dtype='float32') for row in self.rows])
+        np.testing.assert_array_equal(result[:, 0], expected)
+        self.assertEqual(len(result), 96000)
+        self.assertEqual(actual_rate, 48000)
+        self.assertTrue(source.is_file())
+
+    def test_120fps_skipped_odd_frames_do_not_accumulate_half_sample_drift(self):
+        from dolly.movie_audio import _movie_sample_windows
+        self.status = dict(frames_written=240, fps=120, duration=2.0)
+        self.data.update(fps=120, frames_written=240)
+        self.data['movie_audio']['frames'] = [
+            [int('123456789a', 16), (2*i*44100+60)//120,
+             ((2*i+1)*44100+60)//120, 2*i, 44100] for i in range(240)]
+        self.save()
+        rate, windows = _movie_sample_windows(self.video, self.status, self.name)
+        self.assertEqual(rate, 48000)
+        self.assertEqual(windows[:2], [(0, 400), (800, 1200)])
+        self.assertEqual(sum(b-a for a,b in windows), 96000)
+
+    def test_missing_foreign_incomplete_and_nonmonotonic_maps_are_refused(self):
+        import copy
+        from dolly.movie_audio import _movie_sample_windows
+        original = copy.deepcopy(self.data)
+        changes = [lambda d: d.update(video_file='different.mp4'),
+                   lambda d: d['movie_audio'].update(complete=False),
+                   lambda d: d['movie_audio']['frames'].pop(),
+                   lambda d: d['movie_audio']['frames'][0].__setitem__(0, 999),
+                   lambda d: d['movie_audio']['frames'][1].__setitem__(1, 0),
+                   lambda d: d['movie_audio']['frames'][1].__setitem__(3, 0),
+                   lambda d: d['movie_audio']['frames'][0].__setitem__(2, 999999),
+                   lambda d: d['movie_audio']['frames'][0].__setitem__(4, 48000)]
+        for mutate in changes:
+            with self.subTest(mutate=mutate):
+                self.data = copy.deepcopy(original)
+                mutate(self.data)
+                self.save()
+                with self.assertRaisesRegex(RuntimeError, 'alignment is unavailable'):
+                    _movie_sample_windows(self.video, self.status, self.name)
+        self.sidecar.unlink()
+        with self.assertRaisesRegex(RuntimeError, 'alignment is unavailable'):
+            _movie_sample_windows(self.video, self.status, self.name)
+
+    def test_short_source_is_preserved_instead_of_padding_missing_audio(self):
+        from dolly.movie_audio import _align_movie_samples
+        source = self.base / 'short.wav'
+        with wave.open(str(source), 'wb') as wav:
+            wav.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
+            wav.writeframes(b'\0' * 400)
+        original = source.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, 'does not cover'):
+            _align_movie_samples(source, self.base/'output.wav', 44100, [(0, 735)])
+        self.assertEqual(source.read_bytes(), original)
+
+    def test_actual_clip_conversion_and_mux_keep_impulses_at_video_frame_times(self):
+        from dolly.clip_audio import ClipAudioCapture
+        from dolly.video_export import bundled_ffmpeg_path
+        import numpy as np
+        import soundfile as sf
+        import subprocess
+        ffmpeg = bundled_ffmpeg_path()
+        if ffmpeg is None:
+            self.skipTest('Bundled FFmpeg is unavailable')
+        controller = Mock()
+        controller.game_pid.return_value = None
+        controller._native_bridge.return_value.status.return_value = {'engine_time': 100.0}
+        controller.movie_output_context.return_value = MovieOutputContext(self.base/'owned/movie', Mock())
+        controller._request.side_effect = lambda command, **kw: (
+            'Started recording movie: movie/2026_11_04_00_00_00/dolly_audio_x.*: framerate 60'
+            if command.startswith('startmovie ') else 'Finishing movie' if command == 'endmovie' else '')
+        audio = ClipAudioCapture(self.video, game_audio=True, reconstructed=False, bridge=Mock(),
+            game=self.base/'game/bin/win64/deadlock.exe', game_pid=1, controller=controller,
+            fixed_step=True, movie_fps=60, start_engine_seconds=100.0)
+        self.addCleanup(audio.temporary.cleanup)
+        audio.start()
+        audio.movie.name = self.name
+        audio.start_movie()
+        audio.movie.folder.mkdir(parents=True)
+        source = audio.movie.folder / (self.name+'.wav')
+        raw = np.zeros((self.rows[-1][2]+44100, 2), dtype='float32')
+        for frame in (12, 90):
+            first = self.rows[frame][1]
+            pulse = .7 * np.sin(2*np.pi*1000*np.arange(400)/44100)
+            raw[first:first+400] = pulse[:, None]
+        sf.write(source, raw, 44100, subtype='PCM_16')
+        subprocess.run([str(ffmpeg), '-v', 'error', '-f', 'lavfi', '-i',
+            'color=black:s=64x64:r=60:d=2', '-c:v', 'mpeg4', str(self.video)],
+            check=True, capture_output=True)
+        # Use the real video finalizer's native-sidecar relocation boundary.
+        from dolly.video_export import VideoExport
+        native_sidecar = Path(str(self.video) + '.shot.json')
+        self.sidecar.rename(native_sidecar)
+        exporter = VideoExport(controller)
+        exporter.output_path = self.video
+        exporter._layer_folder = self.video.parent
+        exporter._finish_layered_sidecar()
+        self.assertTrue(self.sidecar.is_file())
+        audio.finish(self.status)
+        decoded = self.base/'decoded.wav'
+        subprocess.run([str(ffmpeg), '-v', 'error', '-i', str(self.video), '-vn',
+                        '-c:a', 'pcm_s16le', str(decoded)], check=True, capture_output=True)
+        samples, rate = sf.read(decoded, always_2d=True)
+        peaks = np.flatnonzero(np.max(np.abs(samples), axis=1) > .1)
+        groups = np.split(peaks, np.flatnonzero(np.diff(peaks) > rate*.05)+1)
+        self.assertEqual(len(groups), 2)
+        self.assertAlmostEqual(groups[0][0]/rate, 12/60, delta=.002)
+        self.assertAlmostEqual(groups[1][0]/rate, 90/60, delta=.002)
+        self.assertFalse(source.exists())  # Only after successful aligned conversion.
 
 
 class MovieLifetimeTests(unittest.TestCase):
