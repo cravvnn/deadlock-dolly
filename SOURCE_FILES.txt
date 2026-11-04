@@ -1036,3 +1036,5 @@ docs/RELEASE_NOTES_0.6.97-alpha.md
 
 native/profiles/deadlock-2026-11-04-6849-complete.json
 docs/RELEASE_NOTES_0.7.0-beta.md
+
+docs/RELEASE_NOTES_0.7.1-beta.md
