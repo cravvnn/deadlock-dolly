@@ -186,6 +186,65 @@ class ParticipantFollowControllerTests(unittest.TestCase):
         self.assertTrue(self.c._follow_active)
         self.assertNotIn('native.flight', self.console.events)
 
+    def test_stock_mode_handoff_advances_then_returns_to_selected_paused_tick(self):
+        requested = self.console.tick
+        request = self.console.request
+
+        def advancing_mode(command, *args, **kwargs):
+            output = request(command, *args, **kwargs)
+            if command == 'citadel_spectator_mode 2':
+                self.console.tick += 9
+                self.console.paused = False
+            return output
+
+        self.console.request = advancing_mode
+        self.c.follow_replay_player(1)
+        self.assertTrue(self.c._follow_active)
+        self.assertTrue(self.console.paused)
+        self.assertEqual(self.console.tick, requested)
+        self.assertEqual(self.c._follow_selection_evidence['expected_handle'], self.players[1]['handle'])
+
+    def test_cancel_at_mode_handoff_never_seeks_or_enables_rig(self):
+        request = self.console.request
+        boundary = []
+
+        def cancel(command, *args, **kwargs):
+            output = request(command, *args, **kwargs)
+            if command == 'citadel_spectator_mode 2':
+                self.c._stop_event.set()
+                boundary.append(len(self.console.events))
+            return output
+
+        self.console.request = cancel
+        with self.assertRaisesRegex(RuntimeError, 'cancelled'):
+            self.c.follow_replay_player(1)
+        later = self.console.events[boundary[0]:]
+        self.assertFalse(any(e.startswith('demo_gototick ') for e in later))
+        self.assertNotIn('citadel_camera_overrides_enabled 1', later)
+
+    def test_post_handoff_controller_identity_change_never_enables_rig(self):
+        resolve = self.resolve.side_effect
+        seek = self.c._seek_tick
+        restored = False
+
+        def restore_tick(*args, **kwargs):
+            nonlocal restored
+            result = seek(*args, **kwargs)
+            restored = True
+            return result
+
+        def changed_identity(*args, **kwargs):
+            player = resolve(*args, **kwargs)
+            return dict(player, controller_handle=0x20001) if restored else player
+
+        self.resolve.side_effect = changed_identity
+        with patch.object(self.c, '_seek_tick', side_effect=restore_tick):
+            with self.assertRaisesRegex(RuntimeError, 'player changed during Follow camera handoff'):
+                self.c.follow_replay_player(1)
+        self.assertFalse(self.c._follow_active)
+        self.target.sample_target.assert_not_called()
+        self.assertNotIn('citadel_camera_overrides_enabled 1', self.console.events)
+
     def test_forward_rewind_and_relative_seek_resolve_fresh_pawn_each_time(self):
         self.c.follow_replay_player(1)
         intent = self.c._participant_follow
@@ -214,7 +273,7 @@ class ParticipantFollowControllerTests(unittest.TestCase):
         self.resolve.side_effect = ReplayPlayerUnavailable('This player has no hero at this tick. Camera unchanged.')
         before = len(self.console.events)
         self.c.seek_replay_tick(200)
-        self.assertEqual(self.resolve.call_count, 8)  # 2 initial + bounded 6 absent samples.
+        self.assertEqual(self.resolve.call_count, 9)  # 3 initial (including post-handoff) + 6 absent.
         self.assertIs(self.c._participant_follow, intent)
         self.assertFalse(self.c._follow_active)
         self.assertTrue(self.c._native_manual)
@@ -239,7 +298,7 @@ class ParticipantFollowControllerTests(unittest.TestCase):
             return real_resolve(*args, **kwargs)
         self.resolve.side_effect = delayed
         self.c.follow_replay_player(1)
-        self.assertEqual(attempts, 4)  # 3 lookups + write-boundary recheck.
+        self.assertEqual(attempts, 5)  # 3 lookups + write-boundary and post-handoff checks.
         self.assertTrue(self.c._follow_active)
 
     def test_absent_new_player_replaces_old_intent_and_later_seek_acquires_new_target(self):

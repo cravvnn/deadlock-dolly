@@ -2175,6 +2175,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             settings.values()
             self._require_quiet_session('selecting a Game Follow hero')
             self._require_demo(require_tick=False)
+            selection_owner = (self._session, self._demo)
             bridge = self._native_bridge()
             require_capability = getattr(bridge, 'require_capability', None)
             if callable(require_capability):
@@ -2215,6 +2216,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                         or again['entity_index'] != player.get('entity_index')):
                     raise RuntimeError('The selected Follow hero changed while applying Game Follow.')
             expected_tick = bridge.status().get('tick')
+            if type(expected_tick) is not int or expected_tick < 0:
+                raise RuntimeError('The paused Follow replay tick is unavailable.')
             # Reject a stale roster-backed player before constructing the
             # follow monitor or issuing any command. The resolver-backed path
             # needs the monitor for its fresh identity check.
@@ -2232,6 +2235,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     self._check_participant_follow(_participant)
                 else:
                     self.toggle_game_ui(True)  # Restores any old rig before releasing the pose writer.
+                    self._stop_event.clear()  # The owned handoff stopped its old writer.
+                    self._check_paused_cancelled()
                 # Programmatic hero selection must not flash the replay UI:
                 # release the pose writer, then hide the game HUD/cursor while
                 # keeping the stock camera context that Follow needs.
@@ -2246,6 +2251,25 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._follow_mode_session = self._session
                 self._request('citadel_spectator_mode 2')
                 self._verify_game_ui_values({'citadel_spectator_mode': 2})
+                # Valve's target/mode handoff can advance a paused replay.
+                # Re-establish the chosen tick after that owned transition,
+                # before confirming its fresh pawn and enabling the rig.
+                self._check_position_cancelled()
+                if (self._session is not selection_owner[0] or self._demo != selection_owner[1]
+                        or self._recorder_active()):
+                    raise RuntimeError('The replay changed during Follow camera handoff.')
+                if _participant is not None:
+                    self._check_participant_follow(_participant)
+                self._seek_tick(expected_tick)
+                if self._session is not selection_owner[0] or self._demo != selection_owner[1]:
+                    raise RuntimeError('The replay changed during Follow camera handoff.')
+                if _participant is not None:
+                    self._check_participant_follow(_participant)
+                    refreshed = resolve_participant(monitor, _participant['identifier'],
+                                                    bridge.editor_roster(), evidence={})
+                    if any(refreshed.get(key) != player.get(key)
+                           for key in ('handle', 'entity_index', 'controller_handle')):
+                        raise RuntimeError('The selected player changed during Follow camera handoff.')
                 deadline = time.monotonic() + 5
                 while True:
                     if _participant is not None:
