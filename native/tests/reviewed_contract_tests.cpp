@@ -71,11 +71,12 @@ int main() {
     // Old correction profiles must never acquire the newer pawn member simply
     // because the current Python observer monitor was updated.
     static_assert(FollowTarget::OBSERVER_SERVICES_OFFSET == 0xe98);
-    static_assert(sizeof(kFollowAnchorProfiles) / sizeof(*kFollowAnchorProfiles) == 22);
+    static_assert(sizeof(kFollowAnchorProfiles) / sizeof(*kFollowAnchorProfiles) == 23);
     unsigned historical = 0, reviewed_current = 0;
     for (const auto& profile : kFollowAnchorProfiles) {
         // Keep this reviewed correction independent of future camera-only reviews.
-        if (!std::strcmp(profile.hash,"85fcdc6df9c944186417e75bb48af9be6466085055d793e312b1f15ac825bcae")) {
+        if (!std::strcmp(profile.hash,"c8f6ba9a6d7ca6e53d589b4c2bfb2568eef908b33b4541a20c4736d6a477c0cb") ||
+            !std::strcmp(profile.hash,"85fcdc6df9c944186417e75bb48af9be6466085055d793e312b1f15ac825bcae")) {
             ++reviewed_current;
             assert(profile.observer_services_offset == 0xe98);
             assert(profile.local_player_table == 0x279c2e0);
@@ -166,7 +167,7 @@ int main() {
         }
         assert(composition && blend);
     }
-    assert(historical == 3 && reviewed_current == 19);
+    assert(historical == 3 && reviewed_current == 20);
     // A network vector contains metadata between its float components. Verify
     // the shared decoder indices against a fixed layout fixture.
     unsigned char raw[36]{};

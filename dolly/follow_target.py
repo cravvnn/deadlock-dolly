@@ -14,7 +14,7 @@ from ._runtime_generated import FollowTarget as _profile
 # together for build 6812; the 6813/6814 relocations, the 6817 span moves and
 # the subsequent reviewed updates carry that review forward. Update only with an independent
 # target review.
-REVIEWED_CLIENT_SHA256 = '85fcdc6df9c944186417e75bb48af9be6466085055d793e312b1f15ac825bcae'
+REVIEWED_CLIENT_SHA256 = 'c8f6ba9a6d7ca6e53d589b4c2bfb2568eef908b33b4541a20c4736d6a477c0cb'
 
 TARGET_SPANS = _profile.TARGET_SPANS
 # Exact stock HUD getter chain and its entity predicates. Camera mode alone

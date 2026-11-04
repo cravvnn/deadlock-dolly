@@ -42,6 +42,22 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNone(u.select_release(raw, "0.5.5-alpha"))
         self.assertIsNone(u.select_release(raw, "0.5.6-alpha"))
 
+    def test_beta_series_updates_from_alpha_and_prior_beta(self):
+        for previous, version in (("0.6.97-alpha", "0.7.0-beta"),
+                                  ("0.7.0-beta", "0.7.1-beta"),
+                                  ("0.7.1-beta", "0.7.2-beta")):
+            with self.subTest(previous=previous, version=version):
+                raw = self.release()
+                raw["tag_name"] = "v" + version
+                asset = raw["assets"][0]
+                asset["name"] = f"Deadlock_Dolly_{version}_Windows_x64.zip"
+                asset["browser_download_url"] = (
+                    f"https://github.com/cravvnn/deadlock-dolly/releases/download/v{version}/"
+                    + asset["name"])
+                self.assertEqual(u.select_release(raw, previous)["version"], version)
+                self.assertIsNone(u.select_release(raw, version))
+                self.assertIsNone(u.select_release({**raw, "prerelease": True}, previous))
+
     def test_numeric_versions_and_prerelease_order(self):
         self.assertGreater(u.version_key("0.5.10-alpha"), u.version_key("0.5.9"))
         self.assertGreater(u.version_key("1.0.0"), u.version_key("1.0.0-rc.3"))

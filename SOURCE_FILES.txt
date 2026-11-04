@@ -1033,3 +1033,6 @@ third_party/cvar_unlocker/unlocker-build-6848.patch
 docs/RELEASE_NOTES_0.6.95-alpha.md
 docs/RELEASE_NOTES_0.6.96-alpha.md
 docs/RELEASE_NOTES_0.6.97-alpha.md
+
+native/profiles/deadlock-2026-11-04-6849-complete.json
+docs/RELEASE_NOTES_0.7.0-beta.md

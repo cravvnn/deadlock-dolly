@@ -268,7 +268,7 @@ class GeneratedCompatibilityTests(unittest.TestCase):
                   for a in self.data['follow_anchors'] for span in a['spans']}
         self.assertEqual(actual,expected)
         anchors={a['build']:a for a in self.data['follow_anchors']}
-        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831','6835','6837','6839','6842','6844','6848'})
+        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831','6835','6837','6839','6842','6844','6848','6849'})
         for build in ('6722','6723','6726'):
             self.assertEqual(anchors[build]['values']['observer_services_offset'],'0xe40')
             self.assertNotIn('local_player_table',anchors[build]['values'])
@@ -304,6 +304,8 @@ class GeneratedCompatibilityTests(unittest.TestCase):
         self.assertEqual(anchors['6837']['values']['observer_services_offset'],'0xe98')
         self.assertEqual(int(anchors['6837']['values']['local_player_table'],16),0x279b2e0)
         self.assertEqual(anchors['6848']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(anchors['6849']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6849']['values']['local_player_table'],16),0x279c2e0)
         self.assertEqual(int(anchors['6848']['values']['local_player_table'],16),0x279c2e0)
         self.assertEqual(anchors['6844']['values']['observer_services_offset'],'0xe98')
         self.assertEqual(int(anchors['6844']['values']['local_player_table'],16),0x279c320)

@@ -22,7 +22,7 @@
 Capture views from a local replay, shape a camera path and play it back with
 animated framing and effects. Edit through the desktop or directly in the game.
 
-**Current source: 0.6.97-alpha · Windows x64 · DirectX 11.**
+**Current source: 0.7.0-beta · Windows x64 · DirectX 11.**
 Native source changes need a matching rebuilt helper. The portable app includes
 Python and Tcl/Tk; no separate installation is needed.
 
@@ -70,7 +70,7 @@ See the
   reconstructed audio in both modes. Reconstructed audio installs its verified
   extractor automatically on first use.
 - **Depth and layers.** Paired depth masters, optional float EXRs and per-frame
-  camera metadata, plus World, Players and Effects takes with documented alpha limits.
+  camera metadata, plus World, Players and Effects takes with documented layer limits.
 - **High-resolution stills.** Plate, players-only matte and cut-out hero presets
   up to 8K, with optional depth within the documented readback limits.
 - **ReShade integration.** Optional color effects and verified scene depth for
@@ -116,7 +116,7 @@ Camera compatibility does not by itself establish support for Depth or Players
 output. See the [user guide](docs/USER_GUIDE.md) for build checks and recovery;
 the [maintainer reference](docs/internal/GAME_UPDATES.md) explains compatibility review.
 
-Dolly is in alpha. High FPS and high-resolution output depend on the game,
+Dolly is in beta. High FPS and high-resolution output depend on the game,
 encoder and GPU; the available settings do not guarantee every workload.
 Fixed-step Color exports can carry game or reconstructed audio through the
 engine's frame-locked WAV recorder; extra layer takes stay silent. Depth, matte
@@ -198,6 +198,7 @@ separate terms in [assets/README.md](assets/README.md).
 ## Releases
 
 - [Downloads and published release notes](https://github.com/cravvnn/deadlock-dolly/releases)
+- [0.7.0-beta release notes](docs/RELEASE_NOTES_0.7.0-beta.md)
 - [0.6.97-alpha release notes](docs/RELEASE_NOTES_0.6.97-alpha.md)
 - [0.6.83-alpha release notes](docs/RELEASE_NOTES_0.6.83-alpha.md)
 - [0.6.81-alpha release notes](docs/RELEASE_NOTES_0.6.81-alpha.md)

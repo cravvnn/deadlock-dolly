@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "description": "Build6848 reviewed offline: relocated camera/startup/Follow/schema/effect consumers; explicit indexed image-relative data relocations and minimap update/initializer reviewed. Exact-pair rebuilt unlocker passes lifecycle/adapter/pair tests. Stock cfg/video/UI unchanged. No6848 game-runtime qualification yet.",
+  "description": "Build6849 offline reviewed client relocation; unchanged exact server/unlocker and support modules. No6849 game-runtime qualification.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "85fcdc6df9c944186417e75bb48af9be6466085055d793e312b1f15ac825bcae",
+    "citadel/bin/win64/client.dll": "c8f6ba9a6d7ca6e53d589b4c2bfb2568eef908b33b4541a20c4736d6a477c0cb",
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433"
   },
