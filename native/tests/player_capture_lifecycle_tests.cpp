@@ -29,14 +29,25 @@ static bool complete(unsigned written = 24, unsigned dropped = 0, unsigned seale
 int main() {
     require(capture_slot_wait(true, false, 0) == CaptureSlotWait::wait,
             "full capture ring holds Present rather than losing the next shot phase");
-    require(capture_slot_wait(true, false, 1499) == CaptureSlotWait::wait,
+    require(capture_slot_wait(true, false, 29999) == CaptureSlotWait::wait,
             "readback retains its bounded completion window");
-    require(capture_slot_wait(false, false, 1500) == CaptureSlotWait::ready,
+    require(capture_slot_wait(false, false, 30000) == CaptureSlotWait::ready,
             "retired slot may be reused at the deadline");
-    require(capture_slot_wait(true, false, 1500) == CaptureSlotWait::timeout,
+    require(capture_slot_wait(true, false, 30000) == CaptureSlotWait::timeout,
             "stalled GPU or writer cannot wait without a bound");
     require(capture_slot_wait(true, true, 0) == CaptureSlotWait::stopped,
             "Stop interrupts capture-slot waiting");
+    CaptureProgressWatchdog pacing;
+    pacing.reset(100, 0);
+    for (unsigned n = 1; n <= 8; ++n) {
+        const auto now = 100 + n * 20000;
+        require(capture_slot_wait(true, false, pacing.idle(now)) == CaptureSlotWait::wait,
+                "slow output remains paced before each real progress event");
+        pacing.observe(now, n);
+    }
+    require(pacing.idle(190099) == 29999, "total elapsed time is not a slow-export deadline");
+    require(capture_slot_wait(true, false, pacing.idle(190100)) == CaptureSlotWait::timeout,
+            "heartbeats without real GPU/disk progress cannot extend a stalled capture");
     const auto owned = image();
     // Actual production consumers share these decisions: tick must not close
     // this prepared image, and Present must be able to issue its one seal after

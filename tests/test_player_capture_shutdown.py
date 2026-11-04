@@ -80,13 +80,13 @@ class PlayerCaptureShutdownTests(unittest.TestCase):
         self.controller.mark_recording_pending.assert_called_once_with(False)
         self.assertEqual(self.raw.read_bytes(), b"retained interrupted raw capture")
 
-    def test_stale_terminal_status_cannot_release_capture_and_timeout_restores_settings(self):
+    def test_stale_terminal_status_cannot_release_capture_or_restore_settings(self):
         self.publish("complete", "b" * 32)
         with self.assertRaisesRegex(RuntimeError, "stop.*pending"):
             self.export.stop(cancel=True, timeout=.2)
         self.assert_pending()
-        self.controller.clear_export_timing.assert_called_once_with()
-        self.controller.clear_export_resolution.assert_called_once_with()
+        self.controller.clear_export_timing.assert_not_called()
+        self.controller.clear_export_resolution.assert_not_called()
         with self.assertRaisesRegex(RuntimeError, "Finish the current recording"):
             self.export.start(self.options, capture_only=True)
 
@@ -165,7 +165,10 @@ class PlayerCaptureContextTests(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.directory = Path(folder.name)
         self.controller._session.overlay_dir = self.directory / "owned-deployment"
-        self.controller._session.native = SimpleNamespace(video_status=lambda: {"state": "idle"})
+        self.controller._session.native = SimpleNamespace(
+            video_status=lambda: {"state": "idle"},
+            status=lambda: {"state": "probe", "demo_name": self.console.demo_name,
+                            "game_pid": 1234})
         self.controller._state["startup_stage"] = "editing_ready"
         self.console.values.update(host_framerate=0, r_wait_on_present=0, mat_viewportscale=.75)
         self.deployment = self.controller.deployment_directory()
@@ -266,6 +269,7 @@ class PlayerCaptureContextTests(unittest.TestCase):
         self.assert_retained()
 
     def test_normal_finish_requests_its_own_capture_then_yields_to_pipeline(self):
+        self.on_sleep = lambda: self.publish("complete")
         self.assertEqual(self.export.stop(cancel=False)["state"], "completed")
         self.assertTrue((self.deployment / player_layer.STOP_NAME).exists())
         self.assertFalse(self.export._capture_only)
@@ -275,6 +279,7 @@ class PlayerCaptureContextTests(unittest.TestCase):
         self.assertEqual(self.raw.read_bytes(), b"owned raw capture must stay")
 
     def test_request_replaced_after_release_cannot_receive_pending_runtime_restores(self):
+        self.on_sleep = lambda: self.publish("complete")
         release = self.controller.mark_recording_pending
         def release_then_replace(pending):
             release(pending)
@@ -290,6 +295,7 @@ class PlayerCaptureContextTests(unittest.TestCase):
         self.assertTrue(self.export.finish_pending)
 
     def test_request_replaced_after_timing_restore_cannot_receive_render_scale_restore(self):
+        self.on_sleep = lambda: self.publish("complete")
         clear_timing = self.controller.clear_export_timing
         def timing_then_replace():
             clear_timing()
@@ -331,15 +337,11 @@ class PlayerCaptureContextTests(unittest.TestCase):
         self.assertEqual(self.runtime_writes(), [])
         self.assert_retained()
 
-    def test_unchanged_context_timeout_restores_its_exact_timing_and_scale(self):
+    def test_unchanged_context_timeout_retains_its_exact_timing_and_scale(self):
         with self.assertRaisesRegex(RuntimeError, "stop.*pending"):
             self.export.stop(cancel=True, timeout=.2)
-        self.assertEqual(self.runtime_writes(), [
-            "host_framerate 0; r_wait_on_present 0; demo_timescale 1", "mat_viewportscale 0.75"])
-        self.assertIsNone(self.controller._export_timing)
-        self.assertIsNone(self.controller._export_resolution)
-        self.assertTrue(self.controller._recording_pending)
-        self.assertTrue(self.export._capture_only)
+        self.assertEqual(self.runtime_writes(), [])
+        self.assert_retained()
 
     def test_replay_changes_after_ack_before_reservation_release_is_rejected(self):
         def finish_other_replay():

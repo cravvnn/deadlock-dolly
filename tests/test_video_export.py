@@ -365,7 +365,10 @@ class VideoExportTests(unittest.TestCase):
         self.bridge.start_video.assert_not_called()
         self.controller.mark_recording_pending.assert_called_once_with(True, player_layer=True)
         self.assertEqual(self.export.output_path, self.path.with_suffix(".mov"))
-        self.assertEqual(self.export.stop()["state"], "completed")
+        with patch("dolly.video_export.player_layer.wait_for_capture", return_value="complete") as drained:
+            self.assertEqual(self.export.stop()["state"], "completed")
+        drained.assert_called_once_with(Path(self.folder.name), timeout=120.0,
+                                       request_id=player_layer.capture_request_id(Path(self.folder.name)))
         self.bridge.stop_video.assert_not_called()
         self.assertTrue((Path(self.folder.name)/"dolly_owner_stop.txt").is_file())
         self.controller.mark_recording_pending.assert_called_with(False)

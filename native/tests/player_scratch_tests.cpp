@@ -71,9 +71,69 @@ int main() {
     CHECK(!collision.open(bundle.wstring(),2,true));
     CHECK(fs::file_size(bundle)==72);
     fs::remove(bundle);
+    // Production's nonblocking handoff retains pixels through saturation past
+    // the former 1.5s deadline, with unchanged memory/record order and no drops.
+    {
+        SequenceWriter paced;
+        paced.hold_worker_for_tests(true);
+        auto output = root / "automatic.bin";
+        CHECK(paced.open(output.wstring(), 1, true));
+        SequenceWriter::Buffer a(8, 11), b(8, 22), c(8, 33);
+        CHECK(paced.submit(header, std::move(a)) == SequenceWriter::Submit::accepted);
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!paced.in_flight() && std::chrono::steady_clock::now() < end) std::this_thread::yield();
+        CHECK(paced.in_flight() == 1);
+        CHECK(paced.submit(header, std::move(b)) == SequenceWriter::Submit::accepted);
+        const auto* retained = c.data();
+        const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(1600);
+        do {
+            CHECK(paced.submit(header, std::move(c)) == SequenceWriter::Submit::waiting);
+            CHECK(c.data() == retained && c == SequenceWriter::Buffer(8, 33));
+            CHECK(paced.refused() == 0 && paced.bytes_written() == 0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        } while (std::chrono::steady_clock::now() < until);
+        paced.hold_worker_for_tests(false);
+        auto result = SequenceWriter::Submit::waiting;
+        const auto resume = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (result == SequenceWriter::Submit::waiting && std::chrono::steady_clock::now() < resume) {
+            result = paced.submit(header, std::move(c));
+            std::this_thread::yield();
+        }
+        CHECK(result == SequenceWriter::Submit::accepted);
+        paced.begin_finish();
+        const auto finish = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!paced.finish_ready() && std::chrono::steady_clock::now() < finish) std::this_thread::yield();
+        CHECK(paced.finish_ready() && paced.finish());
+        CHECK(paced.written() == 3 && paced.refused() == 0 && paced.bytes_written() == 216);
+        std::ifstream verify(output, std::ios::binary);
+        for (unsigned char expected : {11, 22, 33}) {
+            std::uint64_t actual[8]; unsigned char data[8];
+            verify.read(reinterpret_cast<char*>(actual), 64);
+            verify.read(reinterpret_cast<char*>(data), 8);
+            CHECK(verify && std::memcmp(actual, header, 64) == 0);
+            for (auto value : data) CHECK(value == expected);
+        }
+    }
     // A fixed-step capture waits for scratch space instead of rejecting a
     // frame. The blocked call must hand off after the worker drains and must
     // keep the caller's buffer when a real timeout expires.
+    {
+        SequenceWriter closing;
+        closing.hold_worker_for_tests(true);
+        CHECK(closing.open((root / "async-close.bin").wstring(), 1, true));
+        SequenceWriter::Buffer pixels(8, 71), retained(8, 99);
+        CHECK(closing.submit(header, std::move(pixels)) == SequenceWriter::Submit::accepted);
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!closing.in_flight() && std::chrono::steady_clock::now() < end) std::this_thread::yield();
+        CHECK(closing.in_flight() == 1);
+        closing.begin_finish(); // Must return while the writer is still held.
+        CHECK(!closing.finish_ready());
+        CHECK(closing.submit(header, std::move(retained)) == SequenceWriter::Submit::failed);
+        CHECK(retained == SequenceWriter::Buffer(8, 99));
+        closing.hold_worker_for_tests(false);
+        CHECK(closing.finish());
+        CHECK(closing.finish_ready() && closing.written() == 1);
+    }
     {
         SequenceWriter paced;
         paced.hold_worker_for_tests(true);

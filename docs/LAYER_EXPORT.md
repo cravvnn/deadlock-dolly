@@ -137,6 +137,13 @@ its matte pair. Dolly restores layer visibility, matte settings and export
 timing at the end; follow any restoration error before continuing to edit.
 
 Players uses one native ownership capture, not a black/white matte pair.
+During fixed-step capture, Dolly automatically waits when GPU readback or the
+scratch writer needs more time. The selected Video FPS and frame count stay
+the same; slower hardware takes longer to export. The status shows when Dolly
+is waiting and how many frames have been written. Capture memory stays bounded.
+A write error or 30 seconds without GPU or disk progress stops the take and
+keeps its scratch data for diagnosis.
+
 **Players processing** offers Background, Balanced and Fast conversion modes.
 **Players scratch folder** accepts an existing ordinary local folder; blank
 uses the output directory. Raw capture can be much larger than the MOV, so

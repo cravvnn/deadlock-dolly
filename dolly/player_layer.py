@@ -42,6 +42,7 @@ ENTITY_SCENE_NODE_FIELD = "m_pGameSceneNode"
 SCENE_NODE_FIELD_OFFSET = 816
 MARKER_NAME = "dolly_owner_start.txt"
 STATUS_NAME = "dolly_owner_status.txt"
+PACING_NAME = "dolly_owner_pacing.txt"
 STOP_NAME = "dolly_owner_stop.txt"
 BUNDLE_NAME = "dolly_owner_color_frame.bin"
 META_NAME = "dolly_owner_frame_meta.bin"
@@ -54,7 +55,7 @@ MIN_FRAMES, MAX_FRAMES = 2, 2_000_000
 MAX_ENGINE_FPS = 600.0
 # Keep small capture reports through deployment cleanup. Never include image
 # bundles, raw process/GPU events, or arbitrary files from the game directory.
-DIAGNOSTIC_NAMES = (STATUS_NAME, MARKER_NAME, "dolly_owner_stall.txt",
+DIAGNOSTIC_NAMES = (STATUS_NAME, MARKER_NAME, PACING_NAME, "dolly_owner_stall.txt",
                     "dolly_owner_draws.txt", "dolly_owner_captures.txt",
                     "dolly_owner_producers.txt", "dolly_owner_frame_stats.txt",
                     "dolly_minimap_guard.txt")
@@ -235,6 +236,34 @@ def capture_request_id(deployment: Path) -> str:
     if not match:
         raise RuntimeError("The Players capture request identity is unavailable.")
     return match[1]
+
+
+def capture_pacing(deployment: Path, request_id: str | None) -> dict:
+    """Read bounded progress for exactly the armed request, never another take."""
+    if not isinstance(request_id, str) or not re.fullmatch(r'[0-9a-f]{32}', request_id):
+        return {}
+    try:
+        with (Path(deployment) / PACING_NAME).open('rb') as source:
+            raw = source.read(2049)
+        if len(raw) > 2048:
+            return {}
+        data = json.loads(raw)
+        if (not isinstance(data, dict) or type(data.get('format')) is not int
+                or data['format'] != 1 or data.get('request') != request_id):
+            return {}
+        if capture_request_id(deployment) != request_id:
+            return {}
+        fields = ('pid', 'heartbeat', 'progress_ms', 'progress', 'written', 'sealed', 'cap', 'bytes', 'error')
+        if any(type(data.get(k)) is not int or not 0 <= data[k] < 2**64 for k in fields):
+            return {}
+        if (not data['pid'] or not 0 < data['progress_ms'] <= data['heartbeat']
+                or not 0 <= data['written'] <= data['sealed'] <= data['cap'] <= MAX_FRAMES
+                or data['cap'] < MIN_FRAMES or data['error'] not in (0, 1)
+                or data.get('stage') not in ('capture', 'storage', 'gpu', 'finishing', 'complete')):
+            return {}
+        return data
+    except (OSError, ValueError, TypeError, RecursionError):
+        return {}
 
 
 def capture_status(deployment: Path, *, request_id: str | None = None) -> str:

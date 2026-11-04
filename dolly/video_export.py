@@ -358,6 +358,11 @@ def format_video_status(status: dict) -> str:
         return "Recording discarded."
     if state not in ("recording", "completed"):
         return "Video recorder unavailable."
+    if state == 'recording' and status.get('capture_waiting') in ('storage', 'gpu', 'finishing'):
+        label = {'storage': 'Waiting for storage', 'gpu': 'Waiting for GPU readback',
+                 'finishing': 'Finishing Players capture'}[status['capture_waiting']]
+        return (f"{label} · {int(status.get('frames_written', 0)):,} / "
+                f"{int(status.get('capture_total', 0)):,} frames · {int(status.get('fps', 0))} FPS output")
     duration = max(0.0, float(status.get("duration", 0)))
     frames = max(0, int(status.get("frames_written", 0)))
     dropped = max(0, int(status.get("frames_dropped", status.get("dropped", 0))))
@@ -417,6 +422,11 @@ class VideoExport:
                 self.controller.mark_recording_pending(False)
                 self._last = {"state": "failed", "error": "Deadlock closed during player capture."}
                 return dict(self._last)
+            if self._capture_only and self._same_export_owner():
+                report = player_layer.capture_pacing(self.controller.deployment_directory(), self._capture_stop_request)
+                if report and report['pid'] == self.controller.game_pid():
+                    last.update(capture_waiting=None if report['error'] else report['stage'], frames_written=report['written'],
+                                capture_total=report['cap'], scratch_bytes=report['bytes'])
             return last
         try:
             current = dict(bridge.video_status())
@@ -644,13 +654,22 @@ class VideoExport:
         return (context is not None and getattr(self.controller, "_session", None) is context[0]
                 and getattr(self.controller, "_demo", None) == context[1])
 
-    def _require_export_context(self) -> None:
+    def _require_export_context(self, *, capture_readback: bool = False) -> None:
         """Never restore this take's runtime values into another session/replay."""
         if not self._same_export_owner():
             raise RuntimeError("The recording's editing session or selected replay changed; its runtime restoration is pending.")
         if self.controller.status().get("game_running") is False:
             return  # The same originating game exited; its restore methods do no writes.
-        self.controller._require_demo(require_tick=False)
+        if capture_readback:
+            # The renderer may be draining Players writes and unable to answer
+            # netcon. Validate the same owned replay through its native readback
+            # before the file stop request; use console checks after draining.
+            bridge = self.controller._native_bridge()
+            if bridge is None:
+                raise RuntimeError("Players capture stop is pending: the native bridge is unavailable.")
+            self.controller._require_native_demo(bridge.status(), allow_idle=True)
+        else:
+            self.controller._require_demo(require_tick=False)
         if not self._same_export_owner():
             raise RuntimeError("The recording's editing session or selected replay changed during verification; restoration is pending.")
         if self._capture_only or self._capture_stop_request is not None:
@@ -673,11 +692,11 @@ class VideoExport:
         if marker.is_file():
             player_layer.request_stop(deployment)
 
-    def _confirm_player_cancel(self, timeout: float) -> None:
-        """Keep capture ownership until this request acknowledges cancellation."""
+    def _confirm_player_stop(self, timeout: float, *, cancel: bool) -> None:
+        """Keep capture ownership until this exact request finishes draining."""
         from . import player_layer
 
-        self._capture_cancel_pending = True
+        self._capture_cancel_pending = self._capture_cancel_pending or cancel
         with self._lock:
             self._finish_pending = True
 
@@ -687,18 +706,25 @@ class VideoExport:
             except (RuntimeError, ValueError, OSError):
                 return False
 
-        self._require_export_context()
+        self._require_export_context(capture_readback=True)
         if game_exited():
             return
         try:
             deployment = self.controller.deployment_directory()
             self._request_player_stop(deployment)
             status = player_layer.wait_for_capture(
-                deployment, timeout=max(0.0, min(float(timeout), 5.0)),
+                deployment, timeout=max(0.0, min(float(timeout), 5.0 if cancel else 120.0)),
                 request_id=self._capture_stop_request)
-            if not status.startswith(("complete", "failed", "rejected")):
+            terminal = status.startswith(("complete", "failed"))
+            if status.startswith("rejected"):
+                # A local scratch-ack validation error can also say rejected
+                # while native capture is still armed. Only a native rejection
+                # stamped with this request can acknowledge shutdown.
+                terminal = "request " + self._capture_stop_request in status.splitlines()
+            if not terminal:
                 raise RuntimeError("The native capture has not acknowledged stop" +
                                    (": " + status if status else "."))
+            self._require_export_context(capture_readback=True)
         except (RuntimeError, ValueError, OSError) as exc:
             if game_exited():
                 return
@@ -719,19 +745,20 @@ class VideoExport:
             with self._lock:
                 bridge = self._bridge
             if self._capture_only:
-                self._require_export_context()
                 capture_cancel = cancel or self._capture_cancel_pending
-                if capture_cancel:
-                    self._confirm_player_cancel(timeout)
-                else:
-                    if self.controller.status().get("game_running") is not False:
-                        self._request_player_stop(self.controller.deployment_directory())
+                self._confirm_player_stop(timeout, cancel=capture_cancel)
                 self._require_export_context()
                 with self._lock:
                     self._capture_only = False
                     self._last = {"state": "cancelled" if capture_cancel else "completed"}
                     self._capture_cancel_pending = False
                 self.controller.mark_recording_pending(False)
+                self._require_export_context()
+                current = self.controller.status()
+                if current.get("game_running") is True and current.get("playing") is False:
+                    restoration = self.controller._finish_native_playback()
+                    if restoration:
+                        raise RuntimeError(restoration)
                 return self.status()
             current = self.status()
             if bridge is None:
@@ -757,13 +784,15 @@ class VideoExport:
             stop_error = exc
             raise
         finally:
-            restorations = [
+            # An unacknowledged capture still owns timing, size and camera.
+            # Keep originals and reservation for retry, including normal Finish.
+            restorations = [] if self._capture_only else [
                 ("timing", lambda: self._clear_export_timing(required=True),
                  lambda: getattr(self.controller, "_export_timing", None) is not None),
                 ("render scale", self._clear_export_resolution,
                  lambda: getattr(self.controller, "_export_resolution", None) is not None),
             ]
-            if getattr(self, "_pov", False):
+            if not self._capture_only and getattr(self, "_pov", False):
                 restorations.append(("POV", self.controller.finish_pov_recording,
                                      lambda: getattr(self.controller, "_pov_active", False)))
             restoration_errors = []

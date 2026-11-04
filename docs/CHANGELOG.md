@@ -1,16 +1,22 @@
-### Deadlock Dolly v0.6.93-alpha
+### Deadlock Dolly v0.6.94-alpha
 
-**0.6.93-alpha**
+**0.6.94-alpha**
 
-- **Support for Deadlock build 6844.** *Before:* the latest game update was blocked by Dolly's compatibility checks. *After:* reviewed game definitions and a rebuilt unlocker support the updated game.
+- **Automatic pacing for Players.** *Before:* temporary GPU or storage delays could stop a high-FPS Players export. *After:* Dolly waits for capture progress while keeping the selected output FPS, so slower hardware can take longer to finish.
 
-- **Replay integrations kept current.** *Before:* the update moved code and data used by camera, Follow and replay protections. *After:* those integrations use the reviewed build 6844 locations while retaining startup and restoration checks.
+- **Safer export cleanup.** *Before:* Dolly could try to restore the replay UI while Players was still finishing its writes, causing console timeouts or pending restoration. *After:* capture finishes before replay settings are restored, with clearer progress and storage error messages.
 
 # Changes
 
 Release history. Each section describes its own version; controls and limits
 may have changed since then. Use the [current documentation](README.md) for
 setup and operation.
+
+## 0.6.93-alpha
+
+- **Support for Deadlock build 6844.** *Before:* the latest game update was blocked by Dolly's compatibility checks. *After:* reviewed game definitions and a rebuilt unlocker support the updated game.
+
+- **Replay integrations kept current.** *Before:* the update moved code and data used by camera, Follow and replay protections. *After:* those integrations use the reviewed build 6844 locations while retaining startup and restoration checks.
 
 ## 0.6.92-alpha
 

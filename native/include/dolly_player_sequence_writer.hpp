@@ -3,6 +3,7 @@
 // handed off in capture order and flushed by one worker. A full queue or a
 // failed write is reported to the caller; memory never grows past the bound.
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -18,6 +19,7 @@ namespace dolly::player_capture {
 class SequenceWriter {
 public:
     using Buffer = std::vector<unsigned char>;
+    enum class Submit { accepted, waiting, failed };
     SequenceWriter() = default;
     SequenceWriter(const SequenceWriter&) = delete;
     SequenceWriter& operator=(const SequenceWriter&) = delete;
@@ -38,6 +40,10 @@ public:
         }
         opened_ = true; closed_ = false; closing_ = false;
         error_.store(false); written_.store(0); refused_.store(0); inFlight_.store(0);
+        bytesWritten_.store(0);
+        progress_.store(0);
+        finished_.store(false);
+        progressMs_.store(GetTickCount64());
         if (!synchronous_) worker = std::thread([this] { run(); });
         return true;
     }
@@ -51,6 +57,34 @@ public:
     unsigned refused() const { return refused_.load(); }
     unsigned in_flight() const { return inFlight_.load(); }
     bool error() const { return error_.load(); }
+    std::uint64_t bytes_written() const { return bytesWritten_.load(); }
+    std::uint64_t progress() const { return progress_.load(); }
+    std::uint64_t progress_ms() const { return progressMs_.load(); }
+
+    // A full queue retains the caller's exact pixels. Present can poll again
+    // while holding the fixed-step frame; saturation is not a rejected image.
+    Submit submit(const std::uint64_t header[8], Buffer&& pixels) {
+        if (synchronous_)
+            return push(header, std::move(pixels)) ? Submit::accepted : Submit::failed;
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!opened_ || closing_ || error_.load())
+            return Submit::failed;
+        if (queue_.size() >= maxQueued_)
+            return Submit::waiting;
+        queue_.emplace_back();
+        std::memcpy(queue_.back().header, header, sizeof(queue_.back().header));
+        queue_.back().pixels = std::move(pixels);
+        wake_.notify_one();
+        return Submit::accepted;
+    }
+
+    void begin_finish() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        closing_ = true;
+        wake_.notify_all();
+        space_.notify_all();
+    }
+    bool finish_ready() const { return synchronous_ || finished_.load(std::memory_order_acquire); }
 
     Buffer take_buffer(std::size_t bytes) {
         Buffer buffer;
@@ -140,18 +174,43 @@ public:
 
 private:
     struct Item { std::uint64_t header[8]{}; Buffer pixels; };
-    bool write_record(const std::uint64_t header[8], const Buffer& pixels) {
-        if (handle_ != INVALID_HANDLE_VALUE) {
-            DWORD written = 0;
-            if (!WriteFile(handle_, header, 64, &written, nullptr) || written != 64) return false;
-            if (pixels.size() > MAXDWORD) return false;
-            return pixels.empty() || (WriteFile(handle_, pixels.data(), static_cast<DWORD>(pixels.size()),
-                                                &written, nullptr) && written == pixels.size());
+    bool write_bytes(const void* bytes, std::size_t size) {
+        const auto* source = static_cast<const unsigned char*>(bytes);
+        while (size) {
+            const auto count = static_cast<DWORD>(std::min<std::size_t>(size, 2u * 1024u * 1024u));
+            if (handle_ != INVALID_HANDLE_VALUE) {
+                DWORD written = 0;
+                if (!WriteFile(handle_, source, count, &written, nullptr) || written != count)
+                    return false;
+            } else {
+                file_.write(reinterpret_cast<const char*>(source), count);
+                if (!file_)
+                    return false;
+            }
+            source += count;
+            size -= count;
+            bytesWritten_.fetch_add(count);
+            progress_.fetch_add(1);
+            progressMs_.store(GetTickCount64());
         }
-        file_.write(reinterpret_cast<const char*>(header), static_cast<std::streamsize>(sizeof(std::uint64_t) * 8));
-        if (!pixels.empty())
-            file_.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
-        return bool(file_);
+        return true;
+    }
+    bool write_record(const std::uint64_t header[8], const Buffer& pixels) {
+        return write_bytes(header, 64) && write_bytes(pixels.data(), pixels.size());
+    }
+    void flush_output() {
+        if (file_.is_open()) {
+            file_.flush();
+            if (!file_)
+                error_.store(true);
+            file_.close();
+        }
+        if (handle_ != INVALID_HANDLE_VALUE) {
+            if (!FlushFileBuffers(handle_))
+                error_.store(true);
+            CloseHandle(handle_);
+            handle_ = INVALID_HANDLE_VALUE;
+        }
     }
     void recycle(Buffer&& buffer) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -163,7 +222,11 @@ private:
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 wake_.wait(lock, [this] { return closing_ || !queue_.empty(); });
-                if (queue_.empty()) { if (closing_) return; continue; }
+                if (queue_.empty()) {
+                    if (closing_)
+                        break;
+                    continue;
+                }
                 item = std::move(queue_.front());
                 queue_.pop_front();
             }
@@ -178,6 +241,10 @@ private:
             inFlight_.fetch_sub(1);
             recycle(std::move(item.pixels));
         }
+        flush_output();
+        progress_.fetch_add(1);
+        progressMs_.store(GetTickCount64());
+        finished_.store(true, std::memory_order_release);
     }
     std::ofstream file_;
     HANDLE handle_ = INVALID_HANDLE_VALUE;
@@ -190,6 +257,8 @@ private:
     std::deque<Item> queue_;
     std::vector<Buffer> free_;
     std::atomic<unsigned> written_{0}, refused_{0}, inFlight_{0};
+    std::atomic<std::uint64_t> bytesWritten_{0}, progress_{0}, progressMs_{0};
+    std::atomic<bool> finished_{false};
     std::atomic<bool> error_{false};
     unsigned maxQueued_ = 1;
     bool opened_ = false, closed_ = false, closing_ = false, synchronous_ = false, hold_ = false;

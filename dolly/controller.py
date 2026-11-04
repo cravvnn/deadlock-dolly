@@ -1776,6 +1776,18 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._player_capture_pending = bool(pending and player_layer)
         was_pending = self._recording_pending
         self._recording_pending = bool(pending)
+        if not pending or not player_layer:
+            self._player_pacing = None
+        elif not was_pending:
+            from .player_layer import capture_request_id
+            self._player_pacing = None
+            try:
+                request = capture_request_id(self.deployment_directory())
+                self._player_pacing = dict(session=self._session, demo=self._demo,
+                    request=request, heartbeat=None, seen_at=0.0, next_read=0.0, report={},
+                    progress=None, progress_seen_at=0.0)
+            except (OSError, ValueError, RuntimeError, TypeError):
+                pass  # Missing identity never relaxes the normal watchdogs.
         if pending and not was_pending:
             # This capture owns only failures from its own playback. A prior
             # failed shot must not abort a new take before its Play request.
@@ -1785,6 +1797,33 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         if was_pending and not pending:
             self._recording_replay = None
             self._recording_warmup = None
+
+    def _player_capture_pacing_active(self, now):
+        """Trust only fresh progress from this owned capture; never send writes."""
+        pin = getattr(self, '_player_pacing', None)
+        if (not getattr(self, '_player_capture_pending', False) or not pin
+                or pin['session'] is not self._session or pin['demo'] != self._demo
+                or not self._alive()):
+            return False
+        if now >= pin['next_read']:
+            from .player_layer import capture_pacing
+            report = capture_pacing(self.deployment_directory(), pin['request'])
+            pin['next_read'] = now + .1
+            if (not report or report['pid'] != self.game_pid()
+                    or (pin['heartbeat'] is not None and report['heartbeat'] < pin['heartbeat'])
+                    or (pin['progress'] is not None and report['progress'] < pin['progress'])):
+                pin['report'] = {}
+                return False
+            if report['heartbeat'] != pin['heartbeat']:
+                pin['heartbeat'], pin['seen_at'] = report['heartbeat'], now
+            if report['progress'] != pin['progress']:
+                pin['progress'], pin['progress_seen_at'] = report['progress'], now
+            pin['report'] = report
+        report = pin['report']
+        return bool(report and now - pin['seen_at'] <= 1.5 and not report['error']
+                    and now - pin['progress_seen_at'] < 30
+                    and report['stage'] in ('storage', 'gpu', 'finishing')
+                    and report['heartbeat'] - report['progress_ms'] < 30000)
 
     def pending_export_restoration(self):
         """Labels for retained export state; no game access or cleanup writes."""
@@ -5115,6 +5154,25 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
 
 
     def _finish_native_playback(self, *, return_to_flight=False):
+        if getattr(self, "_player_capture_pending", False):
+            bridge = self._native_bridge()
+            if bridge is not None:
+                try:
+                    endpoint = bridge.status()
+                    self._require_native_demo(endpoint)
+                except (RuntimeError, ValueError, OSError):
+                    endpoint = {}  # Existing failure cleanup retains its guards.
+                if endpoint.get("state") == "completed":
+                    # Players still owns its final GPU readbacks and disk queue.
+                    # Its completed path clamps the camera; console pause/HUD
+                    # restoration and spectator handoff must wait for capture
+                    # acknowledgement on the export worker, not this monitor.
+                    self._native_handoff_details = {
+                        "verified": False, "pending": True,
+                        "reason": "Waiting for Players capture to finish"}
+                    with self._state_lock:
+                        self._state["playing"] = False
+                    return None
         if getattr(self, "_pov_active", False):
             # Keep the segment clock clamped until capture has drained. Do not
             # perform a spec_goto handoff or expose HUD in the recorded frames.
@@ -5210,12 +5268,18 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     last_fresh = now
                     if first_frame is None:
                         first_frame = frame_count
-                elif now - last_fresh > (15 if getattr(self, "_export_timing", None) is not None else 3):
+                paced = self._player_capture_pacing_active(now)
+                if paced:
+                    # Present deliberately holds the fixed step for bounded GPU
+                    # slots/storage. Heartbeat plus actual chunk progress, pinned
+                    # to this request, distinguishes that wait from a hung game.
+                    last_fresh = now
+                if now - last_fresh > (15 if getattr(self, "_export_timing", None) is not None else 3):
                     # Fixed-step Players/encoder work can hold the render
                     # thread for several seconds without losing a shot frame.
                     # Keep a bounded hang guard, but allow that work to finish.
                     raise RuntimeError("The native camera stopped receiving rendered views. Restore the game window and export diagnostics.")
-                if now >= next_identity:
+                if now >= next_identity and not paced:
                     try:
                         observed_demo = self._require_demo(require_tick=not frozen)
                     except ConsoleTimeout:
@@ -5352,6 +5416,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             elif finished and return_to_flight and self._native_manual:
                 self._message("Cinematic finished. Free camera controls are ready; pause/resume stays available.",
                               playing=False, paused_flight=True)
+            elif finished and getattr(self, "_player_capture_pending", False):
+                self._message("Native shot finished. Finishing Players capture before restoring replay settings.",
+                              playing=False)
             elif finished:
                 self._message("Native shot finished. POV segment paused; finishing recording." if getattr(self, "_pov_active", False)
                               else ("Native shot finished. Replay paused and final camera held. Play shot restarts; Stop / restore returns the game view and HUD." if self._native_active

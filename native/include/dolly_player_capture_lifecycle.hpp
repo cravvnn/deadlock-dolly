@@ -24,12 +24,29 @@ struct CapturePendingImage {
 };
 enum class CaptureSeal { skip, seal, reject };
 enum class CaptureSlotWait { ready, wait, stopped, timeout };
+constexpr std::uint64_t CaptureStallTimeoutMs = 30000;
+// Progress, not wall-clock capture duration, bounds a slow fixed-step export.
+// The caller supplies actual retired GPU work and completed disk chunks.
+struct CaptureProgressWatchdog {
+    std::uint64_t token = 0, changed_at = 0;
+    void reset(std::uint64_t now, std::uint64_t progress) noexcept {
+        token = progress;
+        changed_at = now;
+    }
+    void observe(std::uint64_t now, std::uint64_t progress) noexcept {
+        if (progress != token)
+            reset(now, progress);
+    }
+    std::uint64_t idle(std::uint64_t now) const noexcept {
+        return now >= changed_at ? now - changed_at : CaptureStallTimeoutMs;
+    }
+};
 inline CaptureSlotWait capture_slot_wait(bool busy, bool draining, std::uint64_t elapsed_ms) noexcept {
     if (draining)
         return CaptureSlotWait::stopped;
     if (!busy)
         return CaptureSlotWait::ready;
-    return elapsed_ms < 1500 ? CaptureSlotWait::wait : CaptureSlotWait::timeout;
+    return elapsed_ms < CaptureStallTimeoutMs ? CaptureSlotWait::wait : CaptureSlotWait::timeout;
 }
 inline bool capture_seal_permission(bool shot_aligned, CaptureSeal action) noexcept {
     // Stop may start after validation. Permission belongs to the validated

@@ -92,6 +92,11 @@ The waits are bounded: a stalled ordinary Color recording can still report
 dropped frames, while paired depth stops on a capture/writer failure. Check the
 final status rather than treating the fixed-step checkbox as a success guarantee.
 
+Players automatically waits for GPU readback and scratch storage while keeping
+the selected output FPS. Slower hardware increases export time. A storage error
+or 30 seconds without GPU or disk progress still stops its capture; the status
+reports the wait and completed frame count.
+
 **Depth master (.mov)** is a default-off option on the Export tab. It writes a
 paired 10-bit ProRes depth master and a normalized preview beside the color
 video; **EXR sequence (float)** optionally adds the numerical master.
