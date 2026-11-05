@@ -286,6 +286,10 @@ dolly/screenshot_ui.py
 dolly/session_cleanup.py
 dolly/session_recovery.py
 dolly/settings.py
+dolly/SaveResult.tla
+dolly/SaveResultApi.tla
+dolly/SaveResult.cfg
+dolly/SaveResult.mutants.json
 dolly/shot_history.py
 dolly/smoothing.py
 dolly/source2viewer.py
@@ -306,6 +310,10 @@ dolly/ui_theme.py
 dolly/update_ui.py
 dolly/update_worker.py
 dolly/updater.py
+dolly/ManifestScan.tla
+dolly/ManifestScanApi.tla
+dolly/ManifestScan.cfg
+dolly/ManifestScan.mutants.json
 dolly/video_export.py
 dolly/visualization_preview_wire.py
 dolly/visualization_wire.py
@@ -714,6 +722,7 @@ tests/test_session_cleanup.py
 tests/test_session_crash_recovery.py
 tests/test_session_recovery.py
 tests/test_settings.py
+tests/test_save_result.py
 tests/test_shot_history.py
 tests/test_smoothed_playback.py
 tests/test_smoothing.py
@@ -735,6 +744,7 @@ tests/test_ui_widgets.py
 tests/test_update_consent.py
 tests/test_update_notice.py
 tests/test_updater.py
+tests/test_manifest_types.py
 tests/test_video_color_integration.py
 tests/test_video_export.py
 tests/test_visualization_preview.py

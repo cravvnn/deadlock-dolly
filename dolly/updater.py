@@ -56,12 +56,15 @@ def read_manifest(root):
     if path.stat().st_size > 8 * 1024 * 1024:
         raise ValueError("Update manifest is too large")
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema") not in (1, 2) or not isinstance(data.get("files"), dict):
+    if (not isinstance(data, dict) or type(data.get("schema")) is not int
+            or data["schema"] not in (1, 2) or not isinstance(data.get("files"), dict)
+            or not isinstance(data.get("version"), str)):
         raise ValueError("Unsupported update manifest")
     version_key(data["version"])
     folded = set()
     for name, digest in data["files"].items():
-        if not owned_name(name) or name.lower() in folded or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        if (not owned_name(name) or name.lower() in folded or not isinstance(digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ValueError("Invalid update manifest file")
         folded.add(name.lower())
     entry = "_internal/DollyApp.exe" if data["schema"] == 2 else "DollyUpdater.exe"

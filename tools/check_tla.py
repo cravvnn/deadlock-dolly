@@ -29,6 +29,10 @@ def check(root=ROOT):
     return rows
 
 
+# Additional independent source contracts.
+REQUIRED.update({"SaveResult.cfg", "ManifestScan.cfg"})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")

@@ -1,0 +1,6 @@
+[
+ {"name":"accept bool or float schema","config":"ManifestScan.cfg","replace":[["(~Guarded /\\ work[index] = \"noncanonical\")","work[index] = \"noncanonical\""]],"expect":"StrictSelection"},
+ {"name":"manifest shape exception escapes caller","config":"ManifestScan.cfg","replace":[["index <= 2 /\\ ~Guarded","index <= 2 /\\ TRUE"]],"expect":"ValidationDoesNotAbort"},
+ {"name":"stop after invalid cache","config":"ManifestScan.cfg","replace":[["index' = index + 1","index' = 3"]],"expect":"MatchingNotMissed"},
+ {"name":"skip first approved workspace","config":"ManifestScan.cfg","replace":[["{\"invalid\",\"mismatch\"}","{\"invalid\",\"mismatch\",\"good\"}"]],"expect":"FirstMatching"}
+]

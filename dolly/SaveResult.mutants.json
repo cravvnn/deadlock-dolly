@@ -1,0 +1,6 @@
+[
+ {"name":"cleanup masks save result","config":"SaveResult.cfg","replace":[["IF Guarded THEN","IF FALSE THEN"]],"expect":"CleanupPreservesResult"},
+ {"name":"blanket exception suppression","config":"SaveResult.cfg","replace":[["IF Strict THEN","IF FALSE THEN"]],"expect":"UnexpectedVisible"},
+ {"name":"skip payload sync","config":"SaveResult.cfg","replace":[["synced' = TRUE","synced' = FALSE"]],"expect":"PublishAfterSync"},
+ {"name":"forget payload write","config":"SaveResult.cfg","replace":[["temporary' = \"new\"","temporary' = \"empty\""]],"expect":"TypeOK"}
+]

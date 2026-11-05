@@ -62,6 +62,34 @@ modeled behavior, update the implementation spec, interface mapping, mutants and
 owning tests together. The checker cannot automatically extract Python semantics
 or detect every model/code mismatch.
 
+## Settings save results and update-manifest shape validation
+
+SaveResult.tla beside settings.py models the outer validated-payload save:
+temporary create/write/flush/fsync/close, delegated invalid-settings backup,
+atomic replacement and final best-effort unlink. Cleanup OSError preserves the
+body's success/primary exception; unexpected programming errors remain visible.
+One immutable original and one new payload, returning I/O/failures/process exits
+are bounded. Backup internals remain BackupPublish's contract. GUI scheduling,
+external writers, power loss and directory durability are outside this model.
+Four mutants protect cleanup, exception scope, content and sync. The supported
+contract is strengthened, not an equivalence/state-reduction claim.
+
+ManifestScan.tla beside updater.py models two sorted staged workspaces and the
+read_manifest error boundary. Bad decoded root/version/digest types now raise
+the existing validation ValueError, allowing a later matching workspace to be
+selected. Schemas must be integers1/2; bool/float encodings are rejected. Four
+mutants protect type rejection, continued scan and first matching selection.
+Its API checks completion shape; invariants own the stronger selection rules.
+Marker reads, JSON parser internals/resource exhaustion, arbitrary concurrent
+mutations and filesystem namespace races are outside the scan. Workspace reuse
+does not replace verify_payload or install-time checksum/consent/lock checks.
+
+Both default configs select the guarded production contract. Completion assumes
+returning operations and weak fairness; terminal Done intentionally stutters.
+Real temporary-file, Windows-lock and malformed-workspace owner regressions
+supplement the specs. No whole-program, live/game, native POSIX or power-loss
+certification follows. Current settings schema and graphics recovery are unchanged.
+
 ## Participant Follow selection
 
 `FollowLens.tla` beside `follow_camera.py` models `FollowTransaction.apply` and

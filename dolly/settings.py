@@ -321,4 +321,7 @@ def save_settings(
         os.replace(temporary, target)
     finally:
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass  # Best-effort cleanup must preserve the save result.
