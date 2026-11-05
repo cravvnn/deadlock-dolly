@@ -46,6 +46,7 @@ The early workflow research is recorded in
 | [crosire's ReShade shaders](https://github.com/crosire/reshade-shaders) and [prod80](https://github.com/prod80/prod80-ReShade-Repository) | The redistributable shader library supplied with Dolly, under CC0/public-domain and MIT terms respectively. |
 | [Python](https://www.python.org/) and [Tcl/Tk](https://www.tcl-lang.org/) | Application runtime and desktop interface. |
 | [PyInstaller](https://pyinstaller.org/) and its contributors | Packaging the portable Windows application. |
+| [tla-skill](https://github.com/paralin/tla-skill), paralin, and [tla-ts](https://github.com/aidenybai/tla-ts), Aiden Bai | Development-only TLA+ model and guard-mutant checks. The vendored runner retains its MIT license. |
 | [NumPy](https://numpy.org/), [SciPy](https://scipy.org/), [SoundFile](https://github.com/bastibe/python-soundfile) and [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) | Numerical processing, reconstructed audio and supporting media workflows. |
 | [.NET](https://dotnet.microsoft.com/) and its contributors | Runtime and build tools for DollyReplayIndex. |
 

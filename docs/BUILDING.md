@@ -235,3 +235,8 @@ checks finish, cancel and no-overwrite behavior. Missing media components or
 encoder errors fail that gate; they do not get reported as a successful test.
 The ReShade runtime DLL is installed separately. The crosire/prod80 shader
 library and its notices are bundled under `third_party/reshade_shaders`.
+
+Participant Follow handoff model checks require Node20/npm for development.
+Run `npm ci --prefix tools/tla --ignore-scripts`, then `python tools/check_tla.py`.
+The normal Windows builder runs the same check before native compilation.
+See SPECS.md for the scoped model bounds and limitations.

@@ -1,0 +1,66 @@
+[
+  {
+    "name": "unconditional reconstruction",
+    "replace": [
+      [
+        "sought' = moved",
+        "sought' = TRUE"
+      ]
+    ],
+    "expect": "NoRedundantSeek"
+  },
+  {
+    "name": "ignore readiness",
+    "replace": [
+      [
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ atTick",
+        "/\\ TRUE /\\ mode = \"chase\" /\\ paused /\\ atTick"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "ignore cancellation",
+    "replace": [
+      [
+        "/\\ pc = \"confirm\" /\\ ~cancelled /\\ identity",
+        "/\\ pc = \"confirm\" /\\ TRUE /\\ identity"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "ignore identity",
+    "replace": [
+      [
+        "/\\ pc = \"confirm\" /\\ ~cancelled /\\ identity",
+        "/\\ pc = \"confirm\" /\\ ~cancelled /\\ TRUE"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "accept free observer",
+    "replace": [
+      [
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ atTick",
+        "/\\ ready /\\ mode # \"invalid\" /\\ paused /\\ atTick"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "omit tick restoration",
+    "replace": [
+      [
+        "atTick' = TRUE /\\ sought' = TRUE",
+        "atTick' = FALSE /\\ sought' = TRUE"
+      ],
+      [
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ atTick",
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ TRUE"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  }
+]

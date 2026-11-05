@@ -26,3 +26,5 @@ Desktop.ini
 
 # The one pinned official game plugin is intentionally versioned.
 # Do not add a blanket *.dll rule that would drop it from GitHub builds.
+
+/tools/tla/node_modules/
