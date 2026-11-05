@@ -1822,7 +1822,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         report = pin['report']
         return bool(report and now - pin['seen_at'] <= 1.5 and not report['error']
                     and now - pin['progress_seen_at'] < 30
-                    and report['stage'] in ('storage', 'gpu', 'finishing')
+                    and report['stage'] in ('capture', 'storage', 'gpu', 'finishing')
                     and report['heartbeat'] - report['progress_ms'] < 30000)
 
     def pending_export_restoration(self):
@@ -5360,9 +5360,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                         first_frame = frame_count
                 paced = self._player_capture_pacing_active(now)
                 if paced:
-                    # Present deliberately holds the fixed step for bounded GPU
-                    # slots/storage. Heartbeat plus actual chunk progress, pinned
-                    # to this request, distinguishes that wait from a hung game.
+                    # Normal capture can also delay console service without
+                    # saturating a GPU slot or storage queue. Fresh heartbeat
+                    # and bounded progress for this request cover both cases.
                     last_fresh = now
                 if now - last_fresh > (15 if getattr(self, "_export_timing", None) is not None else 3):
                     # Fixed-step Players/encoder work can hold the render

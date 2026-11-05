@@ -99,6 +99,12 @@ class PacingControllerTests(unittest.TestCase):
         self.assertEqual(self.controller._export_timing['fps'], 60)
 
     def test_backpressure_starting_during_console_query_does_not_abort_capture(self):
+        self.check_capture_starting_during_console_query('storage')
+
+    def test_capture_progress_during_console_query_does_not_abort_capture(self):
+        self.check_capture_starting_during_console_query('capture')
+
+    def check_capture_starting_during_console_query(self, stage):
         from dolly.console import ConsoleTimeout
         self.prepare()
         self.pin_capture()
@@ -110,7 +116,8 @@ class PacingControllerTests(unittest.TestCase):
                 misses.append(True)
                 self.clock.advance(3)
                 now = int(self.clock.now * 1000) + 100000
-                self.publish(heartbeat=now, progress_ms=now, progress=12 + len(misses))
+                self.publish(stage=stage, heartbeat=now, progress_ms=now,
+                             progress=12 + len(misses))
                 raise ConsoleTimeout('capture began waiting during demo_goto')
             return original(*args, **kwargs)
 
@@ -130,6 +137,41 @@ class PacingControllerTests(unittest.TestCase):
         self.assertEqual(len(misses), 2)
         self.assertIsNone(self.controller.status()['playback_error'])
         self.assertEqual(self.controller.status()['time'], self.project.duration)
+
+    def test_normal_capture_progress_avoids_console_queries_during_the_pass(self):
+        self.prepare()
+        self.pin_capture()
+        status = self.bridge.status
+        def capturing():
+            self.clock.advance(.6)
+            current = status()
+            now = int(self.clock.now * 1000) + 100000
+            self.publish(stage='capture', heartbeat=now, progress_ms=now,
+                         progress=self.bridge.frame_count)
+            return current
+        with patch.object(self.bridge, 'status', side_effect=capturing), \
+             patch.object(self.controller, '_require_demo',
+                          side_effect=AssertionError('console query during capture')):
+            self.run_native()
+        self.assertIsNone(self.controller.status()['playback_error'])
+        self.assertEqual(self.controller.status()['time'], self.project.duration)
+
+    def test_capture_stage_retains_all_progress_and_ownership_guards(self):
+        self.pin_capture()
+        for changes in (dict(stage='idle'), dict(stage='complete'),
+                        dict(stage='capture', pid=9999),
+                        dict(stage='capture', request='f' * 32),
+                        dict(stage='capture', error=1),
+                        dict(stage='capture', heartbeat=131000)):
+            with self.subTest(changes=changes):
+                self.publish(**changes)
+                self.controller._player_pacing['next_read'] = 0
+                self.assertFalse(self.controller._player_capture_pacing_active(1))
+        self.publish(stage='capture', heartbeat=132000, progress_ms=132000)
+        self.assertTrue(self.controller._player_capture_pacing_active(2))
+        self.assertFalse(self.controller._player_capture_pacing_active(4))
+        self.publish(stage='capture', heartbeat=163000, progress_ms=163000)
+        self.assertFalse(self.controller._player_capture_pacing_active(33))
 
     def test_repeated_console_timeouts_without_owned_progress_still_abort(self):
         from dolly.console import ConsoleTimeout

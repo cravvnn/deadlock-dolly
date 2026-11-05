@@ -1,5 +1,10 @@
 [
   {
+    "name": "exclude normal capture progress",
+    "replace": [["Valid == report \\in {\"ownedFresh\", \"ownedCapture\"}", "Valid == report = \"ownedFresh\""]],
+    "expect": "KeepProgressingCapture"
+  },
+  {
     "name": "pre-query evidence only (original race)",
     "replace": [
       [
