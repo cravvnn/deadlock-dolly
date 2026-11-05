@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "Build6849 offline reviewed client relocation; unchanged exact server/unlocker and support modules. No6849 game-runtime qualification.",
+  "description": "Build6851 offline: 132 complete/scoped client owners, seven indexed image operands and 34-entry minimap table, 34 optional regions and six particle families reviewed against6849. Named observer record/getters retain0xe98. Config001 named registration/class and three complete server methods requalified. Exact-pair rebuilt unlocker passes 1037 actual-function checks and three lifecycle/ABI tests. Supporting modules/stock config/UI unchanged. No6851 live-runtime qualification.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "c8f6ba9a6d7ca6e53d589b4c2bfb2568eef908b33b4541a20c4736d6a477c0cb",
+    "citadel/bin/win64/client.dll": "6a7c6d40ed70011884054405846e7a5259fff51578714ffa864cbe80ab527627",
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433"
   },
-  "unlocker_server_sha256": "cce86de118afc09868165f5c0e8bf1c8b23307db6fed52e8a5e4ad67f93d9009",
+  "unlocker_server_sha256": "dd191d3ceafa49f5e92c3706d82c78f337c65ae176074e65c1ff8e9a83004407",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "04bc78a730b9623c8b69db6b00a5aa3790ddfd08",
-  "stock_gameinfo_depot": "1422456_7023502151624661415",
-  "stock_provenance_sha256": "de05078aa33c22d247fc789c68314af64489fea60fa9e3853067bd002a0d0d7b",
+  "stock_gameinfo_depot": "1422456_1124591651485547492",
+  "stock_provenance_sha256": "6d358dd0c74c096a92b91e49a3dc683d916e770002591b2e933da59d3395152d",
   "configuration_modules": {
     "bin/win64/engine2.dll": "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6",
     "bin/win64/tier0.dll": "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433",

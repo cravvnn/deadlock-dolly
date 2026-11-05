@@ -1071,3 +1071,5 @@ dolly/CleanupMarker.mutants.json
 dolly/OwnershipApi.tla
 docs/RELEASE_NOTES_0.7.2-beta.md
 docs/RELEASE_NOTES_0.7.3-beta.md
+native/profiles/deadlock-2026-11-04-6851-complete.json
+third_party/cvar_unlocker/unlocker-build-6851.patch
