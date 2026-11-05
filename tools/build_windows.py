@@ -165,6 +165,10 @@ def main(output_dir: Path | None = None) -> int:
     build = ROOT / "build"
     checks = build / "checks"
     checks.mkdir(parents=True, exist_ok=True)
+    print("Checking source models and mutants...", flush=True)
+    with (checks / "tla.jsonl").open("w", encoding="utf-8") as log:
+        subprocess.run([sys.executable, str(ROOT / "tools" / "check_tla.py"), "--json"],
+                       cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
     native_info = build_native(ROOT)
     print("Checking source regressions...", flush=True)
     run_regression_tests(ROOT, checks / "tests.log")

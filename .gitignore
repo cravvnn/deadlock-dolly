@@ -26,3 +26,6 @@ Desktop.ini
 
 # The one pinned official game plugin is intentionally versioned.
 # Do not add a blanket *.dll rule that would drop it from GitHub builds.
+
+# Local source-model dependencies are not application runtime files.
+/tools/tla/node_modules/

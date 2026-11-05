@@ -1,0 +1,32 @@
+[
+  {
+    "name": "acknowledge before all files restored",
+    "replace": [
+      [
+        "pc = 4 /\\ journal'",
+        "pc \\in {2,4} /\\ journal'"
+      ]
+    ],
+    "expect": "NoPrematureAck"
+  },
+  {
+    "name": "release pending marker before recovery",
+    "replace": [
+      [
+        "pc = 5 /\\ marker'",
+        "pc \\in {1,5} /\\ marker'"
+      ]
+    ],
+    "expect": "RecoveryComplete"
+  },
+  {
+    "name": "consume a supposedly immutable backup",
+    "replace": [
+      [
+        "ELSE Disk!Copy(pc)",
+        "ELSE Disk!Move(pc)"
+      ]
+    ],
+    "expect": "ImmutableCopyBackups"
+  }
+]

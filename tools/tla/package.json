@@ -1,0 +1,12 @@
+{
+  "name": "tla-skill-tools",
+  "private": true,
+  "type": "module",
+  "description": "Runs every TLA+ model beside the code with tla-ts.",
+  "bin": {
+    "tla": "./check.mjs"
+  },
+  "dependencies": {
+    "tla-ts": "0.0.8"
+  }
+}

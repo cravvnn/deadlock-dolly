@@ -54,12 +54,15 @@ for developers.
 Install **Visual Studio 2022 Build Tools** with **Desktop development with C++**
 (including the Windows SDK), **CMake 3.21 or newer**, and 64-bit Python 3.12 with
 Tcl/Tk.
+Source model checks also require **Node 20 or newer** and npm. These are build
+tools only; users of the portable application do not need them.
 Your Python 3.12 installation can create the build environment. In a terminal
 at the source folder, run:
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+npm ci --prefix tools/tla --ignore-scripts
 .\.venv\Scripts\python.exe tools\build_windows.py
 ```
 
@@ -68,6 +71,9 @@ the app's source runtime. Run all commands from the repository root with that
 same interpreter. `cmake` and `ctest` must be available on `PATH` (the CMake
 installer can add them). The script stops if a regression, icon check, or actual
 packaged-editor startup fails. Inspect `build/checks/` after a failure.
+Before rebuilding the native DLL, the builder checks the maintained TLA+ models
+and their guard mutants. Results are kept in `build/checks/tla.jsonl`. See
+[model coverage and limits](../SPECS.md) for what these checks establish.
 
 The Windows build commands run on a private desktop, so GUI and native overlay
 checks do not open windows over your work. Their checks, console output and failure

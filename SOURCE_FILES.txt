@@ -1038,3 +1038,34 @@ native/profiles/deadlock-2026-11-04-6849-complete.json
 docs/RELEASE_NOTES_0.7.0-beta.md
 
 docs/RELEASE_NOTES_0.7.1-beta.md
+
+# Maintained source models and development-only checker.
+SPECS.md
+dolly/LauncherHandoff.cfg
+dolly/LauncherHandoff.mutants.json
+dolly/LauncherHandoff.tla
+dolly/RecoveryResourcesApi.tla
+dolly/WorkspaceCleanup.cfg
+dolly/WorkspaceCleanup.mutants.json
+dolly/WorkspaceCleanup.tla
+dolly/AtomicCopy.cfg
+dolly/AtomicCopy.mutants.json
+dolly/AtomicCopy.tla
+dolly/FileOpsApi.tla
+dolly/RollbackApi.tla
+dolly/UpdateRollback.cfg
+dolly/UpdateRollback.mutants.json
+dolly/UpdateRollback.tla
+tools/check_tla.py
+tools/tla/LICENSE.txt
+tools/tla/README.md
+tools/tla/check.mjs
+tools/tla/package-lock.json
+tools/tla/package.json
+dolly/FollowSelection.tla
+dolly/FollowSelection.cfg
+dolly/FollowSelection.mutants.json
+dolly/CleanupMarker.tla
+dolly/CleanupMarker.cfg
+dolly/CleanupMarker.mutants.json
+dolly/OwnershipApi.tla

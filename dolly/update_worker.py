@@ -108,7 +108,8 @@ def rollback(plan):
     if state["target"] != str(target):
         raise ValueError("Rollback target mismatch")
     # Backups are complete before any installed file is touched. Repeating this
-    # operation after interruption is safe; retain backups until recovery passes.
+    # operation after interruption is safe. Keep originals immutable until the
+    # completed workspace is cleaned up, including after a partial rollback.
     for name, old_digest in state["before"].items():
         path = checked_file(target, name)
         if old_digest is None:
@@ -119,8 +120,7 @@ def rollback(plan):
             backup = checked_file(work / "backup", name)
             if digest_file(backup) != old_digest:
                 raise ValueError("Update backup is damaged")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(backup, path)
+            replace_file(backup, path)
     state["state"] = "rolled_back"
     atomic_json(work / "journal.json", state)
     (target / PENDING).unlink(missing_ok=True)

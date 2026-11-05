@@ -223,6 +223,13 @@ class ParticipantFollowControllerTests(unittest.TestCase):
         self.assertNotIn('citadel_camera_overrides_enabled 1', later)
 
     def test_post_handoff_controller_identity_change_never_enables_rig(self):
+        request = self.console.request
+        def drift(command, *args, **kwargs):
+            result = request(command, *args, **kwargs)
+            if command == 'citadel_spectator_mode 2':
+                self.console.tick += 9
+            return result
+        self.console.request = drift
         resolve = self.resolve.side_effect
         seek = self.c._seek_tick
         restored = False

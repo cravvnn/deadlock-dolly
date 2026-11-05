@@ -2165,6 +2165,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
 
     def start_selected_game_follow(self, settings, player, *, _participant=None):
         """Select a fresh roster pawn through the stock command, then verify it."""
+        from .preload import PreloadError
         from .follow_target import FollowTargetMonitor
         from .replay_camera import ReplayCameraMonitor
         from .follow_camera import FollowSettings
@@ -2260,7 +2261,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     raise RuntimeError('The replay changed during Follow camera handoff.')
                 if _participant is not None:
                     self._check_participant_follow(_participant)
-                self._seek_tick(expected_tick)
+                current = bridge.status()
+                self._require_native_demo(current, allow_idle=True)
+                # A redundant seek reconstructs the observer/camera even when
+                # selection left us at the chosen tick. Preserve that handoff;
+                # only repair a tick that actually moved (or became unpaused).
+                if not current.get('paused') or current.get('tick') != expected_tick:
+                    self._seek_tick(expected_tick)
                 if self._session is not selection_owner[0] or self._demo != selection_owner[1]:
                     raise RuntimeError('The replay changed during Follow camera handoff.')
                 if _participant is not None:
@@ -2276,7 +2283,19 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                         self._check_participant_follow(_participant)
                     self._require_demo(require_tick=False)
                     current_player()
-                    selected = monitor.sample_target(require_chase=False)
+                    self._check_position_cancelled()
+                    if (self._session is not selection_owner[0] or self._demo != selection_owner[1]
+                            or self._recorder_active()):
+                        raise RuntimeError('The replay changed during Follow camera handoff.')
+                    try:
+                        selected = monitor.sample_target(require_chase=False)
+                    except PreloadError as exc:
+                        # Mode 4 is the stock free-camera state during a
+                        # target handoff. Retry only this known transition;
+                        # structural/identity/read failures still fail closed.
+                        if getattr(exc, 'observer_mode', None) != 4:
+                            raise
+                        selected = {'handle': None, 'mode': 4}
                     mode = read_cvar_value('citadel_spectator_mode', self._request('citadel_spectator_mode'))
                     camera = ReplayCameraMonitor.sample(monitor)
                     self._follow_selection_evidence = dict(selected=selected, console_mode=mode,

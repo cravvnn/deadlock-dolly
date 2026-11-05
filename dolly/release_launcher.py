@@ -50,14 +50,20 @@ def main(argv=None, *, target=None):
     # Installation health checks run while a journal is intentionally pending.
     if any(flag in args for flag in ("--self-test", "--self-test-hidden", "--cleanup-session", "--help")):
         return open_editor(target, args, wait=True)
-    pending = update_worker.pending_work(target)
-    if pending is not None:
-        ids = launcher_process_ids()
-        update_worker.check_processes(target, exclude_pid=ids)
-        update_worker.launch_worker(target, pending, recover=True, parent_pid=ids[-1])
-        return 0
-    update_worker.cleanup_workspaces(target)
-    # Release discovery belongs to the already-open desktop editor. The public
-    # launcher never downloads or installs a new release on an ordinary open.
-    open_editor(target, args)
-    return 0
+    try:
+        with update_worker.install_lock(target):
+            pending = update_worker.pending_work(target)
+            if pending is not None:
+                ids = launcher_process_ids()
+                update_worker.check_processes(target, exclude_pid=ids)
+                update_worker.launch_worker(target, pending, recover=True, parent_pid=ids[-1])
+                return 0
+            update_worker.cleanup_workspaces(target)
+            # Release discovery belongs to the already-open desktop editor. The public
+            # launcher never downloads or installs a new release on an ordinary open.
+            open_editor(target, args)
+            return 0
+    except OSError as error:
+        update_worker.notify("Dolly could not open safely. Another update may be in progress. "
+                             "Wait for it to finish, then open Dolly again.\n\n" + str(error))
+        return 1

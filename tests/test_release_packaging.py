@@ -1,6 +1,7 @@
 """Source export privacy and embedded-icon release gates."""
 from contextlib import redirect_stderr
 import io
+import json
 from pathlib import Path
 import struct
 import subprocess
@@ -33,6 +34,41 @@ class ReleasePackagingTests(unittest.TestCase):
         with zipfile.ZipFile(archive) as package:
             self.assertEqual(set(package.namelist()), {"SOURCE_FILES.txt", "dolly/app.py", ".github/workflows/windows.yml"})
             self.assertIsNone(package.testzip())
+
+    def test_model_failure_stops_before_native_rebuild(self):
+        installer = SimpleNamespace(__version__="1.2.3")
+        (self.root / "requirements-build.txt").write_text("pyinstaller==1.2.3\n")
+        notes = self.root / "docs" / f"RELEASE_NOTES_{build_windows.__version__}.md"
+        notes.parent.mkdir()
+        notes.write_text("fixture")
+        with patch.dict(sys.modules, {"PyInstaller": installer, "tkinter": SimpleNamespace()}), \
+             patch.object(build_windows.sys, "platform", "win32"), \
+             patch.object(build_windows.sys, "version_info", (3, 12)), \
+             patch.object(build_windows.platform, "machine", return_value="amd64"), \
+             patch.object(build_windows, "ROOT", self.root), \
+             patch.object(build_windows, "validate_publish_body"), \
+             patch.object(build_windows, "build_native") as native, \
+             patch.object(build_windows.subprocess, "run", side_effect=subprocess.CalledProcessError(1, ["models"])) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                build_windows.main()
+        native.assert_not_called()
+        self.assertEqual(run.call_args.args[0],
+                         [sys.executable, str(self.root / "tools" / "check_tla.py"), "--json"])
+        self.assertFalse((self.root / "dist").exists())
+
+    def test_model_check_rejects_success_without_required_models(self):
+        import check_tla
+        package = self.root / "tools/tla/node_modules/tla-ts/package.json"
+        package.parent.mkdir(parents=True)
+        package.write_text("{}")
+        with patch.object(check_tla.shutil, "which", return_value="node"), \
+             patch.object(check_tla.subprocess, "run") as run:
+            for configs in ([], ["AtomicCopy.cfg", "UpdateRollback.cfg"]):
+                with self.subTest(configs=configs):
+                    output = "\n".join(json.dumps({"kind": "model", "name": name}) for name in configs)
+                    run.return_value = SimpleNamespace(returncode=0, stdout=output, stderr="")
+                    with self.assertRaisesRegex(RuntimeError, "required configs"):
+                        check_tla.check(self.root)
 
     def test_export_rejects_accidental_logs_demos_and_traversal(self):
         for name in ["../private.txt", "/private.txt", "logs/private.txt", "x.dem", ".env", "build/app.py", "dolly\\app.py", "native/client.dll", "engine2.dll", "CLIENT.DLL"]:

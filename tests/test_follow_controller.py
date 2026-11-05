@@ -25,6 +25,72 @@ class FollowControllerTests(unittest.TestCase):
         self.assertIn('spec_target 2', self.console.events)
         target.close.assert_called_once()
 
+    def test_paused_selection_does_not_reconstruct_camera_at_same_tick(self):
+        from dolly.replay_camera import ReplayCameraMonitor
+        player, target = self.select_fixture()
+        def reconstruct(*_, **__):
+            ReplayCameraMonitor.sample.return_value = {
+                'coherent': True, 'ready': False, 'blending': True}
+        with patch('dolly.follow_target.FollowTargetMonitor', return_value=target), \
+                patch.object(self.c, '_seek_tick', side_effect=reconstruct) as seek, \
+                patch('dolly.controller.time.monotonic', side_effect=[0., 6.]):
+            self.c.start_selected_game_follow(FollowSettings(), player)
+        seek.assert_not_called()
+        self.assertTrue(self.c._follow_active)
+
+    def test_transient_free_observer_mode_waits_then_confirms_target(self):
+        from dolly.preload import PreloadError
+        player, target = self.select_fixture()
+        transition = PreloadError('observer mode 4')
+        transition.observer_mode = 4
+        target.sample_target.side_effect = [transition,
+            {'handle': player['handle'], 'mode': 2},
+            {'handle': player['handle'], 'mode': 2}]
+        with patch('dolly.follow_target.FollowTargetMonitor', return_value=target):
+            self.c.start_selected_game_follow(FollowSettings(), player)
+        self.assertTrue(self.c._follow_active)
+
+    def test_structural_target_failure_is_not_retried(self):
+        from dolly.preload import PreloadError
+        player, target = self.select_fixture()
+        target.sample_target.side_effect = PreloadError('observer handle serial differs')
+        with patch('dolly.follow_target.FollowTargetMonitor', return_value=target):
+            with self.assertRaisesRegex(PreloadError, 'serial differs'):
+                self.c.start_selected_game_follow(FollowSettings(), player)
+        self.assertEqual(target.sample_target.call_count, 1)
+        self.assertFalse(self.c._follow_active)
+
+    def test_mode4_timeout_restores_original_mode(self):
+        from dolly.preload import PreloadError
+        player, target = self.select_fixture()
+        self.console.values['citadel_spectator_mode'] = 0.
+        error = PreloadError('observer mode 4')
+        error.observer_mode = 4
+        target.sample_target.side_effect = error
+        with patch('dolly.follow_target.FollowTargetMonitor', return_value=target):
+            with self.assertRaisesRegex(RuntimeError, 'did not confirm'):
+                self.c.start_selected_game_follow(FollowSettings(), player)
+        self.assertFalse(self.c._follow_active)
+        self.assertEqual(self.console.values['citadel_spectator_mode'], 0.)
+        self.assertEqual(self.console.values[ENABLED], self.originals[ENABLED])
+        self.assertGreater(target.sample_target.call_count, 1)
+
+    def test_cancel_during_mode4_never_enables_rig(self):
+        from dolly.preload import PreloadError
+        player, target = self.select_fixture()
+        def cancel(**_):
+            self.c._stop_event.set()
+            error = PreloadError('observer mode 4')
+            error.observer_mode = 4
+            raise error
+        target.sample_target.side_effect = cancel
+        with patch('dolly.follow_target.FollowTargetMonitor', return_value=target):
+            with self.assertRaisesRegex(RuntimeError, 'cancelled'):
+                self.c.start_selected_game_follow(FollowSettings(), player)
+        self.assertFalse(self.c._follow_active)
+        self.assertFalse(any(e.startswith(ENABLED + ' 1') for e in self.console.events))
+        self.assertEqual(target.sample_target.call_count, 1)
+
     def test_rejected_native_follow_never_mutates_target_or_rig(self):
         player, _ = self.select_fixture()
         self.bridge.require_capability = Mock(side_effect=RuntimeError('Game Follow is unavailable'))

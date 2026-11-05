@@ -24,6 +24,22 @@ These are the update-flow checks, not a replacement release command. For another
 component, substitute its owning test file and include consumers of the changed
 contract. Tests import sibling fixtures by bare names: do not use `-t .`.
 
+Updater rollback and launcher/cleanup ownership have maintained source-side TLA+
+models and mutants. After
+installing Node 20 or newer, run these from the checkout root:
+
+```powershell
+npm ci --prefix tools/tla --ignore-scripts
+& $py tools/check_tla.py
+```
+
+The normal Windows builder runs the same check before native compilation. Model
+failures, surviving mutants and missing required configurations fail the check.
+Node and the pinned npm dependencies are development tools, not application
+runtime dependencies. [SPECS.md](../../SPECS.md) maps modeled actions to code and
+states the bounds. Keep those specs and the owning regression tests in sync;
+passing a hand-maintained spec does not automatically prove source correspondence.
+
 | Changed area | Include in the selected checks |
 |---|---|
 | Update discovery, consent or worker | Updater, consent, notice, release launcher and notes; settings when persistence changes |

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "cleanup omits shared installation lock",
+    "replace": [["UsesLock == Design = \"locked\"", "UsesLock == FALSE"]],
+    "expect": "UnfinishedJournalKept"
+  },
+  {
+    "name": "cleanup ignores pending recovery marker",
+    "replace": [["IF marker THEN CleanerFinish", "IF FALSE THEN CleanerFinish"]],
+    "expect": "NoRecoveryLoss"
+  },
+  {
+    "name": "cleanup discards an unfinished journal",
+    "replace": [["journal = \"applying\" \\/ ~workspace", "FALSE \\/ ~workspace"]],
+    "expect": "UnfinishedJournalKept"
+  }
+]

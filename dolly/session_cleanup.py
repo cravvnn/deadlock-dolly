@@ -119,7 +119,7 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
     if not overlay.exists() and not overlay.is_symlink():
         return False
     try:
-        _marker(overlay, paths, session_dir)
+        marker_record = _marker(overlay, paths, session_dir)
     except LaunchError:
         if not overlay.exists():
             return False  # The editor's exit thread may have finished first.
@@ -230,6 +230,13 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
         overlay.rmdir()
     except FileNotFoundError:
         pass
+    except OSError:
+        # A late file or held-open directory can defeat the final rmdir.
+        # Retain ownership evidence so a later preflight can preserve new files.
+        if overlay.is_dir() and _plain_ancestors(overlay) and not marker.exists():
+            from .file_ops import _atomic_write
+            _atomic_write(marker, (json.dumps(marker_record, indent=2) + "\n").encode("utf-8"))
+        raise
     if removed_reports and session_dir is not None:
         listed = sorted(removed_reports)
         _append_log(session_dir, "Removed game-written session report files with the temporary plugin directory: "

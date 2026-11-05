@@ -1,0 +1,52 @@
+[
+  {
+    "name": "unconditional reconstruction",
+    "replace": [
+      [
+        "sought' = moved",
+        "sought' = TRUE"
+      ]
+    ],
+    "expect": "NoRedundantSeek"
+  },
+  {
+    "name": "ignore camera readiness",
+    "replace": [
+      [
+        "/\\ ready /\\ mode = \"chase\"",
+        "/\\ TRUE /\\ mode = \"chase\""
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "ignore cancellation",
+    "replace": [
+      [
+        "/\\ pc = \"confirm\" /\\ ~cancelled /\\ identity",
+        "/\\ pc = \"confirm\" /\\ TRUE /\\ identity"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "ignore identity",
+    "replace": [
+      [
+        "/\\ pc = \"confirm\" /\\ ~cancelled /\\ identity",
+        "/\\ pc = \"confirm\" /\\ ~cancelled /\\ TRUE"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "accept free observer",
+    "replace": [
+      [
+        "/\\ ready /\\ mode = \"chase\"",
+        "/\\ ready /\\ mode # \"invalid\""
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  }
+]

@@ -324,9 +324,29 @@ class CleanupTests(unittest.TestCase):
             return rmdir(path, *args, **kwargs)
         with patch.object(Path, "rmdir", held_open), self.assertRaises(PermissionError):
             cleanup.remove_overlay(self.session.overlay_dir, self.paths, self.session.session_dir)
-        self.assertEqual(list(self.session.overlay_dir.iterdir()), [])
+        self.assertEqual([p.name for p in self.session.overlay_dir.iterdir()], [".dolly-session.json"])
         self.recover()
         self.assertFalse(self.session.overlay_dir.exists())
+
+    def test_late_unknown_file_retains_marker_and_does_not_block_next_recovery(self):
+        self.session.restore_gameinfo()
+        overlay = self.session.overlay_dir
+        marker = overlay / ".dolly-session.json"
+        late = overlay / "late-user-notes.txt"
+        unlink = Path.unlink
+        def arrive_after_marker_removal(path, *args, **kwargs):
+            result = unlink(path, *args, **kwargs)
+            if path == marker:
+                late.write_bytes(b"new user bytes")
+            return result
+        with patch.object(Path, "unlink", arrive_after_marker_removal), self.assertRaises(OSError):
+            cleanup.remove_overlay(overlay, self.paths, self.session.session_dir)
+        self.assertEqual(late.read_bytes(), b"new user bytes")
+        self.assertTrue(marker.is_file())
+        self.assertEqual(json.loads(marker.read_text())["session_dir"], str(self.session.session_dir))
+        self.recover()
+        self.assertEqual(late.read_bytes(), b"new user bytes")
+        self.assertTrue(marker.is_file())
 
     def test_empty_directory_without_marker_is_kept_while_mounted(self):
         for child in sorted(self.session.overlay_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):

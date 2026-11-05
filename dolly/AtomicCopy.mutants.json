@@ -1,0 +1,12 @@
+[
+  {
+    "name": "consume the rollback source during commit",
+    "replace": [["UNCHANGED availableBackups", "availableBackups' = {}"]],
+    "expect": "SourcePreserved"
+  },
+  {
+    "name": "publish an uncopied temporary",
+    "replace": [["temporary' = \"old\"", "temporary' = \"empty\""]],
+    "expect": "PublishedOriginal"
+  }
+]

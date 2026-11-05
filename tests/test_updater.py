@@ -158,8 +158,62 @@ class TransactionTests(unittest.TestCase):
         def fail(_): raise RuntimeError("bad new build")
         with self.assertRaisesRegex(RuntimeError, "bad new build"): w.install(self.plan, fail)
         self.assertEqual(self.snapshot(), self.before)
+        journal = json.loads((self.work / "journal.json").read_text())
+        for name, digest in journal["before"].items():
+            if digest is not None:
+                self.assertEqual((self.work / "backup" / name).read_bytes(), self.before[name])
+        with patch.object(w, "replace_file", side_effect=AssertionError("Restored files must not be recopied")):
+            w.rollback(self.plan)
+        self.assertEqual(self.snapshot(), self.before)
+
+    def test_interrupted_rollback_keeps_originals_for_retry(self):
+        restore = w.replace_file
+        def interrupted(source, target):
+            restore(source, target)
+            raise RuntimeError("rollback interrupted")
+        def fail_health(_): raise RuntimeError("bad new build")
+        with patch.object(w, "replace_file", side_effect=interrupted):
+            with self.assertRaisesRegex(RuntimeError, "rollback interrupted"):
+                w.install(self.plan, fail_health)
+        self.assertTrue((self.target / w.PENDING).exists())
+        journal = json.loads((self.work / "journal.json").read_text())
+        self.assertEqual(journal["state"], "applying")
+        for name, digest in journal["before"].items():
+            if digest is not None:
+                self.assertEqual((self.work / "backup" / name).read_bytes(), self.before[name])
         w.rollback(self.plan)
         self.assertEqual(self.snapshot(), self.before)
+        self.assertFalse((self.target / w.PENDING).exists())
+
+    def test_process_exit_before_rollback_commit_keeps_backup_and_can_retry(self):
+        def fail_health(_): raise RuntimeError("bad new build")
+        with patch.object(w, "rollback", side_effect=RuntimeError("defer recovery")):
+            with self.assertRaisesRegex(RuntimeError, "defer recovery"):
+                w.install(self.plan, fail_health)
+        plan_path = self.work / "plan.json"
+        w.atomic_json(plan_path, self.plan)
+        before_crash = self.snapshot()
+        script = '''import json,os,sys
+from pathlib import Path
+from dolly import update_worker as w
+w._replace_retrying=lambda *args,**kwargs:os._exit(77)
+w.rollback(json.loads(Path(sys.argv[1]).read_text()))
+'''
+        result = subprocess.run([sys.executable, "-c", script, str(plan_path)], timeout=30)
+        self.assertEqual(result.returncode, 77)
+        temporary = list(self.target.rglob(".dolly-new-*"))
+        self.assertEqual(len(temporary), 1)
+        self.assertEqual({name: data for name, data in self.snapshot().items()
+                          if not Path(name).name.startswith(".dolly-new-")}, before_crash)
+        journal = json.loads((self.work / "journal.json").read_text())
+        for name, digest in journal["before"].items():
+            if digest is not None:
+                self.assertEqual((self.work / "backup" / name).read_bytes(), self.before[name])
+        w.rollback(self.plan)
+        # An abrupt process exit cannot run finally. The unowned temporary is
+        # separate from restored application files and is not a recovery source.
+        self.assertEqual({name: data for name, data in self.snapshot().items()
+                          if not Path(name).name.startswith(".dolly-new-")}, self.before)
 
     def test_atomic_json_failure_leaves_no_temporary_files(self):
         target = self.root / "state.json"
@@ -252,8 +306,9 @@ install(json.loads(Path(sys.argv[1]).read_text()),replace=cut_power)
             install.assert_not_called()
             launch.assert_not_called()
             network.assert_not_called()
+        self.assertTrue((self.target / ".dolly-update.lock").is_file())
         self.assertEqual({name: data for name, data in self.snapshot().items()
-                          if not name.startswith(work.name + "/")}, self.before)
+                          if name != ".dolly-update.lock" and not name.startswith(work.name + "/")}, self.before)
         self.assertIsNone(w.pending_work(self.target))
         self.assertEqual(json.loads((work / "journal.json").read_text())["state"], "rolled_back")
 

@@ -1,0 +1,3 @@
+[
+ {"name":"omit marker repair after final directory removal fails", "replace":[["IF Repair THEN \"stage\" ELSE \"retry\"", "\"retry\""]], "expect":"RetryRecognizable"}
+]
