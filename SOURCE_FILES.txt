@@ -1080,6 +1080,7 @@ dolly/PlaybackIdentity.tla
 dolly/PlaybackIdentity.cfg
 dolly/PlaybackIdentity.mutants.json
 docs/RELEASE_NOTES_0.7.4-beta.md
+docs/RELEASE_NOTES_0.7.5-beta.md
 dolly/AtomicMode.tla
 dolly/AtomicModeApi.tla
 dolly/AtomicMode.cfg

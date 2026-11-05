@@ -1,3 +1,13 @@
+### Deadlock Dolly v0.7.5-beta
+
+**0.7.5-beta**
+
+- **Players exports recognize normal capture progress.** *Before:* replay queries could time out and stop a Players export even while capture was progressing normally. *After:* Dolly recognizes progress from its active capture and avoids redundant replay queries, retaining ownership, freshness and hang checks.
+
+- **Safer configuration writes.** *Before:* a file-mode failure could occur after new configuration bytes were published, and a cleanup access error could hide the original write result. *After:* Dolly prepares the requested mode before replacement and preserves the original result when temporary-file cleanup encounters an access error.
+
+- **Complete backups of invalid settings.** *Before:* an interrupted settings backup could leave a partial file with a completed-backup name. *After:* Dolly publishes the backup only after the entire original has been copied and synced, and refuses to overwrite an existing backup.
+
 ### Deadlock Dolly v0.7.4-beta
 
 **0.7.4-beta**
@@ -683,7 +693,7 @@ Full details: [0.6.32 release notes](RELEASE_NOTES_0.6.32-alpha.md).
 **0.6.31-alpha**
 
 - **Works with the October 8 Deadlock hotfix (6765).** *Before:* the updated client changed `client.dll` and `server.dll`, and Dolly refused the build so the replay editor would not start. *After:* native camera, replay startup, Game Follow and Players/Depth work on 6765, and the bundled cvar unlocker is rebuilt for the new server.
-- **Export a follow camera without turning on the replay HUD.** *Before:* recording a Player POV (follow camera) required pressing F9 and selecting a hero, and starting the export stopped the Game Follow and brought the replay HUD back. *After:* pick a hero with Game Follow (the replay HUD stays hidden) and record or export straight away — the follow keeps running while you record.
+- **Export a follow camera without turning on the replay HUD.** *Before:* recording a Player POV (follow camera) required pressing F9 and selecting a hero, and starting the export stopped the Game Follow and brought the replay HUD back. *After:* pick a hero with Game Follow (the replay HUD stays hidden) and record or export straight away â€” the follow keeps running while you record.
 - **Busier fights no longer break a Players capture.** *Before:* a Players layer capture failed with "failed player layer exceeded 64 draws per image; incomplete output rejected" when a frame contained more than 64 player draws. *After:* the per-image budget is doubled to 128 draws, so crowded moments capture completely.
 
 Full details: [0.6.31 release notes](RELEASE_NOTES_0.6.31-alpha.md).
@@ -860,7 +870,7 @@ Full details: [0.6.13 release notes](RELEASE_NOTES_0.6.13-alpha.md).
 
 Full details: [0.6.12 release notes](RELEASE_NOTES_0.6.12-alpha.md).
 
-## 0.6.11 alpha — Replay graphics profiles, capture fixes and compatibility hardening
+## 0.6.11 alpha â€” Replay graphics profiles, capture fixes and compatibility hardening
 
 **0.6.11-alpha**
 
@@ -871,14 +881,14 @@ Full details: [0.6.12 release notes](RELEASE_NOTES_0.6.12-alpha.md).
 
 Full overnight changes, usage and validation limits: [0.6.11 release notes](RELEASE_NOTES_0.6.11-alpha.md).
 
-## 0.6.10 alpha — Game Follow and shot playback on build 6745
+## 0.6.10 alpha â€” Game Follow and shot playback on build 6745
 
 **0.6.10-alpha**
 
 - **Game Follow reads the current player view correctly.** *Before:* selecting a hero could fail with "observer services object type differs (got null)." *After:* Dolly uses the verified observer-services field for build 6745 while retaining its player and replay checks.
 - **Fix the health-panel check that blocked shot playback.** *Before:* the same outdated field left health-panel restoration pending, and starting a shot reported "Previous settings still need restoration." *After:* the check uses the current game layout so a valid hero view can finish restoration and unblock playback.
 
-## 0.6.9 alpha — Deadlock build 6745, audio restored
+## 0.6.9 alpha â€” Deadlock build 6745, audio restored
 
 **0.6.9-alpha**
 
@@ -886,34 +896,34 @@ Full overnight changes, usage and validation limits: [0.6.11 release notes](RELE
 - **Game audio works again on the current build.** *Before:* clip audio was disabled after the soundsystem changed. *After:* the reviewed audio hooks are relocated and enabled for the current soundsystem.
 - **Renderer diagnostics follow the current renderer.** *Before:* the optional renderer-pressure diagnostics stopped on the newer renderer. *After:* the reviewed layout is mapped for the current rendersystemdx11.
 
-## 0.6.8 alpha — Game Follow for every hero
+## 0.6.8 alpha â€” Game Follow for every hero
 
 **0.6.8-alpha**
 
 - **Game Follow works for every hero again.** *Before:* starting Game Follow on some heroes (for example Chrono/Paradox or Rat King) stopped with "observer object type differs" because their selected pawn uses the reviewed familiar/clone pawn class. *After:* the whole reviewed pawn family is accepted, so Follow attaches to those heroes too.
 - **Clearer Game Follow errors.** *Before:* every object mismatch reported the same sentence. *After:* the message names the failing object (controller, pawn, services or selected player) and the observed class, so a genuine build mismatch is actionable.
 
-## 0.6.7 alpha — Deadlock build 6742 and clean damage/death effects
+## 0.6.7 alpha â€” Deadlock build 6742 and clean damage/death effects
 
 **0.6.7-alpha**
 
 - **Support for the newest Deadlock update.** *Before:* after Deadlock updated to build 6742, Dolly refused the new build. *After:* the native camera, automatic replay loading, Game Follow and health verification, the particle engine and the cvar unlocker are reviewed and enabled for build 6742.
 - **Particles and clean damage/death effects on 6742.** *Before:* particle effects could be unavailable, and selecting a hero could carry their death grayscale and red damage vignette into Dolly's camera on the new build. *After:* effects render normally and the selected-player damage/death overlays stay out of Dolly's camera while it owns the view.
 
-## 0.6.6 alpha — particle effects return and the F9 handoff keeps the replay UI
+## 0.6.6 alpha â€” particle effects return and the F9 handoff keeps the replay UI
 
 **0.6.6-alpha**
 
 - **Particle effects show again on the current Deadlock build.** *Before:* effects like confetti could stop appearing after Deadlock updated to build 6731. *After:* they render normally again.
 - **F9 keeps the replay controls available when the health display cannot be verified.** *Before:* pressing F9 could leave you without the replay timeline, HUD or cursor when the game view could not be checked. *After:* the replay UI and cursor return so you can pick a hero, and only the health display that cannot be verified stays safely hidden until it can be shown.
 
-## 0.6.5 alpha — F9 stays reliable when the game view cannot be verified
+## 0.6.5 alpha â€” F9 stays reliable when the game view cannot be verified
 
 **0.6.5-alpha**
 
 - **F9 no longer stops on an unverifiable stock hero handoff.** *Before:* returning to the game with F9 could show "Saved spectator hero handoff remains pending" or a health-HUD camera error when the game's own spectator view was not a settled gameplay camera, for example while a replay target change was still settling. *After:* the replay UI and cursor return normally, the health panel stays safely hidden, and the saved hero is restored on a later handoff once a valid hero view exists. No HUD reveal is forced and original settings are retained.
 
-## 0.6.4 alpha — Player lists, the replay timeline and the newest Deadlock update
+## 0.6.4 alpha â€” Player lists, the replay timeline and the newest Deadlock update
 
 **0.6.4-alpha**
 
@@ -921,7 +931,7 @@ Full overnight changes, usage and validation limits: [0.6.11 release notes](RELE
 - **Bone Picker and Game Follow read player IDs again.** *Before:* the player list came up empty, so those cameras could not select a hero on the new build. *After:* the reviewed spectator-to-player chain is relocated for build 6731 and both cameras resolve the selected player again.
 - **F9 brings the replay timeline back.** *Before:* pressing F9 returned the camera to the game but the demo overlay stayed hidden, so the timeline could not be scrubbed. *After:* F9 reopens Deadlock's replay UI and mouse cursor, and Stop still restores your original settings.
 
-## 0.6.3 alpha — Sessions keep going through Deadlock's own assertion dialogs
+## 0.6.3 alpha â€” Sessions keep going through Deadlock's own assertion dialogs
 
 **0.6.3-alpha**
 
@@ -929,21 +939,21 @@ Full overnight changes, usage and validation limits: [0.6.11 release notes](RELE
 - **Native depth of field checks the engine's shader support.** *Before:* the engine's native depth-of-field pass could use the missing-texture fallback when its shaders were disabled or stale. *After:* Dolly verifies the shader setting when native depth of field is first used, reloads the depth-of-field shaders when it must change that setting, restores the setting when you disconnect, and warns you when the game itself cannot compile the effect (which shows as a magenta/black checkerboard).
 - **Support for the October 1 Deadlock update.** *Before:* after Deadlock updated, Dolly refused the new build and asked for a newer release. *After:* the native camera, automatic replay loading and the cvar unlocker are reviewed and enabled for Deadlock build 6728 (Steam build 25658155).
 
-## 0.6.2 alpha — Launch recovery for protected gameinfo files and stale local UI files
+## 0.6.2 alpha â€” Launch recovery for protected gameinfo files and stale local UI files
 
 **0.6.2-alpha**
 
 - **Launch when `gameinfo.gi` is read-only.** *Before:* Steam verification or a modding guide could mark the file read-only, and Dolly's launch failed with "Access is denied" before the game started. *After:* Dolly swaps the file in place and restores the original bytes with the read-only attribute intact.
 - **Launch after a Deadlock update with local UI files.** *Before:* the editing configuration still mounted retired addon paths, so a stale loose file such as an old HUD `hud.xml` could crash the updated game during startup, before Dolly could connect. *After:* the editing configuration matches the official mount list, and a launch names any uncompiled Panorama files still in the game folder instead of only reporting an exit code.
 
-## 0.6.1 alpha — Anchored camera markers and a startup fallback for a missing preload
+## 0.6.1 alpha â€” Anchored camera markers and a startup fallback for a missing preload
 
 **0.6.1-alpha**
 
 - **Steady saved-camera markers.** *Before:* camera boxes could deform and drift as framing, aspect or lens changed. *After:* markers keep the same anchored position and a consistent shape at any view, including path preview.
 - **Startup when Deadlock's intro never appears.** *Before:* if the game never ran its hideout intro, no map/shader preload could start, Dolly waited out the full timeout and no replay loaded. *After:* Dolly stops the automatic check early, explains what happened and offers to load the selected replay without the preload check; the game session stays open.
 
-## 0.6.0 alpha — In-game camera editing, Undo/Redo and current Deadlock support
+## 0.6.0 alpha â€” In-game camera editing, Undo/Redo and current Deadlock support
 
 **0.6.0-alpha**
 
@@ -1047,7 +1057,7 @@ upgrading. This remains an alpha for local replay editing; keep `-insecure` in
 Deadlock's launch options while using Dolly. The repeated intro during shot
 preparation stays visible until a true skip has been verified.
 
-## 0.5.46 alpha — Automatic take validation and a complete source export
+## 0.5.46 alpha â€” Automatic take validation and a complete source export
 
 - Finished layered exports are validated automatically: Dolly checks the take
   folder for missing or zero-frame depth output, incomplete manifests, missing
@@ -1057,7 +1067,7 @@ preparation stays visible until a true skip has been verified.
   `dolly/*.py`, test, tool and packaging file must be listed, and the missing
   `tests/test_layer_modes.py` was restored to the archive.
 
-## 0.5.45 alpha — Deadlock update 2026-09-25 (build 6701) compatibility
+## 0.5.45 alpha â€” Deadlock update 2026-09-25 (build 6701) compatibility
 
 - The native camera accepts the 2026-09-25 Deadlock update: the client was
   re-reviewed offline, every reviewed camera function is unchanged, and the
@@ -1069,7 +1079,7 @@ preparation stays visible until a true skip has been verified.
 - The editing configuration review is refreshed for the new client hash, so
   one-click startup continues to work after the update.
 
-## 0.5.44 alpha — Stability hardening and crash diagnostics
+## 0.5.44 alpha â€” Stability hardening and crash diagnostics
 
 - Dolly now warns when a paused replay keeps committing memory, so a long
   paused edit can be saved and the session restarted before the engine runs
@@ -1090,7 +1100,7 @@ preparation stays visible until a true skip has been verified.
   flags zero-frame depth output (the missing/ALWAYS signature), incomplete
   manifests, missing masters and decoded-audit frame/timestamp failures.
 
-## 0.5.43 alpha — Camera recovery and DOF controls
+## 0.5.43 alpha â€” Camera recovery and DOF controls
 
 - Return to the editor after native camera release or an attach failure without
   getting stuck behind repeated camera-unavailable errors. Recovery clears only
@@ -1100,7 +1110,7 @@ preparation stays visible until a true skip has been verified.
   DOF modes prevents range overrides from masking Citadel blur, preserves saved
   range curves, and keeps the shared master switch enabled for the active mode.
 
-## 0.5.40 alpha — Copy error details from error dialogs
+## 0.5.40 alpha â€” Copy error details from error dialogs
 
 - Error dialogs now include a **Copy error details** button next to **OK**. One
   click copies the Dolly version, the failed operation and the exact error text,
@@ -1109,7 +1119,7 @@ preparation stays visible until a true skip has been verified.
   changes. Startup failures that occur before the editor window exists still use
   the original dialog.
 
-## 0.5.39 alpha — Automatic hideout and verified preload startup
+## 0.5.39 alpha â€” Automatic hideout and verified preload startup
 
 - Dolly advances the initial click-to-continue screen automatically, verifies
   that dashboard map/shader preloading has started and completed, then opens
@@ -1120,7 +1130,7 @@ preparation stays visible until a true skip has been verified.
   Dolly finish loading the hideout and demo without manually navigating menus
   or loading a replay. No frame-time or crash-rate improvement is claimed.
 
-## 0.5.37 alpha — Select DirectX 11 for the Native editor
+## 0.5.37 alpha â€” Select DirectX 11 for the Native editor
 
 - Native replay launches now explicitly select DirectX 11. Previously a game
   using Vulkan could load the replay but time out waiting for the DX11 panel.
@@ -1130,7 +1140,7 @@ preparation stays visible until a true skip has been verified.
   the fixed launcher selected DX11 and opened the paused editor with input ready.
   This does not address unrelated memory-exhaustion or depth-export failures.
 
-## 0.5.34 alpha — Crash reports that explain themselves
+## 0.5.34 alpha â€” Crash reports that explain themselves
 
 - Deadlock crash dumps are now included with diagnostics. Before, a crash wrote
   its dump beside the game executable, but the support ZIP searched only the
@@ -1146,12 +1156,12 @@ preparation stays visible until a true skip has been verified.
   miss shot frames on a busy machine. Dolly refuses the take instead of writing
   a bad layer; retry at a lower FPS or at 0.5x export speed.
 
-## 0.5.33 alpha — Selecting a ReShade runtime works immediately
+## 0.5.33 alpha â€” Selecting a ReShade runtime works immediately
 
 - Selecting a runtime DLL now takes effect immediately: the card remembers the
   path, so the next session can enable it automatically, and the status names
   the one remaining step (launch a replay, then press Enable ReShade). Before,
-  browsing filled only the text box — the path was never saved, the status
+  browsing filled only the text box â€” the path was never saved, the status
   stayed "Choose a runtime DLL", and Enable stayed greyed until a live replay,
   which made a perfectly good DLL look rejected.
 - **Enable ReShade** is pressable as soon as a valid runtime is selected, even
@@ -1161,11 +1171,11 @@ preparation stays visible until a true skip has been verified.
   diagnostics below, but the path was still only remembered after a successful
   enable, so the card never acknowledged the selection.
 
-## 0.5.32 alpha — ReShade runtime diagnostics
+## 0.5.32 alpha â€” ReShade runtime diagnostics
 
 - The ReShade card now says why a selected runtime cannot be used. When the
-  saved DLL is gone — moved, cleaned, quarantined, or replaced with the folder
-  it lived in — Dolly names the missing path and states that it never moves or
+  saved DLL is gone â€” moved, cleaned, quarantined, or replaced with the folder
+  it lived in â€” Dolly names the missing path and states that it never moves or
   deletes the runtime. Before, the card only said "Choose the 64-bit ReShade
   runtime DLL", which read as if Dolly had removed it.
 - A runtime kept inside the Dolly folder is refused with instructions to move
@@ -1174,7 +1184,7 @@ preparation stays visible until a true skip has been verified.
   disappear between versions even though Dolly itself never touches it.
 - Reported by a user whose runtime stopped being recognized after updating.
 
-## 0.5.31 alpha — Play a shot that starts at a recorded-packet boundary
+## 0.5.31 alpha â€” Play a shot that starts at a recorded-packet boundary
 
 - **Play shot no longer fails when the first camera tick sits one tick after
   the replay's recorded packet.** Reported with a 45-minute replay: a camera
@@ -1196,7 +1206,7 @@ preparation stays visible until a true skip has been verified.
   reporting the renderer detail, so a stuck replay is distinguishable from a
   window that is not rendering.
 
-## 0.5.30 alpha — Depth and layer exports at 4K
+## 0.5.30 alpha â€” Depth and layer exports at 4K
 
 - Depth exports now work when the game renders the scene below the window size.
   With upscaling or resolution scaling enabled, the game's scene target is
@@ -1224,7 +1234,7 @@ preparation stays visible until a true skip has been verified.
   color recording unchanged. Live 4K verification in the game remains
   outstanding.
 
-## 0.5.29 alpha — Confetti rain and player POV export
+## 0.5.29 alpha â€” Confetti rain and player POV export
 
 - Add **confetti rain driven by the game's native particle engine**. Enable it
   in the Export tab or the in-game card, choose a spawn height between 100 and
@@ -1246,7 +1256,7 @@ preparation stays visible until a true skip has been verified.
   5-second color+depth camera-path export with no lingering particles.
 - Thanks to s34532 for the native confetti rain implementation.
 
-## 0.5.28 alpha — Editing configuration and in-game camera reset
+## 0.5.28 alpha â€” Editing configuration and in-game camera reset
 
 - Launch with Dolly's reviewed editing gameinfo so competitive framing and
   rendering overrides do not carry into replay editing. Back up the user's
@@ -1263,7 +1273,7 @@ preparation stays visible until a true skip has been verified.
   preserved the current pose and DOF track, and exact configuration/preferences
   restoration and temporary deployment cleanup passed.
 
-## 0.5.26 alpha — More complete player-layer exports
+## 0.5.26 alpha â€” More complete player-layer exports
 
 - Player-layer capture matches character parts to the data actually submitted
   for rendering, rather than data being prepared for a later frame. Recycled
@@ -1282,7 +1292,7 @@ preparation stays visible until a true skip has been verified.
   detection and Seven alpha MOV encoding. Full moving-shot validation, the
   original user replays, and Rem's summoned companions remain follow-up work.
 
-## 0.5.25 alpha — Hero bone cameras and attachment recovery
+## 0.5.25 alpha â€” Hero bone cameras and attachment recovery
 
 - Head and right-hand camera selection, replay playback and detach were checked
   on Holliday, Abrams, Rem, Yamato, Mo and Krill, Drifter, Lash, Graves, Wraith,
@@ -1301,7 +1311,7 @@ preparation stays visible until a true skip has been verified.
 - Fixed a buffer overread in bone-name decoding. Diagnostic exports now include
   attachment selection, roster and bone catalog details.
 
-## 0.5.24 alpha — One camera workspace and precise replay stepping
+## 0.5.24 alpha â€” One camera workspace and precise replay stepping
 
 - In-game Camera combines replay playback, camera selection, a marked shot
   timeline, Seek here and path guides. The separate Replay tab and Between
@@ -1311,7 +1321,7 @@ preparation stays visible until a true skip has been verified.
   is shown. If a requested tick is absent from the recording, stepping uses
   the nearest recorded tick in that direction and reports the actual movement.
 
-## 0.5.23 alpha — In-between shot editing and shared UI
+## 0.5.23 alpha â€” In-between shot editing and shared UI
 
 - In-game **Camera > Between cameras** adds a shot-time slider and **Seek here**.
   Choose a time, then seek once to apply the replay time and complete shot view.
@@ -1349,7 +1359,7 @@ preparation stays visible until a true skip has been verified.
 - The Cameras inspector scrolls, so the camera-source, DOF and path cards stay
   reachable on smaller windows instead of falling below the bottom.
 
-## 0.5.22 alpha — Layer takes stay independent
+## 0.5.22 alpha â€” Layer takes stay independent
 
 - Recording a World layer first hides the skinned objects, and the players
   capture never reset those flags: it armed against a scene with no characters,
@@ -1360,7 +1370,7 @@ preparation stays visible until a true skip has been verified.
 - Verified live by reproducing that order exactly: with the World hiding applied
   first, the players capture sealed 57 frames and encoded its alpha master.
 
-## 0.5.21 alpha — Players-only layer export
+## 0.5.21 alpha â€” Players-only layer export
 
 - The **Players** layer records real players plus their weapons, attachments and
   carried objects, with NPCs and creeps left out, while the untouched world still
@@ -1384,10 +1394,10 @@ preparation stays visible until a true skip has been verified.
   17b profile still reports the build as supported and a fresh live take
   captured and encoded cleanly.
 
-## 0.5.20 alpha — September 17 game compatibility
+## 0.5.20 alpha â€” September 17 game compatibility
 
 - Adds the reviewed compatibility profile for the September 17 client builds
-  (buildids 25376188 and the 25379260 hotfix, client `d1ee16fc…`). Engine modules
+  (buildids 25376188 and the 25379260 hotfix, client `d1ee16fcâ€¦`). Engine modules
   (engine2, tier0, scenesystem, rendersystemdx11) are unchanged between the two
   builds, and the scanner reports the game as supported. Capture, playback and
   export were re-verified live on the current build.
@@ -1409,7 +1419,7 @@ preparation stays visible until a true skip has been verified.
 - Verification behind this release: the capture is part of the native bridge
   binary (16/16 native tests) and the full Python suite passes (1156 tests).
 
-## 0.5.18 alpha — Replay tick-rate alignment
+## 0.5.18 alpha â€” Replay tick-rate alignment
 
 - Replay-timed cameras now use the open replay's own tick rate from its
   `CDemoFileInfo`. Matchmaking replays are recorded at 32 ticks/second as well
@@ -1424,11 +1434,11 @@ preparation stays visible until a true skip has been verified.
 - Playback of a mismatched shot warns in the status line, and diagnostics report
   the detected replay tick rate.
 
-## 0.5.17 alpha — Depth takes skip transition frames
+## 0.5.17 alpha â€” Depth takes skip transition frames
 
 - A depth take now skips presented frames that have no verified scene pass yet
-  — for example a cleared scene target or a full-viewport `ALWAYS` depth write
-  during a loading/transition frame — instead of failing on the first frame
+  â€” for example a cleared scene target or a full-viewport `ALWAYS` depth write
+  during a loading/transition frame â€” instead of failing on the first frame
   with `scene result=missing why=depth function=ALWAYS`. The skip is bounded
   and stops at the first captured frame; any scene failure after that still
   stops the take closed. Reported case: a 1920x1080 60 FPS take failed on its
@@ -1436,7 +1446,7 @@ preparation stays visible until a true skip has been verified.
 - Zero-frame diagnostics now include the transition-frame skip count
   (`scene-skip=` in the capture summary).
 
-## 0.5.16 alpha — Depth guard and encoder diagnostics
+## 0.5.16 alpha â€” Depth guard and encoder diagnostics
 
 - Keep a verified scene-depth frame when a full-viewport `EQUAL` depth write
   targets the chosen scene texture. An EQUAL test with writes can only store
@@ -1452,10 +1462,10 @@ preparation stays visible until a true skip has been verified.
   disabled state and re-asserts it after the recovery that recording
   preparation performs, so a take started with glow off stays off.
 
-## 0.5.15 alpha — September 16 Deadlock build support
+## 0.5.15 alpha â€” September 16 Deadlock build support
 
 - Support the September 16, 2026 Deadlock client (`client.dll`
-  `472dad57…`): refresh the reviewed compatibility profile, the bundled manifest
+  `472dad57â€¦`): refresh the reviewed compatibility profile, the bundled manifest
   and the generated native profile table, and rebuild the native helper against
   it. `server.dll` changed too; `scenesystem.dll`, `rendersystemdx11.dll`,
   `tier0.dll`, `engine2.dll` and `gameinfo.gi` are unchanged by this update.
@@ -1467,7 +1477,7 @@ preparation stays visible until a true skip has been verified.
   render-fraction observation is recorded for it, matching the rule that a
   clock-field review is never inherited across client hashes.
 
-## 0.5.14 alpha — Package privacy and depth diagnostics
+## 0.5.14 alpha â€” Package privacy and depth diagnostics
 
 - Build the Windows package from an explicit file list that never includes
   runtime `logs/`, demos, recordings or staged update folders, so a folder that
@@ -1477,7 +1487,7 @@ preparation stays visible until a true skip has been verified.
   (for example `why=depth function=LESS`), so a failed depth take identifies the
   offending pass from its own message instead of only reporting "depth function".
 
-## 0.5.13 alpha — Safe health-bar toggle
+## 0.5.13 alpha â€” Safe health-bar toggle
 
 - Restore the health-bar toggle to the two live-verified switches
   (`citadel_healthbars_enabled` and `citadel_unit_status_use_new`), written one
@@ -1488,7 +1498,7 @@ preparation stays visible until a true skip has been verified.
   switches are never touched. Exact prior values are still snapshotted and
   restored on the next press.
 
-## 0.5.12 alpha — In-folder updates and smoother recovery
+## 0.5.12 alpha â€” In-folder updates and smoother recovery
 
 - Keep update downloads, staging and backups in a `.dolly-update-*` folder
   inside the Dolly folder instead of beside it; the next launch removes the
@@ -1500,12 +1510,12 @@ preparation stays visible until a true skip has been verified.
   a hand-built native DLL) instead of refusing the update; a failed startup
   check still restores it through rollback.
 
-## 0.5.11 alpha — Live replay speed and health-bar master
+## 0.5.11 alpha â€” Live replay speed and health-bar master
 
 - Make **Playback speed** apply immediately: changing it in-game or on the
   desktop updates the replay's demo timescale while a replay is playing or
   paused, so heavy-effect shots can be reviewed in slow motion without
-  restarting. Stop / restore still returns a Dolly-owned speed to 1×, and the
+  restarting. Stop / restore still returns a Dolly-owned speed to 1Ã—, and the
   update rate still requires a stopped shot.
 - Rework the health-bar button as **Toggle health bars**, a master hide/restore
   for unit, HUD and objective bars (`citadel_unit_status_enabled`,
@@ -1514,7 +1524,7 @@ preparation stays visible until a true skip has been verified.
   the next press. The old style switches are no longer touched and bar glow
   stays with **Toggle Citadel glow**.
 
-## 0.5.10 alpha — Citadel controls
+## 0.5.10 alpha â€” Citadel controls
 
 - Add in-game Camera-tab buttons under Clear ragdolls: **Toggle Citadel glow**
   (boss/player/trooper glow switches plus health-bar glow), **Healthbar
@@ -1524,7 +1534,7 @@ preparation stays visible until a true skip has been verified.
 - Rename the native DOF card to **Native Depth of Field** and add a **Citadel
   Depth of Field** card to the in-game Lens tab: an Enable DOF switch
   (`r_citadel_depthoffield_enable` with `r_depth_of_field`) and sensor-size
-  and focus-distance sliders on the engine's documented bounds (0.5–3, 0–10000
+  and focus-distance sliders on the engine's documented bounds (0.5â€“3, 0â€“10000
   with a logarithmic focus scale).
 - Mirror the Citadel DOF card on the desktop Camera tab. Sliders author the
   shot at the playhead and apply it through the existing paused preview, so
@@ -1536,7 +1546,7 @@ preparation stays visible until a true skip has been verified.
   the game executable. While events are paused, capture waits and the ReShade
   status explains why instead of stopping the runtime.
 
-## 0.5.9 alpha — Export flow wording and launcher notes
+## 0.5.9 alpha â€” Export flow wording and launcher notes
 
 - Clarify the layered export flow in the Export panel: the color video records
   first, ticked passes are extra takes that follow automatically, and the
@@ -1550,7 +1560,7 @@ preparation stays visible until a true skip has been verified.
   The `-insecure` launch-option advice protects the temporary plugin-mount
   window, not a supported way to attach to a manually launched game.
 
-## 0.5.8 alpha — Export fixes, ReShade depth and crash dumps
+## 0.5.8 alpha â€” Export fixes, ReShade depth and crash dumps
 
 - Keep each new export take beside the take tree instead of nesting it inside
   the previous take folder, and log the alpha master path when a layer combine
@@ -1567,18 +1577,18 @@ preparation stays visible until a true skip has been verified.
   target count for the frame being captured rather than a stale reason.
 - Include the newest Deadlock breakpad minidumps in exported diagnostics.
 
-## 0.5.7 alpha — Wireframe-matched controls and manual builds
+## 0.5.7 alpha â€” Wireframe-matched controls and manual builds
 
 - Match the desktop and in-game panels to the wireframe layout.
 - Keep Windows builds manual and fix updater handling for short install paths.
 
-## 0.5.6 alpha — Embedded updates and launcher-first desktop
+## 0.5.6 alpha â€” Embedded updates and launcher-first desktop
 
 - Show the startup update check from Dolly.exe itself.
 - Move the desktop to the launcher-first layout with Camera, Lens and Export
   panels.
 
-## 0.5.5 alpha — Depth master, layer takes and verified updates
+## 0.5.5 alpha â€” Depth master, layer takes and verified updates
 
 - Record an optional paired depth master beside the color video: a 10-bit
   ProRes `.mov`, an optional float EXR sequence and a normalized preview video.
@@ -1589,7 +1599,7 @@ preparation stays visible until a true skip has been verified.
 - Fix scroll-wheel framing anchoring and show a dialog when a background take
   fails.
 
-## 0.5.4 alpha — Recorded-shot metadata and stability
+## 0.5.4 alpha â€” Recorded-shot metadata and stability
 
 - Write `<video>.shot.json` next to a recording that contains a native shot:
   exact first/last encoded frame, replay time, fps, fixed-step flag and frame
@@ -1602,7 +1612,7 @@ preparation stays visible until a true skip has been verified.
 - Add the tested live-depth ownership contract (default-off) ahead of the
   opt-in depth export.
 
-## 0.5.3 alpha — Compatibility scanner and game-update profiles
+## 0.5.3 alpha â€” Compatibility scanner and game-update profiles
 
 - Add `native/profiles/manifest.json` as the single source of truth for
   accepted `client.dll`, `engine2.dll` and `tier0.dll` hashes, shared by the
@@ -1629,7 +1639,7 @@ preparation stays visible until a true skip has been verified.
 - Add portable wildcard-scanner tests and compatibility scanner tests. Retain
   the camera hook, interpolation, recording and ReShade behavior.
 
-## 0.5.2 alpha — 120 FPS recording
+## 0.5.2 alpha â€” 120 FPS recording
 
 - Added 120 FPS alongside 30/60 in Export, command transport and the native encoder.
 - Added 120 FPS cadence, protocol, controller and Windows MP4 metadata regressions.
@@ -1637,7 +1647,7 @@ preparation stays visible until a true skip has been verified.
 - Retains the 0.5.1 recording handoff fix and existing camera/ReShade integration.
 - Depth, hero-only and world-only exports require further renderer integration and are not shipped in this build.
 
-## 0.5.1 alpha — Recording handoff
+## 0.5.1 alpha â€” Recording handoff
 
 - Recording follows the verified native session, independently of manual camera input.
 - Transient camera readiness changes and returning to desktop controls no longer finish an active MP4.
@@ -1645,7 +1655,7 @@ preparation stays visible until a true skip has been verified.
 - Added a Windows Present/encoder regression for camera handoffs and focus changes.
 - Camera movement, interpolation and ReShade API remain unchanged.
 
-## 0.5.0 alpha — MP4 and ReShade
+## 0.5.0 alpha â€” MP4 and ReShade
 
 - Real-time, video-only H.264 MP4 capture at 30/60 FPS and current SDR game resolution.
 - Bounded GPU/CPU queues, encoder worker, missed-slot reporting, exclusive output creation and finalization on stop/focus loss.
@@ -1655,7 +1665,7 @@ preparation stays visible until a true skip has been verified.
 - REPLAY home heading. Camera hook, interpolation and timing remain unchanged.
 - Fixed-step rendering, audio, depth-dependent ReShade shaders and separate layer export are not included.
 
-## 0.4.8 alpha — Recorded packets and frozen native preview
+## 0.4.8 alpha â€” Recorded packets and frozen native preview
 
 - Read a bounded, cached index of completed Source 2 packet records. Native
   shot starts between packets explicitly seek the next indexed packet and
@@ -1672,7 +1682,7 @@ preparation stays visible until a true skip has been verified.
   slowdown and overflow are not fixed here. General legacy calibration remains
   strict, and deterministic export still needs preroll for sparse recordings.
 
-## 0.4.7 alpha — Paused flight return and replay names
+## 0.4.7 alpha â€” Paused flight return and replay names
 
 - Closing F8 on a paused held/completed camera requests the acknowledged Flight
   handoff. It no longer claims movement input while manual flight is inactive.
@@ -1689,7 +1699,7 @@ preparation stays visible until a true skip has been verified.
   establish a safe renderer fix; severe slowdown and buffer overflow remain
   unresolved. Camera interpolation and render-time evaluation are unchanged.
 
-## 0.4.6 alpha — Startup mouse handoff and source cleanup
+## 0.4.6 alpha â€” Startup mouse handoff and source cleanup
 
 - Apply the same explicit game HUD/cursor handoff on first flight and F9 return,
   preserving the pre-edit values for Stop / restore.
@@ -1702,7 +1712,7 @@ preparation stays visible until a true skip has been verified.
 - The reported DX11 vertex-buffer overflow remains unresolved. No renderer
   allocation limit, camera interpolation or playback clock is changed.
 
-## 0.4.5 alpha — Path guides, playback controls and range DOF
+## 0.4.5 alpha â€” Path guides, playback controls and range DOF
 
 - Add numbered, projected camera guides and the authored spline in paused
   flight. Highlight the selected camera and hide guides during playback,
@@ -1716,14 +1726,14 @@ preparation stays visible until a true skip has been verified.
 - Keep the established camera clock, interpolation and paused flight behavior.
   Expanded in-game curves remain Stage 2; export remains Stage 3.
 
-## 0.4.4 alpha — Windows build correction
+## 0.4.4 alpha â€” Windows build correction
 
 - Write BOM-bearing cleanup test fixtures explicitly as UTF-8 and compare the
   helper's normalized Windows path, including temporary folders with 8.3 names.
 - Wait for the test cleanup helper to exit before removing its temporary
   directory. Application behavior and the native DLL are unchanged.
 
-## 0.4.4 alpha — Session cleanup and crash diagnostics
+## 0.4.4 alpha â€” Session cleanup and crash diagnostics
 
 - Remove generated plugin folders after the game exits, including when Dolly
   closes first. A background helper waits on the exact launched process and
@@ -1738,7 +1748,7 @@ preparation stays visible until a true skip has been verified.
 - The reported DX11 vertex-buffer overflow is still unresolved. Camera paths,
   render timing, paused movement and mouse handling are unchanged.
 
-## 0.4.3 alpha — HUD visibility and overlay input
+## 0.4.3 alpha â€” HUD visibility and overlay input
 
 - Returning from F9 hides both the replay controls and the character HUD.
   Opening F9 shows them again with game mouse interaction. Stop restores the
@@ -1749,7 +1759,7 @@ preparation stays visible until a true skip has been verified.
   Hidden Dolly panels no longer receive mouse releases intended for Deadlock.
 - Preserve the existing native camera interpolation and frame-synced effects.
 
-## 0.4.2 alpha — Replay UI, capture and restart fixes
+## 0.4.2 alpha â€” Replay UI, capture and restart fixes
 
 - F9 explicitly shows the replay HUD and releases the game cursor. Returning
   hides the replay controls before native flight takes over. Unsupported
@@ -1764,7 +1774,7 @@ preparation stays visible until a true skip has been verified.
   corresponding fraction of a second; saved keyframes are unchanged.
 - Keep native path interpolation, frame timing and DOF evaluation unchanged.
 
-## 0.4.1 alpha — Native editor startup and controls
+## 0.4.1 alpha â€” Native editor startup and controls
 
 - Wait for the paused replay view, DX11 panel and native input before entering
   flight, including when the launcher is in the foreground. A failed entry
@@ -1777,7 +1787,7 @@ preparation stays visible until a true skip has been verified.
   shot is selected. Capture still uses the native press-time pose and tick.
 - Keep the source packaging independent of local authoring context files.
 
-## 0.4.0 alpha — Stage 1 connected editing
+## 0.4.0 alpha â€” Stage 1 connected editing
 
 - Fix the Windows build's startup-test path comparison for short TEMP names
   such as RUNNER~1. The test checks the resolved, quoted replay path and keeps
@@ -1810,7 +1820,7 @@ preparation stays visible until a true skip has been verified.
   In-world path markers, expanded in-game curves, video export and separate
   depth/world/hero/effect passes remain later stages and are not included.
 
-## 0.3.13 alpha — complete September 9 module compatibility
+## 0.3.13 alpha â€” complete September 9 module compatibility
 
 - Add the supplied engine2.dll and tier0.dll builds to the reviewed fingerprints.
   Existing reviewed modules remain supported; unknown binaries remain blocked.
@@ -1822,7 +1832,7 @@ preparation stays visible until a true skip has been verified.
 - Distribute a complete source package, including native DOF sources/tests;
   this update does not depend on applying earlier incremental ZIPs.
 
-## 0.3.12 alpha — September 9 client compatibility
+## 0.3.12 alpha â€” September 9 client compatibility
 
 - Support the reviewed September 9 client.dll alongside the September 7 build.
 - Verify both complete camera functions against the previous disassembly: only
@@ -1832,7 +1842,7 @@ preparation stays visible until a true skip has been verified.
 - Keep exact engine2.dll and tier0.dll checks; unknown builds still stop before
   game configuration is modified. See GAME_UPDATES.md for update guidance.
 
-## 0.3.11 alpha — native DOF curves
+## 0.3.11 alpha â€” native DOF curves
 
 - Compile seven verified DOF controls with the camera path; evaluate them at
   the same main-view phase using typed native setters and immediate readback.
@@ -1845,7 +1855,7 @@ preparation stays visible until a true skip has been verified.
 - Add parser/parity, transport, replay lifecycle and native callback regressions.
   Camera clock/curve math, manual paused movement and unlocker startup remain.
 
-## 0.3.10 alpha — restart a finished native shot
+## 0.3.10 alpha â€” restart a finished native shot
 
 - Keep an unsettled final spectator handoff as a held view, not a failed shot.
 - Play and Stop release the old native override with acknowledgement before
@@ -1855,7 +1865,7 @@ preparation stays visible until a true skip has been verified.
 - Add repeated-play, pause/stop and failed-release regressions.
 - Native DLL, render callback, interpolation and paused movement are unchanged.
 
-## 0.3.9 alpha — Windows native connection build fix
+## 0.3.9 alpha â€” Windows native connection build fix
 
 - Fix the confirmed Windows-only test/startup error: Python looked up
   `InterlockedExchange` as a kernel32 DLL export, which was unavailable.
@@ -1872,7 +1882,7 @@ preparation stays visible until a true skip has been verified.
 - Camera paths, native timing, hook locations, manual paused movement, unlocker
   sequence and game compatibility fingerprints are unchanged from 0.3.8.
 
-## 0.3.8 alpha — experimental native main-view camera
+## 0.3.8 alpha â€” experimental native main-view camera
 
 - Add a Native (experimental) camera driver selected before launch. Evaluate
   the complete saved path in the game's main-view callback, after normal camera
@@ -1899,7 +1909,7 @@ preparation stays visible until a true skip has been verified.
   responsiveness and visual smoothness remain unverified pending user testing;
   this is an experimental alpha, not a demonstrated jitter-free release.
 
-## 0.3.7 alpha — experimental shared playback smoothing
+## 0.3.7 alpha â€” experimental shared playback smoothing
 
 - Add Off, Light, Balanced and Strong smoothing under Shot playback. Balanced
   is the default for each editor session; the choice is not saved in settings
@@ -1916,7 +1926,7 @@ preparation stays visible until a true skip has been verified.
   shot with Off, Balanced and Strong before publishing. The console filter
   cannot guarantee smooth delivery inside Deadlock's renderer.
 
-## 0.3.6 alpha — smooth the last fraction of path playback
+## 0.3.6 alpha â€” smooth the last fraction of path playback
 
 - Remove a forced final-key jump when the replay reaches the end tick before
   the continuous camera clock reaches the final key. Complete both before
@@ -1931,7 +1941,7 @@ preparation stays visible until a true skip has been verified.
   This change targets the measured endpoint bump; it does not establish a fix
   for all mid-path renderer or recording judder. Native verification is pending.
 
-## 0.3.5 alpha — recover from a paused refresh landing two ticks late
+## 0.3.5 alpha â€” recover from a paused refresh landing two ticks late
 
 - Correct the 0.3.4 paused-controls startup failure seen in all five supplied
   attempts. The backward refresh succeeded, but its forward return stopped two
@@ -1950,7 +1960,7 @@ preparation stays visible until a true skip has been verified.
   view restoration, saved-camera switching and movement in both directions on
   every axis. Native 0.3.5 behavior still needs a rebuilt Windows EXE and game test.
 
-## 0.3.4 alpha — paused camera recovery and precise rotation timing
+## 0.3.4 alpha â€” paused camera recovery and precise rotation timing
 
 - Use the high-resolution performance clock for every camera movement,
   replay-clock sample and frame deadline. Windows Python 3.12's coarse clock
@@ -1970,7 +1980,7 @@ preparation stays visible until a true skip has been verified.
   diagnostics. Retain authored path/rotation/framing interpolation and the
   previous Windows build-test corrections. Native 0.3.4 verification is pending.
 
-## 0.3.3 alpha — build fix 1
+## 0.3.3 alpha â€” build fix 1
 
 - Correct six test failures caused by Windows expanding temporary-directory
   short names such as `RUNNER~1` into their canonical long paths. Continue
@@ -1984,7 +1994,7 @@ preparation stays visible until a true skip has been verified.
 - Change four test files and two documentation files only. Retain the existing
   Windows test/build/icon/GUI gates, executable version, application and assets.
 
-## 0.3.3 alpha — executable packaging
+## 0.3.3 alpha â€” executable packaging
 
 - Add a Windows x64 PyInstaller recipe for direct `Dolly.exe` startup, with
   embedded supplied logo, version resources and bundled Python/Tcl/Tk.
@@ -2101,7 +2111,7 @@ preparation stays visible until a true skip has been verified.
 - Add a framing graph with camera selection, vertical value dragging, keyboard
   adjustments and a visible normal-aspect reference. Framing has its own Smooth,
   Linear or Step interpolation. Smooth uses a shape-preserving cubic curve that
-  does not overshoot between key values. The graph uses a fixed 0.5–4.0 editing
+  does not overshoot between key values. The graph uses a fixed 0.5â€“4.0 editing
   range; these are editor limits, not established native cvar limits.
 - Default normal framing to 16:9, with presets and a custom standard. Capture
   keeps an explicit positive override. Automatic 0 resolves to the launched
