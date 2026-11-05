@@ -103,3 +103,52 @@ Native replay identity, cancellation, clock checks, GPU behavior and wall time
 remain outside this model. This is a scoped race repair, with no state reduction
 or whole-program claim. The original pre-query-only decision is a failing mutant;
 the complementary mutant proves unverified waits cannot bypass the miss budget.
+
+## Configuration file mode publication
+
+AtomicMode.tla and AtomicModeApi.tla beside file_ops.py model its shared atomic
+writer, including optional modes, absent/writable/read-only targets, temporary
+write/flush/fsync/close, staged mode, Windows destination retry, returning failures,
+finally cleanup and process exit. Both fault-enabled and no-fault configurations
+run in the common gate, with six load-bearing mutants. New bytes are published
+with the requested read-only mode; a preparation failure leaves the target alone.
+The baseline comparison is private research: this hardening removes one visible
+intermediate combination but does not reduce the complete internal state graph.
+
+Callers and assumptions are mapped in the module comment. Returning OS calls and
+weak fairness establish bounded completion; no-fault runs also require success.
+No power-loss/directory durability, external writer/namespace race, POSIX ACL or
+fdopen-failure guarantee is made. Finally's exists/stat query and its caught OSError now join the full writer
+model; body success and the primary failure survive all modeled cleanup OSErrors. The existing old-target
+writable-on-failed-retry gap and abandoned temporary files after crash remain.
+Updater replace_file has a different implementation and AtomicCopy model; user
+preference saves retain their own backup/conflict policy. No game or whole-program
+correctness follows from these checks.
+
+
+## Cleanup results and invalid-settings backups
+
+CleanupResult.tla beside file_ops.py checks the finally tail after body success
+or failure, including returning stat/chmod/unlink calls. Its guarded config and
+four mutants preserve the body result under OSError while leaving unexpected
+programming exceptions visible. AtomicMode includes stat failures in the complete
+writer; the tail count is not an additive whole-writer reduction.
+
+BackupPublish.tla beside settings.py checks explicit saves over invalid settings:
+the entire original is copied privately, flushed, fsynced and closed before a
+non-overwriting .invalid publication. Windows uses rename; POSIX uses hard links
+and therefore requires filesystem support. Both platform configurations include
+unavailable publication, collision, cleanup failures and process exits. Four
+mutants protect completion, sync and prior backup preservation. The original
+settings are not replaced when publication fails. Existing partial backups are
+retained; interrupted .invalid.tmp stages may remain. Normal valid-settings saves
+do not use the publication primitive. Schema11 and read-only behavior are unchanged.
+
+The model starts after the new settings payload is prepared and assumes an
+immutable invalid original. GUI/editor save scheduling, external writers,
+power-loss/directory durability and native POSIX filesystem behavior are outside
+the qualification. Two copy chunks abstract arbitrary bytes. Real owner tests
+check oversized originals, collision and failure preservation; private process
+exits/retries supplement them. Return uses weak fairness of returning I/O calls.
+These are scoped hardening contracts, not whole-program or game verification.
+The independent outer save_settings payload cleanup remains unchanged.

@@ -15,7 +15,8 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
 
     Steam validation and modding guides can leave gameinfo.gi read-only, and
     Windows refuses to replace a read-only destination. Clear exactly that
-    attribute for the swap, then apply the recorded mode to the final file.
+    attribute for the swap. Prepare the recorded mode on the completed temporary
+    first, so replacement publishes the new bytes and mode together.
     """
     descriptor, name = tempfile.mkstemp(prefix=".dolly-write-", suffix=".tmp", dir=path.parent)
     temp = Path(name)
@@ -25,6 +26,8 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
+        if mode is not None:
+            os.chmod(temp, mode)
         try:
             os.replace(temp, path)
         except PermissionError:
@@ -32,15 +35,13 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
                 raise
             os.chmod(path, writable)
             os.replace(temp, path)
-        if mode is not None:
-            os.chmod(path, mode)
     finally:
-        if temp.exists():
-            try:
+        try:
+            if temp.exists():
                 os.chmod(temp, writable)
                 temp.unlink()
-            except OSError:
-                pass  # A locked leftover must not hide the real write result.
+        except OSError:
+            pass  # A locked leftover must not hide the real write result.
 
 
 def _plain_path(path: Path) -> bool:

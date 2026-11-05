@@ -1,5 +1,7 @@
 ﻿import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +14,68 @@ from dolly.settings import (
 
 
 class SettingsTests(unittest.TestCase):
+    def test_interrupted_backup_copy_keeps_partial_bytes_out_of_published_names(self):
+        original = b'invalid settings' * 8192
+        self.write_raw(original)
+        script = '''
+import os, sys
+from pathlib import Path
+from dolly import settings
+def interrupted(source, destination):
+    destination.write(source.read(4096))
+    destination.flush()
+    os._exit(77)
+settings.shutil.copyfileobj = interrupted
+settings.save_settings(settings.AppSettings(), Path(sys.argv[1]))
+'''
+        result = subprocess.run([sys.executable, '-c', script, str(self.path)],
+                                capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 77, result.stderr)
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertEqual(list(self.path.parent.glob('*.invalid')), [])
+        stages = list(self.path.parent.glob('*.invalid.tmp'))
+        self.assertEqual(len(stages), 1)
+        self.assertEqual(stages[0].read_bytes(), original[:4096])
+        save_settings(AppSettings(), self.path)
+        self.assertEqual(stages[0].read_bytes(), original[:4096])
+        self.assertEqual([p.read_bytes() for p in self.path.parent.glob('*.invalid')], [original])
+
+    def test_backup_publication_collision_preserves_both_originals(self):
+        self.write_raw(b'invalid original')
+        operation = 'rename' if os.name == 'nt' else 'link'
+        publish = getattr(os, operation)
+        collided = []
+        def collision(source, destination):
+            backup = Path(destination)
+            backup.write_bytes(b'previous backup')
+            collided.append(backup)
+            return publish(source, destination)
+        with patch('dolly.settings.os.' + operation, side_effect=collision):
+            with self.assertRaises(FileExistsError):
+                save_settings(AppSettings(), self.path)
+        self.assertEqual(self.path.read_bytes(), b'invalid original')
+        self.assertEqual([p.read_bytes() for p in collided], [b'previous backup'])
+
+    def test_backup_streams_entire_oversized_original_before_publication(self):
+        original = b'x' * (MAX_SETTINGS_BYTES * 2 + 17)
+        self.write_raw(original)
+        save_settings(AppSettings(), self.path)
+        self.assertEqual([p.read_bytes() for p in self.path.parent.glob('*.invalid')], [original])
+
+    def test_backup_cleanup_failure_preserves_primary_copy_exception(self):
+        self.write_raw(b'invalid original')
+        primary = OSError('copy failed')
+        unlink = Path.unlink
+        def cleanup(path, *args, **kwargs):
+            if path.name.endswith('.invalid.tmp'):
+                raise PermissionError('stage cleanup denied')
+            return unlink(path, *args, **kwargs)
+        with patch('dolly.settings.shutil.copyfileobj', side_effect=primary), patch.object(Path, 'unlink', cleanup):
+            with self.assertRaises(OSError) as caught:
+                save_settings(AppSettings(), self.path)
+        self.assertIs(caught.exception, primary)
+        self.assertEqual(self.path.read_bytes(), b'invalid original')
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

@@ -1,0 +1,88 @@
+[
+  {
+    "name": "mode applied after publication instead of staged",
+    "config": "AtomicMode.cfg",
+    "replace": [
+      [
+        "IF requested # \"none\" THEN \"tempMode\" ELSE \"replace\"",
+        "\"replace\""
+      ],
+      [
+        "/\\ pc' = \"return\"\n           /\\ UNCHANGED",
+        "/\\ pc' = IF requested # \"none\" THEN \"finalMode\" ELSE \"return\"\n           /\\ UNCHANGED"
+      ],
+      [
+        "Return ==",
+        "FinalMode == /\\ pc = \"finalMode\" /\\ permissions' = requested /\\ pc' = \"return\"\n             /\\ UNCHANGED <<content,requested,temporary,tempMode,synced,outcome,cleanupFailed,errorKind>>\nReturn =="
+      ],
+      [
+        "\\/ Replace \\/ RetryPermissionError",
+        "\\/ Replace \\/ FinalMode \\/ RetryPermissionError"
+      ],
+      [
+        "\"return\",\"cleanupStat\"",
+        "\"return\",\"finalMode\",\"cleanupStat\""
+      ]
+    ],
+    "expect": "StagedModeTogether"
+  },
+  {
+    "name": "publication skips content fsync",
+    "config": "AtomicMode.cfg",
+    "replace": [
+      [
+        "synced' = TRUE",
+        "synced' = FALSE"
+      ]
+    ],
+    "expect": "PublishAfterSync"
+  },
+  {
+    "name": "finally leaves temporary despite successful cleanup calls",
+    "config": "AtomicMode.cfg",
+    "replace": [
+      [
+        "/\\ temporary' = \"none\" /\\ tempMode' = \"none\"\n                 /\\ pc' = \"done\"",
+        "/\\ UNCHANGED <<temporary,tempMode>>\n                 /\\ pc' = \"done\""
+      ]
+    ],
+    "expect": "NormalFailureCleansTemp"
+  },
+  {
+    "name": "cleanup error replaces primary error",
+    "config": "AtomicMode.cfg",
+    "replace": [
+      [
+        "/\\ cleanupFailed' = TRUE\n                /\\ UNCHANGED <<content,permissions,requested,temporary,tempMode,synced,errorKind>>",
+        "/\\ cleanupFailed' = TRUE /\\ errorKind' = \"secondary\"\n                /\\ UNCHANGED <<content,permissions,requested,temporary,tempMode,synced>>"
+      ]
+    ],
+    "expect": "PrimarySurvivesCleanup"
+  },
+  {
+    "name": "read-only retry omits writable target mode",
+    "config": "AtomicMode-noFaults.cfg",
+    "replace": [
+      [
+        "permissions' = \"rw\" /\\ pc' = \"retry\"",
+        "permissions' = permissions /\\ pc' = \"retry\""
+      ]
+    ],
+    "expect": "SuccessNoFaults"
+  },
+  {
+    "name": "cleanup stat masks the primary body exception",
+    "config": "AtomicMode.cfg",
+    "replace": [
+      [
+        "pc = \"cleanupStat\" /\\ cleanupFailed' = TRUE",
+        "pc = \"cleanupStat\" /\\ cleanupFailed' = TRUE /\\ errorKind' = \"secondary\""
+      ],
+      [
+        "synced,outcome,errorKind>>\nFinish ==",
+        "synced,outcome>>\nFinish =="
+      ]
+    ],
+    "expect": "PrimarySurvivesCleanup"
+  }
+]

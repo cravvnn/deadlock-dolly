@@ -1,0 +1,46 @@
+[
+  {
+    "name": "leave stat outside cleanup guard",
+    "config": "CleanupResult-guarded.cfg",
+    "replace": [
+      [
+        "pc = \"stat\" /\\ ~Protected",
+        "pc = \"stat\""
+      ]
+    ],
+    "expect": "GuardedPreservesResult"
+  },
+  {
+    "name": "chmod failure masks body result",
+    "config": "CleanupResult-guarded.cfg",
+    "replace": [
+      [
+        "pc = \"stat\" /\\ ~Protected",
+        "(pc = \"stat\" /\\ ~Protected) \\/ pc = \"chmod\""
+      ]
+    ],
+    "expect": "GuardedPreservesResult"
+  },
+  {
+    "name": "unlink failure masks body result",
+    "config": "CleanupResult-guarded.cfg",
+    "replace": [
+      [
+        "pc = \"stat\" /\\ ~Protected",
+        "(pc = \"stat\" /\\ ~Protected) \\/ pc = \"unlink\""
+      ]
+    ],
+    "expect": "GuardedPreservesResult"
+  },
+  {
+    "name": "blanket catch hides programming exceptions",
+    "config": "CleanupResult-guarded.cfg",
+    "replace": [
+      [
+        "IF Strict THEN",
+        "IF FALSE THEN"
+      ]
+    ],
+    "expect": "UnexpectedVisible"
+  }
+]

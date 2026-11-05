@@ -13,7 +13,7 @@ from unittest.mock import patch
 from dolly import launcher, session_cleanup
 
 
-def atomic_trace(writer, fault=None):
+def atomic_trace(writer, fault=None, mode=0o666):
     """Exercise the real filesystem with faults at OS/stream boundaries."""
     with tempfile.TemporaryDirectory(prefix='dolly-file-contract-') as directory:
         folder = Path(directory)
@@ -23,6 +23,8 @@ def atomic_trace(writer, fault=None):
         fdopen, fsync, replace, chmod, unlink = os.fdopen, os.fsync, os.replace, os.chmod, Path.unlink
         primary = OSError('injected ' + str(fault))
         attempts = 0
+        replace_failed = False
+        requested_failed = False
 
         class Stream:
             def __init__(self, descriptor, mode):
@@ -52,21 +54,24 @@ def atomic_trace(writer, fault=None):
             fsync(descriptor)
 
         def swap(source, destination):
-            nonlocal attempts
+            nonlocal attempts, replace_failed
             attempts += 1
             events.append('replace')
             if fault in ('retry_success', 'retry_failure', 'make_writable') and attempts == 1:
                 raise PermissionError('injected read-only destination')
             if fault in ('replace', 'cleanup_chmod', 'cleanup_unlink', 'retry_failure'):
+                replace_failed = True
                 raise primary
             replace(source, destination)
 
-        def mode(path, value):
+        def set_mode(path, value):
+            nonlocal requested_failed
             kind = 'target' if path == target else 'temp'
             events.append('chmod_' + kind)
-            if (fault == 'final_chmod' and kind == 'target') or (fault == 'make_writable' and kind == 'target'):
+            if (fault == 'requested_chmod' and kind == 'temp' and not requested_failed) or (fault == 'make_writable' and kind == 'target'):
+                requested_failed = True
                 raise primary
-            if fault == 'cleanup_chmod' and kind == 'temp':
+            if fault == 'cleanup_chmod' and kind == 'temp' and replace_failed:
                 raise OSError('secondary cleanup chmod')
             chmod(path, value)
 
@@ -79,10 +84,10 @@ def atomic_trace(writer, fault=None):
         error = None
         with ExitStack() as stack:
             for obj, name, replacement in ((os, 'fdopen', Stream), (os, 'fsync', sync),
-                    (os, 'replace', swap), (os, 'chmod', mode), (Path, 'unlink', remove)):
+                    (os, 'replace', swap), (os, 'chmod', set_mode), (Path, 'unlink', remove)):
                 stack.enter_context(patch.object(obj, name, replacement))
             try:
-                writer(target, b'new\x00\r\n', 0o666)
+                writer(target, b'new\x00\r\n', mode)
             except OSError as exc:
                 error = {'type': type(exc).__name__, 'message': str(exc), 'primary': exc is primary}
         return {'events': events, 'bytes': target.read_bytes().hex(), 'error': error,
@@ -91,6 +96,40 @@ def atomic_trace(writer, fault=None):
 
 
 class AtomicWriteTests(unittest.TestCase):
+    def test_cleanup_stat_preserves_success_or_primary_error(self):
+        exists = Path.exists
+        for fail_body in (False, True):
+            with self.subTest(fail_body=fail_body), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / 'target'
+                target.write_bytes(b'old')
+                primary = OSError('replacement failed')
+                def check(path):
+                    if path.name.startswith('.dolly-write-'):
+                        raise PermissionError('cleanup stat denied')
+                    return exists(path)
+                with patch.object(Path, 'exists', check):
+                    if fail_body:
+                        with patch.object(os, 'replace', side_effect=primary):
+                            with self.assertRaises(OSError) as caught:
+                                launcher._atomic_write(target, b'new')
+                        self.assertIs(caught.exception, primary)
+                    else:
+                        launcher._atomic_write(target, b'new')
+                self.assertEqual(target.read_bytes(), b'old' if fail_body else b'new')
+
+    def test_cleanup_programming_error_remains_visible(self):
+        exists = Path.exists
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'target'
+            def check(path):
+                if path.name.startswith('.dolly-write-'):
+                    raise RuntimeError('unexpected cleanup bug')
+                return exists(path)
+            with patch.object(Path, 'exists', check):
+                with self.assertRaisesRegex(RuntimeError, 'unexpected cleanup bug'):
+                    launcher._atomic_write(target, b'new')
+            self.assertEqual(target.read_bytes(), b'new')
+
     def test_write_flush_and_fsync_failures_leave_original_and_clean_temp(self):
         for fault in ('write', 'flush', 'fsync'):
             with self.subTest(fault=fault):
@@ -100,18 +139,46 @@ class AtomicWriteTests(unittest.TestCase):
                 self.assertTrue(trace['error']['primary'])
                 self.assertEqual(trace['leftovers'], [])
 
-    def test_success_flushes_and_closes_before_replace_and_mode(self):
+    def test_success_prepares_mode_after_close_before_replace(self):
         trace = atomic_trace(launcher._atomic_write)
-        self.assertEqual(trace['events'], ['write', 'flush', 'fsync', 'close', 'replace', 'chmod_target'])
+        self.assertEqual(trace['events'], ['write', 'flush', 'fsync', 'close', 'chmod_temp', 'replace'])
         self.assertEqual(trace['bytes'], b'new\x00\r\n'.hex())
         self.assertIsNone(trace['error'])
         self.assertEqual(trace['leftovers'], [])
 
-    def test_mode_failure_reports_error_after_successful_replacement(self):
-        trace = atomic_trace(launcher._atomic_write, 'final_chmod')
-        self.assertEqual(trace['bytes'], b'new\x00\r\n'.hex())
+    def test_mode_preparation_failure_leaves_original_untouched(self):
+        trace = atomic_trace(launcher._atomic_write, 'requested_chmod')
+        self.assertEqual(trace['bytes'], b'original\x00\r\n'.hex())
+        self.assertNotIn('replace', trace['events'])
         self.assertTrue(trace['error']['primary'])
         self.assertEqual(trace['leftovers'], [])
+
+    def test_no_requested_mode_keeps_original_operation_sequence(self):
+        trace = atomic_trace(launcher._atomic_write, mode=None)
+        self.assertEqual(trace['events'], ['write', 'flush', 'fsync', 'close', 'replace'])
+        self.assertEqual(trace['bytes'], b'new\x00\r\n'.hex())
+        self.assertIsNone(trace['error'])
+        self.assertEqual(trace['leftovers'], [])
+
+    def test_readonly_mode_is_present_at_the_replacement_boundary(self):
+        for readonly_target in (False, True):
+            with self.subTest(readonly_target=readonly_target), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / 'target'
+                target.write_bytes(b'original')
+                if readonly_target:
+                    target.chmod(0o444)
+                replace = os.replace
+                observed = []
+                def swap(source, destination):
+                    replace(source, destination)
+                    observed.append((target.read_bytes(), bool(target.stat().st_mode & stat.S_IWRITE)))
+                try:
+                    with patch.object(os, 'replace', side_effect=swap):
+                        launcher._atomic_write(target, b'new', 0o444)
+                    self.assertEqual(observed, [(b'new', False)])
+                    self.assertEqual(list(target.parent.glob('.dolly-write-*.tmp')), [])
+                finally:
+                    target.chmod(0o666)
 
     def test_cleanup_failures_do_not_hide_original_replace_failure(self):
         for fault in ('cleanup_chmod', 'cleanup_unlink'):
@@ -126,8 +193,8 @@ class AtomicWriteTests(unittest.TestCase):
         for fault in ('retry_success', 'retry_failure', 'make_writable'):
             with self.subTest(fault=fault):
                 trace = atomic_trace(launcher._atomic_write, fault)
-                prefix = ['write', 'flush', 'fsync', 'close', 'replace', 'chmod_target']
-                self.assertEqual(trace['events'][:6], prefix)
+                prefix = ['write', 'flush', 'fsync', 'close', 'chmod_temp', 'replace', 'chmod_target']
+                self.assertEqual(trace['events'][:7], prefix)
                 self.assertEqual(trace['events'].count('replace'), 1 if fault == 'make_writable' else 2)
                 self.assertEqual(trace['leftovers'], [])
                 if fault == 'retry_success':

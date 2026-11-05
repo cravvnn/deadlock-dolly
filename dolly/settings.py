@@ -247,21 +247,28 @@ def _backup_invalid_settings(target: Path) -> None:
     try:
         _decode_settings(data)
     except ValueError:
-        backup: Path | None = None
+        staging: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="wb", dir=target.parent, prefix=target.name + ".",
-                suffix=".invalid", delete=False,
+                suffix=".invalid.tmp", delete=False,
             ) as destination:
-                backup = Path(destination.name)
+                staging = Path(destination.name)
                 with target.open("rb") as source:
                     shutil.copyfileobj(source, destination)
                 destination.flush()
                 os.fsync(destination.fileno())
-        except BaseException:
-            if backup is not None:
-                backup.unlink(missing_ok=True)
-            raise
+            published = staging.with_suffix("")
+            if os.name == "nt":
+                os.rename(staging, published)  # Windows refuses an existing name.
+            else:
+                os.link(staging, published)  # Non-overwriting publication on POSIX.
+        finally:
+            if staging is not None:
+                try:
+                    staging.unlink(missing_ok=True)
+                except OSError:
+                    pass  # A leftover stage must not mask the backup result.
 
 
 def save_settings(

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "publish filename before copying",
+    "config": "BackupPublish.cfg",
+    "replace": [
+      [
+        "published' = ~Staged",
+        "published' = TRUE"
+      ]
+    ],
+    "expect": "NamedBackupsComplete"
+  },
+  {
+    "name": "publish truncated copy",
+    "config": "BackupPublish.cfg",
+    "replace": [
+      [
+        "content' = \"full\"",
+        "content' = \"partial\""
+      ]
+    ],
+    "expect": "NamedBackupsComplete"
+  },
+  {
+    "name": "omit backup fsync",
+    "config": "BackupPublish.cfg",
+    "replace": [
+      [
+        "synced' = TRUE",
+        "synced' = FALSE"
+      ]
+    ],
+    "expect": "NamedBackupsComplete"
+  },
+  {
+    "name": "overwrite colliding prior backup",
+    "config": "BackupPublish.cfg",
+    "replace": [
+      [
+        "(available /\\ ~collision)",
+        "available"
+      ],
+      [
+        "prior' = prior",
+        "prior' = (IF collision THEN \"old\" ELSE prior)"
+      ]
+    ],
+    "expect": "PriorBackupSurvives"
+  }
+]
