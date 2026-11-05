@@ -103,3 +103,8 @@ Native replay identity, cancellation, clock checks, GPU behavior and wall time
 remain outside this model. This is a scoped race repair, with no state reduction
 or whole-program claim. The original pre-query-only decision is a failing mutant;
 the complementary mutant proves unverified waits cannot bypass the miss budget.
+
+Normal `capture` progress now satisfies the same predicate as GPU/storage/drain
+progress. The third mutant restores the previous stage exclusion. Idle and
+complete reports remain untrusted. This adds no state holder or timeout; the
+simplification is one shared progress decision for the active capture stages.
