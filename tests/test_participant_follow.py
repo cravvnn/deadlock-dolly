@@ -141,6 +141,102 @@ class ParticipantFollowControllerTests(unittest.TestCase):
         self.assertEqual(targets.count('spec_target 76'), 3)
         self.assertEqual(targets.count('spec_target 77'), 1)
 
+    def test_paused_stock_blend_runs_then_restores_chosen_tick(self):
+        request = self.console.request
+        resumed = False
+        def handoff(command, *args, **kwargs):
+            nonlocal resumed
+            result = request(command, *args, **kwargs)
+            if command.endswith('demo_resume'):
+                resumed = True
+                self.console.tick += 20
+            return result
+        self.console.request = handoff
+        def camera(_monitor):
+            return dict(coherent=True, ready=resumed, blending=not resumed)
+        with patch('dolly.replay_camera.ReplayCameraMonitor.sample', side_effect=camera):
+            self.c.follow_replay_player(1)
+        self.assertTrue(resumed)
+        self.assertTrue(self.c._follow_active)
+        self.assertTrue(self.console.paused)
+        self.assertEqual(self.console.tick, 100)
+        events = self.console.events
+        self.assertLess(next(i for i, e in enumerate(events) if e.endswith('demo_resume')),
+                        events.index('demo_gototick 100 0 1'))
+
+    def test_stock_blend_waits_past_old_five_second_limit(self):
+        clock = [0.]
+        def wait(_timeout):
+            clock[0] += .5
+            return False
+        def camera(_monitor):
+            ready = clock[0] >= 7.5
+            return dict(coherent=True, ready=ready, blending=not ready)
+        with patch('dolly.replay_camera.ReplayCameraMonitor.sample', side_effect=camera), \
+                patch('dolly.controller.time.monotonic', side_effect=lambda: clock[0]), \
+                patch.object(self.c._stop_event, 'wait', side_effect=wait):
+            self.c.follow_replay_player(1)
+        self.assertTrue(self.c._follow_active)
+        self.assertGreaterEqual(clock[0], 7.5)
+        self.assertTrue(self.console.paused)
+        self.assertEqual(self.console.tick, 100)
+
+    def test_stock_blend_restores_slow_playback_speed(self):
+        from dolly.follow_camera import FollowSettings
+        self.console.values['demo_timescale'] = .25
+        request = self.console.request
+        resumed = False
+        def handoff(command, *args, **kwargs):
+            nonlocal resumed
+            result = request(command, *args, **kwargs)
+            if command.endswith('demo_resume'):
+                resumed = True
+                self.console.tick += 20
+            return result
+        self.console.request = handoff
+        def camera(_monitor):
+            return dict(coherent=True, ready=resumed, blending=not resumed)
+        with patch('dolly.replay_camera.ReplayCameraMonitor.sample', side_effect=camera):
+            self.c.follow_replay_player(1)
+        self.assertTrue(self.c._follow_active)
+        self.assertEqual(self.console.values['demo_timescale'], .25)
+        self.assertEqual(self.console.tick, 100)
+        self.assertTrue(self.console.paused)
+        self.assertFalse(any(event.startswith('demo_timescale ') for event in self.console.events))
+
+    def test_cancel_during_stock_blend_pauses_without_enabling_rig(self):
+        calls = 0
+        def camera(_monitor):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.c._stop_event.set()
+            return dict(coherent=True, ready=False, blending=True)
+        with patch('dolly.replay_camera.ReplayCameraMonitor.sample', side_effect=camera):
+            with self.assertRaisesRegex(RuntimeError, 'cancelled'):
+                self.c.follow_replay_player(1)
+        self.assertTrue(self.console.paused)
+        self.assertFalse(self.c._follow_active)
+        self.assertNotIn('citadel_camera_overrides_enabled 1', self.console.events)
+
+    def test_lost_session_during_blend_does_not_pause_another_session(self):
+        request = self.console.request
+        boundary = []
+        def replace_session(command, *args, **kwargs):
+            result = request(command, *args, **kwargs)
+            if command.endswith('demo_resume'):
+                self.c._session = object()
+                boundary.append(len(self.console.events))
+            return result
+        self.console.request = replace_session
+        with patch('dolly.replay_camera.ReplayCameraMonitor.sample',
+                   return_value=dict(coherent=True, ready=False, blending=True)):
+            with self.assertRaises(RuntimeError):
+                self.c.follow_replay_player(1)
+        later = self.console.events[boundary[0]:]
+        self.assertNotIn('demo_pause', later)
+        self.assertNotIn('citadel_camera_overrides_enabled 1', later)
+
     def test_stock_game_follow_survives_replay_seek(self):
         # F9/stock Game Follow has no participant intent. A timeline seek must
         # keep the selected hero's rig instead of re-entering native flight at

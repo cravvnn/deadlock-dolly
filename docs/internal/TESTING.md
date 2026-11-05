@@ -126,3 +126,8 @@ Use the [current user guides](../README.md) for exact labels and options.
 The Stage 1/2 checklists are historical integration records and may contain
 retired UI, defaults and build instructions. Untested behavior remains
 untested; do not carry a result to a different binary or game build.
+
+Participant Follow handoff model checks require Node20/npm for development.
+Run `npm ci --prefix tools/tla --ignore-scripts`, then `python tools/check_tla.py`.
+The normal Windows builder runs the same check before native compilation.
+See SPECS.md for the scoped model bounds and limitations.

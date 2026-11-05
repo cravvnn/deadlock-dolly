@@ -2252,6 +2252,53 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._follow_mode_session = self._session
                 self._request('citadel_spectator_mode 2')
                 self._verify_game_ui_values({'citadel_spectator_mode': 2})
+                # Stock camera blends use replay time. Waiting at a paused
+                # tick cannot finish a blend started by spec_target/mode2.
+                # Let only that measured transition run, then restore the
+                # chosen paused tick before strict target/rig confirmation.
+                self._check_position_cancelled()
+                camera = ReplayCameraMonitor.sample(monitor)
+                if camera.get('coherent') and camera.get('blending'):
+                    def check_transition_owner():
+                        self._check_position_cancelled()
+                        if (self._session is not selection_owner[0] or self._demo != selection_owner[1]
+                                or self._recorder_active()):
+                            raise RuntimeError('The replay changed during Follow camera transition.')
+                        self._require_demo(require_tick=False)
+                        if _participant is not None:
+                            self._check_participant_follow(_participant)
+                            fresh = resolve_participant(monitor, _participant['identifier'],
+                                                        bridge.editor_roster(), evidence={})
+                            if any(fresh.get(key) != player.get(key)
+                                   for key in ('handle', 'entity_index', 'controller_handle')):
+                                raise RuntimeError('The selected player changed during Follow camera transition.')
+                        else:
+                            current_player_roster()
+                    check_transition_owner()
+                    # Build 6849's intro transition lasts 7.5 replay seconds.
+                    # Keep the user's speed unchanged: the supported minimum
+                    # 0.05x needs 150 wall seconds, plus a ten-second margin.
+                    # Cancellation and ownership are checked every poll.
+                    transition_deadline = time.monotonic() + 160
+                    self._message('Settling the game camera before following the selected player...')
+                    try:
+                        self._request('demo_resume')
+                        while True:
+                            check_transition_owner()
+                            camera = ReplayCameraMonitor.sample(monitor)
+                            self._follow_selection_evidence = dict(camera=camera, stage='settling_stock_blend',
+                                                                  expected_handle=player['handle'])
+                            if camera.get('ready'):
+                                break
+                            if time.monotonic() >= transition_deadline:
+                                raise RuntimeError('The selected Follow camera transition did not settle.')
+                            self._stop_event.wait(.05)
+                    finally:
+                        # Pause is restoration of our own temporary playback;
+                        # cancellation never authorizes writes into a new replay.
+                        if self._session is selection_owner[0] and self._demo == selection_owner[1]:
+                            self._require_demo(require_tick=False)
+                            self._request('demo_pause')
                 # Valve's target/mode handoff can advance a paused replay.
                 # Re-establish the chosen tick after that owned transition,
                 # before confirming its fresh pawn and enabling the rig.

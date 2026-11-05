@@ -64,13 +64,20 @@ or detect every model/code mismatch.
 
 ## Participant Follow selection
 
-[FollowSelection.tla](dolly/FollowSelection.tla) models the controller handoff
-called by participant switching and editor hero selection. A paused same-tick
-handoff avoids reconstruction; drift/unpaused state uses the existing seek.
-Transient observer mode4 may settle within the existing confirmation timeout.
-Readiness, observer mode, cancellation and fresh identity remain required before
-enabling the rig. 110 bounded states; five guard mutants fail. Seek/monitor/game
-primitives are abstracted. This does not prove engine blending completes or
-whole-program camera correctness. Python regressions cover both selected paths,
-actual drift repair, timeout restoration and cancellation. The simplification
-removes an unconditional operation; no state-count reduction is claimed.
+FollowSelection.tla beside controller.py models only the selected-player handoff:
+paused unchanged/advanced ticks, transient observer mode4, camera readiness,
+cancellation and identity loss. Existing seek, monitor and game primitives are
+abstracted; this is not whole-program or live proof. Default214states/6guard
+mutants checked by tools/check_tla.py and before native release compilation.
+The code avoids redundant reconstruction, retains actual drift restoration and
+strict rig admission. No state-count reduction claim against a failing baseline.
+Other Dolly stateful components remain outside this scoped model.
+
+The live-observed build6849 intro transition lasts7.5 replay seconds. The controller
+waits cancellably for readiness while temporarily resuming its owned replay, then
+pauses and restores the chosen tick before admitting the rig. It does not change
+playback speed. The160s wall bound accommodates7.5s at supported minimum0.05x
+plus10s margin. Model time is abstracted to settle/abort; clock duration and exact
+speed preservation are covered by owner tests and bounded live evidence. No new
+state holder was added for speed. A virtual-time regression exceeds the old5s
+budget; actualsix-switch verification uses the matching replay at581 and5000.

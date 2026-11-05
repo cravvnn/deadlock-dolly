@@ -10,11 +10,11 @@
     "expect": "NoRedundantSeek"
   },
   {
-    "name": "ignore camera readiness",
+    "name": "ignore readiness",
     "replace": [
       [
-        "/\\ ready /\\ mode = \"chase\"",
-        "/\\ TRUE /\\ mode = \"chase\""
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ atTick",
+        "/\\ TRUE /\\ mode = \"chase\" /\\ paused /\\ atTick"
       ]
     ],
     "expect": "StrictConfirmation"
@@ -43,8 +43,22 @@
     "name": "accept free observer",
     "replace": [
       [
-        "/\\ ready /\\ mode = \"chase\"",
-        "/\\ ready /\\ mode # \"invalid\""
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ atTick",
+        "/\\ ready /\\ mode # \"invalid\" /\\ paused /\\ atTick"
+      ]
+    ],
+    "expect": "StrictConfirmation"
+  },
+  {
+    "name": "omit tick restoration",
+    "replace": [
+      [
+        "atTick' = TRUE /\\ sought' = TRUE",
+        "atTick' = FALSE /\\ sought' = TRUE"
+      ],
+      [
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ atTick",
+        "/\\ ready /\\ mode = \"chase\" /\\ paused /\\ TRUE"
       ]
     ],
     "expect": "StrictConfirmation"

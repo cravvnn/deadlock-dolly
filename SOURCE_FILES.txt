@@ -1069,3 +1069,4 @@ dolly/CleanupMarker.tla
 dolly/CleanupMarker.cfg
 dolly/CleanupMarker.mutants.json
 dolly/OwnershipApi.tla
+docs/RELEASE_NOTES_0.7.2-beta.md

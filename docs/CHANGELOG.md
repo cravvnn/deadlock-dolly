@@ -1,5 +1,10 @@
 ### Deadlock Dolly v0.7.1-beta
 
+## 0.7.2-beta
+
+- Let stock hero-camera transitions finish when switching timeline players, then restore the selected paused tick.
+- Preserve playback speed and retain cancellation, replay/player identity and camera-readiness checks.
+
 **0.7.1-beta**
 
 - **Patched packaging dependency.** *Before:* the Windows bundle included setuptools 84.0.0, affected by a low-severity legacy installer path-escape issue. *After:* Dolly includes setuptools 84.1.0, which rejects invalid namespace package paths.
