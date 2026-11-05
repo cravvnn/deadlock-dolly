@@ -64,6 +64,16 @@ or detect every model/code mismatch.
 
 ## Participant Follow selection
 
+`FollowLens.tla` beside `follow_camera.py` models `FollowTransaction.apply` and
+`restore`: a saved descriptor, two updates, one write/readback or restoration
+failure, ownership loss, retry, and disable/restore/enable ordering. Normal FOV90
+and unsupported150 exercise the neutral aimed-lens admission boundary. One
+opaque offset represents the independent position fields. Its five mutants
+protect neutral zoom, the first snapshot, pending restoration, reviewed ranges,
+and write ownership. Fresh normal-FOV reads on updates, concrete ConVar values,
+exact float readback, callback failures and all descriptor fields remain owning
+Python tests; this projection does not certify the game or all camera state.
+
 FollowSelection.tla beside controller.py models only the selected-player handoff:
 paused unchanged/advanced ticks, transient observer mode4, camera readiness,
 cancellation and identity loss. Existing seek, monitor and game primitives are
@@ -81,3 +91,15 @@ plus10s margin. Model time is abstracted to settle/abort; clock duration and exa
 speed preservation are covered by owner tests and bounded live evidence. No new
 state holder was added for speed. A virtual-time regression exceeds the old5s
 budget; actualsix-switch verification uses the matching replay at581 and5000.
+
+## Playback identity query during Players backpressure
+
+PlaybackIdentity.tla models the _run_native console-timeout decision with zero
+or one prior unpaced miss and a report appearing after query admission. It keeps
+progressing owned capture alive and retains the ordinary failure budget for
+invalid reports. The existing pacing predicate abstracts request, PID, session,
+replay, freshness and progress validation; real file tests own those checks.
+Native replay identity, cancellation, clock checks, GPU behavior and wall time
+remain outside this model. This is a scoped race repair, with no state reduction
+or whole-program claim. The original pre-query-only decision is a failing mutant;
+the complementary mutant proves unverified waits cannot bypass the miss budget.

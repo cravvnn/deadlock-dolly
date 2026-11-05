@@ -5378,9 +5378,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                         # Keep the previous identity result and try again on the
                         # next window; a real hang still fails the frame and
                         # replay-time guards above.
-                        identity_misses += 1
-                        if identity_misses > 1:
-                            raise
+                        # Backpressure can begin after the pre-query check.
+                        # Re-read owned, fresh progress after the blocked query;
+                        # only unpaced misses consume the identity failure budget.
+                        if not self._player_capture_pacing_active(time.perf_counter()):
+                            identity_misses += 1
+                            if identity_misses > 1:
+                                raise
                         observed_demo = None
                     else:
                         identity_misses = 0

@@ -1065,6 +1065,9 @@ tools/tla/package.json
 dolly/FollowSelection.tla
 dolly/FollowSelection.cfg
 dolly/FollowSelection.mutants.json
+dolly/FollowLens.tla
+dolly/FollowLens.cfg
+dolly/FollowLens.mutants.json
 dolly/CleanupMarker.tla
 dolly/CleanupMarker.cfg
 dolly/CleanupMarker.mutants.json
@@ -1073,3 +1076,7 @@ docs/RELEASE_NOTES_0.7.2-beta.md
 docs/RELEASE_NOTES_0.7.3-beta.md
 native/profiles/deadlock-2026-11-04-6851-complete.json
 third_party/cvar_unlocker/unlocker-build-6851.patch
+dolly/PlaybackIdentity.tla
+dolly/PlaybackIdentity.cfg
+dolly/PlaybackIdentity.mutants.json
+docs/RELEASE_NOTES_0.7.4-beta.md

@@ -69,7 +69,8 @@ class FollowTransaction:
 
     read/write are caller-supplied typed, ownership-checked operations. Capability
     discovery belongs to the controller and must precede this transaction.
-    Untouched rig values stay as found, including the separate ADS/wall settings.
+    ADS offsets and wall settings stay as found. The aimed FOV starts from the
+    normal lens so the weapon's own zoom is applied once, not a second time.
     """
     def __init__(self, read, write):
         self.read = read
@@ -85,9 +86,17 @@ class FollowTransaction:
 
     def apply(self, settings):
         values = settings.values()
+        snapshot = self.originals
         if not self.originals:
             # Finish all reads and validation before the first mutation.
             snapshot = {name: validate_value(name, self.read(name)) for name in NAMES}
+        normal_fov = (validate_value(PREFIX + "fov", self.read(PREFIX + "fov"))
+                      if self.originals else snapshot[PREFIX + "fov"])
+        try:
+            values[PREFIX + "ads_fov"] = validate_value(PREFIX + "ads_fov", normal_fov)
+        except ValueError as exc:
+            raise ValueError("Game Follow needs a normal FOV between 50 and 120 to preserve weapon zoom.") from exc
+        if not self.originals:
             self.originals = snapshot
         try:
             for name, value in values.items():

@@ -98,6 +98,56 @@ class PacingControllerTests(unittest.TestCase):
         self.assertGreater(self.clock.now - start, 20)
         self.assertEqual(self.controller._export_timing['fps'], 60)
 
+    def test_backpressure_starting_during_console_query_does_not_abort_capture(self):
+        from dolly.console import ConsoleTimeout
+        self.prepare()
+        self.pin_capture()
+        original = self.controller._require_demo
+        misses = []
+
+        def delayed(*args, **kwargs):
+            if len(misses) < 2:
+                misses.append(True)
+                self.clock.advance(3)
+                now = int(self.clock.now * 1000) + 100000
+                self.publish(heartbeat=now, progress_ms=now, progress=12 + len(misses))
+                raise ConsoleTimeout('capture began waiting during demo_goto')
+            return original(*args, **kwargs)
+
+        # At query admission the writer is idle; only the post-timeout read can
+        # observe its new report. Real files exercise the ownership validator.
+        status = self.bridge.status
+        def idle_before_query():
+            self.clock.advance(.6)
+            current = status()
+            self.publish(stage='idle')
+            self.controller._player_pacing['next_read'] = 0
+            return current
+
+        with patch.object(self.bridge, 'status', side_effect=idle_before_query), \
+             patch.object(self.controller, '_require_demo', side_effect=delayed):
+            self.run_native()
+        self.assertEqual(len(misses), 2)
+        self.assertIsNone(self.controller.status()['playback_error'])
+        self.assertEqual(self.controller.status()['time'], self.project.duration)
+
+    def test_repeated_console_timeouts_without_owned_progress_still_abort(self):
+        from dolly.console import ConsoleTimeout
+        self.prepare()
+        self.pin_capture()
+        self.publish(pid=9999)
+        def timeout(*args, **kwargs):
+            self.clock.advance(3)
+            raise ConsoleTimeout('unverified wait')
+        status = self.bridge.status
+        def next_window():
+            self.clock.advance(.6)
+            return status()
+        with patch.object(self.bridge, 'status', side_effect=next_window), \
+             patch.object(self.controller, '_require_demo', side_effect=timeout):
+            self.run_native()
+        self.assertIn('unverified wait', self.controller.status()['playback_error'])
+
     def test_old_heartbeat_and_no_real_progress_do_not_authorize_a_long_wait(self):
         self.pin_capture()
         self.publish()

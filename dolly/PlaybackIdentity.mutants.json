@@ -1,0 +1,22 @@
+[
+  {
+    "name": "pre-query evidence only (original race)",
+    "replace": [
+      [
+        "IF Valid THEN",
+        "IF FALSE THEN"
+      ]
+    ],
+    "expect": "KeepProgressingCapture"
+  },
+  {
+    "name": "ignore ownership and freshness",
+    "replace": [
+      [
+        "IF Valid THEN",
+        "IF TRUE THEN"
+      ]
+    ],
+    "expect": "RejectUnverifiedWait"
+  }
+]

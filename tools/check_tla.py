@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUIRED = {"AtomicCopy.cfg", "UpdateRollback.cfg", "WorkspaceCleanup.cfg", "LauncherHandoff.cfg", "FollowSelection.cfg", "CleanupMarker.cfg"}
+REQUIRED = {"AtomicCopy.cfg", "UpdateRollback.cfg", "WorkspaceCleanup.cfg", "LauncherHandoff.cfg", "FollowSelection.cfg", "CleanupMarker.cfg", "FollowLens.cfg", "PlaybackIdentity.cfg"}
 
 
 def check(root=ROOT):

@@ -22,7 +22,7 @@
 Capture views from a local replay, shape a camera path and play it back with
 animated framing and effects. Edit through the desktop or directly in the game.
 
-**Current source: 0.7.3-beta · Windows x64 · DirectX 11.**
+**Current source: 0.7.4-beta · Windows x64 · DirectX 11.**
 Native source changes need a matching rebuilt helper. The portable app includes
 Python and Tcl/Tk; no separate installation is needed.
 

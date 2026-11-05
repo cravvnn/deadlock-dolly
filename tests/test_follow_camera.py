@@ -103,6 +103,58 @@ class FollowCameraTests(unittest.TestCase):
         self.assertEqual(values, original)
         self.assertEqual(writes[-1], (ENABLED, 1))
 
+    def test_weapon_zoom_is_applied_once_and_original_lens_restores(self):
+        for normal_fov in (50, 90, 100, 120):
+            with self.subTest(normal_fov=normal_fov):
+                tx, values, original, writes = self.make_transaction()
+                values[PREFIX + 'fov'] = original[PREFIX + 'fov'] = normal_fov
+                values[PREFIX + 'ads_fov'] = original[PREFIX + 'ads_fov'] = 45
+                tx.apply(FollowSettings())
+                # The measured weapon subtracts 40 degrees. Keeping ADS45
+                # makes that 5; a neutral lens preserves the stock zoom.
+                self.assertEqual(values[PREFIX + 'ads_fov'] - 40, normal_fov - 40)
+                self.assertEqual(values[PREFIX + 'fov'], normal_fov)
+                self.assertEqual(values[PREFIX + 'ads_x_offset'], original[PREFIX + 'ads_x_offset'])
+                self.assertLess(writes.index((PREFIX + 'ads_fov', normal_fov)), len(writes) - 1)
+                tx.restore()
+                self.assertEqual(values, original)
+
+    def test_lens_update_uses_current_normal_and_retains_first_snapshot(self):
+        tx, values, original, writes = self.make_transaction()
+        tx.apply(FollowSettings())
+        values[PREFIX + 'fov'] = 110
+        tx.apply(FollowSettings(distance=210))
+        self.assertEqual(values[PREFIX + 'ads_fov'], 110)
+        self.assertEqual(tx.originals, original)
+        tx.restore()
+        self.assertEqual(values, original)
+
+    def test_unsupported_neutral_lens_does_not_mutate_or_lose_originals(self):
+        for active in (False, True):
+            with self.subTest(active=active):
+                tx, values, original, writes = self.make_transaction()
+                if active:
+                    tx.apply(FollowSettings())
+                values[PREFIX + 'fov'] = 150
+                before = dict(values)
+                writes.clear()
+                with self.assertRaisesRegex(ValueError, 'preserve weapon zoom'):
+                    tx.apply(FollowSettings(distance=210))
+                self.assertFalse(writes)
+                self.assertEqual(values, before)
+                self.assertEqual(tx.originals, original if active else {})
+
+    def test_aimed_lens_readback_mismatch_restores_complete_descriptor(self):
+        tx, values, original, writes = self.make_transaction()
+        write = tx.write
+        def clamp(name, value):
+            write(name, 99 if name == PREFIX + 'ads_fov' and value == 100 else value)
+        tx.write = clamp
+        with self.assertRaisesRegex(RuntimeError, 'readback mismatch'):
+            tx.apply(FollowSettings())
+        self.assertEqual(values, original)
+        self.assertFalse(tx.originals)
+
     def test_failed_apply_and_failed_rollback_remain_pending(self):
         tx, values, original, writes = self.make_transaction()
         write = tx.write

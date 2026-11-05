@@ -1,0 +1,7 @@
+[
+  {"name":"keep the extra aimed zoom","replace":[["!.ads = wanted","!.ads = 45"]],"expect":"CorrectAimedLens"},
+  {"name":"overwrite originals on update","replace":[["IF pending THEN saved ELSE actual","actual"]],"expect":"SavedOriginals"},
+  {"name":"discard failed restoration","replace":[["pending' = TRUE\n           /\\ UNCHANGED","pending' = FALSE\n           /\\ UNCHANGED"]],"expect":"RestoredOrPending"},
+  {"name":"admit unsupported neutral lens","replace":[["/\\ actual.normal <= 120","/\\ TRUE"]],"expect":"ReviewedAdsRange"},
+  {"name":"write lens after ownership loss","replace":[["step = 2 /\\ owned\n             /\\ actual'","step = 2 /\\ TRUE\n             /\\ actual'"]],"expect":"WriteAuthority"}
+]
