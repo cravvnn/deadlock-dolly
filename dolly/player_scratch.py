@@ -37,9 +37,11 @@ def create(root, *, fps, frames, output=None):
             state='pending', directory=str(folder)), indent=2), encoding='utf-8')
     except Exception:
         # No raw capture has been admitted yet. Remove only our new known files.
-        (folder/OWNER).unlink(missing_ok=True)
-        (folder/MANIFEST).unlink(missing_ok=True)
-        folder.rmdir()
+        for cleanup in ((folder/OWNER).unlink, (folder/MANIFEST).unlink, folder.rmdir):
+            try:
+                cleanup()
+            except OSError:
+                pass
         raise
     return folder, request
 

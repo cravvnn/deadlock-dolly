@@ -1,7 +1,7 @@
 # Maintained model coverage
 
-The worker/file-output and resource-boundary supplements are described at the
-end of this inventory.
+The worker/file-output, resource-boundary and reviewed failure-handling
+supplements are described at the end of this inventory.
 
 This inventory covers the models currently maintained beside their source. It
 does not claim whole-program coverage. Models run locally via
@@ -409,3 +409,68 @@ console/GUI/program refinement. Weak fairness assumes returning calls, terminal
 Done stutters, and deadlock checking remains enabled. Counts are non-additive:
 SocketSetup7, Admission9, ExportCleanup15/16 states. No reduction is claimed;
 these additive scopes/guards provide defensive failure handling.
+
+## Reviewed admission, cleanup and snapshot boundaries
+
+`LayerAdmission.tla` beside ui/layer_pipeline.py models four advance branches and
+two request identities with one possible refusal then acceptance. The GUI passes
+_submit, backed by OperationQueue.submit. Keep the old pre-submit field clearing
+that accepted workers can observe; restore pending intent only on explicit False.
+The compact test inspects state at real Queue.put and retries an actual rejection.
+Thrown/ambiguous submissions, synchronous completion reentry, audit side effects,
+worker execution and shutdown are outside this finite UI-serialized model.
+
+`ReaderStart.tla` beside replay_events.py covers ReplayEventReader.snapshot;
+editor_publication.configure consumes the result. Thread.start refusal produces
+failed status, cached for the same file identity as other read failures. New file
+identity can start again. `UpdateStart.tla` beside update_ui.py covers check and
+download thread admission: failed start clears running and reports deferred
+status; explicit retry keeps consent/safe-restart/request-ID guards. Completion
+means accepted work settled, not that a release was downloaded or installed.
+Both models assume a returning start refusal accepted no worker and returning
+inner work. Identity replacement, event protocol and retries are actual-method
+regressions, not full async/controller refinement. No helper/network execution
+or OS thread-failure frequency is certified.
+
+`ScratchCreate.tla` beside player_scratch.py starts after fresh directory creation
+and marker/manifest failure, before raw capture admission by player_layer.begin_capture.
+Two known files, optional foreign content and three ordered cleanup attempts
+check original-error preservation, attempt-all and unknown-file preservation.
+Only cleanup OSError is suppressed; leftovers may remain. Unknown files still
+block rmdir; no sweeper or recursive cleanup is introduced. `ReshadeResult.tla`
+beside reshade_setup.py covers _write_config from prepare_config: private stage,
+write/close/replace and unlink. Preserve the body result across cleanup OSError;
+mode/fsync/replacement policy is unchanged. Both models exclude hostile namespace
+replacement, process crash/power-loss durability and indefinitely blocking calls.
+Private actual Windows locks complement compact injected-error/file assertions.
+
+`HistoryShare.tla` beside shot_history.py models the reset snapshot's immutable
+identity, mutable caller, one later record/eviction and four bounded operations
+over three content values. Reset reuses the initial private project snapshot for
+_saved, with a strong reference surviving entry eviction. It is not a saved index.
+Select changes ShotState metadata, record replaces entries, move returns deepcopy;
+caller search and regression checks protect that ownership. mark_saved still
+copies the written snapshot and resets its merge barrier. The default spec omits
+the obsolete independent-save-copy slot. Future in-place mutation of private
+snapshot projects needs model/code reconciliation. GUI/session/revision identity,
+arbitrary Project behavior and complete history semantics are not proved here.
+
+Each of these six production-only specs has two invariant mutants and an adjacent
+Api module checking completion shape only. Their safety rules stay local; there
+is no whole-program refinement claim. Weak fairness assumes returning actions;
+terminal Done stutters with deadlock checking enabled. Baselines remain private.
+The bounded graphs do not establish state-count reduction. History avoids one
+real reset deepcopy; measured Python fixture allocation is not application RSS.
+
+Four touched one-call boundaries need no new lifecycle model: camera_bundle
+_number/parse_bundle reject overflow as CameraBundleError and require an integer
+version; depth_exr.read_distances directly validates the single supported FLOAT Z
+descriptor, terminator and sampling1 rather than iterating unsupported channel
+shapes; crash_dumps validates declared stream extents before interpreting fields
+while allowing valid external name RVAs; export_audit turns file-access OSError
+into findings and ok=False while preserving programming errors. Independent binary
+fixtures, valid outputs and intentional negatives own these contracts. The EXR
+reader was additionally checked against a standalone actual C++ depth writer.
+No valid-file format, game renderer, native POSIX or AE/USD application import
+qualification follows from these parser/diagnostic tests. The GUI already caught
+audit exceptions; structured audit findings primarily help CLI/support automation.

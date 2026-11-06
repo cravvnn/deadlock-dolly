@@ -226,7 +226,10 @@ def _write_config(path: Path, data: bytes) -> None:
             output.write(data)
         os.replace(name, path)
     finally:
-        Path(name).unlink(missing_ok=True)
+        try:
+            Path(name).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def prepare_config(config_path, library_root=None) -> dict:

@@ -25,7 +25,7 @@ def _streams(data: bytes) -> dict[int, tuple[int, int]]:
     streams = {}
     for index in range(count):
         kind, size, offset = struct.unpack_from("<III", data, directory + index * 12)
-        if size > len(data) or offset > len(data):
+        if offset + size > len(data):
             raise ValueError("invalid stream bounds")
         streams.setdefault(kind, (size, offset))
     return streams
@@ -35,10 +35,10 @@ def _modules(data: bytes, streams: dict[int, tuple[int, int]]) -> list[tuple[int
     if _MODULE_LIST_STREAM not in streams:
         return []
     _size, offset = streams[_MODULE_LIST_STREAM]
-    if offset + 4 > len(data):
+    if _size < 4 or offset + 4 > len(data):
         raise ValueError("truncated module list")
     count = struct.unpack_from("<I", data, offset)[0]
-    if count > MAX_MODULES or offset + 4 + count * 108 > len(data):
+    if count > MAX_MODULES or 4 + count * 108 > _size or offset + 4 + count * 108 > len(data):
         raise ValueError("invalid module count")
     modules = []
     for index in range(count):
@@ -69,12 +69,12 @@ def analyse(path: Path) -> dict:
     if _EXCEPTION_STREAM not in streams:
         raise ValueError("minidump has no exception stream")
     _size, offset = streams[_EXCEPTION_STREAM]
-    if offset + 40 > len(data):
+    if _size < 40 or offset + 40 > len(data):
         raise ValueError("truncated exception stream")
     thread, _alignment = struct.unpack_from("<II", data, offset)
     base = offset + 8
     code, flags, _record, address, count = struct.unpack_from("<IIQQI", data, base)
-    if count > 15 or base + 32 + count * 8 > len(data):
+    if count > 15 or 40 + count * 8 > _size or base + 32 + count * 8 > len(data):
         raise ValueError("invalid exception parameters")
     info = struct.unpack_from("<%dQ" % count, data, base + 32) if count else ()
     report = {"exception_code": "0x%08X" % code, "exception_flags": "0x%X" % flags,

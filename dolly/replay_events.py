@@ -74,7 +74,10 @@ class ReplayEventReader:
             if identity != self._identity:
                 self._identity = identity
                 self._result = KillIndex(1, message='Reading replay kills...')
-                threading.Thread(target=self._read, args=(selected, identity), daemon=True).start()
+                try:
+                    threading.Thread(target=self._read, args=(selected, identity), daemon=True).start()
+                except RuntimeError as exc:
+                    self._result = KillIndex(3, message=('Replay reader could not start: ' + str(exc))[:160])
             return self._result
 
     def _read(self, path, identity):

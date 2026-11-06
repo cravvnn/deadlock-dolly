@@ -68,6 +68,8 @@ def read_distances(path) -> np.ndarray:
             break
         name, kind, payload, offset = _attribute(data, offset)
         if name == "channels":
+            if kind != "chlist":
+                raise DepthExrError("unexpected channels attribute")
             channels = payload
         elif name == "dataWindow":
             if kind != "box2i" or len(payload) != 16:
@@ -83,23 +85,10 @@ def read_distances(path) -> np.ndarray:
         raise DepthExrError("only uncompressed depth frames are supported")
     if line_order != 0:
         raise DepthExrError("only increasing line order is supported")
-    entries = []
-    at = 0
-    while at < len(channels):
-        end = channels.find(b"\0", at)
-        if end < 0:
-            raise DepthExrError("truncated channel list")
-        channel = channels[at:end].decode("ascii", "replace")
-        at = end + 1
-        if at + 16 > len(channels):
-            raise DepthExrError("truncated channel entry")
-        pixel_type = struct.unpack_from("<i", channels, at)[0]
-        at += 16  # pixelType + pLinear/reserved + xSampling + ySampling
-        entries.append((channel, pixel_type))
-        if at < len(channels) and channels[at] == 0:
-            break
-    if len(entries) != 1 or entries[0][0] != "Z" or entries[0][1] != 2:
-        raise DepthExrError("expected exactly one FLOAT Z channel")
+    if (len(channels) != 19 or channels[:2] != b"Z\0" or channels[-1] != 0
+            or struct.unpack_from("<i", channels, 2)[0] != 2
+            or struct.unpack_from("<2i", channels, 10) != (1, 1)):
+        raise DepthExrError("expected exactly one unsampled FLOAT Z channel")
     x_min, y_min, x_max, y_max = data_window
     width, height = x_max - x_min + 1, y_max - y_min + 1
     if width <= 0 or height <= 0 or width * height > 64 * 1024 * 1024:

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "share mutable caller project",
+    "replace": [
+      [
+        "saved = 1",
+        "saved = 0"
+      ]
+    ],
+    "expect": "SavedFrozen"
+  },
+  {
+    "name": "overwrite old snapshot when recording",
+    "replace": [
+      [
+        "[objects EXCEPT ![2] = objects[0]]",
+        "[objects EXCEPT ![1] = objects[0]]"
+      ]
+    ],
+    "expect": "SavedFrozen"
+  }
+]

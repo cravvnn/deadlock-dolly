@@ -2,7 +2,7 @@
 
 [Maintainer references](README.md) Â· [Current user documentation](../README.md)
 
-Run the 15 core user-contract tests from the checkout root:
+Run the core user contracts and compact supplements from the checkout root:
 
 ```console
 python -m unittest discover -s tests -q
@@ -166,5 +166,22 @@ and matte/preview bytes decode correctly; first-use ReShade preset failures
 leave no incomplete final and retries preserve existing user edits. The worker
 uses a real owned Python process with a local protocol stand-in, never FFmpeg or
 the game. Deletion/row/write refusal boundaries are injected. These are distinct
-gaps, not restored retired tests. Together with existing owners the suite has54
-test methods. Private exhaustive/fault/process probes remain outside discovery.
+gaps, not restored retired tests. CORE_TEST_INTEGRATION.json records the current
+portfolio inventory. Private exhaustive/fault/process probes remain outside discovery.
+
+## Reviewed failure-boundary supplement
+
+`test_review_hardening.py` adds ten compact owner regressions: layered admission
+rollback/accepted-worker ordering; replay-thread startup status; malformed camera
+bundle numbers/version; exact EXR channel shape; minidump stream containment;
+read-only audit I/O findings; pre-admission scratch cleanup; ReShade write results;
+history reset allocation/isolation; and updater-thread failure/explicit retry.
+Fixtures use real local files, known numeric bytes and queue methods. Thread,
+permission, write and network boundaries are simulated. History counts a real
+copy allocation while checking saved content, not source text or a saved index.
+The current inventory is 70 methods, including the 15 core contracts. No retired
+matrix is restored and no network/game/application renderer is exercised here.
+Individual larger private probes, real Windows locks, 400 history traces and a
+standalone actual C++ EXR writer remain matching-input evidence in analysis.
+Six source-adjacent production-only models/API/config/mutants join the required
+gate; four one-call validation/diagnostic scopes have test-only rationale in SPECS.

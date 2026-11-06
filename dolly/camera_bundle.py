@@ -84,7 +84,10 @@ class CameraBundle:
 def _number(value, what: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise CameraBundleError(f"{what} is not a number")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise CameraBundleError(f"{what} is not finite") from exc
     if not math.isfinite(number):
         raise CameraBundleError(f"{what} is not finite")
     return number
@@ -167,7 +170,7 @@ def parse_bundle(data) -> CameraBundle:
         raise CameraBundleError("top level is not an object")
     if data.get("format") != FORMAT:
         raise CameraBundleError("not a Dolly camera bundle")
-    if data.get("version") != VERSION:
+    if type(data.get("version")) is not int or data.get("version") != VERSION:
         raise CameraBundleError(f"unsupported camera bundle version {data.get('version')!r}")
     complete = data.get("complete")
     if not isinstance(complete, bool):

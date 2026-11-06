@@ -143,7 +143,11 @@ class UpdateUI:
                 self.events.put((request, "error", "Update check deferred: " + str(error)))
             finally:
                 self.events.put((request, "done", None))
-        threading.Thread(target=run, name="Dolly update check", daemon=True).start()
+        try:
+            threading.Thread(target=run, name="Dolly update check", daemon=True).start()
+        except RuntimeError as exc:
+            self.running = False
+            self._status('Update check deferred: ' + str(exc), error=True)
 
     def safe_to_restart(self):
         app = self.app
@@ -189,7 +193,11 @@ class UpdateUI:
                 self.events.put((request, "error", "Update deferred: " + str(error)))
             finally:
                 self.events.put((request, "done", None))
-        threading.Thread(target=run, name="Dolly approved update download", daemon=True).start()
+        try:
+            threading.Thread(target=run, name="Dolly approved update download", daemon=True).start()
+        except RuntimeError as exc:
+            self.running = False
+            self._status('Update deferred: ' + str(exc), error=True)
 
     def restart(self):
         if self.restarting or self.app.closed or self.available is None or self.ready is None:

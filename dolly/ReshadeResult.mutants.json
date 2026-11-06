@@ -1,0 +1,22 @@
+[
+  {
+    "name": "cleanup overrides write error",
+    "replace": [
+      [
+        "result' = result",
+        "result' = \"cleanup_error\""
+      ]
+    ],
+    "expect": "PreserveResult"
+  },
+  {
+    "name": "swallow body error too",
+    "replace": [
+      [
+        "result' = result",
+        "result' = \"ok\""
+      ]
+    ],
+    "expect": "PreserveResult"
+  }
+]

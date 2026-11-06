@@ -1,0 +1,22 @@
+[
+  {
+    "name": "leave phantom loading",
+    "replace": [
+      [
+        "status' = \"failed\"",
+        "status' = \"loading\""
+      ]
+    ],
+    "expect": "NoPhantomLoading"
+  },
+  {
+    "name": "claim nonexistent work complete",
+    "replace": [
+      [
+        "status' = \"failed\"",
+        "status' = \"complete\""
+      ]
+    ],
+    "expect": "NoFalseCompletion"
+  }
+]

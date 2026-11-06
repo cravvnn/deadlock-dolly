@@ -1,0 +1,22 @@
+[
+  {
+    "name": "consume rejected advance",
+    "replace": [
+      [
+        "advance' = TRUE",
+        "advance' = FALSE"
+      ]
+    ],
+    "expect": "RefusalPreserved"
+  },
+  {
+    "name": "lose rejected request identity",
+    "replace": [
+      [
+        "pending' = pending",
+        "pending' = 0"
+      ]
+    ],
+    "expect": "RefusalPreserved"
+  }
+]

@@ -37,6 +37,9 @@ REQUIRED.update({"MemoryWatch.cfg", "RestoreHandles.cfg"})
 REQUIRED.update({"SocketSetup.cfg", "Admission.cfg", "ExportCleanup.cfg", "ExportCleanup-link.cfg"})
 
 
+REQUIRED.update({'LayerAdmission.cfg', 'ScratchCreate.cfg', 'UpdateStart.cfg', 'HistoryShare.cfg', 'ReaderStart.cfg', 'ReshadeResult.cfg'})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")

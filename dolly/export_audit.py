@@ -149,20 +149,23 @@ def _audit_decoded(root: Path, result: dict) -> None:
 
 
 def audit_take(folder) -> dict:
-    """Return ``{folder, takes, findings, ok}`` for a take folder; never raises."""
+    """Return ``{folder, takes, findings, ok}`` for a take folder; file errors become findings."""
     folder = Path(folder)
     result: dict = {"folder": str(folder), "takes": {}, "findings": [], "ok": False}
-    if not folder.is_dir():
-        result["findings"].append("take folder does not exist")
-        return result
-    if (folder / "shot.json").is_file():
-        _audit_sidecar("color", folder / "shot.json", folder, result)
-    elif not any((folder / layer).is_dir() for layer in _LAYERS):
-        result["findings"].append("no color shot.json and no layer folders")
-    for layer in _LAYERS:
-        if (folder / layer).is_dir():
-            _audit_layer(layer, folder / layer, result)
-    _audit_decoded(folder, result)
+    try:
+        if not folder.is_dir():
+            result["findings"].append("take folder does not exist")
+            return result
+        if (folder / "shot.json").is_file():
+            _audit_sidecar("color", folder / "shot.json", folder, result)
+        elif not any((folder / layer).is_dir() for layer in _LAYERS):
+            result["findings"].append("no color shot.json and no layer folders")
+        for layer in _LAYERS:
+            if (folder / layer).is_dir():
+                _audit_layer(layer, folder / layer, result)
+        _audit_decoded(folder, result)
+    except OSError as exc:
+        result["findings"].append(f"take audit could not read files: {exc}")
     result["ok"] = not result["findings"]
     return result
 

@@ -32,7 +32,7 @@ class ShotHistory:
         self.session_id = secrets.randbits(64) or 1
         self._states = [self._state(project)]
         self._index = 0
-        self._saved = deepcopy(project)
+        self._saved = self._states[0].project
         self._merge_key = None
         self._merge_time = 0
         self._advance()

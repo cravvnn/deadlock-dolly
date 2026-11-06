@@ -1,0 +1,22 @@
+[
+  {
+    "name": "cleanup error masks creation failure",
+    "replace": [
+      [
+        "result' = result\n        /\\ pc' = pc + 1",
+        "result' = \"cleanup\"\n        /\\ pc' = pc + 1"
+      ]
+    ],
+    "expect": "PreservePrimary"
+  },
+  {
+    "name": "first denied cleanup skips remaining",
+    "replace": [
+      [
+        "result' = result\n        /\\ pc' = pc + 1",
+        "result' = result\n        /\\ pc' = 4"
+      ]
+    ],
+    "expect": "AttemptAll"
+  }
+]

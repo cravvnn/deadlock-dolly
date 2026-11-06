@@ -58,24 +58,31 @@ class LayerPipeline:
         if self.pending_capture is not None:
             layer, self.pending_capture = self.pending_capture, None
             self.advance_pending = False
-            submit('Building players layer', lambda: finish_capture(layer), complete)
+            if submit('Building players layer', lambda: finish_capture(layer), complete) is False:
+                self.pending_capture = layer
+                self.advance_pending = True
             return
         if self.pending_combine is not None:
             layer, self.pending_combine = self.pending_combine, None
             self.advance_pending = False
-            submit('Building layer alpha', lambda: combine(layer), complete)
+            if submit('Building layer alpha', lambda: combine(layer), complete) is False:
+                self.pending_combine = layer
+                self.advance_pending = True
             return
         if self.queue:
             if recorder_active():
                 return
             self.advance_pending = False
-            submit('Recording layer take', start_next, complete)
+            if submit('Recording layer take', start_next, complete) is False:
+                self.advance_pending = True
             return
         self.advance_pending = False
         if self.base_capture is not None:
             audit(self.base_capture)
-            self.base_capture = None
-            submit('Restoring scene layers', restore, restored or (lambda _: None))
+            base, self.base_capture = self.base_capture, None
+            if submit('Restoring scene layers', restore, restored or (lambda _: None)) is False:
+                self.base_capture = base
+                self.advance_pending = True
 
 
 def recover_export_failure(stop_recording, stop_camera, restore_scene):
