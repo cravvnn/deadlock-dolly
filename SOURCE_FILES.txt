@@ -962,3 +962,4 @@ dolly/RestoreHandles.mutants.json
 dolly/RestoreHandles.tla
 dolly/RestoreHandlesApi.tla
 tests/test_resource_boundaries.py
+docs/RELEASE_NOTES_0.7.11-beta.md
