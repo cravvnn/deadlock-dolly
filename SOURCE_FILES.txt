@@ -1004,3 +1004,4 @@ dolly/ui/LayerAdmission.mutants.json
 dolly/ui/LayerAdmission.tla
 dolly/ui/LayerAdmissionApi.tla
 tests/test_review_hardening.py
+docs/RELEASE_NOTES_0.7.13-beta.md
