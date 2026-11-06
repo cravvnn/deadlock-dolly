@@ -1034,3 +1034,4 @@ dolly/ui/ScrollCommand.tla
 dolly/ui/ScrollCommand.cfg
 dolly/ui/ScrollCommand.mutants.json
 dolly/ui/ScrollCommandApi.tla
+docs/RELEASE_NOTES_0.7.14-beta.md
