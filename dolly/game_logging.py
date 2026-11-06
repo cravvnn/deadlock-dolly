@@ -5,7 +5,7 @@ disables NVIDIA DLSS. Keep stderr, an engine-owned console file and received
 console text instead. Output written only to stdout before the engine logger
 starts cannot be recovered by these channels.
 """
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import os
 from pathlib import Path
 import subprocess
@@ -30,13 +30,12 @@ def gui_stdio(stderr_file):
         info.dwFlags |= subprocess.STARTF_USESTDHANDLES
         info.hStdInput, info.hStdOutput, info.hStdError = handles[0], 0, handles[1]
         info.lpAttributeList = {"handle_list": handles}
-        try:
+        with ExitStack() as restore:
+            for handle, inherited in reversed(list(zip(handles, original))):
+                restore.callback(os.set_handle_inheritable, handle, inherited)
             for handle in handles:
                 os.set_handle_inheritable(handle, True)
             yield {"startupinfo": info, "close_fds": True}
-        finally:
-            for handle, inherited in zip(handles, original):
-                os.set_handle_inheritable(handle, inherited)
 
 
 def spawn(command, stderr_file, **options):

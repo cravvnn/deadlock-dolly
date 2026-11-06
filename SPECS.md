@@ -1,6 +1,7 @@
 # Maintained model coverage
 
-The worker/file-output supplements are described at the end of this inventory.
+The worker/file-output and resource-boundary supplements are described at the
+end of this inventory.
 
 This inventory covers the models currently maintained beside their source. It
 does not claim whole-program coverage. Models run locally via
@@ -317,3 +318,54 @@ named terminal Done stutters. Minimal completion-shape interfaces do not prove
 whole-program equivalence. Distinct/generated counts are scoped, non-additive
 and not performance metrics. Stronger retry/ownership behavior can add states.
 No fsync/sweeper/new permanent recovery flags are introduced by these patches.
+
+## Definitions reads, paused-memory episodes and launch-handle restoration
+
+`definitions.load` needs no new lifecycle model: its local open/read/decode is
+one returning call with no persistent state. It reads at most the existing
+512KiB limit plus one overflow byte, so a valid JSON prefix with excess trailing
+whitespace still fails. The compact real-file regression checks returned-byte
+budget and boundary acceptance. Existing lazy cache/adoption state is unchanged
+and is not claimed modeled here. The cap avoids oversized payload allocation;
+requesting the buffer costs about 512KiB even for tiny files in the measured
+Python fixture. This is not a universal memory/performance improvement.
+
+MemoryWatch.tla beside memory_watch.py models serialized
+PausedMemoryWatch.observe calls. `_check_paused_memory` consumes the optional
+warning; MemoryWatchApi.tla specifies episode reset and at-most-one warning.
+The implementation checks episode identity before the warned early return,
+then throttles and samples only an unwarned episode. The model checks no
+post-warning reads, episode identity, API refinement and bounded progress;
+two mutants protect the latch and reset order. Default thresholds are 2GiB,
+three samples and three seconds. Six calls over at most 18 seconds remain
+within the 60-second window; two known PID/tick episode identities plus invalid,
+unreadable or 0/1/2GiB samples are enumerated. Unknown ticks and window expiry
+are actual private code probes, not modeled. badRead is verification history,
+not a new production flag. The model does not cover concurrent callbacks,
+clock/sample exceptions, real process counters or GUI rendering. The compact
+regression checks exact warning text, quiescence and all four reset/rearm paths.
+
+RestoreHandles.tla beside game_logging.py models gui_stdio, called by spawn
+from launcher.launch. ExitStack registers both saved-flag callbacks before any
+mutation; reverse registration preserves the original restore order. Two
+distinct handles, all four initial flag combinations, setup/body errors and
+every subset of returning restore failures are enumerated. Both callbacks are
+attempted, restorable flags regain their saved values, and errors propagate.
+Two mutants protect continuation and saved flags. RestoreHandlesApi.tla checks
+only completion shape; flag/error obligations stay in the implementation model.
+Exceptions can mask body errors as before; with two restore failures the last
+callback error may now supersede the first. The compact Windows regression uses
+real owned handles and injected restore denial, checks parent startup options
+and original stderr flags. It skips on non-Windows. Python child probes in
+private qualification do not establish engine stdout/DLSS behavior; CRT startup
+normalizes that child's stdout. No live/native-engine behavior is certified.
+The model excludes pre-mutation get/open failures, private stdin context teardown,
+lock contention and child inheritance. No new lock or startup policy is added.
+
+Both maintained models select production behavior only. Weak fairness assumes
+returning calls; terminal Done stutters and deadlock checking stays enabled.
+Private matched comparison evidence shows memory-watch 14,850 -> 9,174 states;
+the production model also has 9,174. Stdio 268 -> 296 states adds safe cleanup
+continuation rather than reducing reachable states. These bounded counts are
+non-additive and do not prove whole-program equivalence or performance. No
+baseline/paired-trace implementation branches are shipped in maintained specs.

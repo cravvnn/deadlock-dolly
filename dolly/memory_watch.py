@@ -128,10 +128,12 @@ class PausedMemoryWatch:
             self._reset(pid, tick)
         if tick is not None:
             self._tick = tick
+        if self._warned:
+            return None
         now = self._clock()
         # The paused/replayed-episode gate and the warning depend on this sample;
         # always take the first sample of an episode, then throttle the rest.
-        if not self._warned and self._last_sample_at is not None \
+        if self._last_sample_at is not None \
                 and now - self._last_sample_at < self._sample_interval:
             return None
         value = self._sample(pid)
@@ -144,7 +146,7 @@ class PausedMemoryWatch:
         cutoff = now - self._window
         while self._samples and self._samples[0][0] < cutoff:
             self._samples.pop(0)
-        if self._warned or len(self._samples) < self._min_samples:
+        if len(self._samples) < self._min_samples:
             return None
         baseline = min(item[1] for item in self._samples)
         growth = self._samples[-1][1] - baseline

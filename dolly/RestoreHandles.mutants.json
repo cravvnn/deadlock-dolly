@@ -1,0 +1,22 @@
+[
+  {
+    "name": "first error stops callbacks",
+    "replace": [
+      [
+        "/\\ pc' = \"restore2\"\n         /\\ UNCHANGED <<original,flags,faults,body>>",
+        "/\\ pc' = \"done\"\n         /\\ UNCHANGED <<original,flags,faults,body>>"
+      ]
+    ],
+    "expect": "BothAttempted"
+  },
+  {
+    "name": "restore second to wrong saved flag",
+    "replace": [
+      [
+        "flags' = [flags EXCEPT ![2] = original[2]]",
+        "flags' = [flags EXCEPT ![2] = ~original[2]]"
+      ]
+    ],
+    "expect": "RestorableRestored"
+  }
+]

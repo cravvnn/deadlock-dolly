@@ -93,6 +93,16 @@ check does not establish source correspondence or in-game behavior.
 
 ## Manual integration checks
 
+`test_resource_boundaries.py` adds three compact regression contracts for gaps
+outside the core workflows: bounded local definitions reads (including valid
+oversized prefixes), warning-episode quiescence with reset/rearm, and Windows
+stdio inheritance restoration after the first callback fails. The latter uses
+real owned handles and injected failure; it skips off Windows. Private matrices,
+large-file allocation measurements and child/GUI adapters stay in analysis.
+MemoryWatch and RestoreHandles models run in the normal model gate with API
+refinement and two invariant mutants each. These checks do not qualify engine
+stdout/DLSS, real process memory usage or live game behavior.
+
 Select the checks for the behavior changed. Record the tested commit, Dolly
 and game versions, driver, result and any limits. Automated checks and a
 packaged editor launch do not establish in-game behavior. Use a local replay

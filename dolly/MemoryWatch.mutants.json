@@ -1,0 +1,22 @@
+[
+  {
+    "name": "keep sampling after warning",
+    "replace": [
+      [
+        "k = 0 \\/ gate.warned \\/",
+        "k = 0 \\/ FALSE \\/"
+      ]
+    ],
+    "expect": "NoPostWarningRead"
+  },
+  {
+    "name": "skip episode reset after warning",
+    "replace": [
+      [
+        "gate == IF k = 0 THEN Empty(0) ELSE IF w.key # k THEN Empty(k) ELSE w",
+        "gate == IF w.warned THEN w ELSE IF k = 0 THEN Empty(0) ELSE IF w.key # k THEN Empty(k) ELSE w"
+      ]
+    ],
+    "expect": "EpisodeIdentity"
+  }
+]

@@ -427,7 +427,8 @@ def decode(raw: bytes, *, native_abi: int = 4) -> Definitions:
 
 def load(path: Path, *, native_abi: int = 4) -> Definitions:
     try:
-        raw = Path(path).read_bytes()
+        with Path(path).open("rb") as stream:
+            raw = stream.read(MAX_BYTES + 1)
     except OSError as exc:
         raise DefinitionsError("definitions: cache is unreadable") from exc
     return decode(raw, native_abi=native_abi)
