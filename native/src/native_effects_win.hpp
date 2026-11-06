@@ -15,6 +15,7 @@ constexpr char kBuild6793Tier0Hash[] =
     "ec99a83124781f051cfdc74f536a6462d92cb1fb5d3b7053fe7d1427fa01d45b";
 constexpr char kBuild6801Tier0Hash[] =
     "666c9022739190d571a67161646d1a55511e130b62c3a93f8c95b47beaede433";
+constexpr char kBuild6853Tier0Hash[] = "3eb86a30eba4e33140232a536555ae846cdba1ba45068635f3b6b33c49c10313";
 constexpr std::uintptr_t kCvarTable = 0x3106e8, kCvarSet = 0x20ec60;
 std::uintptr_t gTier0 = 0, gCvar = 0;
 bool gExtendedCvarSupported = false;
@@ -48,7 +49,8 @@ struct EffectBinding {
         auto length = std::strlen(spec.name) + 1;
         return read_value(ref.data, name) && read_memory(name, text, length) &&
                !std::strcmp(text, spec.name) && read_value(ref.data + 0x28, type) &&
-               type == spec.type &&
+               type == effect_cvar_type(spec.type, season2_cvar_types(
+                          gTier0, reinterpret_cast<std::uintptr_t>(gSetCvar))) &&
                read_value(ref.data + 0x30, flags)
                // Reject references, per-user/server-controlled vars and callback reentry.
                && !(flags & ((1ull << 2) | (1ull << 9) | (1ull << 10) | (1ull << 13) |
@@ -237,6 +239,12 @@ struct CvarLayout {
 };
 
 static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
+    if (module_matches(tier0, kBuild6853Tier0Hash, 0x402000)) {
+        layout.table = 0x313208; layout.setter = 0x20ffa0;
+        layout.find = 0x6c6b0; layout.data = 0x6c5f0;
+        layout.data_slot = 41; layout.extended = true;
+        return true;
+    }
     const bool build6801 = module_matches(tier0, kBuild6801Tier0Hash, 0x401000);
     const bool current_setter = build6801 || module_matches(tier0, kBuild6779Tier0Hash, 0x401000) ||
     module_matches(tier0, kBuild6793Tier0Hash, 0x401000) ||

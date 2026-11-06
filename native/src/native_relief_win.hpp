@@ -75,6 +75,8 @@ struct ReliefCvar {
         if (flags & ((1ull << 2) | (1ull << 9) | (1ull << 10) | (1ull << 13) | (1ull << 15) |
                      (1ull << 18) | (1ull << 22)))
             return false;
+        candidate_type = static_cast<std::uint16_t>(relief_cvar_type(
+            candidate_type, season2_cvar_types(gTier0, reinterpret_cast<std::uintptr_t>(gSetCvar))));
         if (candidate_type != 0 && candidate_type != 2 && candidate_type != 3)
             return false;
         ref = candidate;

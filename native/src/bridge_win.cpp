@@ -87,6 +87,8 @@ constexpr char kBuild6793EngineHash[] =
 // Build 6801: independently reviewed named tables and complete accessor bodies.
 constexpr char kBuild6801EngineHash[] =
     "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6";
+constexpr char kBuild6853EngineHash[] = "e5c84fc8f18a136858af9ec9fc1b2d5ddc745712f63988d58999def32426dcd9";
+constexpr char kSound6853Hash[] = "a1a516ce5bb50167a7f259589eea5c6f824de5688e86433a9c170af5f691a488";
 constexpr char kSound6726Hash[] =
     "a2f20871181b240b994c3a3b9d5a61fcb52392e991b7ce984c06bf1d55fd642c";
 constexpr char kSoundSystemHash[] =
@@ -118,6 +120,7 @@ constexpr EngineLayout kEngine6726Layout{0x5b92b0, 0x4d7e88, 0x4e2790, 0x2d590, 
 // accessor kept their RVAs; only the engine2 identity changed.
 constexpr EngineLayout kEngine6728Layout{0x5b92b0, 0x4d7e88, 0x4e2790, 0x2d590, 0x732c0,
                                          0x34ea0,  0x28b40,  0x34ee0,  0x73310};
+constexpr EngineLayout kEngine6853Layout{0x5b9430, 0x4d7e88, 0x4e27f0, 0x2d590, 0x732c0, 0x34ea0, 0x28b40, 0x34ee0, 0x73310};
 EngineLayout gEngineLayout = kLegacyEngineLayout;
 // Movie-audio capture stays reviewed per exact engine identity. A published
 // definitions entry cannot widen it.
@@ -409,6 +412,13 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
     return module && hash_file(module_path(module)) == expected &&
            module_image_size(module) == image_size;
 }
+// Exact lookup is only for the two active generated tables. Previously
+// reviewed sound builds use the existing unique-signature path, which derives
+// their actual RIP-relative voice table and retains its ambiguity checks.
+static bool exact_sound_profile(HMODULE module) {
+    return module_matches(module, kSoundSystemHash, 0x678000) ||
+           module_matches(module, kSound6853Hash, 0x6c1000);
+}
 // Definitions published on the repository's default branch and cached by the
 // editor. Loaded once in the worker; everything else only reads it. Declared
 // before the behaviour headers below because they consult it during setup.
@@ -434,6 +444,11 @@ camera_view::Cache gCameraCache;
 // published definitions entry may add another accepted engine identity that
 // reuses a named layout, but it can never override a compiled one.
 static bool resolve_engine_layout(HMODULE engine, EngineLayout& layout) {
+    if (module_matches(engine, kBuild6853EngineHash, 0x906000)) {
+        layout = kEngine6853Layout;
+        gReviewedMovieAudioEngine = true;
+        return true;
+    }
     const bool engine6726 = module_matches(engine, kBuild6726EngineHash, 0x906000);
     const bool engine6728 = module_matches(engine, kBuild6728EngineHash, 0x906000);
     const bool engine6739 = module_matches(engine, kBuild6739EngineHash, 0x906000);
@@ -1698,21 +1713,17 @@ static DWORD WINAPI worker(void*) {
         editor_install_input_hooks();
         install_overlay_hooks();
         auto sound = GetModuleHandleW(L"soundsystem.dll");
-        sound_capture_install(sound,
-                              module_matches(sound, kSoundSystemHash, 0x678000) ||
-                                  module_matches(sound, kSeptemberSoundSystemHash, 0x6bf000) ||
-                                  module_matches(sound, kSound6726Hash, 0x6bf000) ||
-                                  module_matches(sound, kSound6739Hash, 0x6bf000) ||
-                                  module_matches(sound, kSound6753Hash, 0x6bf000) ||
-                                  module_matches(sound, kSound6793Hash, 0x6bf000) ||
-                                  module_matches(sound, kSound6801Hash, 0x6bf000));
+        sound_capture_install(sound, exact_sound_profile(sound));
         // The movie-WAV owner, virtual methods and host_framerate registration
         // are reviewed for these exact engines. The hook only changes the movie
         // clock while host_framerate is positive; real-time recording is unchanged.
         if (gReviewedMovieAudioEngine)
             movie_audio_install(engine, sound,
-                                module_matches(engine, kBuild6801EngineHash, 0x906000) &&
-                                    module_matches(sound, kSound6801Hash, 0x6bf000));
+                (module_matches(engine, kBuild6801EngineHash, 0x906000) &&
+                 module_matches(sound, kSound6801Hash, 0x6bf000)) ||
+                (module_matches(engine, kBuild6853EngineHash, 0x906000) &&
+                 module_matches(sound, kSound6853Hash, 0x6c1000)),
+                module_matches(engine, kBuild6853EngineHash, 0x906000));
         // Hook and original trampoline remain resident until process exit. Losing
         // the editor only releases ownership, avoiding code-unload races in a view.
         std::shared_ptr<const NativeShot> shot;
@@ -1746,14 +1757,7 @@ static DWORD WINAPI worker(void*) {
                 const auto module = GetModuleHandleW(L"soundsystem.dll");
                 if (module) {
                     sound = module;
-                    sound_capture_install(
-                        module, module_matches(module, kSoundSystemHash, 0x678000) ||
-                                    module_matches(module, kSeptemberSoundSystemHash, 0x6bf000) ||
-                                    module_matches(module, kSound6726Hash, 0x6bf000) ||
-                                    module_matches(module, kSound6739Hash, 0x6bf000) ||
-                                    module_matches(module, kSound6753Hash, 0x6bf000) ||
-                                    module_matches(module, kSound6793Hash, 0x6bf000) ||
-                                    module_matches(module, kSound6801Hash, 0x6bf000));
+                    sound_capture_install(module, exact_sound_profile(module));
                 }
             }
             if (diagnostic_now >= next_renderer_probe) {

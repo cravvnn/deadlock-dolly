@@ -1,0 +1,52 @@
+[
+  {
+    "name": "original single timeout abort",
+    "replace": [
+      [
+        "RetryAllowed == queries < MaxAttempts",
+        "RetryAllowed == FALSE"
+      ]
+    ],
+    "expect": "TransientConsoleRecovered"
+  },
+  {
+    "name": "unbounded timeout retries",
+    "replace": [
+      [
+        "RetryAllowed == queries < MaxAttempts",
+        "RetryAllowed == TRUE"
+      ]
+    ],
+    "expect": "AttemptsBound"
+  },
+  {
+    "name": "skip native identity recheck",
+    "replace": [
+      [
+        "ReadAllowed == nativeOwned /\\ markerOwned",
+        "ReadAllowed == markerOwned"
+      ]
+    ],
+    "expect": "NoForeignRead"
+  },
+  {
+    "name": "skip request recheck",
+    "replace": [
+      [
+        "ReadAllowed == nativeOwned /\\ markerOwned",
+        "ReadAllowed == nativeOwned"
+      ]
+    ],
+    "expect": "NoForeignRead"
+  },
+  {
+    "name": "release without console response",
+    "replace": [
+      [
+        "IF queries+1 >= readyAt THEN",
+        "IF TRUE THEN"
+      ]
+    ],
+    "expect": "KeepPendingUntilVerified"
+  }
+]

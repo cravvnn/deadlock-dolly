@@ -228,3 +228,13 @@ One private MSVC/static-CRT build and all three owning ABI/lifecycle/pair tests 
 ## Build6819 exact pair
 
 Adds the reviewed 6819 server hash while retaining the 6817 Source2ServerConfig001 table and method bodies (table 0x2b5a1b0; Connect/Disconnect/Interval 0x99d9e4/0x99d9f0/0x99ab40). The candidate passed the three ABI/lifecycle tests and 712 actual-function pair/table checks, and the exact6817 predecessor mutant rejected the new pair. The built DLL is 307200 bytes with SHA-256 `a304dc87f22b1a276463a83ceb0410494b288b92d1f0aef7ef9b4b35df1016b2`. Offline only; no6819 live startup/export/shutdown acceptance is claimed.
+
+## Builds 6853 and 6854 (Ranked Beta Season 2)
+
+Adds only the reviewed new Tier0/server pair and its named Config001 table.
+All fourteen ICvar adapter slots retain their calling conventions. The stock
+callback containers moved within CCvar; the shim continues to use its methods,
+without writing those private fields. Earlier exact pairs and SDK pins remain.
+Compiled lifecycle, adapter, pair and predecessor-negative checks pass.
+
+Build6858 adds the exact reviewed server fingerprint to the existing6853 Tier0/Config001 layout. Complete Connect/Disconnect/Interval bodies, adjustor thunks, named registration and vtable tuple remain exact. Prior pairs and teardown guards retained; no6858 runtime claim.

@@ -96,6 +96,51 @@ class NativePackagingTests(unittest.TestCase):
                 native_pins = set(re.findall(expression, source.read_text()))
                 self.assertEqual(pins, native_pins)
 
+    def test_current_native_engine_layout_matches_reviewed_profile(self):
+        root = TOOLS.parent
+        contract = json.loads((root / "native/profiles/runtime-contracts.json").read_text())
+        profile = json.loads((root / "native/profiles" / contract["modules"]["client"]["profile"]).read_text())
+        engine = profile["engine"]
+        addresses, functions = engine["addresses"], engine["functions"]
+        expected = [addresses["demo_player_pointer"], addresses["demo_player_vtable"],
+                    addresses["engine_client_vtable"], functions["demo_is_playing"]["rva"],
+                    functions["engine_is_playing_demo"]["rva"], functions["demo_is_paused"]["rva"],
+                    functions["demo_is_seeking"]["rva"], functions["demo_get_tick"]["rva"],
+                    functions["engine_get_demo_filename"]["rva"]]
+        source = (root / "native/src/bridge_win.cpp").read_text()
+        row = re.search(r"kEngine6853Layout\{([^}]+)\}", source)
+        self.assertIsNotNone(row)
+        self.assertEqual([int(v, 16) for v in re.findall(r"0x[0-9a-f]+", row.group(1))],
+                         [int(v, 16) for v in expected])
+
+    def test_current_editing_consumer_pins_match_reviewed_module_tuple(self):
+        root = TOOLS.parent
+        contract = json.loads((root / "native/profiles/runtime-contracts.json").read_text())
+        current = json.loads((root / "native/profiles" / contract["modules"]["client"]["profile"]).read_text())
+        editing = json.loads((root / "assets/editing/profile.json").read_text())
+        manifest = json.loads((root / "native/profiles/manifest.json").read_text())
+        self.assertEqual(editing["configuration_modules"], {
+            "bin/win64/engine2.dll": current["engine"]["sha256"],
+            "bin/win64/tier0.dll": current["tier0"]["sha256"],
+            "bin/win64/rendersystemdx11.dll": contract["modules"]["renderer"]["sha256"],
+            "bin/win64/filesystem_stdio.dll": "b7ab9df88d3d6f0dc48c2f894f403a9aee455e28922ff1ca3a48e03117b8070f",
+        })
+
+    def test_exact_sound_caller_selects_only_active_generated_profiles(self):
+        import generate_sound_profile as sound
+        root = TOOLS.parent
+        source = (root / "native/src/bridge_win.cpp").read_text()
+        hashes = dict(re.findall(r'constexpr char (\w+Hash)\[\]\s*=\s*"([a-f0-9]{64})"', source))
+        helper = re.search(r"static bool exact_sound_profile\(HMODULE module\)\s*\{([\s\S]*?)\n\}", source)
+        self.assertIsNotNone(helper)
+        actual = {(hashes[name], int(size, 16)) for name, size in
+                  re.findall(r"module_matches\(module, (\w+), (0x[0-9a-f]+)\)", helper.group(1))}
+        current = json.loads(sound.PROFILE.read_text())
+        legacy = json.loads(sound.LEGACY_PROFILE.read_text())
+        self.assertEqual(actual, {(p["sha256"], p["image_size"]) for p in (current, legacy)})
+        self.assertIn("sound_capture_install(sound, exact_sound_profile(sound));", source)
+        self.assertIn("sound_capture_install(module, exact_sound_profile(module));", source)
+
     def test_clean_source_export_includes_every_reviewed_profile(self):
         from release_files import source_files
         root = TOOLS.parent

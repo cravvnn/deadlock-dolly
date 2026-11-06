@@ -216,6 +216,166 @@ class PlayerCaptureContextTests(unittest.TestCase):
         self.assertEqual(self.controller._export_resolution, .75)
         self.assertEqual(self.raw.read_bytes(), b"owned raw capture must stay")
 
+    def test_gui_failure_sends_owned_stop_before_querying_blocked_console(self):
+        from dolly.gui import DollyApp
+        from dolly.console import ConsoleTimeout
+
+        app = DollyApp.__new__(DollyApp)
+        app.controller, app.video_export, app.clip_audio = self.controller, self.export, None
+        require_demo = self.controller._require_demo
+        queries = []
+
+        def blocked_until_stopped(*args, **kwargs):
+            queries.append((self.deployment / player_layer.STOP_NAME).exists())
+            if not queries[-1]:
+                raise ConsoleTimeout("busy capture console")
+            return require_demo(*args, **kwargs)
+
+        def acknowledge():
+            self.assertTrue((self.deployment / player_layer.STOP_NAME).exists())
+            self.publish("failed player capture missed shot frames")
+
+        self.on_sleep = acknowledge
+        with patch.object(self.controller, "_require_demo", side_effect=blocked_until_stopped):
+            with self.assertRaisesRegex(RuntimeError, "Original camera failure"):
+                app._abort_failed_export("Original camera failure")
+        self.assertTrue((self.deployment / player_layer.STOP_NAME).exists())
+        self.assertTrue(queries)
+        self.assertTrue(all(queries))
+        self.assertFalse(self.controller._recording_pending)
+        self.assertIsNone(self.controller._export_timing)
+        self.assertIsNone(self.controller._export_resolution)
+        self.assertEqual(self.raw.read_bytes(), b"owned raw capture must stay")
+
+    def test_gui_failure_with_blocked_console_retains_unacknowledged_capture(self):
+        from dolly.gui import DollyApp
+        from dolly.console import ConsoleTimeout
+
+        app = DollyApp.__new__(DollyApp)
+        app.controller, app.video_export, app.clip_audio = self.controller, self.export, None
+        with patch.object(self.controller, "_require_demo", side_effect=ConsoleTimeout("busy console")):
+            with self.assertRaisesRegex(RuntimeError, "Original camera failure"):
+                app._abort_failed_export("Original camera failure")
+        self.assertTrue((self.deployment / player_layer.STOP_NAME).exists())
+        self.assertEqual(self.runtime_writes(), [])
+        self.assert_retained()
+
+    def test_gui_failure_keeps_journals_if_console_stays_blocked_after_ack(self):
+        from dolly.gui import DollyApp
+        from dolly.console import ConsoleTimeout
+
+        app = DollyApp.__new__(DollyApp)
+        app.controller, app.video_export, app.clip_audio = self.controller, self.export, None
+        self.on_sleep = lambda: self.publish("failed player capture missed shot frames")
+        with patch.object(self.controller, "_require_demo", side_effect=ConsoleTimeout("busy console")):
+            with self.assertRaisesRegex(RuntimeError, "Original camera failure"):
+                app._abort_failed_export("Original camera failure")
+        self.assertTrue((self.deployment / player_layer.STOP_NAME).exists())
+        self.assertEqual(self.runtime_writes(), [])
+        self.assert_retained()
+
+    def test_gui_failure_cannot_stop_foreign_session_replay_or_request(self):
+        from dolly.gui import DollyApp
+        from dolly.console import ConsoleTimeout
+
+        app = DollyApp.__new__(DollyApp)
+        app.controller, app.video_export, app.clip_audio = self.controller, self.export, None
+        for changed in ("session", "selected replay", "native replay", "request"):
+            with self.subTest(changed=changed):
+                with patch.object(self.controller, "_require_demo", side_effect=ConsoleTimeout("busy console")):
+                    if changed == "session":
+                        context = patch.object(self.controller, "_session", SimpleNamespace(**vars(self.original_session)))
+                    elif changed == "selected replay":
+                        context = patch.object(self.controller, "_demo", Path("other.dem"))
+                    elif changed == "native replay":
+                        context = patch.object(self.console, "demo_name", "other.dem")
+                    else:
+                        player_layer.begin_capture(self.deployment, 48, 12, fps=120)
+                        from contextlib import nullcontext
+                        context = nullcontext()
+                    with context:
+                        with self.assertRaisesRegex(RuntimeError, "Original camera failure"):
+                            app._abort_failed_export("Original camera failure")
+                self.assertFalse((self.deployment / player_layer.STOP_NAME).exists())
+                self.assertEqual(self.runtime_writes(), [])
+                self.assert_retained()
+
+    def test_post_stop_transient_console_timeouts_recover_without_losing_originals(self):
+        from dolly.console import ConsoleTimeout
+        from dolly.gui import DollyApp
+
+        app = DollyApp.__new__(DollyApp)
+        app.controller, app.video_export, app.clip_audio = self.controller, self.export, None
+        self.on_sleep = lambda: self.publish("failed player capture missed shot frames")
+        require_demo = self.controller._require_demo
+        attempts = []
+
+        def busy_then_ready(*args, **kwargs):
+            attempts.append(True)
+            if len(attempts) <= 2:
+                self.assertTrue((self.deployment / player_layer.STOP_NAME).exists())
+                self.assert_retained()
+                self.assertEqual(self.runtime_writes(), [])
+                raise ConsoleTimeout("render queue still draining")
+            return require_demo(*args, **kwargs)
+
+        with patch.object(self.controller, "_require_demo", side_effect=busy_then_ready):
+            with self.assertRaisesRegex(RuntimeError, "Original camera failure") as raised:
+                app._abort_failed_export("Original camera failure")
+        self.assertNotIn("Recovery still needs attention", str(raised.exception))
+        self.assertEqual(self.export.status()["state"], "cancelled")
+        self.assertFalse(self.controller._recording_pending)
+        self.assertIsNone(self.controller._export_timing)
+        self.assertIsNone(self.controller._export_resolution)
+        self.assertEqual(self.raw.read_bytes(), b"owned raw capture must stay")
+        self.assertGreaterEqual(len(attempts), 3)
+
+    def test_post_stop_console_recovery_is_bounded_and_retains_retry_state(self):
+        from dolly.console import ConsoleTimeout
+
+        self.on_sleep = lambda: self.publish("failed player capture missed shot frames")
+        with patch.object(self.controller, "_require_demo", side_effect=ConsoleTimeout("still busy")) as query:
+            with self.assertRaisesRegex(RuntimeError, "acknowledged stop.*still busy.*Finish or discard"):
+                self.export.stop(cancel=True)
+        self.assertEqual(query.call_count, 3)
+        self.assertEqual(self.runtime_writes(), [])
+        self.assert_retained()
+        # A later explicit retry can recover; the cancelled take remains cancelled.
+        self.assertEqual(self.export.stop()["state"], "cancelled")
+        self.assertFalse(self.controller._recording_pending)
+        self.assertIsNone(self.controller._export_timing)
+        self.assertEqual(self.raw.read_bytes(), b"owned raw capture must stay")
+
+    def test_post_stop_retry_rechecks_ownership_before_another_console_query(self):
+        from contextlib import ExitStack
+        from dolly.console import ConsoleTimeout
+
+        marker = self.deployment / player_layer.MARKER_NAME
+        original_marker = marker.read_bytes()
+        self.on_sleep = lambda: self.publish("failed player capture missed shot frames")
+        for changed in ("session", "selected replay", "native replay", "request"):
+            with self.subTest(changed=changed), ExitStack() as stack:
+                def timeout_then_replace(*args, **kwargs):
+                    if changed == "session":
+                        stack.enter_context(patch.object(self.controller, "_session", SimpleNamespace(**vars(self.original_session))))
+                    elif changed == "selected replay":
+                        stack.enter_context(patch.object(self.controller, "_demo", Path("other.dem")))
+                    elif changed == "native replay":
+                        stack.enter_context(patch.object(self.console, "demo_name", "other.dem"))
+                    else:
+                        player_layer.begin_capture(self.deployment, 48, 12, fps=120)
+                    raise ConsoleTimeout("busy before ownership changed")
+
+                try:
+                    with patch.object(self.controller, "_require_demo", side_effect=timeout_then_replace) as query:
+                        with self.assertRaises(RuntimeError):
+                            self.export.stop(cancel=True)
+                    self.assertEqual(query.call_count, 1)
+                    self.assertEqual(self.runtime_writes(), [])
+                    self.assert_retained()
+                finally:
+                    marker.write_bytes(original_marker)
+
     def test_replay_changed_during_ack_wait_gets_no_restoration_writes(self):
         self.on_sleep = lambda: setattr(self.console, "demo_name", "other.dem")
         with self.assertRaises(RuntimeError):

@@ -1576,8 +1576,14 @@ class DollyApp:
                     self.controller._require_demo(require_tick=False)
                     return action()
                 return restore
-            stop_recording, stop_camera, restore_scene = (
-                guarded(action) for action in (stop_recording, stop_camera, restore_scene))
+            # Players Stop validates the pinned session/replay through native
+            # readback before its file request. A netcon prerequisite here can
+            # prevent the request that lets a busy renderer drain in the first
+            # place. The recorder still requires console identity after the ack,
+            # before releasing its reservation or restoring runtime settings.
+            if getattr(self.video_export, "_capture_only", False) is not True:
+                stop_recording = guarded(stop_recording)
+            stop_camera, restore_scene = (guarded(action) for action in (stop_camera, restore_scene))
         errors = recover_export_failure(stop_recording, stop_camera, restore_scene)
         if cancel:
             pending = self.controller.pending_export_restoration()

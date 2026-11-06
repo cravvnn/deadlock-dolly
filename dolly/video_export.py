@@ -18,6 +18,7 @@ import threading
 import time
 
 from . import encoder_select, player_layer
+from .console import ConsoleTimeout
 from .runtime import external_program_environment
 from .display import client_size
 
@@ -732,6 +733,28 @@ class VideoExport:
                                " Raw capture data is kept. Finish or discard again to retry; "
                                "a new capture is blocked until cleanup is confirmed.") from exc
 
+    def _wait_player_restore_context(self) -> None:
+        """After stop acknowledgement, let a busy console recover before writes.
+
+        Keep the reservation and originals across at most three read attempts.
+        Each attempt first verifies native ownership and the pinned request;
+        every non-timeout error remains an immediate refusal. Existing console
+        query timeouts bound each attempt, on the operation worker, not Tk.
+        """
+        for attempt in range(3):
+            self._require_export_context(capture_readback=True)
+            try:
+                self._require_export_context()
+                return
+            except ConsoleTimeout as exc:
+                last_timeout = exc
+                if attempt < 2:
+                    time.sleep(.1)
+        raise RuntimeError(
+            "Players capture acknowledged stop, but replay verification is still unavailable: "
+            + str(last_timeout) + " Raw capture data and restoration settings are kept. "
+            "Use Finish or discard again after Deadlock responds.") from last_timeout
+
     def stop(self, *, cancel: bool = False, timeout: float = 120.0) -> dict:
         """Request shutdown and wait on the operation worker, never on Tk.
 
@@ -747,7 +770,7 @@ class VideoExport:
             if self._capture_only:
                 capture_cancel = cancel or self._capture_cancel_pending
                 self._confirm_player_stop(timeout, cancel=capture_cancel)
-                self._require_export_context()
+                self._wait_player_restore_context()
                 with self._lock:
                     self._capture_only = False
                     self._last = {"state": "cancelled" if capture_cancel else "completed"}

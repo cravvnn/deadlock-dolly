@@ -2,11 +2,26 @@
 #include "dolly_attach.hpp"
 #include "dolly_path.hpp"
 #include <array>
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <limits>
 
 namespace dolly {
+// Internal effect/wire types stay stable; only the exact reviewed Tier0 ABI
+// selects its runtime representation. This is a stateless value conversion.
+inline constexpr unsigned effect_cvar_type(unsigned legacy_type, bool season2) noexcept {
+    return season2 && legacy_type != 0 ? legacy_type + 2 : legacy_type;
+}
+inline constexpr bool season2_cvar_types(std::uintptr_t base, std::uintptr_t setter) noexcept {
+    return base != 0 && setter == base + 0x20ffa0;
+}
+// Normalize into the relief owner's existing bool/int32/float representation.
+// Other runtime types are refused before any binding is published.
+inline constexpr unsigned relief_cvar_type(unsigned runtime_type, bool season2) noexcept {
+    if (!season2) return runtime_type;
+    return runtime_type == 0 ? 0 : runtime_type == 5 ? 3 : runtime_type == 9 ? 2 : 0xffff;
+}
 struct EffectSpec {
     const char* name;
     unsigned type;

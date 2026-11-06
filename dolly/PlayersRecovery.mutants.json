@@ -1,0 +1,82 @@
+[
+  {
+    "name": "console prerequisite blocks native stop",
+    "replace": [
+      [
+        "StopPermitted == nativeOwned /\\ markerOwned",
+        "StopPermitted == nativeOwned /\\ markerOwned /\\ consoleReady"
+      ]
+    ],
+    "expect": "BusyConsoleCannotBlockStop"
+  },
+  {
+    "name": "ignore native ownership",
+    "replace": [
+      [
+        "StopPermitted == nativeOwned /\\ markerOwned",
+        "StopPermitted == markerOwned"
+      ]
+    ],
+    "expect": "NoForeignStop"
+  },
+  {
+    "name": "ignore capture request",
+    "replace": [
+      [
+        "StopPermitted == nativeOwned /\\ markerOwned",
+        "StopPermitted == nativeOwned"
+      ]
+    ],
+    "expect": "NoForeignStop"
+  },
+  {
+    "name": "restore without sent",
+    "replace": [
+      [
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ markerOwned /\\ consoleReady",
+        "RestorePermitted == ack /\\ nativeOwned /\\ markerOwned /\\ consoleReady"
+      ]
+    ],
+    "expect": "KeepPendingUntilVerified"
+  },
+  {
+    "name": "restore without ack",
+    "replace": [
+      [
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ markerOwned /\\ consoleReady",
+        "RestorePermitted == sent /\\ nativeOwned /\\ markerOwned /\\ consoleReady"
+      ]
+    ],
+    "expect": "KeepPendingUntilVerified"
+  },
+  {
+    "name": "restore without nativeOwned",
+    "replace": [
+      [
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ markerOwned /\\ consoleReady",
+        "RestorePermitted == sent /\\ ack /\\ markerOwned /\\ consoleReady"
+      ]
+    ],
+    "expect": "KeepPendingUntilVerified"
+  },
+  {
+    "name": "restore without markerOwned",
+    "replace": [
+      [
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ markerOwned /\\ consoleReady",
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ consoleReady"
+      ]
+    ],
+    "expect": "KeepPendingUntilVerified"
+  },
+  {
+    "name": "restore without consoleReady",
+    "replace": [
+      [
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ markerOwned /\\ consoleReady",
+        "RestorePermitted == sent /\\ ack /\\ nativeOwned /\\ markerOwned"
+      ]
+    ],
+    "expect": "KeepPendingUntilVerified"
+  }
+]

@@ -185,3 +185,34 @@ check oversized originals, collision and failure preservation; private process
 exits/retries supplement them. Return uses weak fairness of returning I/O calls.
 These are scoped hardening contracts, not whole-program or game verification.
 The independent outer save_settings payload cleanup remains unchanged.
+
+## Failed Players export recovery
+
+PlayersRecovery.tla beside gui.py/video_export.py models the GUI's failed-export
+entry to the recorder, native session/replay ownership and request checks, terminal
+acknowledgement, and the identity recheck before reservation release/restoration.
+A busy console cannot prevent the owned file stop request. Console identity is
+still required after acknowledgement before runtime restoration. Normal encoder
+stops retain the outer console guard. Eight mutants protect these boundaries.
+All combinations of identity, marker, console and acknowledgement are enumerated,
+including owner/request changes during waiting. Native GPU/drain internals, audio,
+OS scheduling/storage stalls and entire-program correctness remain outside scope.
+The simplification removes a redundant pre-stop console dependency; it does not
+remove the recorder's native or post-stop guards or introduce another state holder.
+
+## Bounded Players post-stop console recovery
+
+PlayersRestoreRetry.tla beside video_export.py models _wait_player_restore_context,
+called only by stop after the owned capture acknowledges shutdown. Three read
+attempts use existing console query timeouts, with 0.1 seconds between timeouts.
+Every attempt checks native session/replay identity and pinned capture request
+before querying. Only ConsoleTimeout retries; other failures refuse immediately.
+The capture reservation, cancel intent, raw data and restoration originals remain
+until successful verification. Mutating restoration keeps its own fresh guards.
+
+The model enumerates success on attempts 1..3, persistent timeout, and identity or
+request loss between attempts. Five mutants protect ownership, request, response,
+budget and transient recovery. Its 81 states extend behavior; no state reduction or
+whole-program/GPU/OS-hang claim. PlayersRecovery abstracts this helper as its
+consoleReady result. Native drain and post-response ownership are separate owner
+contracts checked through the real controller/recorder/GUI tests.

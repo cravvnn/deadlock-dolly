@@ -500,9 +500,7 @@ bool sound_capture_available() noexcept { return installed.load(); }
 // authored replay window. No TGA frames are produced because the recorded
 // command asks for the `wav` format only.
 namespace {
-constexpr std::uintptr_t kMovieVtableRva = 0x4f6890;
 constexpr std::uintptr_t kMovieGetFramerateRva = 0xfc7c0;
-constexpr std::uintptr_t kHostFramerateCvarRva = 0x8b4dd8;
 constexpr std::uintptr_t kConVarFloatAccessorRva = 0x3bb60;
 constexpr std::uintptr_t kMovieFramerateOffset = 0xf4;
 
@@ -512,12 +510,14 @@ void* host_framerate_cvar = nullptr;
 std::atomic<bool> movie_installed{false};
 std::atomic<std::uintptr_t> movie_reader_base{0};
 
-// CMovieRecorder's audio-stream slot0 adjusts self by-0x10, then returns
-// output_frame / movie_fps (engine2:fe5bc -> fcf00). The sound writer rounds
-// delivery to512-sample blocks; read the stream clock, not those block edges.
+// The recorder's field-clock getter (fcf00) returns output_frame / movie_fps.
+// Secondary slot0 is the adjusting destructor thunk, used only as an identity
+// check. Read the frame clock rather than the writer's512-sample block edges.
 bool read_movie_audio(std::uintptr_t base, MovieAudioSample& sample) noexcept {
     __try {
-        const auto p = reinterpret_cast<const char*>(base + 0x5ba5c0);
+        const bool season2 = reinterpret_cast<std::uintptr_t>(host_framerate_cvar) ==
+                             base + movie_audio_layout(true).host_cvar;
+        const auto p = reinterpret_cast<const char*>(base + movie_audio_layout(season2).recorder);
         if ((*reinterpret_cast<const unsigned short*>(p + 0xec) & 2) == 0 ||
             *reinterpret_cast<const unsigned*>(p + 0x108) <= 1)
             return false;
@@ -569,13 +569,14 @@ float __fastcall movie_get_framerate_hook(void* self) noexcept {
 }
 } // namespace
 
-bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair) noexcept {
+bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair, bool season2) noexcept {
     if (movie_installed.load(std::memory_order_acquire))
         return true;
     if (!engine_module)
         return false;
     const auto base = reinterpret_cast<std::uintptr_t>(engine_module);
-    const auto slot = reinterpret_cast<void**>(base + kMovieVtableRva + 0x38);
+    const auto layout = movie_audio_layout(season2);
+    const auto slot = reinterpret_cast<void**>(base + layout.table + 0x38);
     const auto target = reinterpret_cast<void*>(base + kMovieGetFramerateRva);
     // Exact reviewed accessor: movss xmm0, [rcx+0xf4]; ret.
     constexpr unsigned char expected[] = {0xF3, 0x0F, 0x10, 0x81, 0xF4, 0x00, 0x00, 0x00, 0xC3};
@@ -584,12 +585,12 @@ bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm
         return false;
     }
     convar_float = reinterpret_cast<ConVarFloatFn>(base + kConVarFloatAccessorRva);
-    host_framerate_cvar = reinterpret_cast<void*>(base + kHostFramerateCvarRva);
+    host_framerate_cvar = reinterpret_cast<void*>(base + layout.host_cvar);
     if (exact_pcm_pair && sound_module) {
         // Read-only clock support is restricted to the reviewed engine/sound
         // pair. The native video frame samples this same stream clock.
-        const auto time_slot = reinterpret_cast<void**>(base + 0x4f6920);
-        const auto frame_slot = reinterpret_cast<void**>(base + kMovieVtableRva + 6 * 8);
+        const auto time_slot = reinterpret_cast<void**>(base + layout.audio_table);
+        const auto frame_slot = reinterpret_cast<void**>(base + layout.table + 6 * 8);
         constexpr unsigned char frame_getter[] = {0x48, 0x8b, 0x81, 0xd8, 0, 0, 0, 0xc3};
         if (*time_slot != reinterpret_cast<void*>(base + 0xfe5bc) ||
             *frame_slot != reinterpret_cast<void*>(base + 0xfc7b0) ||

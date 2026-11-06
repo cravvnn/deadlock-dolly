@@ -59,7 +59,7 @@ class FollowCapabilityMonitor(ReplayCameraMonitor):
         self._owned()
         if self.memory is None:
             raise PreloadError('Game Follow capability monitor is closed.')
-        refs = {PREFIX + suffix: (rva, 7) for suffix, rva in REFS.items()}
+        refs = {PREFIX + suffix: (rva, _profile.FLOAT_TYPE) for suffix, rva in REFS.items()}
         refs.update({ENABLED: (_profile.ENABLED_REF, 0), FOLLOW_AIM: (_profile.FOLLOW_AIM_REF, 0)})
         result = {}
         for name, (rva, expected_type) in refs.items():

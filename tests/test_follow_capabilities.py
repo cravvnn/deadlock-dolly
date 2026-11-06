@@ -51,7 +51,7 @@ class FollowCapabilityTests(unittest.TestCase):
         monitor = FollowCapabilityMonitor.__new__(FollowCapabilityMonitor)
         monitor.base = 0x180000000
         monitor._owned = Mock()
-        refs = {PREFIX + name: (rva, 7) for name, rva in REFS.items()}
+        refs = {PREFIX + name: (rva, 9) for name, rva in REFS.items()}
         refs.update({ENABLED: (_profile.ENABLED_REF, 0), FOLLOW_AIM: (_profile.FOLLOW_AIM_REF, 0)})
         blocks, headers = {}, {}
         for i, (name, (rva, value_type)) in enumerate(refs.items()):
@@ -79,7 +79,7 @@ class FollowCapabilityTests(unittest.TestCase):
         values = monitor.sample()
         self.assertEqual(len(values), 19)
         self.assertEqual(values[ENABLED]['type'], 0)
-        self.assertEqual(values[PREFIX + 'x_offset']['type'], 7)
+        self.assertEqual(values[PREFIX + 'x_offset']['type'], 9)
         self.assertEqual(monitor._owned.call_count, 2)
 
     def test_wrong_type_and_blocked_flags_fail_closed(self):
@@ -99,6 +99,15 @@ class FollowCapabilityTests(unittest.TestCase):
             else:
                 struct.pack_into('<f', headers[name], 0x58, value)
             with self.subTest(name=name, value=value), self.assertRaises(PreloadError):
+                monitor.sample()
+
+    def test_season2_float_type_is_exact_and_old_type_is_refused(self):
+        monitor, _, headers = self.monitor()
+        self.assertEqual(_profile.FLOAT_TYPE, 9)
+        self.assertEqual(len(monitor.sample()), len(REFS) + 2)
+        for old_type in (3, 7, 15):
+            struct.pack_into('<H', headers[PREFIX + 'x_offset'], 0x28, old_type)
+            with self.subTest(type=old_type), self.assertRaisesRegex(PreloadError, 'identity/type differs'):
                 monitor.sample()
 
     def test_name_mismatch_and_unregistered_refs_refused(self):

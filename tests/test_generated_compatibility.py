@@ -43,7 +43,7 @@ class GeneratedCompatibilityTests(unittest.TestCase):
     def test_preload_singleton_rva_must_match_its_reviewed_constructor_store(self):
         namespace = {}
         exec(generate.generated_outputs(self.root)['dolly/_runtime_generated.py'], namespace)
-        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3ec9ba8)
+        self.assertEqual(namespace['Preload'].INTRO_GLOBAL, 0x3ed8390)
         original = deepcopy(self.data['groups']['Preload']['INTRO_GLOBAL'])
         # The old copied address stays in range and leaves every saved code
         # hash unchanged. The instruction/target relation must catch it.
@@ -268,7 +268,7 @@ class GeneratedCompatibilityTests(unittest.TestCase):
                   for a in self.data['follow_anchors'] for span in a['spans']}
         self.assertEqual(actual,expected)
         anchors={a['build']:a for a in self.data['follow_anchors']}
-        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831','6835','6837','6839','6842','6844','6848','6849','6851'})
+        self.assertEqual(set(anchors),{'6722','6723','6726','6793','6796','6801','6803','6805','6806','6807','6821','6826','6827','6828','6829','6831','6835','6837','6839','6842','6844','6848','6849','6851','6853','6857','6858'})
         for build in ('6722','6723','6726'):
             self.assertEqual(anchors[build]['values']['observer_services_offset'],'0xe40')
             self.assertNotIn('local_player_table',anchors[build]['values'])
@@ -306,6 +306,12 @@ class GeneratedCompatibilityTests(unittest.TestCase):
         self.assertEqual(anchors['6848']['values']['observer_services_offset'],'0xe98')
         self.assertEqual(anchors['6849']['values']['observer_services_offset'],'0xe98')
         self.assertEqual(anchors['6851']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(anchors['6853']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(anchors['6858']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6858']['values']['local_player_table'],16),0x27a5340)
+        self.assertEqual(anchors['6857']['values']['observer_services_offset'],'0xe98')
+        self.assertEqual(int(anchors['6857']['values']['local_player_table'],16),0x27a5340)
+        self.assertEqual(int(anchors['6853']['values']['local_player_table'],16),0x27a5340)
         self.assertEqual(int(anchors['6849']['values']['local_player_table'],16),0x279c2e0)
         self.assertEqual(int(anchors['6848']['values']['local_player_table'],16),0x279c2e0)
         self.assertEqual(anchors['6844']['values']['observer_services_offset'],'0xe98')
@@ -422,10 +428,10 @@ class GeneratedCompatibilityTests(unittest.TestCase):
 
     def test_player_profiles_keep_exact_pairs_and_moved_producer(self):
         scenes = generate.player_scenes(self.root, self.data)
-        self.assertEqual([row['rva'] for row in scenes], [0x564b0, 0x5c8e0, 0x5c8e0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c9a0])
-        self.assertEqual([row['arguments'] for row in scenes], [9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10])
+        self.assertEqual([row['rva'] for row in scenes], [0x564b0, 0x5c8e0, 0x5c8e0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c8f0, 0x5c9a0, 0x5c9a0])
+        self.assertEqual([row['arguments'] for row in scenes], [9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10])
         self.assertEqual([row['fields'][1] for row in scenes],
-                         [0x5d4fe8, 0x61e7d0, 0x61e860, 0x61e860, 0x61e860, 0x61e800, 0x61e800, 0x61e800, 0x61e800, 0x61e800, 0x61e810])
+                         [0x5d4fe8, 0x61e7d0, 0x61e860, 0x61e860, 0x61e860, 0x61e800, 0x61e800, 0x61e800, 0x61e800, 0x61e800, 0x61e810, 0x61e880])
         header = generate.generated_outputs(self.root)['native/include/dolly_player_scene_generated.hpp']
         for scene in scenes:
             self.assertIn(scene['scene_hash'], header)

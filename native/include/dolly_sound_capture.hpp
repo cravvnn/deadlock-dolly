@@ -18,8 +18,15 @@ bool sound_capture_available() noexcept;
 // host_framerate while a Dolly fixed-step take is active. The recorder keeps
 // writing its WAV at the requested movie fps, while the engine advances at the
 // fixed-step rate, so the WAV is frame-locked to the slow-motion video.
+// Immutable reviewed recorder layouts. Secondary RTTI tables are resolved
+// independently; their relative order can change between builds.
+struct MovieAudioLayout { std::uintptr_t table, host_cvar, recorder, audio_table; };
+inline constexpr MovieAudioLayout movie_audio_layout(bool season2) noexcept {
+    return season2 ? MovieAudioLayout{0x4f6950, 0x8b4f18, 0x5ba740, 0x4f6900}
+                   : MovieAudioLayout{0x4f6890, 0x8b4dd8, 0x5ba5c0, 0x4f6920};
+}
 bool movie_audio_install(void* engine_module, void* sound_module = nullptr,
-                         bool exact_pcm_pair = false) noexcept;
+                         bool exact_pcm_pair = false, bool season2 = false) noexcept;
 bool movie_audio_available() noexcept;
 // The movie audio-stream clock is output-frame/fps, independent of replay
 // speed. PCM writes are chunked; these sample windows intentionally are not.

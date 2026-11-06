@@ -1,3 +1,23 @@
+### Deadlock Dolly v0.7.7-beta
+
+**0.7.7-beta**
+
+- **Players export recovery.** *Before:* a busy game console could block the stop request after a failed Players export or leave restoration pending after a brief timeout. *After:* Dolly requests an owned capture stop first, then retries replay verification before restoring settings, preserving raw captures and saved values when recovery cannot be confirmed.
+
+- **Reliable settings errors.** *Before:* an error removing a temporary settings file could hide the original save failure. *After:* Dolly preserves the original result so a cleanup problem does not replace the useful error.
+
+- **Safer update preparation.** *Before:* malformed cached update metadata could interrupt the search for a usable update. *After:* Dolly rejects invalid metadata consistently and can continue checking other prepared updates.
+
+### Deadlock Dolly v0.7.6-beta
+
+**0.7.6-beta**
+
+- **Ranked Beta Season 2 compatibility.** *Before:* the new game build was refused by Dolly's camera and editing checks. *After:* reviewed compatibility data and a rebuilt unlocker support the new Season 2 update and build 6858 hotfix while retaining the existing ownership and restoration checks.
+
+- **Follow and depth-of-field controls.** *Before:* the game's changed setting types prevented Dolly from recognizing supported camera controls. *After:* Dolly uses the reviewed Season 2 types and preserves the older build checks.
+
+- **Replay seek safeguards.** *Before:* changed setting types could leave temporary render relief unavailable during seeks. *After:* Dolly recognizes the reviewed new types and restores each original value afterward.
+
 ### Deadlock Dolly v0.7.5-beta
 
 **0.7.5-beta**

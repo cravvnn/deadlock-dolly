@@ -45,6 +45,12 @@ struct Fixture {
 };
 
 int main(int argc, char** argv) {
+    const auto old_movie = dolly::movie_audio_layout(false);
+    const auto new_movie = dolly::movie_audio_layout(true);
+    check(old_movie.table == 0x4f6890 && old_movie.host_cvar == 0x8b4dd8);
+    check(old_movie.recorder == 0x5ba5c0 && old_movie.audio_table == 0x4f6920);
+    check(new_movie.table == 0x4f6950 && new_movie.host_cvar == 0x8b4f18);
+    check(new_movie.recorder == 0x5ba740 && new_movie.audio_table == 0x4f6900);
     Resolution out{};
     check(kProfiles[0].parameter_volume_offset == 0x20 && kProfiles[0].parameter_rate_offset == 0x2c);
     check(kProfiles[1].parameter_volume_offset == 0x24 && kProfiles[1].parameter_rate_offset == 0x30);
@@ -73,6 +79,26 @@ int main(int argc, char** argv) {
                                     f.data_size, p.image_size, &missing, 1, mode, out));
         }
     }
+    // The preceding reviewed build keeps the same ABI/signature shape. Its
+    // actual RIP table is derived by fallback, rather than listed twice and
+    // becoming ambiguous with the new profile.
+    const Profile prior{previous::kImageSize, previous::kSignatures,
+                        std::size(previous::kSignatures), previous::kTableReferences,
+                        std::size(previous::kTableReferences), previous::kVoiceTable,
+                        previous::kVoiceMapOffset, previous::kParameterVolumeOffset,
+                        previous::kParameterRateOffset};
+    Fixture previous_build(true, prior);
+    check(resolve_profiles(previous_build.text.data(), previous_build.text.size(),
+                           previous_build.text_rva, previous_build.data_rva,
+                           previous_build.data_size, prior.image_size, kProfiles,
+                           std::size(kProfiles), false, out));
+    check(out.voice_table == previous::kVoiceTable);
+    check(out.parameter_volume_offset == 0x20 && out.parameter_rate_offset == 0x2c);
+    check(!resolve_profiles(previous_build.text.data(), previous_build.text.size(),
+                            previous_build.text_rva, previous_build.data_rva,
+                            previous_build.data_size, prior.image_size, kProfiles,
+                            std::size(kProfiles), true, out));
+    check(out.voice_table == 0 && out.parameter_volume_offset == 0 && out.parameter_rate_offset == 0);
     Fixture exact(true);
     check(exact.run(out, true) && out.voice_table == kVoiceTable);
     check(exact.run(out));

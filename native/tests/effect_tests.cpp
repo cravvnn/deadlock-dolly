@@ -13,6 +13,12 @@ static void check(bool okay) {
 int main(int argc, char** argv) {
     try {
         if (argc == 1) {
+            check(effect_cvar_type(0, true) == 0);
+            check(effect_cvar_type(3, true) == 5);
+            check(effect_cvar_type(7, true) == 9);
+            check(effect_cvar_type(13, true) == 15);
+            for (unsigned old_type : {0u, 3u, 7u, 13u})
+                check(effect_cvar_type(old_type, false) == old_type);
             const std::array<double, 4> ranges{-150, 20, 250, 2500};
             check(effective_dof_ranges(ranges, true, false) == std::array<double, 4>{});
             check(effective_dof_ranges(ranges, false, false) == ranges);
