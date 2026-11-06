@@ -162,7 +162,13 @@ int main(int argc, char **argv) {
                 installed = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'CMake/bin/cmake.exe'
                 cmake = str(installed) if installed.is_file() else None
             self.assertIsNotNone(cmake, 'Windows path parity requires CMake and Visual Studio 2022 C++ tools')
-            build = self.root / 'native-path-build'
+            # MSBuild's tracking files exceed MAX_PATH beneath long test TEMP
+            # roots. Keep its owned build tree short and remove it after use.
+            build_root = root / 'build'
+            build_root.mkdir(exist_ok=True)
+            workspace = tempfile.TemporaryDirectory(prefix='parity-', dir=build_root)
+            self.addCleanup(workspace.cleanup)
+            build = Path(workspace.name)
             runner = build / 'native-path-runner.exe'
             (self.root / 'CMakeLists.txt').write_text(f'''cmake_minimum_required(VERSION 3.21)
 project(DollyPathParity LANGUAGES CXX)
@@ -172,11 +178,11 @@ target_compile_features(native-path-runner PRIVATE cxx_std_17)
 target_compile_options(native-path-runner PRIVATE /fp:strict)
 set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${{CMAKE_BINARY_DIR}}")
 ''', encoding='utf-8')
-            subprocess.run([cmake, '-S', str(self.root), '-B', str(build),
-                            '-G', 'Visual Studio 17 2022', '-A', 'x64'],
-                           check=True, capture_output=True, text=True, timeout=60)
-            subprocess.run([cmake, '--build', str(build), '--config', 'Release', '--parallel', '2'],
-                           check=True, capture_output=True, text=True, timeout=60)
+            for command in ([cmake, '-S', str(self.root), '-B', str(build),
+                             '-G', 'Visual Studio 17 2022', '-A', 'x64'],
+                            [cmake, '--build', str(build), '--config', 'Release', '--parallel', '2']):
+                compiled = subprocess.run(command, capture_output=True, text=True, timeout=60)
+                self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
         else:
             subprocess.run([compiler, '-std=c++17', '-O2', '-ffp-contract=off',
                             '-I', str(root / 'native/include'), str(root / 'native/src/dolly_path.cpp'),
