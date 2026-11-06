@@ -44,7 +44,7 @@ The card, as built (1920 x 1080 reference):
 | Boil | while `.Prewarming` only: the icon holds a pose for 800 ms, then snaps (0.01 % = 0.5 ms keyframe step, no tween) to the next, poses 0 > 3 > 1 > 5 > 2 > 4 on a 4.8 s loop; nudges up to 0.5 px, tilts up to 0.5 degrees (toned down at Kara's request; RenderLock's boil steps every 500 ms) |
 
 Inter is not in the game, so the labels use the stock `sans` (Retail Demo).
-`tests/test_panorama_assets.py` (`LoadingCardDesignTests`) pins these values.
+The values above describe the intended source design.
 
 ## Rebuild
 
@@ -67,25 +67,18 @@ refuses a pack without the `ClientServerDebugStats`, `GameLogoIcon`,
 
 ## Re-pin
 
-1. `dolly/launcher.py`: `UI_OVERRIDE_PACK_SHA256 = "<pack hash>"` (replaces `0af30912...`).
-2. `tests/test_panorama_assets.py`,
-   `test_shipped_pack_is_exact_accepted_five_resource_card_and_capture_clean_payloads`:
-   the same `<pack hash>` literal. The two payload hashes there
-   (`citadel_client_status.vcss_c`, `citadel_hud_and_db_overlay.vcss_c`) belong to
-   unchanged sources that were compiled as addon `dolly_capture`, as the tool does,
-   so they may come out identical; if the test reports a difference (another
-   compiler build records itself in each resource), take the new values from the
-   tool's output.
-3. Leave `OLD_CARD_PACK_SHA256` alone: it names the old pack. With a new pack,
-   `test_shipped_pack_carries_this_card_once_rebuilt` stops skipping and checks the
-   compiled card stylesheet for `DollyTitleRow`, `DollyFamiliarBoil`, `DollyChalk`
-   and both image paths.
+Update `UI_OVERRIDE_PACK_SHA256` in `dolly/launcher.py` to the new pack
+hash printed by the builder. Review the resource hashes in the build output and
+verify the rebuilt pack in a native-camera session using the checklist below.
+
+Run the core source regression suite from the checkout root:
 
 ```powershell
-& $py -m unittest discover -s tests -p 'test_panorama_assets.py' -q
-& $py -m unittest discover -s tests -p 'test_launcher.py' -q
-& $py -m unittest discover -s tests -p 'test_native_packaging.py' -q
+& $py -m unittest discover -s tests -q
 ```
+
+These headless source tests do not exercise Panorama or qualify the rebuilt pack;
+the in-game check is needed to assess the actual integration.
 
 ## In-game checklist (native-camera session)
 

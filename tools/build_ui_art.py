@@ -21,8 +21,8 @@ Outputs (the contract with :mod:`dolly.ui.art`, described in ``assets/ui/manifes
   opaque from ``<source>/playback-art`` and checked against Figma's own 2x render of the card.
 
 Every PNG is 8-bit, one IDAT, every row filter 0, so Dolly reads the picture bands without
-a PNG decoder. ``tests/test_ui_assets.py`` runs :func:`verify`, so a hand-edited file, a stale
-manifest or icons left behind by a palette change fail the suite.
+a PNG decoder. Run :func:`verify` after asset changes to check for hand-edited files,
+stale manifests or icons left behind by a palette change.
 """
 from __future__ import annotations
 
