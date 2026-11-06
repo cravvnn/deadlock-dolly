@@ -952,3 +952,4 @@ dolly/PresetPublish.mutants.json
 dolly/PresetPublish.tla
 dolly/PresetPublishApi.tla
 tests/test_output_ownership.py
+docs/RELEASE_NOTES_0.7.10-beta.md
