@@ -977,3 +977,5 @@ dolly/SocketSetup.mutants.json
 dolly/SocketSetup.tla
 dolly/SocketSetupApi.tla
 tests/test_admission_cleanup.py
+
+docs/RELEASE_NOTES_0.7.12-beta.md
