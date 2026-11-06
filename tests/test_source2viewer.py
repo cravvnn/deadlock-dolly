@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -100,6 +102,71 @@ class Source2ViewerSetupTests(unittest.TestCase):
         self.assertFalse((Path(self.folder.name) / "escape.txt").exists())
         self.assertFalse((self.root / "other.txt").exists())
         self.assertTrue((self.root / "libSkiaSharp.dll").is_file())
+
+    def test_failed_attempt_preserves_legacy_and_neighbor_files(self):
+        self.root.mkdir()
+        legacy = self.root / 'staging'
+        legacy.mkdir()
+        files = [self.root/'cli-windows-x64.zip.part', self.root/'cli-windows-x64.zip', legacy/'keep']
+        for path in files:
+            path.write_bytes(b'another attempt')
+        with patch.object(source2viewer, 'find_viewer', return_value=None), \
+                patch.object(source2viewer, 'cache_root', return_value=self.root), \
+                patch.object(source2viewer, '_download', side_effect=OSError('download interrupted')):
+            with self.assertRaises(RuntimeError):
+                source2viewer.ensure_viewer()
+        for path in files:
+            self.assertEqual(path.read_bytes(), b'another attempt')
+
+    def test_cleanup_denial_does_not_mask_installed_helper(self):
+        archive, digest = self._fixture_zip()
+        unlink = os.unlink
+        def deny_archive(path, *args, **kwargs):
+            if Path(path).name == 'cli-windows-x64.zip':
+                raise PermissionError('archive is locked')
+            return unlink(path, *args, **kwargs)
+        with patch.object(source2viewer, 'find_viewer', return_value=None), \
+                patch.object(source2viewer, 'cache_root', return_value=self.root), \
+                patch.object(source2viewer, 'SOURCE2VIEWER_CLI_SHA256', digest), \
+                patch.object(source2viewer, '_download', side_effect=lambda path, progress: path.write_bytes(archive.read_bytes())), \
+                patch.object(os, 'unlink', side_effect=deny_archive):
+            result = source2viewer.ensure_viewer()
+        self.assertEqual(result.read_bytes(), b'fake-cli')
+        self.assertTrue((self.root/'.complete').is_file())
+
+    def test_other_completed_attempt_cannot_consume_paused_download(self):
+        archive, digest = self._fixture_zip()
+        ready, resume = threading.Event(), threading.Event()
+        errors, results, paths = [], [], []
+        def download(path, progress):
+            paths.append(path)
+            path.write_bytes(archive.read_bytes())
+            if threading.current_thread().name == 'paused-helper':
+                ready.set()
+                if not resume.wait(5):
+                    raise RuntimeError('test release timed out')
+        def paused():
+            try:
+                results.append(source2viewer.ensure_viewer())
+            except Exception as exc:
+                errors.append(exc)
+        with patch.object(source2viewer, 'find_viewer', return_value=None), \
+                patch.object(source2viewer, 'cache_root', return_value=self.root), \
+                patch.object(source2viewer, 'SOURCE2VIEWER_CLI_SHA256', digest), \
+                patch.object(source2viewer, '_download', side_effect=download):
+            worker = threading.Thread(target=paused, name='paused-helper', daemon=True)
+            worker.start()
+            try:
+                self.assertTrue(ready.wait(5))
+                result = source2viewer.ensure_viewer()
+                self.assertEqual(result.read_bytes(), b'fake-cli')
+            finally:
+                resume.set()
+                worker.join(5)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [result])
+        self.assertEqual(len(set(paths)), 2)
 
 
 if __name__ == "__main__":

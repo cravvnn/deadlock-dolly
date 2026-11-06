@@ -272,5 +272,56 @@ class ReplayRepairGuiTests(unittest.TestCase):
         app._submit.assert_not_called()
 
 
+class ReplayPublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.source = self.root / 'original.dem'
+        self.output = self.root / 'repaired.dem'
+        self.source.write_bytes(make_demo())
+
+    def test_copy_failure_never_exposes_final_name_and_retry_succeeds(self):
+        original = self.source.read_bytes()
+        def fail(source, target, count):
+            self.assertFalse(self.output.exists())
+            target.write(b'partial')
+            raise OSError('copy interrupted')
+        with patch.object(replay_repair, '_copy_exact', side_effect=fail):
+            with self.assertRaisesRegex(OSError, 'copy interrupted'):
+                replay_repair.repair_replay(self.source, self.output)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.source.read_bytes(), original)
+        self.assertEqual(replay_repair.repair_replay(self.source, self.output), self.output)
+
+    def test_packet_verification_happens_before_final_publication(self):
+        index = replay_repair.packet_index
+        def verify(path):
+            if Path(path) != self.source:
+                self.assertFalse(self.output.exists())
+                self.assertEqual(Path(path).parent, self.output.parent)
+                self.assertIsNotNone(index(path))
+                raise replay_repair.ReplayRepairUnavailable('verification refused')
+            return index(path)
+        with patch.object(replay_repair, 'packet_index', side_effect=verify):
+            with self.assertRaisesRegex(replay_repair.ReplayRepairUnavailable, 'verification refused'):
+                replay_repair.repair_replay(self.source, self.output)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(set(self.root.iterdir()), {self.source})
+
+    def test_final_appearing_after_verification_is_never_overwritten_or_cleaned(self):
+        index = replay_repair.packet_index
+        def verify(path):
+            result = index(path)
+            if Path(path) != self.source:
+                self.output.write_bytes(b'another owner')
+            return result
+        with patch.object(replay_repair, 'packet_index', side_effect=verify):
+            with self.assertRaises(FileExistsError):
+                replay_repair.repair_replay(self.source, self.output)
+        self.assertEqual(self.output.read_bytes(), b'another owner')
+        self.assertEqual(set(self.root.iterdir()), {self.source, self.output})
+
+
 if __name__ == "__main__":
     unittest.main()

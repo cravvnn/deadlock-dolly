@@ -96,5 +96,52 @@ class ScratchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'links'):
                 player_scratch.checked_directory(self.scratch)
 
+    def test_interrupted_status_write_preserves_manifest_and_allows_retry(self):
+        folder = self.begin()
+        manifest = folder/player_scratch.MANIFEST
+        original = manifest.read_bytes()
+        raw = folder/player_layer.BUNDLE_NAME
+        raw.write_bytes(b'keep raw capture')
+        def fail(data, stream, **kwargs):
+            stream.write('{"state":')
+            raise OSError('disk full')
+        with patch.object(player_scratch.json, 'dump', side_effect=fail):
+            with self.assertRaisesRegex(OSError, 'disk full'):
+                player_scratch.update(folder, 'captured')
+        self.assertEqual(manifest.read_bytes(), original)
+        player_scratch.update(folder, 'encode_failed', error='retry reason')
+        data = json.loads(manifest.read_text(encoding='utf-8'))
+        self.assertEqual((data['state'], data['error']), ('encode_failed', 'retry reason'))
+        self.assertEqual(raw.read_bytes(), b'keep raw capture')
+
+    def test_legacy_temporary_does_not_block_completed_cleanup_or_get_deleted(self):
+        folder = self.begin()
+        legacy = folder/'capture.tmp'
+        legacy.write_bytes(b'unknown interrupted file')
+        (folder/player_layer.BUNDLE_NAME).write_bytes(b'raw')
+        (self.layer/'players.mov').write_bytes(b'completed master')
+        self.assertEqual(player_layer.cleanup_capture(self.deploy, self.layer), [])
+        self.assertEqual(json.loads((folder/player_scratch.MANIFEST).read_text(encoding='utf-8'))['state'], 'completed')
+        self.assertEqual(legacy.read_bytes(), b'unknown interrupted file')
+        self.assertTrue((folder/player_scratch.OWNER).exists())
+        self.assertEqual((self.layer/'players.mov').read_bytes(), b'completed master')
+
+    def test_exclusive_name_collision_never_authorizes_foreign_cleanup(self):
+        folder = self.begin()
+        token = type('Token', (), {'hex': 'a'*32})()
+        foreign = folder/('.dolly-capture-' + token.hex + '.tmp')
+        foreign.write_bytes(b'another owner')
+        with patch.object(player_scratch.uuid, 'uuid4', return_value=token):
+            with self.assertRaises(FileExistsError):
+                player_scratch.update(folder, 'captured')
+        self.assertEqual(foreign.read_bytes(), b'another owner')
+        player_scratch.update(folder, 'captured')
+
+    def test_cleanup_error_keeps_successful_status_result(self):
+        folder = self.begin()
+        with patch.object(Path, 'unlink', side_effect=PermissionError('cleanup denied')):
+            self.assertIsNone(player_scratch.update(folder, 'captured'))
+        self.assertEqual(json.loads((folder/player_scratch.MANIFEST).read_text(encoding='utf-8'))['state'], 'captured')
+
 
 if __name__=='__main__':unittest.main()

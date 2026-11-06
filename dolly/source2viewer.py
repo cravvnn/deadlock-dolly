@@ -190,39 +190,33 @@ def ensure_viewer(progress=None) -> Path:
 
     root = cache_root()
     root.mkdir(parents=True, exist_ok=True)
-    partial = root / "cli-windows-x64.zip.part"
-    archive = root / "cli-windows-x64.zip"
-    staging = root / "staging"
     try:
-        if progress is not None:
-            progress(0, SOURCE2VIEWER_SIZE)
-        LOG.info("Downloading reconstructed-audio helper (%.0f MB, one time).", HELP_SIZE_MB)
-        _download(partial, progress)
-        partial.replace(archive)
-        if staging.is_dir():
-            shutil.rmtree(staging, ignore_errors=True)
-        cli = _safe_extract(archive, staging)
-        for name in _ALLOWED_FILES:
-            source = staging / name
-            if source.is_file():
-                source.replace(root / name)
-        if not _valid_cached_viewer(cli if cli.parent == root else root / cli.name):
-            raise RuntimeError("The reconstructed-audio helper could not be installed.")
-        (root / "NOTICE.txt").write_text(_NOTICE, encoding="utf-8", newline="\n")
-        (root / "LICENSE.txt").write_text(_LICENSE, encoding="utf-8", newline="\n")
-        (root / ".complete").write_text(
-            json.dumps({"version": SOURCE2VIEWER_VERSION,
-                        "sha256": SOURCE2VIEWER_CLI_SHA256}) + "\n",
-            encoding="utf-8", newline="\n")
-        LOG.info("Reconstructed-audio helper installed at %s", root)
-        return root / "Source2Viewer-CLI.exe"
+        with tempfile.TemporaryDirectory(prefix=".dolly-helper-", dir=root,
+                                         ignore_cleanup_errors=True) as directory:
+            archive = Path(directory) / "cli-windows-x64.zip"
+            staging = Path(directory) / "staging"
+            if progress is not None:
+                progress(0, SOURCE2VIEWER_SIZE)
+            LOG.info("Downloading reconstructed-audio helper (%.0f MB, one time).", HELP_SIZE_MB)
+            _download(archive, progress)
+            cli = _safe_extract(archive, staging)
+            for name in _ALLOWED_FILES:
+                source = staging / name
+                if source.is_file():
+                    source.replace(root / name)
+            if not _valid_cached_viewer(cli if cli.parent == root else root / cli.name):
+                raise RuntimeError("The reconstructed-audio helper could not be installed.")
+            (root / "NOTICE.txt").write_text(_NOTICE, encoding="utf-8", newline="\n")
+            (root / "LICENSE.txt").write_text(_LICENSE, encoding="utf-8", newline="\n")
+            (root / ".complete").write_text(
+                json.dumps({"version": SOURCE2VIEWER_VERSION,
+                            "sha256": SOURCE2VIEWER_CLI_SHA256}) + "\n",
+                encoding="utf-8", newline="\n")
+            LOG.info("Reconstructed-audio helper installed at %s", root)
+            return root / "Source2Viewer-CLI.exe"
     except Exception as exc:
         LOG.info("Reconstructed-audio helper setup failed: %s", exc)
         raise RuntimeError(
             "Dolly could not download the reconstructed-audio helper. Check your internet "
             "connection and try again. Advanced users can set DOLLY_SOURCE2VIEWER to an "
             "existing Source2Viewer-CLI.exe.") from exc
-    finally:
-        partial.unlink(missing_ok=True)
-        archive.unlink(missing_ok=True)
-        shutil.rmtree(staging, ignore_errors=True)

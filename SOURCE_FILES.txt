@@ -1135,3 +1135,23 @@ docs/RELEASE_NOTES_0.7.7-beta.md
 native/profiles/deadlock-2026-11-05-6860-complete.json
 third_party/cvar_unlocker/unlocker-build-6860.patch
 docs/RELEASE_NOTES_0.7.8-beta.md
+
+# Owned replay, helper and scratch publication models.
+dolly/HelperWorkspace-noFaults.cfg
+dolly/HelperWorkspace.cfg
+dolly/HelperWorkspace.mutants.json
+dolly/HelperWorkspace.tla
+dolly/HelperWorkspaceApi.tla
+dolly/PublishReplay-link.cfg
+dolly/PublishReplay.cfg
+dolly/PublishReplay.mutants.json
+dolly/PublishReplay.tla
+dolly/PublishReplayApi.tla
+dolly/ScratchStatus-collision.cfg
+dolly/ScratchStatus-concurrent-noFaults.cfg
+dolly/ScratchStatus-concurrent.cfg
+dolly/ScratchStatus-noFaults.cfg
+dolly/ScratchStatus.cfg
+dolly/ScratchStatus.mutants.json
+dolly/ScratchStatus.tla
+dolly/ScratchStatusApi.tla
