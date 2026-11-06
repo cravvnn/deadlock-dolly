@@ -1,0 +1,22 @@
+[
+  {
+    "name": "restore recursive unknown deletion",
+    "replace": [
+      [
+        "pc \\in {1,2} /\\ pc \\notin linked",
+        "pc \\notin linked"
+      ]
+    ],
+    "expect": "KeepUnknown"
+  },
+  {
+    "name": "follow linked known entry",
+    "replace": [
+      [
+        "pc \\in {1,2} /\\ pc \\notin linked",
+        "pc \\in {1,2}"
+      ]
+    ],
+    "expect": "KeepLinked"
+  }
+]

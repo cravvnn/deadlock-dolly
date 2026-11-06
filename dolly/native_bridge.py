@@ -1473,22 +1473,24 @@ class NativeBridge(MediaTransport):
         with self._operations:
             if self._closed:
                 return
-            self._close_media()
-            with self._lock:
-                self._sample_graphics(force=True)
-                self._sample_input(force=True)
             try:
-                self.release(timeout=0.25)
-            except (NativeBridgeError, OSError, ValueError):
-                pass
-            finally:
-                self._heartbeat_stop.set()
-                if self._thread is not None and self._thread is not threading.current_thread():
-                    self._thread.join(timeout=0.5)
+                self._close_media()
                 with self._lock:
-                    self._close_visualization_preview()
-                    self._close_visualization()
-                    self._closed = True
-                    close = getattr(self._mapping, "close", None)
-                    if close is not None:
-                        close()
+                    self._sample_graphics(force=True)
+                    self._sample_input(force=True)
+            finally:
+                try:
+                    self.release(timeout=0.25)
+                except (NativeBridgeError, OSError, ValueError):
+                    pass
+                finally:
+                    self._heartbeat_stop.set()
+                    if self._thread is not None and self._thread is not threading.current_thread():
+                        self._thread.join(timeout=0.5)
+                    with self._lock:
+                        self._close_visualization_preview()
+                        self._close_visualization()
+                        self._closed = True
+                        close = getattr(self._mapping, "close", None)
+                        if close is not None:
+                            close()

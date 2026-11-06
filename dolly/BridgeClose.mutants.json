@@ -1,0 +1,22 @@
+[
+  {
+    "name": "abort remaining cleanup after media failure",
+    "replace": [
+      [
+        "pc' = pc + 1",
+        "pc' = IF fault = pc THEN 6 ELSE pc + 1"
+      ]
+    ],
+    "expect": "FinishOthers"
+  },
+  {
+    "name": "forget heartbeat stop",
+    "replace": [
+      [
+        "stopped' = TRUE",
+        "stopped' = FALSE"
+      ]
+    ],
+    "expect": "FinishOthers"
+  }
+]

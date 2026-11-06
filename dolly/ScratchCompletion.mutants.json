@@ -1,0 +1,22 @@
+[
+  {
+    "name": "let terminal filesystem error escape",
+    "replace": [
+      [
+        "THEN \"leftover\"",
+        "THEN \"exception\""
+      ]
+    ],
+    "expect": "ReportCleanup"
+  },
+  {
+    "name": "erase unknown sibling during cleanup",
+    "replace": [
+      [
+        "UNCHANGED <<fault,foreign,kept>>",
+        "kept' = FALSE /\\ UNCHANGED <<fault,foreign>>"
+      ]
+    ],
+    "expect": "ForeignKept"
+  }
+]

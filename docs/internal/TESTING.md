@@ -1,6 +1,6 @@
 # Development checks
 
-[Maintainer references](README.md) Â· [Current user documentation](../README.md)
+[Maintainer references](README.md) Ã‚Â· [Current user documentation](../README.md)
 
 Run the core user contracts and compact supplements from the checkout root:
 
@@ -196,3 +196,15 @@ and hide-intent regressions. Current discovery is 73 methods. Native rail
 regressions exercise real checkbox dispatch, keyboard access, viewport fit
 and playback guards at 720p, 1080p, 1440p and 4K. Render captures use the actual
 renderer and embedded fonts over a synthetic background; no game proof.
+
+## Next ten review supplement
+
+`test_next_ten.py` retains ten real-owner regressions from the qualified
+private review, with routine free-shot and Tk iteration counts reduced while
+retaining distinct failure boundaries. The portfolio now has 83 methods.
+Cases exercise real mmap/heartbeat/Tk objects and local files plus controlled
+console/filesystem/worker failures. They cover saved outputs, explicit override
+policy and invalid settings backups. No network/game/GPU qualification is
+inferred. Six source-adjacent production-only models join the required gate.
+Private broad comparisons, Windows lock/junction and software still probes are
+retained separately and not repeated behind a permanent suite wrapper.

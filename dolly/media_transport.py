@@ -42,12 +42,15 @@ class MediaTransport:
             mapping = mmap.mmap(-1, wire.MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
         else:
             mapping = self._mapping_factory(name, wire.MAPPING_BYTES)
-        if len(mapping) != wire.MAPPING_BYTES:
+        try:
+            if len(mapping) != wire.MAPPING_BYTES:
+                raise NativeBridgeError("Unexpected media mapping size")
+            mapping[:] = b"\0" * wire.MAPPING_BYTES
+        except BaseException:
             close = getattr(mapping, "close", None)
             if close:
                 close()
-            raise NativeBridgeError("Unexpected media mapping size")
-        mapping[:] = b"\0" * wire.MAPPING_BYTES
+            raise
         self._media_mapping = mapping
 
     def media_status(self):

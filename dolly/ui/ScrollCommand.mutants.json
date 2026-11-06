@@ -1,0 +1,22 @@
+[
+  {
+    "name": "register command on persistent root",
+    "replace": [
+      [
+        "registered' = FALSE",
+        "registered' = registered"
+      ]
+    ],
+    "expect": "CommandOwned"
+  },
+  {
+    "name": "forget to cancel cost marker",
+    "replace": [
+      [
+        "child' = FALSE /\\ job' = FALSE",
+        "child' = FALSE /\\ job' = job"
+      ]
+    ],
+    "expect": "TimerOwned"
+  }
+]

@@ -105,8 +105,9 @@ def poll(app):
                 attach_result = None
             if attach_result and attach_result.get("valid") and not getattr(app, "_bone_picker_context", None):
                 sequence = attach_result.get("sequence")
-                if sequence and sequence != getattr(app, "_attach_result_sequence", None):
-                    app._attach_result_sequence = sequence
+                identity = (bridge, sequence)
+                if sequence and identity != getattr(app, "_attach_result_sequence", None):
+                    app._attach_result_sequence = identity
                     handler = getattr(app, "_attach_result_changed", None)
                     if callable(handler):
                         handler(attach_result)

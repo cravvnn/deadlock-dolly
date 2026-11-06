@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 import json
-import math
 import os
 from pathlib import Path
 import shutil
@@ -78,7 +77,7 @@ class AppSettings:
         parse_launch_options(self.launch_options)
         for name, low, high in (("movement_speed", 1.0, 10000.0), ("mouse_sensitivity", 0.001, 10.0)):
             value = getattr(self, name)
-            if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+            if type(value) not in (int, float) or not low <= value <= high:
                 raise ValueError(f"{name} must be a finite number between {low:g} and {high:g}.")
             object.__setattr__(self, name, float(value))
         if not isinstance(self.action_bindings, dict):

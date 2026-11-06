@@ -491,3 +491,21 @@ persistent state. Actual-method tests cover both health-bar backends and wire
 bytes; native tests cover decoding, dispatch, keyboard and playback guards.
 Simplification: reuse the exact saved opacity dictionary as enabled state,
 with no extra flag or UI draft cache. No prior state machine was removed.
+
+## Next ten reviewed boundaries
+
+| Component | Model | Scope |
+| --- | --- | --- |
+| `dolly/native_bridge.py`: NativeBridge.close | [BridgeClose.tla](dolly/BridgeClose.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+| `dolly/media_transport.py`: MediaTransport._ensure_media | [MediaAdmission.tla](dolly/MediaAdmission.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+| `dolly/editor_session.py`: poll | [AttachObservation.tla](dolly/AttachObservation.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+| `dolly/screenshot.py`: cleanup | [StillCleanup.tla](dolly/StillCleanup.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+| `dolly/player_layer.py`: cleanup_capture | [ScratchCompletion.tla](dolly/ScratchCompletion.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+| `dolly/ui/tween.py`: WheelScroller._time | [ScrollCommand.tla](dolly/ui/ScrollCommand.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+
+No state-reduction or whole-program refinement claim. Six private paired
+models were specialized to production behavior, keeping baseline branches
+private. Completion APIs describe only a returning local operation. Settings
+numeric validation, mod entry classification, free-shot attach compilation and
+selected-frame parsing are single-call computations; their caller state is
+unchanged, with owner regressions instead of new lifecycle models.

@@ -71,7 +71,7 @@ def compile_attach(project):
         raise ValueError("Native attach compilation requires a Project")
     project.validate()
     keys = project.keyframes
-    if not keys:
+    if not keys or not any(key.source == "attach" for key in keys):
         return b""
     boundaries = sorted({0.0, *[float(key.time) for key in keys], float(project.duration)})
     blended = any(key.source_blend for key in keys)

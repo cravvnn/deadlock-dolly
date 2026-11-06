@@ -1,0 +1,22 @@
+[
+  {
+    "name": "deduplicate by reusable sequence alone",
+    "replace": [
+      [
+        "memo' = <<b,s>>",
+        "memo' = <<0,s>>"
+      ]
+    ],
+    "expect": "CorrectAdmission"
+  },
+  {
+    "name": "accept every repeated result",
+    "replace": [
+      [
+        "actual' = (<<b,s>> # memo)",
+        "actual' = TRUE"
+      ]
+    ],
+    "expect": "CorrectAdmission"
+  }
+]

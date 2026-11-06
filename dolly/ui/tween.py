@@ -561,8 +561,8 @@ class WheelScroller:
             return   # still timing an earlier scroll
         try:
             if self._mark is None:
-                # On the toplevel (it outlives the page); the job is cancelled with the page.
-                self._mark = self.widget.winfo_toplevel().register(self._marked)
+                # Widget destruction owns both the timer and its Tcl command.
+                self._mark = self.widget.register(self._marked)
                 self.widget.bind("<Destroy>", self._destroyed, add="+")
             self._mark_start, self._mark_round = start, 0
             self._mark_job = self.widget.tk.call("after", "idle", self._mark)

@@ -256,11 +256,17 @@ def read_bundle_frame(bundle: Path, index: int) -> tuple[int, int, bytes]:
         size = width * height * 8
         source.seek(index * (64 + size))
         header = source.read(64)
-        if len(header) != 64 or struct.unpack("<8Q", header)[:3] != (magic, width, height):
+        if len(header) != 64:
             raise RuntimeError("The players capture does not contain the settled frame.")
+        frame = struct.unpack("<8Q", header)
+        if (frame[:3] != (magic, width, height) or frame[7] != 8
+                or (not frame[3] and (frame[4] or frame[5]))):
+            raise RuntimeError("The settled players frame is not a reviewed capture.")
         pixels = source.read(size)
         if len(pixels) != size:
             raise RuntimeError("The players capture is truncated.")
+        if not frame[3] and any(pixels):
+            raise RuntimeError("The players empty scene frame contains unexpected pixels.")
         return width, height, pixels
 
 
@@ -371,6 +377,36 @@ def cleanup(folder: Path, video: Path) -> None:
             path.unlink(missing_ok=True)
         except OSError:
             pass
+    from .file_ops import _plain_path
+
+    def discard(directory, names, pattern=None):
+        # No recursive removal: only documented regular intermediates are ours.
+        for path in directory.iterdir():
+            try:
+                if ((path.name in names or pattern and re.fullmatch(pattern, path.name))
+                        and _plain_path(path) and path.is_file()):
+                    path.unlink()
+            except OSError:
+                pass
+        try:
+            directory.rmdir()  # Unknown files/directories deliberately block this.
+        except OSError:
+            pass
+
     for sub in (folder / "depth", folder / "players"):
-        if sub.is_dir() and not sub.is_symlink():
-            shutil.rmtree(sub, ignore_errors=True)
+        try:
+            if not _plain_path(sub) or not sub.is_dir():
+                continue
+            if sub.name == "depth":
+                exr = sub / "exr"
+                if exr.exists() and _plain_path(exr) and exr.is_dir():
+                    discard(exr, (), r"[0-9]{8}\.exr")
+                discard(sub, ("depth.mov", "depth.mov.shot.json", "shot.json",
+                              "manifest.json", "camera.json", "preview.mp4", "preview.mkv"),
+                        r"preview_[0-9]+x[0-9]+\.raw")
+            else:
+                discard(sub, ("players.mov", "players.mov.shot.json", "players.mp4",
+                              "players.mp4.shot.json", "players.mkv", "players.mkv.shot.json",
+                              "shot.json"))
+        except OSError:
+            pass

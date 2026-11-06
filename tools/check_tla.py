@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUIRED = {"SceneOpacity.cfg", "PlayersRestoreRetry.cfg", "PlayersRecovery.cfg", "CleanupResult-guarded.cfg", "BackupPublish.cfg", "BackupPublish-link.cfg", "AtomicMode.cfg", "AtomicMode-noFaults.cfg", "AtomicCopy.cfg", "UpdateRollback.cfg", "WorkspaceCleanup.cfg", "LauncherHandoff.cfg", "FollowSelection.cfg", "CleanupMarker.cfg", "FollowLens.cfg", "PlaybackIdentity.cfg"}
+REQUIRED = {'BridgeClose.cfg','MediaAdmission.cfg','AttachObservation.cfg','StillCleanup.cfg','ScratchCompletion.cfg','ScrollCommand.cfg',"SceneOpacity.cfg", "PlayersRestoreRetry.cfg", "PlayersRecovery.cfg", "CleanupResult-guarded.cfg", "BackupPublish.cfg", "BackupPublish-link.cfg", "AtomicMode.cfg", "AtomicMode-noFaults.cfg", "AtomicCopy.cfg", "UpdateRollback.cfg", "WorkspaceCleanup.cfg", "LauncherHandoff.cfg", "FollowSelection.cfg", "CleanupMarker.cfg", "FollowLens.cfg", "PlaybackIdentity.cfg"}
 
 
 def check(root=ROOT):

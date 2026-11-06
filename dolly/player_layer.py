@@ -529,10 +529,13 @@ def cleanup_capture(deployment: Path, layer_dir: Path) -> list[str]:
             try: parent.rmdir()
             except OSError: pass
     if data_dir != Path(deployment) and not failures:
-        player_scratch.update(data_dir, 'completed')
-        # Leave ownership intact if there are unexpected files; never recurse.
-        if {p.name for p in data_dir.iterdir()} == {player_scratch.OWNER, player_scratch.MANIFEST}:
-            (data_dir/player_scratch.MANIFEST).unlink()
-            (data_dir/player_scratch.OWNER).unlink()
-            data_dir.rmdir()
+        try:
+            player_scratch.update(data_dir, 'completed')
+            # Leave ownership intact if there are unexpected files; never recurse.
+            if {p.name for p in data_dir.iterdir()} == {player_scratch.OWNER, player_scratch.MANIFEST}:
+                (data_dir/player_scratch.MANIFEST).unlink()
+                (data_dir/player_scratch.OWNER).unlink()
+                data_dir.rmdir()
+        except OSError:
+            failures.append(str(data_dir))
     return failures

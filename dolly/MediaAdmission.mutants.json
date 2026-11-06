@@ -1,0 +1,22 @@
+[
+  {
+    "name": "lose mapping on initialization failure",
+    "replace": [
+      [
+        "closed' = (fault # 0)",
+        "closed' = (fault = 1)"
+      ]
+    ],
+    "expect": "ProvisionalClosed"
+  },
+  {
+    "name": "publish a failed mapping",
+    "replace": [
+      [
+        "published' = (fault = 0)",
+        "published' = TRUE"
+      ]
+    ],
+    "expect": "NoInvalidPublication"
+  }
+]

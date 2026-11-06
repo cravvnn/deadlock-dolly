@@ -140,10 +140,7 @@ def _scan_loose(root: Path, depth: int, evidence: list[str]) -> None:
         evidence.append(f"{root.name or 'mount'} could not be read ({exc.__class__.__name__})")
         return
     for child in children:
-        try:
-            plain = _plain_path(child)
-        except OSError:
-            continue
+        plain = _plain_path(child)
         if not plain:
             evidence.append(f"{child.name} is a link")
             continue
@@ -190,7 +187,11 @@ def classify_mount(root: Path, *, allow_overrides: bool = False) -> dict:
         return {"allowed": True, "reason": None, "evidence": [],
                 "allow_overrides": True}
     evidence: list[str] = []
-    _scan_loose(path, 0, evidence)
+    try:
+        _scan_loose(path, 0, evidence)
+    except OSError as exc:
+        return {"allowed": False, "reason": f"a mount entry could not be checked ({exc.__class__.__name__})",
+                "evidence": evidence[:MAX_EVIDENCE]}
     if evidence:
         if _has_content(path):
             # A skin pack may also ship its own HUD, post-processing or shader
