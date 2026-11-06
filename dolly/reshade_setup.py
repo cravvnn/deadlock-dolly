@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 import ntpath
 import os
+import secrets
 import tempfile
 
 PRESET_NAME = "Deadlock-Dolly.ini"
@@ -194,12 +195,26 @@ def _install_presets(config: Path, preset: Path | None) -> tuple[Path | None, li
     for source in sources:
         target = folder / source.name
         data = source.read_bytes()
+        if target.exists() or target.is_symlink():
+            continue  # Existing user presets need no temporary-file allocation.
+        temporary = folder / (".dolly-preset-" + secrets.token_hex(16) + ".tmp")
+        stream = temporary.open("xb")
         try:
-            with target.open("xb") as output:
+            with stream as output:
                 output.write(data)
-        except FileExistsError:
-            continue  # ReShade saves the user's edits here. Keep them on upgrades.
-        created.append(target)
+            try:
+                if os.name == "nt":
+                    os.rename(temporary, target)  # Windows refuses an existing target.
+                else:
+                    os.link(temporary, target)  # Same-filesystem no-overwrite publication.
+            except FileExistsError:
+                continue  # Preserve the user's edits, including a competing install.
+            created.append(target)
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass  # A private leftover must not hide the install result.
     return folder / preset.name, created
 
 

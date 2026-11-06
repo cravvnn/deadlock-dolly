@@ -136,3 +136,16 @@ Use targeted checks during development and one normal complete release build;
 reuse passing proof while relevant inputs match. Live/recording checks need their
 own current authorization and are selected for the changed integration boundary,
 not automatically requested for every source-only repackage.
+
+
+## Output ownership supplement
+
+`test_output_ownership.py` adds three bounded owning contracts to the compact
+portfolio: Players cancellation/encoder errors survive denied MOV cleanup and
+both files are attempted; still PNG failures preserve unrelated partial files
+and matte/preview bytes decode correctly; first-use ReShade preset failures
+leave no incomplete final and retries preserve existing user edits. The worker
+uses a real owned Python process with a local protocol stand-in, never FFmpeg or
+the game. Deletion/row/write refusal boundaries are injected. These are distinct
+gaps, not restored retired tests. Together with existing owners the suite has54
+test methods. Private exhaustive/fault/process probes remain outside discovery.

@@ -30,6 +30,7 @@ def check(root=ROOT):
 
 
 # Additional independent source contracts.
+REQUIRED.update({'PngStage-collision.cfg', 'PresetPublish-link.cfg', 'CleanupWorker.cfg', 'PresetPublish.cfg', 'PngStage.cfg', 'PresetPublish-collision.cfg', 'PngStage-noFaults.cfg'})
 REQUIRED.update({'PublishReplay-link.cfg', 'ScratchStatus.cfg', 'PublishReplay.cfg', 'ScratchStatus-collision.cfg', 'HelperWorkspace.cfg', 'ScratchStatus-concurrent.cfg', 'ScratchStatus-noFaults.cfg', 'ScratchStatus-concurrent-noFaults.cfg', 'HelperWorkspace-noFaults.cfg'})
 REQUIRED.update({"SaveResult.cfg", "ManifestScan.cfg"})
 

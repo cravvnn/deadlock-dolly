@@ -27,6 +27,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import secrets
 import struct
 import subprocess
 import zlib
@@ -218,21 +219,28 @@ def _png(path: Path, width: int, height: int, depth: int, color: int, rows) -> N
     def chunk(kind: bytes, data: bytes) -> bytes:
         return (struct.pack(">I", len(data)) + kind + data +
                 struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
-    temporary = path.with_name(path.name + ".partial")
+    temporary = path.with_name(".dolly-png-" + secrets.token_hex(16) + ".tmp")
     compressor = zlib.compressobj(6)
-    with temporary.open("wb") as out:
-        out.write(b"\x89PNG\r\n\x1a\n")
-        out.write(chunk(b"IHDR", struct.pack(">2I5B", width, height, depth, color, 0, 0, 0)))
-        pending = bytearray()
-        for row in rows:
-            pending += compressor.compress(b"\0" + bytes(row))
-            if len(pending) >= 1 << 20:
-                out.write(chunk(b"IDAT", bytes(pending)))
-                pending.clear()
-        pending += compressor.flush()
-        out.write(chunk(b"IDAT", bytes(pending)))
-        out.write(chunk(b"IEND", b""))
-    os.replace(temporary, path)
+    stream = temporary.open("xb")
+    try:
+        with stream as out:
+            out.write(b"\x89PNG\r\n\x1a\n")
+            out.write(chunk(b"IHDR", struct.pack(">2I5B", width, height, depth, color, 0, 0, 0)))
+            pending = bytearray()
+            for row in rows:
+                pending += compressor.compress(b"\0" + bytes(row))
+                if len(pending) >= 1 << 20:
+                    out.write(chunk(b"IDAT", bytes(pending)))
+                    pending.clear()
+            pending += compressor.flush()
+            out.write(chunk(b"IDAT", bytes(pending)))
+            out.write(chunk(b"IEND", b""))
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # An owned leftover must not hide the PNG write result.
 
 
 def read_bundle_frame(bundle: Path, index: int) -> tuple[int, int, bytes]:

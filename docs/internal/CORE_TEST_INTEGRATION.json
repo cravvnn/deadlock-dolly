@@ -1,10 +1,11 @@
 {
   "base_audit": "CORE_TEST_AUDIT.json records upstream Linux evidence, not current Windows release results",
   "core_contracts": 15,
-  "maintained_tests": 51,
+  "maintained_tests": 54,
   "supplements": [
     "Replay repair, helper setup and scratch: 34 owner tests including 10 refactor regressions",
-    "Updater/startup: 2 real child-process race schedules"
+    "Updater/startup: 2 real child-process race schedules",
+    "Output ownership: 3 compact worker-result, still-PNG and first-use-preset regression contracts"
   ],
   "policy": "No fixed test ceiling; permanent tests require a distinct contract/regression gap. Temporary harnesses stay ignored outside discovery.",
   "limits": "Reduced coverage accepted explicitly; not equivalent to the retired exhaustive suite. Models do not replace source/platform/output tests. Release results stay with the release artifact."

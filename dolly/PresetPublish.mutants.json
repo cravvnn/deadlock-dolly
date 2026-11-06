@@ -1,0 +1,57 @@
+[
+  {
+    "name": "expose incomplete final",
+    "config": "PresetPublish.cfg",
+    "replace": [
+      [
+        "stage' = (\"empty\")\n    /\\ final' = (final)",
+        "stage' = (\"empty\")\n    /\\ final' = (\"empty\")"
+      ]
+    ],
+    "expect": "PublishedComplete"
+  },
+  {
+    "name": "overwrite existing preset",
+    "config": "PresetPublish.cfg",
+    "replace": [
+      [
+        "Publish == /\\ pc = \"publish\" /\\ final = \"none\"\n    /\\ final' = (\"full\")\n    /\\ stage' = (IF LinkPublication THEN stage ELSE \"none\")\n    /\\ bad' = (bad \\/ ~closed \\/ stage # \"full\")\n    /\\ pc' = (\"return\")\n    /\\ UNCHANGED <<closed,own,result,prior,lost,retries,orphan>>",
+        "Publish == /\\ pc = \"publish\"\n    /\\ final' = (\"full\")\n    /\\ stage' = (IF LinkPublication THEN stage ELSE \"none\")\n    /\\ bad' = (bad \\/ ~closed \\/ stage # \"full\")\n    /\\ pc' = (\"return\")\n    /\\ lost' = (lost \\/ final = \"other\")\n    /\\ UNCHANGED <<closed,own,result,prior,retries,orphan>>"
+      ]
+    ],
+    "expect": "ForeignPreserved"
+  },
+  {
+    "name": "cleanup masks result",
+    "config": "PresetPublish.cfg",
+    "replace": [
+      [
+        "CleanupError == /\\ pc = \"cleanup\"\n    /\\ pc' = (\"done\")\n    /\\ UNCHANGED <<stage,final,closed,own,result,prior,lost,retries,orphan,bad>>",
+        "CleanupError == /\\ pc = \"cleanup\"\n    /\\ pc' = (\"done\")\n    /\\ result' = \"error\"\n    /\\ UNCHANGED <<stage,final,closed,own,prior,lost,retries,orphan,bad>>"
+      ]
+    ],
+    "expect": "PreserveResult"
+  },
+  {
+    "name": "cleanup before ownership",
+    "config": "PresetPublish-collision.cfg",
+    "replace": [
+      [
+        "Occupied == /\\ pc = \"start\" /\\ stage = \"intruder\"\n    /\\ result' = (\"error\")\n    /\\ pc' = (\"done\")\n    /\\ UNCHANGED <<stage,final,closed,own,prior,lost,retries,orphan,bad>>",
+        "Occupied == /\\ pc = \"start\" /\\ stage = \"intruder\"\n    /\\ result' = (\"error\")\n    /\\ pc' = (\"cleanup\")\n    /\\ UNCHANGED <<stage,final,closed,own,prior,lost,retries,orphan,bad>>"
+      ]
+    ],
+    "expect": "ForeignPreserved"
+  },
+  {
+    "name": "publish before close",
+    "config": "PresetPublish.cfg",
+    "replace": [
+      [
+        "closed' = (TRUE)",
+        "closed' = (FALSE)"
+      ]
+    ],
+    "expect": "ClosedComplete"
+  }
+]

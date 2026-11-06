@@ -933,3 +933,22 @@ tests/test_source2viewer.py
 tests/test_update_handoff_process.py
 docs/RELEASE_NOTES_0.7.9-beta.md
 docs/internal/CORE_TEST_INTEGRATION.json
+
+# Bounded worker cleanup, still PNG and preset publication.
+dolly/CleanupWorker.cfg
+dolly/CleanupWorker.mutants.json
+dolly/CleanupWorker.tla
+dolly/CleanupWorkerApi.tla
+dolly/PngStage-collision.cfg
+dolly/PngStage-noFaults.cfg
+dolly/PngStage.cfg
+dolly/PngStage.mutants.json
+dolly/PngStage.tla
+dolly/PngStageApi.tla
+dolly/PresetPublish-collision.cfg
+dolly/PresetPublish-link.cfg
+dolly/PresetPublish.cfg
+dolly/PresetPublish.mutants.json
+dolly/PresetPublish.tla
+dolly/PresetPublishApi.tla
+tests/test_output_ownership.py

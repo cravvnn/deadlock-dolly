@@ -1,0 +1,24 @@
+[
+  {
+    "name": "cleanup changes primary result",
+    "config": "CleanupWorker.cfg",
+    "replace": [
+      [
+        "result' = result",
+        "result' = \"cleanup_error\""
+      ]
+    ],
+    "expect": "PreserveBody"
+  },
+  {
+    "name": "first denied deletion skips second",
+    "config": "CleanupWorker.cfg",
+    "replace": [
+      [
+        "result' = result\n        /\\ pc' = pc + 1",
+        "result' = result\n        /\\ pc' = 3"
+      ]
+    ],
+    "expect": "AttemptBoth"
+  }
+]

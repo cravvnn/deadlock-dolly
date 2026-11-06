@@ -143,8 +143,11 @@ def encode_in_worker(ffmpeg, bundle, output, *, fps=60, resource_mode='Backgroun
             if process and process.poll() is None:
                 process.kill()
                 process.wait(timeout=10)
-            partial.unlink(missing_ok=True)
-            staged.unlink(missing_ok=True)
+            for temporary in (partial, staged):
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass  # An owned leftover must not hide the processing result.
 
 
 def worker_main(request):

@@ -1,5 +1,7 @@
 # Maintained model coverage
 
+The worker/file-output supplements are described at the end of this inventory.
+
 This inventory covers the models currently maintained beside their source. It
 does not claim whole-program coverage. Models run locally via
 `python tools/check_tla.py` and before native compilation in the Windows builder.
@@ -276,3 +278,42 @@ consoleReady result. Core contract P6 checks native drain and post-response
 ownership through the real controller and recorder with simulated game/bridge
 boundaries. GUI failed-export orchestration is outside the 15 and requires a
 targeted packaged UI check when changed.
+
+
+## Worker results, streamed PNG stages and first-use presets
+
+CleanupWorker.tla beside player_encode.py starts after job/process cleanup
+returns. Two owned MOV paths, immutable body outcome, ordered deletion and
+returning OSError check result preservation and attempted cleanup of both files.
+Two mutants guard those rules. Minimal API refinement checks completion shape.
+ProcessJob failures and TemporaryDirectory cleanup remain outside this scope;
+locked leftovers may remain. No live encoder/GUI or process-crash proof.
+
+PngStage.tla beside screenshot.py covers two same-output Windows PNG attempts,
+exclusive private stages and open-handle identities. Stream and whole-buffer
+Close are abstractions, not atomic implementations of individual PNG chunks.
+Windows publication refuses open handles; full and noFaults configs separate
+returning I/O faults from healthy progress; collision stress protects unowned
+files. Three mutants guard progress, result and cleanup ownership. Actual
+independent PNG decoding and hero-still adapter checks complement this model.
+POSIX behavior, hostile private namespace replacement, process crash/power loss,
+whole GUI orchestration and multi-image bundle atomicity are not proved.
+
+PresetPublish.tla beside reshade_setup.py covers one first-use preset after
+source read, existing/competing target, preflight separate from allocation,
+write/close/no-overwrite publication, cleanup and one interruption/retry.
+Windows rename and POSIX link alias configs differ; separate collision stress
+checks cleanup authority. Five mutants guard incomplete exposure, overwrite,
+close-before-publication and cleanup results/ownership. Source bytes, optional
+preset selection and outer prepare_config are abstracted, with real adapters
+checking first/repeated use. Existing files, even old incomplete ones, are
+never automatically repaired. No multi-preset/config transaction is promised.
+Hard-link capability is required on the POSIX branch; native POSIX, ReShade
+rendering and power-loss durability are not certified.
+
+These maintained models select production behavior only; obsolete comparison
+designs remain private. Weak fairness assumes returning started operations;
+named terminal Done stutters. Minimal completion-shape interfaces do not prove
+whole-program equivalence. Distinct/generated counts are scoped, non-additive
+and not performance metrics. Stronger retry/ownership behavior can add states.
+No fsync/sweeper/new permanent recovery flags are introduced by these patches.

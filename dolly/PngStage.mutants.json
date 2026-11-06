@@ -1,0 +1,35 @@
+[
+  {
+    "name": "shared stage",
+    "config": "PngStage-noFaults.cfg",
+    "replace": [
+      [
+        "key(i) == i",
+        "key(i) == 1"
+      ]
+    ],
+    "expect": "HealthyProgress"
+  },
+  {
+    "name": "cleanup masks successful publication",
+    "config": "PngStage.cfg",
+    "replace": [
+      [
+        "CleanupError(i) == /\\ Faults /\\ pc[i] = \"cleanup\"\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ UNCHANGED <<stage,handles,owned,result,published,lost>>",
+        "CleanupError(i) == /\\ Faults /\\ pc[i] = \"cleanup\"\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ result' = [result EXCEPT ![i] = \"error\"]\n    /\\ UNCHANGED <<stage,handles,owned,published,lost>>"
+      ]
+    ],
+    "expect": "PreserveSuccess"
+  },
+  {
+    "name": "cleanup collision without ownership",
+    "config": "PngStage-collision.cfg",
+    "replace": [
+      [
+        "Occupied(i) == /\\ pc[i] = \"open\" /\\ stage[key(i)] # 0\n    /\\ result' = ([result EXCEPT ![i] = \"error\"])\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ UNCHANGED <<stage,handles,owned,published,lost>>",
+        "Occupied(i) == /\\ pc[i] = \"open\" /\\ stage[key(i)] # 0\n    /\\ result' = ([result EXCEPT ![i] = \"error\"])\n    /\\ pc' = ([pc EXCEPT ![i] = \"cleanup\"])\n    /\\ UNCHANGED <<stage,handles,owned,published,lost>>"
+      ]
+    ],
+    "expect": "OwnCleanup"
+  }
+]
