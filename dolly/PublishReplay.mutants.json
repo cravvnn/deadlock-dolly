@@ -1,0 +1,66 @@
+[
+  {
+    "name": "expose output before copy",
+    "replace": [
+      [
+        "final' = (final)",
+        "final' = (\"ours\")"
+      ]
+    ],
+    "expect": "PublishedComplete"
+  },
+  {
+    "name": "omit packet verification",
+    "replace": [
+      [
+        "verified' = (TRUE)",
+        "verified' = (FALSE)"
+      ]
+    ],
+    "expect": "PublishedComplete"
+  },
+  {
+    "name": "overwrite existing final",
+    "replace": [
+      [
+        "pc = \"publish\" /\\ final = \"absent\"",
+        "pc = \"publish\""
+      ],
+      [
+        "UNCHANGED <<contents,synced,verified,sourceOk,outcome,lostOther>>",
+        "lostOther' = (lostOther \\/ final = \"other\")\n    /\\ UNCHANGED <<contents,synced,verified,sourceOk,outcome>>"
+      ]
+    ],
+    "expect": "ForeignPreserved"
+  },
+  {
+    "name": "omit fsync",
+    "replace": [
+      [
+        "synced' = (TRUE)",
+        "synced' = (FALSE)"
+      ]
+    ],
+    "expect": "PublishedComplete"
+  },
+  {
+    "name": "ignore source change",
+    "replace": [
+      [
+        "sourceOk' = (FALSE)\n    /\\ outcome' = (\"error\")\n    /\\ pc' = (\"cleanup\")",
+        "sourceOk' = (FALSE)\n    /\\ outcome' = (\"error\")\n    /\\ pc' = (\"verify\")"
+      ]
+    ],
+    "expect": "PublishedComplete"
+  },
+  {
+    "name": "cleanup deletes foreign final",
+    "replace": [
+      [
+        "Cleanup == /\\ pc = \"cleanup\"\n    /\\ stage' = (FALSE)\n    /\\ pc' = (\"done\")\n    /\\ UNCHANGED <<final,contents,synced,verified,sourceOk,outcome,lostOther>>",
+        "Cleanup == /\\ pc = \"cleanup\"\n    /\\ stage' = (FALSE)\n    /\\ pc' = (\"done\")\n    /\\ lostOther' = (lostOther \\/ final = \"other\")\n    /\\ final' = (\"absent\")\n    /\\ UNCHANGED <<contents,synced,verified,sourceOk,outcome>>"
+      ]
+    ],
+    "expect": "ForeignPreserved"
+  }
+]

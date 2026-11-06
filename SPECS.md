@@ -51,9 +51,9 @@ download liveness and arbitrary external writers are outside their bounds.
 CleanupReturns assumes returning file operations and weak fairness for started
 operations. The interface maps needed to pending AND committed change, resources
 to workspace AND backup. It is a scoped refinement, not a whole-program model.
-Historical two-process fake-install regressions exercised both ownership
+Maintained two-process fake-install regressions exercise both ownership
 orderings, delayed first commit, process exit and exact-byte rollback. Those
-regressions are retained in Git history, not in the current 15 headless
+regressions run in test_update_handoff_process.py alongside the core
 contracts; neither set establishes packaged Dolly or kernel image-lock behavior.
 The former unlocked design fails the recovery contract, so its partial search
 is not a state-reduction baseline. Platform qualification must still check the
@@ -64,6 +64,57 @@ errors and stale replacements do not count as valid mutant kills. When modifying
 modeled behavior, update the implementation spec, interface mapping, mutants and
 owning tests together. The checker cannot automatically extract Python semantics
 or detect every model/code mismatch.
+
+## Owned replay, reconstructed-audio setup and scratch-status publication
+
+`PublishReplay.tla` beside replay_repair.py covers repair_replay after its
+source scan/patch preparation. Empty/partial/full copy, flush/fsync/close,
+source identity/size check, packet verification, no-overwrite publication and
+best-effort owned-stage cleanup are separate steps. Windows rename consumes
+the stage; the link config covers POSIX's remaining private alias. Another
+owner may create the final before publication. Publication never exposes an
+incomplete final, and cleanup never deletes a foreign final. Source/packet
+parsing and record transforms remain owner tests; hostile private namespace
+replacement, native POSIX certification and power-loss durability are excluded.
+Crash stages can remain and consume replay-sized disk space; POSIX needs a
+same-filesystem hard link. Six deliberately broken invariants guard this model.
+
+`HelperWorkspace.tla` beside source2viewer.py covers two cache-missing setup
+attempts with distinct workspace owners. Allocation, verified download,
+extraction, existing per-file installation, CLI confirmation, notices, marker
+and artifact cleanup are separate. The noFaults config isolates independent
+progress; the default also includes returning I/O faults and operation-boundary
+process exits. A locked private archive can remain, without masking a completed
+installation. Four mutants protect private ownership, cleanup results, cache
+confirmation and marker publication. Individual DLL moves/download internals
+are abstracted: final cache publication remains shared/per-file and is not a
+fully atomic or serialized installation. The clip_audio adapter still trusts
+explicit external overrides and reuses the existing verified cache policy.
+
+`ScratchStatus.tla` beside player_scratch.py covers two status writes to one
+valid owned take: read, ownership validation, exclusive private open, partial/
+full JSON dump, close, replacement and cleanup. Sequential retry and concurrent
+variants run with/without new I/O faults and process exits; a prior orphan is
+always allowed. A separate collision config checks that an unsuccessful open
+does not authorize cleanup. Five mutants guard fresh progress, complete JSON,
+ownership validation and cleanup results/ownership. Five configs exhaust only
+these finite bounds. GUI captured/cancelled/encode_failed and cleanup's completed
+values are abstracted as distinct payloads; their whole workflows are not proved.
+The actual cleanup adapter preserves finished output and unexpected old files.
+This writer does not fsync or lock its read/modify/replace transaction: no
+power-loss, status ordering or concurrent field-merge guarantee is introduced.
+Private leftovers remain; the random basename has a longer fixed length.
+
+All three implementation models are specialized to the production design;
+historical baseline comparisons stay in private analysis. Explicit terminal
+Done stutters; weak fairness assumes returning operations, not an eventual end
+to permanent I/O failure. Minimal API refinements check completion shape;
+invariants hold the publication/ownership obligations. They are scoped models,
+not equivalence, whole-program coverage, live/native or performance proofs.
+Counts can increase as previously blocked retries/peers become available.
+Real file/process/Windows-lock qualification supplements the maintained owning
+regressions. Changes to these modeled paths must update source, specs and tests
+together. The existing held legacy-graphics proposal is outside this change.
 
 ## Settings save results and update-manifest shape validation
 

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "restore shared temporary path",
+    "config": "ScratchStatus-concurrent-noFaults.cfg",
+    "replace": [
+      [
+        "key(i) == i",
+        "key(i) == 0"
+      ]
+    ],
+    "expect": "FreshAttemptsProgress"
+  },
+  {
+    "name": "publish partial JSON",
+    "config": "ScratchStatus.cfg",
+    "replace": [
+      [
+        "full' = ([full EXCEPT ![key(i)] = TRUE])",
+        "full' = ([full EXCEPT ![key(i)] = FALSE])"
+      ]
+    ],
+    "expect": "OnlyCompletePublication"
+  },
+  {
+    "name": "skip ownership validation",
+    "config": "ScratchStatus.cfg",
+    "replace": [
+      [
+        "validated' = ([validated EXCEPT ![i] = TRUE])",
+        "validated' = ([validated EXCEPT ![i] = FALSE])"
+      ]
+    ],
+    "expect": "OnlyValidatedPublication"
+  },
+  {
+    "name": "cleanup error masks update result",
+    "config": "ScratchStatus.cfg",
+    "replace": [
+      [
+        "CleanupError(i) == /\\ Faults /\\ pc[i] = \"cleanup\" /\\ opened[i]\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ UNCHANGED <<owners,full,manifest,complete,result,opened,validated,foreignDeleted,prior>>",
+        "CleanupError(i) == /\\ Faults /\\ pc[i] = \"cleanup\" /\\ opened[i]\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ result' = [result EXCEPT ![i] = \"error\"]\n    /\\ UNCHANGED <<owners,full,manifest,complete,opened,validated,foreignDeleted,prior>>"
+      ]
+    ],
+    "expect": "CleanupPreservesResult"
+  },
+  {
+    "name": "cleanup collision before exclusive ownership",
+    "config": "ScratchStatus-collision.cfg",
+    "replace": [
+      [
+        "Occupied(i) == /\\ pc[i] = \"open\" /\\ owners[key(i)] # 0\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ result' = ([result EXCEPT ![i] = \"error\"])\n    /\\ UNCHANGED <<owners,full,manifest,complete,opened,validated,foreignDeleted,prior>>",
+        "Occupied(i) == /\\ pc[i] = \"open\" /\\ owners[key(i)] # 0\n    /\\ pc' = ([pc EXCEPT ![i] = \"cleanup\"])\n    /\\ result' = ([result EXCEPT ![i] = \"error\"])\n    /\\ opened' = [opened EXCEPT ![i] = TRUE]\n    /\\ UNCHANGED <<owners,full,manifest,complete,validated,foreignDeleted,prior>>"
+      ]
+    ],
+    "expect": "OwnCleanupOnly"
+  }
+]

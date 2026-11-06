@@ -1,6 +1,6 @@
 # Development checks
 
-[Maintainer references](README.md) · [Current user documentation](../README.md)
+[Maintainer references](README.md) Â· [Current user documentation](../README.md)
 
 Run the 15 core user-contract tests from the checkout root:
 
@@ -10,7 +10,7 @@ python -m unittest discover -s tests -q
 
 The portfolio prioritizes safe startup after a game update, preserving the game
 install and user files, and completing native camera/Players recordings honestly.
-Keep exactly 15 named contracts with a bounded set of related failure scenarios;
+Keep the 15 core contracts with a bounded set of related failure scenarios;
 do not hide the retired suite behind a runner or test implementation text.
 
 - `test_core_install.py` owns P01 reviewed-build admission and additive published
@@ -42,7 +42,7 @@ fixes, selected decision-function coverage, seeded faults and remaining gaps.
 Two or more targeted faults per contract must be detected without parse/import
 errors or unrelated invalid fixtures. Coverage is a smell check on those owning
 decisions, not a whole-application percentage target or proof of correctness.
-The retired detailed suite remains in Git history; its full coverage is not
+The remaining retired detailed suite remains in Git history; its full coverage is not
 preserved by these 15 contracts.
 
 Run these fast source checks for runtime changes. Keep live and packaged checks
@@ -52,7 +52,7 @@ proportional to the change:
   publishing definitions or a release: ready paused camera, capture, four exact
   seeks, shot playback, F9 and exact file restoration on exit.
 - For a release, retain native compilation/ctest, PE/ABI and packaged executable
-  gates, plus a short recording checked for decoded frame count. Verify
+  gates, plus affected output qualification when recording behavior changes. Verify
   Players/depth/audio/EXR output when their implementation changes.
 - When updater/bootstrap ownership changes, qualify the actual Windows process
   handoff and file locks, including one update from the preceding release.
@@ -111,3 +111,27 @@ Use the [current user guides](../README.md) for exact labels and options.
 The Stage 1/2 checklists are historical integration records and may contain
 retired UI, defaults and build instructions. Untested behavior remains
 untested; do not carry a result to a different binary or game build.
+
+## Focused regressions and temporary investigations
+
+The core portfolio is a starting point, not a test-count ceiling. The maintained
+source suite also retains replay repair, helper setup and Players scratch owner
+regressions, plus two real child-process updater/startup schedules. These protect
+publication-before-verification, foreign-file deletion, retry blockage and
+recovery-resource races that the headless core and abstract models do not establish.
+Run all maintained source tests with the discovery command above.
+
+Before adding a permanent test, name its observable contract, plausible regression
+and gap in current proof. Prefer the existing owner and independent expected
+results. Add a new test only for a distinct risk; demonstrate that it detects the
+intended defect. Temporary probes and one-off investigation harnesses belong in
+ignored analysis/ directories, outside discovery and source exports. Promote
+only durable regression proof. Do not delete valuable proof to meet a quota.
+
+TLA+ remains a bounded protocol/interleaving check. Keep implementation witnesses
+for critical model contracts and reconcile their mapping when code changes.
+Model mutants establish model sensitivity; they do not establish code sensitivity.
+Use targeted checks during development and one normal complete release build;
+reuse passing proof while relevant inputs match. Live/recording checks need their
+own current authorization and are selected for the changed integration boundary,
+not automatically requested for every source-only repackage.

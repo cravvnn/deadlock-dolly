@@ -24,7 +24,7 @@ helper, assets and build metadata from the checkout. The Windows package bundles
 its own runtime; its build uses Python 3.12 x64 and the pinned
 `requirements-build.txt`. See [BUILDING.md](docs/BUILDING.md).
 
-Run the 15 core headless source regression tests from the repository root with
+Run the core headless workflows and focused owner regressions from the repository root with
 `python -m unittest discover -s tests -q`. See the [testing guide](docs/internal/TESTING.md)
 for release gates and targeted manual checks. These tests do not qualify Windows,
 the game, or rendered output. For camera or transport changes, describe the

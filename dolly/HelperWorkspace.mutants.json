@@ -1,0 +1,46 @@
+[
+  {
+    "name": "collapse independent workspaces",
+    "config": "HelperWorkspace.cfg",
+    "replace": [
+      [
+        "key(i) == i",
+        "key(i) == 1"
+      ]
+    ],
+    "expect": "OwnCleanupOnly"
+  },
+  {
+    "name": "cleanup archive error changes return result",
+    "config": "HelperWorkspace.cfg",
+    "replace": [
+      [
+        "DenyArchive(i) == /\\ Faults /\\ pc[i] = \"cleaning\" /\\ 2 \\in remaining[i]\n    /\\ pc' = ([pc EXCEPT ![i] = pc[i]])\n    /\\ outcome' = ([outcome EXCEPT ![i] = outcome[i]])\n    /\\ remaining' = ([remaining EXCEPT ![i] = @ \\ {2}])\n    /\\ UNCHANGED <<archive,stage,workspace,cli,marker,foreignDeleted,beforeCleanup,confirmed>>",
+        "DenyArchive(i) == /\\ Faults /\\ pc[i] = \"cleaning\" /\\ 2 \\in remaining[i]\n    /\\ pc' = ([pc EXCEPT ![i] = \"done\"])\n    /\\ outcome' = ([outcome EXCEPT ![i] = \"error\"])\n    /\\ remaining' = ([remaining EXCEPT ![i] = @ \\ {2}])\n    /\\ UNCHANGED <<archive,stage,workspace,cli,marker,foreignDeleted,beforeCleanup,confirmed>>"
+      ]
+    ],
+    "expect": "CleanupPreservesResult"
+  },
+  {
+    "name": "return without cache confirmation",
+    "config": "HelperWorkspace.cfg",
+    "replace": [
+      [
+        "confirmed' = ([confirmed EXCEPT ![i] = TRUE])",
+        "confirmed' = ([confirmed EXCEPT ![i] = FALSE])"
+      ]
+    ],
+    "expect": "SuccessfulCache"
+  },
+  {
+    "name": "omit completion marker",
+    "config": "HelperWorkspace.cfg",
+    "replace": [
+      [
+        "Marker(i) == /\\ pc[i] = \"marker\"\n    /\\ marker' = (TRUE)",
+        "Marker(i) == /\\ pc[i] = \"marker\"\n    /\\ marker' = (FALSE)"
+      ]
+    ],
+    "expect": "SuccessfulCache"
+  }
+]

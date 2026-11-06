@@ -6,6 +6,8 @@ repair arbitrary demo corruption and never changes the selected recording.
 from __future__ import annotations
 
 import os
+import errno
+import secrets
 import hashlib
 from pathlib import Path
 import struct
@@ -322,8 +324,7 @@ def repair_replay(source: Path, output: Path) -> Path:
     index = packet_index(source)
     if index is None:
         raise ReplayRepairUnavailable("This is not a completed, supported replay file.")
-    created = False
-    identity = None
+    staging: Path | None = None
     try:
         with source.open("rb") as original:
             before = os.fstat(original.fileno())
@@ -392,9 +393,11 @@ def repair_replay(source: Path, output: Path) -> Path:
                     and before.st_size + delta <= _MAX_FILE):
                 raise ReplayRepairUnavailable("The replay's footer cannot be adjusted safely.")
             fixed_header = header[:8] + struct.pack("<II", info + delta, spawn + delta)
-            with output.open("xb") as target:
-                created = True
-                identity = os.fstat(target.fileno())
+            if output.exists():
+                raise FileExistsError(errno.EEXIST, "File exists", str(output))
+            candidate_path = output.with_name(f".dolly-repair-{secrets.token_hex(16)}.tmp")
+            with candidate_path.open("xb") as target:
+                staging = candidate_path
                 target.write(fixed_header)
                 previous = 16
                 for start, end, replacement in replacements:
@@ -414,17 +417,18 @@ def repair_replay(source: Path, output: Path) -> Path:
             if (before.st_dev, before.st_ino, before.st_size) != (
                     current_source.st_dev, current_source.st_ino, current_source.st_size):
                 raise ReplayRepairUnavailable("The original replay was replaced while the copy was made.")
-        verified = packet_index(output)
+        verified = packet_index(staging)
         if (verified is None or verified.ticks != index.ticks or verified.total_ticks != index.total_ticks
                 or verified.playback_time != index.playback_time):
             raise ReplayRepairUnavailable("The repaired copy did not pass its replay checks.")
+        if os.name == "nt":
+            os.rename(staging, output)  # Windows refuses an existing destination.
+        else:
+            os.link(staging, output)  # Same-filesystem no-replace publication.
         return output
-    except BaseException:
-        if created and identity is not None:
+    finally:
+        if staging is not None:
             try:
-                current = output.stat()
-                if (identity.st_dev, identity.st_ino) == (current.st_dev, current.st_ino):
-                    output.unlink()
+                staging.unlink(missing_ok=True)
             except OSError:
-                pass
-        raise
+                pass  # A private leftover must not mask the repair result.

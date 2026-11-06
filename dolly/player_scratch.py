@@ -63,10 +63,17 @@ def update(folder, state, *, error=None):
     validate(folder, data['request'])
     data['state'] = state
     if error: data['error'] = str(error)[:1000]
-    temporary = manifest.with_suffix('.tmp')
-    with temporary.open('x', encoding='utf-8') as stream:
-        json.dump(data, stream, indent=2)
-    os.replace(temporary, manifest)
+    temporary = manifest.with_name('.dolly-capture-' + uuid.uuid4().hex + '.tmp')
+    stream = temporary.open('x', encoding='utf-8')
+    try:
+        with stream:
+            json.dump(data, stream, indent=2)
+        os.replace(temporary, manifest)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # An owned leftover must not hide the update result.
 
 
 def from_marker(deployment):
