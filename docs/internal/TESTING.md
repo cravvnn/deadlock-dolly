@@ -93,6 +93,15 @@ check does not establish source correspondence or in-game behavior.
 
 ## Manual integration checks
 
+`test_admission_cleanup.py` owns three distinct regressions: provisional console
+socket cleanup/transfer, failed preenqueue notification/reentrancy and real worker
+retry, and camera-export cleanup result preservation. Real unconnected sockets,
+owned temporary files and hard links are used; factory, reader and failures are
+simulated. No network/game/AE/USD application is contacted. Private pilot matrices
+stay outside discovery. SocketSetup, Admission and ExportCleanup models/API/
+mutants run in the normal model gate; their finite contracts do not replace
+native, packaged or live qualification at those boundaries.
+
 `test_resource_boundaries.py` adds three compact regression contracts for gaps
 outside the core workflows: bounded local definitions reads (including valid
 oversized prefixes), warning-episode quiescence with reset/rearm, and Windows

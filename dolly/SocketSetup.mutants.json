@@ -1,0 +1,22 @@
+[
+  {
+    "name": "omit failed setup cleanup",
+    "replace": [
+      [
+        "pc' = \"rollback\"",
+        "pc' = \"done\""
+      ]
+    ],
+    "expect": "NoUnownedFailure"
+  },
+  {
+    "name": "close transferred socket",
+    "replace": [
+      [
+        "/\\ UNCHANGED <<open,failed>>",
+        "/\\ open' = FALSE /\\ UNCHANGED failed"
+      ]
+    ],
+    "expect": "SuccessfulTransfer"
+  }
+]

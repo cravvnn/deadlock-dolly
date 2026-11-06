@@ -369,3 +369,43 @@ the production model also has 9,174. Stdio 268 -> 296 states adds safe cleanup
 continuation rather than reducing reachable states. These bounded counts are
 non-additive and do not prove whole-program equivalence or performance. No
 baseline/paired-trace implementation branches are shipped in maintained specs.
+
+## Failed admissions and camera-export cleanup
+
+SocketSetup.tla beside console.py covers ConsoleClient.connect factory return,
+TCP_NODELAY, timeout and release of provisional cleanup responsibility. An
+ExitStack callback closes failed setup sockets and is discarded on success;
+actual client publication/reader startup follows outside this model. One socket
+and returning successful close are bounded. Two mutants protect failure cleanup
+and successful transfer. Concurrent operations, close failure recovery and real
+network behavior are excluded. Close errors can supersede setup errors. The
+compact regression uses real unconnected sockets with simulated factory/reader.
+Controller.connect cannot close a socket that has not yet been published.
+
+Admission.tla beside ui/operations.py covers OperationQueue.submit after its
+closed/blocked/busy guards pass. DollyApp._submit writes the busy label through
+started(label). Reserve before notification to reject one synchronous nested
+submission; release the reservation if notification raises. Two mutants protect
+reset and reentrant exclusion. Queue.put stays outside the catch: ambiguous
+publication failure, worker/event draining, concurrent submission, shutdown and
+arbitrary UI callback-side-effect compensation are excluded. The compact test
+checks original exceptions, nested rejection and a real worker retry/shutdown.
+
+ExportCleanup.tla beside camera_export.py covers write_script, called by
+export_jsx/export_usda. After owned temporary creation it abstracts body errors,
+an existing user destination, complete no-overwrite publication and cleanup.
+Windows consumes the stage; the link config keeps a private alias until cleanup.
+Only cleanup OSError is suppressed; leftovers may consume disk and programmer
+errors propagate. Two mutants protect original errors and post-link success.
+No creation/mode/fsync/no-overwrite policy changes. The compact test uses real
+files/hard links and checks original user bytes; private Windows lock probes and
+actual exporter adapters supplement it. Windows hard links are not native POSIX
+qualification. AE/USD application import, hostile namespace changes, crashes,
+power loss/directory durability and indefinitely blocking operations are excluded.
+
+Adjacent Api modules check completion shape only; safety rules remain in each
+implementation model. These are production-only bounded contracts, not whole
+console/GUI/program refinement. Weak fairness assumes returning calls, terminal
+Done stutters, and deadlock checking remains enabled. Counts are non-additive:
+SocketSetup7, Admission9, ExportCleanup15/16 states. No reduction is claimed;
+these additive scopes/guards provide defensive failure handling.

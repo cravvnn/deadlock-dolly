@@ -770,7 +770,10 @@ def write_script(path: str | Path, script: str) -> None:
             os.link(temporary, destination)  # Same-directory atomic no-replace publication.
     finally:
         if temporary is not None:
-            Path(temporary).unlink(missing_ok=True)
+            try:
+                Path(temporary).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def number(value: float) -> str:

@@ -34,7 +34,11 @@ class OperationQueue:
             rejected('Please wait for the current operation to finish.')
             return False
         self.busy = True
-        started(label)
+        try:
+            started(label)
+        except BaseException:
+            self.busy = False
+            raise
         self.jobs.put((label, function, callback))
         return True
 

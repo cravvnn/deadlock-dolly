@@ -1,0 +1,26 @@
+[
+  {
+    "name": "retain failed busy reservation",
+    "replace": [
+      [
+        "busy' = FALSE",
+        "busy' = busy"
+      ]
+    ],
+    "expect": "FailureReleased"
+  },
+  {
+    "name": "notify before reserving admission",
+    "replace": [
+      [
+        "/\\ busy' = TRUE /\\ pc' = \"callback\"",
+        "/\\ busy' = FALSE /\\ pc' = \"callback\""
+      ],
+      [
+        "pc' = \"enqueue\"\n           /\\ UNCHANGED <<busy,queued,failed,nested,nestedAccepted>>",
+        "pc' = \"enqueue\" /\\ busy' = TRUE\n           /\\ UNCHANGED <<queued,failed,nested,nestedAccepted>>"
+      ]
+    ],
+    "expect": "NoNestedAdmission"
+  }
+]

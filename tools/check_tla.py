@@ -34,6 +34,7 @@ REQUIRED.update({'PngStage-collision.cfg', 'PresetPublish-link.cfg', 'CleanupWor
 REQUIRED.update({'PublishReplay-link.cfg', 'ScratchStatus.cfg', 'PublishReplay.cfg', 'ScratchStatus-collision.cfg', 'HelperWorkspace.cfg', 'ScratchStatus-concurrent.cfg', 'ScratchStatus-noFaults.cfg', 'ScratchStatus-concurrent-noFaults.cfg', 'HelperWorkspace-noFaults.cfg'})
 REQUIRED.update({"SaveResult.cfg", "ManifestScan.cfg"})
 REQUIRED.update({"MemoryWatch.cfg", "RestoreHandles.cfg"})
+REQUIRED.update({"SocketSetup.cfg", "Admission.cfg", "ExportCleanup.cfg", "ExportCleanup-link.cfg"})
 
 
 def main():

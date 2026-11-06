@@ -1,0 +1,23 @@
+[
+  {
+    "name": "cleanup overrides original error",
+    "replace": [
+      [
+        "result' = result",
+        "result' = \"cleanup_error\""
+      ]
+    ],
+    "expect": "PreserveResult"
+  },
+  {
+    "name": "cleanup reports failure after publication",
+    "config": "ExportCleanup-link.cfg",
+    "replace": [
+      [
+        "result' = result",
+        "result' = IF final = \"complete\" THEN \"cleanup_error\" ELSE result"
+      ]
+    ],
+    "expect": "PreserveResult"
+  }
+]

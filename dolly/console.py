@@ -10,6 +10,7 @@ never endpoints accepting arbitrary text from project files or a web UI.
 from __future__ import annotations
 
 from collections import deque
+from contextlib import ExitStack
 import codecs
 import ipaddress
 import logging
@@ -370,9 +371,12 @@ class ConsoleClient:
         with self._lock:
             self.close()
             try:
-                sock = socket.create_connection((host, port), timeout=timeout)
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                sock.settimeout(0.25)
+                with ExitStack() as setup:
+                    sock = socket.create_connection((host, port), timeout=timeout)
+                    setup.callback(sock.close)
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    sock.settimeout(0.25)
+                    setup.pop_all()
             except OSError as exc:
                 raise ConsoleError(f"Cannot connect to local {self.protocol} on {host}:{port}: {exc}") from exc
             with self._condition:

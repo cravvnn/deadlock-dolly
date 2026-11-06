@@ -963,3 +963,17 @@ dolly/RestoreHandles.tla
 dolly/RestoreHandlesApi.tla
 tests/test_resource_boundaries.py
 docs/RELEASE_NOTES_0.7.11-beta.md
+dolly/ui/Admission.cfg
+dolly/ui/Admission.mutants.json
+dolly/ui/Admission.tla
+dolly/ui/AdmissionApi.tla
+dolly/ExportCleanup-link.cfg
+dolly/ExportCleanup.cfg
+dolly/ExportCleanup.mutants.json
+dolly/ExportCleanup.tla
+dolly/ExportCleanupApi.tla
+dolly/SocketSetup.cfg
+dolly/SocketSetup.mutants.json
+dolly/SocketSetup.tla
+dolly/SocketSetupApi.tla
+tests/test_admission_cleanup.py
