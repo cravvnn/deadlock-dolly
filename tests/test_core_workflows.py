@@ -122,8 +122,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertAlmostEqual(actual, project.evaluate(start + u*(end-start))['x'], places=9)
         self.assertEqual(project.to_dict(), before)
         with self.assertRaises(ValueError): native_path.compile_project(Project())
-        compiler = shutil.which('g++')
-        if compiler is None:
+        compiler = shutil.which('g++') if os.name != 'nt' else None
+        if os.name != 'nt' and compiler is None:
             warnings.warn('C++ path parity not run: g++ unavailable', RuntimeWarning)
             return
         root = Path(__file__).resolve().parents[1]
@@ -154,9 +154,33 @@ int main(int argc, char **argv) {
     }
 }
 """)
-        subprocess.run([compiler, '-std=c++17', '-O2', '-ffp-contract=off',
-                        '-I', str(root / 'native/include'), str(root / 'native/src/dolly_path.cpp'),
-                        str(source), '-o', str(runner)], check=True, capture_output=True, text=True, timeout=60)
+        if os.name == 'nt':
+            # Match the release toolchain without requiring a Developer Prompt
+            # or installing a second compiler just for this source test.
+            cmake = shutil.which('cmake')
+            if cmake is None:
+                installed = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'CMake/bin/cmake.exe'
+                cmake = str(installed) if installed.is_file() else None
+            self.assertIsNotNone(cmake, 'Windows path parity requires CMake and Visual Studio 2022 C++ tools')
+            build = self.root / 'native-path-build'
+            runner = build / 'native-path-runner.exe'
+            (self.root / 'CMakeLists.txt').write_text(f'''cmake_minimum_required(VERSION 3.21)
+project(DollyPathParity LANGUAGES CXX)
+add_executable(native-path-runner "{source.as_posix()}" "{(root / 'native/src/dolly_path.cpp').as_posix()}")
+target_include_directories(native-path-runner PRIVATE "{(root / 'native/include').as_posix()}")
+target_compile_features(native-path-runner PRIVATE cxx_std_17)
+target_compile_options(native-path-runner PRIVATE /fp:strict)
+set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${{CMAKE_BINARY_DIR}}")
+''', encoding='utf-8')
+            subprocess.run([cmake, '-S', str(self.root), '-B', str(build),
+                            '-G', 'Visual Studio 17 2022', '-A', 'x64'],
+                           check=True, capture_output=True, text=True, timeout=60)
+            subprocess.run([cmake, '--build', str(build), '--config', 'Release', '--parallel', '2'],
+                           check=True, capture_output=True, text=True, timeout=60)
+        else:
+            subprocess.run([compiler, '-std=c++17', '-O2', '-ffp-contract=off',
+                            '-I', str(root / 'native/include'), str(root / 'native/src/dolly_path.cpp'),
+                            str(source), '-o', str(runner)], check=True, capture_output=True, text=True, timeout=60)
         # Distinct captured lenses force wire version 2. Explicit broken
         # tangents exercise authored nonlinear motion on unequal segments.
         authored = Project(keyframes=[key(0, x=0), key(1, x=10), key(3, x=20)])

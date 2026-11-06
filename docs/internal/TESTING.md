@@ -30,10 +30,11 @@ They check independently known bytes, numeric values, output data and event
 order. P01 checks generated compatibility data as part of its normal run. The
 standalone equivalent is `python tools/generate_compatibility.py --check`.
 
-With `g++` available, P10 compiles the actual C++ path parser/evaluator and checks
-Python-generated paths against independent numeric expectations. Without it,
-that portion warns and Python wire checks still run; the release native gates
-remain necessary. If Tk cannot import, the updater's UI imports are isolated
+P10 compiles the actual C++ path parser/evaluator and checks Python-generated
+paths against independent numeric expectations. Windows uses CMake and Visual
+Studio 2022 x64, matching the release toolchain; missing tools fail the test.
+Linux uses `g++`; without it, that portion warns and Python wire checks still
+run. The release native gates remain necessary. If Tk cannot import, the updater's UI imports are isolated
 behind test stubs. P15 exercises real consent policy with a fake notice widget;
 no window is constructed and those imports are restored afterward.
 
