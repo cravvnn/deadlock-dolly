@@ -5,6 +5,19 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 5 build 6860 review
+
+Build 6860 relocates reviewed client camera, startup, Follow and effects consumers,
+and the server configuration interface. Additive profiles and a rebuilt exact-pair
+unlocker retain earlier reviewed builds. Supporting modules and stock UI/configuration
+provenance passed offline verification.
+
+One bounded local replay check passed normal startup and four exact seeks, with
+normal exit and exact settings/runtime restoration. The two owned DLLs were removed;
+unmounted session caches were preserved. The previously known Steam networking
+assertion remained; no new game incident was observed. This does not certify camera
+motion, rendered output or recording/export. No new release package is implied.
+
 ## October 30 build 6835 review
 
 Build 6835 changes the client and server binaries. Its camera, startup, Follow,

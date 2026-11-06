@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "6858 offline client review against6853:128 unchanged complete/scoped regions plus independently reviewed minimap indexed operands and34-entry table; named observer record and typed getters retain0xe98. Supporting modules are whole-file identical to the reviewed Season2 set; the new server has exact named Config001 registration, table and three complete method bodies. No6858 live claim.",
+  "description": "6860 offline client review against6853:128 unchanged complete/scoped regions plus independently reviewed minimap indexed operands and34-entry table; named observer record and typed getters retain0xe98. Supporting modules are whole-file identical to the reviewed Season2 set; the new server has separately mapped named Config001 registration, table, thunks and three complete method bodies. No6860 live claim.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "21cd561a8818522756ef377ca67584bf8573c2cc63f348134703513c1dad443f",
+    "citadel/bin/win64/client.dll": "2007fddaf9f48211e1ed188aff3c31ad47ba667cbaace16f5dd30e9376b884c7",
     "bin/win64/engine2.dll": "e5c84fc8f18a136858af9ec9fc1b2d5ddc745712f63988d58999def32426dcd9",
     "bin/win64/tier0.dll": "3eb86a30eba4e33140232a536555ae846cdba1ba45068635f3b6b33c49c10313"
   },
-  "unlocker_server_sha256": "a6d7a488bde35b02f600178b5da0d4924e74bae9918c07a84c5119d0bebf3866",
+  "unlocker_server_sha256": "1415c83dadf8f8b0a72fc253df728804188b13c1ea22a877d43b98b1081cfd3b",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "04bc78a730b9623c8b69db6b00a5aa3790ddfd08",
-  "stock_gameinfo_depot": "1422456_3255813969905480578",
-  "stock_provenance_sha256": "45585b45757f73a507870d2af3029049427faa3556f58bbd5be3c66ea3618d9a",
+  "stock_gameinfo_depot": "1422456_2939123716983788394",
+  "stock_provenance_sha256": "3554fe1c6dcafd23bb9629eccb22a8906ceb96646fcd734cb0abeb51b8650525",
   "configuration_modules": {
     "bin/win64/engine2.dll": "e5c84fc8f18a136858af9ec9fc1b2d5ddc745712f63988d58999def32426dcd9",
     "bin/win64/tier0.dll": "3eb86a30eba4e33140232a536555ae846cdba1ba45068635f3b6b33c49c10313",

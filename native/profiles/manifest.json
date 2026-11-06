@@ -8,7 +8,7 @@
     "citadel/bin/win64/client.dll": {
       "role": "client",
       "reviewed_utc": "2026-11-05",
-      "latest_timestamp": 1793914288,
+      "latest_timestamp": 1793925300,
       "accepted": [
         "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
         "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
@@ -71,11 +71,12 @@
         "6a7c6d40ed70011884054405846e7a5259fff51578714ffa864cbe80ab527627",
         "fa6a50168ac34e282ddb4e4b5e1a0fe0c67983b3779406cdf1a856008142210c",
         "77fb13f576d3ecabf4688d51a81b842c73c3b62131392da0b09a6ea04d1f0203",
-        "21cd561a8818522756ef377ca67584bf8573c2cc63f348134703513c1dad443f"
+        "21cd561a8818522756ef377ca67584bf8573c2cc63f348134703513c1dad443f",
+        "2007fddaf9f48211e1ed188aff3c31ad47ba667cbaace16f5dd30e9376b884c7"
       ],
       "feature_pins": {
         "automatic preload": [
-          "21cd561a8818522756ef377ca67584bf8573c2cc63f348134703513c1dad443f"
+          "2007fddaf9f48211e1ed188aff3c31ad47ba667cbaace16f5dd30e9376b884c7"
         ]
       }
     },
@@ -277,6 +278,7 @@
     "scenesystem-2026-11-05-6853.json",
     "soundsystem-2026-11-05-6853.json",
     "deadlock-2026-11-05-6857-complete.json",
-    "deadlock-2026-11-05-6858-complete.json"
+    "deadlock-2026-11-05-6858-complete.json",
+    "deadlock-2026-11-05-6860-complete.json"
   ]
 }

@@ -1131,3 +1131,7 @@ dolly/PlayersRestoreRetry.cfg
 dolly/PlayersRestoreRetry.mutants.json
 
 docs/RELEASE_NOTES_0.7.7-beta.md
+
+native/profiles/deadlock-2026-11-05-6860-complete.json
+third_party/cvar_unlocker/unlocker-build-6860.patch
+docs/RELEASE_NOTES_0.7.8-beta.md
