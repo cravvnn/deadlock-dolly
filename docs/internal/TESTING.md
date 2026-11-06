@@ -2,108 +2,93 @@
 
 [Maintainer references](README.md) · [Current user documentation](../README.md)
 
-Choose checks for the behavior being changed, then run its neighboring consumers.
-Run from the product checkout root and select its qualified Python environment
-explicitly. For the standard setup in [BUILDING.md](../BUILDING.md):
+Run the 15 core user-contract tests from the checkout root:
 
-```powershell
-$py = '.\.venv\Scripts\python.exe'
+```console
+python -m unittest discover -s tests -q
 ```
 
-If a linked worktree uses a shared environment, set `$py` to the interpreter
-identified by the active project instructions and keep the product worktree as
-the current directory. For example, update-flow checks are:
+The portfolio prioritizes safe startup after a game update, preserving the game
+install and user files, and completing native camera/Players recordings honestly.
+Keep exactly 15 named contracts with a bounded set of related failure scenarios;
+do not hide the retired suite behind a runner or test implementation text.
+
+- `test_core_install.py` owns P01 reviewed-build admission and additive published
+  definitions; P02 launch, journal-before-write and exact restoration; P03
+  interrupted-session recovery; P04 deletion of only owned temporary files.
+- `test_core_native.py` owns P05 native preparation/playback/watchdogs/handoff;
+  P06 owned Players progress and drain-before-restore; P08 verified native seeks;
+  P09 rendered-pose/tick capture and replacement.
+- `test_core_workflows.py` owns P07 recorder admission and cleanup; P10 authored
+  motion/retiming/native parity; P11 USD/AE camera export; P12 Follow/Bone and F9;
+  P13 shot persistence/validation; P14 settings preservation/migration; P15
+  verified update installation, recovery and explicit consent.
+
+These tests use real product code and owned temporary files, with simulated
+processes, console/native telemetry, network responses and deliberate I/O faults.
+They check independently known bytes, numeric values, output data and event
+order. P01 checks generated compatibility data as part of its normal run. The
+standalone equivalent is `python tools/generate_compatibility.py --check`.
+
+With `g++` available, P10 compiles the actual C++ path parser/evaluator and checks
+Python-generated paths against independent numeric expectations. Without it,
+that portion warns and Python wire checks still run; the release native gates
+remain necessary. If Tk cannot import, the updater's UI imports are isolated
+behind test stubs. P15 exercises real consent policy with a fake notice widget;
+no window is constructed and those imports are restored afterward.
+
+[CORE_TEST_AUDIT.json](CORE_TEST_AUDIT.json) maps each contract to recent release
+fixes, selected decision-function coverage, seeded faults and remaining gaps.
+Two or more targeted faults per contract must be detected without parse/import
+errors or unrelated invalid fixtures. Coverage is a smell check on those owning
+decisions, not a whole-application percentage target or proof of correctness.
+The retired detailed suite remains in Git history; its full coverage is not
+preserved by these 15 contracts.
+
+Run these fast source checks for runtime changes. Keep live and packaged checks
+proportional to the change:
+
+- After each game build, qualify reviewed offsets/hooks in a local replay before
+  publishing definitions or a release: ready paused camera, capture, four exact
+  seeks, shot playback, F9 and exact file restoration on exit.
+- For a release, retain native compilation/ctest, PE/ABI and packaged executable
+  gates, plus a short recording checked for decoded frame count. Verify
+  Players/depth/audio/EXR output when their implementation changes.
+- When updater/bootstrap ownership changes, qualify the actual Windows process
+  handoff and file locks, including one update from the preceding release.
+- When UI behavior changes, use packaged GUI smoke and inspect the changed
+  interaction/layout. ReShade, Discord, replay repair, DLSS, graphics profiles
+  and reconstructed audio receive targeted manual checks when touched.
+- When a modeled protocol changes, run its maintained TLA+ checks and update the
+  source/spec mapping. A model result does not replace implementation tests.
+
+The source suite does not qualify Windows, live game/render/encoder behavior,
+all GUI orchestration, abrupt process death or every protocol interleaving.
+The audit records which checks actually ran and which remain unqualified.
+
+For a Windows release, use the normal builder with the qualified Python
+environment described in [BUILDING.md](../BUILDING.md):
 
 ```powershell
-& $py -m unittest discover -s tests -p 'test_update*.py' -q
-& $py -m unittest discover -s tests -p 'test_release_launcher.py' -q
-& $py -m unittest discover -s tests -p 'test_release_notes.py' -q
+& .\.venv\Scripts\python.exe tools/build_windows.py
 ```
 
-These are the update-flow checks, not a replacement release command. For another
-component, substitute its owning test file and include consumers of the changed
-contract. Tests import sibling fixtures by bare names: do not use `-t .`.
+The builder runs the source suite and retains its existing native compilation,
+model checks, and packaged executable smoke gates. Those gates are separate from
+the Python source tests. An explicit `--output-dir <new-folder>` preserves
+an older candidate with the same version; it refuses to overwrite an existing
+release archive or checksum.
 
-Updater rollback and launcher/cleanup ownership have maintained source-side TLA+
-models and mutants. After
-installing Node 20 or newer, run these from the checkout root:
+The source-side TLA+ models can also be checked independently with Node 20 or
+newer and the pinned npm dependencies:
 
-```powershell
+```console
 npm ci --prefix tools/tla --ignore-scripts
-& $py tools/check_tla.py
+python tools/check_tla.py
 ```
 
-The normal Windows builder runs the same check before native compilation. Model
-failures, surviving mutants and missing required configurations fail the check.
-Node and the pinned npm dependencies are development tools, not application
-runtime dependencies. [SPECS.md](../../SPECS.md) maps modeled actions to code and
-states the bounds. Keep those specs and the owning regression tests in sync;
-passing a hand-maintained spec does not automatically prove source correspondence.
-
-| Changed area | Include in the selected checks |
-|---|---|
-| Update discovery, consent or worker | Updater, consent, notice, release launcher and notes; settings when persistence changes |
-| Desktop component | Component tests plus its real GUI adapter, layout/theme and input consumers affected by the change |
-| Controller, path, settings or shared test fixture | Owning tests during iteration; full source suite before completing a shared-contract change |
-| Launch, configuration or recovery | Launcher, graphics profiles, session cleanup/recovery, atomic files and relevant controller consumers |
-| Native compatibility, protocol or packaging | Generated compatibility, Python/native agreement, launcher and package tests; affected native targets when their inputs change |
-| Documentation only | Changed commands/links and source-export membership; runtime tests only if executable behavior is affected |
-
-If the affected consumers are unclear, run the full source suite. Search fixture
-imports before changing a helper shared by other test files. Preserve independent
-transport, lifecycle, platform and packaging checks even when their assertions
-look similar. Reuse a passing result only while its relevant source, fixtures,
-generated inputs and environment remain unchanged; record that identity.
-
-The full source check for shared or unclear changes is:
-
-```powershell
-& $py -m unittest discover -s tests -q
-```
-
-For a separately requested Windows release, retain the full local source/native
-and packaged-executable qualification in the normal builder. It includes the
-full source suite, so reuse that proof when its relevant inputs match. Its gates
-and forced native relink remain unchanged. Use the intended release version and
-outputs, preserving published artifacts. No new skip flags or hosted builds are
-part of this workflow.
-
-```powershell
-& $py tools/build_windows.py
-```
-
-When an older local candidate already uses the intended version number, pass
-`--output-dir <new-folder>` to keep both candidates. An explicit output folder
-refuses to overwrite an existing release archive or checksum file.
-
-For new regressions, name the observable contract, a credible failing change,
-and why existing proof misses it. Prefer one strong owning test with independent
-expected values. Before consolidating, carry every unique case into its keeper
-and demonstrate that the keeper fails for the intended regression. Avoid new
-production seams used only by tests. Use virtual clocks for simulated waiting;
-keep real timing, process and filesystem proof in the tests that own it.
-
-Record elapsed time for changed suites and preserve failed attempts. Do not add
-retries, broaden mocks or remove failure checks merely to get a passing run.
-
-For FFmpeg color changes on Windows, build the small WARP recorder fixture and
-provide the pinned FFmpeg path to the native integration test. This checks real
-H.264 and lossless recordings, including the audio remux; it does not launch the
-game. The Players and video-export suites also check alpha masters when bundled
-FFmpeg is available. To include the Auto H.264 and HEVC NVENC paths on a system
-with NVIDIA encoding available, set `DOLLY_TEST_NVENC=1` before the color test.
-
-```powershell
-cmake -S native -B build/color-check -DBUILD_TESTING=ON
-cmake --build build/color-check --config Release --target video_color_smoke --parallel 2
-$env:DOLLY_TEST_VIDEO_COLOR_SMOKE = (Resolve-Path build/color-check/Release/video_color_smoke.exe).Path
-$env:DOLLY_TEST_FFMPEG = (Resolve-Path third_party/ffmpeg/bin/ffmpeg.exe).Path
-& $py -m unittest discover -s tests -p 'test_video_color_integration.py' -q
-& $py -m unittest discover -s tests -p 'test_player_layer.py' -q
-& $py -m unittest discover -s tests -p 'test_video_export.py' -q
-Remove-Item Env:DOLLY_TEST_VIDEO_COLOR_SMOKE, Env:DOLLY_TEST_FFMPEG
-if (Test-Path Env:DOLLY_TEST_NVENC) { Remove-Item Env:DOLLY_TEST_NVENC }
-```
+[SPECS.md](../../SPECS.md) describes their scope and bounds. Passing a model
+check does not establish source correspondence or in-game behavior.
 
 ## Manual integration checks
 
@@ -126,8 +111,3 @@ Use the [current user guides](../README.md) for exact labels and options.
 The Stage 1/2 checklists are historical integration records and may contain
 retired UI, defaults and build instructions. Untested behavior remains
 untested; do not carry a result to a different binary or game build.
-
-Participant Follow handoff model checks require Node20/npm for development.
-Run `npm ci --prefix tools/tla --ignore-scripts`, then `python tools/check_tla.py`.
-The normal Windows builder runs the same check before native compilation.
-See SPECS.md for the scoped model bounds and limitations.

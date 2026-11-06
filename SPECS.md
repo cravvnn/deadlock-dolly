@@ -13,7 +13,8 @@ for this development check. No hosted checker or workflow is needed.
 | `update_worker.replace_file`; used by installation and rollback | [AtomicCopy.tla](dolly/AtomicCopy.tla), [FileOpsApi.tla](dolly/FileOpsApi.tla) | Single-file temporary copy/flush/replace and process interruption. Preserve the source and publish original bytes. Temporary leftovers after abrupt exit are allowed; normal failures run cleanup. |
 | `release_launcher.main` ordinary startup, concurrent `_apply_plan`/`install` | [LauncherHandoff.tla](dolly/LauncherHandoff.tla), [RecoveryResourcesApi.tla](dolly/RecoveryResourcesApi.tla) | One writer admitted before startup or attempting admission while startup owns the shared install lock; one old staged workspace, one file, one optional writer exit, one editor handoff. Pending check, cleanup and handoff share ownership. Target-side staging and commit are separate, allowing delayed executable replacement. |
 | `cleanup_workspaces`, `_workspace_finished`; sole production caller `release_launcher.main` | [WorkspaceCleanup.tla](dolly/WorkspaceCleanup.tla) | Lower projection of the caller-held lock around eligibility and removal. Backup unlink and directory removal are separate actions. Preserve recovery resources and unfinished journals; PENDING prevents cleanup. This helper does not reacquire the caller's lock. |
-| Input validation, manifest verification, process visibility/identity, consent and recovery-worker parent wait | Owning Python tests; outside these implementation models | Models assume validated paths, correct hashes and OS lock semantics. Writer admission models a successful process snapshot before startup; a visible editor prevents new admission. Recovery handoff terminates the launcher model; parent waiting is reviewed/tested separately. |
+| Input validation, reviewed-build admission, manifest verification and explicit update consent | Core Python contracts P1, P13 and P15 in [TESTING.md](docs/internal/TESTING.md); outside these implementation models | Tests exercise validated files and simulated network/process boundaries. Models still assume correct hashes and OS lock semantics; source tests do not qualify a published game profile or packaged Windows update. |
+| Game-process admission and session recovery | Core Python contracts P2 and P3 in [TESTING.md](docs/internal/TESTING.md) | A simulated process snapshot exercises launch refusal and recovery ordering. Actual Windows process visibility/identity, kernel locks and recovery-worker parent waiting require platform qualification; they are not established by the 15 headless contracts. |
 | Other stateful Dolly components | Not covered by the maintained model set yet | No inference about camera/game compatibility, GPU capture, encoding, UI state or whole-program correctness. |
 
 The implementation model instances the per-file interface and checks refinement
@@ -50,11 +51,13 @@ download liveness and arbitrary external writers are outside their bounds.
 CleanupReturns assumes returning file operations and weak fairness for started
 operations. The interface maps needed to pending AND committed change, resources
 to workspace AND backup. It is a scoped refinement, not a whole-program model.
-Real two-process fake-install regressions exercise both ownership orderings,
-delayed first commit, process exit and exact-byte rollback; they do not execute
-packaged Dolly or prove kernel image-lock behavior. The former unlocked design
-fails the recovery contract, so its partial search is not a state-reduction
-baseline. This integration consolidates ownership and hardens recovery.
+Historical two-process fake-install regressions exercised both ownership
+orderings, delayed first commit, process exit and exact-byte rollback. Those
+regressions are retained in Git history, not in the current 15 headless
+contracts; neither set establishes packaged Dolly or kernel image-lock behavior.
+The former unlocked design fails the recovery contract, so its partial search
+is not a state-reduction baseline. Platform qualification must still check the
+real process handoff when updater or bootstrap ownership changes.
 
 Each adjacent `.mutants.json` names deliberately broken rules. Parse/evaluation
 errors and stale replacements do not count as valid mutant kills. When modifying
@@ -86,9 +89,11 @@ does not replace verify_payload or install-time checksum/consent/lock checks.
 
 Both default configs select the guarded production contract. Completion assumes
 returning operations and weak fairness; terminal Done intentionally stutters.
-Real temporary-file, Windows-lock and malformed-workspace owner regressions
-supplement the specs. No whole-program, live/game, native POSIX or power-loss
-certification follows. Current settings schema and graphics recovery are unchanged.
+Core contracts P14 and P15 supplement the specs with real temporary-file and
+malformed-workspace checks. Historical Windows-lock regressions remain in Git
+history and require platform qualification when their ownership code changes.
+No whole-program, live/game, native POSIX or power-loss certification follows.
+Current settings schema and graphics recovery are unchanged.
 
 ## Participant Follow selection
 
@@ -98,9 +103,10 @@ failure, ownership loss, retry, and disable/restore/enable ordering. Normal FOV9
 and unsupported150 exercise the neutral aimed-lens admission boundary. One
 opaque offset represents the independent position fields. Its five mutants
 protect neutral zoom, the first snapshot, pending restoration, reviewed ranges,
-and write ownership. Fresh normal-FOV reads on updates, concrete ConVar values,
-exact float readback, callback failures and all descriptor fields remain owning
-Python tests; this projection does not certify the game or all camera state.
+and write ownership. Core contract P12 checks a neutral aimed lens, concrete
+rig restoration, target identity and F9 handoff. The retired detailed Python
+suite covered additional callbacks, ranges and descriptor fields; those checks
+are not all retained. This projection does not certify the game or all camera state.
 
 FollowSelection.tla beside controller.py models only the selected-player handoff:
 paused unchanged/advanced ticks, transient observer mode4, camera readiness,
@@ -115,10 +121,10 @@ The live-observed build6849 intro transition lasts7.5 replay seconds. The contro
 waits cancellably for readiness while temporarily resuming its owned replay, then
 pauses and restores the chosen tick before admitting the rig. It does not change
 playback speed. The160s wall bound accommodates7.5s at supported minimum0.05x
-plus10s margin. Model time is abstracted to settle/abort; clock duration and exact
-speed preservation are covered by owner tests and bounded live evidence. No new
-state holder was added for speed. A virtual-time regression exceeds the old5s
-budget; actualsix-switch verification uses the matching replay at581 and5000.
+plus10s margin. Model time is abstracted to settle/abort. P12 simulates a stock
+blend advancing the selected tick and checks restoration before rig admission;
+it does not reproduce the full160s bound. The older virtual-time and bounded
+live six-switch evidence are historical, not current-suite qualification.
 
 ## Playback identity query during Players backpressure
 
@@ -180,9 +186,10 @@ do not use the publication primitive. Schema11 and read-only behavior are unchan
 The model starts after the new settings payload is prepared and assumes an
 immutable invalid original. GUI/editor save scheduling, external writers,
 power-loss/directory durability and native POSIX filesystem behavior are outside
-the qualification. Two copy chunks abstract arbitrary bytes. Real owner tests
-check oversized originals, collision and failure preservation; private process
-exits/retries supplement them. Return uses weak fairness of returning I/O calls.
+the qualification. Two copy chunks abstract arbitrary bytes. P14 checks complete
+invalid-original backups, collision and failure preservation. Oversized-original
+and private-process exit regressions remain historical checks outside the 15.
+Return uses weak fairness of returning I/O calls.
 These are scoped hardening contracts, not whole-program or game verification.
 The independent outer save_settings payload cleanup remains unchanged.
 
@@ -214,5 +221,7 @@ The model enumerates success on attempts 1..3, persistent timeout, and identity 
 request loss between attempts. Five mutants protect ownership, request, response,
 budget and transient recovery. Its 81 states extend behavior; no state reduction or
 whole-program/GPU/OS-hang claim. PlayersRecovery abstracts this helper as its
-consoleReady result. Native drain and post-response ownership are separate owner
-contracts checked through the real controller/recorder/GUI tests.
+consoleReady result. Core contract P6 checks native drain and post-response
+ownership through the real controller and recorder with simulated game/bridge
+boundaries. GUI failed-export orchestration is outside the 15 and requires a
+targeted packaged UI check when changed.

@@ -12,8 +12,8 @@ Two palettes live here, one per surface:
   :mod:`dolly.gui_theme` and the canvas-drawn shell). It carries every native
   key, overridden with Kara's "Dolly Blue" redesign, plus desktop-only keys.
 
-``tests/test_ui_theme.py`` guards both against drift. Write a Dolly UI colour
-here and nowhere else.
+Write Dolly UI colours here and regenerate the native headers with
+``tools/generate_ui_tokens.py`` after changing native tokens.
 """
 from __future__ import annotations
 

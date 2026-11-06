@@ -102,8 +102,7 @@ double drop_z_offset(int index) {
     return 0.0;
 }
 // Library mirror of dolly/object_library.py (id order is the wire index).
-// tests/test_object_library.py checks the two stay in step via the generated
-// label table below; keep ids/labels/categories in append-only order.
+// Keep this label table in sync and ids/labels/categories in append-only order.
 struct ObjectEntry {
     const char* label;
     const char* category;

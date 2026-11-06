@@ -1,0 +1,585 @@
+{
+  "scope": "Opus5.5 product-risk portfolio: exactly 15 named user contracts, not whole-program coverage equivalence.",
+  "recommended_by": "Claude Opus 5.5, independent read-only product/source/release-history review",
+  "implemented_by": "Three GPT-6.1 Terra agents plus parent integration and independent cross-review",
+  "basis_revision": "7f16ec5",
+  "baseline_revision": "c2f23819d9322225dec2d25587e6e40cfd4bb9ac",
+  "priority": [
+    "Reviewed startup after a game patch and safe refusal",
+    "Exact preservation of game install/user files",
+    "Default native recording/Players completion and honest failure",
+    "Rendered camera/tick identity and ownership handoff",
+    "Stable authored motion and exported camera data"
+  ],
+  "contracts": [
+    {
+      "id": "P01",
+      "user_contract": "Reviewed game admission",
+      "test": "test_core_install.InstallTests.test_p01_reviewed_game_admission_and_published_definitions",
+      "action": "Scan synthetic game module bytes, admit the reviewed build, reject changed/missing modules with a valid DLL fixture, adopt only valid additive definitions.",
+      "oracle": "Independent module SHA-256s, unchanged game tree, strict cache retention, positive/negative native admission and generated-data consistency.",
+      "seeded_faults_detected": [
+        "unreviewed module hash treated as reviewed",
+        "published definitions accept wrong native ABI",
+        "native DLL gate admits an unsupported game"
+      ]
+    },
+    {
+      "id": "P02",
+      "user_contract": "Launch and exact install restoration",
+      "test": "test_core_install.InstallTests.test_p02_launch_transaction_restores_install_on_exit_and_failure",
+      "action": "Real console/native deployment and isolated settings preparation with simulated game creation, including process-start races and spawn failure.",
+      "oracle": "Backup/prepared journal exist before installed-gameinfo publication; mod filtering, native deployment and flags are observed at spawn; exact original tree returns.",
+      "seeded_faults_detected": [
+        "launch overwrites a gameinfo changed during preparation",
+        "exit acknowledges restoration without restoring gameinfo bytes"
+      ]
+    },
+    {
+      "id": "P03",
+      "user_contract": "Interrupted-session recovery",
+      "test": "test_core_install.InstallTests.test_p03_interrupted_recovery_preserves_foreign_and_modified_files",
+      "action": "Exercise recover_pending and restore_session_configs, including foreign/tampered/linked input, external edits, I/O failure and running-game graphics guard.",
+      "oracle": "Exact original bytes, valid mounted/restored/conflict state, preserved foreign data and successful retry.",
+      "seeded_faults_detected": [
+        "foreign session owner accepted for recovery",
+        "tampered original backup accepted for recovery"
+      ]
+    },
+    {
+      "id": "P04",
+      "user_contract": "Delete only owned temporary files",
+      "test": "test_core_install.InstallTests.test_p04_cleanup_preserves_unknown_and_removes_only_owned_session_files",
+      "action": "Real remove_overlay/recover_orphans with mounted, linked, foreign, locked, replay-containing, unknown and late-arriving files.",
+      "oracle": "Exact preserved user bytes and ownership evidence; owned reports removed; locked or final-rmdir failure remains recoverable.",
+      "seeded_faults_detected": [
+        "cleanup removes files while overlay is still mounted",
+        "cleanup treats an unknown user file as generated",
+        "late-file cleanup failure loses its ownership marker"
+      ]
+    },
+    {
+      "id": "P05",
+      "user_contract": "Default native preparation and playback",
+      "test": "test_core_native.NativeWorkflows.test_p05_native_playback_lifecycle_and_watchdog",
+      "action": "Prepare/reload/seek through real controller, play and monitor native telemetry, exercise owned pause/resume, effects and callback faults, hitch/hang watchdogs and held-view retry.",
+      "oracle": "Native arm/play precedes replay resume; no console pose stream while native plays; correct completion/restoration; bad telemetry stops before endpoint.",
+      "seeded_faults_detected": [
+        "native playback accepts a changed replay identity",
+        "fixed-step watchdog aborts a normal four-second hitch"
+      ]
+    },
+    {
+      "id": "P06",
+      "user_contract": "Players progress and safe drain",
+      "test": "test_core_native.NativeWorkflows.test_p06_players_backpressure_and_safe_drain",
+      "action": "Real Controller plus VideoExport and request/pacing/stop files; delayed identity replies, foreign/stale/error/completed reports, session/replay changes, unacknowledged drain and two transient post-stop timeouts.",
+      "oracle": "Otherwise-valid report controls isolate each refusal; only fresh owned progress protects the take; stop precedes verification and originals stay held until drain/identity confirmation.",
+      "seeded_faults_detected": [
+        "Players pacing trusts a foreign game PID",
+        "Players idle report excuses capture backpressure"
+      ]
+    },
+    {
+      "id": "P07",
+      "user_contract": "Recorder admission and cleanup",
+      "test": "test_core_workflows.WorkflowTests.test_p07_recording_admission_and_lifecycle",
+      "action": "Real VideoExport validation/start/stop/cancel, simulated external bridge and encoder catalog, plus actual controller timing restoration.",
+      "oracle": "Existing output bytes survive, unsupported encoder refused, frame cap/options/event order correct, uncertain begin stays reserved and cleanup returns original timing.",
+      "seeded_faults_detected": [
+        "recorder overwrites an existing output file",
+        "recorder drops the requested frame cap"
+      ]
+    },
+    {
+      "id": "P08",
+      "user_contract": "Verified native seeking",
+      "test": "test_core_native.NativeWorkflows.test_p08_native_seek_and_replay_clock",
+      "action": "Real absolute/shot native seeks, early tick, recorded-packet floor, forward undershoot refusal and ReplayClock stalls/rewind.",
+      "oracle": "Hand-computed actual ticks/pose/phase, explicit boundary details, finite-input refusal without writes and bounded clock prediction.",
+      "seeded_faults_detected": [
+        "absolute replay seek lands one tick late",
+        "replay clock predicts ten ticks past a stalled observation"
+      ]
+    },
+    {
+      "id": "P09",
+      "user_contract": "Rendered camera capture and replacement",
+      "test": "test_core_native.NativeWorkflows.test_p09_native_capture_rendered_pose_and_tick",
+      "action": "Real capture_at_replay/capture_native_snapshot and shot replacement, pause-after-capture and wrong replay/early capture refusal.",
+      "oracle": "Independent rendered pose/lens/tick-to-time calculation; replacement preserves tangents; pause policy is observed.",
+      "seeded_faults_detected": [
+        "rendered capture is assigned the wrong replay time",
+        "capture ignores the requested pause after capture"
+      ]
+    },
+    {
+      "id": "P10",
+      "user_contract": "Authored motion through native execution",
+      "test": "test_core_workflows.WorkflowTests.test_p10_authored_path_preview_and_native",
+      "action": "Preview curves/retiming and Python wire output, then compile actual C++ parser/evaluator when g++ is available.",
+      "oracle": "Independent all-channel linear/smooth equations and authored cubic samples; angle wrap, track retime, v2 captured lens and native/Python agreement.",
+      "seeded_faults_detected": [
+        "retime leaves effect tracks on the old timeline",
+        "native wire omits authored cubic slopes"
+      ]
+    },
+    {
+      "id": "P11",
+      "user_contract": "USD and After Effects camera export",
+      "test": "test_core_workflows.WorkflowTests.test_p11_camera_export",
+      "action": "Sample a distinct-axis, rotating, slow-motion/lens shot; write and parse emitted USDA/JSX; refuse overwrite.",
+      "oracle": "Hand-derived frame/time/position/axis/rotation/focal expectations and preserved existing export.",
+      "seeded_faults_detected": [
+        "AE export inverts its vertical axis",
+        "camera export silently overwrites existing output"
+      ]
+    },
+    {
+      "id": "P12",
+      "user_contract": "Follow/Bone identity and F9",
+      "test": "test_core_workflows.WorkflowTests.test_p12_follow_and_bone",
+      "action": "Select a fresh player, reject stale serial, restore directly from active Follow, simulate stock blend moving tick1 to10, restore1 before new rig; save/reload bone take.",
+      "oracle": "Exact rig/input/original restoration, neutral aimed lens, selected paused tick restored before enabling rig and unchanged bone identity/authored data.",
+      "seeded_faults_detected": [
+        "Follow accepts a stale player serial",
+        "F9 handoff retains an active Follow rig"
+      ]
+    },
+    {
+      "id": "P13",
+      "user_contract": "Shot persistence and validation",
+      "test": "test_core_workflows.WorkflowTests.test_p13_shot_persistence_and_validation",
+      "action": "Save/load/migrate an advanced shot and reject one-property corruptions of a valid file, with failed atomic replacement.",
+      "oracle": "Independent normalized authored content, original bytes unchanged on failure, strict duplicate/nonfinite/schema/command-injection refusal.",
+      "seeded_faults_detected": [
+        "shot loader accepts duplicate JSON fields",
+        "shot save writes directly instead of atomic replacement"
+      ]
+    },
+    {
+      "id": "P14",
+      "user_contract": "Settings preservation and migration",
+      "test": "test_core_workflows.WorkflowTests.test_p14_settings_preservation",
+      "action": "Persist settings, back up invalid originals, inject backup/publication/replace/cleanup failures and migrate a saved v1 capture binding.",
+      "oracle": "Complete original backups; no overwrite on backup failure; original save exception survives cleanup denial; saved binding retained without rewriting legacy file.",
+      "seeded_faults_detected": [
+        "invalid-settings backup is truncated",
+        "settings migration discards the saved capture binding"
+      ]
+    },
+    {
+      "id": "P15",
+      "user_contract": "Verified, consented update and recovery",
+      "test": "test_core_workflows.WorkflowTests.test_p15_verified_update_and_rollback",
+      "action": "Valid/unsafe archive matrix, malformed cached manifests preceding a valid update, staged tamper/admission/backup/partial and health rollback, then real UpdateUI discovery and explicit click policy with fake notice.",
+      "oracle": "Verified exact bytes, immutable valid backups, obsolete-only removal/user preservation, usable later workspace without network, and zero download/launch before consent.",
+      "seeded_faults_detected": [
+        "update installs a checksum-mismatched staged executable",
+        "release discovery downloads before explicit Update now"
+      ]
+    }
+  ],
+  "validation": {
+    "normal_default_python": {
+      "run": 15,
+      "seconds": 3.724,
+      "result": "passed",
+      "optional_tk_imports": "isolated",
+      "game_gpu_display": "not used"
+    },
+    "measured_run": {
+      "run": 15,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "whole_application": {
+        "covered_lines": 7133,
+        "num_statements": 43631,
+        "percent_statements_covered": 16.348,
+        "covered_branches": 1793,
+        "num_branches": 14620,
+        "percent_branches_covered": 12.264
+      }
+    },
+    "selected_decision_functions": {
+      "dolly/compatibility.py:scan_game_modules": {
+        "covered_lines": 20,
+        "num_statements": 20,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 8,
+        "num_branches": 8,
+        "percent_branches_covered": 100.0
+      },
+      "dolly/launcher.py:launch": {
+        "covered_lines": 137,
+        "num_statements": 161,
+        "percent_statements_covered": 85.093,
+        "covered_branches": 37,
+        "num_branches": 52,
+        "percent_branches_covered": 71.154
+      },
+      "dolly/session_cleanup.py:remove_overlay": {
+        "covered_lines": 72,
+        "num_statements": 97,
+        "percent_statements_covered": 74.227,
+        "covered_branches": 36,
+        "num_branches": 48,
+        "percent_branches_covered": 75.0
+      },
+      "dolly/gameinfo_transaction.py:restore_record": {
+        "covered_lines": 27,
+        "num_statements": 27,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 10,
+        "num_branches": 10,
+        "percent_branches_covered": 100.0
+      },
+      "dolly/update_worker.py:install": {
+        "covered_lines": 45,
+        "num_statements": 45,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 22,
+        "num_branches": 22,
+        "percent_branches_covered": 100.0
+      },
+      "dolly/update_worker.py:rollback": {
+        "covered_lines": 16,
+        "num_statements": 17,
+        "percent_statements_covered": 94.118,
+        "covered_branches": 9,
+        "num_branches": 10,
+        "percent_branches_covered": 90.0
+      },
+      "dolly/controller.py:Controller._run_native": {
+        "covered_lines": 120,
+        "num_statements": 144,
+        "percent_statements_covered": 83.333,
+        "covered_branches": 56,
+        "num_branches": 80,
+        "percent_branches_covered": 70.0
+      },
+      "dolly/controller.py:Controller._player_capture_pacing_active": {
+        "covered_lines": 17,
+        "num_statements": 17,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 10,
+        "num_branches": 10,
+        "percent_branches_covered": 100.0
+      }
+    },
+    "additional_native_functions": {
+      "Controller.prepare_native_recording": {
+        "covered_lines": 31,
+        "num_statements": 37,
+        "percent_statements_covered": 83.784,
+        "covered_branches": 7,
+        "num_branches": 12,
+        "percent_branches_covered": 58.333
+      },
+      "Controller._finish_native_playback": {
+        "covered_lines": 25,
+        "num_statements": 59,
+        "percent_statements_covered": 42.373,
+        "covered_branches": 11,
+        "num_branches": 22,
+        "percent_branches_covered": 50.0
+      },
+      "Controller.capture_at_replay": {
+        "covered_lines": 16,
+        "num_statements": 34,
+        "percent_statements_covered": 47.059,
+        "covered_branches": 7,
+        "num_branches": 18,
+        "percent_branches_covered": 38.889
+      },
+      "Controller._record_native_capture": {
+        "covered_lines": 32,
+        "num_statements": 65,
+        "percent_statements_covered": 49.231,
+        "covered_branches": 18,
+        "num_branches": 40,
+        "percent_branches_covered": 45.0
+      }
+    },
+    "seeded_faults": {
+      "attempted": 32,
+      "detected_by_assertion": 32,
+      "unexpected_exceptions": 0,
+      "minimum_per_contract": 2,
+      "method": "Compile single-function code changes and apply in memory, then restore; product files unchanged. Syntax/import/setup failures do not count."
+    },
+    "environment": {
+      "python": "3.14.5",
+      "os": "Linux",
+      "coverage": "7.17.2, source=dolly, branch=True; no subprocess Python coverage",
+      "tk_measured": "Actual isolated Tk8.6 imports; DISPLAY unset. Notice widget is a deliberate UI boundary fake.",
+      "native": "g++ compiled and ran actual native/src/dolly_path.cpp; no native Windows DLL/GPU/game execution."
+    },
+    "reverse_order_and_network_check": {
+      "run": 15,
+      "failures": 0,
+      "errors": 0,
+      "network_guard": true,
+      "ui_import_state_restored": true,
+      "order": "reverse",
+      "suite_sha256": {
+        "tests/camera_modes.py": "7b7811218bcc889afa5894577224dec984ced6975a274fa1fba758a0034ea298",
+        "tests/core_helpers.py": "d8663789a13769d4b6db50d11b8535ae7fe84aad2b0c0eaaa2d144e0da02d166",
+        "tests/native_helpers.py": "ec3e7d2c0c5f8140ab20101dd03ff92b3b5207b234572fbf39bc650a238283c5",
+        "tests/test_core_install.py": "3abf1f0c6f896e3335d4ec68f812ff3485a0d8b9044361c65b4c11306d54f351",
+        "tests/test_core_native.py": "f64d2366029bc9b55f814baa7f756bed6bfbe64ad22aec7f0a561a3431c499dd",
+        "tests/test_core_workflows.py": "10fd26739aa300610278a6370dc8ee8be32d1cc14c9601d43fb88c0e9ff125b4",
+        "tests/video_workflow.py": "1242b393ce0f5a44f90520925b394a8fb2919e20b4b7cd571b3a6f36ebcfd436"
+      }
+    },
+    "generated_compatibility": "P01 runs generate_compatibility.check_generated on checked-in inputs."
+  },
+  "recent_fix_traceability": [
+    {
+      "release": "0.7.8-beta",
+      "fix": "Build6860 admission and updated server/unlocker",
+      "contracts": [
+        "P01",
+        "P02"
+      ],
+      "proof_and_qualification_limit": "Generated data and admission/deployment source checks; actual reviewed offsets/unlocker startup require the per-game-build live replay qualification."
+    },
+    {
+      "release": "0.7.7-beta",
+      "fix": "Players stop before busy-console verification and bounded retry",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Request marker precedes queries; two ConsoleTimeout replies after drain are retried while timing/reservation remain held."
+    },
+    {
+      "release": "0.7.7-beta",
+      "fix": "Settings cleanup cannot hide primary save error",
+      "contracts": [
+        "P14"
+      ],
+      "proof_and_qualification_limit": "Deliberate replace failure plus unlink PermissionError preserves the same primary exception object and original bytes."
+    },
+    {
+      "release": "0.7.7-beta",
+      "fix": "Malformed cached update metadata cannot hide usable workspace",
+      "contracts": [
+        "P15"
+      ],
+      "proof_and_qualification_limit": "Malformed root/schema/digest manifests precede later valid cache; verified reuse succeeds without network and preserves invalid metadata bytes."
+    },
+    {
+      "release": "0.7.6-beta",
+      "fix": "Season2 compatibility and changed Follow/seek setting types",
+      "contracts": [
+        "P01",
+        "P08",
+        "P12"
+      ],
+      "proof_and_qualification_limit": "Admission/generated consistency and source ownership/seek checks; actual changed engine types require reviewed-build native/live checks."
+    },
+    {
+      "release": "0.7.5-beta",
+      "fix": "Normal owned capture progress avoids spurious Players abort",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Fresh owned progress across blocked identity replies succeeds; PID/request/heartbeat/progress/error/stage controls independently refuse invalid reports."
+    },
+    {
+      "release": "0.7.5-beta",
+      "fix": "Mode-before-publication and cleanup-result configuration hardening",
+      "contracts": [
+        "P02",
+        "P03"
+      ],
+      "proof_and_qualification_limit": "Real atomic gameinfo transaction and error recovery are exercised; AtomicMode/AtomicModeApi TLA models plus targeted mode-fault/platform check when writer changes own chmod-order details."
+    },
+    {
+      "release": "0.7.5-beta",
+      "fix": "Invalid settings backup published only when complete",
+      "contracts": [
+        "P14"
+      ],
+      "proof_and_qualification_limit": "Complete-byte backup checks and copy/publication collision faults preserve the original; BackupPublish model retains process-interruption bounds."
+    },
+    {
+      "release": "0.7.4-beta",
+      "fix": "Weapon zoom applied once in Follow",
+      "contracts": [
+        "P12"
+      ],
+      "proof_and_qualification_limit": "Python rig selects neutral ADS lens and restores originals; native follow policy/rendered weapon zoom require native/live qualification."
+    },
+    {
+      "release": "0.7.4-beta",
+      "fix": "Delayed identity reply rechecks fresh Players progress",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Progress arrives during ConsoleTimeout and protects real native controller loop; foreign progress does not excuse repeated misses."
+    },
+    {
+      "release": "0.7.3-beta",
+      "fix": "Reviewed game support and exact-build unlocker",
+      "contracts": [
+        "P01",
+        "P02"
+      ],
+      "proof_and_qualification_limit": "Generated/admission and deployment checks; per-game-build native/live qualification still required."
+    },
+    {
+      "release": "0.7.3-beta",
+      "fix": "Rollback backups retained; startup lock/handoff ownership",
+      "contracts": [
+        "P15"
+      ],
+      "proof_and_qualification_limit": "Repeated/partial/health rollback preserves originals and backups; actual startup lock race/process handoff remains TLA/platform qualification, not claimed by15."
+    },
+    {
+      "release": "0.7.3-beta",
+      "fix": "Late cleanup failure repairs ownership marker",
+      "contracts": [
+        "P04"
+      ],
+      "proof_and_qualification_limit": "Final rmdir receives a late user file; marker is repaired, user bytes survive and retry preserves them."
+    },
+    {
+      "release": "0.7.2-beta",
+      "fix": "Stock camera blend finishes before restoring selected paused tick",
+      "contracts": [
+        "P12"
+      ],
+      "proof_and_qualification_limit": "Simulated blend advances tick1 to10; real controller restores1 before enabling Follow. Full160s and actual intro transition remain outside source proof."
+    },
+    {
+      "release": "0.6.65-alpha",
+      "fix": "Game-written reports removed; unknown/replay files preserved",
+      "contracts": [
+        "P04"
+      ],
+      "proof_and_qualification_limit": "Owned rpt removed; unknown notes/replays and links not deleted or followed."
+    },
+    {
+      "release": "0.6.67-alpha",
+      "fix": "Unsupported encoder admission and bounded native timeout",
+      "contracts": [
+        "P05",
+        "P07"
+      ],
+      "proof_and_qualification_limit": "Encoder catalog refusal before start; fixed-step4s hitch survives and sustained hang aborts."
+    },
+    {
+      "release": "0.6.77/78/94-alpha",
+      "fix": "Players storage/GPU progress pacing and drain cleanup",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Owned real marker/progress files drive controller decisions and drain retry; actual storage/GPU/decoded matte remain separate qualification."
+    }
+  ],
+  "out_of_suite_checks": [
+    {
+      "when": "Each new game build, before publishing definitions/release",
+      "check": "Reviewed offsets/unlocker and live local-replay startup, rendered capture, four exact seeks, play, F9, exit file restoration."
+    },
+    {
+      "when": "Each Windows release",
+      "check": "Existing native compilation/ctest/PE/ABI and packaged executable gates; short encoded take with decoded frame count."
+    },
+    {
+      "when": "Players/depth/audio/EXR implementation changes",
+      "check": "Short actual output qualification for affected layer/audio timing/decoded channels; source fake telemetry is not render/encode proof."
+    },
+    {
+      "when": "Updater/bootstrap ownership changes",
+      "check": "Actual Windows lock/process parent/handoff and one update from previous release; maintained TLA ownership models."
+    },
+    {
+      "when": "UI/adjacent integration changes",
+      "check": "Packaged UI interaction/layout check; targeted ReShade/Discord/replay-repair/DLSS/graphics/reconstructed-audio check."
+    }
+  ],
+  "known_limits": [
+    "Full old-suite coverage is not preserved; global coverage percentages are not the portfolio acceptance target.",
+    "Windows builder, actual game/renderer/GPU/encoding/network services and real process locks were not run.",
+    "Stock-provenance verification and native capture-pack trust are fixture boundaries in P02; reviewed data and real offsets still require build/live qualification.",
+    "Native return-to-flight and many pending-restoration/effect-warmup paths remain outside these15; additional native function percentages are exposed rather than hidden.",
+    "Without g++, C++ parity warns and Python checks remain; platform symlink scenarios are conditional on host support.",
+    "Detailed UI/layout/animation, audio/layer-processing, all protocol/compatibility corners, abrupt process death, hostile namespace races and power-loss guarantees are not established.",
+    "Targeted mutants are hand-selected behavioral faults, not an exhaustive mutation score."
+  ],
+  "review_corrections": [
+    "Used otherwise-valid native artifact fixture for unsupported-build refusal, preventing unrelated missing-DLL failure from satisfying P01.",
+    "Injected native identity mismatch independently from console identity, and tested raw-valid completed pacing report independently from parser-rejected idle reports.",
+    "Isolated and restored optional UI/worker imports; reverse-order check observes no leaked module state.",
+    "Kept real Controller on Players path and actual non-frozen native preparation; old whole-controller recorder mock remains only at P07 external boundary.",
+    "Traceability distinguishes headless behavior, historical checks, model bounds and unperformed live/platform qualification."
+  ],
+  "historical_measurements": {
+    "legacy-all": {
+      "discovered_tests": 3641,
+      "run": 3636,
+      "skipped": 594,
+      "failure_records": 6,
+      "error_records": 38,
+      "overall": {
+        "covered_lines": 25978,
+        "num_statements": 43631,
+        "percent_statements_covered": 59.54,
+        "covered_branches": 7915,
+        "num_branches": 14620,
+        "percent_branches_covered": 54.138
+      }
+    },
+    "initial-15": {
+      "discovered_tests": 15,
+      "run": 15,
+      "skipped": 0,
+      "failure_records": 0,
+      "error_records": 0,
+      "overall": {
+        "covered_lines": 3320,
+        "num_statements": 43631,
+        "percent_statements_covered": 7.609,
+        "covered_branches": 514,
+        "num_branches": 14620,
+        "percent_branches_covered": 3.516
+      }
+    },
+    "final-15": {
+      "discovered_tests": 15,
+      "run": 15,
+      "skipped": 0,
+      "failure_records": 0,
+      "error_records": 0,
+      "overall": {
+        "covered_lines": 4985,
+        "num_statements": 43631,
+        "percent_statements_covered": 11.425,
+        "covered_branches": 1065,
+        "num_branches": 14620,
+        "percent_branches_covered": 7.285
+      }
+    }
+  },
+  "historical_audit_revision": "7f16ec5",
+  "suite_sha256": {
+    "tests/camera_modes.py": "7b7811218bcc889afa5894577224dec984ced6975a274fa1fba758a0034ea298",
+    "tests/core_helpers.py": "d8663789a13769d4b6db50d11b8535ae7fe84aad2b0c0eaaa2d144e0da02d166",
+    "tests/native_helpers.py": "ec3e7d2c0c5f8140ab20101dd03ff92b3b5207b234572fbf39bc650a238283c5",
+    "tests/test_core_install.py": "3abf1f0c6f896e3335d4ec68f812ff3485a0d8b9044361c65b4c11306d54f351",
+    "tests/test_core_native.py": "f64d2366029bc9b55f814baa7f756bed6bfbe64ad22aec7f0a561a3431c499dd",
+    "tests/test_core_workflows.py": "10fd26739aa300610278a6370dc8ee8be32d1cc14c9601d43fb88c0e9ff125b4",
+    "tests/video_workflow.py": "1242b393ce0f5a44f90520925b394a8fb2919e20b4b7cd571b3a6f36ebcfd436"
+  },
+  "raw_evidence_location": "/mnt/terramaster8tb/Scratch/dolly_tests_20261105/audit",
+  "reproduction": {
+    "suite": "python -m unittest discover -s tests -q",
+    "coverage_driver": "audit/run_suite.py CHECKOUT REPORT_PREFIX (isolated coverage dependency)",
+    "fault_driver": "audit/opus_faults.py",
+    "opus_review": "audit/opus55-coverage-review.md",
+    "reverse_order_driver": "audit/reverse_suite.py"
+  }
+}

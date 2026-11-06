@@ -34,8 +34,7 @@ void OverlayPanel::style_panel() {
     auto& style = ImGui::GetStyle();
     // Dolly palette, shared with the desktop Tk UI. The values live in
     // dolly/ui_theme.py and reach here through dolly_ui_tokens_generated.hpp
-    // (regenerate with tools/generate_ui_tokens.py); tests/test_ui_theme.py
-    // fails if the two drift apart.
+    // (regenerate with tools/generate_ui_tokens.py; use --check to verify).
     namespace ui = dolly::ui;
     style.WindowPadding = ImVec2(16, 14);
     style.FramePadding = ImVec2(10, 5);

@@ -24,13 +24,13 @@ helper, assets and build metadata from the checkout. The Windows package bundles
 its own runtime; its build uses Python 3.12 x64 and the pinned
 `requirements-build.txt`. See [BUILDING.md](docs/BUILDING.md).
 
-Choose owning tests and relevant consumers using the [testing guide](docs/internal/TESTING.md).
-Run `python -m unittest discover -s tests -q` for shared controller/path/settings
-or fixture changes and before a release. Use the selected environment's Python
-from the repository root; do not add `-t .`, because tests import sibling fixtures.
-For camera or transport changes, describe the tested replay state and separate
-simulated checks from observations in the native game. Do not commit personal
-replays, diagnostic exports, recovery journals, credentials or build outputs.
+Run the 15 core headless source regression tests from the repository root with
+`python -m unittest discover -s tests -q`. See the [testing guide](docs/internal/TESTING.md)
+for release gates and targeted manual checks. These tests do not qualify Windows,
+the game, or rendered output. For camera or transport changes, describe the
+tested replay state and distinguish simulated checks from observations in the
+native game. Do not commit personal replays, diagnostic exports, recovery
+journals, credentials or build outputs.
 
 Keep the launcher restricted to its own development/insecure process and
 retain journaled gameinfo recovery. The bundled official unlocker has pinned

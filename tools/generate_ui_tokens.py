@@ -7,8 +7,7 @@ that the native side never sees. Run after any change to ``NATIVE_TOKENS``::
     python tools/generate_ui_tokens.py            # write the header
     python tools/generate_ui_tokens.py --check     # verify it is current
 
-``tests/test_ui_theme.py`` runs the ``--check`` path, so a stale header fails the
-suite.
+Run the ``--check`` command after palette changes to detect a stale header.
 """
 from __future__ import annotations
 
