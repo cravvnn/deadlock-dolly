@@ -16,7 +16,7 @@ def exercise_camera_modes(case, root):
     console.values.update({PREFIX + name: float((low + high) / 2)
                            for name, (low, high) in BOUNDS.items()})
     console.values.update({ENABLED: 0., 'citadel_camera_spectator_auto_target_view': 0.,
-                           'citadel_spectator_mode': 0.})
+                           'citadel_spectator_mode': 0., PREFIX + 'fov': 90., PREFIX + 'ads_fov': 45.})
     player = {'handle': 0x10002, 'entity_index': 2, 'model': 0x123456789abcdef,
               'model_path': 'models/heroes/frank/frank.vmdl'}
 
@@ -71,6 +71,8 @@ def exercise_camera_modes(case, root):
         case.assertEqual(console.values['citadel_spectator_mode'], 2)
         case.assertEqual(console.values[ENABLED], 1)
         case.assertEqual(console.values[PREFIX + 'x_offset'], -250)
+        # The engine applies weapon zoom itself; ADS starts from the normal lens.
+        case.assertEqual(console.values[PREFIX + 'ads_fov'] - 40, 50)
         case.assertEqual(bridge.owner, 'panel')
         case.assertEqual(target.sample_target.call_count, 2)
         target.close.assert_called_once()
@@ -86,6 +88,37 @@ def exercise_camera_modes(case, root):
         case.assertEqual(bridge.owner, 'game_ui')
         case.assertIsNone(controller._game_hero_restore)
         case.assertIn(ENABLED + ' 0', console.events[handoff_start:])
+        # Switching to a second roster pawn near replay start must preserve the
+        # selected paused tick and send that pawn's actual entity index.
+        other = {**player, 'handle': 0x10003, 'entity_index': 3}
+        console.tick = 1
+        bridge.roster = [dict(other)]
+        target.sample_target.return_value = {'handle': other['handle'], 'mode': 2}
+        target.sample_health_hud_context.return_value = {'handle': other['handle']}
+        switch_start = len(console.events)
+        request = console.request
+        resumed = False
+        def advance_blend(command, *args, **kwargs):
+            nonlocal resumed
+            result = request(command, *args, **kwargs)
+            if command == 'demo_resume':
+                resumed = True
+                console.tick = 10
+            return result
+        def camera_state(_monitor):
+            return {'coherent': True, 'ready': resumed, 'blending': not resumed}
+        console.request = advance_blend
+        with patch('dolly.replay_camera.ReplayCameraMonitor.sample', side_effect=camera_state):
+            controller.start_selected_game_follow(FollowSettings(), other)
+        case.assertTrue(resumed)
+        case.assertEqual(console.tick, 1)
+        case.assertTrue(console.paused)
+        events = console.events[switch_start:]
+        case.assertIn('spec_target 3', events)
+        case.assertLess(events.index('demo_resume'), events.index('demo_gototick 1 0 1'))
+        case.assertLess(events.index('demo_gototick 1 0 1'), events.index(ENABLED + ' 1'))
+        controller.toggle_game_ui(True)
+        case.assertEqual(console.values[PREFIX + 'ads_fov'], 45)
 
     # A timed take duplicates a validated attached view without changing the
     # authored camera. Save/load checks its identity, offset and bone fields.

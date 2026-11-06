@@ -1,16 +1,523 @@
 {
-  "scope": "Exactly 15 broader core regression workflows; not equivalent to the retired full suite.",
+  "scope": "Opus5.5 product-risk portfolio: exactly 15 named user contracts, not whole-program coverage equivalence.",
+  "recommended_by": "Claude Opus 5.5, independent read-only product/source/release-history review",
+  "implemented_by": "Three GPT-6.1 Terra agents plus parent integration and independent cross-review",
+  "basis_revision": "7f16ec5",
   "baseline_revision": "c2f23819d9322225dec2d25587e6e40cfd4bb9ac",
-  "initial_reduction_revision": "10f1254",
-  "environment": {
-    "python": "3.14.5",
-    "system": "Linux",
-    "display": "unset",
-    "tk": "real Tk 8.6 loaded from isolated task dependencies for measured runs",
-    "coverage": "7.17.2, statements and branches, source=dolly, Python subprocess coverage not collected",
-    "native": "Actual native/src/dolly_path.cpp compiled with g++; no GPU/game/Windows DLL executed"
+  "priority": [
+    "Reviewed startup after a game patch and safe refusal",
+    "Exact preservation of game install/user files",
+    "Default native recording/Players completion and honest failure",
+    "Rendered camera/tick identity and ownership handoff",
+    "Stable authored motion and exported camera data"
+  ],
+  "contracts": [
+    {
+      "id": "P01",
+      "user_contract": "Reviewed game admission",
+      "test": "test_core_install.InstallTests.test_p01_reviewed_game_admission_and_published_definitions",
+      "action": "Scan synthetic game module bytes, admit the reviewed build, reject changed/missing modules with a valid DLL fixture, adopt only valid additive definitions.",
+      "oracle": "Independent module SHA-256s, unchanged game tree, strict cache retention, positive/negative native admission and generated-data consistency.",
+      "seeded_faults_detected": [
+        "unreviewed module hash treated as reviewed",
+        "published definitions accept wrong native ABI",
+        "native DLL gate admits an unsupported game"
+      ]
+    },
+    {
+      "id": "P02",
+      "user_contract": "Launch and exact install restoration",
+      "test": "test_core_install.InstallTests.test_p02_launch_transaction_restores_install_on_exit_and_failure",
+      "action": "Real console/native deployment and isolated settings preparation with simulated game creation, including process-start races and spawn failure.",
+      "oracle": "Backup/prepared journal exist before installed-gameinfo publication; mod filtering, native deployment and flags are observed at spawn; exact original tree returns.",
+      "seeded_faults_detected": [
+        "launch overwrites a gameinfo changed during preparation",
+        "exit acknowledges restoration without restoring gameinfo bytes"
+      ]
+    },
+    {
+      "id": "P03",
+      "user_contract": "Interrupted-session recovery",
+      "test": "test_core_install.InstallTests.test_p03_interrupted_recovery_preserves_foreign_and_modified_files",
+      "action": "Exercise recover_pending and restore_session_configs, including foreign/tampered/linked input, external edits, I/O failure and running-game graphics guard.",
+      "oracle": "Exact original bytes, valid mounted/restored/conflict state, preserved foreign data and successful retry.",
+      "seeded_faults_detected": [
+        "foreign session owner accepted for recovery",
+        "tampered original backup accepted for recovery"
+      ]
+    },
+    {
+      "id": "P04",
+      "user_contract": "Delete only owned temporary files",
+      "test": "test_core_install.InstallTests.test_p04_cleanup_preserves_unknown_and_removes_only_owned_session_files",
+      "action": "Real remove_overlay/recover_orphans with mounted, linked, foreign, locked, replay-containing, unknown and late-arriving files.",
+      "oracle": "Exact preserved user bytes and ownership evidence; owned reports removed; locked or final-rmdir failure remains recoverable.",
+      "seeded_faults_detected": [
+        "cleanup removes files while overlay is still mounted",
+        "cleanup treats an unknown user file as generated",
+        "late-file cleanup failure loses its ownership marker"
+      ]
+    },
+    {
+      "id": "P05",
+      "user_contract": "Default native preparation and playback",
+      "test": "test_core_native.NativeWorkflows.test_p05_native_playback_lifecycle_and_watchdog",
+      "action": "Prepare/reload/seek through real controller, play and monitor native telemetry, exercise owned pause/resume, effects and callback faults, hitch/hang watchdogs and held-view retry.",
+      "oracle": "Native arm/play precedes replay resume; no console pose stream while native plays; correct completion/restoration; bad telemetry stops before endpoint.",
+      "seeded_faults_detected": [
+        "native playback accepts a changed replay identity",
+        "fixed-step watchdog aborts a normal four-second hitch"
+      ]
+    },
+    {
+      "id": "P06",
+      "user_contract": "Players progress and safe drain",
+      "test": "test_core_native.NativeWorkflows.test_p06_players_backpressure_and_safe_drain",
+      "action": "Real Controller plus VideoExport and request/pacing/stop files; delayed identity replies, foreign/stale/error/completed reports, session/replay changes, unacknowledged drain and two transient post-stop timeouts.",
+      "oracle": "Otherwise-valid report controls isolate each refusal; only fresh owned progress protects the take; stop precedes verification and originals stay held until drain/identity confirmation.",
+      "seeded_faults_detected": [
+        "Players pacing trusts a foreign game PID",
+        "Players idle report excuses capture backpressure"
+      ]
+    },
+    {
+      "id": "P07",
+      "user_contract": "Recorder admission and cleanup",
+      "test": "test_core_workflows.WorkflowTests.test_p07_recording_admission_and_lifecycle",
+      "action": "Real VideoExport validation/start/stop/cancel, simulated external bridge and encoder catalog, plus actual controller timing restoration.",
+      "oracle": "Existing output bytes survive, unsupported encoder refused, frame cap/options/event order correct, uncertain begin stays reserved and cleanup returns original timing.",
+      "seeded_faults_detected": [
+        "recorder overwrites an existing output file",
+        "recorder drops the requested frame cap"
+      ]
+    },
+    {
+      "id": "P08",
+      "user_contract": "Verified native seeking",
+      "test": "test_core_native.NativeWorkflows.test_p08_native_seek_and_replay_clock",
+      "action": "Real absolute/shot native seeks, early tick, recorded-packet floor, forward undershoot refusal and ReplayClock stalls/rewind.",
+      "oracle": "Hand-computed actual ticks/pose/phase, explicit boundary details, finite-input refusal without writes and bounded clock prediction.",
+      "seeded_faults_detected": [
+        "absolute replay seek lands one tick late",
+        "replay clock predicts ten ticks past a stalled observation"
+      ]
+    },
+    {
+      "id": "P09",
+      "user_contract": "Rendered camera capture and replacement",
+      "test": "test_core_native.NativeWorkflows.test_p09_native_capture_rendered_pose_and_tick",
+      "action": "Real capture_at_replay/capture_native_snapshot and shot replacement, pause-after-capture and wrong replay/early capture refusal.",
+      "oracle": "Independent rendered pose/lens/tick-to-time calculation; replacement preserves tangents; pause policy is observed.",
+      "seeded_faults_detected": [
+        "rendered capture is assigned the wrong replay time",
+        "capture ignores the requested pause after capture"
+      ]
+    },
+    {
+      "id": "P10",
+      "user_contract": "Authored motion through native execution",
+      "test": "test_core_workflows.WorkflowTests.test_p10_authored_path_preview_and_native",
+      "action": "Preview curves/retiming and Python wire output, then compile actual C++ parser/evaluator when g++ is available.",
+      "oracle": "Independent all-channel linear/smooth equations and authored cubic samples; angle wrap, track retime, v2 captured lens and native/Python agreement.",
+      "seeded_faults_detected": [
+        "retime leaves effect tracks on the old timeline",
+        "native wire omits authored cubic slopes"
+      ]
+    },
+    {
+      "id": "P11",
+      "user_contract": "USD and After Effects camera export",
+      "test": "test_core_workflows.WorkflowTests.test_p11_camera_export",
+      "action": "Sample a distinct-axis, rotating, slow-motion/lens shot; write and parse emitted USDA/JSX; refuse overwrite.",
+      "oracle": "Hand-derived frame/time/position/axis/rotation/focal expectations and preserved existing export.",
+      "seeded_faults_detected": [
+        "AE export inverts its vertical axis",
+        "camera export silently overwrites existing output"
+      ]
+    },
+    {
+      "id": "P12",
+      "user_contract": "Follow/Bone identity and F9",
+      "test": "test_core_workflows.WorkflowTests.test_p12_follow_and_bone",
+      "action": "Select a fresh player, reject stale serial, restore directly from active Follow, simulate stock blend moving tick1 to10, restore1 before new rig; save/reload bone take.",
+      "oracle": "Exact rig/input/original restoration, neutral aimed lens, selected paused tick restored before enabling rig and unchanged bone identity/authored data.",
+      "seeded_faults_detected": [
+        "Follow accepts a stale player serial",
+        "F9 handoff retains an active Follow rig"
+      ]
+    },
+    {
+      "id": "P13",
+      "user_contract": "Shot persistence and validation",
+      "test": "test_core_workflows.WorkflowTests.test_p13_shot_persistence_and_validation",
+      "action": "Save/load/migrate an advanced shot and reject one-property corruptions of a valid file, with failed atomic replacement.",
+      "oracle": "Independent normalized authored content, original bytes unchanged on failure, strict duplicate/nonfinite/schema/command-injection refusal.",
+      "seeded_faults_detected": [
+        "shot loader accepts duplicate JSON fields",
+        "shot save writes directly instead of atomic replacement"
+      ]
+    },
+    {
+      "id": "P14",
+      "user_contract": "Settings preservation and migration",
+      "test": "test_core_workflows.WorkflowTests.test_p14_settings_preservation",
+      "action": "Persist settings, back up invalid originals, inject backup/publication/replace/cleanup failures and migrate a saved v1 capture binding.",
+      "oracle": "Complete original backups; no overwrite on backup failure; original save exception survives cleanup denial; saved binding retained without rewriting legacy file.",
+      "seeded_faults_detected": [
+        "invalid-settings backup is truncated",
+        "settings migration discards the saved capture binding"
+      ]
+    },
+    {
+      "id": "P15",
+      "user_contract": "Verified, consented update and recovery",
+      "test": "test_core_workflows.WorkflowTests.test_p15_verified_update_and_rollback",
+      "action": "Valid/unsafe archive matrix, malformed cached manifests preceding a valid update, staged tamper/admission/backup/partial and health rollback, then real UpdateUI discovery and explicit click policy with fake notice.",
+      "oracle": "Verified exact bytes, immutable valid backups, obsolete-only removal/user preservation, usable later workspace without network, and zero download/launch before consent.",
+      "seeded_faults_detected": [
+        "update installs a checksum-mismatched staged executable",
+        "release discovery downloads before explicit Update now"
+      ]
+    }
+  ],
+  "validation": {
+    "normal_default_python": {
+      "run": 15,
+      "seconds": 3.724,
+      "result": "passed",
+      "optional_tk_imports": "isolated",
+      "game_gpu_display": "not used"
+    },
+    "measured_run": {
+      "run": 15,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "whole_application": {
+        "covered_lines": 7133,
+        "num_statements": 43631,
+        "percent_statements_covered": 16.348,
+        "covered_branches": 1793,
+        "num_branches": 14620,
+        "percent_branches_covered": 12.264
+      }
+    },
+    "selected_decision_functions": {
+      "dolly/compatibility.py:scan_game_modules": {
+        "covered_lines": 20,
+        "num_statements": 20,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 8,
+        "num_branches": 8,
+        "percent_branches_covered": 100.0
+      },
+      "dolly/launcher.py:launch": {
+        "covered_lines": 137,
+        "num_statements": 161,
+        "percent_statements_covered": 85.093,
+        "covered_branches": 37,
+        "num_branches": 52,
+        "percent_branches_covered": 71.154
+      },
+      "dolly/session_cleanup.py:remove_overlay": {
+        "covered_lines": 72,
+        "num_statements": 97,
+        "percent_statements_covered": 74.227,
+        "covered_branches": 36,
+        "num_branches": 48,
+        "percent_branches_covered": 75.0
+      },
+      "dolly/gameinfo_transaction.py:restore_record": {
+        "covered_lines": 27,
+        "num_statements": 27,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 10,
+        "num_branches": 10,
+        "percent_branches_covered": 100.0
+      },
+      "dolly/update_worker.py:install": {
+        "covered_lines": 45,
+        "num_statements": 45,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 22,
+        "num_branches": 22,
+        "percent_branches_covered": 100.0
+      },
+      "dolly/update_worker.py:rollback": {
+        "covered_lines": 16,
+        "num_statements": 17,
+        "percent_statements_covered": 94.118,
+        "covered_branches": 9,
+        "num_branches": 10,
+        "percent_branches_covered": 90.0
+      },
+      "dolly/controller.py:Controller._run_native": {
+        "covered_lines": 120,
+        "num_statements": 144,
+        "percent_statements_covered": 83.333,
+        "covered_branches": 56,
+        "num_branches": 80,
+        "percent_branches_covered": 70.0
+      },
+      "dolly/controller.py:Controller._player_capture_pacing_active": {
+        "covered_lines": 17,
+        "num_statements": 17,
+        "percent_statements_covered": 100.0,
+        "covered_branches": 10,
+        "num_branches": 10,
+        "percent_branches_covered": 100.0
+      }
+    },
+    "additional_native_functions": {
+      "Controller.prepare_native_recording": {
+        "covered_lines": 31,
+        "num_statements": 37,
+        "percent_statements_covered": 83.784,
+        "covered_branches": 7,
+        "num_branches": 12,
+        "percent_branches_covered": 58.333
+      },
+      "Controller._finish_native_playback": {
+        "covered_lines": 25,
+        "num_statements": 59,
+        "percent_statements_covered": 42.373,
+        "covered_branches": 11,
+        "num_branches": 22,
+        "percent_branches_covered": 50.0
+      },
+      "Controller.capture_at_replay": {
+        "covered_lines": 16,
+        "num_statements": 34,
+        "percent_statements_covered": 47.059,
+        "covered_branches": 7,
+        "num_branches": 18,
+        "percent_branches_covered": 38.889
+      },
+      "Controller._record_native_capture": {
+        "covered_lines": 32,
+        "num_statements": 65,
+        "percent_statements_covered": 49.231,
+        "covered_branches": 18,
+        "num_branches": 40,
+        "percent_branches_covered": 45.0
+      }
+    },
+    "seeded_faults": {
+      "attempted": 32,
+      "detected_by_assertion": 32,
+      "unexpected_exceptions": 0,
+      "minimum_per_contract": 2,
+      "method": "Compile single-function code changes and apply in memory, then restore; product files unchanged. Syntax/import/setup failures do not count."
+    },
+    "environment": {
+      "python": "3.14.5",
+      "os": "Linux",
+      "coverage": "7.17.2, source=dolly, branch=True; no subprocess Python coverage",
+      "tk_measured": "Actual isolated Tk8.6 imports; DISPLAY unset. Notice widget is a deliberate UI boundary fake.",
+      "native": "g++ compiled and ran actual native/src/dolly_path.cpp; no native Windows DLL/GPU/game execution."
+    },
+    "reverse_order_and_network_check": {
+      "run": 15,
+      "failures": 0,
+      "errors": 0,
+      "network_guard": true,
+      "ui_import_state_restored": true,
+      "order": "reverse",
+      "suite_sha256": {
+        "tests/camera_modes.py": "7b7811218bcc889afa5894577224dec984ced6975a274fa1fba758a0034ea298",
+        "tests/core_helpers.py": "d8663789a13769d4b6db50d11b8535ae7fe84aad2b0c0eaaa2d144e0da02d166",
+        "tests/native_helpers.py": "ec3e7d2c0c5f8140ab20101dd03ff92b3b5207b234572fbf39bc650a238283c5",
+        "tests/test_core_install.py": "3abf1f0c6f896e3335d4ec68f812ff3485a0d8b9044361c65b4c11306d54f351",
+        "tests/test_core_native.py": "f64d2366029bc9b55f814baa7f756bed6bfbe64ad22aec7f0a561a3431c499dd",
+        "tests/test_core_workflows.py": "10fd26739aa300610278a6370dc8ee8be32d1cc14c9601d43fb88c0e9ff125b4",
+        "tests/video_workflow.py": "1242b393ce0f5a44f90520925b394a8fb2919e20b4b7cd571b3a6f36ebcfd436"
+      }
+    },
+    "generated_compatibility": "P01 runs generate_compatibility.check_generated on checked-in inputs."
   },
-  "coverage": {
+  "recent_fix_traceability": [
+    {
+      "release": "0.7.8-beta",
+      "fix": "Build6860 admission and updated server/unlocker",
+      "contracts": [
+        "P01",
+        "P02"
+      ],
+      "proof_and_qualification_limit": "Generated data and admission/deployment source checks; actual reviewed offsets/unlocker startup require the per-game-build live replay qualification."
+    },
+    {
+      "release": "0.7.7-beta",
+      "fix": "Players stop before busy-console verification and bounded retry",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Request marker precedes queries; two ConsoleTimeout replies after drain are retried while timing/reservation remain held."
+    },
+    {
+      "release": "0.7.7-beta",
+      "fix": "Settings cleanup cannot hide primary save error",
+      "contracts": [
+        "P14"
+      ],
+      "proof_and_qualification_limit": "Deliberate replace failure plus unlink PermissionError preserves the same primary exception object and original bytes."
+    },
+    {
+      "release": "0.7.7-beta",
+      "fix": "Malformed cached update metadata cannot hide usable workspace",
+      "contracts": [
+        "P15"
+      ],
+      "proof_and_qualification_limit": "Malformed root/schema/digest manifests precede later valid cache; verified reuse succeeds without network and preserves invalid metadata bytes."
+    },
+    {
+      "release": "0.7.6-beta",
+      "fix": "Season2 compatibility and changed Follow/seek setting types",
+      "contracts": [
+        "P01",
+        "P08",
+        "P12"
+      ],
+      "proof_and_qualification_limit": "Admission/generated consistency and source ownership/seek checks; actual changed engine types require reviewed-build native/live checks."
+    },
+    {
+      "release": "0.7.5-beta",
+      "fix": "Normal owned capture progress avoids spurious Players abort",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Fresh owned progress across blocked identity replies succeeds; PID/request/heartbeat/progress/error/stage controls independently refuse invalid reports."
+    },
+    {
+      "release": "0.7.5-beta",
+      "fix": "Mode-before-publication and cleanup-result configuration hardening",
+      "contracts": [
+        "P02",
+        "P03"
+      ],
+      "proof_and_qualification_limit": "Real atomic gameinfo transaction and error recovery are exercised; AtomicMode/AtomicModeApi TLA models plus targeted mode-fault/platform check when writer changes own chmod-order details."
+    },
+    {
+      "release": "0.7.5-beta",
+      "fix": "Invalid settings backup published only when complete",
+      "contracts": [
+        "P14"
+      ],
+      "proof_and_qualification_limit": "Complete-byte backup checks and copy/publication collision faults preserve the original; BackupPublish model retains process-interruption bounds."
+    },
+    {
+      "release": "0.7.4-beta",
+      "fix": "Weapon zoom applied once in Follow",
+      "contracts": [
+        "P12"
+      ],
+      "proof_and_qualification_limit": "Python rig selects neutral ADS lens and restores originals; native follow policy/rendered weapon zoom require native/live qualification."
+    },
+    {
+      "release": "0.7.4-beta",
+      "fix": "Delayed identity reply rechecks fresh Players progress",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Progress arrives during ConsoleTimeout and protects real native controller loop; foreign progress does not excuse repeated misses."
+    },
+    {
+      "release": "0.7.3-beta",
+      "fix": "Reviewed game support and exact-build unlocker",
+      "contracts": [
+        "P01",
+        "P02"
+      ],
+      "proof_and_qualification_limit": "Generated/admission and deployment checks; per-game-build native/live qualification still required."
+    },
+    {
+      "release": "0.7.3-beta",
+      "fix": "Rollback backups retained; startup lock/handoff ownership",
+      "contracts": [
+        "P15"
+      ],
+      "proof_and_qualification_limit": "Repeated/partial/health rollback preserves originals and backups; actual startup lock race/process handoff remains TLA/platform qualification, not claimed by15."
+    },
+    {
+      "release": "0.7.3-beta",
+      "fix": "Late cleanup failure repairs ownership marker",
+      "contracts": [
+        "P04"
+      ],
+      "proof_and_qualification_limit": "Final rmdir receives a late user file; marker is repaired, user bytes survive and retry preserves them."
+    },
+    {
+      "release": "0.7.2-beta",
+      "fix": "Stock camera blend finishes before restoring selected paused tick",
+      "contracts": [
+        "P12"
+      ],
+      "proof_and_qualification_limit": "Simulated blend advances tick1 to10; real controller restores1 before enabling Follow. Full160s and actual intro transition remain outside source proof."
+    },
+    {
+      "release": "0.6.65-alpha",
+      "fix": "Game-written reports removed; unknown/replay files preserved",
+      "contracts": [
+        "P04"
+      ],
+      "proof_and_qualification_limit": "Owned rpt removed; unknown notes/replays and links not deleted or followed."
+    },
+    {
+      "release": "0.6.67-alpha",
+      "fix": "Unsupported encoder admission and bounded native timeout",
+      "contracts": [
+        "P05",
+        "P07"
+      ],
+      "proof_and_qualification_limit": "Encoder catalog refusal before start; fixed-step4s hitch survives and sustained hang aborts."
+    },
+    {
+      "release": "0.6.77/78/94-alpha",
+      "fix": "Players storage/GPU progress pacing and drain cleanup",
+      "contracts": [
+        "P06"
+      ],
+      "proof_and_qualification_limit": "Owned real marker/progress files drive controller decisions and drain retry; actual storage/GPU/decoded matte remain separate qualification."
+    }
+  ],
+  "out_of_suite_checks": [
+    {
+      "when": "Each new game build, before publishing definitions/release",
+      "check": "Reviewed offsets/unlocker and live local-replay startup, rendered capture, four exact seeks, play, F9, exit file restoration."
+    },
+    {
+      "when": "Each Windows release",
+      "check": "Existing native compilation/ctest/PE/ABI and packaged executable gates; short encoded take with decoded frame count."
+    },
+    {
+      "when": "Players/depth/audio/EXR implementation changes",
+      "check": "Short actual output qualification for affected layer/audio timing/decoded channels; source fake telemetry is not render/encode proof."
+    },
+    {
+      "when": "Updater/bootstrap ownership changes",
+      "check": "Actual Windows lock/process parent/handoff and one update from previous release; maintained TLA ownership models."
+    },
+    {
+      "when": "UI/adjacent integration changes",
+      "check": "Packaged UI interaction/layout check; targeted ReShade/Discord/replay-repair/DLSS/graphics/reconstructed-audio check."
+    }
+  ],
+  "known_limits": [
+    "Full old-suite coverage is not preserved; global coverage percentages are not the portfolio acceptance target.",
+    "Windows builder, actual game/renderer/GPU/encoding/network services and real process locks were not run.",
+    "Stock-provenance verification and native capture-pack trust are fixture boundaries in P02; reviewed data and real offsets still require build/live qualification.",
+    "Native return-to-flight and many pending-restoration/effect-warmup paths remain outside these15; additional native function percentages are exposed rather than hidden.",
+    "Without g++, C++ parity warns and Python checks remain; platform symlink scenarios are conditional on host support.",
+    "Detailed UI/layout/animation, audio/layer-processing, all protocol/compatibility corners, abrupt process death, hostile namespace races and power-loss guarantees are not established.",
+    "Targeted mutants are hand-selected behavioral faults, not an exhaustive mutation score."
+  ],
+  "review_corrections": [
+    "Used otherwise-valid native artifact fixture for unsupported-build refusal, preventing unrelated missing-DLL failure from satisfying P01.",
+    "Injected native identity mismatch independently from console identity, and tested raw-valid completed pacing report independently from parser-rejected idle reports.",
+    "Isolated and restored optional UI/worker imports; reverse-order check observes no leaked module state.",
+    "Kept real Controller on Players path and actual non-frozen native preparation; old whole-controller recorder mock remains only at P07 external boundary.",
+    "Traceability distinguishes headless behavior, historical checks, model bounds and unperformed live/platform qualification."
+  ],
+  "historical_measurements": {
     "legacy-all": {
       "discovered_tests": 3641,
       "run": 3636,
@@ -24,170 +531,6 @@
         "covered_branches": 7915,
         "num_branches": 14620,
         "percent_branches_covered": 54.138
-      },
-      "modules": {
-        "dolly/path.py": {
-          "covered_lines": 757,
-          "num_statements": 795,
-          "percent_statements_covered": 95.22,
-          "covered_branches": 354,
-          "num_branches": 382,
-          "percent_branches_covered": 92.67
-        },
-        "dolly/controller.py": {
-          "covered_lines": 3951,
-          "num_statements": 4421,
-          "percent_statements_covered": 89.369,
-          "covered_branches": 1302,
-          "num_branches": 1612,
-          "percent_branches_covered": 80.769
-        },
-        "dolly/native_path.py": {
-          "covered_lines": 43,
-          "num_statements": 43,
-          "percent_statements_covered": 100.0,
-          "covered_branches": 14,
-          "num_branches": 14,
-          "percent_branches_covered": 100.0
-        },
-        "dolly/settings.py": {
-          "covered_lines": 229,
-          "num_statements": 234,
-          "percent_statements_covered": 97.863,
-          "covered_branches": 89,
-          "num_branches": 96,
-          "percent_branches_covered": 92.708
-        },
-        "dolly/gameinfo_transaction.py": {
-          "covered_lines": 61,
-          "num_statements": 63,
-          "percent_statements_covered": 96.825,
-          "covered_branches": 20,
-          "num_branches": 22,
-          "percent_branches_covered": 90.909
-        },
-        "dolly/updater.py": {
-          "covered_lines": 154,
-          "num_statements": 166,
-          "percent_statements_covered": 92.771,
-          "covered_branches": 52,
-          "num_branches": 62,
-          "percent_branches_covered": 83.871
-        },
-        "dolly/update_worker.py": {
-          "covered_lines": 286,
-          "num_statements": 503,
-          "percent_statements_covered": 56.859,
-          "covered_branches": 87,
-          "num_branches": 158,
-          "percent_branches_covered": 55.063
-        },
-        "dolly/video_export.py": {
-          "covered_lines": 646,
-          "num_statements": 718,
-          "percent_statements_covered": 89.972,
-          "covered_branches": 261,
-          "num_branches": 312,
-          "percent_branches_covered": 83.654
-        },
-        "dolly/player_layer.py": {
-          "covered_lines": 312,
-          "num_statements": 358,
-          "percent_statements_covered": 87.151,
-          "covered_branches": 110,
-          "num_branches": 144,
-          "percent_branches_covered": 76.389
-        },
-        "dolly/follow_camera.py": {
-          "covered_lines": 75,
-          "num_statements": 76,
-          "percent_statements_covered": 98.684,
-          "covered_branches": 27,
-          "num_branches": 28,
-          "percent_branches_covered": 96.429
-        }
-      },
-      "selected_functions": {
-        "dolly/gameinfo_transaction.py:load_record": {
-          "covered_lines": 19,
-          "num_statements": 20,
-          "percent_statements_covered": 95.0,
-          "covered_branches": 11,
-          "num_branches": 12,
-          "percent_branches_covered": 91.667
-        },
-        "dolly/gameinfo_transaction.py:restore_record": {
-          "covered_lines": 26,
-          "num_statements": 27,
-          "percent_statements_covered": 96.296,
-          "covered_branches": 9,
-          "num_branches": 10,
-          "percent_branches_covered": 90.0
-        },
-        "dolly/update_worker.py:install": {
-          "covered_lines": 43,
-          "num_statements": 45,
-          "percent_statements_covered": 95.556,
-          "covered_branches": 20,
-          "num_branches": 22,
-          "percent_branches_covered": 90.909
-        },
-        "dolly/update_worker.py:rollback": {
-          "covered_lines": 14,
-          "num_statements": 17,
-          "percent_statements_covered": 82.353,
-          "covered_branches": 7,
-          "num_branches": 10,
-          "percent_branches_covered": 70.0
-        },
-        "dolly/updater.py:extract_verified": {
-          "covered_lines": 24,
-          "num_statements": 27,
-          "percent_statements_covered": 88.889,
-          "covered_branches": 9,
-          "num_branches": 12,
-          "percent_branches_covered": 75.0
-        },
-        "dolly/updater.py:verify_payload": {
-          "covered_lines": 6,
-          "num_statements": 8,
-          "percent_statements_covered": 75.0,
-          "covered_branches": 4,
-          "num_branches": 6,
-          "percent_branches_covered": 66.667
-        },
-        "dolly/native_path.py:compile_project": {
-          "covered_lines": 29,
-          "num_statements": 29,
-          "percent_statements_covered": 100.0,
-          "covered_branches": 14,
-          "num_branches": 14,
-          "percent_branches_covered": 100.0
-        },
-        "dolly/video_export.py:VideoExport.start": {
-          "covered_lines": 11,
-          "num_statements": 11,
-          "percent_statements_covered": 100.0,
-          "covered_branches": 4,
-          "num_branches": 4,
-          "percent_branches_covered": 100.0
-        },
-        "dolly/video_export.py:VideoExport._start": {
-          "covered_lines": 87,
-          "num_statements": 103,
-          "percent_statements_covered": 84.466,
-          "covered_branches": 26,
-          "num_branches": 34,
-          "percent_branches_covered": 76.471
-        },
-        "dolly/video_export.py:VideoExport.stop": {
-          "covered_lines": 64,
-          "num_statements": 65,
-          "percent_statements_covered": 98.462,
-          "covered_branches": 26,
-          "num_branches": 28,
-          "percent_branches_covered": 92.857
-        }
       }
     },
     "initial-15": {
@@ -203,170 +546,6 @@
         "covered_branches": 514,
         "num_branches": 14620,
         "percent_branches_covered": 3.516
-      },
-      "modules": {
-        "dolly/path.py": {
-          "covered_lines": 425,
-          "num_statements": 795,
-          "percent_statements_covered": 53.459,
-          "covered_branches": 134,
-          "num_branches": 382,
-          "percent_branches_covered": 35.079
-        },
-        "dolly/controller.py": {
-          "covered_lines": 716,
-          "num_statements": 4421,
-          "percent_statements_covered": 16.195,
-          "covered_branches": 105,
-          "num_branches": 1612,
-          "percent_branches_covered": 6.514
-        },
-        "dolly/native_path.py": {
-          "covered_lines": 37,
-          "num_statements": 43,
-          "percent_statements_covered": 86.047,
-          "covered_branches": 10,
-          "num_branches": 14,
-          "percent_branches_covered": 71.429
-        },
-        "dolly/settings.py": {
-          "covered_lines": 171,
-          "num_statements": 234,
-          "percent_statements_covered": 73.077,
-          "covered_branches": 48,
-          "num_branches": 96,
-          "percent_branches_covered": 50.0
-        },
-        "dolly/gameinfo_transaction.py": {
-          "covered_lines": 38,
-          "num_statements": 63,
-          "percent_statements_covered": 60.317,
-          "covered_branches": 6,
-          "num_branches": 22,
-          "percent_branches_covered": 27.273
-        },
-        "dolly/updater.py": {
-          "covered_lines": 85,
-          "num_statements": 166,
-          "percent_statements_covered": 51.205,
-          "covered_branches": 18,
-          "num_branches": 62,
-          "percent_branches_covered": 29.032
-        },
-        "dolly/update_worker.py": {
-          "covered_lines": 139,
-          "num_statements": 503,
-          "percent_statements_covered": 27.634,
-          "covered_branches": 30,
-          "num_branches": 158,
-          "percent_branches_covered": 18.987
-        },
-        "dolly/video_export.py": {
-          "covered_lines": 0,
-          "num_statements": 718,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 312,
-          "percent_branches_covered": 0.0
-        },
-        "dolly/player_layer.py": {
-          "covered_lines": 0,
-          "num_statements": 358,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 144,
-          "percent_branches_covered": 0.0
-        },
-        "dolly/follow_camera.py": {
-          "covered_lines": 0,
-          "num_statements": 76,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 28,
-          "percent_branches_covered": 0.0
-        }
-      },
-      "selected_functions": {
-        "dolly/gameinfo_transaction.py:load_record": {
-          "covered_lines": 0,
-          "num_statements": 20,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 12,
-          "percent_branches_covered": 0.0
-        },
-        "dolly/gameinfo_transaction.py:restore_record": {
-          "covered_lines": 22,
-          "num_statements": 27,
-          "percent_statements_covered": 81.481,
-          "covered_branches": 6,
-          "num_branches": 10,
-          "percent_branches_covered": 60.0
-        },
-        "dolly/update_worker.py:install": {
-          "covered_lines": 38,
-          "num_statements": 45,
-          "percent_statements_covered": 84.444,
-          "covered_branches": 14,
-          "num_branches": 22,
-          "percent_branches_covered": 63.636
-        },
-        "dolly/update_worker.py:rollback": {
-          "covered_lines": 13,
-          "num_statements": 17,
-          "percent_statements_covered": 76.471,
-          "covered_branches": 6,
-          "num_branches": 10,
-          "percent_branches_covered": 60.0
-        },
-        "dolly/updater.py:extract_verified": {
-          "covered_lines": 21,
-          "num_statements": 27,
-          "percent_statements_covered": 77.778,
-          "covered_branches": 7,
-          "num_branches": 12,
-          "percent_branches_covered": 58.333
-        },
-        "dolly/updater.py:verify_payload": {
-          "covered_lines": 0,
-          "num_statements": 8,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 6,
-          "percent_branches_covered": 0.0
-        },
-        "dolly/native_path.py:compile_project": {
-          "covered_lines": 23,
-          "num_statements": 29,
-          "percent_statements_covered": 79.31,
-          "covered_branches": 10,
-          "num_branches": 14,
-          "percent_branches_covered": 71.429
-        },
-        "dolly/video_export.py:VideoExport.start": {
-          "covered_lines": 0,
-          "num_statements": 11,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 4,
-          "percent_branches_covered": 0.0
-        },
-        "dolly/video_export.py:VideoExport._start": {
-          "covered_lines": 0,
-          "num_statements": 103,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 34,
-          "percent_branches_covered": 0.0
-        },
-        "dolly/video_export.py:VideoExport.stop": {
-          "covered_lines": 0,
-          "num_statements": 65,
-          "percent_statements_covered": 0.0,
-          "covered_branches": 0,
-          "num_branches": 28,
-          "percent_branches_covered": 0.0
-        }
       }
     },
     "final-15": {
@@ -382,380 +561,25 @@
         "covered_branches": 1065,
         "num_branches": 14620,
         "percent_branches_covered": 7.285
-      },
-      "modules": {
-        "dolly/path.py": {
-          "covered_lines": 649,
-          "num_statements": 795,
-          "percent_statements_covered": 81.635,
-          "covered_branches": 265,
-          "num_branches": 382,
-          "percent_branches_covered": 69.372
-        },
-        "dolly/controller.py": {
-          "covered_lines": 1183,
-          "num_statements": 4421,
-          "percent_statements_covered": 26.759,
-          "covered_branches": 252,
-          "num_branches": 1612,
-          "percent_branches_covered": 15.633
-        },
-        "dolly/native_path.py": {
-          "covered_lines": 41,
-          "num_statements": 43,
-          "percent_statements_covered": 95.349,
-          "covered_branches": 12,
-          "num_branches": 14,
-          "percent_branches_covered": 85.714
-        },
-        "dolly/settings.py": {
-          "covered_lines": 176,
-          "num_statements": 234,
-          "percent_statements_covered": 75.214,
-          "covered_branches": 51,
-          "num_branches": 96,
-          "percent_branches_covered": 53.125
-        },
-        "dolly/gameinfo_transaction.py": {
-          "covered_lines": 62,
-          "num_statements": 63,
-          "percent_statements_covered": 98.413,
-          "covered_branches": 21,
-          "num_branches": 22,
-          "percent_branches_covered": 95.455
-        },
-        "dolly/updater.py": {
-          "covered_lines": 95,
-          "num_statements": 166,
-          "percent_statements_covered": 57.229,
-          "covered_branches": 25,
-          "num_branches": 62,
-          "percent_branches_covered": 40.323
-        },
-        "dolly/update_worker.py": {
-          "covered_lines": 149,
-          "num_statements": 503,
-          "percent_statements_covered": 29.622,
-          "covered_branches": 41,
-          "num_branches": 158,
-          "percent_branches_covered": 25.949
-        },
-        "dolly/video_export.py": {
-          "covered_lines": 422,
-          "num_statements": 718,
-          "percent_statements_covered": 58.774,
-          "covered_branches": 135,
-          "num_branches": 312,
-          "percent_branches_covered": 43.269
-        },
-        "dolly/player_layer.py": {
-          "covered_lines": 95,
-          "num_statements": 358,
-          "percent_statements_covered": 26.536,
-          "covered_branches": 12,
-          "num_branches": 144,
-          "percent_branches_covered": 8.333
-        },
-        "dolly/follow_camera.py": {
-          "covered_lines": 61,
-          "num_statements": 76,
-          "percent_statements_covered": 80.263,
-          "covered_branches": 19,
-          "num_branches": 28,
-          "percent_branches_covered": 67.857
-        }
-      },
-      "selected_functions": {
-        "dolly/gameinfo_transaction.py:load_record": {
-          "covered_lines": 19,
-          "num_statements": 20,
-          "percent_statements_covered": 95.0,
-          "covered_branches": 11,
-          "num_branches": 12,
-          "percent_branches_covered": 91.667
-        },
-        "dolly/gameinfo_transaction.py:restore_record": {
-          "covered_lines": 27,
-          "num_statements": 27,
-          "percent_statements_covered": 100.0,
-          "covered_branches": 10,
-          "num_branches": 10,
-          "percent_branches_covered": 100.0
-        },
-        "dolly/update_worker.py:install": {
-          "covered_lines": 45,
-          "num_statements": 45,
-          "percent_statements_covered": 100.0,
-          "covered_branches": 22,
-          "num_branches": 22,
-          "percent_branches_covered": 100.0
-        },
-        "dolly/update_worker.py:rollback": {
-          "covered_lines": 16,
-          "num_statements": 17,
-          "percent_statements_covered": 94.118,
-          "covered_branches": 9,
-          "num_branches": 10,
-          "percent_branches_covered": 90.0
-        },
-        "dolly/updater.py:extract_verified": {
-          "covered_lines": 24,
-          "num_statements": 27,
-          "percent_statements_covered": 88.889,
-          "covered_branches": 9,
-          "num_branches": 12,
-          "percent_branches_covered": 75.0
-        },
-        "dolly/updater.py:verify_payload": {
-          "covered_lines": 7,
-          "num_statements": 8,
-          "percent_statements_covered": 87.5,
-          "covered_branches": 5,
-          "num_branches": 6,
-          "percent_branches_covered": 83.333
-        },
-        "dolly/native_path.py:compile_project": {
-          "covered_lines": 27,
-          "num_statements": 29,
-          "percent_statements_covered": 93.103,
-          "covered_branches": 12,
-          "num_branches": 14,
-          "percent_branches_covered": 85.714
-        },
-        "dolly/video_export.py:VideoExport.start": {
-          "covered_lines": 9,
-          "num_statements": 11,
-          "percent_statements_covered": 81.818,
-          "covered_branches": 3,
-          "num_branches": 4,
-          "percent_branches_covered": 75.0
-        },
-        "dolly/video_export.py:VideoExport._start": {
-          "covered_lines": 71,
-          "num_statements": 103,
-          "percent_statements_covered": 68.932,
-          "covered_branches": 19,
-          "num_branches": 34,
-          "percent_branches_covered": 55.882
-        },
-        "dolly/video_export.py:VideoExport.stop": {
-          "covered_lines": 47,
-          "num_statements": 65,
-          "percent_statements_covered": 72.308,
-          "covered_branches": 16,
-          "num_branches": 28,
-          "percent_branches_covered": 57.143
-        }
       }
     }
   },
-  "fault_injection": {
-    "attempted": 30,
-    "detected_by_assertion": 29,
-    "test_errors": 0,
-    "cases": [
-      {
-        "fault": "shortest angles use the long route",
-        "test": "MotionTests.test_camera_curves_tracks_and_retime",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "retime leaves effect tracks at old times",
-        "test": "MotionTests.test_camera_curves_tracks_and_retime",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "project accepts duplicate JSON fields",
-        "test": "MotionTests.test_project_rejects_malformed_schema_invalid_values_and_injection",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "settings accept duplicate JSON fields",
-        "test": "SafetyTests.test_settings_roundtrip_and_invalid_backups",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "wrong replay accepted",
-        "test": "MotionTests.test_playback_guards_and_failed_restore_are_retryable",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "failed HUD restoration drops pending originals",
-        "test": "MotionTests.test_playback_guards_and_failed_restore_are_retryable",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "Follow accepts a stale player serial",
-        "test": "MotionTests.test_playback_orders_camera_before_resume_and_restores_on_stop",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "F9 handoff leaves Follow active",
-        "test": "MotionTests.test_playback_orders_camera_before_resume_and_restores_on_stop",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "native coefficients lose authored slopes",
-        "test": "MotionTests.test_native_cubic_wire_coefficients_reproduce_motion",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "native compilation drops captured lens channel",
-        "test": "MotionTests.test_native_cubic_wire_coefficients_reproduce_motion",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "AE export swaps coordinate sign",
-        "test": "MotionTests.test_camera_export_samples_speed_lens_and_output",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "recorder permits overlapping starts",
-        "test": "MotionTests.test_video_export_lifecycle_and_timing",
-        "detected_by_assertion": false,
-        "classification": "Redundant guard: _start retains identical admission check; paired removal tested separately."
-      },
-      {
-        "fault": "recorder loses both overlapping-start checks",
-        "test": "MotionTests.test_video_export_lifecycle_and_timing",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "recorder drops frame cap",
-        "test": "MotionTests.test_video_export_lifecycle_and_timing",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "recorder overwrites existing output",
-        "test": "MotionTests.test_video_export_lifecycle_and_timing",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "recorder restores into a changed replay",
-        "test": "MotionTests.test_video_export_lifecycle_and_timing",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "foreign recovery journal accepted",
-        "test": "SafetyTests.test_journal_rejects_foreign_tampered_linked_and_modified_files",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "tampered original backup accepted",
-        "test": "SafetyTests.test_journal_rejects_foreign_tampered_linked_and_modified_files",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "recovery overwrites external configuration edits",
-        "test": "SafetyTests.test_journal_rejects_foreign_tampered_linked_and_modified_files",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "invalid settings backup is truncated",
-        "test": "SafetyTests.test_settings_roundtrip_and_invalid_backups",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update ignores download checksum",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update ignores package version",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update accepts changed staged executable",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update publishes an incomplete recovery backup",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update overwrites unowned managed-path file",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "rollback trusts damaged backup",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update leaves obsolete managed files installed",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update runs over unfinished transaction",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "failed update skips rollback",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      },
-      {
-        "fault": "update accepts a downgrade",
-        "test": "SafetyTests.test_verified_update_install_and_recovery",
-        "detected_by_assertion": true
-      }
-    ]
-  },
-  "core_tests": [
-    "test_core_motion.MotionTests.test_project_roundtrip_version_migration_and_atomic_failure",
-    "test_core_motion.MotionTests.test_project_rejects_malformed_schema_invalid_values_and_injection",
-    "test_core_motion.MotionTests.test_camera_curves_tracks_and_retime",
-    "test_core_motion.MotionTests.test_replay_clock_stall_jitter_and_rewind",
-    "test_core_motion.MotionTests.test_playback_orders_camera_before_resume_and_restores_on_stop",
-    "test_core_motion.MotionTests.test_playback_guards_and_failed_restore_are_retryable",
-    "test_core_motion.MotionTests.test_seek_rewind_boundaries_and_bad_time",
-    "test_core_motion.MotionTests.test_native_cubic_wire_coefficients_reproduce_motion",
-    "test_core_motion.MotionTests.test_camera_export_samples_speed_lens_and_output",
-    "test_core_motion.MotionTests.test_video_export_lifecycle_and_timing",
-    "test_core_safety.SafetyTests.test_settings_roundtrip_and_invalid_backups",
-    "test_core_safety.SafetyTests.test_settings_failed_backup_and_replace_preserve_original",
-    "test_core_safety.SafetyTests.test_journal_restores_original_and_write_failures_remain_recoverable",
-    "test_core_safety.SafetyTests.test_journal_rejects_foreign_tampered_linked_and_modified_files",
-    "test_core_safety.SafetyTests.test_verified_update_install_and_recovery"
-  ],
+  "historical_audit_revision": "7f16ec5",
   "suite_sha256": {
-    "tests/camera_modes.py": "9a1b01dd521ecdbb18c8eaea331f1dd080bab253c0c119dfdcaecf19d6d3ac1f",
+    "tests/camera_modes.py": "7b7811218bcc889afa5894577224dec984ced6975a274fa1fba758a0034ea298",
     "tests/core_helpers.py": "d8663789a13769d4b6db50d11b8535ae7fe84aad2b0c0eaaa2d144e0da02d166",
-    "tests/test_core_motion.py": "3beb1c2c407ccbfa646c6fe9c1a874121b0f33c7b6eab89e1f96d77b8d0f5d08",
-    "tests/test_core_safety.py": "6afea824102f1ffaa5169ca679969a84411bbb821d2d4e3deec3b1379010a834",
-    "tests/video_workflow.py": "e036852f8c659d44ba65725c807aaf39f6045d61f1e6e6923bc8c605b6e08ea8"
+    "tests/native_helpers.py": "ec3e7d2c0c5f8140ab20101dd03ff92b3b5207b234572fbf39bc650a238283c5",
+    "tests/test_core_install.py": "3abf1f0c6f896e3335d4ec68f812ff3485a0d8b9044361c65b4c11306d54f351",
+    "tests/test_core_native.py": "f64d2366029bc9b55f814baa7f756bed6bfbe64ad22aec7f0a561a3431c499dd",
+    "tests/test_core_workflows.py": "10fd26739aa300610278a6370dc8ee8be32d1cc14c9601d43fb88c0e9ff125b4",
+    "tests/video_workflow.py": "1242b393ce0f5a44f90520925b394a8fb2919e20b4b7cd571b3a6f36ebcfd436"
   },
-  "retained_proofs": [
-    "Project/schema/injection validation and atomic save failure",
-    "Linear/smooth/spline/step/vector/angle-wrap/retime camera behavior",
-    "Playback order, completion, replay loss, guarded seek and retryable restoration",
-    "Stale Follow target refusal and direct active-Follow F9 restoration; bone take persistence",
-    "Real Python-to-C++ path parser/evaluator parity including captured lens and analytic expectations",
-    "Camera output timing, axes, rotations and lens in USDA/JSX",
-    "Video admission/start/stop/cancel/frame cap/start uncertainty/Players drain and session ownership",
-    "Settings malformed backups and failed publication/replace preservation",
-    "Real recovery journal loader, original hashes, foreign/modified/linked file refusal and retries",
-    "Verified package extraction, unsafe archive matrix, update admission, backups, partial/health rollback, retry, user-file preservation"
-  ],
-  "known_losses_and_limits": [
-    "Whole-application coverage remains materially below the old suite: no coverage equivalence claim.",
-    "Legacy baseline is not green on this headless Linux host: 6 failure records,38 error records,594 skips; retained raw logs identify missing display,Windows modules,optional audio dependencies and other failures.",
-    "GUI widgets/layout, broad editor orchestration, audio/mux/depth/layer processing, network release discovery and many fine-grained protocol/compatibility cases no longer have the old Python regression coverage.",
-    "Actual native encoding/rendered output, live replay/game state, Windows locks/process handoff, abrupt process death, and platform-specific packaging were not qualified here.",
-    "Without g++, Python wire assertions run but native parity warns and returns; normal release native/package/model gates remain separate.",
-    "When Tk cannot import, only updater UI module imports are stubbed; file transaction code is real and GUI is untested.",
-    "Line/branch coverage indicates executed source, not correctness; targeted mutants are hand-selected and not an exhaustive mutation score."
-  ],
   "raw_evidence_location": "/mnt/terramaster8tb/Scratch/dolly_tests_20261105/audit",
-  "commands": {
-    "source_suite": "python -m unittest discover -s tests -q",
-    "coverage_driver": "run_suite.py CHECKOUT REPORT_PREFIX",
-    "fault_driver": "mutations.py (in-memory function-code edits, restored after each case; no production files changed)"
+  "reproduction": {
+    "suite": "python -m unittest discover -s tests -q",
+    "coverage_driver": "audit/run_suite.py CHECKOUT REPORT_PREFIX (isolated coverage dependency)",
+    "fault_driver": "audit/opus_faults.py",
+    "opus_review": "audit/opus55-coverage-review.md",
+    "reverse_order_driver": "audit/reverse_suite.py"
   }
 }

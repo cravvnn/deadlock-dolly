@@ -2,49 +2,69 @@
 
 [Maintainer references](README.md) · [Current user documentation](../README.md)
 
-Run the 15 core Python source regression tests from the checkout root:
+Run the 15 core user-contract tests from the checkout root:
 
 ```console
 python -m unittest discover -s tests -q
 ```
 
-These automated, headless checks cover core source behavior. They do not qualify
-an actual Windows build, game integration, or rendered output. Select targeted
-manual checks for the behavior changed and record any limits. Add or change a
-regression test when it materially protects an important behavior.
+The portfolio prioritizes safe startup after a game update, preserving the game
+install and user files, and completing native camera/Players recordings honestly.
+Keep exactly 15 named contracts with a bounded set of related failure scenarios;
+do not hide the retired suite behind a runner or test implementation text.
 
-The 10 motion tests and five safety tests exercise project persistence and
-validation; nonlinear camera curves, retiming and replay transport; playback and
-Follow/F9 restoration; bone-camera persistence; native path parity; camera and
-video export; settings preservation; journal validation; and verified updates
-with partial-write and health-check rollback. Named scenarios within those
-workflows cover important failures without restoring the retired detailed suites.
+- `test_core_install.py` owns P01 reviewed-build admission and additive published
+  definitions; P02 launch, journal-before-write and exact restoration; P03
+  interrupted-session recovery; P04 deletion of only owned temporary files.
+- `test_core_native.py` owns P05 native preparation/playback/watchdogs/handoff;
+  P06 owned Players progress and drain-before-restore; P08 verified native seeks;
+  P09 rendered-pose/tick capture and replacement.
+- `test_core_workflows.py` owns P07 recorder admission and cleanup; P10 authored
+  motion/retiming/native parity; P11 USD/AE camera export; P12 Follow/Bone and F9;
+  P13 shot persistence/validation; P14 settings preservation/migration; P15
+  verified update installation, recovery and explicit consent.
 
-Console/process responses are simulated. With `g++` available, the path test
-compiles the real C++ parser/evaluator and checks generated paths against
-independent numeric expectations. Without it, that portion emits a warning;
-Python wire assertions still run. When Tk cannot import, only the updater's UI
-imports are stubbed; its file transaction code is real and its window is untested.
+These tests use real product code and owned temporary files, with simulated
+processes, console/native telemetry, network responses and deliberate I/O faults.
+They check independently known bytes, numeric values, output data and event
+order. P01 checks generated compatibility data as part of its normal run. The
+standalone equivalent is `python tools/generate_compatibility.py --check`.
 
-The [coverage and fault audit](CORE_TEST_AUDIT.json) records the comparison with
-`c2f2381`, the 15 workflows, and known losses. The revised suite detected 29
-deliberate faults. One additional single-guard mutation survived because a
-second guard still blocked the operation; removing both was detected. These
-are targeted checks, not an exhaustive mutation score.
+With `g++` available, P10 compiles the actual C++ path parser/evaluator and checks
+Python-generated paths against independent numeric expectations. Without it,
+that portion warns and Python wire checks still run; the release native gates
+remain necessary. If Tk cannot import, the updater's UI imports are isolated
+behind test stubs. P15 exercises real consent policy with a fake notice widget;
+no window is constructed and those imports are restored afterward.
 
-The 15 workflows do **not** retain full-suite coverage. The headless measurement
-covered 11.4% of Python application statements, versus 7.6% for the initial
-reduction and 59.5% for the retired suite. The retired baseline had six failure
-records, 38 error records and 594 skips on this host. Detailed GUI/editor, audio,
-layer-processing and compatibility coverage remains outside these 15 tests;
-the audit lists those limits. Important transaction functions have much stronger
-coverage than that whole-application percentage, but executed lines alone do
-not establish correctness. The retired tests remain in Git history.
+[CORE_TEST_AUDIT.json](CORE_TEST_AUDIT.json) maps each contract to recent release
+fixes, selected decision-function coverage, seeded faults and remaining gaps.
+Two or more targeted faults per contract must be detected without parse/import
+errors or unrelated invalid fixtures. Coverage is a smell check on those owning
+decisions, not a whole-application percentage target or proof of correctness.
+The retired detailed suite remains in Git history; its full coverage is not
+preserved by these 15 contracts.
 
-Keep exactly 15 core workflows. Strengthen their independently checked scenarios
-when an important regression is found rather than adding checks for every
-implementation detail. A green core suite is not a Windows or in-game release
-qualification.
+Run these fast source checks for runtime changes. Keep live and packaged checks
+proportional to the change:
+
+- After each game build, qualify reviewed offsets/hooks in a local replay before
+  publishing definitions or a release: ready paused camera, capture, four exact
+  seeks, shot playback, F9 and exact file restoration on exit.
+- For a release, retain native compilation/ctest, PE/ABI and packaged executable
+  gates, plus a short recording checked for decoded frame count. Verify
+  Players/depth/audio/EXR output when their implementation changes.
+- When updater/bootstrap ownership changes, qualify the actual Windows process
+  handoff and file locks, including one update from the preceding release.
+- When UI behavior changes, use packaged GUI smoke and inspect the changed
+  interaction/layout. ReShade, Discord, replay repair, DLSS, graphics profiles
+  and reconstructed audio receive targeted manual checks when touched.
+- When a modeled protocol changes, run its maintained TLA+ checks and update the
+  source/spec mapping. A model result does not replace implementation tests.
+
+The source suite does not qualify Windows, live game/render/encoder behavior,
+all GUI orchestration, abrupt process death or every protocol interleaving.
+The audit records which checks actually ran and which remain unqualified.
 
 For a Windows release, use the normal builder with the qualified Python
 environment described in [BUILDING.md](../BUILDING.md):

@@ -590,8 +590,10 @@ packaging/entrypoint.py
 requirements-build.txt
 tests/camera_modes.py
 tests/core_helpers.py
-tests/test_core_motion.py
-tests/test_core_safety.py
+tests/native_helpers.py
+tests/test_core_install.py
+tests/test_core_native.py
+tests/test_core_workflows.py
 tests/video_workflow.py
 third_party/cvar_unlocker/LICENSE.md
 third_party/cvar_unlocker/MODIFICATIONS.md
