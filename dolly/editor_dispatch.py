@@ -500,7 +500,7 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "toggle_healthbars":
         _native_operation(app, "Toggling health bars", app.controller.toggle_healthbars, bridge)
     elif action == "near_player_opacity_fix":
-        _native_operation(app, "Fixing near-player opacity",
+        _native_operation(app, "Toggling near-player opacity",
                           app.controller.near_player_opacity_fix, bridge)
     elif action == "start_video":
         app._start_video_recording()

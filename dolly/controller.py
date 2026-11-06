@@ -404,6 +404,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._dof_shader_checked = False
         self._native_dof_unavailable = None
         self._layer_hidden = None
+        self._near_opacity_restore = {}
         self._healthbar_restore = {}
         self._healthbars_hidden = False
         self._look_restore = {}
@@ -474,6 +475,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         state["camera_backend"] = "native" if self._native_bridge() is not None else "console"
         state["native_holding"] = self._native_active and not state.get("playing", False)
         state["native_editor_active"] = self._native_manual
+        state["scene_appearance_flags"] = (int(self._glow_disabled)
+                                           | int(self._healthbars_hidden) << 1
+                                           | int(bool(self._near_opacity_restore)) << 2)
         state["game_ui_visible"] = self._game_ui_visible
         state["health_panel_restore_pending"] = self._game_ui_restore.get(OWN_HEALTH_HUD) == 0
         state["native_dof_unavailable"] = bool(self._native_dof_unavailable)
@@ -963,6 +967,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._game_ui_visible = False
             self._game_ui_restore.clear()
             self._game_hero_restore = None
+            self._near_opacity_restore.clear()
             self._healthbar_restore.clear()
             self._healthbars_hidden = False
             self._look_restore.clear()
@@ -1943,6 +1948,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise RuntimeError("Replay changed while confirming the recovered paused view.")
             self._probe_result = dict(previous_probe, demo=checked, native_camera=paused)
             self._replay_recovery.update(stage="ready", initial_update=ready, paused_tick=checked["tick"])
+            if self._near_opacity_restore:
+                self._write_look_values(dict.fromkeys(self._near_opacity_restore, 1))
             if self._healthbars_hidden:
                 self._write_look_values({name: 0 for name in self._healthbar_restore})
             if self._glow_disabled:
@@ -3990,7 +3997,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         """Flip the Citadel glow set and keep the choice across replay resets."""
         with self._op_lock:
             self._require_quiet_session("toggling glow")
-            disabled = self._console_cvar("citadel_boss_glow_disabled") != 1
+            disabled = not self._glow_disabled
             self._apply_citadel_glow(disabled)
             self._glow_disabled = disabled
             self._message("Citadel glow disabled." if self._glow_disabled
@@ -4021,9 +4028,6 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 return
             scales = {name: self._console_cvar(name) for name in HEALTHBAR_SCALE_CVARS}
             if all(value is not None and value >= 0 for value in scales.values()):
-                if all(value == 0 for value in scales.values()):
-                    self._message("Floating health bars are already hidden by the game's settings.")
-                    return
                 # Build6723's live-tested panel scale controls hide existing
                 # bars without destroying their renderer. Keep exact originals.
                 self._healthbar_restore = scales
@@ -4036,20 +4040,6 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise RuntimeError(
                     "This Deadlock build does not expose the supported health-bar switches. "
                     "The health-bar toggle is unavailable; no settings were changed.")
-            if snapshot["citadel_healthbars_enabled"] == 0:
-                # Already hidden outside Dolly; turn the switches back on.
-                self._healthbar_restore = snapshot
-                applied = []
-                for name, value in HEALTHBAR_SWITCH_ON.items():
-                    self._request(f"{name} {numeric(value)}", allow_error=True)
-                    if self._console_cvar(name) == value:
-                        applied.append(name)
-                if len(applied) != len(HEALTHBAR_SWITCH_ON):
-                    raise RuntimeError("This game build did not accept the health-bar switches. "
-                                       "Press again to restore the saved settings.")
-                self._healthbar_restore.clear()
-                self._message("Health bars enabled.")
-                return
             self._healthbar_restore = snapshot
             applied = []
             for name in HEALTHBAR_SWITCH_CVARS:
@@ -4060,15 +4050,35 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise RuntimeError(
                     "This game build did not accept the health-bar switches. "
                     "Press again to restore the saved settings.")
+            self._healthbars_hidden = True
             self._message("Health bars hidden.")
 
     def near_player_opacity_fix(self):
-        """Force full opacity on the near-player camera fades."""
+        """Toggle full near-player opacity, restoring the exact pre-fix values."""
         with self._op_lock:
-            self._require_quiet_session("fixing near-player opacity")
-            self._write_look_values({"citadel_camera_fade_viewed_near_opacity": 1,
-                                     "citadel_camera_fade_other_near_opacity": 1})
-            self._message("Near-player fade opacity forced to full.")
+            self._require_quiet_session("toggling near-player opacity")
+            if self._near_opacity_restore:
+                self._restore_near_player_opacity()
+                self._message("Near-player fade opacity restored.")
+                return
+            values = {name: self._console_cvar(name) for name in (
+                "citadel_camera_fade_viewed_near_opacity",
+                "citadel_camera_fade_other_near_opacity")}
+            if any(value is None for value in values.values()):
+                raise RuntimeError("This Deadlock build does not expose the near-player opacity controls. "
+                                   "No settings were changed.")
+            self._write_look_values(dict.fromkeys(values, 1))
+            self._near_opacity_restore = values
+            self._message("Near-player opacity fix enabled.")
+
+    def _restore_near_player_opacity(self):
+        """Retain original values until every restore readback succeeds."""
+        for name, value in self._near_opacity_restore.items():
+            self._request(f"{name} {numeric(value)}", allow_error=True)
+        if any(self._console_cvar(name) != value
+               for name, value in self._near_opacity_restore.items()):
+            raise RuntimeError("Near-player opacity restoration remains pending; retry the toggle.")
+        self._near_opacity_restore.clear()
 
     def set_playback_speed(self, speed):
         """Apply a replay speed immediately through the demo timescale.
@@ -5851,6 +5861,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 close_media()
             except Exception:  # noqa: BLE001 - media cleanup is best-effort on disconnect
                 LOG.warning("Could not close native media during disconnect", exc_info=True)
+        if self._near_opacity_restore and self._console and self._console.is_connected and self._alive():
+            try:
+                self._restore_near_player_opacity()
+            except Exception:
+                LOG.warning("Could not restore near-player opacity during disconnect", exc_info=True)
         if self._healthbar_restore and self._console and self._console.is_connected and self._alive():
             try:
                 self._restore_healthbar_values()
@@ -5906,7 +5921,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._recording_warmup = None
             self._recording_pending = False
             for journal in ('_game_ui_restore','_playback_restore','_replay_hud_restore',
-                            '_healthbar_restore','_look_restore','_dof_shader_restore','_restore'):
+                            '_healthbar_restore','_near_opacity_restore','_look_restore','_dof_shader_restore','_restore'):
                 getattr(self,journal,{}).clear()
             self._game_hero_restore = None
             self._replay_hud_session = None
@@ -5994,6 +6009,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                   "pending_look_restoration": dict(self._look_restore),
                   "healthbar_originals": dict(self._healthbar_restore),
                   "floating_healthbars_hidden": self._healthbars_hidden,
+                  "scene_appearance_flags": (int(self._glow_disabled)
+                                             | int(self._healthbars_hidden) << 1
+                                             | int(bool(self._near_opacity_restore)) << 2),
                   "pending_playback_restoration": dict(self._playback_restore),
                   "pending_dof_shader_restoration": dict(self._dof_shader_restore),
                   "pending_game_ui_restoration": dict(self._game_ui_restore),

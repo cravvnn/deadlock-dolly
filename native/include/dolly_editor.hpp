@@ -237,7 +237,7 @@ struct EditorConfig {
     float pov_duration;
     // Camera export formats beyond the full video_flags byte. Bit 0: USD (.usda).
     std::uint8_t camera_export_flags;
-    unsigned char padding[1];
+    std::uint8_t scene_appearance_flags; // bit 0: glow hidden, 1: bars hidden, 2: opacity fix
 };
 struct EditorEvent {
     std::uint32_t sequence, action;
@@ -597,6 +597,7 @@ struct EditorSnapshot {
     double speed = 400, sensitivity = .08, phase = 0, duration = 0, playhead = 0;
     std::int32_t tick = 0;
     bool playing = false, busy = false, pause_after_capture = false;
+    std::uint8_t scene_appearance_flags = 0;
     double playback_speed = 1;
     std::uint32_t playback_rate = 60;
     std::uint32_t video_fps = 60, video_bitrate_mbps = 20, video_codec = 0;

@@ -14,7 +14,7 @@ STATUS_OFFSET = 2 * 1024 * 1024 + 2048
 EDITOR_ABI = 2
 CONFIG_MAGIC = b"DLYEDIT1"
 STATUS_MAGIC = b"DLYEDS01"
-CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI2H2H2Bf4sBx")
+CONFIG = struct.Struct("<8s10I2d52H96s128s2diIdI2H2H2Bf4sBB")
 VIDEO_FPS = (30, 60, 120, 300, 600)
 VIDEO_BITRATE_MBPS = (10, 20, 40)
 VIDEO_CODEC_MAX = 10
@@ -427,6 +427,9 @@ def pack_config(sequence, owner_sequence, ack_event, values):
     pause_after_capture = values.get("pause_after_capture", False)
     if type(pause_after_capture) is not bool:
         raise ValueError("Pause after capture must be a boolean")
+    scene_appearance_flags = _uint(values.get("scene_appearance_flags", 0), "scene appearance flags")
+    if scene_appearance_flags > 7:
+        raise ValueError("Unknown scene appearance flags")
     owner = values.get("owner", "disabled")
     if owner not in OWNERS or owner == "unfocused":
         raise ValueError("Unknown native editor input owner")
@@ -505,7 +508,8 @@ def pack_config(sequence, owner_sequence, ack_event, values):
         0 if reshade is None else reshade.modifiers,
         video_fps, video_bitrate, video_encoder, video_flags, video_speed,
         struct.pack("<f", _finite(values.get("pov_duration", 10), .1, 120, "POV duration"))
-        if values.get("video_pov") else b"\0" * 4, camera_export_flags)
+        if values.get("video_pov") else b"\0" * 4, camera_export_flags,
+        scene_appearance_flags)
 
 
 def unpack_status(data, ack_event=0):

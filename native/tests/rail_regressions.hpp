@@ -266,6 +266,38 @@ static void rail_regressions(const char* output, bool motion = false) {
                     "Rail drawer no longer uses Kara's one/two-column width");
         }
         {
+            activate_tab(3);
+            auto* look = find("##rail-tab3");
+            const dolly::EditorAction actions[] = {dolly::EditorAction::ToggleCitadelGlow,
+                dolly::EditorAction::ToggleHealthbars, dolly::EditorAction::NearPlayerOpacityFix};
+            const char* labels[] = {"Hide Citadel glow", "Hide floating health bars", "Near player opacity fix"};
+            for (unsigned state : {0u, 7u}) {
+                snapshot.scene_appearance_flags = static_cast<std::uint8_t>(state);
+                for (unsigned i = 0; i < 3; ++i) {
+                    observed_actions.clear();
+                    ctx->NavNextActivateId = look->GetID(labels[i]);
+                    frame();
+                    require(observed_actions.size() == 1 && observed_actions[0].action == actions[i] && observed_actions[0].value == 0,
+                            "Scene checkbox lost its toggle dispatch");
+                    auto* nav = ctx->NavWindow;
+                    require(nav != nullptr, "Scene checkbox is not keyboard accessible");
+                    auto rect = nav->NavRectRel[ImGuiNavLayer_Main];
+                    rect.Translate(nav->Pos);
+                    require(rect.Min.x >= look->Pos.x && rect.Max.x <= look->Pos.x + look->Size.x,
+                            "Scene checkbox escapes the existing drawer");
+                }
+            }
+            observed_actions.clear();
+            snapshot.playing = true;
+            for (const auto* label : labels) {
+                ctx->NavNextActivateId = look->GetID(label);
+                frame();
+            }
+            require(observed_actions.empty(), "Scene checkboxes bypass playback guard");
+            snapshot.playing = false;
+            snapshot.scene_appearance_flags = 0;
+        }
+        {
             // Relocated camera actions keep their real dispatch and use the same
             // full-width rows, drawer insets and gaps as Save Path at every scale.
             const float scale = size.y / 1080;
@@ -641,7 +673,7 @@ static void rail_regressions(const char* output, bool motion = false) {
                 io.DeltaTime = 1.f / 60;
                 settle();
             }
-            for (unsigned shot = 0; shot < (motion ? 180u : 11u); ++shot) {
+            for (unsigned shot = 0; shot < (motion ? 180u : 12u); ++shot) {
                 const unsigned tab = motion ? 0 : shot;
                 if (motion) {
                     const float scale = size.y / 1080;
@@ -691,6 +723,11 @@ static void rail_regressions(const char* output, bool motion = false) {
                 else if (tab == 9) {
                     snapshot.bone_picker = false;
                     snapshot.object_picker = true;
+                }
+                if (tab == 11) {
+                    snapshot.bone_picker = snapshot.object_picker = false;
+                    snapshot.scene_appearance_flags = 7;
+                    activate_tab(3);
                 }
                 if (tab == 5) {
                     ctx->NavNextActivateId = find("##rail-tab0")->GetID("##rail-button");

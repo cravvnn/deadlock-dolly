@@ -1,0 +1,22 @@
+[
+  {
+    "name": "forget originals on failed restore",
+    "replace": [
+      [
+        "UNCHANGED <<original,saved,game,active,attempts>>",
+        "saved' = <<>> /\\ UNCHANGED <<original,game,active,attempts>>"
+      ]
+    ],
+    "expect": "Ownership"
+  },
+  {
+    "name": "replace saved values with forced opacity",
+    "replace": [
+      [
+        "saved' = original",
+        "saved' = <<1,1>>"
+      ]
+    ],
+    "expect": "Ownership"
+  }
+]

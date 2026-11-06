@@ -1773,22 +1773,25 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                     "Clear ragdolls, decals, screen post-processing and Violet ink left "
                     "behind after seeking or repeated shot playback.");
             ImGui::BeginDisabled(state.playing);
-            action_button("Toggle Citadel glow", EditorAction::ToggleCitadelGlow,
-                          ImGui::GetContentRegionAvail().x);
+            bool hide_glow = (state.scene_appearance_flags & 1) != 0;
+            if (compact_checkbox("Hide Citadel glow", &hide_glow, panel_scale))
+                editor_enqueue(EditorAction::ToggleCitadelGlow);
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
                     "Toggle hero, trooper, boss and health-bar glow together.");
             ImGui::BeginDisabled(state.playing);
-            action_button("Toggle floating health bars", EditorAction::ToggleHealthbars,
-                          ImGui::GetContentRegionAvail().x);
+            bool hide_bars = (state.scene_appearance_flags & 2) != 0;
+            if (compact_checkbox("Hide floating health bars", &hide_bars, panel_scale))
+                editor_enqueue(EditorAction::ToggleHealthbars);
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
                     "Hide or restore floating unit bars. Replay HUD controls the hero health panel. Bar glow stays with Toggle Citadel glow.");
             ImGui::BeginDisabled(state.playing);
-            action_button("Near player opacity fix", EditorAction::NearPlayerOpacityFix,
-                          ImGui::GetContentRegionAvail().x);
+            bool opacity_fix = (state.scene_appearance_flags & 4) != 0;
+            if (compact_checkbox("Near player opacity fix", &opacity_fix, panel_scale))
+                editor_enqueue(EditorAction::NearPlayerOpacityFix);
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(

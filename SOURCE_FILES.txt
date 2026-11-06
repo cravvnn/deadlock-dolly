@@ -1005,3 +1005,7 @@ dolly/ui/LayerAdmission.tla
 dolly/ui/LayerAdmissionApi.tla
 tests/test_review_hardening.py
 docs/RELEASE_NOTES_0.7.13-beta.md
+dolly/SceneOpacity.tla
+dolly/SceneOpacity.cfg
+dolly/SceneOpacity.mutants.json
+tests/test_scene_appearance.py

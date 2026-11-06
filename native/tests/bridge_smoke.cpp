@@ -2893,11 +2893,21 @@ void run() {
                 "Capture pause preference bypassed panel ownership");
         editor_set_owner(EditorOwner::Panel);
         config.sequence += 2;
+        config.scene_appearance_flags = 7;
         config.playback_flags = kEditorPauseAfterCapture | 2;
         std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
         editor_worker_tick(f.mapping.data(), true);
         require(!editor_enqueue(EditorAction::SetPauseAfterCapture, 1),
                 "Busy editor changed capture pause preference");
+        require(editor_snapshot().scene_appearance_flags == 7,
+                "Scene appearance state was lost in the desktop/native publication");
+        config.sequence += 2;
+        config.scene_appearance_flags = 8;
+        std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
+        editor_worker_tick(f.mapping.data(), true);
+        require(editor_snapshot().scene_appearance_flags == 7,
+                "Unknown scene appearance flags replaced a valid publication");
+        config.scene_appearance_flags = 7;
         config.sequence += 2;
         config.playback_flags = 8;
         std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));

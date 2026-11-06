@@ -601,6 +601,7 @@ EditorSnapshot editor_snapshot() noexcept {
         result.playing = (c->playback_flags & 1) != 0;
         result.busy = (c->playback_flags & 2) != 0;
         result.pause_after_capture = (c->playback_flags & kEditorPauseAfterCapture) != 0;
+        result.scene_appearance_flags = c->scene_appearance_flags;
         std::memcpy(result.shot_name, c->shot_name, sizeof(result.shot_name));
         std::memcpy(result.message, c->message, sizeof(result.message));
     }
@@ -1897,7 +1898,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                  c.video_fps == 300 || c.video_fps == 600) &&
                 (c.video_bitrate_mbps == 0 || c.video_bitrate_mbps == 10 ||
                  c.video_bitrate_mbps == 20 || c.video_bitrate_mbps == 40) &&
-                c.video_encoder <= 10 && (c.camera_export_flags & ~1u) == 0 && c.video_speed >= 0 &&
+                c.video_encoder <= 10 && (c.scene_appearance_flags & ~7u) == 0 && (c.camera_export_flags & ~1u) == 0 && c.video_speed >= 0 &&
                 c.video_speed <= 4 && std::memchr(c.shot_name, 0, sizeof(c.shot_name)) &&
                 std::memchr(c.message, 0, sizeof(c.message));
             for (auto& b : c.bindings)

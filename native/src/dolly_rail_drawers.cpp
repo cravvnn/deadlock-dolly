@@ -545,15 +545,25 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             split();
             k::SectionTitle("Scene appearance");
             k::VGap(15);
-            k::BeginRow(30, 8);
-            button("Clear stuck effects", EditorAction::DestroyRagdolls, 197.5, 0, s.playing);
-            button("Toggle Citadel glow", EditorAction::ToggleCitadelGlow, 0, 0, s.playing);
-            k::EndRow();
+            auto scene_toggle = [&](const char* label, bool value, EditorAction action, bool off) {
+                if (k::Checkbox(label, &value, off))
+                    d.send(action); // existing toggle actions carry no scalar payload
+            };
+            scene_toggle("Hide Citadel glow", (s.scene_appearance_flags & 1) != 0,
+                  EditorAction::ToggleCitadelGlow, s.playing || locked);
+            k::ItemTooltip("Hide hero, trooper, boss and health-bar glow together.");
             k::VGap(10);
-            k::BeginRow(30, 8);
-            button("Toggle floating health bars", EditorAction::ToggleHealthbars, 197.5, 0,
-                   s.playing);
-            button("Near player opacity fix", EditorAction::NearPlayerOpacityFix, 0, 0, s.playing);
+            scene_toggle("Hide floating health bars", (s.scene_appearance_flags & 2) != 0,
+                  EditorAction::ToggleHealthbars, s.playing || locked);
+            k::ItemTooltip("Hide floating unit bars with Dolly; uncheck to restore the saved values. Replay HUD controls the hero health panel.");
+            k::VGap(10);
+            scene_toggle("Near player opacity fix", (s.scene_appearance_flags & 4) != 0,
+                  EditorAction::NearPlayerOpacityFix, s.playing || locked);
+            k::ItemTooltip("Force full opacity on near-player camera fades; uncheck to restore both original fade values.");
+            k::VGap(15);
+            k::BeginRow(30, 0);
+            button("Clear stuck effects", EditorAction::DestroyRagdolls, 0, 0,
+                   s.playing || locked);
             k::EndRow();
             if (!d.overrides) {
                 k::VGap(15);

@@ -166,6 +166,7 @@ def editor_values(*, active, settings, project, selected, count, playhead, statu
                   replay_tick=int(status.get("tick") or 0),
                   playing=bool(status.get("playing")), busy=bool(busy),
                   pause_after_capture=settings.pause_after_capture,
+                  scene_appearance_flags=status.get("scene_appearance_flags", 0),
                   playback_speed=playback_speed, playback_rate=playback_rate,
                   video_fps=video_fps, video_bitrate_mbps=video_bitrate,
                   video_encoder=video_encoder, video_fixed_step=video_fixed_step,

@@ -474,3 +474,20 @@ reader was additionally checked against a standalone actual C++ depth writer.
 No valid-file format, game renderer, native POSIX or AE/USD application import
 qualification follows from these parser/diagnostic tests. The GUI already caught
 audit exceptions; structured audit findings primarily help CLI/support automation.
+
+## Scene appearance checkboxes
+
+`controller.near_player_opacity_fix` and `_restore_near_player_opacity`, called by
+`editor_dispatch` and disconnect, use [SceneOpacity.tla](dolly/SceneOpacity.tla):
+two fade values, enable success/failure, partial restoration, readback failure,
+and two restore attempts. Originals survive failed restoration. Does not model
+actual console timeouts, crash persistence or game rendering. The existing
+Look rollback retains failed enable cleanup; no new game-read loop is added.
+Glow flips Dolly's remembered hide choice; health-bar hiding snapshots even
+already-hidden values, so a Hide click cannot enable externally hidden bars.
+The other two checkboxes project controller choices through the final
+reserved config byte; editor_view, wire and native draw functions own no new
+persistent state. Actual-method tests cover both health-bar backends and wire
+bytes; native tests cover decoding, dispatch, keyboard and playback guards.
+Simplification: reuse the exact saved opacity dictionary as enabled state,
+with no extra flag or UI draft cache. No prior state machine was removed.

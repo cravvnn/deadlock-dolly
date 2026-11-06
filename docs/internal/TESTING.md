@@ -185,3 +185,14 @@ Individual larger private probes, real Windows locks, 400 history traces and a
 standalone actual C++ EXR writer remain matching-input evidence in analysis.
 Six source-adjacent production-only models/API/config/mutants join the required
 gate; four one-call validation/diagnostic scopes have test-only rationale in SPECS.
+
+## Scene appearance supplement
+
+`test_scene_appearance.py` adds three owner contracts: opacity toggle exact
+restore and failed-readback retry; glow/health hide choices (including already
+hidden external settings and both bar backends); and eight scene flag values
+in the existing final reserved wire byte. The baseline methods fail the opacity
+and hide-intent regressions. Current discovery is 73 methods. Native rail
+regressions exercise real checkbox dispatch, keyboard access, viewport fit
+and playback guards at 720p, 1080p, 1440p and 4K. Render captures use the actual
+renderer and embedded fonts over a synthetic background; no game proof.
