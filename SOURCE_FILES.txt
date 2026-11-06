@@ -161,6 +161,7 @@ docs/UPDATING.md
 docs/USER_GUIDE.md
 docs/VIDEO_AND_RESHADE.md
 docs/VIDEO_SCRIPT_0.6.49-alpha.md
+docs/internal/CORE_TEST_AUDIT.json
 docs/internal/CAMERA_VISIBILITY.md
 docs/internal/CONSOLE_RESEARCH.md
 docs/internal/GAME_UPDATES.md
@@ -587,8 +588,11 @@ packaging/bootstrap_entrypoint.py
 packaging/dolly.spec
 packaging/entrypoint.py
 requirements-build.txt
+tests/camera_modes.py
 tests/core_helpers.py
-tests/test_core.py
+tests/test_core_motion.py
+tests/test_core_safety.py
+tests/video_workflow.py
 third_party/cvar_unlocker/LICENSE.md
 third_party/cvar_unlocker/MODIFICATIONS.md
 third_party/cvar_unlocker/THIRD_PARTY.json

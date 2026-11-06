@@ -13,14 +13,38 @@ an actual Windows build, game integration, or rendered output. Select targeted
 manual checks for the behavior changed and record any limits. Add or change a
 regression test when it materially protects an important behavior.
 
-The suite covers project persistence and validation, camera interpolation and
-rotation, replay timing and seeking, controller restoration, native path data,
-settings preservation, game configuration recovery, camera export, and update
-installation and rollback. Console/process responses are simulated. When Tk is
-unavailable, the updater's UI imports are stubbed to exercise its file transaction;
-this does not test the updater window. The retired detailed suites remain in Git
-history. Prefer improving these core workflows over adding checks for every
-implementation detail.
+The 10 motion tests and five safety tests exercise project persistence and
+validation; nonlinear camera curves, retiming and replay transport; playback and
+Follow/F9 restoration; bone-camera persistence; native path parity; camera and
+video export; settings preservation; journal validation; and verified updates
+with partial-write and health-check rollback. Named scenarios within those
+workflows cover important failures without restoring the retired detailed suites.
+
+Console/process responses are simulated. With `g++` available, the path test
+compiles the real C++ parser/evaluator and checks generated paths against
+independent numeric expectations. Without it, that portion emits a warning;
+Python wire assertions still run. When Tk cannot import, only the updater's UI
+imports are stubbed; its file transaction code is real and its window is untested.
+
+The [coverage and fault audit](CORE_TEST_AUDIT.json) records the comparison with
+`c2f2381`, the 15 workflows, and known losses. The revised suite detected 29
+deliberate faults. One additional single-guard mutation survived because a
+second guard still blocked the operation; removing both was detected. These
+are targeted checks, not an exhaustive mutation score.
+
+The 15 workflows do **not** retain full-suite coverage. The headless measurement
+covered 11.4% of Python application statements, versus 7.6% for the initial
+reduction and 59.5% for the retired suite. The retired baseline had six failure
+records, 38 error records and 594 skips on this host. Detailed GUI/editor, audio,
+layer-processing and compatibility coverage remains outside these 15 tests;
+the audit lists those limits. Important transaction functions have much stronger
+coverage than that whole-application percentage, but executed lines alone do
+not establish correctness. The retired tests remain in Git history.
+
+Keep exactly 15 core workflows. Strengthen their independently checked scenarios
+when an important regression is found rather than adding checks for every
+implementation detail. A green core suite is not a Windows or in-game release
+qualification.
 
 For a Windows release, use the normal builder with the qualified Python
 environment described in [BUILDING.md](../BUILDING.md):
