@@ -530,3 +530,25 @@ numeric results, an explicit linear-work budget, and controlled I/O refusals.
 The six original implementations fail their corresponding regressions. No
 state-count reduction, whole-program proof or live renderer qualification is
 claimed by these tests. Existing models still run in the release gate.
+
+## Capture-helper and bitmap boundaries
+
+| Owner and caller | Maintained contract | Bounds and exclusions |
+| --- | --- | --- |
+| CaptureHotkey.start/stop; DollyApp._change_capture_listener | [HotkeyStart](dolly/HotkeyStart.tla), [API](dolly/HotkeyStartApi.tla) | Two serialized enable attempts; refused worker retirement, accepted-worker ownership through ready timeout and returning join. Input/focus, nonstandard post-start exceptions, worker hangs and concurrent callers excluded. |
+| MovieWave.finish; ClipAudioCapture._finish_movie | [MovieEnvironment](dolly/MovieEnvironment.tla), [API](dolly/MovieEnvironmentApi.tla) | Two mapped-take conversions, either may fail. Compose existing runtime environment entry/restoration; assume returning context/process operations. Global import races, actual FFmpeg and PCM correctness excluded. |
+| Win32Backend._surface; update via ScrollFade._want | [FadeSurface](dolly/ui/FadeSurface.tla), [API](dolly/ui/FadeSurfaceApi.tla) | One provisional DC/bitmap and checked selection before admission; returning successful deletion assumed. Crash/cleanup interruption, dict-update MemoryError and concurrent callers excluded. |
+
+Default configs check local safety and refinement of a minimal completion-shape
+interface. Terminal states deliberately have deadlock checking disabled; no
+deadlock-freedom, real-I/O liveness, whole-program or state-reduction claim.
+Seven model mutants remove specific refusal, environment or cleanup protections.
+
+`test_capture_boundaries.py` adds seven owner regressions. Projection pixels,
+matching VPK duplicate rejection, optional helper file lookup and fade clipping/
+copy size are single-call predicates/computations with independent expected
+outputs; they add no lifecycle state and need no additional lifecycle models.
+Tests retain accepted shortcut workers and actual movie alignment/source cleanup
+while simulating API refusals and external process results. Real Windows GDI
+resource accounting, DLL-directory restoration and larger pixel-grid probes are
+separate platform qualification evidence, not implied by portable source tests.

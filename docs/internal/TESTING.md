@@ -220,3 +220,14 @@ intervals and numeric outputs are checked independently; filesystem errors are
 injected. A work budget detects repeated scans, not game FPS. Broader paired
 attach-format comparisons remain private qualification evidence. No game,
 long-recording, lifecycle or general OpenEXR compatibility proof is inferred.
+
+## Capture boundary supplement
+
+`test_capture_boundaries.py` adds seven contracts for shortcut refusal/retry,
+both movie-audio external environments and failure unwind, finite projection
+pixels, duplicate VPK listings, optional helper I/O fallback, exact fade bytes/
+copy bounds and provisional GDI admission/cleanup. The portfolio is 96 methods.
+Real threads and temporary files/WAV alignment are used; external process/input
+and GDI failure returns are simulated. No renderer/game/packaged-output proof
+is inferred. Three maintained adjacent specs/APIs join the required gate, with
+seven intended invariant mutants. See SPECS.md for mapping and finite bounds.

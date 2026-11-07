@@ -1,0 +1,24 @@
+[
+  {
+    "name": "skip-resample-context",
+    "config": "MovieEnvironment.cfg",
+    "replace": [
+      [
+        "UseContext == TRUE",
+        "UseContext == pass # 1"
+      ]
+    ],
+    "expect": "Sanitized"
+  },
+  {
+    "name": "skip-final-context",
+    "config": "MovieEnvironment.cfg",
+    "replace": [
+      [
+        "UseContext == TRUE",
+        "UseContext == pass # 2"
+      ]
+    ],
+    "expect": "Sanitized"
+  }
+]

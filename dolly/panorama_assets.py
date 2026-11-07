@@ -110,6 +110,8 @@ def list_vpk_entries(index_path, *, prefixes=(), suffixes=(), max_tree_bytes=64*
             continue
         if archive == 0x7fff and length == 0:
             continue
+        if key in found:
+            raise ValueError('Duplicate named VPK resource.')
         if len(found) >= max_entries:
             raise ValueError('VPK entry limit exceeded.')
         found[key] = (archive, offset, length)

@@ -1059,3 +1059,16 @@ third_party/reshade_shaders/notices/SweetFX-LICENSE.txt
 third_party/reshade_shaders/notices/prod80-noise-LICENSE.txt
 docs/RELEASE_NOTES_0.7.15-beta.md
 tests/test_numeric_boundaries.py
+dolly/HotkeyStart.tla
+dolly/HotkeyStartApi.tla
+dolly/HotkeyStart.cfg
+dolly/HotkeyStart.mutants.json
+dolly/MovieEnvironment.tla
+dolly/MovieEnvironmentApi.tla
+dolly/MovieEnvironment.cfg
+dolly/MovieEnvironment.mutants.json
+dolly/ui/FadeSurface.tla
+dolly/ui/FadeSurfaceApi.tla
+dolly/ui/FadeSurface.cfg
+dolly/ui/FadeSurface.mutants.json
+tests/test_capture_boundaries.py

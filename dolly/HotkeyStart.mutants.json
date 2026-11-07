@@ -1,0 +1,24 @@
+[
+  {
+    "name": "keep-unstarted-owner",
+    "config": "HotkeyStart.cfg",
+    "replace": [
+      [
+        "           /\\ owner' = \"none\"",
+        "           /\\ owner' = \"new\""
+      ]
+    ],
+    "expect": "NoUnstartedJoin"
+  },
+  {
+    "name": "drop-accepted-worker",
+    "config": "HotkeyStart.cfg",
+    "replace": [
+      [
+        "/\\ owner' = owner",
+        "/\\ owner' = \"none\""
+      ]
+    ],
+    "expect": "WorkerOwned"
+  }
+]

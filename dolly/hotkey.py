@@ -128,7 +128,12 @@ class CaptureHotkey:
             self._thread = threading.Thread(
                 target=self._run, name="DollyCaptureHotkey", daemon=True,
             )
-            self._thread.start()
+            try:
+                self._thread.start()
+            except RuntimeError:
+                self._thread = None
+                self._stop.set()
+                raise
             if not self._ready.wait(2.0):
                 self._stop.set()
                 raise RuntimeError("Capture shortcut startup timed out. Use Capture here.")

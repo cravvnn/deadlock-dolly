@@ -235,6 +235,7 @@ class MovieWave:
         if duration <= 0:
             raise RuntimeError("The video did not report a duration for its audio.")
         from .clip_audio import _ffmpeg
+        from .runtime import external_program_environment
         if video_status is not None:
             rate, windows = _movie_sample_windows(self.video, video_status, self.name)
             import soundfile as sf
@@ -243,9 +244,10 @@ class MovieWave:
                         wav.frames * rate < windows[-1][1] * wav.samplerate):
                     raise RuntimeError('Movie audio does not cover the captured frames; source WAV was kept.')
             converted = Path(work) / 'movie_resampled.wav'
-            result = subprocess.run([str(_ffmpeg()), '-hide_banner', '-loglevel', 'error', '-y',
-                '-i', str(source), '-ar', str(rate), '-ac', '2', '-c:a', 'pcm_f32le', str(converted)],
-                capture_output=True, text=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            with external_program_environment() as environment:
+                result = subprocess.run([str(_ffmpeg()), '-hide_banner', '-loglevel', 'error', '-y',
+                    '-i', str(source), '-ar', str(rate), '-ac', '2', '-c:a', 'pcm_f32le', str(converted)],
+                    capture_output=True, text=True, env=environment, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             if result.returncode or not converted.is_file():
                 raise RuntimeError('Movie audio resampling failed; source WAV was kept: ' + (result.stderr or '')[-1000:])
             aligned = Path(work) / 'movie_aligned.wav'
@@ -261,8 +263,9 @@ class MovieWave:
                    "-i", str(source), "-ss", f"{offset:.9f}", "-t", f"{duration:.9f}",
                    "-af", "apad", "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le",
                    str(target)]
-        result = subprocess.run(command, capture_output=True, text=True,
-                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        with external_program_environment() as environment:
+            result = subprocess.run(command, capture_output=True, text=True, env=environment,
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode or not target.is_file() or target.stat().st_size <= 0:
             detail = (result.stderr or "").strip()[-1000:]
             raise RuntimeError("The movie audio WAV could not be converted: " + detail)

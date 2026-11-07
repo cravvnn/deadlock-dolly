@@ -1,7 +1,7 @@
 {
   "base_audit": "CORE_TEST_AUDIT.json records upstream Linux evidence, not current Windows release results",
   "core_contracts": 15,
-  "maintained_tests": 83,
+  "maintained_tests": 96,
   "supplements": [
     "Replay repair, helper setup and scratch: 34 owner tests including 10 refactor regressions",
     "Updater/startup: 2 real child-process race schedules",
@@ -10,7 +10,8 @@
     "Failed admissions and export cleanup: 3 compact provisional-socket, preenqueue-reservation and camera-export result contracts",
     "Reviewed ten-item set: 10 compact layer admission, worker startup, binary validation, diagnostic, cleanup and history allocation contracts",
     "Scene appearance: 3 owner contracts for exact opacity restoration/retry, hide semantics with external settings and both bar backends, and fixed-size scene-state wire bytes",
-    "Next ten review: ten owner regressions for bridge close, provisional mapping, bridge-scoped attach results, settings numeric fallback, known-only still cleanup, scratch terminal cleanup, Tcl marker ownership, mod entry inspection, free-shot attach work and selected Players-frame validation"
+    "Next ten review: ten owner regressions for bridge close, provisional mapping, bridge-scoped attach results, settings numeric fallback, known-only still cleanup, scratch terminal cleanup, Tcl marker ownership, mod entry inspection, free-shot attach work and selected Players-frame validation",
+    "Reviewed capture boundaries: seven compact shortcut recovery, movie environment, projection, VPK, helper lookup, fade clipping/copy and GDI admission regressions"
   ],
   "policy": "No fixed test ceiling; permanent tests require a distinct contract/regression gap. Temporary harnesses stay ignored outside discovery.",
   "limits": "Reduced coverage accepted explicitly; not equivalent to the retired exhaustive suite. Models do not replace source/platform/output tests. Release results stay with the release artifact."
