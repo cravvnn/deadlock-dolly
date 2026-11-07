@@ -290,7 +290,7 @@ Dolly loads that DLL from the separate folder you choose below.
    The status changes from loading to ready after a game frame initializes it.
 4. Press **F11** in Deadlock to open ReShade's own menu. Rebind this action on
    **Settings → Controls & keybinds** if needed. **F7** continues to open the game console.
-5. Dolly registers its bundled crosire/prod80 shader and texture library and
+5. Dolly registers its bundled shader and texture library and
    copies editable presets into its private `ReShade\presets` folder. A new
    configuration selects **Deadlock-Dolly**, a neutral color-control preset.
    Open ReShade's menu to adjust its sliders or enable the other bundled effects.
@@ -340,6 +340,28 @@ is not needed. While add-on events are paused, video capture through ReShade
 waits for them to resume; Dolly reports that state instead of failing the
 runtime, and color effects continue to render.
 
+## Additional bundled effects
+
+The F11 menu now includes CinematicDOF, AdaptiveFog, DepthHaze, Vignette,
+AspectRatioSuite, HexLensFlare, Oilify, Halftone, Comic, CRT_Lottes and ColorMask.
+They start disabled; enable only the effects needed for your shot. Your saved
+presets and selected runtime are preserved. DepthHaze is an optional haze/blur
+choice alongside AdaptiveFog; stacking them is not required.
+
+Check DisplayDepth before using CinematicDOF, AdaptiveFog or DepthHaze.
+CinematicDOF has independent manual focus and autofocus controls. It does not
+follow Dolly's native focus sliders or authored focus animation. This version
+uses procedural bokeh and the existing prod80 noise, without custom bokeh images.
+
+For selective grading, put BeforeColorMask before the desired effect(s) and
+AfterColorMask after them. For example, bracket prod80 black-and-white and use
+a luma mask to apply grayscale only to a brightness range. Mask settings and
+effect order matter. The controls are in ReShade's menu.
+
+These sources rendered and appeared in bounded 720p Color recordings through
+Dolly with ReShade 6.8/API20 and D3D11. Test performance at your export size;
+long recordings, fixed-step autofocus and every combination are not qualified.
+
 ## Implementation and validation
 
 The recorder uses three reusable GPU staging slots and a bounded CPU queue.
@@ -354,7 +376,7 @@ ReShade runs through its manual runtime API inside Dolly's existing Present
 callback. Capture occurs at its post-effects, pre-interface callback. Optional
 loading runs outside the camera worker. The public API headers are pinned in
 `native/vendor/reshade/UPSTREAM.json`. The shader library in
-`third_party/reshade_shaders` includes its CC0/MIT notices; runtime DLLs are not
+`third_party/reshade_shaders` includes its original license and contribution notices; runtime DLLs are not
 redistributed.
 
 References: [ReShade runtime API](https://crosire.github.io/reshade-docs/structreshade_1_1api_1_1effect__runtime.html),
