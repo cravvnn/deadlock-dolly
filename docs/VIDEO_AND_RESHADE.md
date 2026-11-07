@@ -344,7 +344,8 @@ runtime, and color effects continue to render.
 
 The F11 menu now includes CinematicDOF, AdaptiveFog, DepthHaze, Vignette,
 AspectRatioSuite, HexLensFlare, Oilify, Halftone, Comic, CRT_Lottes and ColorMask.
-They start disabled; enable only the effects needed for your shot. Your saved
+CanvasMask, ASCII, CShade | KinoMirror and Droste are also included as selected
+masking and stylized additions. They start disabled; enable only the effects needed for your shot. Your saved
 presets and selected runtime are preserved. DepthHaze is an optional haze/blur
 choice alongside AdaptiveFog; stacking them is not required.
 
@@ -356,10 +357,15 @@ uses procedural bokeh and the existing prod80 noise, without custom bokeh images
 For selective grading, put BeforeColorMask before the desired effect(s) and
 AfterColorMask after them. For example, bracket prod80 black-and-white and use
 a luma mask to apply grayscale only to a brightness range. Mask settings and
-effect order matter. The controls are in ReShade's menu.
+effect order matter. The controls are in ReShade's menu. CanvasMask uses the same before/after
+ordering for geometric gradients and optional depth masks; it complements
+ColorMask's hue/brightness selection.
 
-These sources rendered and appeared in bounded 720p Color recordings through
-Dolly with ReShade 6.8/API20 and D3D11. Test performance at your export size;
+The original eleven additions rendered and appeared in bounded 720p Color
+recordings through Dolly with ReShade 6.8/API20 and D3D11. CanvasMask, ASCII,
+KinoMirror and Droste also passed offline compilation and representative
+720p Color capture checks. CanvasMask was checked with a geometric gradient;
+its optional depth modes remain unverified. Test performance at your export size;
 long recordings, fixed-step autofocus and every combination are not qualified.
 
 ## Implementation and validation

@@ -24,3 +24,18 @@ third_party/reshade_shaders/Shaders/Oilify.fx -text -whitespace
 third_party/reshade_shaders/Shaders/Halftone.fx -text -whitespace
 third_party/reshade_shaders/Shaders/Comic.fx -text -whitespace
 third_party/reshade_shaders/Shaders/ColorMask.fx -text -whitespace
+
+# Second curated shader batch: preserve exact pinned source bytes.
+third_party/reshade_shaders/Shaders/CanvasMask.fx -text -whitespace
+third_party/reshade_shaders/Shaders/ASCII.fx -text -whitespace
+third_party/reshade_shaders/Shaders/kMirror.fx -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cMath.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cShade.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cMacros.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cCamera.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cComposite.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cColor.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cLens.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/shared/cBlend.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/Droste.fx -text -whitespace
+third_party/reshade_shaders/Shaders/CobraUtility.fxh -text -whitespace

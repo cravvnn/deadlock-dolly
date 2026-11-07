@@ -59,3 +59,27 @@ Qualified with one ReShade 6.8/API20 D3D11 runtime, local replay and 720p SDR
 single-frame Color captures. Performance at export resolution, long recordings,
 fixed-step autofocus convergence and all effect combinations need user testing.
 No game-folder ReShade installer or graphics proxy is used.
+
+Second curated batch (4 effects)
+-------------------------------
+  CanvasMask (originalnicodr / CorgiFX): bracket existing effects with
+    BeforeCanvasMask and AfterCanvasMask to blend by geometric/depth masks.
+  ASCII (CeeJayDK / SweetFX): character-based image rendering.
+  KinoMirror (papadanku / CShade, Keijiro Takahashi contribution): angular
+    repetition and kaleidoscope mirroring, listed as CShade | KinoMirror.
+  Droste (SirCobra / CobraFX): recursive circular/rectangular spiral warping.
+
+Only these effects and their required shared headers are included, not the
+whole upstream packs. Pinned source hashes and original notices are retained
+in EXPANSION.json, notices/ and the source headers. No source adaptations.
+These additions are disabled by default; existing presets remain unchanged.
+CanvasMask differs from ColorMask's hue/luma selection: it masks the effect
+chain spatially, with optional depth conditioning. Mask order matters.
+Do not enable CanvasMask before/after techniques without placing the intended
+effect(s) between them. Pattern scale and mirroring need tuning per shot.
+
+The second batch passed exact ReShade 6.8 D3D11 offline compilation and
+recorded 1280x720 Color samples through Dolly, with normal startup/cleanup.
+Each run used one off/on/off sample set. CanvasMask checks geometric masking;
+its optional depth modes are not certified by that sample. All four remain
+subject to the export-size/performance/combination limits above.

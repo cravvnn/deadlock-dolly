@@ -1,0 +1,510 @@
+
+/*
+    This header file provides a comprehensive color grading and tonemapping pipeline for post-processing effects. It allows shaders to apply a series of adjustments to the image, including exposure bias, color filtering, saturation, and contrast. It also implements advanced color controls such as Lift/Gamma/Gain for shadows, midtones, and highlights, with corresponding offset adjustments. A selection of tonemapping operators is available to manage HDR to SDR conversion. This file is crucial for achieving professional-grade color correction and stylized looks.
+
+    Additionally, it offers exposure peaking functionality to highlight over-exposed regions, with customizable dither algorithms and cell sizes. This file helps integrate realistic camera behaviors into rendering pipelines.
+
+    Abstracted Preprocessor Definitions: CSHADE_APPLY_GRADING, CSHADE_APPLY_TONEMAP, CSHADE_DEBUG_PEAKING, CSHADE_APPLY_SWIZZLE
+*/
+
+#include "cColor.fxh"
+
+#if !defined(CSHADE_COMPOSITE)
+    #define CSHADE_COMPOSITE
+
+    #ifndef CSHADE_APPLY_GRADING
+        #define CSHADE_APPLY_GRADING 0
+    #endif
+
+    #ifndef CSHADE_APPLY_TONEMAP
+        #define CSHADE_APPLY_TONEMAP 0
+    #endif
+
+    #ifndef CSHADE_APPLY_DITHER
+        #define CSHADE_APPLY_DITHER 0
+    #endif
+
+    #ifndef CSHADE_DEBUG_PEAKING
+        #define CSHADE_DEBUG_PEAKING 0
+    #endif
+
+    #ifndef CSHADE_APPLY_SWIZZLE
+        #define CSHADE_APPLY_SWIZZLE 0
+    #endif
+
+    /* cComposite Options */
+
+    #if CSHADE_APPLY_GRADING
+        // Primary Adjustments
+        uniform float _CComposite_ExposureBias <
+            ui_category = "Output / Color Grade";
+            ui_text = "EXPOSURE & COLOR FILTERING";
+            ui_label = "Exposure Adjustment (f-stops)";
+            ui_type = "drag";
+            ui_tooltip = "Adjusts the overall exposure of the scene in f-stops, making it brighter or darker.";
+        > = 1.0;
+
+        uniform float3 _CComposite_ColorFilter <
+            ui_category = "Output / Color Grade";
+            ui_label = "Color Filter (Tint)";
+            ui_type = "color";
+            ui_tooltip = "Applies a color tint to the scene, useful for adjusting white balance or creating stylistic looks.";
+        > = 1.0;
+
+        uniform float _CComposite_Saturation <
+            ui_category = "Output / Color Grade";
+            ui_text = "SATURATION & CONTRAST";
+            ui_label = "Color Saturation";
+            ui_type = "slider";
+            ui_tooltip = "Adjusts the intensity of colors in the scene; higher values make colors more vibrant, lower values desaturate them.";
+        > = 1.0;
+
+        uniform float _CComposite_Contrast <
+            ui_category = "Output / Color Grade";
+            ui_label = "Image Contrast";
+            ui_type = "slider";
+            ui_tooltip = "Adjusts the difference between the brightest and darkest parts of the image, affecting perceived depth and richness.";
+        > = 1.0;
+
+        // Lift/Gamma/Gain - Color Controls
+        uniform float3 _CComposite_ShadowColor <
+            ui_category = "Output / Color Grade";
+            ui_text = "LIFT, GAMMA, GAIN";
+            ui_label = "Shadow Tint (Lift)";
+            ui_type = "color";
+            ui_tooltip = "Adjusts the color tint applied to the darkest areas (shadows) of the image.";
+        > = 1.0;
+
+        uniform float3 _CComposite_MidtoneColor <
+            ui_category = "Output / Color Grade";
+            ui_label = "Midtone Tint (Gamma)";
+            ui_type = "color";
+            ui_tooltip = "Adjusts the color tint applied to the mid-range tones (midtones) of the image.";
+        > = 1.0;
+
+        uniform float3 _CComposite_HighlightColor <
+            ui_category = "Output / Color Grade";
+            ui_label = "Highlight Tint (Gain)";
+            ui_type = "color";
+            ui_tooltip = "Adjusts the color tint applied to the brightest areas (highlights) of the image.";
+        > = 1.0;
+
+        // Lift/Gamma/Gain - Offset Controls
+        uniform float _CComposite_ShadowOffset <
+            ui_category = "Output / Color Grade";
+            ui_label = "Shadow Level Offset";
+            ui_type = "slider";
+            ui_tooltip = "Adjusts the offset for shadow values, making dark areas brighter or darker.";
+        > = 0.0;
+
+        uniform float _CComposite_MidtoneOffset <
+            ui_category = "Output / Color Grade";
+            ui_label = "Midtone Level Offset";
+            ui_type = "slider";
+            ui_tooltip = "Adjusts the offset for midtone values, affecting the brightness of mid-range tones.";
+        > = 0.0;
+
+        uniform float _CComposite_HighlightOffset <
+            ui_category = "Output / Color Grade";
+            ui_label = "Highlight Level Offset";
+            ui_type = "slider";
+            ui_tooltip = "Adjusts the offset for highlight values, making bright areas brighter or darker.";
+        > = 0.0;
+    #endif
+
+    #if CSHADE_APPLY_TONEMAP
+        uniform int _CComposite_Tonemapper <
+            ui_category_closed = true;
+            ui_category = "Output / Tonemap";
+            ui_label = "Tonemapping Operator";
+            ui_tooltip = "Selects a tonemap operator to map HDR colors to SDR, affecting how bright areas are compressed.";
+            ui_type = "combo";
+            ui_items = "None\0Reinhard\0Reinhard Squared\0AMD Resolve\0ACES Fitted\0Logarithmic C [Encode]\0";
+        > = 4;
+    #endif
+
+    #if CSHADE_APPLY_DITHER
+        uniform bool _CShade_Dithering <
+            ui_category_closed = true;
+            ui_category = "Output / Dither";
+            ui_label = "Enable Dithering Effect";
+            ui_type = "radio";
+            ui_tooltip = "When enabled, dithering is applied to reduce color banding and create the illusion of more colors.";
+        > = false;
+
+        uniform int _CShade_DitherMethod <
+            ui_category = "Output / Dither";
+            ui_items = "Golden Ratio Noise\0Interleaved Gradient Noise\0White Noise\0";
+            ui_label = "Dither Pattern Algorithm";
+            ui_type = "combo";
+            ui_tooltip = "Selects the algorithm used to generate the dither pattern, such as Golden Ratio Noise or White Noise.";
+        > = 0;
+    #endif
+
+    #if CSHADE_APPLY_SWIZZLE
+        uniform int _CShade_SwizzleRed <
+            ui_category_closed = true;
+            ui_category = "Output / Swizzle";
+            ui_text = "COLOR WRITE MASK";
+            ui_label = "Map Red Channel To";
+            ui_type = "combo";
+            ui_items = "Red\0Green\0Blue\0Alpha\0None\0";
+            ui_tooltip = "Maps the red output channel to one of the source color or alpha channels, or disables it.";
+        > = 0;
+
+        uniform int _CShade_SwizzleGreen <
+            ui_category = "Output / Swizzle";
+            ui_label = "Map Green Channel To";
+            ui_type = "combo";
+            ui_items = "Red\0Green\0Blue\0Alpha\0None\0";
+            ui_tooltip = "Maps the green output channel to one of the source color or alpha channels, or disables it.";
+        > = 1;
+
+        uniform int _CShade_SwizzleBlue <
+            ui_category = "Output / Swizzle";
+            ui_label = "Map Blue Channel To";
+            ui_type = "combo";
+            ui_items = "Red\0Green\0Blue\0Alpha\0None\0";
+            ui_tooltip = "Maps the blue output channel to one of the source color or alpha channels, or disables it.";
+        > = 2;
+
+        uniform int _CShade_SwizzleAlpha <
+            ui_category = "Output / Swizzle";
+            ui_label = "Map Alpha Channel To";
+            ui_type = "combo";
+            ui_items = "Red\0Green\0Blue\0Alpha\0None\0";
+            ui_tooltip = "Maps the alpha output channel to one of the source color or alpha channels, or disables it.";
+        > = 3;
+
+        uniform int _CShade_OutputMode <
+            ui_category = "Output / Swizzle";
+            ui_label = " ";
+            ui_text = "DEBUG";
+            ui_tooltip = "Displays a specific color channel (Red, Green, Blue, or Alpha) for debugging purposes. Remember to reset this option when done.";
+            ui_type = "combo";
+            ui_items = "All\0Red\0Green\0Blue\0Alpha\0";
+        > = 0;
+    #endif
+
+    /* cComposite Functions */
+
+    float3 CComposite_ApplyOutputTonemap(float3 HDR)
+    {
+        #if CSHADE_APPLY_TONEMAP
+            return CColor_ApplyTonemap(HDR, _CComposite_Tonemapper);
+        #else
+            return HDR;
+        #endif
+    }
+
+    /*
+        John Hable's Minimal Color Grading
+
+        1. Exposure
+        2. Color Filter
+        3. Saturation
+        4. Log-Space Contrast
+        5. Filmic Tone Curve
+        6. Display Gamma
+        7. Lift/Gamma/Gain
+
+        Creative Commons Legal Code
+
+        CC0 1.0 Universal
+
+            CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE LEGAL SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES REGARDING THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES RESULTING FROM THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED HEREUNDER.
+
+        Statement of Purpose
+
+        The laws of most jurisdictions throughout the world automatically confer exclusive Copyright and Related Rights (defined below) upon the creator and subsequent owner(s) (each and all, an "owner") of an original work of authorship and/or a database (each, a "Work").
+
+        Certain owners wish to permanently relinquish those rights to a Work for the purpose of contributing to a commons of creative, cultural and scientific works ("Commons") that the public can reliably and without fear of later claims of infringement build upon, modify, incorporate in other works, reuse and redistribute as freely as possible in any form whatsoever and for any purposes, including without limitation commercial purposes. These owners may contribute to the Commons to promote the ideal of a free culture and the further production of creative, cultural and scientific works, or to gain reputation or greater distribution for their Work in part through the use and efforts of others.
+
+        For these and/or other purposes and motivations, and without any expectation of additional consideration or compensation, the person associating CC0 with a Work (the "Affirmer"), to the extent that he or she is an owner of Copyright and Related Rights in the Work, voluntarily elects to apply CC0 to the Work and publicly distribute the Work under its terms, with knowledge of his or her Copyright and Related Rights in the Work and the meaning and intended legal effect of CC0 on those rights.
+
+        1. Copyright and Related Rights. A Work made available under CC0 may be protected by copyright and related or neighboring rights ("Copyright and Related Rights"). Copyright and Related Rights include, but are not limited to, the following:
+
+            i. the right to reproduce, adapt, distribute, perform, display, communicate, and translate a Work;
+            ii. moral rights retained by the original author(s) and/or performer(s);
+            iii. publicity and privacy rights pertaining to a person's image or likeness depicted in a Work;
+            iv. rights protecting against unfair competition in regards to a Work, subject to the limitations in paragraph 4(a), below;
+            v. rights protecting the extraction, dissemination, use and reuse of data in a Work;
+            vi. database rights (such as those arising under Directive 96/9/EC of the European Parliament and of the Council of 11 March 1996 on the legal protection of databases, and under any national implementation thereof, including any amended or successor version of suchdirective); and
+            vii. other similar, equivalent or corresponding rights throughout the world based on applicable law or treaty, and any national implementations thereof.
+
+        2. Waiver. To the greatest extent permitted by, but not in contravention of, applicable law, Affirmer hereby overtly, fully, permanently, irrevocably and unconditionally waives, abandons, and surrenders all of Affirmer's Copyright and Related Rights and associated claims and causes of action, whether now known or unknown (including existing as well as future claims and causes of action), in the Work (i) in all territories worldwide, (ii) for the maximum duration provided by applicable law or treaty (including future time extensions), (iii) in any current or future medium and for any number of copies, and (iv) for any purpose whatsoever, including without limitation commercial, advertising or promotional purposes (the "Waiver"). Affirmer makes the Waiver for the benefit of each member of the public at large and to the detriment of Affirmer's heirs and successors, fully intending that such Waiver shall not be subject to revocation, rescission, cancellation, termination, or any other legal or equitable action to disrupt the quiet enjoyment of the Work by the public as contemplated by Affirmer's express Statement of Purpose.
+
+        3. Public License Fallback. Should any part of the Waiver for any reason be judged legally invalid or ineffective under applicable law, then the Waiver shall be preserved to the maximum extent permitted taking into account Affirmer's express Statement of Purpose. In addition, to the extent the Waiver is so judged Affirmer hereby grants to each affected person a royalty-free, non transferable, non sublicensable, non exclusive, irrevocable and unconditional license to exercise Affirmer's Copyright and Related Rights in the Work (i) in all territories worldwide, (ii) for the maximum duration provided by applicable law or treaty (including future time extensions), (iii) in any current or future medium and for any number of copies, and (iv) for any purpose whatsoever, including without limitation commercial, advertising or promotional purposes (the "License"). The License shall be deemed effective as of the date CC0 was applied by Affirmer to the Work. Should any part of the License for any reason be judged legally invalid or ineffective under applicable law, such partial invalidity or ineffectiveness shall not invalidate the remainder of the License, and in such case Affirmer hereby affirms that he or she will not (i) exercise any of his or her remaining Copyright and Related Rights in the Work or (ii) assert any associated claims and causes of action with respect to the Work, in either case contrary to Affirmer's express Statement of Purpose.
+
+        4. Limitations and Disclaimers.
+
+            a. No trademark or patent rights held by Affirmer are waived, abandoned, surrendered, licensed or otherwise affected by this document.
+            b. Affirmer offers the Work as-is and makes no representations or warranties of any kind concerning the Work, express, implied, statutory or otherwise, including without limitation warranties of title, merchantability, fitness for a particular purpose, non infringement, or the absence of latent or other defects, accuracy, or the present or absence of errors, whether or not discoverable, all to the greatest extent permissible under applicable law.
+            c. Affirmer disclaims responsibility for clearing rights of other persons that may apply to the Work or any use thereof, including without limitation any person's Copyright and Related Rights in the Work. Further, Affirmer disclaims responsibility for obtaining any necessary consents, permissions or other rights required for any use of the Work.
+            d. Affirmer understands and acknowledges that Creative Commons is not a party to this document and has no duty or obligation with respect to this CC0 or use of the Work.
+    */
+
+    void CComposite_ApplyColorGrading(
+        inout float3 Color,
+        in float ExposureBias,
+        in float3 ColorFilter,
+        in float Saturation,
+        in float Contrast,
+        in float3 ShadowColor,
+        in float3 MidtoneColor,
+        in float3 HighlightColor,
+        in float ShadowOffset,
+        in float MidtoneOffset,
+        in float HighlightOffset
+    )
+    {
+        #if CSHADE_APPLY_GRADING
+            // Constants
+            const float ACEScc_MIDGRAY = 0.4135884;
+
+            // Create controls for Lift/Gamma/Gain
+            float3 LiftC = ShadowColor;
+            float3 GammaC = MidtoneColor;
+            float3 GainC = HighlightColor;
+
+            float AverageLift = dot(LiftC, 1.0 / 3.0);
+            float AverageGamma = dot(GammaC, 1.0 / 3.0);
+            float AverageGain = dot(GainC, 1.0 / 3.0);
+
+            LiftC = LiftC - AverageLift;
+            GammaC = GammaC - AverageGamma;
+            GainC = GainC - AverageGain;
+
+            float3 LiftAdjust = 0.0 + (LiftC + ShadowOffset);
+            float3 GainAdjust = 1.0 + (GainC + HighlightOffset);
+
+            float3 MidGrey = 0.5 + (GammaC + MidtoneOffset);
+            float3 H = GainAdjust;
+            float3 S = LiftAdjust;
+
+            float3 GammaAdjust = log((0.5 - S) / (H - S)) / log(MidGrey);
+            float3 InvGammaAdjust = 1.0 / GammaAdjust;
+
+            // Exposure & Color Filter multiplier
+            float3 ExposureColorFilter = exp2(ExposureBias) * ColorFilter;
+            Color = Color * ExposureColorFilter;
+
+            // Apply Saturation
+            float Gray = CColor_RGBtoLuma(Color.rgb, 3);
+            Color = Gray + Saturation * (Color - Gray);
+
+            // Apply Log Contrast
+            Color = CColor_ApplyLogContrast(Color, (float3)Contrast);
+
+            // Apply Filmic Curve
+            #if CSHADE_APPLY_TONEMAP
+                Color = CColor_ApplyTonemap(Color, _CComposite_Tonemapper);
+            #endif
+
+            // Apply Display Gamma
+            Color = CColor_RGBtoSRGB(float4(Color, 0.0)).rgb;
+
+            // Apply Lift-Gamma-Gain
+            float3 Weight = pow(abs(Color), InvGammaAdjust);
+            Color = lerp(LiftAdjust, GainAdjust, Weight);
+
+            // Apply Linear Gamma
+            Color = CColor_SRGBtoRGB(float4(Color, 0.0)).rgb;
+        #endif
+    }
+
+    void CComposite_ApplyOutput(inout float3 Color)
+    {
+        #if CSHADE_APPLY_GRADING
+            CComposite_ApplyColorGrading(
+                Color,
+                _CComposite_ExposureBias,
+                _CComposite_ColorFilter,
+                _CComposite_Saturation,
+                _CComposite_Contrast,
+                _CComposite_ShadowColor,
+                _CComposite_MidtoneColor,
+                _CComposite_HighlightColor,
+                _CComposite_ShadowOffset,
+                _CComposite_MidtoneOffset,
+                _CComposite_HighlightOffset
+            );
+        #elif CSHADE_APPLY_TONEMAP
+            Color = CColor_ApplyTonemap(Color, _CComposite_Tonemapper);
+        #else
+            Color = Color;
+        #endif
+    }
+
+    #if CSHADE_DEBUG_PEAKING
+        uniform bool _CCamera_ExposurePeaking <
+            ui_text = "TOOLS - EXPOSURE PEAKING";
+            ui_category = "Output / Peaking";
+            ui_label = "Show Exposure Peaking Overlay";
+            ui_type = "radio";
+            ui_tooltip = "When enabled, displays an overlay that highlights areas within a specified exposure threshold.";
+        > = false;
+
+        uniform int _CCamera_ExposurePeakingDitherType <
+            ui_category = "Output / Peaking";
+            ui_label = "Exposure Peaking Dither Algorithm";
+            ui_type = "combo";
+            ui_items = "Golden Ratio Noise\0Interleaved Gradient Noise\0White Noise\0Disabled\0";
+            ui_tooltip = "Selects the dither algorithm used for the exposure peaking overlay.";
+        > = 0;
+
+        uniform float3 _CCamera_ExposurePeakingThreshold <
+            ui_category = "Output / Peaking";
+            ui_label = "Exposure Peaking Luminance Threshold";
+            ui_type = "slider";
+            ui_min = 0.0;
+            ui_max = 1.0;
+            ui_tooltip = "Sets the luminance threshold for exposure peaking, highlighting areas above this level.";
+        > = float3(1.0, 1.0, 1.0);
+
+        uniform int _CCamera_ExposurePeakingCellWidth <
+            ui_category = "Output / Peaking";
+            ui_label = "Exposure Peaking Cell Size";
+            ui_type = "slider";
+            ui_min = 1;
+            ui_max = 16;
+            ui_tooltip = "Sets the width of the cells in the checkerboard pattern used for exposure peaking.";
+        > = 8;
+    #endif
+
+    void CComposite_ApplyDither(inout float3 Color, in float2 HPos, in float2 Tex)
+    {
+        #if CSHADE_APPLY_DITHER
+            #if BUFFER_COLOR_BIT_DEPTH == 8
+                const float Bits = 1.0 / (exp2(8.0) - 1.0);
+            #else
+                const float Bits = 1.0 / (exp2(10.0) - 1.0);
+            #endif
+
+            float3 Dither = 0.0;
+
+            if (_CShade_Dithering)
+            {
+                switch (_CShade_DitherMethod)
+                {
+                    case 0:
+                        Dither = CMath_GetGoldenRatioNoise(HPos);
+                        break;
+                    case 1:
+                        Dither = CMath_GetInterleavedGradientNoise(HPos);
+                        break;
+                    case 2:
+                        Dither = CMath_GetHash_FLT1(HPos, 0.0);
+                        break;
+                    default:
+                        Dither = 0.0;
+                        break;
+                }
+
+                // Go from range [0, 1) to [0, 1)
+                Dither = (Dither * 2.0) - 1.0;
+
+                // Apply dithering
+                Color += (Dither * Bits);
+            }
+        #endif
+    }
+
+    void CComposite_SwapChannels(inout float Color, in float4 Cache, in int Parameter)
+    {
+        switch (Parameter)
+        {
+            case 0:
+                Color = Cache.r;
+                break;
+            case 1:
+                Color = Cache.g;
+                break;
+            case 2:
+                Color = Cache.b;
+                break;
+            case 3:
+                Color = Cache.a;
+                break;
+            default:
+                Color = 0.0;
+                break;
+        }
+    }
+
+    float4 CComposite_SwizzleChannels(float3 Color, float Alpha)
+    {
+        #if CSHADE_APPLY_SWIZZLE
+            float4 Cache = float4(Color, Alpha);
+            float4 Channels = Cache;
+            CComposite_SwapChannels(Channels.r, Cache, _CShade_SwizzleRed);
+            CComposite_SwapChannels(Channels.g, Cache, _CShade_SwizzleGreen);
+            CComposite_SwapChannels(Channels.b, Cache, _CShade_SwizzleBlue);
+            CComposite_SwapChannels(Channels.a, Cache, _CShade_SwizzleAlpha);
+
+            // Process OutputColor
+            float4 OutputColor = 0.0;
+            switch (_CShade_OutputMode)
+            {
+                case 1:
+                    OutputColor.r = Channels.r;
+                    OutputColor.a = 1.0;
+                    break;
+                case 2:
+                    OutputColor.g = Channels.g;
+                    OutputColor.a = 1.0;
+                    break;
+                case 3:
+                    OutputColor.b = Channels.b;
+                    OutputColor.a = 1.0;
+                    break;
+                case 4: // Write to all channels for alpha, so people can see it
+                    OutputColor.rgb = Channels.a;
+                    OutputColor.a = 1.0;
+                    break;
+                default: // No Debug
+                    OutputColor = Channels;
+                    break;
+            }
+
+            return OutputColor;
+        #else
+            return float4(Color, Alpha);
+        #endif
+    }
+
+    void CComposite_ApplyExposurePeaking(inout float3 Color, in float2 Pos)
+    {
+        #if CSHADE_DEBUG_PEAKING
+            if (_CCamera_ExposurePeaking)
+            {
+                // Create the checkerboard
+                float2 Grid = Pos / _CCamera_ExposurePeakingCellWidth;
+                float3 Checkerboard = frac(dot(floor(Grid), 0.5)) * 2.0;
+
+                // Compute our dithered thresholds
+                float Hash = 0.0;
+
+                switch (_CCamera_ExposurePeakingDitherType)
+                {
+                    case 0:
+                        Hash = CMath_GetGoldenRatioNoise(Pos);
+                        break;
+                    case 1:
+                        Hash = CMath_GetInterleavedGradientNoise(Pos);
+                        break;
+                    case 2:
+                        Hash = CMath_GetHash_FLT1(Pos, 0.0);
+                        break;
+                    default:
+                        Hash = 0.0;
+                        break;
+                }
+
+                float3 Threshold = _CCamera_ExposurePeakingThreshold + Hash;
+                Color = lerp(Color, Checkerboard, Color > Threshold);
+            }
+        #endif
+    }
+
+#endif
