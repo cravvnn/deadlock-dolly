@@ -186,9 +186,11 @@ def reconstruct_normals(record, distances, *, step_relative: float = 0.05,
     ``world`` converts the result with :func:`world_normals`.
     """
     distances = _array(distances)
-    if step_relative < 0 or step_absolute < 0:
+    if (isinstance(step_relative, bool) or isinstance(step_absolute, bool)
+            or not isinstance(step_relative, (int, float)) or not isinstance(step_absolute, (int, float))
+            or not 0 <= step_relative < float("inf") or not 0 <= step_absolute < float("inf")):
         raise ValueError("step tolerances must not be negative")
-    if smoothing < 0:
+    if type(smoothing) is not int or smoothing < 0:
         raise ValueError("smoothing must not be negative")
     points, valid = view_points(record, distances)
     limit = step_absolute + step_relative * distances

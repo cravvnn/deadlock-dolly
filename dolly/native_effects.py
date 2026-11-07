@@ -76,15 +76,14 @@ def compile_attach(project):
     boundaries = sorted({0.0, *[float(key.time) for key in keys], float(project.duration)})
     blended = any(key.source_blend for key in keys)
     segments = []
+    next_key = 0
+    governing = None
     for begin, end in zip(boundaries, boundaries[1:]):
         if end <= begin:
             continue
-        governing = None
-        for key in keys:
-            if float(key.time) <= begin + 1e-9:
-                governing = key
-            else:
-                break
+        while next_key < len(keys) and float(keys[next_key].time) <= begin + 1e-9:
+            governing = keys[next_key]
+            next_key += 1
         if governing is not None and governing.source == "attach":
             attach = governing.attach
             segments.append((begin, end, 1 | (2 if attach.hide_body else 0) |

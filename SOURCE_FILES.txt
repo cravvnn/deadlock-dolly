@@ -1058,3 +1058,4 @@ third_party/reshade_shaders/notices/OtisFX-LICENSE.txt
 third_party/reshade_shaders/notices/SweetFX-LICENSE.txt
 third_party/reshade_shaders/notices/prod80-noise-LICENSE.txt
 docs/RELEASE_NOTES_0.7.15-beta.md
+tests/test_numeric_boundaries.py

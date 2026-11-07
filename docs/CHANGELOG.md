@@ -4,11 +4,11 @@
 
 - **Eleven more ReShade effects.** *Before:* the bundled library focused on color controls. *After:* choose CinematicDOF, AdaptiveFog, DepthHaze, Vignette, AspectRatioSuite, HexLensFlare, Oilify, Halftone, Comic, CRT_Lottes and ColorMask in the existing ReShade menu.
 
-- **More cinematic depth choices.** *Before:* the bundle had no CinematicDOF or dedicated distance-haze option. *After:* use independent manual focus or autofocus, fog and DepthHaze with Dolly's depth feed. CinematicDOF does not follow Dolly's native focus sliders or authored focus animation.
+- **Cinematic looks with your own presets.** *Before:* these depth, haze, selective-mask and stylized effects needed separate setup. *After:* the curated bundle includes required dependencies, source records and original notices. New effects start disabled and existing presets remain yours. CinematicDOF has independent focus controls; it does not follow Dolly's focus animation.
 
-- **Selective and stylized looks.** *Before:* these masks, framing and stylized shaders needed separate downloads. *After:* bracket existing effects with ColorMask, add cinematic framing, or choose painterly, print, comic and CRT treatments from the curated bundle.
+- **Stricter still and depth validation.** *Before:* malformed pixels, overflowed camera comparisons, invalid normals options or EXR offsets into metadata could be accepted. *After:* these unsupported values are rejected while valid still, camera and depth data retain their normal behavior.
 
-- **Ready for your own presets.** *Before:* the additional shader sources needed individual dependency and license checks. *After:* the selected files include their required dependencies, pinned source records and original notices. Effects start disabled and existing preset edits remain yours; no ReShade installer is used in Deadlock.
+- **Less repeated camera compilation work.** *Before:* attached shots repeatedly scanned earlier keys, and an inaccessible FFmpeg path could escape optional-tool lookup. *After:* compilation walks sorted keys once, and path inspection errors retain normal unavailable/fallback handling. This changes compile work, not game rendering speed.
 
 ### Deadlock Dolly v0.7.14-beta
 

@@ -242,7 +242,8 @@ def linearize(inverse_z, viewport_min: float, viewport_max: float,
 
 
 def _close(a: float, b: float, tolerance: float) -> bool:
-    return abs(a - b) <= tolerance * max(1.0, abs(a), abs(b))
+    return (math.isfinite(a) and math.isfinite(b)
+            and abs(a - b) <= tolerance * max(1.0, abs(a), abs(b)))
 
 
 def _check_projection(record: CameraRecord, what: str, issues: list[str], *,
