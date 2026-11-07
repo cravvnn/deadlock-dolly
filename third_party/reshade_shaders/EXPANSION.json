@@ -93,7 +93,7 @@
       "upstream_path": "Shaders/Oilify.fx",
       "upstream_sha256": "a99e3df130356024acf9a6e6226c15fb33dedd4362aeee921462fda7e703e83e",
       "changes": [],
-      "license": "MIT root and retained source notices"
+      "license": "CC0-1.0; retained source notices"
     },
     {
       "path": "Shaders/Halftone.fx",
@@ -103,7 +103,7 @@
       "upstream_path": "Shaders/Halftone.fx",
       "upstream_sha256": "46e3e926932173c88bd95cf442a0287966b77329a6f23a289fdc94cd62e82137",
       "changes": [],
-      "license": "MIT root and retained source notices"
+      "license": "CC0-1.0; retained source notices"
     },
     {
       "path": "Shaders/Comic.fx",
@@ -113,7 +113,7 @@
       "upstream_path": "Shaders/Comic.fx",
       "upstream_sha256": "f5ad5e60eb8753be6f35e2247bd5425871b993874bd89eca49fa00f1cab65b7d",
       "changes": [],
-      "license": "MIT root and retained source notices"
+      "license": "BSD-3-Clause; retained source notices"
     },
     {
       "path": "Shaders/ColorMask.fx",
@@ -123,7 +123,7 @@
       "upstream_path": "Shaders/ColorMask.fx",
       "upstream_sha256": "9bc87d6533fa69e279e13c48801bf3ec733e3b581ad1f5cdc561fc4f5252e163",
       "changes": [],
-      "license": "MIT root and retained source notices"
+      "license": "CC0-1.0; retained source notices"
     }
   ],
   "dependencies": [

@@ -40,7 +40,9 @@ source headers also retain their original copyright, terms and disclaimers.
 CinematicDOF uses its BSD-style source grant and KinoBokeh MIT contribution.
 Its custom-image bokeh block is disabled; dithering reuses the existing MIT
 prod80 noise. The six optional third-party bokeh images are not distributed.
-The other additions use MIT grants; CRT_Lottes retains its public-domain core.
+SweetFX and the remaining OtisFX/FXShaders additions use MIT grants. Comic
+uses BSD-3-Clause; Insane-Shaders and CorgiFX use CC0-1.0. CRT_Lottes
+retains its public-domain core.
 
 These effects are available in the existing F11 menu, disabled by default.
 Saved presets are not changed. One primary DOF is supplied; no alternate DOF

@@ -10,3 +10,17 @@
 *.dll binary
 # Preserve the supplied configuration bytes, including original whitespace.
 assets/editing/** -text -whitespace
+
+# Preserve exact qualified vendor shader bytes recorded in EXPANSION.json.
+third_party/reshade_shaders/Shaders/CinematicDOF.fx -text -whitespace
+third_party/reshade_shaders/Shaders/AdaptiveFog.fx -text -whitespace
+third_party/reshade_shaders/Shaders/DepthHaze.fx -text -whitespace
+third_party/reshade_shaders/Shaders/Vignette.fx -text -whitespace
+third_party/reshade_shaders/Shaders/AspectRatioSuite.fx -text -whitespace
+third_party/reshade_shaders/Shaders/HexLensFlare.fx -text -whitespace
+third_party/reshade_shaders/Shaders/CRT_Lottes.fx -text -whitespace
+third_party/reshade_shaders/Shaders/CRT_Lottes.fxh -text -whitespace
+third_party/reshade_shaders/Shaders/Oilify.fx -text -whitespace
+third_party/reshade_shaders/Shaders/Halftone.fx -text -whitespace
+third_party/reshade_shaders/Shaders/Comic.fx -text -whitespace
+third_party/reshade_shaders/Shaders/ColorMask.fx -text -whitespace
