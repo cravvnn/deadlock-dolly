@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "effects": 11,
+  "effects": 15,
   "files": [
     {
       "path": "Shaders/CinematicDOF.fx",
@@ -124,6 +124,136 @@
       "upstream_sha256": "9bc87d6533fa69e279e13c48801bf3ec733e3b581ad1f5cdc561fc4f5252e163",
       "changes": [],
       "license": "CC0-1.0; retained source notices"
+    },
+    {
+      "path": "Shaders/CanvasMask.fx",
+      "sha256": "85415abedf160663311c16942fb17f5f6f60d2bf4f535d2541ed43ef503dd6cf",
+      "upstream_repository": "https://github.com/originalnicodr/CorgiFX",
+      "upstream_commit": "c4cfbf9dd37f41bdd776688b6cc4c8157ce8e5c0",
+      "upstream_path": "Shaders/CanvasMask.fx",
+      "upstream_sha256": "85415abedf160663311c16942fb17f5f6f60d2bf4f535d2541ed43ef503dd6cf",
+      "changes": [],
+      "license": "CC0-1.0; retained Otis MIT contribution notices"
+    },
+    {
+      "path": "Shaders/ASCII.fx",
+      "sha256": "2a61173381663357ee2542f342b6650456c2cc77e80a762852de78d92ae719a2",
+      "upstream_repository": "https://github.com/CeeJayDK/SweetFX",
+      "upstream_commit": "93ddf39b357f5da534ed6d34ba4ec8cc7dcfa361",
+      "upstream_path": "Shaders/SweetFX/ASCII.fx",
+      "upstream_sha256": "2a61173381663357ee2542f342b6650456c2cc77e80a762852de78d92ae719a2",
+      "changes": [],
+      "license": "MIT"
+    },
+    {
+      "path": "Shaders/kMirror.fx",
+      "sha256": "07cb83f741e6cedf1cde3e3ad420f4889c07262c7416d24ac8ce6a33d8f34d01",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/kMirror.fx",
+      "upstream_sha256": "07cb83f741e6cedf1cde3e3ad420f4889c07262c7416d24ac8ce6a33d8f34d01",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cMath.fxh",
+      "sha256": "837f9cd4c360e14b698f79766fd98859371a37d549925ea2297d84c1d9754ec3",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cMath.fxh",
+      "upstream_sha256": "837f9cd4c360e14b698f79766fd98859371a37d549925ea2297d84c1d9754ec3",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cShade.fxh",
+      "sha256": "48b20a48d1553409f4c590e66e3d96634e95ea450bc20a5f342d016610cd9f2d",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cShade.fxh",
+      "upstream_sha256": "48b20a48d1553409f4c590e66e3d96634e95ea450bc20a5f342d016610cd9f2d",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cMacros.fxh",
+      "sha256": "503825e1e3e8823bccef5127183dd80a79e6ad04b93f4b07c7130bf441a8e92d",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cMacros.fxh",
+      "upstream_sha256": "503825e1e3e8823bccef5127183dd80a79e6ad04b93f4b07c7130bf441a8e92d",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cCamera.fxh",
+      "sha256": "2782e1aec46ec4ed0525785a27f047f997e7817e5d2da05641c93a2a8ad6eecb",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cCamera.fxh",
+      "upstream_sha256": "2782e1aec46ec4ed0525785a27f047f997e7817e5d2da05641c93a2a8ad6eecb",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cComposite.fxh",
+      "sha256": "a8dad99d2ce59c2f24222ea841888b659bb4776ccb952f6c1ce5870a1ec64091",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cComposite.fxh",
+      "upstream_sha256": "a8dad99d2ce59c2f24222ea841888b659bb4776ccb952f6c1ce5870a1ec64091",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cColor.fxh",
+      "sha256": "10d3ebd089d9c1a2e9ff363fb561cec6651c96ee44b618880cce9f7b85de8831",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cColor.fxh",
+      "upstream_sha256": "10d3ebd089d9c1a2e9ff363fb561cec6651c96ee44b618880cce9f7b85de8831",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cLens.fxh",
+      "sha256": "3c0c4b382916e0f768714171778ab6e1db0cec5b466437f7c73fb87b3a4f3d08",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cLens.fxh",
+      "upstream_sha256": "3c0c4b382916e0f768714171778ab6e1db0cec5b466437f7c73fb87b3a4f3d08",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/shared/cBlend.fxh",
+      "sha256": "554dd87328061f918be79f3640d96f2bced30345e43fbb9fe8d4deba1a51d648",
+      "upstream_repository": "https://github.com/papadanku/CShade",
+      "upstream_commit": "2b220380477c9b227acb9201e31c23f5c6669ba5",
+      "upstream_path": "shaders/shared/cBlend.fxh",
+      "upstream_sha256": "554dd87328061f918be79f3640d96f2bced30345e43fbb9fe8d4deba1a51d648",
+      "changes": [],
+      "license": "BSD-3-Clause root; embedded MIT and BSD contribution notices retained"
+    },
+    {
+      "path": "Shaders/Droste.fx",
+      "sha256": "246dbc7fdcf47b17e2292c0e9468b4109cc7087cff3d09cf4f54dd4c89956f30",
+      "upstream_repository": "https://github.com/LordKobra/CobraFX",
+      "upstream_commit": "bf9295a7bb8ad1bc375aefc83ea447536b322e9a",
+      "upstream_path": "Shaders/Droste.fx",
+      "upstream_sha256": "246dbc7fdcf47b17e2292c0e9468b4109cc7087cff3d09cf4f54dd4c89956f30",
+      "changes": [],
+      "license": "MIT root; embedded component notices retained"
+    },
+    {
+      "path": "Shaders/CobraUtility.fxh",
+      "sha256": "222d371497b194b0b15e0d6f6e8ad0714d243c1b892f9421ff7b9cadd6df3ccd",
+      "upstream_repository": "https://github.com/LordKobra/CobraFX",
+      "upstream_commit": "bf9295a7bb8ad1bc375aefc83ea447536b322e9a",
+      "upstream_path": "Shaders/CobraUtility.fxh",
+      "upstream_sha256": "222d371497b194b0b15e0d6f6e8ad0714d243c1b892f9421ff7b9cadd6df3ccd",
+      "changes": [],
+      "license": "MIT root; embedded component notices retained"
     }
   ],
   "dependencies": [
@@ -131,7 +261,7 @@
     "Shaders/ReShadeUI.fxh",
     "Textures/pd80_gaussnoise.png"
   ],
-  "notes": "Exact sources qualified with ReShade 6.8/API20 D3D11 through Dolly. Effects remain disabled until selected by the user. No ReShade runtime, optional custom bokeh images, SMAA, MagicBorder or other shader packs are part of this expansion.",
+  "notes": "Fifteen individually selected additions. Qualified with ReShade6.8/API20 D3D11 through Dolly, using bounded 720p SDR one-frame Color captures. All disabled until selected by user. No runtime, custom bokeh assets, SMAA, MagicBorder or whole shader packs redistributed. See README for limits.",
   "notices": [
     "notices/CinematicDOF-BSD-2-Clause.txt",
     "notices/CorgiFX-LICENSE.txt",
@@ -141,6 +271,19 @@
     "notices/KinoBokeh-README.md",
     "notices/OtisFX-LICENSE.txt",
     "notices/prod80-noise-LICENSE.txt",
-    "notices/SweetFX-LICENSE.txt"
-  ]
+    "notices/SweetFX-LICENSE.txt",
+    "notices/CShade-LICENSE.txt",
+    "notices/CobraFX-LICENSE.txt"
+  ],
+  "second_batch_validation": {
+    "effects": [
+      "CanvasMask",
+      "ASCII",
+      "KinoMirror",
+      "Droste"
+    ],
+    "offline_compiler": "ReShade6.8/API20 target, D3D11",
+    "live": "Four independently audited off/on/off Color sample runs at1280x720; normal startup/cleanup; same user-selected runtime.",
+    "limits": "Single local replay/context and representative settings only. No sustained FPS, long recording, 4K, all GPUs or every parameter/combination qualification. CanvasMask test uses geometric gradient, not its optional depth modes."
+  }
 }

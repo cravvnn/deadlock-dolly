@@ -1,0 +1,984 @@
+
+/*
+    This header file provides a comprehensive library of mathematical functions and utilities essential for shader programming. It includes functions for common vector and scalar operations (min, max, median, modulus), conversions between normalized and signed-normalized ranges, and handling floating-point precision. The file also offers advanced features such as geometric transformations (scaling, rotation, translation) with configurable order, screen-space utilities (pixel size, grid generation), and various noise functions (hash-based, Golden Ratio, Interleaved Gradient, Value, and Gradient noise) for procedural generation and dithering. Additionally, it contains functions for encoding/decoding velocity vectors and mapping UV coordinates to a concentric disk.
+*/
+
+/*
+    The MIT License (MIT)
+
+    https://github.com/microsoft/DirectX-Graphics-Samples/blob/master/MiniEngine/Core/Shaders/DoFMedianFilterCS.hlsl
+
+    Copyright (c) 2015 Microsoft
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+*/
+
+#if !defined(INCLUDE_CMATH)
+    #define INCLUDE_CMATH
+
+    /*
+        CMATH: DATA CONVERSION & PROCESSING
+    */
+
+    float4 CMath_PadFloat1(float Value)
+    {
+        float4 Vector = float4(0.0, 0.0, 0.0, 0.0);
+        Vector.x = Value;
+        return Vector;
+    }
+
+    float4 CMath_PadFloat2(float2 Value)
+    {
+        float4 Vector = float4(0.0, 0.0, 0.0, 0.0);
+        Vector.xy = Value;
+        return Vector;
+    }
+
+    float4 CMath_PadFloat3(float3 Value)
+    {
+        float4 Vector = float4(0.0, 0.0, 0.0, 0.0);
+        Vector.xyz = Value;
+        return Vector;
+    }
+
+    /*
+        Function to convert 2D row and column (0-indexed) to a 1D index.
+        GridPos.x: The 0-indexed row number.
+        GridPos.y: The 0-indexed column number.
+        GridWidth: The total width of the grid (number of columns).
+        Returns a 1D index.
+    */
+    int CMath_Get1DIndexFrom2D(int2 GridPos, int GridWidth)
+    {
+        return GridPos.x + (GridPos.y * GridWidth);
+    }
+
+    // Get the Half format distribution of bits
+    // Sign    Exponent    Significand
+    // x       xxxxx       xxxxxxxxxx
+    float CMath_Calculate_FP16(int Sign, int Exponent, int Significand)
+    {
+        const int Bias = -15;
+        const int MaxExponent = (Exponent - (int)exp2(1)) + Bias;
+        const float MaxSignificand = 1.0f + ((float)(Significand - 1) / (float)Significand);
+
+        return (float)pow(-1, Sign) * (float)exp2(MaxExponent) * MaxSignificand;
+    }
+
+    float CMath_GetFP16Min()
+    {
+        /*
+            Sign    Exponent    Significand
+            ----    --------    -----------
+            0       00001       000000000
+        */
+        return CMath_Calculate_FP16(0, (int)exp2(0) + 1, (int)exp2(0));
+    }
+
+    float CMath_GetFP16Max()
+    {
+        /*
+            Sign    Exponent    Significand
+            ----    --------    -----------
+            0       11110       1111111111
+        */
+        return CMath_Calculate_FP16(0, (int)exp2(5), (int)exp2(10));
+    }
+
+    // Get the Single Precision (FP32) format distribution of bits
+    // Sign    Exponent    Significand
+    // x       xxxxxxxx    xxxxxxxxxxxxxxxxxxxxxxx
+    float CMath_Calculate_FP32(int Sign, int Exponent, int Significand)
+    {
+        const int Bias = -127;
+        const int MaxExponent = (Exponent - (int)exp2(7)) + Bias;
+        const float MaxSignificand = 1.0f + ((float)(Significand - 1) / (float)Significand);
+
+        return (float)pow(-1, Sign) * (float)exp2(MaxExponent) * MaxSignificand;
+    }
+
+    float CMath_GetFP32Min()
+    {
+        /*
+            Sign    Exponent    Significand
+            ----    --------    -----------
+            0       00000001    00000000000000000000000 (Normalized min)
+        */
+        return CMath_Calculate_FP32(0, (int)exp2(0), (int)exp2(0));
+    }
+
+    float CMath_GetFP32Max()
+    {
+        /*
+            Sign    Exponent    Significand
+            ----    --------    -----------
+            0       11111110    11111111111111111111111
+        */
+        return CMath_Calculate_FP32(0, (int)exp2(8) - 2, (int)exp2(23));
+    }
+
+    float CMath_GetNAN()
+    {
+        return 0.0 / 0.0;
+    }
+
+    #define TEMPLATE_CMATH_DATA_CONV(DATA_TYPE, LENGTH) \
+        DATA_TYPE CMath_UNORMtoSNORM_FLT##LENGTH(DATA_TYPE X) \
+        { \
+            return (X * (DATA_TYPE)2.0) - (DATA_TYPE)1.0; \
+        } \
+        \
+        DATA_TYPE CMath_SNORMtoUNORM_FLT##LENGTH(DATA_TYPE X) \
+        { \
+            return (X * (DATA_TYPE)0.5) + (DATA_TYPE)0.5; \
+        } \
+        \
+        DATA_TYPE CMath_FP16toSNORM_FLT##LENGTH(DATA_TYPE X) \
+        { \
+            return X / (DATA_TYPE)CMath_GetFP16Max(); \
+        } \
+        \
+        DATA_TYPE CMath_SNORMtoFP16_FLT##LENGTH(DATA_TYPE X) \
+        { \
+            return X * (DATA_TYPE)CMath_GetFP16Max(); \
+        }
+
+    // Instantiate template over vector dimensions
+    TEMPLATE_CMATH_DATA_CONV(float, 1)
+    TEMPLATE_CMATH_DATA_CONV(float2, 2)
+    TEMPLATE_CMATH_DATA_CONV(float3, 3)
+    TEMPLATE_CMATH_DATA_CONV(float4, 4)
+
+    /*
+        CMATH: CONSTANTS
+    */
+
+    int CMath_GetFactorial(int N)
+    {
+        int O = N;
+        for (int i = 1 ; i < N; i++)
+        {
+            O *= i;
+        }
+        return O;
+    }
+
+    float CMath_GetPi()
+    {
+        return acos(-1.0);
+    }
+
+    float CMath_GetGoldenRatio()
+    {
+        return (3.0 - sqrt(5.0)) * CMath_GetPi();
+    }
+
+    float CMath_GetPhi(int D)
+    {
+        float X = 2.0;
+
+        [unroll]
+        for (int i = 0; i < 10; i++)
+        {
+            X = pow(1.0 + X, 1.0 / (D + 1.0));
+        }
+
+        return X;
+    }
+
+    /*
+        CMATH: MATH FUNCTIONS
+    */
+
+    #define CMATH_MAX_MIN_MED(DATA_TYPE, LENGTH) \
+        \
+        DATA_TYPE CMath_Max3_FLT##LENGTH(DATA_TYPE A, DATA_TYPE B, DATA_TYPE C) \
+        { \
+            return max(max(A, B), C); \
+        } \
+        \
+        DATA_TYPE CMath_Min3_FLT##LENGTH(DATA_TYPE A, DATA_TYPE B, DATA_TYPE C) \
+        { \
+            return min(min(A, B), C); \
+        } \
+        \
+        DATA_TYPE CMath_Med3_FLT##LENGTH(DATA_TYPE x, DATA_TYPE y, DATA_TYPE z) \
+        { \
+            return max(min(x, y), min(max(x, y), z)); \
+        }
+
+    CMATH_MAX_MIN_MED(float, 1)
+    CMATH_MAX_MIN_MED(float2, 2)
+    CMATH_MAX_MIN_MED(float3, 3)
+    CMATH_MAX_MIN_MED(float4, 4)
+
+    float CMath_Med3_FLT1(float x, float y, float z)
+    {
+        return max(min(x, y), min(max(x, y), z));
+    }
+
+    float4 CMath_Med9_FLT4(
+        float4 X0, float4 X1, float4 X2,
+        float4 X3, float4 X4, float4 X5,
+        float4 X6, float4 X7, float4 X8)
+    {
+        float4 A = CMath_Max3_FLT4(CMath_Min3_FLT4(X0, X1, X2), CMath_Min3_FLT4(X3, X4, X5), CMath_Min3_FLT4(X6, X7, X8));
+        float4 B = CMath_Min3_FLT4(CMath_Max3_FLT4(X0, X1, X2), CMath_Max3_FLT4(X3, X4, X5), CMath_Max3_FLT4(X6, X7, X8));
+        float4 C = CMath_Med3_FLT4(CMath_Med3_FLT4(X0, X1, X2), CMath_Med3_FLT4(X3, X4, X5), CMath_Med3_FLT4(X6, X7, X8));
+        return CMath_Med3_FLT4(A, B, C);
+    }
+
+    float CMath_GetModulus_FLT1(float X, float Y)
+    {
+        return X - Y * floor(X / Y);
+    }
+
+    /*
+        CMATH: GEOMETRIC & TRIGONOMETRIC FUNCTIONS
+    */
+
+    /*
+        Compute the Coherance.
+
+        Simplication of the factor inside the square root (S):
+
+            1. Tr(M)^2 - 4det(M)
+            2. (a + c)^2 - 4(ac - b^2)
+            3. a^2 + 2ac + c^2 - 4ac + 4b^2
+            4. a^2 - 2ac + c^2 + 4b^2
+            5. (a - c)^2 + 4b^2
+
+            1. E = (Tr(M) +- sqrt((a - c)^2 + 4b^2)) / 2
+            2. E = (Tr(M) / 2) +- sqrt(((a - c)^2 / 4) + (4b^2 / 4))
+            3. E = (Tr(M) / 2) +- sqrt(((a - c) / 2)^2 + b^2)
+
+            E1 = (Tr(M) / 2) + sqrt(((a - c) / 2)^2 + b^2)
+            E2 = (Tr(M) / 2) - sqrt(((a - c) / 2)^2 + b^2)
+
+        Now we need to compute C: (E1 - E2) / (E1 + E2)
+
+            E1 - E2:
+
+                1. ((Tr(M) / 2) + sqrt(((a - c) / 2)^2 + b^2)) - ((Tr(M) / 2) - sqrt(((a - c) / 2)^2 + b^2))
+                2. (Tr(M) / 2) + sqrt(((a - c) / 2)^2 + b^2) - (Tr(M) / 2) + sqrt(((a - c) / 2)^2 + b^2)
+                3. sqrt(((a - c) / 2)^2 + b^2) + sqrt(((a - c) / 2)^2 + b^2)
+                4. 2 * sqrt(((a - c) / 2)^2 + b^2)
+
+            E1 + E2:
+
+                1. (Tr(M) / 2) + sqrt(((a - c) / 2)^2 + b^2) + ((Tr(M) / 2) - sqrt(((a - c) / 2)^2 + b^2))
+                2. (Tr(M) / 2) + (Tr(M) / 2)
+                3. 2 * (Tr(M) / 2)
+                4. Tr(M)
+
+            Therefore: (2 * sqrt(((a - c) / 2)^2 + b^2)) / Tr(M)
+    */
+
+    float CMath_GetCovarianceCoherence(float2x2 CoV)
+    {
+        float Tr = CoV._11 + CoV._22;    // Element (a + c)
+        float Df = CoV._11 - CoV._22;    // Element (a - c)
+        float N = (Df * Df) + (4.0 * (CoV._21 * CoV._12));
+
+        // Normalized Coherence: 0 (flat), (highly directional edge)
+        float Coherence = (abs(Tr) > 0.0) ? sqrt(N) / Tr : 0.0;
+        return Coherence;
+    }
+
+    float CMath_GetCovarianceCoherence_Sq(float2x2 CoV)
+    {
+        float Tr = CoV._11 + CoV._22;   // Element (a + c)
+        float Df = CoV._11 - CoV._22;   // Element (a - c) / 2
+        float N = ((Df * Df) * 0.5) + (CoV._21 * CoV._12);
+        float D = Tr * Tr;
+
+        // Normalized Squared Coherence: 0 (flat), (highly directional edge)
+        float Coherence_Sq = (D > 0.0) ? (4.0 * N) / D : 0.0;
+        return Coherence_Sq;
+    }
+
+    float CMath_GetCovarianceCoherence_Inverse(float2x2 CoV)
+    {
+        float Tr = CoV._11 + CoV._22;   // Element (a + c)
+        float Df = CoV._11 - CoV._22;   // Element (a - c)
+        float N = Tr - sqrt((Df * Df) + (4.0 * (CoV._12 * CoV._12)));
+
+        // Normalized Isotropy: 0 (highly directional edge), 1 (flat)
+        float InverseCoherence = (abs(Tr) > 0.0) ? N / Tr : 1.0;
+        return InverseCoherence;
+    }
+
+    float CMath_GetCovarianceCoherence_InverseSq(float2x2 CoV)
+    {
+        float Tr = CoV._11 + CoV._22;                           // Tr(J) = a + c
+        float Det = (CoV._11 * CoV._22) - (CoV._21 * CoV._12);  // Determinant(J) = ac - b^2
+        float D = Tr * Tr;
+
+        // Normalized Isotropy: 0 (highly directional edge), 1 (flat)
+        float InverseCoherence_Sq = (D > 0.0) ? (4.0 * Det) / D : 1.0;
+        return InverseCoherence_Sq;
+    }
+
+    /*
+        Auricchio, G., Giudici, P., & Toscani, G. (2026). How to Measure Multidimensional Variation? Journal of Classification, 43(2), 503–526. https://doi.org/10.1007/s00357-026-09551-8
+
+        Compute the SideWindow's Sample Coefficient of Variance (CoV).
+
+        We use Albert-Zhang's Multivariate Coefficient of Variation because of the computational simplicity.
+
+        ---
+
+        SigmaVec mapping:
+
+        .x = xx (Variance X)
+        .y = yy (Variance Y)
+        .z = xy (Covariance XY)
+    */
+
+    float CMath_GetCoefficientVariation_AZ(float2 Mean, float2x2 CovarianceMat)
+    {
+        // Compute standard quadratic forms: (Mean^T * Covariance) * Mean
+        float Numerator = dot(Mean, mul(CovarianceMat, Mean));
+        float Denominator = dot(Mean, Mean);
+
+        /*
+            CoV = sqrt(N) / D
+        */
+
+        float CoV_InverseSq = (Denominator > 0.0) ? sqrt(Numerator) / Denominator : 1.0;
+
+        return CoV_InverseSq;
+    }
+
+    float CMath_GetCoefficientVariation_AZ_Sq(float2 Mean, float2x2 CovarianceMat)
+    {
+        // Compute standard quadratic forms: (Mean^T * Covariance) * Mean
+        float Numerator = dot(Mean, mul(CovarianceMat, Mean));
+        float Denominator = dot(Mean, Mean);
+
+        /*
+            CoV     = sqrt(N) / D
+            CoV^2   = N / D^2
+        */
+
+        float CoV_InverseSq = (Denominator > 0.0) ? Numerator / (Denominator * Denominator) : 1.0;
+
+        return CoV_InverseSq;
+    }
+
+    float CMath_GetCoefficientVariation_AZ_Inverse(float2 Mean, float2x2 CovarianceMat)
+    {
+        // Compute standard quadratic forms: (Mean^T * Covariance) * Mean
+        float Numerator = dot(Mean, mul(CovarianceMat, Mean));
+        float Denominator = dot(Mean, Mean);
+
+        /*
+            CoV     = sqrt(N) / D
+            1/CoV   = 1 / (sqrt(N) / D)
+                    = D / sqrt(N)
+                    = D * rsqrt(N)
+        */
+
+        float CoV_InverseSq = (Numerator > 0.0) ? Denominator * rsqrt(Numerator) : 1.0;
+
+        return CoV_InverseSq;
+    }
+
+    float CMath_GetCoefficientVariation_AZ_InverseSq(float2 Mean, float2x2 CovarianceMat)
+    {
+        // Compute standard quadratic forms: (Mean^T * Covariance) * Mean
+        float Numerator = dot(Mean, mul(CovarianceMat, Mean));
+        float Denominator = dot(Mean, Mean);
+
+        /*
+            CoV     = sqrt(N) / D
+            CoV^2   = N / D^2
+            1/CoV^2 = 1 / (N / D^2)
+                    = D^2 / N
+        */
+
+        float CoV_InverseSq = (Numerator > 0.0) ? (Denominator * Denominator) / Numerator : 1.0;
+
+        return CoV_InverseSq;
+    }
+
+    float CMath_GetCoefficientVariation_VV(float2 Mean, float2 Trace)
+    {
+        float N = Trace.x + Trace.y;
+        float D = dot(Mean, Mean);
+        float VV = (abs(N) > 0.0) ? rsqrt(D / N) : 0.0;
+
+        return VV;
+    }
+
+    /*
+        VECTOR SIMILARITY METRIC (Magnitude-Weighted Cosine Similarity)
+        ---------------------------------------------------------------
+
+        Calculates a combined similarity score based on both the angular alignment
+        and the relative scale of two vectors.
+
+        Original Formulation:
+
+            Sc (Cosine Similarity):     dot(u, v) / (||u|| * ||v||)
+            Sm (Magnitude Similarity):  (2 * ||u|| * ||v||) / (||u||^2 + ||v||^2)
+
+            Similarity_Raw = Sc * Sm = (2 * dot(u, v)) / (||u||^2 + ||v||^2)
+            Raw Range: [-1.0, 1.0]
+
+        OPTIMIZED UNORM FORMULATION [0.0, 1.0]
+        --------------------------------------
+        To map the metric to an unsigned normalized range (UNORM) for interpolation
+        weights and masking, we shift and scale the raw result:
+
+            Similarity_UNORM:   (Similarity_Raw * 0.5) + 0.5
+                                (((2 * dot(u, v)) / (||u||^2 + ||v||^2)) * 0.5) + 0.5
+
+        The scalar 2.0 and 0.5 cancel out perfectly, eliminating a multiplication step:
+
+            Similarity_UNORM: (dot(u, v) / (||u||^2 + ||v||^2)) + 0.5
+
+        Mapping to Variables:
+
+            * DotV1V2: dot(u, v)
+            * D: dot(u, u) + dot(v, v) = ||u||^2 + ||v||^2
+
+        Final Equation:
+
+            Similarity: (DotV1V2 / D) + 0.5
+
+        Zero-Vector & Boundary Handling:
+
+            * If both vectors are zero, D == 0.0. The function safely bypasses
+            the division and returns 1.0 (perfect match).
+            * `saturate()` clamps the final output to a hard [0.0, 1.0] boundary,
+            protecting against precision or floating-point under/overflow.
+
+        Behavior & Bounds:
+
+            * Identical vectors (u == v):           1.0 (Maximum similarity)
+            * Orthogonal vectors (u perp v):        0.5
+            * Perfectly opposing vectors (u == -v): 0.0 (Minimum similarity)
+            * Output Range:                         [0.0, 1.0]
+    */
+
+    float CMath_GetSimilarityDice_Fast(bool OutputSigned, float DotAB, float DotAA, float DotBB)
+    {
+        float D = DotAA + DotBB;
+        float S;
+
+        if (OutputSigned)
+        {
+            S = (2.0 * DotAB) / D;
+        }
+        else
+        {
+            S = saturate((DotAB / D) + 0.5);
+        }
+
+        S = (D == 0.0) ? 1.0 : S;
+
+        return S;
+    }
+
+    float CMath_GetSimilarityJaccard_Fast(bool OutputSigned, float DotAB, float DotAA, float DotBB)
+    {
+        float D = (DotAA + DotBB) - DotAB;
+        float S = DotAB / D;
+
+        if (!OutputSigned)
+        {
+            S = saturate(CMath_SNORMtoUNORM_FLT1(S));
+        }
+
+        S = (D == 0.0) ? 1.0 : S;
+
+        return S;
+    }
+
+    #define TEMPLATE_CMATH_GET_VECTOR_SIMILARITY(DATA_TYPE, LENGTH) \
+        float CMath_GetSimilarityDice_FLT##LENGTH( \
+            bool OutputSigned, \
+            DATA_TYPE Vector1, \
+            DATA_TYPE Vector2 \
+        ) \
+        { \
+            float DotAB = dot(Vector1, Vector2); \
+            float DotAA = dot(Vector1, Vector1); \
+            float DotBB = dot(Vector2, Vector2); \
+            float D = DotAA + DotBB; \
+            float S; \
+            \
+            if (OutputSigned) \
+            { \
+                S = (2.0 * DotAB) / D; \
+            } \
+            else \
+            { \
+                S = saturate((DotAB / D) + 0.5); \
+            } \
+            \
+            S = (D == 0.0) ? 1.0 : S; \
+            \
+            return S; \
+        } \
+        \
+        float CMath_GetSimilarityJaccard_FLT##LENGTH( \
+            bool OutputSigned, \
+            DATA_TYPE Vector1, \
+            DATA_TYPE Vector2 \
+        ) \
+        { \
+            float DotAB = dot(Vector1, Vector2); \
+            float DotAA = dot(Vector1, Vector1); \
+            float DotBB = dot(Vector2, Vector2); \
+            float D = (DotAA + DotBB) - DotAB; \
+            float S = DotAB / D; \
+            \
+            if (!OutputSigned) \
+            { \
+                S = saturate(CMath_SNORMtoUNORM_FLT1(S)); \
+            } \
+            \
+            S = (D == 0.0) ? 1.0 : S; \
+            \
+            return S; \
+        }
+
+    float CMath_GetVectorSimilarity_FLT2(
+        float2 Vector1, // V1
+        float2 Vector2  // V2
+    )
+    {
+        float DotV1V2 = dot(Vector1, Vector2);
+        float DotV1V1 = dot(Vector1, Vector1);
+        float DotV2V2 = dot(Vector2, Vector2);
+
+        float M = DotV1V1 * DotV2V2;
+        float N = DotV1V2 + sqrt(M);
+        float D = DotV1V1 + DotV2V2;
+        float Similarity = (M > 0.0) ? N / D : 1.0;
+
+        return Similarity;
+    }
+
+    float CMath_GetSimilarityJaccard_Scalar(float Scalar1, float Scalar2)
+    {
+        float MinValue = min(Scalar1, Scalar2);
+        float MaxValue = max(Scalar1, Scalar2);
+        float Jaccard = (MaxValue > 0.0) ? MinValue / MaxValue : 1.0;
+        return Jaccard;
+    }
+
+    TEMPLATE_CMATH_GET_VECTOR_SIMILARITY(float2, 2)
+    TEMPLATE_CMATH_GET_VECTOR_SIMILARITY(float3, 3)
+    TEMPLATE_CMATH_GET_VECTOR_SIMILARITY(float4, 4)
+
+    float2x2 CMath_GetRotationMatrix(float A)
+    {
+        return float2x2(cos(A), sin(A), -sin(A), cos(A));
+    }
+
+    float CMath_GetGaussian1D(float X, float S)
+    {
+        float G = rsqrt(2.0 * CMath_GetPi() * S * S);
+        return G * exp(-(X * X) / (2.0 * S * S));
+    }
+
+    float CMath_GetGaussian2D(float2 X, float S)
+    {
+        float G = 1.0 / (2.0 * CMath_GetPi() * S * S);
+        return G * exp(-dot(X, X) / (2.0 * S * S));
+    }
+
+    float CMath_GetLorentzian1D(float X, float A, float FWHM)
+    {
+        float HWHM = FWHM / 2.0;
+        float HWHM_Sq = HWHM * HWHM;
+        float X_Sq = X * X;
+        return (A * HWHM_Sq) / (HWHM_Sq + X_Sq);
+    }
+
+    float CMath_GetLorentzian1D_Fast(float X_Sq, float A, float FWHM_Sq)
+    {
+        // (FWHM / 2)^2 = FWHM^2 / 4
+        float HWHM_Sq = FWHM_Sq / 4.0;
+        return (A * HWHM_Sq) / (HWHM_Sq + X_Sq);
+    }
+
+    float2 CMath_CartesianToPolar(float2 Cartesian)
+    {
+        // r = magnitude of the vector
+        float R = length(Cartesian);
+
+        // Theta = angle in radians (-PI to PI)
+        float Theta = atan2(Cartesian.y, Cartesian.x);
+
+        return float2(R, Theta);
+    }
+
+    float3 CMath_CartesianToSpherical(float3 Cartesian)
+    {
+        // Precalculate (x*x + y*y)^0.5 and (x*x + y*y + z*z)^0.5
+        float L1 = rsqrt(dot(Cartesian.xyz, Cartesian.xyz));
+        float L2 = rsqrt(dot(Cartesian.xy, Cartesian.xy));
+
+        // .x = radius; .y = inclination; .z = azimuth
+        float3 RIA = 0.0;
+        RIA.x = L1;
+        RIA.y = Cartesian.z * L1;
+        RIA.z = Cartesian.x * L2;
+
+        // Calculate inclination and azimuth
+        RIA.yz = acos(RIA.yz);
+
+        return RIA;
+    }
+
+    void CMath_ApplyGeometricTransform(
+        inout float2 Tex, // [0, 1)
+        in int Order,
+        in float Angle,
+        in float2 Translate,
+        in float2 Scale,
+        bool ProcessTex
+    )
+    {
+        /*
+            The array containing the permutations of the geometric transforms.
+            0 = Scale, 1 = Rotate, 2 = Translate
+            The index of this array is driven by the _GeometricTransformOrder uniform.
+            To get the correct permutation, you would access this array like:
+            int3 Order = TransformPermutations[_GeometricTransformOrder];
+        */
+        const int3 TransformPermutations[6] =
+        {
+            int3(0, 1, 2),  // Scale > Rotate > Translate
+            int3(0, 2, 1),  // Scale > Translate > Rotate
+            int3(1, 0, 2),  // Rotate > Scale > Translate
+            int3(1, 2, 0),  // Rotate > Translate > Scale
+            int3(2, 0, 1),  // Translate > Scale > Rotate
+            int3(2, 1, 0)   // Translate > Rotate > Scale
+        };
+
+        float Pi2 = CMath_GetPi() * 2.0;
+        int3 Transforms = TransformPermutations[Order];
+
+        // Rotations matrix
+        float2x2 RotationMatrix = CMath_GetRotationMatrix(Angle * Pi2);
+
+        // Translation matrix
+        float3x3 TranslationMatrix = float3x3
+        (
+            1.0, 0.0, 0.0, // Row 1
+            0.0, 1.0, 0.0, // Row 2
+            Translate.x, Translate.y, 1.0 // Row 3
+        );
+
+        // Scaling matrix
+        float2x2 ScalingMatrix = float2x2
+        (
+            Scale.x, 0.0, // Row 1
+            0.0, Scale.y // Row 2
+        );
+
+        // Scale TexCoord from [0,1) to [-1,1)
+        if (ProcessTex)
+        {
+            Tex = CMath_UNORMtoSNORM_FLT2(Tex);
+        }
+
+        // Do transformations here
+        [unroll]
+        for (int i = 0; i < 3; i++)
+        {
+            Tex = (Transforms[i] == 0) ? mul(Tex, RotationMatrix) : Tex;
+            Tex = (Transforms[i] == 1) ? mul(float3(Tex, 1.0), TranslationMatrix).xy : Tex;
+            Tex = (Transforms[i] == 2) ? mul(Tex, ScalingMatrix) : Tex;
+        }
+
+        // Scale TexCoord from [-1,1) to [0,1)
+        if (ProcessTex)
+        {
+            Tex = CMath_SNORMtoUNORM_FLT2(Tex);
+        }
+    }
+
+    float2 CMath_MapUVtoConcentricDisk(
+        float2 UV // UV [-1, 1)
+    )
+    {
+        float Pi = CMath_GetPi();
+
+        // Handle the special case for the origin
+        if (UV.x == 0.0 && UV.y == 0.0)
+        {
+            return float2(0.0, 0.0);
+        }
+
+        // Check if the coordinates are in the first or second half of the square
+        float R;
+        float Theta;
+        if ((UV.x * UV.x) > (UV.y * UV.y))
+        {
+            R = UV.x;
+            Theta = (Pi / 4.0) * (UV.y / UV.x);
+        }
+        else
+        {
+            R = UV.y;
+            Theta = (Pi / 2.0) - (Pi / 4.0) * (UV.x / UV.y);
+        }
+
+        // Convert from polar to Cartesian coordinates
+        return R * float2(cos(Theta), sin(Theta));
+    }
+
+    /*
+        Functions from Graphics Gems from CryEngine 3
+        https://www.advances.realtimerendering.com/s2013/Sousa_Graphics_Gems_CryENGINE3.pptx
+    */
+
+    float2 CMath_EncodeVelocity(float2 Velocity)
+    {
+        return CMath_SNORMtoUNORM_FLT2(sign(Velocity) * sqrt(abs(Velocity)));
+    }
+
+    float2 CMath_DecodeVelocity(float2 Velocity)
+    {
+        Velocity = CMath_UNORMtoSNORM_FLT2(Velocity);
+        return (Velocity * Velocity) * sign(Velocity);
+    }
+
+    /*
+        CMATH: TEXTURE COORDINATE PROCESSING
+    */
+
+    bool CMath_GetOutOfBounds(float2 Tex)
+    {
+        return any(Tex < 0.0 || Tex > 1.0);
+    }
+
+    int2 CMath_GetScreenSizeFromTex(float2 Tex)
+    {
+        return max(round(1.0 / fwidth(Tex)), 1.0);
+    }
+
+    float2 CMath_GetPixelSizeFromTex(float2 Tex)
+    {
+        return 1.0 / CMath_GetScreenSizeFromTex(Tex);
+    }
+
+    struct CMath_TexGrid
+    {
+        float2 Tex;
+        float2 Frac;
+        float2 RowAndColumn;
+        float Index;
+    };
+
+    CMath_TexGrid CMath_GetTexGrid(float2 Tex, int GridSize)
+    {
+        CMath_TexGrid Output;
+        Output.Tex = Tex * GridSize;
+        Output.Frac = frac(Output.Tex);
+        Output.RowAndColumn = floor(Output.Tex);
+        Output.Index = (Output.RowAndColumn.y * GridSize) + Output.RowAndColumn.x;
+        return Output;
+    }
+
+    float CMath_GetAntiAliasShape(float Distance, float Radius)
+    {
+        float AA = fwidth(Distance);
+        return smoothstep(Radius - AA, Radius, Distance);
+    }
+
+    /*
+        CMATH: PSEUDORANDOM & PROCEDURAL FUNCTIONS
+    */
+
+    /*
+        https://www.shadertoy.com/view/4djSRW
+
+        Copyright (c) 2014 David Hoskins
+
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+        THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+
+    */
+
+    float CMath_GetHash_FLT1(float2 P, float Bias)
+    {
+        float3 P3 = frac(P.xyx * 0.1031);
+        P3 += dot(P3, P3.yzx + 33.33);
+        return frac(((P3.x + P3.y) * P3.z) + Bias);
+    }
+
+    float2 CMath_GetHash_FLT2(float2 P, float2 Bias)
+    {
+        float3 P3 = frac(P.xyx * float3(0.1031, 0.1030, 0.0973));
+        P3 += dot(P3, P3.yzx + 33.33);
+        return frac(((P3.xx + P3.yz) * P3.zy) + Bias);
+    }
+
+    float3 CMath_GetHash_FLT3(float2 P, float3 Bias)
+    {
+        float3 P3 = frac(P.xyx * float3(0.1031, 0.1030, 0.0973));
+        P3 += dot(P3, P3.yxz + 33.33);
+        return frac(((P3.xxy + P3.yzz) * P3.zyx) + Bias);
+    }
+
+    /*
+        Interleaved Gradient Noise Dithering
+
+        http://www.iryoku.com/downloads/Next-Generation-Post-Processing-in-Call-of-Duty-Advanced-Warfare-v18.pptx
+    */
+
+    float CMath_GetInterleavedGradientNoise(float2 Position)
+    {
+        return frac(52.9829189 * frac(dot(Position, float2(0.06711056, 0.00583715))));
+    }
+
+    /*
+        http://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences/
+        https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions
+    */
+
+    float CMath_GetGoldenRatioNoise(float2 Position)
+    {
+        float P2 = CMath_GetPhi(2);
+        return frac(dot(Position, 1.0 / float2(P2, P2 * P2)));
+    }
+
+    /*
+        CMath_GetGradientNoise_FLT1(): https://iquilezles.org/articles/gradientnoise/
+        CMath_GetQuintic(): https://iquilezles.org/articles/texture/
+
+        The MIT License (MIT)
+
+        Copyright (c) 2017 Inigo Quilez
+
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this
+        software and associated documentation files (the "Software"), to deal in the Software
+        without restriction, including without limitation the rights to use, copy, modify,
+        merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+        permit persons to whom the Software is furnished to do so, subject to the following
+        conditions:
+
+        The above copyright notice and this permission notice shall be included in all copies
+        or substantial portions of the Software.
+
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+        INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+        PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+        HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+        CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+        OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    */
+
+    float2 CMath_GetQuintic(float2 X)
+    {
+        return X * X * X * (X * (X * 6.0 - 15.0) + 10.0);
+    }
+
+    float CMath_GetValueNoise(float2 Tex, float Bias, bool UseQuintic)
+    {
+        float2 I = floor(Tex);
+        float2 F = frac(Tex);
+        float A = CMath_GetHash_FLT1(I + float2(0.0, 0.0), Bias);
+        float B = CMath_GetHash_FLT1(I + float2(1.0, 0.0), Bias);
+        float C = CMath_GetHash_FLT1(I + float2(0.0, 1.0), Bias);
+        float D = CMath_GetHash_FLT1(I + float2(1.0, 1.0), Bias);
+        float2 UV = UseQuintic ? CMath_GetQuintic(F) : F;
+        return lerp(lerp(A, B, UV.x), lerp(C, D, UV.x), UV.y);
+    }
+
+    float CMath_GetGradient_FLT1(float2 I, float2 F, float2 O, float Bias)
+    {
+        // Get constants
+        const float TwoPi = CMath_GetPi() * 2.0;
+
+        // Calculate random hash rotation
+        float Hash = CMath_GetHash_FLT1(I + O, Bias) * TwoPi;
+        float2 HashSinCos = float2(sin(Hash), cos(Hash));
+
+        // Calculate final dot-product
+        return dot(HashSinCos, F - O);
+    }
+
+    float2 CMath_GetGradient_FLT2(float2 I, float2 F, float2 O, float Bias)
+    {
+        // Get constants
+        const float TwoPi = CMath_GetPi() * 2.0;
+
+        // Calculate random hash rotation
+        float2 Hash = CMath_GetHash_FLT2(I + O, Bias) * TwoPi;
+        float2 HashSinCos1 = float2(sin(Hash.x), cos(Hash.x));
+        float2 HashSinCos2 = float2(sin(Hash.y), cos(Hash.y));
+        float2 Gradient = F - O;
+
+        // Calculate final dot-product
+        return float2(dot(HashSinCos1, Gradient), dot(HashSinCos2, Gradient));
+    }
+
+    float3 CMath_GetGradient_FLT3(float2 I, float2 F, float2 O, float Bias)
+    {
+        // Get constants
+        const float TwoPi = CMath_GetPi() * 2.0;
+
+        // Calculate random hash rotation
+        float3 Hash = CMath_GetHash_FLT3(I + O, Bias) * TwoPi;
+        float2 HashSinCos1 = float2(sin(Hash.x), cos(Hash.x));
+        float2 HashSinCos2 = float2(sin(Hash.y), cos(Hash.y));
+        float2 HashSinCos3 = float2(sin(Hash.z), cos(Hash.z));
+        float2 Gradient = F - O;
+
+        // Calculate final dot-product
+        return float3(dot(HashSinCos1, Gradient), dot(HashSinCos2, Gradient), dot(HashSinCos3, Gradient));
+    }
+
+    #define TEMPLATE_CMATH_GET_GRADIENT_NOISE(DATA_TYPE, LENGTH) \
+        DATA_TYPE CMath_GetGradientNoise_FLT##LENGTH(float2 Tex, float Bias, bool OutputSigned) \
+        { \
+            float2 I = floor(Tex); \
+            float2 F = frac(Tex); \
+            DATA_TYPE A = CMath_GetGradient_FLT##LENGTH(I, F, float2(0.0, 0.0), Bias); \
+            DATA_TYPE B = CMath_GetGradient_FLT##LENGTH(I, F, float2(1.0, 0.0), Bias); \
+            DATA_TYPE C = CMath_GetGradient_FLT##LENGTH(I, F, float2(0.0, 1.0), Bias); \
+            DATA_TYPE D = CMath_GetGradient_FLT##LENGTH(I, F, float2(1.0, 1.0), Bias); \
+            float2 UV = CMath_GetQuintic(F); \
+            DATA_TYPE Noise = lerp(lerp(A, B, UV.x), lerp(C, D, UV.x), UV.y); \
+            Noise = OutputSigned ? Noise : saturate(CMath_SNORMtoUNORM_FLT##LENGTH(Noise)); \
+            return Noise; \
+        } \
+
+    TEMPLATE_CMATH_GET_GRADIENT_NOISE(float, 1) // float CMath_GetGradientNoise_FLT1(float2 Tex, float Bias, bool OutputSigned)
+    TEMPLATE_CMATH_GET_GRADIENT_NOISE(float2, 2) // float2 CMath_GetGradientNoise_FLT2(float2 Tex, float Bias, bool OutputSigned)
+    TEMPLATE_CMATH_GET_GRADIENT_NOISE(float3, 3) // float3 CMath_GetGradientNoise_FLT3(float2 Tex, float Bias, bool OutputSigned)
+
+#endif
