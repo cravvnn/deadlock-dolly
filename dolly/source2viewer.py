@@ -110,12 +110,18 @@ def _candidate_paths() -> list[Path]:
 def find_viewer() -> Path | None:
     """Return an existing CLI quickly; the caller may still validate it."""
     for candidate in _candidate_paths():
-        if candidate.is_file():
-            return candidate
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
     cached = cache_root() / "Source2Viewer-CLI.exe"
     marker = cache_root() / ".complete"
-    if cached.is_file() and marker.is_file():
-        return cached
+    try:
+        if cached.is_file() and marker.is_file():
+            return cached
+    except OSError:
+        pass
     found = shutil.which("Source2Viewer-CLI.exe")
     return Path(found) if found else None
 

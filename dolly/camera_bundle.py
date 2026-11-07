@@ -392,9 +392,13 @@ def project_point(bundle: CameraBundle, record: CameraRecord, point) -> Projecte
     distance = linearize(record.inverse_z, record.viewport_min, record.viewport_max, device_z)
     if distance is None:
         return None
+    pixel_x = (nx + 1.0) * 0.5 * bundle.width
+    pixel_y = (1.0 - ny) * 0.5 * bundle.height
+    if not math.isfinite(pixel_x) or not math.isfinite(pixel_y):
+        return None
     return ProjectedPoint(
-        x=(nx + 1.0) * 0.5 * bundle.width,
-        y=(1.0 - ny) * 0.5 * bundle.height,
+        x=pixel_x,
+        y=pixel_y,
         device_z=device_z,
         distance=distance,
     )

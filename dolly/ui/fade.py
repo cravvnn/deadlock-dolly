@@ -94,7 +94,7 @@ def render_rows(width, height, spans, rgb, edge) -> bytes:
         t = 1.0 - y / last if edge == "top" else y / last
         a = round(255 * _smoothstep(t)) if height > 1 else 255
         pixel = bytes(((b * a + 127) // 255, (g * a + 127) // 255, (r * a + 127) // 255, a))
-        covered = sorted((max(0, int(x0)), min(width, int(x1))) for x0, x1, y0, y1 in spans
+        covered = sorted((min(width, max(0, int(x0))), max(0, min(width, int(x1)))) for x0, x1, y0, y1 in spans
                          if y0 <= y < y1 and x1 > x0)
         parts, x = [], 0
         for x0, x1 in covered:
@@ -208,11 +208,22 @@ class Win32Backend:
         ctypes.memmove(info, ctypes.byref(header), ctypes.sizeof(header))
         bits = ctypes.c_void_p()
         dc = self.gdi32.CreateCompatibleDC(None)
-        bitmap = self.gdi32.CreateDIBSection(dc, info, 0, ctypes.byref(bits), None, 0)
-        if not dc or not bitmap or not bits.value:
-            raise OSError("CreateDIBSection failed")
-        handle.update(dc=dc, bitmap=bitmap, old=self.gdi32.SelectObject(dc, bitmap), bits=bits.value,
-                      size=(width, height))
+        if not dc:
+            raise OSError("CreateCompatibleDC failed")
+        bitmap = None
+        try:
+            bitmap = self.gdi32.CreateDIBSection(dc, info, 0, ctypes.byref(bits), None, 0)
+            if not bitmap or not bits.value:
+                raise OSError("CreateDIBSection failed")
+            old = self.gdi32.SelectObject(dc, bitmap)
+            if not old or old == ctypes.c_void_p(-1).value:
+                raise OSError("SelectObject failed")
+        except BaseException:
+            if bitmap:
+                self.gdi32.DeleteObject(bitmap)
+            self.gdi32.DeleteDC(dc)
+            raise
+        handle.update(dc=dc, bitmap=bitmap, old=old, bits=bits.value, size=(width, height))
 
     def _free(self, handle):
         if handle.get("dc"):
@@ -227,6 +238,8 @@ class Win32Backend:
         return self.BLENDFUNCTION(0, 0, max(0, min(255, int(alpha))), 1)   # AC_SRC_OVER, AC_SRC_ALPHA
 
     def update(self, handle, x, y, width, height, data, alpha):
+        if len(data) != width * height * 4:
+            raise ValueError("Fade bitmap size does not match its surface.")
         ctypes, wintypes = self.ctypes, self.wintypes
         self._surface(handle, width, height)
         ctypes.memmove(handle["bits"], data, len(data))

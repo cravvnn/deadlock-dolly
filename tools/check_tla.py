@@ -40,6 +40,8 @@ REQUIRED.update({"SocketSetup.cfg", "Admission.cfg", "ExportCleanup.cfg", "Expor
 REQUIRED.update({'LayerAdmission.cfg', 'ScratchCreate.cfg', 'UpdateStart.cfg', 'HistoryShare.cfg', 'ReaderStart.cfg', 'ReshadeResult.cfg'})
 
 
+REQUIRED.update({"HotkeyStart.cfg", "MovieEnvironment.cfg", "FadeSurface.cfg"})
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")

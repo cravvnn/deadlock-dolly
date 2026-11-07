@@ -1,0 +1,35 @@
+[
+  {
+    "name": "omit-dc-release",
+    "config": "FadeSurface.cfg",
+    "replace": [
+      [
+        "/\\ dc' = \"none\"\n            /\\ bitmap",
+        "/\\ dc' = dc\n            /\\ bitmap"
+      ]
+    ],
+    "expect": "NoLeaks"
+  },
+  {
+    "name": "omit-bitmap-release",
+    "config": "FadeSurface.cfg",
+    "replace": [
+      [
+        "/\\ bitmap' = \"none\"\n            /\\ UNCHANGED selected",
+        "/\\ bitmap' = bitmap\n            /\\ UNCHANGED selected"
+      ]
+    ],
+    "expect": "NoLeaks"
+  },
+  {
+    "name": "admit-failed-selection",
+    "config": "FadeSurface.cfg",
+    "replace": [
+      [
+        "IF ok THEN \"admit\" ELSE \"failed\"",
+        "IF ok THEN \"admit\" ELSE \"admit\""
+      ]
+    ],
+    "expect": "Usable"
+  }
+]
