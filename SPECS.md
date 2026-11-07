@@ -552,3 +552,32 @@ Tests retain accepted shortcut workers and actual movie alignment/source cleanup
 while simulating API refusals and external process results. Real Windows GDI
 resource accounting, DLL-directory restoration and larger pixel-grid probes are
 separate platform qualification evidence, not implied by portable source tests.
+
+## Audio extraction and export preparation
+
+These tool specs sit beside their implementation and join the normal model gate:
+
+| Owner and caller | Spec / interface | Scope |
+| --- | --- | --- |
+| export_captured_audio._convert_asset; export via ClipAudioCapture.finish/_finish_movie | [AssetEnvironment](tools/AssetEnvironment.tla), [API](tools/AssetEnvironmentApi.tla) | Two returning child calls, either may refuse; compose existing runtime context restoration. External executable behavior, global imports and OS loader semantics excluded. |
+| export_captured_audio.export; ClipAudioCapture finish paths | [AssetFailure](tools/AssetFailure.tla), [API](tools/AssetFailureApi.tla) | Two distinct assets; first conversion may fail and cleanup may refuse. Keep the primary error, continue attempts and preserve explicit partial reporting. No end-to-end reconstruction success inferred. |
+| filter_captured_audio_window.filter_window; ClipAudioCapture.finish | [WindowCreate](tools/WindowCreate.tla), [API](tools/WindowCreateApi.tla) | Writer check/parse/open/write and a peer creating the output before atomic exclusive open. Failed writes may leave an owned partial. No complete publication, replacement-after-open, symlink or crash durability proof. |
+
+Default configs check bounded safety and a minimal completion-shape refinement.
+Terminal deadlock checking is disabled; returning operations and stated OS
+primitives are assumed. No real-I/O liveness, whole-program or state-reduction
+claim follows. Six mutants exercise the three new contracts.
+
+Streamed CSV parsing, bounded WAV digesting, numerical stereo fitting, shared
+encoder lookup and lazy arrival lookup are one-call computations with no new
+cross-call state. They have actual-owner/output and allocation-budget tests,
+not new lifecycle models. CSV rows remain materialized; marker searches remain
+linear; a digest read bound is not a file-identity or disk-I/O guarantee.
+
+Fitting rejects nonfinite reference samples and the source stereo channels it
+consumes; extra source channels retain the previous ignored/truncated policy.
+Zero-energy channels use zero gain. Entirely silent reference correlation/energy
+metrics remain undefined under existing reporting; finite zero output alone
+is not evidence of acoustic fidelity. Malformed/missing-asset end-to-end policy
+is unchanged. Portable tests simulate child/permission boundaries; real Windows
+lock/DLL-directory, owned-peer-process and larger comparisons are separate proof.

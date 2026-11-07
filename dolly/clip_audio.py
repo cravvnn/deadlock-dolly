@@ -30,10 +30,10 @@ def _sample_window(offset: float, duration: float, available: int,
 
 
 def _ffmpeg() -> Path:
-    configured = os.environ.get("DOLLY_FFMPEG")
-    if configured and Path(configured).is_file():
-        return Path(configured)
-    from .video_export import bundled_ffmpeg_path
+    from .video_export import resolve_ffmpeg, bundled_ffmpeg_path
+    configured = resolve_ffmpeg(os.environ.get("DOLLY_FFMPEG"))
+    if configured is not None:
+        return configured
     bundled = bundled_ffmpeg_path()
     if bundled is not None:
         return bundled

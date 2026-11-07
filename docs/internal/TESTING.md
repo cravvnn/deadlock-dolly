@@ -231,3 +231,19 @@ Real threads and temporary files/WAV alignment are used; external process/input
 and GDI failure returns are simulated. No renderer/game/packaged-output proof
 is inferred. Three maintained adjacent specs/APIs join the required gate, with
 seven intended invariant mutants. See SPECS.md for mapping and finite bounds.
+
+## Audio and camera-export supplement
+
+`test_audio_boundaries.py` adds eight owner contracts; the portfolio is 104
+methods. Real CSV/WAV parsing, independent interpolation/output values and
+explicit allocation/read budgets cover streaming, digest and marker changes.
+Child/environment, cleanup-refusal and competing-output interleavings are
+controlled; fitting covers either silent stereo channel, mono, ignored extra
+channels and invalid consumed samples. Larger resampled/loopback/tiny/silent
+fixtures and real Windows file-lock/DLL-directory/process probes stay private
+qualification evidence. No actual converter, acoustic/game fidelity, native
+DLL or packaged-output result is inferred from the source suite.
+
+Three source-adjacent specs in tools/ join check_tla's explicit configuration
+list; the gate checks both runtime and tool contracts. Coverage, assumptions,
+six invariant mutants and the one-call modeling exceptions are in SPECS.md.

@@ -15,6 +15,11 @@ import subprocess
 import tempfile
 import wave
 
+# Keep direct CLI execution able to import the shared Dolly runtime boundary.
+if not __package__:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Dolly runs from a GUI process. Without this flag, every Source2Viewer and
 # FFmpeg invocation opens a console window. Reconstructed audio can extract
 # dozens of assets, which makes the export look like it is spawning cmd.exe
@@ -26,14 +31,17 @@ def _convert_asset(asset: str, destination: Path, *, vpk: Path, viewer: Path,
                    ffmpeg: Path, temporary: Path) -> None:
     source_name = asset[:-5] + ".vsnd_c"
     raw = temporary / (hashlib.sha256(asset.encode()).hexdigest()[:16] + ".audio")
-    result = subprocess.run([str(viewer), "-i", str(vpk), "-d", "-f", source_name,
-                             "-o", str(raw)], cwd=temporary, capture_output=True, text=True,
-                            creationflags=_CREATE_NO_WINDOW)
+    from dolly.runtime import external_program_environment
+    with external_program_environment() as environment:
+        result = subprocess.run([str(viewer), "-i", str(vpk), "-d", "-f", source_name,
+                                 "-o", str(raw)], cwd=temporary, capture_output=True, text=True,
+                                env=environment, creationflags=_CREATE_NO_WINDOW)
     if result.returncode or not raw.is_file():
         raise RuntimeError(f"Source2Viewer could not extract {asset}: {result.stderr or result.stdout}")
-    subprocess.run([str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
-                    "-i", str(raw), "-map", "0:a:0", "-c:a", "pcm_s16le",
-                    str(destination)], check=True, creationflags=_CREATE_NO_WINDOW)
+    with external_program_environment() as environment:
+        subprocess.run([str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+                        "-i", str(raw), "-map", "0:a:0", "-c:a", "pcm_s16le",
+                        str(destination)], check=True, env=environment, creationflags=_CREATE_NO_WINDOW)
 
 
 def _metadata(line: str) -> dict[str, str]:
@@ -42,6 +50,7 @@ def _metadata(line: str) -> dict[str, str]:
 
 
 def _events(path: Path) -> tuple[dict[str, str], list[dict[str, str]], dict[str, str]]:
+    from itertools import chain
     with path.open(newline="", encoding="utf-8-sig") as source:
         first = source.readline()
         if not first.startswith("# "):
@@ -52,7 +61,7 @@ def _events(path: Path) -> tuple[dict[str, str], list[dict[str, str]], dict[str,
             raise ValueError("Unsupported native source-voice log")
         rows = []
         footer = {}
-        for row in csv.DictReader([columns, *source.readlines()]):
+        for row in csv.DictReader(chain((columns,), source)):
             if row["kind"].startswith("#"):
                 footer = _metadata(row["kind"])
             else:
@@ -133,7 +142,11 @@ def export(log: Path, output: Path, *, vpk: Path, viewer: Path, ffmpeg: Path) ->
                                temporary=temporary)
                 with wave.open(str(wav), "rb") as audio:
                     duration = audio.getnframes() / audio.getframerate()
-                content_hash = hashlib.sha256(wav.read_bytes()).hexdigest()
+                digest_state = hashlib.sha256()
+                with wav.open("rb") as content:
+                    for block in iter(lambda: content.read(1024 * 1024), b""):
+                        digest_state.update(block)
+                content_hash = digest_state.hexdigest()
                 existing = wave_hashes.get(content_hash)
                 if existing:
                     wav.unlink()
@@ -142,8 +155,11 @@ def export(log: Path, output: Path, *, vpk: Path, viewer: Path, ffmpeg: Path) ->
                     wave_hashes[content_hash] = existing
                 extracted[asset] = {"path": existing,
                                     "source_duration_seconds": duration}
-            except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-                wav.unlink(missing_ok=True)
+            except (OSError, RuntimeError, ValueError, wave.Error, subprocess.CalledProcessError) as exc:
+                try:
+                    wav.unlink(missing_ok=True)
+                except OSError:
+                    pass  # Retain a private leftover and report the original asset failure.
                 failed[asset] = str(exc)
     for row in usages:
         row["source_wav"] = extracted.get(row["source_vsnd"], {}).get("path", "")

@@ -24,6 +24,8 @@ def fit(args):
     reference, sr = sf.read(args.reference_wav, always_2d=True, dtype="float32")
     if sr != 48000 or reference.shape[1] != 2:
         raise ValueError("Reference must be 48 kHz stereo")
+    if not np.isfinite(reference).all():
+        raise ValueError("Reference audio contains nonfinite samples")
     reference = reference.astype(np.float64)
     engine_start = getattr(args, "engine_start", None)
     speed = float(getattr(args, "speed", 1.0) or 1.0)
@@ -56,6 +58,8 @@ def fit(args):
                 wave = resample_poly(wave, sr, source_rate, axis=0)
             if wave.shape[1] == 1:
                 wave = np.repeat(wave, 2, axis=1)
+            if not np.isfinite(wave[:, :2]).all():
+                raise ValueError("Source audio contains nonfinite samples")
             cache[asset] = wave[:, :2]
         source = cache[asset]
         if engine_start is not None:
@@ -122,7 +126,8 @@ def fit(args):
                           mode="valid", method="fft")
                 for channel in range(2)
             ])
-            gains = np.clip(cov / voice["energy"], 0, getattr(args, "max_gain", 1.0))
+            gains = np.clip(np.divide(cov, voice["energy"], out=np.zeros_like(cov),
+                                      where=voice["energy"] > 0), 0, getattr(args, "max_gain", 1.0))
             score = np.sum(2 * gains * cov - gains * gains * voice["energy"], axis=1)
             index = int(np.argmax(score))
             voice["place"] = lo + index

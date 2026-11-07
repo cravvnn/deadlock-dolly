@@ -47,7 +47,7 @@ def filter_window(voice_log: Path, reference_wav: Path, output: Path) -> dict:
     footer = next((line for line in reversed(body) if line.startswith("# ")), None)
     if not footer:
         raise ValueError("Native voice log has no completion footer")
-    with output.open("w", newline="", encoding="utf-8") as destination:
+    with output.open("x", newline="", encoding="utf-8") as destination:
         destination.write(header)
         destination.write(columns)
         for line, row in events:
