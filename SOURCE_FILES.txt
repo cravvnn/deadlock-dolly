@@ -1072,3 +1072,4 @@ dolly/ui/FadeSurfaceApi.tla
 dolly/ui/FadeSurface.cfg
 dolly/ui/FadeSurface.mutants.json
 tests/test_capture_boundaries.py
+docs/RELEASE_NOTES_0.7.16-beta.md
