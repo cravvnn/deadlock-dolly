@@ -208,3 +208,15 @@ policy and invalid settings backups. No network/game/GPU qualification is
 inferred. Six source-adjacent production-only models join the required gate.
 Private broad comparisons, Windows lock/junction and software still probes are
 retained separately and not repeated behind a permanent suite wrapper.
+
+
+## Numeric and binary boundary supplement
+
+`test_numeric_boundaries.py` adds six contracts for invalid still pixels,
+overflowed camera comparisons, optional FFmpeg lookup I/O, linear attached-key
+compilation with known intervals, finite offline normals options and EXR
+metadata-alias rejection. The portfolio now has 89 methods. PNG bytes, decoded
+intervals and numeric outputs are checked independently; filesystem errors are
+injected. A work budget detects repeated scans, not game FPS. Broader paired
+attach-format comparisons remain private qualification evidence. No game,
+long-recording, lifecycle or general OpenEXR compatibility proof is inferred.

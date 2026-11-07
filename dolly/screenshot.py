@@ -272,6 +272,7 @@ def read_bundle_frame(bundle: Path, index: int) -> tuple[int, int, bytes]:
 
 def write_hero_stills(width: int, height: int, pixels: bytes, folder: Path) -> tuple[Path, Path]:
     """Write the 16-bit coverage matte and the isolated players preview."""
+    import math
     folder = Path(folder)
     row_format = struct.Struct("<%de" % (width * 4))
     stride = width * 8
@@ -283,6 +284,8 @@ def write_hero_stills(width: int, height: int, pixels: bytes, folder: Path) -> t
         for y in range(height):
             values = row_format.unpack_from(pixels, y * stride)
             alphas = values[3::4]
+            if any(not math.isfinite(a) or not 0 <= a <= 1 for a in alphas):
+                raise ValueError("Invalid Players alpha.")
             if not any(alphas):
                 yield empty_alpha, empty_rgba
                 continue
@@ -294,6 +297,8 @@ def write_hero_stills(width: int, height: int, pixels: bytes, folder: Path) -> t
                 alpha = min(alpha, 1.0)
                 struct.pack_into(">H", matte, x * 2, round(alpha * 65535))
                 r, g, b = values[x * 4:x * 4 + 3]
+                if not all(math.isfinite(v) for v in (r, g, b)):
+                    raise ValueError("Invalid Players color.")
                 color[x * 4:x * 4 + 4] = bytes((preview(r / alpha), preview(g / alpha),
                                                 preview(b / alpha), round(alpha * 255)))
             yield matte, color

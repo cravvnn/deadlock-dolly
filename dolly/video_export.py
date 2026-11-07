@@ -72,9 +72,9 @@ def resolve_ffmpeg(configured: "Path | None") -> "Path | None":
         return None
     try:
         candidate = Path(configured).expanduser()
-    except (TypeError, ValueError):
+        return candidate if candidate.is_file() else None
+    except (OSError, TypeError, ValueError):
         return None
-    return candidate if candidate.is_file() else None
 
 
 def bundled_ffmpeg_path() -> "Path | None":
@@ -86,8 +86,11 @@ def bundled_ffmpeg_path() -> "Path | None":
         return None
     for candidate in (root / "third_party" / "ffmpeg" / "bin" / "ffmpeg.exe",
                       root / "_internal" / "third_party" / "ffmpeg" / "bin" / "ffmpeg.exe"):
-        if candidate.is_file():
-            return candidate
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
     return None
 
 

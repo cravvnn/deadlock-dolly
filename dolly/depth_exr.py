@@ -98,7 +98,7 @@ def read_distances(path) -> np.ndarray:
     rows = np.empty((height, width), dtype=np.float32)
     for index in range(height):
         row_offset = struct.unpack_from("<Q", data, offset + index * 8)[0]
-        if row_offset + 8 > len(data):
+        if row_offset < offset + 8 * height or row_offset + 8 > len(data):
             raise DepthExrError("scanline offset out of range")
         y, size = struct.unpack_from("<2i", data, row_offset)
         if y != y_min + index or size != width * 4:

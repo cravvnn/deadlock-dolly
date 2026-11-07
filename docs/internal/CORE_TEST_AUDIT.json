@@ -581,5 +581,18 @@
     "fault_driver": "audit/opus_faults.py",
     "opus_review": "audit/opus55-coverage-review.md",
     "reverse_order_driver": "audit/reverse_suite.py"
+  },
+  "third_sweep_supplement": {
+    "test": "test_numeric_boundaries.NumericBoundaryTests",
+    "contracts": {
+      "still_pixels": "Reject malformed alpha/visible nonfinite RGB while transparent RGB remains ignored; inspect independent PNG bytes.",
+      "camera_comparison": "Reject overflow from finite view axes while preserving ordinary numeric tolerances.",
+      "optional_tool_lookup": "Injected inspection refusals return unavailable and allow a later valid bundled path.",
+      "attach_compile": "Bound float conversions linearly; decode independent expected interval bounds/flags for formats 1-4 with a leading gap and extended track.",
+      "normals_options": "Reject nonfinite/Boolean tolerances and fractional/Boolean pass counts; preserve known planar normals.",
+      "exr_offsets": "Reject an offset into header metadata while preserving real scanline values."
+    },
+    "before_code_negatives": 6,
+    "limits": "Single-call boundaries, no new lifecycle model, no game FPS or universal recording/EXR proof."
   }
 }

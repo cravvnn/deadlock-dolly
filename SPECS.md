@@ -509,3 +509,24 @@ private. Completion APIs describe only a returning local operation. Settings
 numeric validation, mod entry classification, free-shot attach compilation and
 selected-frame parsing are single-call computations; their caller state is
 unchanged, with owner regressions instead of new lifecycle models.
+
+
+## Third sweep: one-call numeric, parser and lookup boundaries
+
+These changes introduce no state across calls, retries, ownership transitions
+or concurrent protocols. Existing lifecycle models remain unchanged:
+
+| Component | Changed scope | Why no new lifecycle model |
+| --- | --- | --- |
+| `screenshot.write_hero_stills` | Validate alpha and visible RGB before conversion | Pixel predicates within one conversion; PNG publication/cleanup ownership is unchanged. This does not make two PNG writes transactional. |
+| `camera_bundle._close` | Reject nonfinite comparison intermediates | One finite-number predicate used by existing projection/view validation. |
+| `video_export.resolve_ffmpeg`, `bundled_ffmpeg_path` | Contain filesystem inspection errors | One optional lookup; preserves fallback and changes no recorder state. |
+| `native_effects.compile_attach` | Monotone cursor over validated sorted keys | Cursor lives only during one stable-project compile; independently decoded intervals and bounded work, not cross-call state or game FPS. |
+| `depth_normals.reconstruct_normals` | Validate tolerance/pass options | Offline numeric predicates before reconstruction; no iteration cap or new cache. |
+| `depth_exr.read_distances` | Reject header/table-aliasing scanline offsets | Bounds checking in the existing limited single-channel EXR parser. |
+
+`test_numeric_boundaries.py` covers these contracts with real output bytes and
+numeric results, an explicit linear-work budget, and controlled I/O refusals.
+The six original implementations fail their corresponding regressions. No
+state-count reduction, whole-program proof or live renderer qualification is
+claimed by these tests. Existing models still run in the release gate.
