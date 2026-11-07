@@ -1088,3 +1088,4 @@ third_party/reshade_shaders/Shaders/shared/cMath.fxh
 third_party/reshade_shaders/Shaders/shared/cShade.fxh
 third_party/reshade_shaders/notices/CShade-LICENSE.txt
 third_party/reshade_shaders/notices/CobraFX-LICENSE.txt
+docs/RELEASE_NOTES_0.7.17-beta.md
