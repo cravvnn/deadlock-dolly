@@ -1,0 +1,32 @@
+[
+  {
+    "name": "ignore generation",
+    "replace": [
+      [
+        "CheckIdentity == TRUE",
+        "CheckIdentity == FALSE"
+      ]
+    ],
+    "expect": "CorrectGeneration"
+  },
+  {
+    "name": "retain oversize",
+    "replace": [
+      [
+        "RespectBudget == TRUE",
+        "RespectBudget == FALSE"
+      ]
+    ],
+    "expect": "RetentionBound"
+  },
+  {
+    "name": "ignore changed read",
+    "replace": [
+      [
+        "IF CheckIdentity /\\ file # seen THEN 3 ELSE data",
+        "data"
+      ]
+    ],
+    "expect": "CorrectGeneration"
+  }
+]

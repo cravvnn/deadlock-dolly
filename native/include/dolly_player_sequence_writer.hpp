@@ -13,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <system_error>
 #include <vector>
 #include <windows.h>
 namespace dolly::player_capture {
@@ -44,7 +45,20 @@ public:
         progress_.store(0);
         finished_.store(false);
         progressMs_.store(GetTickCount64());
-        if (!synchronous_) worker = std::thread([this] { run(); });
+        if (!synchronous_) {
+            try {
+                worker = std::thread([this] { run(); });
+            } catch (const std::system_error&) {
+                if (file_.is_open()) file_.close();
+                if (handle_ != INVALID_HANDLE_VALUE) {
+                    CloseHandle(handle_);
+                    handle_ = INVALID_HANDLE_VALUE;
+                }
+                opened_ = false; closed_ = true; closing_ = false;
+                error_.store(true); finished_.store(true);
+                return false;
+            }
+        }
         return true;
     }
 

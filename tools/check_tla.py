@@ -20,7 +20,8 @@ def check(root=ROOT):
     if not (tools / "node_modules" / "tla-ts" / "package.json").is_file():
         raise RuntimeError("Install model dependencies: npm ci --prefix tools/tla --ignore-scripts")
     result = subprocess.run([node, str(tools / "check.mjs"), "-json", str(root / "dolly"),
-                             *(str(root / "tools" / name) for name in ("AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg"))],
+                             *(str(root / "tools" / name) for name in ("AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg")),
+                             str(root / "native" / "include" / "WriterAdmission.cfg")],
                             cwd=root, text=True, capture_output=True)
     rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     checked = {Path(row["name"]).name for row in rows if row.get("kind") == "model"}
@@ -44,6 +45,8 @@ REQUIRED.update({'LayerAdmission.cfg', 'ScratchCreate.cfg', 'UpdateStart.cfg', '
 REQUIRED.update({"HotkeyStart.cfg", "MovieEnvironment.cfg", "FadeSurface.cfg"})
 
 REQUIRED.update({"AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg"})
+REQUIRED.update({"ArchiveCreate.cfg", "SaveCleanup.cfg", "SavedSnapshot.cfg",
+                 "TimingSwitch.cfg", "GameFileCache.cfg", "WriterAdmission.cfg"})
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

@@ -1113,7 +1113,10 @@ class Project:
             os.replace(temporary, destination)
         finally:
             if temporary is not None:
-                Path(temporary).unlink(missing_ok=True)
+                try:
+                    Path(temporary).unlink(missing_ok=True)
+                except OSError:
+                    pass  # Retain a private leftover without hiding the save result.
 
     @classmethod
     def load(cls, path: str | Path) -> "Project":

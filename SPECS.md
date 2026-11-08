@@ -1,5 +1,9 @@
 # Maintained model coverage
 
+The reviewed-owner supplement below adds five Python scopes and one native
+header scope. The current gate checks 64 configurations and 145 intended
+invariant mutants. Counts describe finite contracts, not whole-program coverage.
+
 The worker/file-output, resource-boundary and reviewed failure-handling
 supplements are described at the end of this inventory.
 
@@ -581,3 +585,32 @@ metrics remain undefined under existing reporting; finite zero output alone
 is not evidence of acoustic fidelity. Malformed/missing-asset end-to-end policy
 is unchanged. Portable tests simulate child/permission boundaries; real Windows
 lock/DLL-directory, owned-peer-process and larger comparisons are separate proof.
+
+## Reviewed publication, snapshot and startup owners
+
+| Owner and caller | Maintained model | Bounds and exclusions |
+| --- | --- | --- |
+| Controller._write_diagnostics_archive; export_diagnostics | [ArchiveCreate](dolly/ArchiveCreate.tla), [API](dolly/ArchiveCreateApi.tla) | One chosen ZIP and one peer creating it before exclusive open. Preserve the peer; a failed archive write may leave an owned partial. No ZIP transaction, crash or hostile path substitution claim. |
+| Project.save; GUI Save/Save As | [SaveCleanup](dolly/SaveCleanup.tla), [API](dolly/SaveCleanupApi.tla) | One private stage, returning body success/error and ordinary unlink refusal. Preserve the primary result. Actual tests keep unexpected programming errors visible. The payload/write/replace body is abstract; no durability or external-writer proof. |
+| ShotHistory.mark_saved; GUI after successful save | [SavedSnapshot](dolly/SavedSnapshot.tla), [API](dolly/SavedSnapshotApi.tla) | Four calls, three contents, immutable fresh snapshots and a mutable caller. Share only equal history content; unmatched saves remain detached. HistoryShare covers reset separately. Full undo/redo/merge/revision behavior stays in actual method checks. |
+| ExportTimingMixin.suspend_export_timing/resume_export_timing; Controller.play | [TimingSwitch](dolly/TimingSwitch.tla), [API](dolly/TimingSwitchApi.tla) | Two transitions; commands may be applied or ignored; returning coherent host/wait reads. Publish the local flag only after both match. Retry and clear restoration are actual-owner tests. No concurrent cvar writer, game pacing or live readback qualification. |
+| preload.game_file; preload/replay-camera/Follow monitors | [GameFileCache](dolly/GameFileCache.tla), [API](dolly/GameFileCacheApi.tla) | One cached generation, one read, two replacements retaining size/mtime, budget1 and representative sizes1/2. Distinct full path metadata identifies generations; hashes identify consumed bytes. Multi-entry accounting/warm hits are actual tests. No read-memory cap, hostile metadata forgery, identity reuse, parallel callers or module-load lock. |
+| SequenceWriter.open; native arm_capture noexcept | [WriterAdmission](native/include/WriterAdmission.tla), [API](native/include/WriterAdmissionApi.tla) | Existing writer, two worker-start attempts, stream/handle admission, system_error refusal, returning successful close and retry. Native generated-header fault tests keep the real ownership and I/O code. No unrelated allocation failure, GPU, concurrent open/finish or weak-memory proof. |
+
+The six production-only specs run via `tools/check_tla.py`; the native header's
+configuration is explicitly included. Ten invariant mutants protect their
+preservation/verification/alias/admission/cache guards. Each model retains a
+local completion-shape API and a returning-step fairness assumption; terminal
+Done stutters. This is not complete caller refinement or real-I/O termination.
+Baseline comparisons and deliberately broken source experiments remain private.
+
+Recovery-journal JSON and KeyValues recursion conversion change one-call error
+boundaries, with no new lifecycle state or parser depth policy. Their maintained
+owner regressions check independent restoration and discovery continuation.
+No extra standalone lifecycle spec is justified for those conversions.
+
+The snapshot simplification removes one redundant deep copy on matching saves;
+unmatched saves retain the copy. No application-wide state-count, memory or FPS
+improvement is inferred. The other changes strengthen failure handling rather
+than claim equivalence to their failing predecessors. Actual build/source tests
+do not establish live game timing, native rendering or packaged-release behavior.

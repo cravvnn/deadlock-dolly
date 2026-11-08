@@ -135,6 +135,10 @@ class ExportTimingMixin:
         if self._demo_speed_changed:
             commands.append("demo_timescale 1")
         self._request("; ".join(commands))
+        for name, expected in restore.items():
+            actual = read_cvar_value(name, self._request(name))
+            if not math.isclose(actual, expected, rel_tol=1e-6):
+                raise RuntimeError("The game did not suspend export timing. Finish the recording to restore it.")
         state["suspended"] = True
 
     def resume_export_timing(self):
@@ -148,4 +152,8 @@ class ExportTimingMixin:
         engine_fps = state["fps"] / state["speed"]
         self._request(f"host_framerate {numeric(engine_fps)}; r_wait_on_present 1; "
                       f"demo_timescale {numeric(state['speed'])}")
+        actual = read_cvar_value("host_framerate", self._request("host_framerate"))
+        synchronized = read_cvar_value("r_wait_on_present", self._request("r_wait_on_present"))
+        if not math.isclose(actual, engine_fps, rel_tol=1e-6) or synchronized != 1:
+            raise RuntimeError("The game did not resume export timing. Finish the recording to restore it.")
         state["suspended"] = False

@@ -74,7 +74,8 @@ class ShotHistory:
         return True
 
     def mark_saved(self, project):
-        self._saved = deepcopy(project)
+        current = self._states[self._index].project
+        self._saved = current if project == current else deepcopy(project)
         self._merge_key = None
 
     def is_dirty(self, project):

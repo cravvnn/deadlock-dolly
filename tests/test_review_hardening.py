@@ -192,6 +192,12 @@ class ReviewHardeningTests(unittest.TestCase):
             self.assertEqual(copying.call_count, 1)
         project['items'].append(4); self.assertTrue(history.is_dirty(project))
         original = {'items': [1, 2, 3]}; self.assertFalse(history.is_dirty(original))
+        with patch.object(shot_history, 'deepcopy', wraps=copy.deepcopy) as copying:
+            history.mark_saved(original)
+        self.assertEqual(copying.call_count, 0)
+        original['items'].append(999)
+        self.assertFalse(history.is_dirty({'items': [1, 2, 3]}))
+        original = {'items': [1, 2, 3]}
         history.select(123); self.assertFalse(history.is_dirty(original))
         history.record({'items': [2]}); history.record({'items': [3]})
         self.assertFalse(history.is_dirty(original))

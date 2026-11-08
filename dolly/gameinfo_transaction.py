@@ -54,7 +54,7 @@ def load_record(session_dir: Path, *, validate_game: Callable[[Path], GameinfoPa
         if not all(re.fullmatch(r"[0-9a-f]{64}", record[key]) for key in ("original_sha256", "patched_sha256")):
             raise ValueError("invalid content hashes")
         return record
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
         raise LaunchError(f"Could not read Dolly's recovery journal at {session_dir}: {exc}") from exc
 
 

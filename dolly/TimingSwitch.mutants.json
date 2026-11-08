@@ -1,0 +1,12 @@
+[
+  {
+    "name": "skip timing readback",
+    "replace": [
+      [
+        "Verify == TRUE",
+        "Verify == FALSE"
+      ]
+    ],
+    "expect": "VerifiedClaim"
+  }
+]
