@@ -1,5 +1,7 @@
 ### Deadlock Dolly v0.7.18-beta
 
+**0.7.18-beta**
+
 - **Safer reconstructed audio.** *Before:* a silent stereo channel could spoil voice fitting. *After:* either channel can stay silent while fitting produces finite audio, and invalid samples are rejected.
 
 - **More reliable audio conversion.** *Before:* bundled library settings or an inaccessible custom encoder path could interrupt audio preparation. *After:* asset converters use the external-program environment and encoder lookup can fall back to an available copy.
