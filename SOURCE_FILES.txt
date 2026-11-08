@@ -1141,3 +1141,4 @@ dolly/MediaFinalizeApi.tla
 dolly/MediaFinalize.cfg
 dolly/MediaFinalize.mutants.json
 tests/test_completion_boundaries.py
+docs/RELEASE_NOTES_0.7.20-beta.md
