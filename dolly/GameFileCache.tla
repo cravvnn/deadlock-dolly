@@ -1,7 +1,7 @@
 ---- MODULE GameFileCache ----
 EXTENDS Naturals
 \* Maintained production contract; private baseline comparisons are not shipped.
-\* preload.game_file; PreloadMonitor, ReplayCameraMonitor, FollowTargetReader and
+\* preload.game_file; PreloadMonitor, ReplayCameraMonitor, FollowTargetMonitor and
 \* follow capability probes compare its returned digest with reviewed pins.
 \* One prior cached generation, one read, up to two replacements with unchanged
 \* size/mtime. Full path metadata distinguishes generations; stat is coherent.
