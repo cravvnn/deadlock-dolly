@@ -98,7 +98,7 @@ class ReplayEventReader:
             info = path.stat()
             if identity != (str(path), info.st_size, info.st_mtime_ns, info.st_ctime_ns):
                 raise ValueError('Replay changed while reading kills. Open the completed replay again.')
-        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired) as error:
+        except (OSError, ValueError, TypeError, KeyError, RecursionError, subprocess.TimeoutExpired) as error:
             result = KillIndex(3, message=str(error)[:160])
         with self._lock:
             if self._identity == identity:

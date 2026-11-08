@@ -181,7 +181,7 @@ def load_library() -> dict:
         return {"format": 1, "selected": "", "profiles": []}
     try:
         return _validate_library(json.loads(_read(path), object_pairs_hook=_unique_object))
-    except (OSError, ValueError, LaunchError) as exc:
+    except (OSError, ValueError, LaunchError, RecursionError) as exc:
         raise LaunchError(f"Could not read graphics profiles at {path}: {exc}. The file was left untouched.") from exc
 
 

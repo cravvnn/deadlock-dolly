@@ -1132,3 +1132,12 @@ dolly/GameFileCache.mutants.json
 tests/test_reviewed_owners.py
 native/tests/sequence_writer_start_tests.cpp
 docs/RELEASE_NOTES_0.7.19-beta.md
+dolly/ReaderTerminal.tla
+dolly/ReaderTerminalApi.tla
+dolly/ReaderTerminal.cfg
+dolly/ReaderTerminal.mutants.json
+dolly/MediaFinalize.tla
+dolly/MediaFinalizeApi.tla
+dolly/MediaFinalize.cfg
+dolly/MediaFinalize.mutants.json
+tests/test_completion_boundaries.py

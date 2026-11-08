@@ -48,6 +48,9 @@ REQUIRED.update({"AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg"}
 REQUIRED.update({"ArchiveCreate.cfg", "SaveCleanup.cfg", "SavedSnapshot.cfg",
                  "TimingSwitch.cfg", "GameFileCache.cfg", "WriterAdmission.cfg"})
 
+REQUIRED.update({"ReaderTerminal.cfg", "MediaFinalize.cfg"})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")

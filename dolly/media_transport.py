@@ -164,19 +164,25 @@ class MediaTransport:
             state = self.media_status()
             unconfirmed_audio = (self._media_last_command == "start_source_audio"
                                  and state.get("ack") != self._media_sequence)
-            if self._source_audio_recording or unconfirmed_audio:
-                self.stop_source_audio()
             unconfirmed_start = (self._media_last_command == "start_video"
                                  and state.get("ack") != self._media_sequence)
+            if self._source_audio_recording or unconfirmed_audio:
+                try:
+                    self.stop_source_audio()
+                except (RuntimeError, OSError, ValueError):
+                    logging.getLogger(__name__).exception("Could not finish source audio before disconnect")
             if state.get("state") in ("starting", "recording", "finalizing") or unconfirmed_start:
-                self.stop_video()
-                deadline = self._clock() + 10
-                while self._clock() < deadline:
-                    if self.media_status().get("state") not in ("starting", "recording", "finalizing"):
-                        break
-                    self._sleep(.05)
-                else:
-                    logging.getLogger(__name__).warning("Video is still finalizing; keep Deadlock open until the output is complete.")
+                try:
+                    self.stop_video()
+                    deadline = self._clock() + 10
+                    while self._clock() < deadline:
+                        if self.media_status().get("state") not in ("starting", "recording", "finalizing"):
+                            break
+                        self._sleep(.05)
+                    else:
+                        logging.getLogger(__name__).warning("Video is still finalizing; keep Deadlock open until the output is complete.")
+                except (RuntimeError, OSError, ValueError):
+                    logging.getLogger(__name__).exception("Could not finish video before disconnect")
             if state.get("reshade", {}).get("state"):
                 self.disable_reshade()
         except (RuntimeError, OSError, ValueError):
