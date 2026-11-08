@@ -1,0 +1,24 @@
+[
+  {
+    "name": "truncate-competing-output",
+    "config": "WindowCreate.cfg",
+    "replace": [
+      [
+        "clobbered' = clobbered",
+        "clobbered' = (clobbered \\/ (owner = \"peer\"))"
+      ]
+    ],
+    "expect": "PeerPreserved"
+  },
+  {
+    "name": "overwrite-peer-on-refusal",
+    "config": "WindowCreate.cfg",
+    "replace": [
+      [
+        "IF owner = \"peer\" THEN owner ELSE \"ours-partial\"",
+        "\"ours-partial\""
+      ]
+    ],
+    "expect": "PeerRemains"
+  }
+]

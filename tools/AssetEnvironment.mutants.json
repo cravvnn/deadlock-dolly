@@ -1,0 +1,24 @@
+[
+  {
+    "name": "unwrapped-viewer",
+    "config": "AssetEnvironment.cfg",
+    "replace": [
+      [
+        "UseContext == TRUE",
+        "UseContext == pass # 1"
+      ]
+    ],
+    "expect": "Sanitized"
+  },
+  {
+    "name": "unwrapped-ffmpeg",
+    "config": "AssetEnvironment.cfg",
+    "replace": [
+      [
+        "UseContext == TRUE",
+        "UseContext == pass # 2"
+      ]
+    ],
+    "expect": "Sanitized"
+  }
+]

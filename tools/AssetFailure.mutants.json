@@ -1,0 +1,24 @@
+[
+  {
+    "name": "mask-original-error",
+    "config": "AssetFailure.cfg",
+    "replace": [
+      [
+        "/\\ result' = primary\n                  /\\ UNCHANGED",
+        "/\\ result' = \"cleanup\"\n                  /\\ UNCHANGED"
+      ]
+    ],
+    "expect": "PrimaryPreserved"
+  },
+  {
+    "name": "stop-after-first-failure",
+    "config": "AssetFailure.cfg",
+    "replace": [
+      [
+        "/\\ pc' = \"next\"\n                  /\\ result'",
+        "/\\ pc' = \"done\"\n                  /\\ result'"
+      ]
+    ],
+    "expect": "Continued"
+  }
+]

@@ -294,10 +294,11 @@ def key_markers(project: Project, frames: list[Frame], recorded: bool) -> tuple[
 
 def arrival_at(frames: list[Frame], phase: float):
     """Time and camera position when the shot reached a certain phase, or None if it never did."""
+    from itertools import pairwise
     step = abs(frames[-1].phase - frames[-2].phase) if len(frames) > 1 else 0.0
     if frames[0].phase - step <= phase < frames[0].phase:
         return frames[0].time, frames[0].position
-    for before, after in zip(frames, frames[1:]):
+    for before, after in pairwise(frames):
         if before.phase <= phase <= after.phase:
             span = after.phase - before.phase
             weight = (phase - before.phase) / span if span > 0 else 0.0

@@ -1089,3 +1089,16 @@ third_party/reshade_shaders/Shaders/shared/cShade.fxh
 third_party/reshade_shaders/notices/CShade-LICENSE.txt
 third_party/reshade_shaders/notices/CobraFX-LICENSE.txt
 docs/RELEASE_NOTES_0.7.17-beta.md
+tools/AssetEnvironment.tla
+tools/AssetEnvironmentApi.tla
+tools/AssetEnvironment.cfg
+tools/AssetEnvironment.mutants.json
+tools/AssetFailure.tla
+tools/AssetFailureApi.tla
+tools/AssetFailure.cfg
+tools/AssetFailure.mutants.json
+tools/WindowCreate.tla
+tools/WindowCreateApi.tla
+tools/WindowCreate.cfg
+tools/WindowCreate.mutants.json
+tests/test_audio_boundaries.py
