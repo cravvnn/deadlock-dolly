@@ -112,7 +112,10 @@ def _parse(text: str) -> list[_Entry]:
             raise LaunchError("gameinfo.gi has an unclosed block.")
         return entries, None
 
-    return block()[0]
+    try:
+        return block()[0]
+    except RecursionError as exc:
+        raise LaunchError("Configuration nesting exceeds the parser capacity.") from exc
 
 
 def _named(entries: list[_Entry], name: str) -> list[_Entry]:

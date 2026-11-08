@@ -157,7 +157,7 @@ def _writable(path):
 def _write_diagnostics_archive(destination, report, history, session_files, session, dumps):
     """Write the diagnostics ZIP, preferring a free name over a locked one."""
     destination = _diagnostics_destination(destination)
-    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("diagnostics.json", json.dumps(report, indent=2, ensure_ascii=False))
         if history is not None:
             archive.writestr("logs/recent_console.txt", history)

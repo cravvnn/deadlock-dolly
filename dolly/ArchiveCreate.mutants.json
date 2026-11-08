@@ -1,0 +1,12 @@
+[
+  {
+    "name": "truncate peer",
+    "replace": [
+      [
+        "Exclusive == TRUE",
+        "Exclusive == FALSE"
+      ]
+    ],
+    "expect": "PeerPreserved"
+  }
+]

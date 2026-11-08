@@ -20,12 +20,10 @@ class PreloadError(RuntimeError):
     """Verification unavailable; never permission to dispatch a replay."""
 
 
-# Reviewed game files are large (client.dll is ~59 MB) and several independent
-# monitors re-read and re-hash the same ones on startup and on every shot
-# preparation. Cache the bytes and digest keyed by (path, size, mtime_ns) so a
-# changed file is always re-read and re-hashed; the expected-hash comparison
-# downstream still fails closed on any mismatch. This removes repeated 59 MB
-# reads without weakening the verification.
+# Several monitors inspect large reviewed game files during startup and shot
+# preparation. Cache bytes/digest under path metadata including file identity;
+# consumers still compare the digest with their reviewed pin. Refuse a changing
+# read and return oversized bytes for validation without retaining them.
 _FILE_CACHE = {}
 _FILE_CACHE_BUDGET = 128 * 1024 * 1024
 
@@ -33,32 +31,37 @@ _FILE_CACHE_BUDGET = 128 * 1024 * 1024
 def game_file(path):
     """Return (data, sha256_hexdigest) for a reviewed game file, memoized.
 
-    Keyed on the resolved path plus size and modification time, so editing or
-    replacing the file forces a fresh read and hash. The caller still compares
-    the digest against its expected reviewed value.
+    Keyed on the resolved path and observed file identity/metadata. Ordinary
+    replacement invalidates cached bytes even when size and mtime match.
+    Misses must retain their stamp through the read; the caller still compares
+    the digest against its expected reviewed value. This is not an OS load lock.
     """
     path = Path(path)
     key = str(path.resolve())
-    size = mtime = None
+    def identity():
+        info = path.stat()
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
     try:
-        stat = path.stat()
-        size, mtime = stat.st_size, stat.st_mtime_ns
-    except OSError:
-        pass
-    if size is not None:
+        before = identity()
         cached = _FILE_CACHE.get(key)
-        if cached is not None and cached[0] == size and cached[1] == mtime:
-            return cached[2], cached[3]
-    try:
+        if cached is not None and cached[0] == before:
+            return cached[1], cached[2]
         data = path.read_bytes()
+        if identity() != before or len(data) != before[2]:
+            raise PreloadError(f'Reviewed game file changed while reading {path.name}.')
     except OSError as exc:
         raise PreloadError(f'Cannot read reviewed game file {path.name}.') from exc
     digest = hashlib.sha256(data).hexdigest()
-    if size is not None:
-        total = sum(len(entry[2]) for entry in _FILE_CACHE.values())
+    if len(data) <= _FILE_CACHE_BUDGET:
+        total = sum(len(entry[1]) for entry in _FILE_CACHE.values())
+        old = _FILE_CACHE.get(key)
+        if old is not None:
+            total -= len(old[1])
         if total + len(data) > _FILE_CACHE_BUDGET:
             _FILE_CACHE.clear()
-        _FILE_CACHE[key] = (size, mtime, data, digest)
+        _FILE_CACHE[key] = (before, data, digest)
+    else:
+        _FILE_CACHE.pop(key, None)
     return data, digest
 
 

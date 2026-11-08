@@ -1,0 +1,12 @@
+[
+  {
+    "name": "mask save result",
+    "replace": [
+      [
+        "result' = body",
+        "result' = \"cleanupError\""
+      ]
+    ],
+    "expect": "ResultPreserved"
+  }
+]

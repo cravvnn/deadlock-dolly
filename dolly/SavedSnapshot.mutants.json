@@ -1,0 +1,22 @@
+[
+  {
+    "name": "alias mutable caller",
+    "replace": [
+      [
+        "saved' = IF MatchHistory THEN history ELSE calls+2",
+        "saved' = 0"
+      ]
+    ],
+    "expect": "SavedContent"
+  },
+  {
+    "name": "share unequal snapshot",
+    "replace": [
+      [
+        "MatchHistory == objects[history] = objects[0]",
+        "MatchHistory == TRUE"
+      ]
+    ],
+    "expect": "SavedContent"
+  }
+]

@@ -247,3 +247,25 @@ DLL or packaged-output result is inferred from the source suite.
 Three source-adjacent specs in tools/ join check_tla's explicit configuration
 list; the gate checks both runtime and tool contracts. Coverage, assumptions,
 six invariant mutants and the one-call modeling exceptions are in SPECS.md.
+
+## Reviewed owner supplement
+
+The portfolio now has 110 source methods. `test_reviewed_owners.py` adds six
+contracts for competing diagnostics ZIPs, project-save cleanup results, verified
+export-timing transitions, independent recovery after malformed JSON, reviewed
+file-cache identity/budget and typed KeyValues failures. The existing history
+allocation keeper in `test_review_hardening.py` also checks matching saved-snapshot
+reuse and mutable-caller isolation. Larger trace/fault matrices stay private.
+
+`native_sequence_writer_start_tests` substitutes only worker construction in a
+generated copy of the production header. Both real output modes must retire a
+refused start and permit a flushed retry. CMake checks/reconfigures that creation
+boundary; no production failure-injection API exists. The uninstrumented scratch
+test separately covers normal asynchronous operation. These are Windows native
+tests, outside Python discovery; ordinary native CTest includes them.
+
+Six adjacent model/API/config/mutant sets join the required gate, including
+`native/include/WriterAdmission.cfg`: 64 configurations and 145 intended mutants.
+See SPECS.md for the precise bounds. Simulated console replies do not qualify
+actual game timing. Real temporary files/handles and local native compilation
+do not establish packaged DLL, GPU, encoder, acoustic or live replay behavior.
