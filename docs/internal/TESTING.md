@@ -269,3 +269,16 @@ Six adjacent model/API/config/mutant sets join the required gate, including
 See SPECS.md for the precise bounds. Simulated console replies do not qualify
 actual game timing. Real temporary files/handles and local native compilation
 do not establish packaged DLL, GPU, encoder, acoustic or live replay behavior.
+
+## Reviewed completion supplement
+
+The portfolio now has 113 methods. `test_completion_boundaries.py` adds three
+contracts: attempted audio/video/ReShade cleanup and mapping retirement despite
+independent stop errors; terminal replay-reader results for malformed bounded
+JSON with current/stale identity checks; and typed graphics-library errors that
+leave user bytes unchanged while preserving normal selection. Actual parser,
+worker publication and finalization owner methods run; subprocess/native replies
+and ordinary errors are controlled. No game, renderer, full GUI startup or real
+encoder output is exercised. The two adjacent production models/APIs and four
+mutants join the 66-config/149-mutant normal model gate. Native/package/output
+qualification remains with the receiving release thread under normal gates.

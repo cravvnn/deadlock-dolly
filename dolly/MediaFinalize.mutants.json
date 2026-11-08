@@ -1,0 +1,32 @@
+[
+  {
+    "name": "audio refusal skips video and ReShade",
+    "replace": [
+      [
+        "/\\ attempted' = attempted \\cup {\"audio\"} /\\ pc' = \"video\"",
+        "/\\ attempted' = attempted \\cup {\"audio\"} /\\ pc' = (IF \"audio\" \\in failures THEN \"unmap\" ELSE \"video\")"
+      ]
+    ],
+    "expect": "IndependentAttempts"
+  },
+  {
+    "name": "video refusal skips ReShade",
+    "replace": [
+      [
+        "/\\ pc' = \"reshade\" /\\ UNCHANGED",
+        "/\\ pc' = (IF \"video\" \\in failures THEN \"unmap\" ELSE \"reshade\") /\\ UNCHANGED"
+      ]
+    ],
+    "expect": "IndependentAttempts"
+  },
+  {
+    "name": "forget pending start before audio command",
+    "replace": [
+      [
+        "VideoRequired == ~pending \\/ intent",
+        "VideoRequired == ~pending \\/ command = \"startVideo\""
+      ]
+    ],
+    "expect": "IndependentAttempts"
+  }
+]

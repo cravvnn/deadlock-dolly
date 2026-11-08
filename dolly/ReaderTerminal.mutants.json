@@ -1,0 +1,16 @@
+[
+  {
+    "name": "recursion leaves loading",
+    "replace": [
+      [
+        "pc' = \"publish\"",
+        "pc' = (IF kind = \"recursion\" THEN \"done\" ELSE \"publish\")"
+      ],
+      [
+        "result' = (IF kind = \"success\" THEN \"complete\" ELSE \"failed\")",
+        "result' = (IF kind = \"recursion\" THEN result ELSE IF kind = \"success\" THEN \"complete\" ELSE \"failed\")"
+      ]
+    ],
+    "expect": "TerminalResult"
+  }
+]

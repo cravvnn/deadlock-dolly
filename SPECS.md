@@ -1,7 +1,7 @@
 # Maintained model coverage
 
-The reviewed-owner supplement below adds five Python scopes and one native
-header scope. The current gate checks 64 configurations and 145 intended
+The completion-boundary supplement adds two Python scopes to the reviewed-owner
+set. The current gate checks 66 configurations and 149 intended
 invariant mutants. Counts describe finite contracts, not whole-program coverage.
 
 The worker/file-output, resource-boundary and reviewed failure-handling
@@ -614,3 +614,23 @@ unmatched saves retain the copy. No application-wide state-count, memory or FPS
 improvement is inferred. The other changes strengthen failure handling rather
 than claim equivalence to their failing predecessors. Actual build/source tests
 do not establish live game timing, native rendering or packaged-release behavior.
+
+## Reviewed completion boundaries
+
+| Owner and caller | Spec / interface | Scope |
+| --- | --- | --- |
+| ReplayEventReader._read, worker from snapshot; editor_publication.configure | [ReaderTerminal](dolly/ReaderTerminal.tla), [API](dolly/ReaderTerminalApi.tla) | One current identity; success, ValueError or RecursionError; decode and terminal publication are separate. ReaderStart continues to cover admission. Helper I/O, replacement identity, arbitrary exceptions and crashes are excluded; real-parser owner tests cover valid/malformed bytes and stale-result rejection. |
+| MediaTransport._finish_media_and_unmap; NativeBridge.close via _close_media | [MediaFinalize](dolly/MediaFinalize.tla), [API](dolly/MediaFinalizeApi.tla) | Active or pending video plus source audio and ReShade; independent stop refusals. Snapshot pending intent before audio changes command identity, attempt remaining cleanup before unmap. BridgeClose still covers outer teardown. Status read and mapping close succeed; real acknowledgements, wait duration, heartbeat fallback, GPU and process crashes are excluded. |
+
+Both production-only configs check safety, weakly fair returning-operation
+completion and a minimal completion-shape refinement. Terminal Done stutters;
+deadlock checking stays enabled. Four invariant mutants restore missed terminal
+publication, lost pending intent or skipped independent cleanup. This is neither
+whole-program refinement nor a measured state reduction. Private baseline
+comparisons remain in analysis. Three compact owner tests preserve the code
+witnesses without restoring a broad retired test matrix.
+
+graphics_profiles.load_library only converts a one-call bounded JSON parse error
+into the existing LaunchError boundary; it needs no additional lifecycle model.
+Tests preserve exact malformed bytes and normal selection. No default reset,
+GUI startup, live media finalization or packaged-output qualification is inferred.
