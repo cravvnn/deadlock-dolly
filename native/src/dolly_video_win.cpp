@@ -24,6 +24,7 @@
 #include <vector>
 #include "dolly_video.hpp"
 #include "dolly_video_math.hpp"
+#include "dolly_encoder_error.hpp"
 #include "dolly_capture_timing.hpp"
 #include "dolly_depth_scene.hpp"
 #include "dolly_depth_sequence.hpp"
@@ -798,7 +799,7 @@ HRESULT write_all(HANDLE pipe, const void* data, std::size_t bytes) noexcept {
     }
     return S_OK;
 }
-std::wstring read_log_tail(const std::wstring& path) {
+std::wstring read_log_error(const std::wstring& path) {
     HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE)
@@ -812,8 +813,6 @@ std::wstring read_log_tail(const std::wstring& path) {
         data.resize(read);
     }
     CloseHandle(file);
-    if (data.size() > 600)
-        data = data.substr(data.size() - 600);
     if (data.empty())
         return L"";
     const int wide =
@@ -822,10 +821,7 @@ std::wstring read_log_tail(const std::wstring& path) {
     if (wide > 0)
         MultiByteToWideChar(CP_UTF8, 0, data.data(), static_cast<int>(data.size()), out.data(),
                             wide);
-    for (auto& c : out)
-        if (c == L'\n' || c == L'\r')
-            c = L' ';
-    return out;
+    return encoder_error_summary(out);
 }
 struct Child {
     HANDLE process = nullptr;
@@ -844,7 +840,7 @@ struct Child {
         }
     }
 };
-// Names the first failing write stage and appends a bounded tail of that
+// Names the first failing write stage and appends the first diagnostic from that
 // child's stderr, so a stopped take keeps its cause in the media error even
 // though the temporary FFmpeg logs are removed during cleanup.
 enum class WriteStage { color_pipe, depth_sequence, depth_pipe };
@@ -869,11 +865,10 @@ std::wstring write_failure_detail(WriteStage stage, HRESULT hr, const Child& col
     const Child* failed = stage == WriteStage::color_pipe   ? &color
                           : stage == WriteStage::depth_pipe ? &depth
                                                             : nullptr;
-    const auto tail = failed ? read_log_tail(failed->log) : std::wstring();
+    const auto tail = failed ? read_log_error(failed->log) : std::wstring();
     if (!tail.empty()) {
-        constexpr std::size_t kTailLimit = 110;
         detail += L": ";
-        detail += tail.size() > kTailLimit ? tail.substr(tail.size() - kTailLimit) : tail;
+        detail += tail;
     }
     return detail;
 }
@@ -1043,7 +1038,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 if (FAILED(hr)) {
                     std::wstring message =
                         s->depth_enabled
-                            ? L"Paired depth output could not be written; recording stopped."
+                            ? L"Paired color/depth recording stopped."
                             : L"FFmpeg stopped accepting frames. Check the encoder and "
                               L"output path.";
                     message +=
@@ -1080,7 +1075,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             s->wake.notify_all();
             if (FAILED(hr)) {
                 std::wstring message =
-                    s->depth_enabled ? L"Paired depth output could not be written while finishing."
+                    s->depth_enabled ? L"Paired color/depth recording failed while finishing."
                                      : L"FFmpeg stopped accepting frames while finishing.";
                 message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
                 fail_text(*s, hr, message);
@@ -1101,7 +1096,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 DWORD code = 1;
                 GetExitCodeProcess(child.process, &code);
                 if (wait != WAIT_OBJECT_0 || code != 0) {
-                    const auto tail = read_log_tail(child.log);
+                    const auto tail = read_log_error(child.log);
                     fail_text(
                         *s, E_FAIL,
                         tail.empty()
@@ -1118,7 +1113,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             DWORD code = 1;
             GetExitCodeProcess(depth_child.process, &code);
             if (wait != WAIT_OBJECT_0 || code != 0) {
-                const auto tail = read_log_tail(depth_child.log);
+                const auto tail = read_log_error(depth_child.log);
                 fail_text(
                     *s, E_FAIL,
                     tail.empty()

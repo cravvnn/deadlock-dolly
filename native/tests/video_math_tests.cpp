@@ -1,4 +1,5 @@
 #include "dolly_video_math.hpp"
+#include "dolly_encoder_error.hpp"
 #include "dolly_capture_timing.hpp"
 #include <array>
 #include <cstdlib>
@@ -14,6 +15,16 @@ void require(bool value) {
 
 int main() {
     using namespace dolly::video;
+    const std::wstring first = L"Driver does not support the required nvenc API version.";
+    const std::wstring log = L"\r\n[h264_nvenc @ 00000123] " + first + L"\r\n" +
+        std::wstring(700, L'x') + L"\n[out @ 0123] Nothing was written into output file, "
+        L"because at least one of its streams received no packets.\n";
+    require(encoder_error_summary(log) == first);
+    require(encoder_error_summary(L"Permission denied\nNothing was written") == L"Permission denied");
+    require(encoder_error_summary(L" \r\n\t").empty());
+    require(encoder_error_summary(L"[unprefixed] failure") == L"[unprefixed] failure");
+    require(encoder_error_summary(std::wstring(200, L'x')) == std::wstring(107, L'x') + L"...");
+    require(encoder_error_summary(L"error", 0).empty());
     CaptureTrace capture_trace;
     require(!capture_trace.begin(false, 0, 1, 0));
     require(!capture_trace.begin(true, -1, 1, 0));

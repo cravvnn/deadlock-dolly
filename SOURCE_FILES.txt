@@ -373,6 +373,7 @@ native/include/dolly_runtime_generated.hpp
 native/include/dolly_sound_capture.hpp
 native/include/dolly_sound_compat.hpp
 native/include/dolly_video.hpp
+native/include/dolly_encoder_error.hpp
 native/include/dolly_video_math.hpp
 native/include/dolly_visualization.hpp
 native/include/dolly_visualization_runtime.hpp
