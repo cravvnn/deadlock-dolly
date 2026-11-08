@@ -1102,3 +1102,4 @@ tools/WindowCreateApi.tla
 tools/WindowCreate.cfg
 tools/WindowCreate.mutants.json
 tests/test_audio_boundaries.py
+docs/RELEASE_NOTES_0.7.18-beta.md
