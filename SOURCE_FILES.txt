@@ -1131,3 +1131,4 @@ dolly/GameFileCache.cfg
 dolly/GameFileCache.mutants.json
 tests/test_reviewed_owners.py
 native/tests/sequence_writer_start_tests.cpp
+docs/RELEASE_NOTES_0.7.19-beta.md
