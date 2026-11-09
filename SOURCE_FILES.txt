@@ -1146,3 +1146,16 @@ native/src/VideoCompleteness.tla
 native/src/VideoCompleteness.cfg
 native/src/VideoCompleteness.mutants.json
 docs/RELEASE_NOTES_0.7.21-beta.md
+dolly/ConsoleStart.tla
+dolly/ConsoleStartApi.tla
+dolly/ConsoleStart.cfg
+dolly/ConsoleStart.mutants.json
+dolly/PlaybackStart.tla
+dolly/PlaybackStartApi.tla
+dolly/PlaybackStart.cfg
+dolly/PlaybackStart.mutants.json
+dolly/ConfigMode.tla
+dolly/ConfigModeApi.tla
+dolly/ConfigMode.cfg
+dolly/ConfigMode.mutants.json
+tests/test_startup_audit_boundaries.py

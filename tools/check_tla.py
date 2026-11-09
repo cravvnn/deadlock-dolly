@@ -52,6 +52,9 @@ REQUIRED.update({"ArchiveCreate.cfg", "SaveCleanup.cfg", "SavedSnapshot.cfg",
 REQUIRED.update({"ReaderTerminal.cfg", "MediaFinalize.cfg", "VideoCompleteness.cfg"})
 
 
+REQUIRED.update({"ConsoleStart.cfg", "PlaybackStart.cfg", "ConfigMode.cfg"})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")

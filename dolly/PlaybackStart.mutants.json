@@ -1,0 +1,22 @@
+[
+  {
+    "name": "retain refused playback worker",
+    "replace": [
+      [
+        "reader' = FALSE",
+        "reader' = TRUE"
+      ]
+    ],
+    "expect": "RefusedRetired"
+  },
+  {
+    "name": "skip native release",
+    "replace": [
+      [
+        "nativeOwned' = reader",
+        "nativeOwned' = TRUE"
+      ]
+    ],
+    "expect": "RefusedRetired"
+  }
+]

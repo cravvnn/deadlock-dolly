@@ -2528,7 +2528,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._message("Playing POV segment.", playing=True, playback_error=None, time=0)
                 self._thread = threading.Thread(target=self._run_native,
                     args=(project, 0, speed, 60, False), daemon=True, name="DollyPOVPlayback")
-                self._thread.start()
+                try:
+                    self._thread.start()
+                except RuntimeError:
+                    self._thread = None
+                    raise
             except Exception:
                 self.finish_pov_recording()
                 raise
@@ -5075,7 +5079,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     self._message(message, playing=True, playback_error=None, time=start)
                     self._thread = threading.Thread(target=self._run_native,
                         args=(project, start, speed, rate, bool(frozen)), daemon=True, name="DollyNativePlayback")
-                    self._thread.start()
+                    try:
+                        self._thread.start()
+                    except RuntimeError:
+                        self._thread = None
+                        raise
                     return
                 if not frozen:
                     # Apply the initial camera/lens/cvars before resuming in
@@ -5092,7 +5100,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._message(message, playing=True, playback_error=None, time=start)
                 self._thread = threading.Thread(target=self._run, args=(project, start, speed, rate, frozen, smoothing),
                                                 daemon=True, name="DollyPlayback")
-                self._thread.start()
+                try:
+                    self._thread.start()
+                except RuntimeError:
+                    self._thread = None
+                    raise
             except Exception as exc:
                 self._playback_details["error"] = str(exc)
                 if native is not None:
