@@ -592,6 +592,13 @@ the authored lens curve continues independently. Try a short preview to check
 clearance from walls and character models. Saved source blends need a compatible
 Dolly version; older releases may not open them.
 
+**Fixed-step export** is enabled by default. It lets rendering and encoding take
+longer so the shot can retain every frame. If its capture queue times out, Dolly
+stops instead of skipping ahead. A fixed-step take, or an FFmpeg take in real-time
+mode, is rejected if frames were lost; it is not reported as a successful saved
+video. Keep fixed-step enabled for shot exports. If capture still fails, reduce
+the output FPS or rendering load and retry.
+
 The color video is always recorded first. **Depth master** is paired with that
 color take; ticking World, Players or Effects adds extra takes. When the color
 take finishes (at the end of the shot, or when you press **Finish recording**),

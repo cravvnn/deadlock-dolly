@@ -1,0 +1,32 @@
+[
+  {
+    "name": "old finalization publishes lost frames",
+    "replace": [
+      [
+        "RejectLoss == TRUE",
+        "RejectLoss == FALSE"
+      ]
+    ],
+    "expect": "NoIncompleteSuccess"
+  },
+  {
+    "name": "fixed timeout falls through to drop",
+    "replace": [
+      [
+        "StopOnOverflow == TRUE",
+        "StopOnOverflow == FALSE"
+      ]
+    ],
+    "expect": "FixedTimeoutStops"
+  },
+  {
+    "name": "publish cancelled take",
+    "replace": [
+      [
+        "published' = (~cancelled /\\ ~error",
+        "published' = (~error"
+      ]
+    ],
+    "expect": "NoCancelledSuccess"
+  }
+]

@@ -194,7 +194,7 @@ class VideoOptions:
     quality: int = 0
     preset: int = 0
     ffmpeg_path: "Path | None" = None
-    fixed_step: bool = False
+    fixed_step: bool = True
     # Replay slow-motion for fixed-step export (same range as playback speed).
     speed: float = 1.0
     # Paired depth master. When on, the take records into its own folder: the

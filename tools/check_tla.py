@@ -21,7 +21,8 @@ def check(root=ROOT):
         raise RuntimeError("Install model dependencies: npm ci --prefix tools/tla --ignore-scripts")
     result = subprocess.run([node, str(tools / "check.mjs"), "-json", str(root / "dolly"),
                              *(str(root / "tools" / name) for name in ("AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg")),
-                             str(root / "native" / "include" / "WriterAdmission.cfg")],
+                             str(root / "native" / "include" / "WriterAdmission.cfg"),
+                             str(root / "native" / "src" / "VideoCompleteness.cfg")],
                             cwd=root, text=True, capture_output=True)
     rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     checked = {Path(row["name"]).name for row in rows if row.get("kind") == "model"}
@@ -48,7 +49,7 @@ REQUIRED.update({"AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg"}
 REQUIRED.update({"ArchiveCreate.cfg", "SaveCleanup.cfg", "SavedSnapshot.cfg",
                  "TimingSwitch.cfg", "GameFileCache.cfg", "WriterAdmission.cfg"})
 
-REQUIRED.update({"ReaderTerminal.cfg", "MediaFinalize.cfg"})
+REQUIRED.update({"ReaderTerminal.cfg", "MediaFinalize.cfg", "VideoCompleteness.cfg"})
 
 
 def main():

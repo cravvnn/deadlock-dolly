@@ -83,7 +83,7 @@ def exercise_video_workflow(case, root):
     original = deepcopy(project)
     target = root / "shot.mp4"
     options = VideoOptions(target, fps=120, bitrate=10_000_000, codec="builtin",
-                           fixed_step=True, speed=.5, max_frames=30)
+                           speed=.5, max_frames=30)
     case.assertEqual(export.start(options, project=project,
                                   before_record=lambda: events.append(("filter",)))["state"], "recording")
     case.assertEqual(project, original)

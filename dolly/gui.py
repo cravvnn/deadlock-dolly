@@ -376,7 +376,7 @@ class DollyApp:
         self.players_scratch = tk.StringVar(value="")
         self._player_encode_cancel = None
         self._player_encode_progress = 0
-        self.video_fixed_step = tk.BooleanVar(value=False)
+        self.video_fixed_step = tk.BooleanVar(value=True)
         self.video_depth = tk.BooleanVar(value=False)
         self.video_depth_exr = tk.BooleanVar(value=False)
         # The EXR sequence requires the depth master; follow the variable so

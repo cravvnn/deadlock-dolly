@@ -24,7 +24,7 @@ void require(bool condition, const char* message) {
 }
 
 void record(const wchar_t* ffmpeg, const std::filesystem::path& output,
-            bool rgba, dolly::video::Codec codec) {
+            bool rgba, dolly::video::Codec codec, bool stalled = false, bool fixed = true) {
     using namespace dolly::video;
     const HWND window = CreateWindowExW(0, L"STATIC", L"Dolly color smoke", WS_OVERLAPPEDWINDOW,
                                         0, 0, width, height, nullptr, nullptr,
@@ -71,27 +71,43 @@ void record(const wchar_t* ffmpeg, const std::filesystem::path& output,
     options.codec = codec;
     options.fps = 30;
     options.bitrate = 20000000;
-    options.fixed_step = true;
-    options.max_frames = 2;
+    options.fixed_step = fixed;
+    options.max_frames = stalled ? 12 : 2;
     require(start(options), "Recorder refused color test");
     const auto deadline = GetTickCount64() + 15000;
     Status result;
+    bool delayed = false;
     do {
         context.p->UpdateSubresource(backbuffer.p, 0, nullptr, pixels.data(), width * 4, 0);
         capture(swapchain.p, device.p, context.p);
         swapchain.p->Present(0, 0);
         Sleep(2);
         result = status();
+        if (stalled && !delayed && result.frames_written >= 1) {
+            Sleep(350); // A slow render must lengthen export time, not omit frames.
+            delayed = true;
+        }
     } while (result.state != State::completed && result.state != State::failed &&
              GetTickCount64() < deadline);
-    if (result.state != State::completed)
+    const bool rejected = stalled && !fixed;
+    if (!rejected && result.state != State::completed)
         std::fwprintf(stderr, L"Recorder state %u: 0x%08x %ls\n",
                       static_cast<unsigned>(result.state), result.error_code, result.error);
     stop(result.state != State::completed);
     shutdown();
     reset_resources();
     DestroyWindow(window);
-    require(result.state == State::completed && result.frames_written == 2,
+    if (rejected) {
+        require(result.state == State::failed && result.frames_dropped > 0 &&
+                    std::wstring(result.error).find(L"lost frames") != std::wstring::npos,
+                "Missing real-time frames were not rejected explicitly");
+        require(!std::filesystem::exists(output), "Incomplete take was published as a video");
+        return;
+    }
+    require(result.frames_dropped == 0, "Frame-accurate capture lost frames");
+    require(result.duration_100ns == (stalled ? 12ull : 2ull) * 10000000 / 30,
+            "A render stall changed the encoded duration");
+    require(result.state == State::completed && result.frames_written == (stalled ? 12 : 2),
             "Recorder did not finish its two-frame test");
     require(std::filesystem::is_regular_file(output), "Recorder output is missing");
 }
@@ -122,6 +138,8 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
         record(argv[1], root / L"h264-mf-rgba.mov", true, dolly::video::Codec::h264_mf);
+        record(argv[1], root / L"fixed-stall.mkv", true, dolly::video::Codec::lossless, true, true);
+        record(argv[1], root / L"realtime-stall.mkv", true, dolly::video::Codec::lossless, true, false);
         if (argc == 4) {
             record(argv[1], root / L"h264-auto-rgba.mp4", true, dolly::video::Codec::auto_select);
             record(argv[1], root / L"hevc-nvenc-rgba.mp4", true, dolly::video::Codec::hevc_nvenc);

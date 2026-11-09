@@ -937,6 +937,19 @@ bool spawn_depth_ffmpeg(Session& s, Child& child, std::uint32_t width, std::uint
     return spawn_encoder(s, child, build_depth_command(s, width, height), s.depth_video_path,
                          L"depth", error);
 }
+// Called only after the render producer is quiescent and CPU draining has ended.
+// FFmpeg rawvideo cannot represent a hole in its constant-rate input. Fixed-step
+// exports promise every captured frame regardless of the selected encoder.
+void reject_incomplete_take(Session& s, bool& finalized) noexcept {
+    if (!finalized || s.cancel.load() || FAILED(s.error.load()) ||
+        !(s.fixed_step || s.encoder == Encoder::ffmpeg) || !s.dropped.load())
+        return;
+    fail(s, HRESULT_FROM_WIN32(ERROR_INVALID_DATA),
+         L"Export lost frames and was discarded to prevent a shortened or incomplete video. "
+         L"Use fixed-step export; if already enabled, lower the export FPS or rendering load.");
+    finalized = false;
+}
+
 void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     bool created = false, finalized = false, wrote_any = false;
     std::uint64_t frames = 0;
@@ -1085,6 +1098,8 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             ++frames;
             observe_written_frame(*s, stamp,
                                   double(frames - 1) / std::max<std::uint32_t>(1, s->fps));
+            s->duration.store(frames * 10000000ull / std::max<std::uint32_t>(1, s->fps),
+                              std::memory_order_release);
         }
         child.close_input();
         depth_child.close_input();
@@ -1148,6 +1163,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         DeleteFileW(child.log.c_str());
     if (!depth_child.log.empty())
         DeleteFileW(depth_child.log.c_str());
+    reject_incomplete_take(*s, finalized);
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
@@ -1311,6 +1327,7 @@ void encode(std::shared_ptr<Session> s) noexcept {
     if (com_started)
         CoUninitialize();
     api.unload();
+    reject_incomplete_take(*s, finalized);
     if (s->depth_enabled) {
         if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
@@ -1725,13 +1742,9 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                 if (!s.stopping.load(std::memory_order_acquire) &&
                     s.ready.load(std::memory_order_acquire) &&
                     !FAILED(s.error.load(std::memory_order_relaxed))) {
-                    if (s.depth_enabled)
-                        fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
-                             L"Paired depth export writer exceeded the capture wait budget.");
-                    else {
-                        s.capture_dropped.fetch_add(1, std::memory_order_relaxed);
-                        s.dropped.fetch_add(1, std::memory_order_relaxed);
-                    }
+                    fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                         L"Frame-accurate export writer exceeded the capture wait budget. "
+                         L"Recording stopped without skipping the frame.");
                 }
                 return;
             }
@@ -1893,9 +1906,9 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     if (gpu.submitted - gpu.drained >= kSlots) {
         if (timing)
             timing->outcome = CaptureTrace::queue_full;
-        if (s.depth_enabled && s.fixed_step) {
+        if (s.fixed_step) {
             fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
-                 L"Paired depth export could not keep up within the capture wait budget.");
+                 L"Frame-accurate export could not capture every frame. Recording stopped.");
             return;
         }
         s.capture_dropped.fetch_add(1, std::memory_order_relaxed);

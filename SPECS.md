@@ -634,3 +634,7 @@ graphics_profiles.load_library only converts a one-call bounded JSON parse error
 into the existing LaunchError boundary; it needs no additional lifecycle model.
 Tests preserve exact malformed bytes and normal selection. No default reset,
 GUI startup, live media finalization or packaged-output qualification is inferred.
+
+## Video completeness
+
+`native/src/VideoCompleteness.tla` models the final producer-quiescence, late GPU loss, fixed-step timeout and publication boundary in `dolly_video_win.cpp`. Four mode combinations, one pending frame and one cancellation; three guard mutants. FFmpeg and fixed-step takes cannot publish successfully after counted loss; fixed-step queue timeout stops instead of dropping. Ordinary real-time Media Foundation retains timestamped partial capture semantics. Does not establish game-clock accuracy, GPU pixels, throughput or whole-program correctness. Simplification keeps one shared terminal check across both writers, with no new runtime state.
