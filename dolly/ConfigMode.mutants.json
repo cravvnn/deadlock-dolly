@@ -1,0 +1,22 @@
+[
+  {
+    "name": "omit mode compensation",
+    "replace": [
+      [
+        "readonly' = (fault # \"restore\")",
+        "readonly' = FALSE"
+      ]
+    ],
+    "expect": "ModeRetained"
+  },
+  {
+    "name": "mask primary replacement failure",
+    "replace": [
+      [
+        "error' = error /\\ UNCHANGED fault",
+        "error' = (IF fault = \"restore\" THEN \"restore\" ELSE error) /\\ UNCHANGED fault"
+      ]
+    ],
+    "expect": "PrimaryKept"
+  }
+]

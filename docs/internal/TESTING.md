@@ -282,3 +282,16 @@ and ordinary errors are controlled. No game, renderer, full GUI startup or real
 encoder output is exercised. The two adjacent production models/APIs and four
 mutants join the 66-config/149-mutant normal model gate. Native/package/output
 qualification remains with the receiving release thread under normal gates.
+
+## Startup and audit supplement
+
+The portfolio now has 118 methods. `test_startup_audit_boundaries.py` retains
+five contracts for console reader start/cleanup/retry, native/console/POV worker
+refusal and recovery, original read-only mode after failed Windows replacement,
+decoded color-count findings and bounded malformed audit JSON. Windows file locks
+and owned sockets/readers are real; native/replay/process replies are simulated.
+The Windows lock portion is platform-specific; portable write-error checks remain.
+Larger private probes stay in analysis. No decoder/game or packaged-output result
+is implied. Three adjacent model/API/config sets and six mutants join the normal
+70-config/158-mutant model gate. Release native/package/output gates remain needed
+at their own boundaries. No maintained test or production timeout was removed.

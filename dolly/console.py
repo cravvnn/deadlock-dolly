@@ -386,8 +386,13 @@ class ConsoleClient:
                 self._event_bytes = 0
                 self._sequence = 0
                 self._replay_warning_logged = False
-            self._reader = threading.Thread(target=self._read_loop, args=(sock,), daemon=True, name="dolly-console")
-            self._reader.start()
+            try:
+                self._reader = threading.Thread(target=self._read_loop, args=(sock,), daemon=True, name="dolly-console")
+                self._reader.start()
+            except RuntimeError:
+                self._reader = None
+                self.close()
+                raise
 
     def close(self) -> None:
         # May be called during a pending request to cancel it immediately.

@@ -35,8 +35,12 @@ def _load(path: Path):
     try:
         if not path.is_file() or not 0 < path.stat().st_size <= 1024 * 1024:
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        with path.open("rb") as stream:
+            raw = stream.read(1024 * 1024 + 1)
+        if len(raw) > 1024 * 1024:
+            return None
+        return json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError):
         return None
 
 
@@ -138,9 +142,9 @@ def _audit_decoded(root: Path, result: dict) -> None:
                 continue
             frames = stream.get("decoded_frames")
             if not isinstance(frames, int) or isinstance(frames, bool) or frames <= 0:
-                if name == "depth":
-                    result["findings"].append(
-                        "decoded audit: depth stream has zero decoded frames (missing/ALWAYS signature)")
+                result["findings"].append(
+                    "decoded audit: depth stream has zero decoded frames (missing/ALWAYS signature)"
+                    if name == "depth" else "decoded audit: color stream has zero or invalid decoded frames")
         color, depth = streams.get("color"), streams.get("depth")
         if (isinstance(color, dict) and isinstance(depth, dict)
                 and color.get("timestamps") and color.get("timestamps") != depth.get("timestamps")):

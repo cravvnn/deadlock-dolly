@@ -33,8 +33,16 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
         except PermissionError:
             if os.name != "nt" or not path.exists():
                 raise
+            original_mode = stat.S_IMODE(path.stat().st_mode)
             os.chmod(path, writable)
-            os.replace(temp, path)
+            try:
+                os.replace(temp, path)
+            except BaseException:
+                try:
+                    os.chmod(path, original_mode)
+                except OSError:
+                    pass  # Preserve the replacement error if restoration is denied too.
+                raise
     finally:
         try:
             if temp.exists():

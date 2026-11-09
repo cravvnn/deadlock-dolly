@@ -1,7 +1,7 @@
 # Maintained model coverage
 
-The completion-boundary supplement adds two Python scopes to the reviewed-owner
-set. The current gate checks 66 configurations and 149 intended
+The startup/audit supplement adds three Python scopes. The current gate checks
+70 configurations and 158 intended
 invariant mutants. Counts describe finite contracts, not whole-program coverage.
 
 The worker/file-output, resource-boundary and reviewed failure-handling
@@ -638,3 +638,23 @@ GUI startup, live media finalization or packaged-output qualification is inferre
 ## Video completeness
 
 `native/src/VideoCompleteness.tla` models the final producer-quiescence, late GPU loss, fixed-step timeout and publication boundary in `dolly_video_win.cpp`. Four mode combinations, one pending frame and one cancellation; three guard mutants. FFmpeg and fixed-step takes cannot publish successfully after counted loss; fixed-step queue timeout stops instead of dropping. Ordinary real-time Media Foundation retains timestamped partial capture semantics. Does not establish game-clock accuracy, GPU pixels, throughput or whole-program correctness. Simplification keeps one shared terminal check across both writers, with no new runtime state.
+
+## Startup refusal and configuration compensation
+
+| Owner and callers | Spec / API | Scope |
+| --- | --- | --- |
+| ConsoleClient.connect; Controller.connect | [ConsoleStart](dolly/ConsoleStart.tla), [API](dolly/ConsoleStartApi.tla) | One connected socket, refused Thread.start and clear-before-close. No accepted worker, concurrent close or socket-close failure; actual socket/reader retry stays in owner tests. |
+| Controller.play_pov; finish_pov_recording via _halt, plus play native/console startup | [PlaybackStart](dolly/PlaybackStart.tla), [API](dolly/PlaybackStartApi.tla) | POV refused worker must retire before join/release; normal release returns. Actual owner tests cover all three startup sites and accepted retry. Readiness, renderer, restoration failures and concurrent callers excluded. |
+| file_ops._atomic_write; launcher, editing-session and graphics-profile writes | [ConfigMode](dolly/ConfigMode.tla), [API](dolly/ConfigModeApi.tla) | Initial Windows permission refusal, retry success/failure and compensating-chmod refusal. Fixed destination identity, completed temporary bytes and returning calls assumed; preserve primary error even when original mode cannot be restored. No namespace race, ACL, crash or directory-durability guarantee. |
+
+Production-only configs check finite safety, weakly fair returning completion
+and minimal completion-shape refinement, with terminal stuttering and deadlock
+checking enabled. Six invariant mutants remove the named protections. These
+are not whole-caller refinement, real-I/O liveness or measured state reductions.
+Private before comparisons remain outside the maintained models.
+
+export_audit._audit_decoded and _load change only one-call reporting/parsing:
+invalid color counts become findings; actual reads stay bounded and recursion
+becomes unreadable input. No new lifecycle model is needed. The five compact
+owner tests check exact files, cleanup/retry and independently known metadata.
+No actual decoder, packaged GUI, native DLL, recording or game proof is inferred.

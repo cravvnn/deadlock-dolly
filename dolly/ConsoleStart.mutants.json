@@ -1,0 +1,26 @@
+[
+  {
+    "name": "retain refused reader",
+    "replace": [
+      [
+        "reader' = FALSE",
+        "reader' = TRUE"
+      ]
+    ],
+    "expect": "RefusedRetired"
+  },
+  {
+    "name": "skip connection close",
+    "replace": [
+      [
+        "socketOpen' = FALSE",
+        "socketOpen' = TRUE"
+      ],
+      [
+        "connected' = FALSE",
+        "connected' = TRUE"
+      ]
+    ],
+    "expect": "RefusedRetired"
+  }
+]
