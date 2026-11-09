@@ -1159,3 +1159,4 @@ dolly/ConfigModeApi.tla
 dolly/ConfigMode.cfg
 dolly/ConfigMode.mutants.json
 tests/test_startup_audit_boundaries.py
+docs/RELEASE_NOTES_0.7.22-beta.md
