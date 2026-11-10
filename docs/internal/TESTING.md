@@ -320,3 +320,21 @@ these tests; production timeouts remain unchanged.
 Live failure follow-up: terminal pacing publication bypasses the 250ms progress throttle, because no later tick republishes after capture closes. The actual-owner test verifies a real pacing file transitions from progress/error0 to terminal/error1 immediately; the old throttle fails it. CaptureFailure models terminal visibility with an additional required-publication mutant.
 
 `test_reviewed_runtime.py` retains six compact contracts: camera result isolation, refused monitor/watchdog cleanup with actual owned children, real Windows locked partial error preservation, optional audit failure/cache completion, recursive definitions fallback through launcher pins, and realistic per-frame metadata plus actual read bounds. Native media_disconnect_tests compiles the actual media owner with controlled external services/clock; checks inactive disconnect, starting/recording/finalizing grace and unnamed shutdown. No game/real sound-hook flush or FFmpeg output qualification is inferred.
+
+
+## Capture completion supplement
+
+test_capture_completion.py adds five compact owner contracts: bounded actual
+movie-audio map reads and typed malformed-input failure; acknowledged cancellation
+and retired stop authority; optional preview completion; primary Players result
+preservation with strict captured-state admission; and layer/queue raised admission
+versus ambiguous publication. The existing test_review_hardening refusal keeper
+continues to cover explicit False and pre-submit ordering. Owned files and real
+queue workers run; console, encoder and denied I/O boundaries are controlled. No
+game, real FFmpeg output, PCM fidelity or whole-GUI recovery is inferred.
+
+MovieCancel and LayerQueueAdmission join the normal model gate with six expected
+mutants. Current inventory is emitted by tools/check_tla.py --json. Minimal API
+refinement and bounded composition evidence do not establish a whole-program proof.
+The maintained source suite now has 130 methods, including the draw-proof keeper
+and six reviewed-runtime owner tests from the preceding batch.

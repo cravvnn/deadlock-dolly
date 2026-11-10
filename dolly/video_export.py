@@ -967,10 +967,11 @@ class VideoExport:
                                         timeout=max(120.0, frames * 0.5),
                                         env=environment,
                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            encoded = result.returncode == 0 and target.is_file()
         except (OSError, subprocess.SubprocessError) as exc:
             LOG.warning("Depth preview could not be encoded: %s", exc)
             return status
-        if result.returncode != 0 or not target.is_file():
+        if not encoded:
             detail = (result.stderr or "").strip().splitlines()
             LOG.warning("Depth preview encoder failed: %s", detail[-1] if detail else "unknown error")
             return status

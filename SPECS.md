@@ -1,8 +1,8 @@
 # Maintained model coverage
 
-The startup/audit supplement adds three Python scopes. The current gate checks
-70 configurations and 158 intended
-invariant mutants. Counts describe finite contracts, not whole-program coverage.
+Run `python tools/check_tla.py --json` for the current checked configuration
+and expected-mutant inventory. Counts describe finite contracts, not whole-program
+coverage; this document records the owners and limits rather than a stale tally.
 
 The worker/file-output, resource-boundary and reviewed failure-handling
 supplements are described at the end of this inventory.
@@ -683,3 +683,43 @@ Live failure follow-up: terminal pacing publication bypasses the 250ms progress 
 CameraOwnership beside shot_commands models isolation of a returned mutable key; MediaDetach beside dolly_media_win models audio retirement after existing video grace; EncoderUnwind beside player_layer models refused monitor admission and locked-partial cleanup preserving the primary failure. Each has a minimal active/done caller API, production safety config and load-bearing mutants. These bounded contracts allow terminal stuttering and retain deadlock checks. They assume returning cleanup; no real-I/O liveness, whole-program refinement, GPU/output quality or state-count reduction is claimed. Parent ProcessJob fallback remains separate.
 
 reference_frame_count, definitions.decode and VideoExport._audit_take change synchronous parsing/exception boundaries; actual reader/launcher/finalizer probes cover them without inventing lifecycle state. The Players reader now accepts current per-frame audio metadata up to40MiB with an actual bounded UTF8 read. The optional audit's independent1MiB limit remains unchanged.
+
+## Scope reconciliation after the reviewed runtime batches
+
+AtomicMode owns per-file staging/publication and ordinary cleanup safety;
+ConfigMode separately covers failed read-only retry compensation. AtomicMode's
+failed-path permission states do not by themselves prove original-mode restoration.
+CleanupResult's modeled finally block is unchanged by that body compensation.
+SocketSetup ends at provisional socket transfer; ConsoleStart covers subsequent
+reader-start refusal. PlayersRecovery preserves request identity/ack-before-restore;
+PlayerFailure separately covers terminal result/error/request retention, with
+CaptureFailure owning the native drain. A later edit to a shared source file is
+not by itself semantic model drift, and these bounded slices are not a composed
+whole-program proof.
+
+## Capture completion and layer/queue composition
+
+| Component and callers | Spec | Contract and bounds |
+| --- | --- | --- |
+| MovieWave.cancel via ClipAudioCapture.cancel and GUI stop/discard/recovery | [MovieCancel](dolly/MovieCancel.tla), [API](dolly/MovieCancelApi.tla) | One pinned controller/root, one WAV, lost acknowledgement then one acknowledged retry, peer B and repeated cancel. Keep unconfirmed files and retire global-stop authority after acknowledgement. Returning console/cleanup assumed. Not whole-GUI recovery, active-generation proof, real PCM or I/O liveness. |
+| DollyApp._advance_layer_pipeline -> LayerPipeline.advance -> DollyApp._submit -> OperationQueue.submit | [LayerQueueAdmission](dolly/ui/LayerQueueAdmission.tla), [API](dolly/ui/LayerQueueAdmissionApi.tla) | Four branch kinds, two request identities, explicit refusal, pre-enqueue notification failure, accepted or ambiguous publication and one retry. UI serialized; busy=false confirms no admission. Keep intent only after confirmed refusal, never replay accepted/uncertain work. Direct callback mutation, close races, audit side effects, worker output and I/O liveness excluded. |
+
+LayerAdmission retains its explicit-False contract; Admission retains the queue's
+pre-enqueue reservation/reentrancy contract. LayerQueueAdmission checks the missing
+caller/queue failure boundary, including conservative ambiguous publication. It is
+a bounded composition projection, not a complete formal composition of the GUI.
+Both new production specs check a minimal active/done interface and safety mutants;
+the interface does not claim complete caller behavior. Terminal stuttering and
+deadlock checks remain. Matched private baseline/candidate comparisons show no
+reachable-state reduction (MovieCancel six states; LayerQueueAdmission 160).
+Rollback is centralized without adding persistent runtime flags.
+
+No independent lifecycle model is added for _movie_sample_windows' actual binary
+read bound/typed recursion containment, VideoExport._encode_depth_preview's optional
+result lookup, or DollyApp._finish_player_capture's two error-reporting writes:
+these are synchronous validation/exception boundaries. Their enclosing lifecycles
+remain covered only by existing partial scopes. test_capture_completion exercises
+the actual owners with known sample intervals, retained WAV/peer bytes, successful
+and failed optional completion, strict scratch admission, preserved primary error/
+cancel outcome and real queue worker retries. It does not establish game/encoder
+or full application correctness. All new files enter the explicit source manifest.

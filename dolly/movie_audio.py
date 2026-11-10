@@ -33,7 +33,11 @@ def _movie_sample_windows(video: Path, status: dict, name: str) -> tuple[int, li
     try:
         if not _plain_path(sidecar) or sidecar.stat().st_size > 40 * 1024 * 1024:
             raise ValueError('unsafe or oversized sample map')
-        data = json.loads(sidecar.read_text(encoding='utf-8'))
+        with sidecar.open('rb') as stream:
+            raw = stream.read(40 * 1024 * 1024 + 1)
+        if len(raw) > 40 * 1024 * 1024:
+            raise ValueError('sample map exceeds the read budget')
+        data = json.loads(raw.decode('utf-8'))
         frames = status.get('frames_written')
         fps = status.get('fps')
         duration = float(status.get('duration', 0))
@@ -71,7 +75,7 @@ def _movie_sample_windows(video: Path, status: dict, name: str) -> tuple[int, li
         if abs(sum(b-a for a,b in windows) - round(duration * rate)) > 1:
             raise ValueError('movie samples do not cover the video duration')
         return rate, windows
-    except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
         raise RuntimeError(error) from exc
 
 
@@ -274,11 +278,16 @@ class MovieWave:
 
     def cancel(self, controller=None) -> None:
         self._verify_output(controller)
-        if self.started and not self.finished and controller is not None:
+        if self.started and not self.finished:
+            if controller is None:
+                raise RuntimeError("Movie audio stop was not confirmed; its WAV was kept.")
             try:
-                controller._request("endmovie", timeout=15, allow_error=True)
-            except Exception:
-                pass
+                response = controller._request("endmovie", timeout=15, allow_error=True)
+            except Exception as exc:
+                raise RuntimeError("Movie audio stop was not confirmed; its WAV was kept.") from exc
+            if "Finishing movie" not in response:
+                raise RuntimeError("Movie audio stop was not confirmed; its WAV was kept.")
+            self.finished = True
         self.cleanup()
 
     def cleanup(self) -> None:

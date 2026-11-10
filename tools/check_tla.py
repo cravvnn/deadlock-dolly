@@ -62,6 +62,9 @@ REQUIRED.update({"ConsoleStart.cfg", "PlaybackStart.cfg", "ConfigMode.cfg"})
 REQUIRED.update({"CameraOwnership.cfg", "EncoderUnwind.cfg", "MediaDetach.cfg"})
 
 
+REQUIRED.update({"MovieCancel.cfg", "LayerQueueAdmission.cfg"})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")

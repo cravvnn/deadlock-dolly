@@ -1,3 +1,10 @@
+## Unreleased
+
+- Preserve movie WAV files when stopping audio cannot be confirmed, and avoid repeated stop commands after acknowledged cancellation.
+- Bound movie-audio timing-map reads and report malformed maps without discarding captured files.
+- Preserve completed recordings and original Players failure/cancellation results when optional output checks or scratch-status writes fail.
+- Keep pending layer work after a confirmed queue admission failure without replaying work that may already have been accepted.
+
 ### Deadlock Dolly v0.7.24-beta
 
 **0.7.24-beta**

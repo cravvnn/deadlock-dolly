@@ -1622,6 +1622,7 @@ class DollyApp:
             busy=self.busy,
             recorder_active=lambda: self.video_export.status().get("state") in ACTIVE_STATES,
             submit=self._submit,
+            not_enqueued=lambda: not self.operations.busy,
             finish_capture=self._finish_player_capture,
             combine=self._combine_layer,
             start_next=self._start_next_layer_take,
@@ -1819,10 +1820,18 @@ class DollyApp:
                 cancel=self._player_encode_cancel,
                 progress=lambda count: setattr(self, '_player_encode_progress', count))
         except InterruptedError:
-            if data_dir != Path(deployment): player_scratch.update(data_dir, 'cancelled')
+            if data_dir != Path(deployment):
+                try:
+                    player_scratch.update(data_dir, 'cancelled')
+                except OSError:
+                    LOG.warning("Could not update cancelled Players scratch status", exc_info=True)
             return {"state": "cancelled", "layer": layer, "reason": "processing_cancelled"}
         except Exception as exc:
-            if data_dir != Path(deployment): player_scratch.update(data_dir, 'encode_failed', error=exc)
+            if data_dir != Path(deployment):
+                try:
+                    player_scratch.update(data_dir, 'encode_failed', error=exc)
+                except OSError:
+                    LOG.warning("Could not update failed Players scratch status", exc_info=True)
             raise
         finally:
             self._player_encode_cancel = None

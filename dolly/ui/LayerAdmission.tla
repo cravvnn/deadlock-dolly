@@ -9,7 +9,8 @@ EXTENDS Naturals
 \* DollyApp._advance_layer_pipeline calls this with DollyApp._submit, which
 \* delegates to OperationQueue.submit. Four branch types/two request identities.
 \* At most one refused submission followed by acceptance. Worker calls/callbacks,
-\* side effects of audit, thrown submit/publication ambiguity and close excluded.
+\* side effects of audit and close excluded; LayerQueueAdmission separately
+\* covers raised submission and ambiguous publication across the queue boundary.
 \* The real queue starts functions asynchronously; UI completion cannot reenter
 \* advance while this Tk-thread call is still returning. No lock atomicity claim.
 VARIABLES pc,pending,original,advance,accepted,rejected,attempt,kind,delivered
