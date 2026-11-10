@@ -352,6 +352,8 @@ def format_video_status(status: dict) -> str:
     state = str(status.get("state", "idle"))
     if state == "failed":
         return "Recording failed: " + str(status.get("error") or "Native recording stopped unexpectedly.")
+    if state in ACTIVE_STATES and status.get("status_unavailable"):
+        return str(status.get("message") or "Recorder status unavailable; finish or discard to retry.")
     if state == "idle":
         return "Ready to record."
     if state == "starting":
@@ -468,7 +470,13 @@ class VideoExport:
                 current = {**last, "state": "starting", "error": str(exc),
                            "message": "Recorder status unavailable. Finish or discard before recording again."}
             elif last.get("state") in ACTIVE_STATES:
-                current = {**last, "state": "failed", "error": str(exc)}
+                try:
+                    exited = self.controller.status().get("game_running") is False
+                except (RuntimeError, ValueError, OSError):
+                    exited = False  # Unreadable ownership is not native completion.
+                current = {**last, "state": "failed" if exited else last["state"],
+                           "error": str(exc), "status_unavailable": not exited,
+                           "message": "Recorder status unavailable. Finish or discard before recording again."}
             else:
                 return last
         with self._lock:
@@ -821,13 +829,16 @@ class VideoExport:
         finally:
             # An unacknowledged capture still owns timing, size and camera.
             # Keep originals and reservation for retry, including normal Finish.
-            restorations = [] if self._capture_only else [
+            with self._lock:
+                unconfirmed = (self._capture_only or self._start_pending
+                               or self._last.get("state") in ACTIVE_STATES)
+            restorations = [] if unconfirmed else [
                 ("timing", lambda: self._clear_export_timing(required=True),
                  lambda: getattr(self.controller, "_export_timing", None) is not None),
                 ("render scale", self._clear_export_resolution,
                  lambda: getattr(self.controller, "_export_resolution", None) is not None),
             ]
-            if not self._capture_only and getattr(self, "_pov", False):
+            if not unconfirmed and getattr(self, "_pov", False):
                 restorations.append(("POV", self.controller.finish_pov_recording,
                                      lambda: getattr(self.controller, "_pov_active", False)))
             restoration_errors = []

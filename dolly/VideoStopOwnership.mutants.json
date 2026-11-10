@@ -1,0 +1,22 @@
+[
+  {
+    "name": "restore active recorder values",
+    "replace": [
+      [
+        "CanRestore(s) == s = \"cancelled\"",
+        "CanRestore(s) == TRUE"
+      ]
+    ],
+    "expect": "RetainActive"
+  },
+  {
+    "name": "never restore terminal values",
+    "replace": [
+      [
+        "CanRestore(s) == s = \"cancelled\"",
+        "CanRestore(s) == FALSE"
+      ]
+    ],
+    "expect": "TerminalRestored"
+  }
+]

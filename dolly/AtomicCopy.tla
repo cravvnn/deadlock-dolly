@@ -3,6 +3,9 @@ EXTENDS Naturals
 \* replace_file source/copy/fsync-temp/replace/finally-unlink, one owned file.
 \* Caller source is immutable under the install lock. Target replacement is
 \* assumed to expose old or new file after ordinary process interruption.
+\* Normal I/O failure/denied temporary unlink preserves primary exception,
+\* checked synchronously by test_recorder_updater; no extra lifecycle state.
+\* This copy/crash projection does not model exception diagnostics or fsync faults.
 \* Source or target corruption / machine power loss is not modeled/proved.
 \* Crash terminates the helper; a leftover private temp is allowed on abrupt
 \* process exit, as finally cannot run then. Caller retry is in Rollback.tla.

@@ -351,3 +351,13 @@ source-stop and ordinary cleanup faults are controlled. Real Win32 sharing-lock
 probes remain matching-input private qualification, not game/acoustic proof.
 The maintained suite now has 133 methods. AudioWorkRetirement and VoiceWindowReuse
 run in the normal model gate with three expected mutants and minimal API properties.
+
+`test_recorder_updater.py` owns five related failure contracts: ordinary Stop keeps
+runtime overrides until terminal telemetry (pre-admission unwind remains covered),
+unreadable recorder status retains ownership until valid terminal/confirmed exit,
+manifest actual read bounds and recursive bad-stage skipping, conservative journal
+cleanup with real installation locks, and primary write-error preservation under
+real Windows deny-delete temporary locks. The fsync error and process/native
+observations are controlled; real game/encoder and packaged update acceptance are
+not inferred. Keep test_update_handoff_process's actual child/lock/crash/rollback
+checks and existing P07/P15 contracts; these additions do not replace them.
