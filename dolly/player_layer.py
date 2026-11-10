@@ -134,9 +134,15 @@ def reference_frame_count(color_path: Path, fps: int) -> int:
     color_path = Path(color_path)
     sidecar = color_path.parent / "shot.json"
     try:
-        if not color_path.is_file() or not 0 < sidecar.stat().st_size <= 128 * 1024:
+        if not color_path.is_file() or not 0 < sidecar.stat().st_size <= 40 * 1024 * 1024:
             raise ValueError("missing color take or invalid metadata size")
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        # Match the movie-audio reader's metadata budget, including frame rows.
+        # Bound the actual read too: a file can grow after stat().
+        with sidecar.open("rb") as source:
+            payload = source.read(40 * 1024 * 1024 + 1)
+        if len(payload) > 40 * 1024 * 1024:
+            raise ValueError("color metadata exceeds the read budget")
+        data = json.loads(payload.decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("invalid metadata")
         frames = data.get("frames_written")
@@ -147,7 +153,7 @@ def reference_frame_count(color_path: Path, fps: int) -> int:
                 or data.get("first_frame") != 0 or data.get("last_frame") != frames - 1):
             raise ValueError("color take metadata does not match this export")
         return frames
-    except (OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError, RecursionError) as exc:
         raise RuntimeError("The players layer needs the completed color take's frame metadata. "
                            "Record a new color take before exporting Players.") from exc
 
@@ -443,7 +449,11 @@ def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60,
                             except OSError: pass
                         return
             monitor = threading.Thread(target=watch_cancel, daemon=True)
-            monitor.start()
+            try:
+                monitor.start()
+            except RuntimeError:
+                monitor = None
+                raise
             estimated_frames = max(1, Path(bundle).stat().st_size // (64 + width * height * 8))
             timer = threading.Timer(max(120, 30 * estimated_frames), process.kill)
             timer.daemon = True; timer.start()
@@ -486,7 +496,10 @@ def encode_bundle(ffmpeg: Path, bundle: Path, output: Path, *, fps: int = 60,
             except OSError:
                 pass
         frames.close()
-        temporary.unlink(missing_ok=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # A locked leftover must not replace the encoding failure.
 
 
 def _encode_failure(errors, code: int, cause=None, *, stopped: bool = False) -> str:

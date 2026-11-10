@@ -24,7 +24,8 @@ def check(root=ROOT):
                              str(root / "native" / "include" / "WriterAdmission.cfg"),
                              str(root / "native" / "src" / "VideoCompleteness.cfg"),
                              str(root / "native" / "src" / "DrawProof.cfg"),
-                             str(root / "native" / "src" / "CaptureFailure.cfg")],
+                             str(root / "native" / "src" / "CaptureFailure.cfg"),
+                             str(root / "native" / "src" / "MediaDetach.cfg")],
                             cwd=root, text=True, capture_output=True)
     rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     checked = {Path(row["name"]).name for row in rows if row.get("kind") == "model"}
@@ -56,6 +57,9 @@ REQUIRED.update({"ReaderTerminal.cfg", "MediaFinalize.cfg", "VideoCompleteness.c
 
 REQUIRED.update({"DrawProof.cfg", "CaptureFailure.cfg", "PlayerFailure.cfg"})
 REQUIRED.update({"ConsoleStart.cfg", "PlaybackStart.cfg", "ConfigMode.cfg"})
+
+
+REQUIRED.update({"CameraOwnership.cfg", "EncoderUnwind.cfg", "MediaDetach.cfg"})
 
 
 def main():

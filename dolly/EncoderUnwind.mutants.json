@@ -1,0 +1,24 @@
+[
+  {
+    "name": "retain refused monitor handle",
+    "config": "EncoderUnwind.cfg",
+    "replace": [
+      [
+        "AdmissionFix == TRUE",
+        "AdmissionFix == FALSE"
+      ]
+    ],
+    "expect": "LocallyRetired"
+  },
+  {
+    "name": "allow partial unlink to replace error",
+    "config": "EncoderUnwind.cfg",
+    "replace": [
+      [
+        "UnlinkFix == TRUE",
+        "UnlinkFix == FALSE"
+      ]
+    ],
+    "expect": "PrimaryPreserved"
+  }
+]

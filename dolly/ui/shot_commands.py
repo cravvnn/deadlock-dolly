@@ -9,7 +9,7 @@ from ..path import TrackKey
 
 
 def commit_camera(project, keys):
-    candidate = copy.deepcopy(project)
+    candidate, keys = copy.deepcopy((project, list(keys)))
     candidate.keyframes = sorted(keys, key=lambda key: key.time)
     if candidate.keyframes:
         candidate.validate()

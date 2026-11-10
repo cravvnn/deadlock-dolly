@@ -244,6 +244,7 @@ void media_worker_tick(const wchar_t* session_name, bool connected) noexcept {
             disconnected_since.store(0, std::memory_order_release);
             session_seen.store(0, std::memory_order_release);
             video::stop(false);
+            sound_capture_stop();
             reshade_set_enabled(false);
             close_mapping();
             return;

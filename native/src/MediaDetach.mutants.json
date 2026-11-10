@@ -1,0 +1,24 @@
+[
+  {
+    "name": "omit audio stop on detach",
+    "config": "MediaDetach.cfg",
+    "replace": [
+      [
+        "UseFix == TRUE",
+        "UseFix == FALSE"
+      ]
+    ],
+    "expect": "StoppedOnDetach"
+  },
+  {
+    "name": "stop audio before grace ends",
+    "config": "MediaDetach.cfg",
+    "replace": [
+      [
+        "UNCHANGED <<video,age,audio,detached>>",
+        "audio' = FALSE /\\ UNCHANGED <<video,age,detached>>"
+      ]
+    ],
+    "expect": "KeepGrace"
+  }
+]
