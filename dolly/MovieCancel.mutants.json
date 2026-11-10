@@ -1,0 +1,24 @@
+[
+  {
+    "name": "discard unacknowledged WAV",
+    "config": "MovieCancel.cfg",
+    "replace": [
+      [
+        "KeepUnconfirmed == TRUE",
+        "KeepUnconfirmed == FALSE"
+      ]
+    ],
+    "expect": "UnconfirmedKept"
+  },
+  {
+    "name": "send another stop after retirement",
+    "config": "MovieCancel.cfg",
+    "replace": [
+      [
+        "RetireAcknowledged == TRUE",
+        "RetireAcknowledged == FALSE"
+      ]
+    ],
+    "expect": "PeerPreserved"
+  }
+]

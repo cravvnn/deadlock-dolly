@@ -52,37 +52,50 @@ class LayerPipeline:
         return layered
 
     def advance(self, *, busy, recorder_active, submit, finish_capture, combine,
-                start_next, complete, audit, restore, restored=None):
+                start_next, complete, audit, restore, restored=None, not_enqueued=None):
         if not self.advance_pending or busy:
             return
+        retained = self.pending_capture, self.pending_combine, self.base_capture
+
+        def retry():
+            self.pending_capture, self.pending_combine, self.base_capture = retained
+            self.advance_pending = True
+
+        def dispatch(label, function, callback):
+            # Preserve intent only after a known rejection. A raised publish
+            # can be ambiguous; the caller must confirm no admission occurred.
+            try:
+                accepted = submit(label, function, callback)
+            except BaseException:
+                if not_enqueued is not None and not_enqueued():
+                    retry()
+                raise
+            if accepted is False:
+                retry()
+            return accepted
+
         if self.pending_capture is not None:
             layer, self.pending_capture = self.pending_capture, None
             self.advance_pending = False
-            if submit('Building players layer', lambda: finish_capture(layer), complete) is False:
-                self.pending_capture = layer
-                self.advance_pending = True
+            dispatch('Building players layer', lambda: finish_capture(layer), complete)
             return
         if self.pending_combine is not None:
             layer, self.pending_combine = self.pending_combine, None
             self.advance_pending = False
-            if submit('Building layer alpha', lambda: combine(layer), complete) is False:
-                self.pending_combine = layer
-                self.advance_pending = True
+            dispatch('Building layer alpha', lambda: combine(layer), complete)
             return
         if self.queue:
             if recorder_active():
                 return
             self.advance_pending = False
-            if submit('Recording layer take', start_next, complete) is False:
-                self.advance_pending = True
+            dispatch('Recording layer take', start_next, complete)
             return
         self.advance_pending = False
         if self.base_capture is not None:
             audit(self.base_capture)
-            base, self.base_capture = self.base_capture, None
-            if submit('Restoring scene layers', restore, restored or (lambda _: None)) is False:
-                self.base_capture = base
-                self.advance_pending = True
+            self.base_capture = None
+            dispatch('Restoring scene layers', restore, restored or (lambda _: None))
+
 
 
 def recover_export_failure(stop_recording, stop_camera, restore_scene):

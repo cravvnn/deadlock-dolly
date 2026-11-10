@@ -1186,3 +1186,12 @@ native/src/MediaDetachApi.tla
 native/tests/media_disconnect_tests.cpp
 tests/test_reviewed_runtime.py
 docs/RELEASE_NOTES_0.7.24-beta.md
+tests/test_capture_completion.py
+dolly/MovieCancel.tla
+dolly/MovieCancelApi.tla
+dolly/MovieCancel.cfg
+dolly/MovieCancel.mutants.json
+dolly/ui/LayerQueueAdmission.tla
+dolly/ui/LayerQueueAdmissionApi.tla
+dolly/ui/LayerQueueAdmission.cfg
+dolly/ui/LayerQueueAdmission.mutants.json

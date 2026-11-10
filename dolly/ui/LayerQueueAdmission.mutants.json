@@ -1,0 +1,46 @@
+[
+  {
+    "name": "lose raised notification intent",
+    "config": "LayerQueueAdmission.cfg",
+    "replace": [
+      [
+        "RestoreRaised == TRUE",
+        "RestoreRaised == FALSE"
+      ]
+    ],
+    "expect": "FailureRetained"
+  },
+  {
+    "name": "lose explicit refusal intent",
+    "config": "LayerQueueAdmission.cfg",
+    "replace": [
+      [
+        "RestoreRejected == TRUE",
+        "RestoreRejected == FALSE"
+      ]
+    ],
+    "expect": "FailureRetained"
+  },
+  {
+    "name": "restore already accepted work",
+    "config": "LayerQueueAdmission.cfg",
+    "replace": [
+      [
+        "KeepAccepted == TRUE",
+        "KeepAccepted == FALSE"
+      ]
+    ],
+    "expect": "AcceptedOwned"
+  },
+  {
+    "name": "blindly retry uncertain publication",
+    "config": "LayerQueueAdmission.cfg",
+    "replace": [
+      [
+        "HoldUncertain == TRUE",
+        "HoldUncertain == FALSE"
+      ]
+    ],
+    "expect": "UnknownHeld"
+  }
+]
