@@ -1205,3 +1205,4 @@ tools/VoiceWindowReuse.tla
 tools/VoiceWindowReuse.cfg
 tools/VoiceWindowReuse.mutants.json
 tools/VoiceWindowReuseApi.tla
+docs/RELEASE_NOTES_0.7.26-beta.md
