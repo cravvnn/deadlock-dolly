@@ -1185,3 +1185,4 @@ native/src/MediaDetach.tla
 native/src/MediaDetachApi.tla
 native/tests/media_disconnect_tests.cpp
 tests/test_reviewed_runtime.py
+docs/RELEASE_NOTES_0.7.24-beta.md
