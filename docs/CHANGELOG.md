@@ -1,4 +1,6 @@
-### Unreleased
+### Deadlock Dolly v0.7.27-beta
+
+**0.7.27-beta**
 
 - **Safer recording recovery.** *Before:* a failed stop or unreadable recorder report could restore runtime overrides while a recording remained active. *After:* Dolly retains timing, render scale, POV and retry ownership until terminal telemetry or confirmed process exit.
 
