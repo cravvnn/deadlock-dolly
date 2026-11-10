@@ -1,0 +1,13 @@
+[
+  {
+    "name": "allow cleanup to replace primary outcome",
+    "config": "AudioWorkRetirement.cfg",
+    "replace": [
+      [
+        "~Candidate",
+        "TRUE"
+      ]
+    ],
+    "expect": "PrimaryKept"
+  }
+]

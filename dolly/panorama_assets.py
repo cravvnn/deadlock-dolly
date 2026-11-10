@@ -108,7 +108,7 @@ def list_vpk_entries(index_path, *, prefixes=(), suffixes=(), max_tree_bytes=64*
             continue
         if suffixes and not key.endswith(tuple(suffixes)):
             continue
-        if archive == 0x7fff and length == 0:
+        if archive == 0x7fff and length == 0 and not _preload:
             continue
         if key in found:
             raise ValueError('Duplicate named VPK resource.')

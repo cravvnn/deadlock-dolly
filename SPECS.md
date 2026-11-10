@@ -723,3 +723,26 @@ the actual owners with known sample intervals, retained WAV/peer bytes, successf
 and failed optional completion, strict scratch admission, preserved primary error/
 cancel outcome and real queue worker retries. It does not establish game/encoder
 or full application correctness. All new files enter the explicit source manifest.
+
+
+## Audio work retirement and reused voice-window evidence
+
+| Component / callers | Spec | Contract and bounds |
+| --- | --- | --- |
+| ClipAudioCapture._cleanup_work via finish/_finish_movie/cancel, GUI stop worker | [AudioWorkRetirement](dolly/AudioWorkRetirement.tla), [API](dolly/AudioWorkRetirementApi.tla) | Three paths, primary completion/stop failure already established, locked/unlocked owned temporary work, returning cleanup. Preserve primary outcome; retain and log denied cleanup. Does not prove mux/stop authority, GUI retry, namespace races, crash durability or I/O liveness. |
+| filter_window via ClipAudioCapture.finish before export_captured_audio.export | [VoiceWindowReuse](tools/VoiceWindowReuse.tla), [API](tools/VoiceWindowReuseApi.tla) | One reused (slot,id), two complete nonoverlapping lifetimes, ordered integer endpoints 0..6, reference window (2,4). Select if any lifetime overlaps; exclude keys with no overlap. Missing/orphan stops, equal timestamps, multiple keys and publication are outside this model. Owner tests retain conservative incomplete observations and original row order. |
+
+Both production models check a minimal active/done interface and safety mutants.
+Terminal stuttering and deadlock checks remain; neither is a full-caller or
+whole-program refinement. Private matched baseline/candidate graphs have identical
+counts (12 /105 distinct states respectively); no state-count reduction claimed.
+Audio cleanup is centralized without new persistent flags. Voice filtering replaces
+independent last-start/last-stop snapshots with active starts and monotone selection.
+All rows for selected keys remain, preserving downstream pairing/partial evidence.
+
+panorama_assets.list_vpk_entries's preload-only resource admission is a stateless
+validation fix; no lifecycle model is useful. The actual CRC reader and DOF presence
+adapter are tested over an owned synthetic VPK, without claiming compiled material
+validity or installed-game/GPU proof. test_audio_inventory adds three owning contracts;
+all new files enter the source manifest and formal gate. Native/package and real
+audio/encoder qualification remain separate from these source tests.

@@ -1,3 +1,9 @@
+## Unreleased
+
+- Keep completed audio/video results and original stop errors when temporary audio work cannot be removed.
+- Retain overlapping sound uses when a voice identity is reused in reconstructed-audio logs.
+- Recognize VPK resources stored entirely in preload data during resource inventory checks.
+
 ### Deadlock Dolly v0.7.25-beta
 
 **0.7.25-beta**

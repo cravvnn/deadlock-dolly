@@ -242,7 +242,7 @@ class ClipAudioCapture:
             shutil.move(str(fitted / "reconstructed.wav"), str(self.folder / "reconstructed.wav"))
             shutil.move(str(fitted / "fitted_usage.csv"), str(self.folder / "usage.csv"))
         _mux(self.video, tracks, self.ffmpeg)
-        self.temporary.cleanup()
+        self._cleanup_work()
         return self.folder if self.reconstructed else None
 
     def _finish_movie(self, video_status: dict) -> Path | None:
@@ -286,7 +286,7 @@ class ClipAudioCapture:
             shutil.move(str(fitted / "reconstructed.wav"), str(self.folder / "reconstructed.wav"))
             shutil.move(str(fitted / "fitted_usage.csv"), str(self.folder / "usage.csv"))
         _mux(self.video, tracks, self.ffmpeg)
-        self.temporary.cleanup()
+        self._cleanup_work()
         return self.folder if self.reconstructed else None
 
     def cancel(self) -> None:
@@ -302,4 +302,11 @@ class ClipAudioCapture:
                 if self.process and self.process.poll() is None:
                     self.process.kill()
                     self.process.communicate()
-                self.temporary.cleanup()
+                self._cleanup_work()
+
+
+    def _cleanup_work(self) -> None:
+        try:
+            self.temporary.cleanup()
+        except OSError:
+            LOG.warning("Could not remove temporary clip-audio work: %s", self.work, exc_info=True)
