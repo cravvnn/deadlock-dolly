@@ -876,10 +876,12 @@ class VideoExport:
         UI, but a validator problem can never fail a finished recording.
         """
         folder = self._layer_folder
-        if folder is None or not folder.is_dir():
+        if folder is None:
             return status
         from .export_audit import audit_take
         try:
+            if not folder.is_dir():
+                return status
             report = audit_take(folder)
         except Exception:  # noqa: BLE001 - diagnostics must never fail an export
             LOG.exception("Take audit could not run")

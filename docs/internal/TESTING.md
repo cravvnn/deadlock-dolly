@@ -318,3 +318,5 @@ and desktop telemetry are simulated. Game wall-time behavior is not qualified by
 these tests; production timeouts remain unchanged.
 
 Live failure follow-up: terminal pacing publication bypasses the 250ms progress throttle, because no later tick republishes after capture closes. The actual-owner test verifies a real pacing file transitions from progress/error0 to terminal/error1 immediately; the old throttle fails it. CaptureFailure models terminal visibility with an additional required-publication mutant.
+
+`test_reviewed_runtime.py` retains six compact contracts: camera result isolation, refused monitor/watchdog cleanup with actual owned children, real Windows locked partial error preservation, optional audit failure/cache completion, recursive definitions fallback through launcher pins, and realistic per-frame metadata plus actual read bounds. Native media_disconnect_tests compiles the actual media owner with controlled external services/clock; checks inactive disconnect, starting/recording/finalizing grace and unnamed shutdown. No game/real sound-hook flush or FFmpeg output qualification is inferred.

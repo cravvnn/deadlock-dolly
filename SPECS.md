@@ -677,3 +677,9 @@ Simplification: reuse normal drain and recovery instead of a forced-close path;
 no second lifecycle or state-count reduction/whole-program liveness claim.
 
 Live failure follow-up: terminal pacing publication bypasses the 250ms progress throttle, because no later tick republishes after capture closes. The actual-owner test verifies a real pacing file transitions from progress/error0 to terminal/error1 immediately; the old throttle fails it. CaptureFailure models terminal visibility with an additional required-publication mutant.
+
+## Reviewed runtime ownership and metadata
+
+CameraOwnership beside shot_commands models isolation of a returned mutable key; MediaDetach beside dolly_media_win models audio retirement after existing video grace; EncoderUnwind beside player_layer models refused monitor admission and locked-partial cleanup preserving the primary failure. Each has a minimal active/done caller API, production safety config and load-bearing mutants. These bounded contracts allow terminal stuttering and retain deadlock checks. They assume returning cleanup; no real-I/O liveness, whole-program refinement, GPU/output quality or state-count reduction is claimed. Parent ProcessJob fallback remains separate.
+
+reference_frame_count, definitions.decode and VideoExport._audit_take change synchronous parsing/exception boundaries; actual reader/launcher/finalizer probes cover them without inventing lifecycle state. The Players reader now accepts current per-frame audio metadata up to40MiB with an actual bounded UTF8 read. The optional audit's independent1MiB limit remains unchanged.

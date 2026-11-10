@@ -1171,3 +1171,17 @@ dolly/PlayerFailure.cfg
 dolly/PlayerFailure.mutants.json
 dolly/PlayerFailure.tla
 docs/RELEASE_NOTES_0.7.23-beta.md
+dolly/EncoderUnwind.cfg
+dolly/EncoderUnwind.mutants.json
+dolly/EncoderUnwind.tla
+dolly/EncoderUnwindApi.tla
+dolly/ui/CameraOwnership.cfg
+dolly/ui/CameraOwnership.mutants.json
+dolly/ui/CameraOwnership.tla
+dolly/ui/CameraOwnershipApi.tla
+native/src/MediaDetach.cfg
+native/src/MediaDetach.mutants.json
+native/src/MediaDetach.tla
+native/src/MediaDetachApi.tla
+native/tests/media_disconnect_tests.cpp
+tests/test_reviewed_runtime.py

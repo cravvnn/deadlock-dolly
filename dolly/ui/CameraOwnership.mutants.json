@@ -1,0 +1,13 @@
+[
+  {
+    "name": "restore original alias",
+    "config": "CameraOwnership.cfg",
+    "replace": [
+      [
+        "UseFix == TRUE",
+        "UseFix == FALSE"
+      ]
+    ],
+    "expect": "OriginalPreserved"
+  }
+]

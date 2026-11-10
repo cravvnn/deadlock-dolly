@@ -2487,3 +2487,11 @@ visible camera behavior. Those remain first-run checks described in README.md.
 
 Initial camera-path editor, replay controller, console transport, cvar tracks,
 development launcher and recoverable unlocker mount.
+
+### Unreleased — reviewed runtime hardening
+
+- **Independent camera edits and complete media cleanup.** *Before:* committed keys could share mutable objects, and a retired media session could omit source-audio cleanup. *After:* camera keys are copied together and audio is stopped after the existing disconnect grace.
+
+- **Safer Players error cleanup.** *Before:* a refused monitor thread or locked partial file could interrupt cleanup or replace the encoding error. *After:* refused workers are retired and locked leftovers preserve the original error.
+
+- **Reliable metadata handling.** *Before:* valid larger sidecars could block Players, while diagnostic-folder or deeply nested definitions errors could escape their fallback. *After:* sidecar reads accept current timing data within a bounded budget, and those optional failures stay contained.

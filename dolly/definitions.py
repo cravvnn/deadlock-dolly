@@ -420,7 +420,7 @@ def decode(raw: bytes, *, native_abi: int = 4) -> Definitions:
         raise DefinitionsError("definitions: document is too large")
     try:
         document = json.loads(bytes(raw).decode("utf-8"))
-    except (UnicodeError, ValueError) as exc:
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise DefinitionsError("definitions: document is not valid UTF-8 JSON") from exc
     return parse(document, native_abi=native_abi)
 
