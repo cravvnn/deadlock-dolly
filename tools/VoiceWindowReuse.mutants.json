@@ -1,0 +1,24 @@
+[
+  {
+    "name": "forget earlier overlapping lifetime",
+    "config": "VoiceWindowReuse.cfg",
+    "replace": [
+      [
+        "Candidate /\\ selected",
+        "FALSE /\\ selected"
+      ]
+    ],
+    "expect": "NoLostVoice"
+  },
+  {
+    "name": "select voices outside reference window",
+    "config": "VoiceWindowReuse.cfg",
+    "replace": [
+      [
+        "Overlap(c,d) \\/ (Candidate /\\ selected)",
+        "TRUE"
+      ]
+    ],
+    "expect": "NoFalseSelection"
+  }
+]

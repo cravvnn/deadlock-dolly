@@ -1,7 +1,7 @@
 {
   "base_audit": "CORE_TEST_AUDIT.json records upstream Linux evidence, not current Windows release results",
   "core_contracts": 15,
-  "maintained_tests": 130,
+  "maintained_tests": 133,
   "supplements": [
     "Replay repair, helper setup and scratch: 34 owner tests including 10 refactor regressions",
     "Updater/startup: 2 real child-process race schedules",
@@ -17,7 +17,8 @@
     "Reviewed completion boundaries: three owner contracts for independent native-media cleanup, replay-worker terminal parsing failures and non-destructive graphics-library startup errors",
     "Five reviewed startup/audit contracts: console reader and camera worker start refusal, read-only replacement compensation, invalid decoded color counts and bounded malformed audit input",
     "Player failure-before-ack draw-proof lifetime keeper plus six reviewed-runtime camera/encoder/audit/definitions/metadata contracts",
-    "Capture completion: five map-read, acknowledged movie cancel, optional preview, Players primary result and layer/queue admission composition contracts"
+    "Capture completion: five map-read, acknowledged movie cancel, optional preview, Players primary result and layer/queue admission composition contracts",
+    "Audio retirement/inventory: three temporary-work outcome, reused voice-window selection and preload-only VPK contracts"
   ],
   "policy": "No fixed test ceiling; permanent tests require a distinct contract/regression gap. Temporary harnesses stay ignored outside discovery.",
   "limits": "Reduced coverage accepted explicitly; not equivalent to the retired exhaustive suite. Models do not replace source/platform/output tests. Release results stay with the release artifact."

@@ -338,3 +338,16 @@ mutants. Current inventory is emitted by tools/check_tla.py --json. Minimal API
 refinement and bounded composition evidence do not establish a whole-program proof.
 The maintained source suite now has 130 methods, including the draw-proof keeper
 and six reviewed-runtime owner tests from the preceding batch.
+
+
+## Audio retirement and resource inventory supplement
+
+test_audio_inventory.py adds three owner contracts: audio temporary cleanup must
+preserve completion/primary stop errors; loopback filtering retains any overlapping
+lifetime of a reused voice key and downstream paired evidence; VPK listing includes
+CRC-readable preload-only resources while retaining duplicate/entry limits. Real
+PCM/files and production mux/parse/presence adapters run; conversion, subprocess,
+source-stop and ordinary cleanup faults are controlled. Real Win32 sharing-lock
+probes remain matching-input private qualification, not game/acoustic proof.
+The maintained suite now has 133 methods. AudioWorkRetirement and VoiceWindowReuse
+run in the normal model gate with three expected mutants and minimal API properties.

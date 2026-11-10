@@ -28,7 +28,7 @@ def filter_window(voice_log: Path, reference_wav: Path, output: Path) -> dict:
     qpc_start = round(first_sample * int(frequency[1]))
     qpc_end = round((first_sample + info.frames / info.samplerate) * int(frequency[1]))
     starts = {}
-    stops = {}
+    selected = set()
     events = []
     for line in body:
         if line.startswith("# "):
@@ -37,13 +37,23 @@ def filter_window(voice_log: Path, reference_wav: Path, output: Path) -> dict:
         if row["kind"] not in ("start", "stop"):
             raise ValueError(f"Unknown native voice kind: {row['kind']}")
         events.append((line, row))
+    # Pair each lifetime in clock order; an older stop cannot close a reused
+    # identity's newer start. Keep all rows for selected identities so export's
+    # existing pairing and partial-capture diagnostics remain authoritative.
+    for _line, row in sorted(events, key=lambda event: int(event[1]["qpc_ticks"])):
+        key = (row["voice_slot"], row["voice_id"])
         if row["kind"] == "start":
-            starts[(row["voice_slot"], row["voice_id"])] = row
+            previous = starts.get(key)
+            if previous is not None and int(previous["qpc_ticks"]) < qpc_end:
+                selected.add(key)  # No observed stop: conservatively retain.
+            starts[key] = row
         else:
-            stops[(row["voice_slot"], row["voice_id"])] = row
-    selected = {key for key, row in starts.items()
-                if int(row["qpc_ticks"]) < qpc_end and
-                (key not in stops or int(stops[key]["qpc_ticks"]) > qpc_start)}
+            previous = starts.pop(key, None)
+            if (previous is not None and int(previous["qpc_ticks"]) < qpc_end
+                    and int(row["qpc_ticks"]) > qpc_start):
+                selected.add(key)
+    selected.update(key for key, row in starts.items()
+                    if int(row["qpc_ticks"]) < qpc_end)
     footer = next((line for line in reversed(body) if line.startswith("# ")), None)
     if not footer:
         raise ValueError("Native voice log has no completion footer")

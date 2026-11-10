@@ -1196,3 +1196,12 @@ dolly/ui/LayerQueueAdmissionApi.tla
 dolly/ui/LayerQueueAdmission.cfg
 dolly/ui/LayerQueueAdmission.mutants.json
 docs/RELEASE_NOTES_0.7.25-beta.md
+tests/test_audio_inventory.py
+dolly/AudioWorkRetirement.tla
+dolly/AudioWorkRetirement.cfg
+dolly/AudioWorkRetirement.mutants.json
+dolly/AudioWorkRetirementApi.tla
+tools/VoiceWindowReuse.tla
+tools/VoiceWindowReuse.cfg
+tools/VoiceWindowReuse.mutants.json
+tools/VoiceWindowReuseApi.tla
