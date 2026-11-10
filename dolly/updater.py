@@ -53,9 +53,14 @@ def owned_name(name):
 
 def read_manifest(root):
     path = Path(root) / MANIFEST
-    if path.stat().st_size > 8 * 1024 * 1024:
+    with path.open("rb") as stream:
+        raw = stream.read(8 * 1024 * 1024 + 1)
+    if len(raw) > 8 * 1024 * 1024:
         raise ValueError("Update manifest is too large")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except RecursionError as exc:
+        raise ValueError("Update manifest JSON is too deeply nested") from exc
     if (not isinstance(data, dict) or type(data.get("schema")) is not int
             or data["schema"] not in (1, 2) or not isinstance(data.get("files"), dict)
             or not isinstance(data.get("version"), str)):

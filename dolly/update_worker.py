@@ -34,9 +34,11 @@ def atomic_json(path, value):
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
-        # A serialization or write failure must not leave .dolly-* temporaries
-        # behind in the install root; a successful replace already moved it.
-        temporary.unlink(missing_ok=True)
+        # Best-effort cleanup; a successful replace already moved the temporary.
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # A locked temporary must not replace the primary write error.
 
 
 def checked_file(root, name):
@@ -99,7 +101,10 @@ def replace_file(source, target):
             os.fsync(durable.fileno())
         _replace_retrying(temporary, target)
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # A locked temporary must not replace the primary write error.
 
 
 def rollback(plan):
@@ -501,10 +506,11 @@ def _workspace_finished(work, keep):
     journal = work / "journal.json"
     if journal.exists():
         try:
-            state = json.loads(journal.read_text(encoding="utf-8")).get("state")
-        except (OSError, ValueError):
+            data = json.loads(journal.read_text(encoding="utf-8"))
+        except (OSError, ValueError, RecursionError):
             return False
-        return state != "applying"
+        # Ambiguous or future journal states do not authorize backup deletion.
+        return isinstance(data, dict) and data.get("state") in ("complete", "rolled_back")
     if (work / "result.json").exists():
         return True
     try:
@@ -520,9 +526,9 @@ def _workspace_records_target(work, target):
     for name in ("plan.json", "journal.json"):
         try:
             data = json.loads((work / name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             continue
-        if isinstance(data.get("target"), str):
+        if isinstance(data, dict) and isinstance(data.get("target"), str):
             recorded = data["target"]
     if recorded is None:
         return False

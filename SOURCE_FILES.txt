@@ -1206,3 +1206,16 @@ tools/VoiceWindowReuse.cfg
 tools/VoiceWindowReuse.mutants.json
 tools/VoiceWindowReuseApi.tla
 docs/RELEASE_NOTES_0.7.26-beta.md
+tests/test_recorder_updater.py
+dolly/VideoStopOwnership.tla
+dolly/VideoStopOwnership.cfg
+dolly/VideoStopOwnership.mutants.json
+dolly/VideoStopOwnershipApi.tla
+dolly/RecorderReadUncertainty.tla
+dolly/RecorderReadUncertainty.cfg
+dolly/RecorderReadUncertainty.mutants.json
+dolly/RecorderReadUncertaintyApi.tla
+dolly/WorkspaceEligibility.tla
+dolly/WorkspaceEligibility.cfg
+dolly/WorkspaceEligibility.mutants.json
+dolly/WorkspaceEligibilityApi.tla

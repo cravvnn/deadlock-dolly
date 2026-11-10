@@ -1,0 +1,22 @@
+[
+  {
+    "name": "treat missing status as terminal failure",
+    "replace": [
+      [
+        "KeepLive == TRUE",
+        "KeepLive == FALSE"
+      ]
+    ],
+    "expect": "NoFalseTerminal"
+  },
+  {
+    "name": "hold confirmed exited owner as active",
+    "replace": [
+      [
+        "KeepLive /\\ knowledge # \"exit\"",
+        "KeepLive"
+      ]
+    ],
+    "expect": "ExitReported"
+  }
+]

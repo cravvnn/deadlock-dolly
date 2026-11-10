@@ -17,7 +17,7 @@ for this development check. No hosted checker or workflow is needed.
 | --- | --- | --- |
 | `session_cleanup.remove_overlay`; Session.close, recover_pending, recover_orphans, detached waiter | [CleanupMarker.tla](dolly/CleanupMarker.tla), [OwnershipApi.tla](dolly/OwnershipApi.tla) | One validated unmounted overlay, one late plain user file, final-directory failure and staged marker repair. Successful compensation restores retry evidence. Crash/repair failure are unresolved terminal outcomes; no universal crash-recovery or hostile namespace-race claim. Actual cleanup/recovery regression preserves late user bytes. |
 | `update_worker.rollback`; called by `install` on failure and `_apply_plan` during recovery | [UpdateRollback.tla](dolly/UpdateRollback.tla), [RollbackApi.tla](dolly/RollbackApi.tla) | Three sorted owned files: replacement, addition, removal; each interrupted install prefix; up to two process restarts during rollback. Restore all original contents before acknowledgement and pending-marker removal. Backups stay immutable. |
-| `update_worker.replace_file`; used by installation and rollback | [AtomicCopy.tla](dolly/AtomicCopy.tla), [FileOpsApi.tla](dolly/FileOpsApi.tla) | Single-file temporary copy/flush/replace and process interruption. Preserve the source and publish original bytes. Temporary leftovers after abrupt exit are allowed; normal failures run cleanup. |
+| `update_worker.replace_file`; used by installation and rollback | [AtomicCopy.tla](dolly/AtomicCopy.tla), [FileOpsApi.tla](dolly/FileOpsApi.tla) | Single-file temporary copy/flush/replace and process interruption. Preserve the source and publish original bytes. Temporary leftovers after abrupt exit or denied cleanup are allowed; normal failures attempt cleanup without masking the primary exception (owning test). |
 | `release_launcher.main` ordinary startup, concurrent `_apply_plan`/`install` | [LauncherHandoff.tla](dolly/LauncherHandoff.tla), [RecoveryResourcesApi.tla](dolly/RecoveryResourcesApi.tla) | One writer admitted before startup or attempting admission while startup owns the shared install lock; one old staged workspace, one file, one optional writer exit, one editor handoff. Pending check, cleanup and handoff share ownership. Target-side staging and commit are separate, allowing delayed executable replacement. |
 | `cleanup_workspaces`, `_workspace_finished`; sole production caller `release_launcher.main` | [WorkspaceCleanup.tla](dolly/WorkspaceCleanup.tla) | Lower projection of the caller-held lock around eligibility and removal. Backup unlink and directory removal are separate actions. Preserve recovery resources and unfinished journals; PENDING prevents cleanup. This helper does not reacquire the caller's lock. |
 | Input validation, reviewed-build admission, manifest verification and explicit update consent | Core Python contracts P1, P13 and P15 in [TESTING.md](docs/internal/TESTING.md); outside these implementation models | Tests exercise validated files and simulated network/process boundaries. Models still assume correct hashes and OS lock semantics; source tests do not qualify a published game profile or packaged Windows update. |
@@ -746,3 +746,40 @@ adapter are tested over an owned synthetic VPK, without claiming compiled materi
 validity or installed-game/GPU proof. test_audio_inventory adds three owning contracts;
 all new files enter the source manifest and formal gate. Native/package and real
 audio/encoder qualification remain separate from these source tests.
+
+## Recorder uncertainty and updater cleanup
+
+| Owner and callers | Adjacent scope | Contract and bounds |
+| --- | --- | --- |
+| VideoExport.stop finally; GUI _stop_video_recording and other owner Stop calls | [VideoStopOwnership](dolly/VideoStopOwnership.tla), [API](dolly/VideoStopOwnershipApi.tla) | One admitted ordinary take, recording/finalizing, command error/deadline, optional POV, terminal retry. Keep timing/scale/POV until terminal. Cached active status is coherent; transport uncertainty is separately projected below. Players, start admission, concurrent owner replacement and full GUI recovery are excluded. |
+| VideoExport.status; polling/start/stop callers | [RecorderReadUncertainty](dolly/RecorderReadUncertainty.tla), [API](dolly/RecorderReadUncertaintyApi.tla) | One cached active take, invalid status packet, process observation alive/unknown/exited, later valid terminal and restoration. Unknown observation retains reservation and runtime settings; known exit remains failed. No actual engine/GPU/process-identity proof. |
+| update_worker._workspace_finished via cleanup_workspaces, release_launcher.main | [WorkspaceEligibility](dolly/WorkspaceEligibility.tla), [API](dolly/WorkspaceEligibilityApi.tla) | One existing journal/backup, five journal observations, pending and keep booleans; only complete/rolled_back authorizes journal-based cleanup. WorkspaceCleanup keeps the writer-lock interleaving contract. This scope assumes the caller holds that lock and metadata stays stable. No-journal result/age policy, dishonest terminal record, external writer and path attacks excluded. |
+
+These three production-only models check safety and a minimal call-completion
+projection with terminal stuttering and deadlock checks enabled. They do not add
+whole-program refinement or temporal I/O liveness. The recorder observation and
+cleanup specs share an interpretation of native activity and settings ownership;
+they are bounded separate projections, not a mechanically composed GUI theorem.
+The private before/after comparisons had identical state counts (32 Stop,15 read,
+100 eligibility); these fixes remove unsafe transitions, not a measured state
+space reduction. Private baseline specs remain research artifacts, not exports.
+
+ManifestScan now also represents recursive manifest JSON as a typed ValueError
+that staged_payload skips, preserving later valid cache discovery. The actual
+8MiB+1 binary read budget/UTF8 conversion is a synchronous reader contract, checked
+by test_recorder_updater; it introduces no separate lifecycle state. Existing
+schema, owned-path, approved-version/digest and payload verification remain.
+
+update_worker.atomic_json and replace_file now contain OSError only from final
+owned temporary unlink. A real Win32 deny-delete lock plus controlled fsync fault
+checks primary exception identity and exact old target bytes; ordinary writes
+still flush/fsync/replace and leave no temporary. No additional state model is
+needed for this synchronous exception boundary. AtomicCopy's successful-copy/crash
+projection remains unchanged and explicitly excludes these diagnostic faults.
+No machine power-loss or persistent-failure durability proof follows from fsync.
+
+test_recorder_updater adds five owning contracts with controlled GUI submit/native
+packets, actual decoder/transport, actual filesystem and installation byte locks.
+Existing child-process update/recovery/handoff checks now import integrated source.
+They simulate packaged process identity/editor launch; native/package/output and
+previous-release updater qualification remain separate release obligations.

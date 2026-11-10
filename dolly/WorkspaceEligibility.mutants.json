@@ -1,0 +1,42 @@
+[
+  {
+    "name": "delete unknown journal as if finished",
+    "replace": [
+      [
+        "KnownTerminal == TRUE",
+        "KnownTerminal == FALSE"
+      ]
+    ],
+    "expect": "AmbiguousRetained"
+  },
+  {
+    "name": "ignore pending marker",
+    "replace": [
+      [
+        "CheckMarker == TRUE",
+        "CheckMarker == FALSE"
+      ]
+    ],
+    "expect": "PendingRetained"
+  },
+  {
+    "name": "ignore selected workspace",
+    "replace": [
+      [
+        "CheckKeep == TRUE",
+        "CheckKeep == FALSE"
+      ]
+    ],
+    "expect": "SelectedRetained"
+  },
+  {
+    "name": "never clean explicit terminal workspace",
+    "replace": [
+      [
+        "AllowTerminal == TRUE",
+        "AllowTerminal == FALSE"
+      ]
+    ],
+    "expect": "TerminalRemoved"
+  }
+]

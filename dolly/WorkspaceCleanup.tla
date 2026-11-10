@@ -11,6 +11,8 @@ EXTENDS Naturals
 \* an empty workspace. Eligibility observation and deletion are separate steps.
 \* DeleteBackup is a single critical unlink within rmtree, not an assertion
 \* that recursive directory removal is atomic. OS file operations must return.
+\* WorkspaceEligibility covers existing ambiguous/rolled-back journal admission;
+\* "none" here is an already eligible old unjournaled workspace, not every age.
 \* Download liveness, legacy ownership, path/link attacks, launcher/editor
 \* startup exclusion and machine power loss remain outside this model.
 CONSTANT Design
@@ -59,7 +61,7 @@ CleanerPending == /\ cpc = "pending"
                      ELSE /\ cpc' = "eligible"
                           /\ UNCHANGED <<lock,wpc,workspace,backup,journal,marker,changed>>
 CleanerEligible == /\ cpc = "eligible"
-                   /\ IF journal = "applying" \/ ~workspace THEN CleanerFinish
+                   /\ IF journal \notin {"none","complete"} \/ ~workspace THEN CleanerFinish
                       ELSE /\ cpc' = "deleteBackup"
                            /\ UNCHANGED <<lock,wpc,workspace,backup,journal,marker,changed>>
 CleanerDeleteBackup == /\ cpc = "deleteBackup" /\ backup' = FALSE /\ cpc' = "deleteWorkspace"

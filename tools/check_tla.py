@@ -68,6 +68,9 @@ REQUIRED.update({"MovieCancel.cfg", "LayerQueueAdmission.cfg"})
 REQUIRED.update({"AudioWorkRetirement.cfg", "VoiceWindowReuse.cfg"})
 
 
+REQUIRED.update({"VideoStopOwnership.cfg", "RecorderReadUncertainty.cfg", "WorkspaceEligibility.cfg"})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit upstream results, including mutant traces")
