@@ -658,3 +658,22 @@ invalid color counts become findings; actual reads stay bounded and recursion
 becomes unreadable input. No new lifecycle model is needed. The five compact
 owner tests check exact files, cleanup/retry and independently known metadata.
 No actual decoder, packaged GUI, native DLL, recording or game proof is inferred.
+
+## Player draw proof retirement
+
+`native/src/DrawProof.tla` models two proof slots and four draws joining GPU verification/poll return with redirect completion before event/slot reuse. Three mutants remove each completion requirement. Failure remains pinned for outer cleanup; there is no renderer liveness or whole-program refinement claim. The explicit mismatch predicate is defensive redundancy: successful verification and redirect imply no mismatch in this projection. Native actual-owner/WARP tests exercise real event retention, snapshot comparison and reuse; image pixels and game coverage remain separate. No ownership-state reduction is claimed; the change shortens successful proof lifetime while preserving the image.
+
+### Players failure drain and reporting
+
+`native/src/CaptureFailure.tla` covers one failed prepared image, image/proof
+readbacks, an admitted callback and writer flush. Returning GPU work retires
+failure without demanding a successful write; callbacks and readbacks still
+prevent normal close. Five removed-guard mutants fail. The no-progress watchdog
+is outside this finite returning-work model. `dolly/PlayerFailure.tla` covers owned
+telemetry, prompt failure, retained request/reservation without acknowledgement,
+and failure after cleanup (three mutants). PlayersRecovery/PlayersRestoreRetry
+retain identity/restoration obligations. GUI uses its existing recovery worker.
+Simplification: reuse normal drain and recovery instead of a forced-close path;
+no second lifecycle or state-count reduction/whole-program liveness claim.
+
+Live failure follow-up: terminal pacing publication bypasses the 250ms progress throttle, because no later tick republishes after capture closes. The actual-owner test verifies a real pacing file transitions from progress/error0 to terminal/error1 immediately; the old throttle fails it. CaptureFailure models terminal visibility with an additional required-publication mutant.

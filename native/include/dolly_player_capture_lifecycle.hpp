@@ -22,6 +22,12 @@ struct CapturePendingImage {
     // target is a real transparent image, not a missing render callback.
     bool scene_observed = false;
 };
+// A completed GPU readback alone does not retire a draw: redirect still uses
+// its event records, and a failed proof must remain visible to frame rejection.
+inline bool capture_snapshot_reusable(bool pending, bool verified, bool redirected,
+                                      bool mismatch) noexcept {
+    return !pending && verified && redirected && !mismatch;
+}
 enum class CaptureSeal { skip, seal, reject };
 enum class CaptureSlotWait { ready, wait, stopped, timeout };
 constexpr std::uint64_t CaptureStallTimeoutMs = 30000;

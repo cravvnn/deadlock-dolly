@@ -259,6 +259,52 @@ class NativeWorkflows(unittest.TestCase):
                     self.assertEqual(case.controller.status()['time'], 1)
                     self.assertGreater(case.clock.now-began, 4)
 
+    def test_p06_players_failure_reports_before_cleanup_ack(self):
+        self.controller._state['startup_stage'] = 'editing_ready'
+        self.console.values.update(host_framerate=90, r_wait_on_present=0, r_aspectratio=1.5)
+        directory = self.controller.deployment_directory()
+        directory.mkdir(parents=True)
+        export = VideoExport(self.controller)
+        export.start(VideoOptions(self.root/'players.mp4', fixed_step=True), frozen=True,
+                     capture_only=True, before_record=lambda: player_layer.begin_capture(directory, 48, 302))
+        request = player_layer.capture_request_id(directory)
+        report = dict(format=1, request=request, pid=1234, heartbeat=100000,
+                      progress_ms=99500, stage='capture', written=116, sealed=116,
+                      cap=302, bytes=100, progress=12, error=1)
+        for changes in (dict(pid=9999), dict(request='f'*32)):
+            (directory/player_layer.PACING_NAME).write_text(json.dumps({**report, **changes}))
+            self.assertEqual(export.status()['state'], 'recording')
+        (directory/player_layer.PACING_NAME).write_text(json.dumps(report))
+        self.assertEqual(export.status()['state'], 'failed')
+        self.assertTrue(export.finish_pending)
+        self.assertTrue(self.controller._player_capture_pending)
+        # Real GUI polling dispatches recovery even while camera playback is
+        # still running; no Tk window, game or worker thread is constructed.
+        from dolly.gui import DollyApp
+        app = SimpleNamespace(video_export=export, busy=False, _last_video_state='recording',
+                              _clear_layer_pipeline=Mock(), _submit=Mock(return_value=True),
+                              _abort_failed_export=Mock())
+        DollyApp._refresh_video(app, {'playing': True, 'recording_generation': 1})
+        app._clear_layer_pipeline.assert_called_once()
+        app._submit.assert_called_once()
+        app._submit.call_args.args[1]()
+        self.assertIn('Players capture failed', app._abort_failed_export.call_args.args[0])
+        with patch('dolly.video_export.player_layer.wait_for_capture', return_value='draining'):
+            with self.assertRaisesRegex(RuntimeError, 'not acknowledged stop'):
+                export.stop()
+        self.assertTrue(export.finish_pending)
+        self.assertEqual(export._capture_stop_request, request)
+        self.assertTrue(self.controller._player_capture_pending)
+        self.assertEqual(self.console.values['host_framerate'], 60)
+        reason = 'failed player draw verification queue full; incomplete output rejected'
+        with patch('dolly.video_export.player_layer.wait_for_capture', return_value=reason):
+            result = export.stop()
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['error'], reason)
+        self.assertFalse(export.finish_pending)
+        self.assertFalse(self.controller._player_capture_pending)
+        self.assertEqual(self.console.values['host_framerate'], 90)
+
     def test_p06_players_backpressure_and_safe_drain(self):
         self.controller._state['startup_stage'] = 'editing_ready'
         self.console.values.update(host_framerate=90, r_wait_on_present=0, r_aspectratio=1.5)

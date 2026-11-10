@@ -27,6 +27,13 @@ static bool complete(unsigned written = 24, unsigned dropped = 0, unsigned seale
                                      cap, refused, writer_error, true, cadence_lost);
 }
 int main() {
+    for (unsigned mask = 0; mask < 16; ++mask) {
+        const bool pending = mask & 1, verified = mask & 2;
+        const bool redirected = mask & 4, mismatch = mask & 8;
+        require(capture_snapshot_reusable(pending, verified, redirected, mismatch) == (mask == 6),
+                "proof retirement requires successful GPU and redirect completion, no pending work");
+    }
+
     require(capture_slot_wait(true, false, 0) == CaptureSlotWait::wait,
             "full capture ring holds Present rather than losing the next shot phase");
     require(capture_slot_wait(true, false, 29999) == CaptureSlotWait::wait,

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "ReportFailure",
+    "replace": [
+      [
+        "ReportFailure == TRUE",
+        "ReportFailure == FALSE"
+      ]
+    ],
+    "expect": "PromptError"
+  },
+  {
+    "name": "KeepPending",
+    "replace": [
+      [
+        "KeepPending == TRUE",
+        "KeepPending == FALSE"
+      ]
+    ],
+    "expect": "RetainUntilAck"
+  },
+  {
+    "name": "KeepFailure",
+    "replace": [
+      [
+        "KeepFailure == TRUE",
+        "KeepFailure == FALSE"
+      ]
+    ],
+    "expect": "FailureSurvivesCleanup"
+  }
+]

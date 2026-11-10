@@ -295,3 +295,26 @@ Larger private probes stay in analysis. No decoder/game or packaged-output resul
 is implied. Three adjacent model/API/config sets and six mutants join the normal
 70-config/158-mutant model gate. Release native/package/output gates remain needed
 at their own boundaries. No maintained test or production timeout was removed.
+
+## Player draw proof lifetime
+
+`native_player_draw_slots_tests` compiles the actual private capture owner into
+an owned WARP executable without configuring or installing game hooks. It
+streams 1,024 distinct snapshot records through 128 slots in one image's
+accounting, checks both completion barriers and failed-proof retention, and
+releases the staging pool. Redirect completion is supplied by the harness;
+this does not establish full redirected-image coverage or hardware throughput.
+Existing matte/vertex tests retain pixel and shader checks. The lifecycle test
+covers the reusable predicate; DrawProof models the bounded completion join.
+Private negative copies restore whole-frame retention or omit success barriers
+and must fail the actual-owner test. No game or hardware encoder runs here.
+
+P06's failure-before-ack regression checks foreign telemetry, GUI recovery dispatch,
+request/timing retention on retry and failed terminal status after cleanup.
+The native actual-owner WARP test checks failed-image retirement, independent
+image/proof barriers, callback close, repeated polls and completion-only Present.
+GPU submission/verification is real WARP; pending flags in failure-barrier cases
+and desktop telemetry are simulated. Game wall-time behavior is not qualified by
+these tests; production timeouts remain unchanged.
+
+Live failure follow-up: terminal pacing publication bypasses the 250ms progress throttle, because no later tick republishes after capture closes. The actual-owner test verifies a real pacing file transitions from progress/error0 to terminal/error1 immediately; the old throttle fails it. CaptureFailure models terminal visibility with an additional required-publication mutant.

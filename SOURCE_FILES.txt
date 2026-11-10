@@ -1160,3 +1160,14 @@ dolly/ConfigMode.cfg
 dolly/ConfigMode.mutants.json
 tests/test_startup_audit_boundaries.py
 docs/RELEASE_NOTES_0.7.22-beta.md
+native/tests/player_draw_slots_tests.cpp
+native/src/DrawProof.tla
+native/src/DrawProof.cfg
+native/src/DrawProof.mutants.json
+native/src/CaptureFailure.cfg
+native/src/CaptureFailure.mutants.json
+native/src/CaptureFailure.tla
+dolly/PlayerFailure.cfg
+dolly/PlayerFailure.mutants.json
+dolly/PlayerFailure.tla
+docs/RELEASE_NOTES_0.7.23-beta.md

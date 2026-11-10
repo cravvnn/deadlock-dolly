@@ -431,6 +431,11 @@ class VideoExport:
                 if report and report['pid'] == self.controller.game_pid():
                     last.update(capture_waiting=None if report['error'] else report['stage'], frames_written=report['written'],
                                 capture_total=report['cap'], scratch_bytes=report['bytes'])
+                    if report['error']:
+                        last.update(state="failed", error="Players capture failed; finishing GPU cleanup. Incomplete output will not be exported.")
+                        with self._lock:
+                            self._last = dict(last)
+                            self._finish_pending = True
             return last
         try:
             current = dict(bridge.video_status())
@@ -696,7 +701,7 @@ class VideoExport:
         if marker.is_file():
             player_layer.request_stop(deployment)
 
-    def _confirm_player_stop(self, timeout: float, *, cancel: bool) -> None:
+    def _confirm_player_stop(self, timeout: float, *, cancel: bool) -> str | None:
         """Keep capture ownership until this exact request finishes draining."""
         from . import player_layer
 
@@ -729,6 +734,7 @@ class VideoExport:
                 raise RuntimeError("The native capture has not acknowledged stop" +
                                    (": " + status if status else "."))
             self._require_export_context(capture_readback=True)
+            return status
         except (RuntimeError, ValueError, OSError) as exc:
             if game_exited():
                 return
@@ -772,11 +778,14 @@ class VideoExport:
                 bridge = self._bridge
             if self._capture_only:
                 capture_cancel = cancel or self._capture_cancel_pending
-                self._confirm_player_stop(timeout, cancel=capture_cancel)
+                capture_status = self._confirm_player_stop(timeout, cancel=capture_cancel)
                 self._wait_player_restore_context()
                 with self._lock:
                     self._capture_only = False
-                    self._last = {"state": "cancelled" if capture_cancel else "completed"}
+                    failure = (capture_status if capture_status and capture_status.startswith(("failed", "rejected"))
+                               else self._last.get("error") if self._last.get("state") == "failed" else None)
+                    self._last = ({"state": "failed", "error": failure} if failure else
+                                  {"state": "cancelled" if capture_cancel else "completed"})
                     self._capture_cancel_pending = False
                 self.controller.mark_recording_pending(False)
                 self._require_export_context()
@@ -837,7 +846,7 @@ class VideoExport:
                     message = str(stop_error) + " " + message
                 raise RuntimeError(message) from stop_error
             with self._lock:
-                if not self._start_pending and self._last.get("state") in TERMINAL_STATES:
+                if not self._capture_only and not self._start_pending and self._last.get("state") in TERMINAL_STATES:
                     self._capture_stop_request = None
                     self._finish_pending = False
 

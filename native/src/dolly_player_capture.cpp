@@ -207,13 +207,14 @@ double captureSpeed = 1.0;
 struct GpuSlot {
     GpuSnapshot snapshot;
     bool used = false, pending = false, mismatch = false;
+    bool verified = false, redirected = false;
     std::uint32_t owner = 0;
     std::uint64_t startEvent = 0, drawEvent = 0;
     ULONGLONG polled = 0;
 };
 // Ownership staging is 36 bytes/draw. Bound each of the three frame slots to
-// 128 original draws (13824 staging bytes total); image-buffer count is unchanged.
-// Raised 64 -> 128 for player layers whose scene has more than 64 player draws.
+// 128 outstanding proofs per image (13824 staging bytes total). Validated,
+// redirected draws release their proof slots without discarding image pixels.
 constexpr unsigned AggregateDrawLimit = 128;
 constexpr unsigned SequenceRing = 3;
 constexpr unsigned SequenceMaxCap = 2000000;
@@ -282,7 +283,9 @@ void publish_pacing() noexcept {
         return;
     static ULONGLONG last = 0;
     const auto now = GetTickCount64();
-    if (now - last < 250)
+    // Terminal state is the final publication: no later tick retries it.
+    // Never let the progress rate limit hide a fast failure/completion.
+    if (!captured && now - last < 250)
         return;
     last = now;
     const auto progress = (std::min)(
@@ -316,26 +319,42 @@ struct FrameMeta {
     std::uint64_t epoch = 0, draws = 0, first = 0, last = 0, wall_ms = 0, delta_ms = 0;
 };
 std::vector<FrameMeta> frameMeta;
+// Render-thread-only. Event references outlive both the snapshot comparison and
+// redirect transaction. The image owns pixels independently of these proofs.
+void release_draw_slot(unsigned index) noexcept {
+    auto& gpu = gpuSlots[index];
+    if (sequenceV3 && gpu.used) {
+        if (gpu.startEvent)
+            eventSlots.release(static_cast<unsigned>(gpu.startEvent - 1));
+        if (gpu.drawEvent)
+            eventSlots.release(static_cast<unsigned>(gpu.drawEvent - 1));
+    }
+    gpu.snapshot.abandon();
+    gpu.used = gpu.pending = gpu.mismatch = false;
+    gpu.verified = gpu.redirected = false;
+    gpu.owner = 0;
+    gpu.startEvent = gpu.drawEvent = 0;
+    gpu.polled = 0;
+    auto& matte = mattes[index];
+    matte.attempted = false;
+    matte.draw = matte.event = 0;
+}
 void release_frame_slots(unsigned ring) noexcept {
     const unsigned first = ring * AggregateDrawLimit;
-    for (unsigned i = 0; i < AggregateDrawLimit; ++i) {
-        auto& gpu = gpuSlots[first + i];
-        if (sequenceV3 && gpu.used) {
-            if (gpu.startEvent)
-                eventSlots.release(static_cast<unsigned>(gpu.startEvent - 1));
-            if (gpu.drawEvent)
-                eventSlots.release(static_cast<unsigned>(gpu.drawEvent - 1));
+    for (unsigned i = 0; i < AggregateDrawLimit; ++i)
+        release_draw_slot(first + i);
+}
+GpuSlot* available_draw_slot(unsigned firstSlot, unsigned drawLimit) noexcept {
+    for (unsigned i = firstSlot; i < firstSlot + drawLimit; ++i)
+        if (!gpuSlots[i].used ||
+            (sequenceV3 && aggregateMode && capture_snapshot_reusable(
+                gpuSlots[i].pending, gpuSlots[i].verified,
+                gpuSlots[i].redirected, gpuSlots[i].mismatch))) {
+            if (gpuSlots[i].used)
+                release_draw_slot(i);
+            return &gpuSlots[i];
         }
-        gpu.snapshot.abandon();
-        gpu.used = false;
-        gpu.pending = false;
-        gpu.mismatch = false;
-        gpu.owner = 0;
-        gpu.startEvent = gpu.drawEvent = 0;
-        auto& matte = mattes[first + i];
-        matte.attempted = false;
-        matte.draw = matte.event = 0;
-    }
+    return nullptr;
 }
 CapturePendingImage pending_image(const ColorFrame& slot) noexcept {
     return {slot.clock,
@@ -375,6 +394,26 @@ bool ring_snapshots_pending(unsigned ring) noexcept {
         if (gpuSlots[first + i].pending)
             return true;
     return false;
+}
+// Called only by gpu_poll on the admitted immediate-context callback.
+void retire_failed_images() noexcept {
+    // Failed images cannot be submitted, but still own their GPU readbacks.
+    // Retire their preparation only on the immediate-context owner after those
+    // readbacks return. Keep diagnostics/resources for the closed-callback dump.
+    if (sequenceV3 && sequenceStall) {
+        for (unsigned ring = 0; ring < SequenceRing; ++ring) {
+            auto& slot = colorFrames[ring];
+            if (slot.prepared && !slot.capture.pending && !ring_snapshots_pending(ring)) {
+                slot.prepared = false;
+                captureOwnership.image_retired();
+            }
+        }
+    }
+}
+bool sequence_readbacks_drained() noexcept {
+    return sequenceV2 && sequenceWriterReady && !captureOwnership.prepared_pending() &&
+           (sequenceStall || framesWritten >= framesSealed) && !any_frame_pending() &&
+           !any_snapshot_pending();
 }
 thread_local std::uint64_t pendingMatteDraw = 0;
 thread_local std::uint64_t pendingMatteGeneration = 0;
@@ -640,7 +679,7 @@ std::uintptr_t buffer(std::uintptr_t global) noexcept {
                      : 0;
 }
 // Diagnostics keep a chronological log. Shot exports recycle only unreferenced
-// slots; GPU evidence stays pinned until its frame has been verified and written.
+// slots; GPU evidence stays pinned until verification and redirect both finish.
 struct Write {
     Event* event = nullptr;
     bool admitted = false;
@@ -1349,6 +1388,8 @@ void tick() noexcept {
         arm_capture();
     if (captured)
         return;
+    if (sequenceV3 && sequenceWriterReady && sequence_writer().error())
+        sequenceStall = true;
     publish_pacing();
     const auto elapsed = GetTickCount64() - started;
     const auto sinceFirstSeal = firstSeal ? GetTickCount64() - firstSeal : 0;
@@ -1383,10 +1424,7 @@ void tick() noexcept {
         status(sequenceV2 ? "draining bounded sequence readbacks"
                           : "draining previously submitted GPU readbacks, maximum 250 ms");
     }
-    const bool sequenceDrained = sequenceV2 && sequenceWriterReady &&
-                                 !captureOwnership.prepared_pending() &&
-                                 framesWritten >= framesSealed && !any_frame_pending() &&
-                                 !any_snapshot_pending();
+    const bool sequenceDrained = sequence_readbacks_drained();
     if (armed.load(std::memory_order_acquire) && samplingDone.load(std::memory_order_acquire) &&
         ((sequenceV3 ? (sequenceDrained || budgetElapsed >= CaptureStallTimeoutMs)
                      : capture_drain_finished(sequenceDrained, GetTickCount64() - drainStarted,
@@ -1450,7 +1488,7 @@ void tick() noexcept {
             char buf[192];
             std::snprintf(
                 buf, sizeof(buf),
-                "failed player layer exceeded %u draws per image; incomplete output rejected",
+                "failed player layer draw verification queue is full (%u slots); incomplete output rejected",
                 AggregateDrawLimit);
             status(buf);
         } else if (saved && sequence_writer().error()) {
@@ -1917,6 +1955,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     record_matches(slot.snapshot.id, static_cast<unsigned>(request.w[8]),
                                    slot.snapshot.record, expected);
                 if (ok) {
+                    slot.verified = true;
                     ++recordValid;
                 } else {
                     ++recordInvalid;
@@ -1925,6 +1964,7 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             }
             slot.pending = false;
         }
+    retire_failed_images();
 }
 // One bounded diagnostic dump of the draws that reach shot-aligned capture.
 // It names the reason a draw was not captured and keeps the raw binding
@@ -2106,12 +2146,7 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
     // Two-frame diagnostics exercise the same bounded per-image queue as export.
     const unsigned drawLimit = aggregateMode ? AggregateDrawLimit : meshMode ? 8u : 3u;
     const unsigned firstSlot = sequenceMode ? colorIndex * AggregateDrawLimit : 0;
-    GpuSlot* target = nullptr;
-    for (unsigned i = firstSlot; i < firstSlot + drawLimit; ++i)
-        if (!gpuSlots[i].used) {
-            target = &gpuSlots[i];
-            break;
-        }
+    GpuSlot* target = available_draw_slot(firstSlot, drawLimit);
     if (!producer) {
         ++dbg[7];
         draw_probe("noproducer", e);
@@ -2689,6 +2724,9 @@ void redirect_indexed(ID3D11DeviceContext* c, unsigned n, unsigned instances, un
     out->w[9] = static_cast<std::uint32_t>(matte.failure);
     out->w[10] = aggregateMode ? colorAggregate.width : matte.width;
     out->w[11] = aggregateMode ? colorAggregate.height : matte.height;
+    // Last use by this redirect; selection in a later draw may recycle it only
+    // after independent GPU verification also succeeds.
+    gpuSlots[pendingMatteSlot].redirected = captured;
 }
 void update(ID3D11DeviceContext* c, ID3D11Resource* destination, unsigned sub, const D3D11_BOX* box,
             const void* source, unsigned row, unsigned depth,
@@ -2770,6 +2808,10 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
     CaptureCallbackPin callback(captureOwnership, 12);
     if (!callback)
         return;
+    // A failed/empty scene may no longer issue indexed draws. Present still
+    // owns an admitted immediate-context opportunity to drain submitted work.
+    if (sequenceV3 && sequenceStall && c)
+        gpu_poll(c);
     if (sequenceV2) {
         const auto now = GetTickCount64();
         if (now - lastTimeline >= 1000) {

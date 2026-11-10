@@ -1613,7 +1613,7 @@ class DollyApp:
             LOG.exception("Could not complete failed-export recovery")
             errors.append("recovery: " + str(exc))
         pending = (" Recovery still needs attention: " + " ".join(errors)) if errors else ""
-        raise RuntimeError("Export stopped because camera playback failed: " + str(reason)
+        raise RuntimeError("Export stopped because capture or camera playback failed: " + str(reason)
                            + " Completed takes and Players scratch data were kept. "
                              "Record a new take after correcting the reported problem." + pending)
 
@@ -1906,24 +1906,26 @@ class DollyApp:
         state = status.get("state", "idle")
         previous = getattr(self, "_last_video_state", "idle")
         playback_error = controller_status.get("playback_error")
+        capture_error = (status.get("error") if state == "failed"
+                         and getattr(self.video_export, "_capture_only", False) is True else None)
         generation = controller_status.get("recording_generation")
         recovery_pending = (getattr(self, "_playback_failure_recovery_pending", False)
                             if generation is None else
                             getattr(self, "_playback_failure_recovery_generation", None) == generation)
-        if (state in ACTIVE_STATES and playback_error and not controller_status.get("playing")
+        if (((state in ACTIVE_STATES and playback_error and not controller_status.get("playing"))
+             or capture_error)
                 and not self.busy and not getattr(self, "_pending_auto_play", False)
                 and not recovery_pending):
-            # The native camera monitor reports failures outside the operation
-            # worker. In particular, a Players capture has no video bridge to
-            # transition it out of 'recording' by itself. Stop that capture and
-            # restore the scene before accepting another camera operation.
+            # Camera and Players telemetry can fail outside the operation
+            # worker. Request capture stop and restore the scene before
+            # accepting another camera operation.
             # Clear queued passes now so the failure cannot advance the run.
             self._clear_layer_pipeline()
             self._playback_failure_recovery_pending = True
             previous_generation = getattr(self, "_playback_failure_recovery_generation", None)
             self._playback_failure_recovery_generation = generation
             submitted = self._submit("Restoring failed export",
-                                     lambda reason=str(playback_error): self._abort_failed_export(reason))
+                                     lambda reason=str(capture_error or playback_error): self._abort_failed_export(reason))
             if submitted is False:
                 self._playback_failure_recovery_pending = False
                 self._playback_failure_recovery_generation = previous_generation
