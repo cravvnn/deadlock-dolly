@@ -1195,3 +1195,4 @@ dolly/ui/LayerQueueAdmission.tla
 dolly/ui/LayerQueueAdmissionApi.tla
 dolly/ui/LayerQueueAdmission.cfg
 dolly/ui/LayerQueueAdmission.mutants.json
+docs/RELEASE_NOTES_0.7.25-beta.md
