@@ -239,6 +239,12 @@ struct CvarLayout {
 };
 
 static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
+    if (module_matches(tier0, "29eae7e1e78245c64da8cb8ee7102df05cfc9c0c3181105d65c547f66e48bdf2", 0x3fa000)) {
+        layout.table = 0x313208; layout.setter = 0x20fe50;
+        layout.find = 0x6c710; layout.data = 0x6c650;
+        layout.data_slot = 41; layout.extended = true;
+        return true;
+    }
     if (module_matches(tier0, kBuild6853Tier0Hash, 0x402000)) {
         layout.table = 0x313208; layout.setter = 0x20ffa0;
         layout.find = 0x6c6b0; layout.data = 0x6c5f0;

@@ -13,22 +13,19 @@ import re
 from generate_profile import Image, ProfileError, ROOT, build_signature, resolve_game_dir
 
 LEGACY_PROFILE = ROOT / "native/profiles/soundsystem-2026-09-09.json"
-PROFILE = ROOT / "native/profiles/soundsystem-2026-11-05-6853.json"
+PROFILE = ROOT / "native/profiles/soundsystem-2026-11-11-6861.json"
+RECENT_PROFILE = ROOT / "native/profiles/soundsystem-2026-11-05-6853.json"
 PREVIOUS_PROFILE = ROOT / "native/profiles/soundsystem-2026-10-20-6801.json"
 HEADER = ROOT / "native/src/dolly_sound_compat_generated.hpp"
-REVIEWED_HASH = "a1a516ce5bb50167a7f259589eea5c6f824de5688e86433a9c170af5f691a488"
-REVIEWED_VOICE_TABLE = 0x659fa0
+REVIEWED_HASH = "1c8c499b7e1ad14bafddb657a956a7f6223ae0fbe046ba3f087102f4ed280acf"
+REVIEWED_VOICE_TABLE = 0x658fa0
 # Reviewed prefixes span complete instructions. Stop has split unwind records;
 # its first .pdata entry covers only the prologue, not the function body.
-ANCHORS = (("voice_start", 0x96270, 0x120, 14),
-           ("voice_stop", 0x98460, 0x120, 13),
-           ("voice_map_remove", 0x7bc20, 0x120, 20),
-           ("vmix_start", 0x1a5200, 0x120, 14),
-           ("event_name", 0x1bd540, 91, 6))
+ANCHORS = (('voice_start', 614800, 283, 14), ('voice_stop', 623488, 285, 13), ('voice_map_remove', 506960, 286, 20), ('vmix_start', 1724848, 288, 14), ('event_name', 1823984, 91, 6))
 
 
 def build_sound_profile(image):
-    if image.sha256 != REVIEWED_HASH or image.image_size != 0x6c1000:
+    if image.sha256 != REVIEWED_HASH or image.image_size != 0x6c0000:
         raise ProfileError("Audio signatures require the exact reviewed soundsystem.dll; re-review changed code first")
     import capstone
     md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
@@ -100,8 +97,11 @@ def emit_sound_header(profile, destination=HEADER, *, legacy_profile=None, previ
     lines.append("namespace previous {")
     lines.extend(_emit_profile(previous))
     lines.append("} // namespace previous")
+    lines.append("namespace recent {")
+    lines.extend(_emit_profile(json.loads(RECENT_PROFILE.read_text(encoding="utf-8"))))
+    lines.append("} // namespace recent")
     lines.append("inline constexpr Profile kProfiles[] = {")
-    for prefix in ("", "legacy::"):
+    for prefix in ("", "legacy::", "recent::"):
         lines.append("    {%skImageSize, %skSignatures, sizeof(%skSignatures)/sizeof(%skSignatures[0]), "
                      "%skTableReferences, sizeof(%skTableReferences)/sizeof(%skTableReferences[0]), "
                      "%skVoiceTable, %skVoiceMapOffset, %skParameterVolumeOffset, %skParameterRateOffset},"

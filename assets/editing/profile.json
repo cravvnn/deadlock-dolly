@@ -1,22 +1,22 @@
 {
   "format": 1,
-  "description": "6860 offline client review against6853:128 unchanged complete/scoped regions plus independently reviewed minimap indexed operands and34-entry table; named observer record and typed getters retain0xe98. Supporting modules are whole-file identical to the reviewed Season2 set; the new server has separately mapped named Config001 registration, table, thunks and three complete method bodies. No6860 live claim.",
+  "description": "6861 reviewed compatibility candidate; live acceptance pending.",
   "gameinfo_sha256": "d8f5ff724a563cc464537238ab5e7bcd37ed0bc74099010a69aa1bd333b2f1ab",
   "modules": {
-    "citadel/bin/win64/client.dll": "2007fddaf9f48211e1ed188aff3c31ad47ba667cbaace16f5dd30e9376b884c7",
-    "bin/win64/engine2.dll": "e5c84fc8f18a136858af9ec9fc1b2d5ddc745712f63988d58999def32426dcd9",
-    "bin/win64/tier0.dll": "3eb86a30eba4e33140232a536555ae846cdba1ba45068635f3b6b33c49c10313"
+    "citadel/bin/win64/client.dll": "d0341ce77398614af905ef8669d328fd4d45958282acef66789a250492e466b5",
+    "bin/win64/engine2.dll": "cd066b699ac8cc2d74371f45d2854e562f52c9b66d8ccf1ed1b50cf49f8bd010",
+    "bin/win64/tier0.dll": "29eae7e1e78245c64da8cb8ee7102df05cfc9c0c3181105d65c547f66e48bdf2"
   },
-  "unlocker_server_sha256": "1415c83dadf8f8b0a72fc253df728804188b13c1ea22a877d43b98b1081cfd3b",
+  "unlocker_server_sha256": "86eefc584d5fd7fb17e8ee59d35061b47efc7cbe8c8ecee6b27490625fe241ed",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "04bc78a730b9623c8b69db6b00a5aa3790ddfd08",
-  "stock_gameinfo_depot": "1422456_2939123716983788394",
-  "stock_provenance_sha256": "3554fe1c6dcafd23bb9629eccb22a8906ceb96646fcd734cb0abeb51b8650525",
+  "stock_gameinfo_depot": "1422456_3164984248281119043",
+  "stock_provenance_sha256": "a9182369e50cf756c2d4b905ac43cc10c013029f9b4198beffd7f2b35b77df15",
   "configuration_modules": {
-    "bin/win64/engine2.dll": "e5c84fc8f18a136858af9ec9fc1b2d5ddc745712f63988d58999def32426dcd9",
-    "bin/win64/tier0.dll": "3eb86a30eba4e33140232a536555ae846cdba1ba45068635f3b6b33c49c10313",
-    "bin/win64/filesystem_stdio.dll": "b7ab9df88d3d6f0dc48c2f894f403a9aee455e28922ff1ca3a48e03117b8070f",
-    "bin/win64/rendersystemdx11.dll": "9c0f6080ba98a81ec207739c1fec9b0def417fa751e86e845aadb5751d4a0d77"
+    "bin/win64/engine2.dll": "cd066b699ac8cc2d74371f45d2854e562f52c9b66d8ccf1ed1b50cf49f8bd010",
+    "bin/win64/tier0.dll": "29eae7e1e78245c64da8cb8ee7102df05cfc9c0c3181105d65c547f66e48bdf2",
+    "bin/win64/filesystem_stdio.dll": "21a169c37f182e2b0b686be87dabf41c4d7699c8f14ad7b5777e1b7ddcf6ca0b",
+    "bin/win64/rendersystemdx11.dll": "5cbcdb190d28ae074e321b64305253972cf1f14339733acab7a34224b0523f87"
   }
 }

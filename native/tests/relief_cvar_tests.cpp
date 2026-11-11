@@ -46,10 +46,10 @@ static void check(bool value) {
     if (!value)
         throw std::runtime_error("relief cvar owner contract failed");
 }
-static void prepare(unsigned type, bool season2) {
+static void prepare(unsigned type, unsigned setter) {
     storage = {};
     writes = 0;
-    gTier0 = season2 ? reinterpret_cast<std::uintptr_t>(gSetCvar) - 0x20ffa0 : 0;
+    gTier0 = setter ? reinterpret_cast<std::uintptr_t>(gSetCvar) - setter : 0;
     const auto name = reinterpret_cast<std::uintptr_t>("r_wait_on_present");
     std::memcpy(storage.data(), &name, 8);
     const auto t = static_cast<std::uint16_t>(type);
@@ -57,10 +57,10 @@ static void prepare(unsigned type, bool season2) {
 }
 int main() {
     try {
-        for (bool season2 : {false, true})
+        for (unsigned setter : {0u, 0x20ffa0u, 0x20fe50u})
             for (unsigned kind : {0u, 3u, 2u}) {
-                const unsigned runtime = season2 ? (kind == 3 ? 5 : kind == 2 ? 9 : 0) : kind;
-                prepare(runtime, season2);
+                const unsigned runtime = setter ? (kind == 3 ? 5 : kind == 2 ? 9 : 0) : kind;
+                prepare(runtime, setter);
                 if (kind == 0)
                     storage[0x58] = 1;
                 else if (kind == 3) {
@@ -83,25 +83,25 @@ int main() {
                 check(storage == original && writes == 2);
             }
         for (unsigned bad : {2u, 3u, 7u, 15u, 0xffffu}) {
-            prepare(bad, true);
+            prepare(bad, 0x20fe50);
             ReliefCvar owner;
             check(!owner.bind("r_wait_on_present", 0));
             check(writes == 0 && !owner.bound);
         }
-        prepare(5, true);
+        prepare(5, 0x20fe50);
         storage[0x30] = 4;
         ReliefCvar blocked;
         check(!blocked.bind("r_wait_on_present", 0) && writes == 0);
-        prepare(5, true);
+        prepare(5, 0x20fe50);
         ReliefCvar wrong;
         check(!wrong.bind("another_setting", 0) && writes == 0);
-        prepare(0, true);
+        prepare(0, 0x20fe50);
         storage[0x58] = 2;
         ReliefCvar invalid_bool;
         check(invalid_bool.bind("r_wait_on_present", 0));
         double value = 0;
         check(!invalid_bool.read(value) && writes == 0);
-        prepare(9, true);
+        prepare(9, 0x20fe50);
         const float nan = std::numeric_limits<float>::quiet_NaN();
         std::memcpy(storage.data() + 0x58, &nan, 4);
         ReliefCvar invalid_float;

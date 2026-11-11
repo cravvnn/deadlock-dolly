@@ -14,7 +14,7 @@ inline constexpr unsigned effect_cvar_type(unsigned legacy_type, bool season2) n
     return season2 && legacy_type != 0 ? legacy_type + 2 : legacy_type;
 }
 inline constexpr bool season2_cvar_types(std::uintptr_t base, std::uintptr_t setter) noexcept {
-    return base != 0 && setter == base + 0x20ffa0;
+    return base != 0 && (setter == base + 0x20ffa0 || setter == base + 0x20fe50);
 }
 // Normalize into the relief owner's existing bool/int32/float representation.
 // Other runtime types are refused before any binding is published.

@@ -1241,3 +1241,10 @@ tests/test_authoring_audit_boundaries.py
 docs/RELEASE_NOTES_0.7.30-beta.md
 
 docs/RELEASE_NOTES_0.7.31-beta.md
+
+native/profiles/deadlock-2026-11-11-6861-complete.json
+native/profiles/scenesystem-2026-11-11-6861.json
+native/profiles/soundsystem-2026-11-11-6861.json
+third_party/cvar_unlocker/cvar_slots_6861.inc
+third_party/cvar_unlocker/unlocker-build-6861.patch
+docs/RELEASE_NOTES_0.7.32-beta.md

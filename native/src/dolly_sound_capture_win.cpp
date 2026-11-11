@@ -501,7 +501,6 @@ bool sound_capture_available() noexcept { return installed.load(); }
 // command asks for the `wav` format only.
 namespace {
 constexpr std::uintptr_t kMovieGetFramerateRva = 0xfc7c0;
-constexpr std::uintptr_t kConVarFloatAccessorRva = 0x3bb60;
 constexpr std::uintptr_t kMovieFramerateOffset = 0xf4;
 
 using ConVarFloatFn = float(__fastcall*)(void*);
@@ -517,7 +516,9 @@ bool read_movie_audio(std::uintptr_t base, MovieAudioSample& sample) noexcept {
     __try {
         const bool season2 = reinterpret_cast<std::uintptr_t>(host_framerate_cvar) ==
                              base + movie_audio_layout(true).host_cvar;
-        const auto p = reinterpret_cast<const char*>(base + movie_audio_layout(season2).recorder);
+        const bool build6861 = reinterpret_cast<std::uintptr_t>(host_framerate_cvar) ==
+                               base + movie_audio_layout(false, true).host_cvar;
+        const auto p = reinterpret_cast<const char*>(base + movie_audio_layout(season2, build6861).recorder);
         if ((*reinterpret_cast<const unsigned short*>(p + 0xec) & 2) == 0 ||
             *reinterpret_cast<const unsigned*>(p + 0x108) <= 1)
             return false;
@@ -569,13 +570,13 @@ float __fastcall movie_get_framerate_hook(void* self) noexcept {
 }
 } // namespace
 
-bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair, bool season2) noexcept {
+bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair, bool season2, bool build6861) noexcept {
     if (movie_installed.load(std::memory_order_acquire))
         return true;
     if (!engine_module)
         return false;
     const auto base = reinterpret_cast<std::uintptr_t>(engine_module);
-    const auto layout = movie_audio_layout(season2);
+    const auto layout = movie_audio_layout(season2, build6861);
     const auto slot = reinterpret_cast<void**>(base + layout.table + 0x38);
     const auto target = reinterpret_cast<void*>(base + kMovieGetFramerateRva);
     // Exact reviewed accessor: movss xmm0, [rcx+0xf4]; ret.
@@ -584,7 +585,7 @@ bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm
                                        expected, sizeof(expected))) {
         return false;
     }
-    convar_float = reinterpret_cast<ConVarFloatFn>(base + kConVarFloatAccessorRva);
+    convar_float = reinterpret_cast<ConVarFloatFn>(base + layout.float_accessor);
     host_framerate_cvar = reinterpret_cast<void*>(base + layout.host_cvar);
     if (exact_pcm_pair && sound_module) {
         // Read-only clock support is restricted to the reviewed engine/sound

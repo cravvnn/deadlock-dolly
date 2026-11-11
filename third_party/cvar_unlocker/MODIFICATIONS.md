@@ -1,5 +1,15 @@
 # Bundled cvar unlocker modifications
 
+- `unlocker-build-6861.patch` (apply after6860), with `cvar_slots_6861.inc`:
+  adds the exact reviewed server/Tier0 pair and relocated Config001 methods.
+  Fourteen adapter methods were independently reviewed. Existing accepted pairs,
+  secure-mode rejection and owned-command shutdown behavior remain intact.
+  Three compiled ABI/lifecycle suites,1203 actual-function pair checks, the
+  predecessor rejection, static-CRT/export/Tier0 import audit pass. Bounded
+  build6861 startup, seeking, camera/path and short Color/Depth/Players export
+  sessions also pass. The historical Steam networking shutdown assertion remains
+  visible; this does not claim exhaustive runtime or driver qualification.
+
 - `unlocker-build-6806.patch` (apply after6805): local identifier
   `v0.5.2-dolly-build-6806`, retaining upstream v0.5.2 and pinned source/SDK
   provenance. Adds only the reviewed server6806/Tier0 exact pair; the named

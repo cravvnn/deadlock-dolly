@@ -51,6 +51,10 @@ int main(int argc, char** argv) {
     check(old_movie.recorder == 0x5ba5c0 && old_movie.audio_table == 0x4f6920);
     check(new_movie.table == 0x4f6950 && new_movie.host_cvar == 0x8b4f18);
     check(new_movie.recorder == 0x5ba740 && new_movie.audio_table == 0x4f6900);
+    const auto latest_movie = dolly::movie_audio_layout(false, true);
+    check(latest_movie.table == 0x4f6950 && latest_movie.host_cvar == 0x8b3f18);
+    check(latest_movie.recorder == 0x5b9740 && latest_movie.audio_table == 0x4f6900);
+    check(latest_movie.float_accessor == 0x3bb30 && new_movie.float_accessor == 0x3bb60);
     Resolution out{};
     check(kProfiles[0].parameter_volume_offset == 0x20 && kProfiles[0].parameter_rate_offset == 0x2c);
     check(kProfiles[1].parameter_volume_offset == 0x24 && kProfiles[1].parameter_rate_offset == 0x30);
