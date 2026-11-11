@@ -1237,3 +1237,5 @@ dolly/ui/PopupSelectionApi.tla
 dolly/ui/PopupSelection.cfg
 dolly/ui/PopupSelection.mutants.json
 tests/test_authoring_audit_boundaries.py
+
+docs/RELEASE_NOTES_0.7.30-beta.md
