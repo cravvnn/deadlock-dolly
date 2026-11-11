@@ -709,7 +709,8 @@ class Project:
         rate``. When the loaded replay uses a different rate (its own
         CDemoFileInfo is authoritative), stored times are scaled by
         ``old_rate / new_rate`` and the project adopts the new rate. Camera keys
-        and cvar tracks share one shot timeline, so all times move together.
+        and cvar tracks share one shot timeline, so all times and source-arrival
+        durations move together. Attach smoothing uses rendered time instead.
         """
         rate = _finite(tick_rate, "Tick rate")
         if rate <= 0:
@@ -729,12 +730,13 @@ class Project:
                           if tangent.mode in ("linked", "broken") else tangent)
                 for channel, tangent in key.tangents.items()
             }
-            keys.append(replace(key, time=key.time * factor, tangents=tangents))
+            keys.append(replace(key, time=key.time * factor, tangents=tangents,
+                                source_blend=key.source_blend * factor))
         tracks = [replace(track, keys=[replace(key, time=key.time * factor) for key in track.keys])
                   for track in self.tracks]
         replace(self, keyframes=keys, tracks=tracks, tick_rate=rate).validate()
         for key, retimed in zip(self.keyframes, keys):
-            key.time, key.tangents = retimed.time, retimed.tangents
+            key.time, key.tangents, key.source_blend = retimed.time, retimed.tangents, retimed.source_blend
         for track, retimed in zip(self.tracks, tracks):
             for key, retimed_key in zip(track.keys, retimed.keys):
                 key.time = retimed_key.time

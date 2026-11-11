@@ -39,26 +39,28 @@ def delete_camera(project, index):
             candidate.start_tick = int(round(candidate.start_tick + offset * candidate.tick_rate))
             for key in candidate.keyframes:
                 key.time -= offset
+            boundary_values = project.evaluate(offset)["cvars"]
             for track in candidate.tracks:
-                _rebase_track(track, offset)
+                if track.keys:
+                    _rebase_track(track, offset, boundary_values[track.name])
     if candidate.keyframes:
         candidate.validate()
     return candidate
 
 
-def _rebase_track(track, offset):
-    """Shift one effect track and collapse anything before the new start to 0."""
+def _rebase_track(track, offset, boundary_value):
+    """Shift a track, retaining its evaluated value at the new shot start."""
     kept = []
     boundary = None
     for key in sorted(track.keys, key=lambda key: key.time):
         time = key.time - offset
         if time <= 0:
-            # Only the value in effect as the shot now begins still matters.
+            # Earlier keys collapse to the original evaluator's cut value.
             boundary = key
         else:
             kept.append(TrackKey(time, key.value))
     if boundary is not None:
-        kept.insert(0, TrackKey(0.0, boundary.value))
+        kept.insert(0, TrackKey(0.0, boundary_value))
     track.keys = kept
 
 

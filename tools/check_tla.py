@@ -72,6 +72,7 @@ REQUIRED.update({"VideoStopOwnership.cfg", "RecorderReadUncertainty.cfg", "Works
 
 
 REQUIRED.update({"DefinitionsFirstRead.cfg", "ProjectOpenSnapshot.cfg"})
+REQUIRED.add("PopupSelection.cfg")
 
 
 def main():

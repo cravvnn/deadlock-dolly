@@ -1,5 +1,18 @@
 # Development checks
 
+`test_authoring_audit_boundaries.py` adds four owner checks: popup selection
+must still match the visible list and an enabled combobox; leading-camera
+deletion retains sampled scalar/vector effects at the cut; replay-rate retiming
+scales source-arrival durations in native packets and rejects overflow before
+mutation; paired color/depth frame evidence must agree. The audit test uses the
+real VideoExport finishing adapter and checks that completed status/counts and
+all take-file bytes remain unchanged. Its inert video bytes prove presence,
+not decoding. The source suite uses the normal private Windows desktop for Tk.
+PopupSelection is adjacent to the popup owner, required by the model gate, with
+two load-bearing mutants. Actual native arrival weights and synthetic encoded
+frame order are separately checked at preflight; real game/hardware encoder
+qualification and packaged GUI smoke remain receiving-release obligations.
+
 `test_metadata_boundaries.py` owns five additional contracts: incomplete mod
 inspection cannot become mixed-skin permission; dump reads enforce their cap;
 post-spawn source-launcher logging failure preserves the admitted PID; invalid

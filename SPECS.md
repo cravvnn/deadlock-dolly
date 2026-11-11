@@ -858,3 +858,44 @@ Original-code negatives establish that each regression detects its intended
 failure. Art tests construct no Tk images/windows; the bootstrap GUI request is
 captured and substituted. Native engine, output, full GUI, abrupt death, power
 loss and whole-program composition remain outside this source proof.
+
+## Popup selection and synchronous authoring/audit boundaries
+
+`ui/PopupSelection.tla` sits beside `ui/dropdown_popup.py`. Its Open state is
+the values/row snapshot in Popup.__init__; Refresh abstracts changes from
+DollyApp._attach_roster_changed or disablement before Popup._choose. Choose
+checks the captured list and enabled state synchronously before applying the
+row. Two rows, four distinct live lists (original/reordered/replaced/empty),
+and enabled/disabled controls retain wrong-row and disabled-admission failures.
+The cget/instate/current boundary has no event-loop wait; this does not model
+arbitrary reentrant application traces, identical-label ABA or changes after
+the queued selection event. Other combobox users share the admission guard;
+their application callbacks, focus/grab, pixels and widget destruction are not
+modeled. The two mutants remove each recheck and violate VisibleChoice or
+EnabledChoice. PopupSelectionApi checks a minimal returning-call refinement;
+weakly fair returning handlers are assumed, not real GUI/I/O liveness.
+Intentional Done stuttering remains enabled, with normal deadlock checking.
+The finite graph has 34 reachable states; adding guards is hardening, with no
+state-space reduction or full-program equivalence claim.
+
+The remaining changes are synchronous transforms without a new interleaving
+protocol. `Project.retime`, called by the replay-rate resolution UI, scales
+source_blend with key times, validates temporary keys/tracks before publication
+and preserves the existing ten-second native limit. Attach smoothing uses
+rendered dt and stays unchanged. `shot_commands.delete_camera`, called by the
+desktop/native delete adapters, evaluates original cvars at the new start before
+rebasing effect tracks. General smooth tracks preserve the cut value, not all
+later derivatives after earlier keys are removed. `export_audit.audit_take`,
+called by the offline CLI, VideoExport finishing and layered GUI completion,
+compares known positive color/depth frame counts across available metadata and
+decoded evidence. It reads/reports only; completed recording status and frame
+counts remain intact. Missing historical optional evidence stays optional,
+and World/Players counts are outside the paired color/depth comparison.
+
+`test_authoring_audit_boundaries` owns four compact regressions: actual Tk plus
+roster refresh, scalar/vector cut values, retimed native attach packet durations
+and atomic rejection, and read-only paired audits through the real finishing
+caller. Before-code negatives establish each test detects the reported defect.
+Codec/frame order, actual C++ arrival weights and relevant native test targets
+are separate preflight evidence; native/package/live qualification remains with
+those boundaries. No numeric-transform toy model or whole-program claim is used.

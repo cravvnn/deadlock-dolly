@@ -113,6 +113,11 @@ class Popup:
         return 'break'
     def _choose(self,e=None):
         try:
+            # Rows belong to the list shown when this popup opened. Refreshes
+            # or disablement must not turn an old row into a different choice.
+            if tuple(self.combo.cget("values")) != self.values or self.combo.instate(("disabled",)):
+                self.close()
+                return "break"
             self.combo.current(self.index)
             self.close()
             self.combo.event_generate('<<ComboboxSelected>>', when='tail')

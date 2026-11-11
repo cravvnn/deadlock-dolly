@@ -1232,3 +1232,8 @@ dolly/ProjectOpenSnapshot.cfg
 dolly/ProjectOpenSnapshot.mutants.json
 dolly/ProjectOpenSnapshotApi.tla
 tests/test_metadata_boundaries.py
+dolly/ui/PopupSelection.tla
+dolly/ui/PopupSelectionApi.tla
+dolly/ui/PopupSelection.cfg
+dolly/ui/PopupSelection.mutants.json
+tests/test_authoring_audit_boundaries.py

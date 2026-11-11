@@ -153,7 +153,30 @@ def _audit_decoded(root: Path, result: dict) -> None:
         if (isinstance(color, dict) and isinstance(depth, dict)
                 and color.get("timestamps") and color.get("timestamps") != depth.get("timestamps")):
             result["findings"].append("decoded audit: depth timestamps do not match color")
+        for name in ("color", "depth"):
+            stream = streams.get(name)
+            if isinstance(stream, dict):
+                count = stream.get("decoded_frames")
+                if type(count) is int and count > 0:
+                    result["takes"].setdefault(name, {})["decoded_frames"] = count
         return
+
+
+def _audit_frame_counts(result):
+    """Paired color/depth evidence describes the same encoded frame sequence."""
+    counts = []
+    for name in ("color", "depth"):
+        take = result["takes"].get(name, {})
+        for field in ("frames_written", "manifest_frames", "camera_frames", "decoded_frames"):
+            count = take.get(field)
+            if type(count) is int and count > 0:
+                counts.append((name + " " + field, count))
+    if counts:
+        reference, expected = counts[0]
+        for label, count in counts[1:]:
+            if count != expected:
+                result["findings"].append(
+                    f"paired frame count mismatch: {reference}={expected}, {label}={count}")
 
 
 def audit_take(folder) -> dict:
@@ -172,6 +195,7 @@ def audit_take(folder) -> dict:
             if (folder / layer).is_dir():
                 _audit_layer(layer, folder / layer, result)
         _audit_decoded(folder, result)
+        _audit_frame_counts(result)
     except OSError as exc:
         result["findings"].append(f"take audit could not read files: {exc}")
     result["ok"] = not result["findings"]

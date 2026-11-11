@@ -1,0 +1,4 @@
+[
+  {"name":"apply old row index to refreshed list","replace":[["Fresh == TRUE","Fresh == FALSE"]],"expect":"VisibleChoice"},
+  {"name":"choose after control disabled","replace":[["Enabled == TRUE","Enabled == FALSE"]],"expect":"EnabledChoice"}
+]

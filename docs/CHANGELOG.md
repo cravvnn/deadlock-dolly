@@ -2559,3 +2559,13 @@ development launcher and recoverable unlocker mount.
 - **Safer Players error cleanup.** *Before:* a refused monitor thread or locked partial file could interrupt cleanup or replace the encoding error. *After:* refused workers are retired and locked leftovers preserve the original error.
 
 - **Reliable metadata handling.** *Before:* valid larger sidecars could block Players, while diagnostic-folder or deeply nested definitions errors could escape their fallback. *After:* sidecar reads accept current timing data within a bounded budget, and those optional failures stay contained.
+
+### Unreleased - reviewed authoring and take-audit hardening
+
+- **Reliable dropdown choices.** *Before:* a roster refresh or disabled control could accept an old popup row. *After:* selection requires the same visible list and an enabled control.
+
+- **Continuous effects after deleting the first camera.** *Before:* rebasing could jump interpolated effects to an earlier key value. *After:* the new start retains the original evaluated effect value. Later general smooth derivatives may still change.
+
+- **Consistent transition timing.** *Before:* replay-rate correction moved camera keys without scaling their source-arrival blends. *After:* keys and arrival durations scale together, with invalid results rejected before changing the shot.
+
+- **Honest paired take audits.** *Before:* contradictory positive color/depth frame counts could pass validation. *After:* the audit reports disagreements while preserving the finished recording and every frame.
