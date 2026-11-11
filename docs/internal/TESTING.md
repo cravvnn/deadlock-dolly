@@ -1,5 +1,16 @@
 # Development checks
 
+`test_metadata_boundaries.py` owns five additional contracts: incomplete mod
+inspection cannot become mixed-skin permission; dump reads enforce their cap;
+post-spawn source-launcher logging failure preserves the admitted PID; invalid
+completion markers cannot block later valid staged reuse; optional art manifests
+retain flat-colour fallback. Tests use owned files, an NTFS junction on Windows
+(a symbolic link elsewhere), controlled I/O faults and a real harmless child
+inheriting its log. No game, editor GUI, network, clipboard or installed user
+settings are accessed. ManifestScan includes recursive completion-marker failure
+and six mutants. Byte bounds stay with real readers. Packaged GUI/update checks
+remain receiving-release obligations. Existing tests and assertions are unchanged.
+
 [Maintainer references](README.md) Ã‚Â· [Current user documentation](../README.md)
 
 Run the core user contracts and compact supplements from the checkout root:

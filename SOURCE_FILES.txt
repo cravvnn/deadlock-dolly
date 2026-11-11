@@ -1230,3 +1230,4 @@ dolly/ProjectOpenSnapshot.tla
 dolly/ProjectOpenSnapshot.cfg
 dolly/ProjectOpenSnapshot.mutants.json
 dolly/ProjectOpenSnapshotApi.tla
+tests/test_metadata_boundaries.py

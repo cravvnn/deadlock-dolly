@@ -32,7 +32,10 @@ def launch_gui(root: Path | None = None) -> int:
             creationflags=subprocess.CREATE_NO_WINDOW,
             close_fds=True,
         )
-        startup_log.write(f"Dolly editor started (PID {child.pid}).\r\n".encode("utf-8"))
+        try:
+            startup_log.write(f"Dolly editor started (PID {child.pid}).\r\n".encode("utf-8"))
+        except OSError:
+            pass  # The editor already owns its inherited log handle.
     return child.pid
 
 

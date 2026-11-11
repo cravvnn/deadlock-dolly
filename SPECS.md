@@ -829,3 +829,32 @@ actual threads, bounded cache decoder and refresh disk writes with controlled fe
 GUI cases use actual loader/history/guard with controlled picker/UI callbacks.
 These source checks do not qualify network, packaged GUI, game compatibility or
 render/encoder output. New files enter the explicit export list and formal gate.
+
+## Inspection and optional metadata boundaries
+
+ManifestScan now includes recursive verified.json completion-marker decoding,
+rather than starting after that read. updater.staged_payload, called by
+download_update, reads at most64KiB+1 and skips oversized/recursive markers.
+Approved identity, first matching workspace, miss and completion/API properties
+remain; a sixth mutant removes marker-recursion containment. The finite scope
+has two workspaces,298distinctstates and assumes returning validation calls with
+weakly fair scan progress. It does not prove real-I/O liveness, payload integrity,
+crash recovery or safety against concurrent namespace replacement. Byte limits
+are actual-reader contracts, not lifecycle state. Failing mutant prefixes do not
+establish a reachable-state reduction.
+
+The other changes have no new persistent lifecycle or ownership protocol:
+
+| Owner/callers | Direct contract and reason no additional lifecycle model |
+| --- | --- |
+| mod_policy.classify_mount/split_mounts; launcher mount preparation | Hard inspection failures propagate through the existing synchronous scan; the complete VPK tree is validated before mixed-content allowance. Valid mixed skin/UI packs and explicit override remain. This does not recursively verify every asset or eliminate filesystem races. |
+| crash_dumps.analyse; Controller crash suffix/diagnostics | Actual64MiB+1 read cap precedes decoding. No state persists between calls; real growth-after-stat and literal default-read probes own the proof. |
+| bootstrap.launch_gui/main; source batch launcher | After Popen succeeds, only the informational PID log write is best effort. Pre-admission errors and existing child/handle lifetime remain. A real harmless child fixture validates this return/error boundary; actual GUI and packaged launcher are separate. |
+| ui.art._verified_manifest/load; GUI/sidebar | Existing256KiB cap applies to the actual read and recursive JSON becomes a validation error. Existing None/flat-colour fallback and root cache retain their meaning; no new fallback state. File verification/image rendering remain independent. |
+
+test_metadata_boundaries adds five owner regressions, with real VPK metadata,
+owned junctions/files and a real harmless child inheriting the startup log.
+Original-code negatives establish that each regression detects its intended
+failure. Art tests construct no Tk images/windows; the bootstrap GUI request is
+captured and substituted. Native engine, output, full GUI, abrupt death, power
+loss and whole-program composition remain outside this source proof.

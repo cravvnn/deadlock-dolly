@@ -64,7 +64,10 @@ def analyse(path: Path) -> dict:
     size = target.stat().st_size
     if size > MAX_ANALYSIS_BYTES:
         raise ValueError("minidump is too large to analyse")
-    data = target.read_bytes()
+    with target.open("rb") as stream:
+        data = stream.read(MAX_ANALYSIS_BYTES + 1)
+    if len(data) > MAX_ANALYSIS_BYTES:
+        raise ValueError("minidump is too large to analyse")
     streams = _streams(data)
     if _EXCEPTION_STREAM not in streams:
         raise ValueError("minidump has no exception stream")

@@ -35,6 +35,10 @@ MAX_VPK_TREE_BYTES = 16 * 1024 * 1024
 MAX_EVIDENCE = 4
 
 
+class MountInspectionError(ValueError):
+    """Content could not be inspected; an override is not a successful scan."""
+
+
 def _content(parts: list[str]) -> bool:
     """True when this virtual path is reviewed skin/map/audio content."""
     root = parts[0].casefold()
@@ -62,16 +66,17 @@ def _scan_materials(root: Path, evidence: list[str]) -> None:
     try:
         children = sorted(root.iterdir(), key=lambda item: item.name.casefold())
     except OSError as exc:
-        evidence.append(f"materials could not be read ({exc.__class__.__name__})")
-        return
+        raise MountInspectionError(f"materials could not be read ({exc.__class__.__name__})") from exc
     for child in children:
+        if not _plain_path(child):
+            raise MountInspectionError(f"materials/{child.name} is a link")
         if child.is_dir() and child.name.casefold() in ALLOWED_MATERIAL_ROOTS:
             continue
         evidence.append(f"materials/{child.name} overrides a visual material")
 
 
 def _scan_vpk(pack: Path, evidence: list[str]) -> None:
-    """Read only the directory tree; stop at the first non-content entry."""
+    """Validate the complete directory tree, retaining bounded policy evidence."""
     try:
         _header, _tree_size, tree = _read_vpk_tree(pack, MAX_VPK_TREE_BYTES)
         for key, _crc, _preload, _archive, _offset, _length in _iter_vpk_tree(tree):
@@ -80,10 +85,10 @@ def _scan_vpk(pack: Path, evidence: list[str]) -> None:
                 continue  # A root-level readme or licence is not content.
             reason = _reason(parts)
             if reason:
-                evidence.append(f"{pack.name}: {reason} ({key})")
-                return
+                if len(evidence) < MAX_EVIDENCE:
+                    evidence.append(f"{pack.name}: {reason} ({key})")
     except (OSError, ValueError) as exc:
-        evidence.append(f"{pack.name} could not be checked ({exc.__class__.__name__})")
+        raise MountInspectionError(f"{pack.name} could not be checked ({exc.__class__.__name__})") from exc
 
 
 def _vpk_has_content(pack: Path) -> bool:
@@ -137,13 +142,11 @@ def _scan_loose(root: Path, depth: int, evidence: list[str]) -> None:
     try:
         children = sorted(root.iterdir(), key=lambda item: item.name.casefold())
     except OSError as exc:
-        evidence.append(f"{root.name or 'mount'} could not be read ({exc.__class__.__name__})")
-        return
+        raise MountInspectionError(f"{root.name or 'mount'} could not be read ({exc.__class__.__name__})") from exc
     for child in children:
         plain = _plain_path(child)
         if not plain:
-            evidence.append(f"{child.name} is a link")
-            continue
+            raise MountInspectionError(f"{child.name} is a link")
         name = child.name.casefold()
         if child.is_file():
             # Source 2 mounts a pack through its *_dir.vpk index; numbered
@@ -189,8 +192,8 @@ def classify_mount(root: Path, *, allow_overrides: bool = False) -> dict:
     evidence: list[str] = []
     try:
         _scan_loose(path, 0, evidence)
-    except OSError as exc:
-        return {"allowed": False, "reason": f"a mount entry could not be checked ({exc.__class__.__name__})",
+    except (OSError, MountInspectionError) as exc:
+        return {"allowed": False, "reason": f"a mount entry could not be checked ({exc.__class__.__name__}): {exc}",
                 "evidence": evidence[:MAX_EVIDENCE]}
     if evidence:
         if _has_content(path):
