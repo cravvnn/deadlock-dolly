@@ -1,4 +1,6 @@
-## Unreleased - reviewed metadata hardening
+### Deadlock Dolly v0.7.29-beta
+
+**0.7.29-beta**
 
 - **Reliable optional metadata.** *Before:* corrupt update completion metadata could block reuse, and nested UI-art JSON could escape fallback. *After:* Dolly bounds both reads and contains parser failures through normal skip or flat-colour paths.
 
