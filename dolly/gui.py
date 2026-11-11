@@ -5084,9 +5084,8 @@ class DollyApp:
         if not path:
             return
         def operation():
-            project = Project.load(path)
-            # Project.load enforces the file-size limit before this migration notice.
-            legacy_project = json.loads(Path(path).read_text(encoding="utf-8")).get("version") == 1
+            project, source_version = Project.load_versioned(path)
+            legacy_project = source_version == 1
             project.validate()
             self.project = project
             self.shot_history.reset(self.project)

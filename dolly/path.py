@@ -1120,6 +1120,11 @@ class Project:
 
     @classmethod
     def load(cls, path: str | Path) -> "Project":
+        return cls.load_versioned(path)[0]
+
+    @classmethod
+    def load_versioned(cls, path: str | Path) -> tuple["Project", int]:
+        """Return a validated shot and its version from one bounded JSON snapshot."""
         def reject_constant(value: str) -> None:
             raise ValueError(f"Non-finite JSON number is not permitted: {value}")
 
@@ -1140,4 +1145,4 @@ class Project:
                              object_pairs_hook=unique_object)
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
             raise ValueError(f"Invalid project JSON: {exc}") from exc
-        return cls.from_dict(obj)
+        return cls.from_dict(obj), obj["version"]

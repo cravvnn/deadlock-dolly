@@ -126,7 +126,7 @@ def definitions_probe(C):
     nested = b'[' * 10000 + b']' * 10000
     assert len(nested) < definitions.MAX_BYTES
     cache.write_bytes(nested)
-    saved = (definitions._ACTIVE, definitions._ACTIVE_LOADED)
+    saved = definitions._ACTIVE
     try:
         with patch.object(definitions, 'cache_path', return_value=cache):
             definitions.reset()
@@ -146,7 +146,7 @@ def definitions_probe(C):
             assert definitions._ACTIVE is document and cache.read_bytes() == nested
         return dict(actual_launcher_pins_fall_back=True, first_cache_read_falls_back=True, retry_stable=True, failed_refresh_preserves_active_and_disk=True, valid_bundled_document=True)
     finally:
-        definitions._ACTIVE, definitions._ACTIVE_LOADED = saved
+        definitions._ACTIVE = saved
 
 class ReviewedRuntimeTests(unittest.TestCase):
     def setUp(self):

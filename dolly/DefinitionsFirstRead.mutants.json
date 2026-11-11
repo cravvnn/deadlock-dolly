@@ -1,0 +1,22 @@
+[
+  {
+    "name": "current first read lacks lock",
+    "replace": [
+      [
+        "SerialRead == TRUE",
+        "SerialRead == FALSE"
+      ]
+    ],
+    "expect": "NoProvisionalEmpty"
+  },
+  {
+    "name": "adopt bypasses first reader lock",
+    "replace": [
+      [
+        "SerialAdopt == TRUE",
+        "SerialAdopt == FALSE"
+      ]
+    ],
+    "expect": "RefreshWins"
+  }
+]

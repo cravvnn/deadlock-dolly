@@ -25,6 +25,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -435,37 +436,33 @@ def load(path: Path, *, native_abi: int = 4) -> Definitions:
 
 
 _ACTIVE: Definitions | None = None
-_ACTIVE_LOADED = False
+_ACTIVE_LOCK = threading.Lock()
 
 
 def current() -> Definitions:
-    """The active definitions: the cached remote document, or an empty set.
-
-    Reading the cache is lazy and never touches the network, so the launcher
-    sees a previously fetched document immediately at start-up.
-    """
-    global _ACTIVE, _ACTIVE_LOADED
-    if not _ACTIVE_LOADED:
-        _ACTIVE_LOADED = True
-        try:
-            _ACTIVE = load(cache_path())
-        except DefinitionsError:
-            _ACTIVE = EMPTY
-    return _ACTIVE or EMPTY
+    """Load the bounded cache once; never expose a provisional empty document."""
+    global _ACTIVE
+    with _ACTIVE_LOCK:
+        if _ACTIVE is None:
+            try:
+                _ACTIVE = load(cache_path())
+            except DefinitionsError:
+                _ACTIVE = EMPTY
+        return _ACTIVE
 
 
 def adopt(document: Definitions | None) -> None:
-    """Install a freshly fetched document for the rest of this process."""
-    global _ACTIVE, _ACTIVE_LOADED
-    _ACTIVE = document or EMPTY
-    _ACTIVE_LOADED = True
+    """Replace session definitions after any in-progress first cache read."""
+    global _ACTIVE
+    with _ACTIVE_LOCK:
+        _ACTIVE = document or EMPTY
 
 
 def reset() -> None:
-    """Forget process state. Tests and the settings UI use this."""
-    global _ACTIVE, _ACTIVE_LOADED
-    _ACTIVE = None
-    _ACTIVE_LOADED = False
+    """Forget session state; the next current call reloads the cache."""
+    global _ACTIVE
+    with _ACTIVE_LOCK:
+        _ACTIVE = None
 
 
 def _redirect_allowed(url: str) -> bool:

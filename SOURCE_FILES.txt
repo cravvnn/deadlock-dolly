@@ -1220,3 +1220,12 @@ dolly/WorkspaceEligibility.tla
 dolly/WorkspaceEligibility.cfg
 dolly/WorkspaceEligibility.mutants.json
 dolly/WorkspaceEligibilityApi.tla
+tests/test_shot_definitions_audit.py
+dolly/DefinitionsFirstRead.tla
+dolly/DefinitionsFirstRead.cfg
+dolly/DefinitionsFirstRead.mutants.json
+dolly/DefinitionsFirstReadApi.tla
+dolly/ProjectOpenSnapshot.tla
+dolly/ProjectOpenSnapshot.cfg
+dolly/ProjectOpenSnapshot.mutants.json
+dolly/ProjectOpenSnapshotApi.tla
