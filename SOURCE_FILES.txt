@@ -1207,6 +1207,7 @@ tools/VoiceWindowReuse.mutants.json
 tools/VoiceWindowReuseApi.tla
 docs/RELEASE_NOTES_0.7.26-beta.md
 docs/RELEASE_NOTES_0.7.27-beta.md
+docs/RELEASE_NOTES_0.7.28-beta.md
 tests/test_recorder_updater.py
 dolly/VideoStopOwnership.tla
 dolly/VideoStopOwnership.cfg

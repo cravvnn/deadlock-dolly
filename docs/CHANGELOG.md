@@ -1,4 +1,4 @@
-### Unreleased
+### Deadlock Dolly v0.7.28-beta
 
 - **Reliable shot opening.** *Before:* a valid shot could be rejected or receive an incorrect migration notice after Dolly read the file twice. *After:* the shot and its source version come from the same bounded read.
 
