@@ -41,6 +41,60 @@ class ReadSpy:
 
 
 class MetadataBoundaryTests(unittest.TestCase):
+    def test_replay_storage_link_does_not_exclude_skin_mount(self):
+        from dolly import launcher
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            mount = root / "citadel" / "addons"; mount.mkdir(parents=True)
+            target = root / "owned-replays"; target.mkdir()
+            # Even model-looking files under replay storage are not skin evidence.
+            (target / "models").mkdir()
+            marker = target / "models" / "keep.txt"; marker.write_bytes(b"user replay storage")
+            link = mount / "RePlAyS"
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(target), str(link))
+            else:
+                link.symlink_to(target, target_is_directory=True)
+            try:
+                pack = mount / "skin_dir.vpk"
+                vpk(pack, [("particles", "effect"), ("models", "skin")])
+                before = pack.read_bytes()
+                real_plain, real_iterdir = mod_policy._plain_path, Path.iterdir
+                def plain(path):
+                    self.assertNotEqual(path, link, "replay storage must not be inspected")
+                    return real_plain(path)
+                def children(path):
+                    self.assertFalse(path == link or path.is_relative_to(target),
+                                     "replay target must not be traversed")
+                    return real_iterdir(path)
+                with patch.object(mod_policy, "_plain_path", side_effect=plain), patch.object(Path, "iterdir", children):
+                    carried, excluded = mod_policy.split_mounts([("Game", "citadel/addons")], root)
+                    self.assertFalse(excluded)
+                    self.assertEqual(carried, [{"key": "Game", "path": "citadel/addons", "mixed_skin": True}])
+                    editing = '"GameInfo" { "FileSystem" { "SearchPaths" { "Game" "citadel" } } }'
+                    merged = launcher.merge_addon_mounts(editing, editing,
+                        [(r["key"], r["path"]) for r in carried])
+                    self.assertIn(("Game", "citadel/addons"), launcher.mod_search_paths(merged))
+                    # The exception must not reopen incomplete-pack or pure-render allowance.
+                    vpk(pack, [("models", "skin")], malformed=True)
+                    self.assertFalse(mod_policy.classify_mount(mount)["allowed"])
+                    vpk(pack, [("particles", "effect")])
+                    self.assertFalse(mod_policy.classify_mount(mount)["allowed"])
+                    pack.write_bytes(before)
+                self.assertEqual(pack.read_bytes(), before)
+                self.assertEqual(marker.read_bytes(), b"user replay storage")
+            finally:
+                link.rmdir() if os.name == "nt" else link.unlink()
+            # Ordinary replay folders are ignored too, including when nested
+            # below a mod-manager container. They cannot make a render pack a skin.
+            replay_models = mount / "manager" / "replays" / "models"
+            replay_models.mkdir(parents=True)
+            (replay_models / "keep.txt").write_bytes(b"not mounted model content")
+            vpk(pack, [("particles", "effect")])
+            self.assertFalse(mod_policy.classify_mount(mount)["allowed"])
+            self.assertEqual((replay_models / "keep.txt").read_bytes(), b"not mounted model content")
+
     def test_mixed_content_cannot_override_incomplete_inspection(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

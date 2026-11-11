@@ -1,5 +1,11 @@
 # Development checks
 
+The mod-inspection owner also checks a real replay-storage junction beside a
+mixed skin VPK, preservation through session mount merging, no target traversal,
+and continued refusal of malformed packs and render-only content. Replay folders
+cannot supply skin evidence. This is offline mount preparation, not in-game skin
+rendering qualification.
+
 `test_authoring_audit_boundaries.py` adds four owner checks: popup selection
 must still match the visible list and an enabled combobox; leading-camera
 deletion retains sampled scalar/vector effects at the cut; replay-rate retiming

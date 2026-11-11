@@ -7,7 +7,8 @@ UI override, which is exactly why the isolated editing session exists.
 
 The decision is made from the mount's own content, never from a mod name:
 loose files and the directory trees of VPK packs are inspected without reading
-payloads. Unreadable or linked content is refused rather than guessed at.
+payloads. Unreadable or linked content is refused rather than guessed at;
+non-asset replay storage is ignored without traversing it.
 """
 from __future__ import annotations
 
@@ -33,6 +34,9 @@ DENIED_ROOTS = frozenset({"panorama", "shaders", "cfg", "scripts", "particles", 
 MAX_CONTAINER_DEPTH = 1
 MAX_VPK_TREE_BYTES = 16 * 1024 * 1024
 MAX_EVIDENCE = 4
+# Replay storage is not an asset search root. Mod managers can put a junction
+# here; do not inspect its target or let it classify the surrounding skin pack.
+NON_ASSET_FOLDERS = frozenset({"replays"})
 
 
 class MountInspectionError(ValueError):
@@ -110,6 +114,8 @@ def _has_content(root: Path, depth: int = 0) -> bool:
     except OSError:
         return False
     for child in children:
+        if child.name.casefold() in NON_ASSET_FOLDERS:
+            continue
         try:
             plain = _plain_path(child)
         except OSError:
@@ -144,6 +150,8 @@ def _scan_loose(root: Path, depth: int, evidence: list[str]) -> None:
     except OSError as exc:
         raise MountInspectionError(f"{root.name or 'mount'} could not be read ({exc.__class__.__name__})") from exc
     for child in children:
+        if child.name.casefold() in NON_ASSET_FOLDERS:
+            continue
         plain = _plain_path(child)
         if not plain:
             raise MountInspectionError(f"{child.name} is a link")
