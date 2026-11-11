@@ -52,5 +52,15 @@
       ]
     ],
     "expect": "RecursionDoesNotAbort"
+  },
+  {
+    "name": "recursive completion marker aborts scan",
+    "replace": [
+      [
+        "ContainMarkerRecursion == TRUE",
+        "ContainMarkerRecursion == FALSE"
+      ]
+    ],
+    "expect": "MarkerDoesNotAbort"
   }
 ]

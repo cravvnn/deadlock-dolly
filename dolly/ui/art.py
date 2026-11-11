@@ -116,7 +116,14 @@ def _verified_manifest(folder):
         raise ValueError(f"{MANIFEST} is missing")
     if path.stat().st_size > _MANIFEST_LIMIT:
         raise ValueError(f"{MANIFEST} is too large")
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+    with path.open("rb") as stream:
+        raw = stream.read(_MANIFEST_LIMIT + 1)
+    if len(raw) > _MANIFEST_LIMIT:
+        raise ValueError(f"{MANIFEST} is too large")
+    try:
+        manifest = json.loads(raw.decode("utf-8"))
+    except RecursionError as exc:
+        raise ValueError(f"{MANIFEST} JSON is too deeply nested") from exc
     if not isinstance(manifest, dict) or manifest.get("version") != MANIFEST_VERSION:
         raise ValueError(f"unsupported {MANIFEST} version")
     files = manifest["files"]

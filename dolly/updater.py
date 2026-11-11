@@ -189,9 +189,13 @@ def staged_payload(target, version, sha256=None):
         return None
     for work in sorted(Path(target).glob(".dolly-update-*")):
         try:
-            marker = json.loads((work / "verified.json").read_text(encoding="utf-8"))
+            with (work / "verified.json").open("rb") as stream:
+                raw = stream.read(64 * 1024 + 1)
+            if len(raw) > 64 * 1024:
+                raise ValueError("Update completion marker is too large")
+            marker = json.loads(raw.decode("utf-8"))
             manifest = read_manifest(work / "payload")
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             continue
         if (isinstance(marker, dict) and marker.get("version") == version
                 and marker.get("sha256") == sha256 and manifest["version"] == version):
