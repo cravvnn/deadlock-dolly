@@ -1,5 +1,7 @@
 ### Deadlock Dolly v0.7.30-beta
 
+**0.7.30-beta**
+
 - **Reliable dropdown choices.** *Before:* a roster refresh or disabled control could accept an old popup row. *After:* selections require the same visible list and an enabled control.
 
 - **Smoother camera deletion.** *Before:* deleting the first camera could jump interpolated effects to an earlier value. *After:* effects retain their evaluated value at the new start.
