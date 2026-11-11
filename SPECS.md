@@ -783,3 +783,49 @@ packets, actual decoder/transport, actual filesystem and installation byte locks
 Existing child-process update/recovery/handoff checks now import integrated source.
 They simulate packaged process identity/editor launch; native/package/output and
 previous-release updater qualification remain separate release obligations.
+
+
+## Shot snapshots, definitions publication and take-audit evidence
+
+| Owner and callers | Adjacent scope | Contract and bounds |
+| --- | --- | --- |
+| Project.load_versioned/from_dict and DollyApp.open; Project.load retains the Project-only API | [ProjectOpenSnapshot](dolly/ProjectOpenSnapshot.tla), [API](dolly/ProjectOpenSnapshotApi.tla) | One strict bounded accepted file, current/legacy source version and one replacement before the migration notice. Notice uses the accepted snapshot; no second read. Parsing during concurrent writes, modal admission and full GUI/history lifetime excluded. |
+| definitions.current/adopt/reset; launcher game_pins and UpdateUI background refresh | [DefinitionsFirstRead](dolly/DefinitionsFirstRead.tla), [API](dolly/DefinitionsFirstReadApi.tla) | One first cache read and one concurrent lookup, refresh or withdrawal. Local read/decode/publication and adopt share the real Python lock; no provisional empty lookup or stale read overwrites newer adoption. One old/new/empty document. Reset races, multiple refreshes, failures and mutable returned dictionaries excluded; sequential reset/empty-adoption/fallback are owner tests. |
+
+Production definitions state has no _ACTIVE_LOADED flag: None means not loaded,
+EMPTY means a known empty/withdrawn document. The model removes that former
+bookkeeping variable too. The private unsafe baseline had36states and candidate17
+under the same bounded actors; hardening excludes unsafe observations, so this is
+not behavioral equivalence or a whole-program state-reduction percentage. The
+production scope keeps17states. Shot snapshot stays10states while deleting the
+duplicate file read/parse. Both scopes check safety and minimal call-completion API
+projection, allow explicit terminal stutter and retain deadlock checks. They do not
+prove returning I/O, temporal liveness or mechanical whole-program composition.
+Definitions refresh fetch/decode happens outside the lock; only bounded local cache
+load and in-memory publication serialize. Atomic disk cache ordering across multiple
+refreshes, compatibility/profile validity and native forwarding remain other owners.
+
+camera_bundle.load_bundle is a synchronous immutable-data reader, not a retained
+lifecycle owner. Actual byte admission replaces stat-only bounds; recursion is
+normalized into CameraBundleError so export_audit can report and continue. No new
+state model is needed: actual bounded-reader, malformed-byte, caller/CLI and later-
+layer probes preserve the validation/error contract. Camera schema and completeness
+checks remain unchanged. The permanent fixture checks the real128MiB+1 request and
+scales the boundary payload to4KiB; separate matching-runtime discovery exercised
+the actual128MiB+1 growing stream. No unbounded-RSS or snapshot-during-write proof.
+
+export_audit._audit_sidecar is likewise a synchronous validation result with no
+retained owner/retry state: success now requires a nonempty video declaration and
+an existing nonempty referenced file. This is presence evidence, not media decoding,
+frame count, timing, color or native-output certification. Missing/invalid/blank/
+missing-file/empty-file and positive cases use unchanged owned bytes. OSError stays
+a finding; unexpected programming errors remain visible. Decoded-audit and camera
+completeness remain independent checks. No new lifecycle model is warranted.
+
+test_shot_definitions_audit adds four owner contracts and preserves all existing
+tests. The existing reviewed-runtime definitions fixture only stops saving/restoring
+the deleted private flag; all its assertions remain. The new concurrency cases use
+actual threads, bounded cache decoder and refresh disk writes with controlled fetch;
+GUI cases use actual loader/history/guard with controlled picker/UI callbacks.
+These source checks do not qualify network, packaged GUI, game compatibility or
+render/encoder output. New files enter the explicit export list and formal gate.

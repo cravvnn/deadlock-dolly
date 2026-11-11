@@ -1,0 +1,12 @@
+[
+  {
+    "name": "notice rereads file after accepted project",
+    "replace": [
+      [
+        "SameSnapshot == TRUE",
+        "SameSnapshot == FALSE"
+      ]
+    ],
+    "expect": "NoticeMatchesLoaded"
+  }
+]

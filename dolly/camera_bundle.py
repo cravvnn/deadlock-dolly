@@ -205,12 +205,16 @@ def load_bundle(path) -> CameraBundle:
     """Read and parse a camera bundle file; raises CameraBundleError."""
     path = Path(path)
     try:
-        if not path.is_file() or not 0 < path.stat().st_size <= _MAX_FILE_BYTES:
+        if not path.is_file():
             raise CameraBundleError("camera bundle is missing or oversized")
-        data = json.loads(path.read_text(encoding="utf-8"))
+        with path.open("rb") as stream:
+            raw = stream.read(_MAX_FILE_BYTES + 1)
+        if not 0 < len(raw) <= _MAX_FILE_BYTES:
+            raise CameraBundleError("camera bundle is missing or oversized")
+        data = json.loads(raw.decode("utf-8"))
     except CameraBundleError:
         raise
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         raise CameraBundleError(f"camera bundle could not be read: {exc}") from exc
     return parse_bundle(data)
 

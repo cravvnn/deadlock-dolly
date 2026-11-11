@@ -361,3 +361,16 @@ real Windows deny-delete temporary locks. The fsync error and process/native
 observations are controlled; real game/encoder and packaged update acceptance are
 not inferred. Keep test_update_handoff_process's actual child/lock/crash/rollback
 checks and existing P07/P15 contracts; these additions do not replace them.
+
+
+`test_shot_definitions_audit.py` adds four contracts: one strict shot/version
+snapshot across BOM and actual file replacement; first definitions read versus
+concurrent lookup/refresh/withdrawal; bounded typed camera-bundle loading with
+actual audit/CLI continuation; and declared nonempty video evidence before audit
+success. The camera byte-budget case checks the default read argument then4KiB
+exact/overrun fixtures. Test video bytes prove presence only, not valid media.
+GUI/network/process inputs are controlled; cache I/O, threads, parsers and audit
+owners are real. Keep existing P01/P13 and reviewed-runtime fallback/preservation
+assertions. The obsolete private loaded flag disappears from its save/restore
+fixture without changing assertions. DefinitionsFirstRead/ProjectOpenSnapshot run
+in the normal model gate with three expected mutants and bounded API projections.

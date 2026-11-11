@@ -61,8 +61,12 @@ def _audit_sidecar(label: str, sidecar: Path, video_dir: Path, result: dict) -> 
     elif data.get("first_frame") != 0 or data.get("last_frame") != frames - 1:
         problems.append("frame range does not match frames_written")
     video = data.get("video_file")
-    if isinstance(video, str) and video and not (video_dir / video).is_file():
+    if not isinstance(video, str) or not video:
+        problems.append("video_file is missing or invalid")
+    elif not (video_dir / video).is_file():
         problems.append(f"referenced video is missing: {video}")
+    elif (video_dir / video).stat().st_size == 0:
+        problems.append(f"referenced video is empty: {video}")
     take = result["takes"].setdefault(label, {})
     take["frames_written"] = frames
     take.setdefault("problems", []).extend(problems)
