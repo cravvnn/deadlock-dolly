@@ -902,3 +902,13 @@ caller. Before-code negatives establish each test detects the reported defect.
 Codec/frame order, actual C++ arrival weights and relevant native test targets
 are separate preflight evidence; native/package/live qualification remains with
 those boundaries. No numeric-transform toy model or whole-program claim is used.
+
+The native Follow anchor session predicate also admits validated game-owned POV
+Hold, Play and HoldCurrent commands. This changes no command transitions, stored
+state, ownership protocol or frame math; no independent lifecycle model is added
+for the stateless mode/flag/path predicate. The actual native session regression
+checks every admitted POV mode and lease, replay/seeking, inactive Follow, worker
+fault, override, manual/path and camera-writing exclusions. Existing exact
+caller/target/cvar gates and private descriptor-copy limits remain unchanged.
+These source checks do not certify game frames; bounded POV exports qualify
+that separately. No whole-program or state-reduction claim follows.

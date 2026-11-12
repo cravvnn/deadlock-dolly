@@ -123,8 +123,17 @@ static bool follow_anchor_session(dolly::EditorFollowConfig& config,
         return false;
     command = std::atomic_load(&gCommand);
     DemoState demo{};
-    return command && command->wire.mode == std::uint32_t(Mode::Release) && read_demo(demo) &&
-           demo.playing && !demo.seeking && same_demo(command->wire.demo_name, demo.name);
+    // A POV segment times the take without replacing the game spectator view.
+    // It needs the same anchor correction as released Follow, including arm/hold.
+    const bool game_owned = command &&
+        (command->wire.mode == std::uint32_t(Mode::Release) ||
+         ((command->wire.flags & kGamePov) && !(command->wire.flags & (kFrozen | kAspect)) &&
+          !command->manual && command->path &&
+          (command->wire.mode == std::uint32_t(Mode::Hold) ||
+           command->wire.mode == std::uint32_t(Mode::Play) ||
+           command->wire.mode == std::uint32_t(Mode::HoldCurrent))));
+    return game_owned && read_demo(demo) && demo.playing && !demo.seeking &&
+           same_demo(command->wire.demo_name, demo.name);
 }
 
 __declspec(noinline) static void __fastcall follow_composition_hook(

@@ -9,6 +9,7 @@ the people and projects behind it, from the original camera editor onward.
 | Contributor | Contribution |
 | --- | --- |
 | [Cravvnn](https://github.com/cravvnn) | Project creation, direction, ongoing development, game-update compatibility research, testing and releases. |
+| [**EsteemFPS**](https://www.youtube.com/@EsteemFPS) | Created a community [Dolly tutorial](https://www.youtube.com/watch?v=6l0pWXf1sVo) to help players get started with the editor. |
 | [**@spookyisnapping**](https://github.com/spookyisnapping) | Clarified ReShade setup instructions to extract the runtime DLL instead of running the installer against Deadlock. See [PR #31](https://github.com/cravvnn/deadlock-dolly/pull/31). |
 | [**@Moelandblue**](https://github.com/Moelandblue) | Reported missing DLSS options and identified redirected game stdout as the trigger, informing Dolly's optional DLSS-compatible startup and retained diagnostic logs. See [issue #18](https://github.com/cravvnn/deadlock-dolly/issues/18). |
 | [**@ExoCalibra**](https://github.com/ExoCalibra) | Bone and Weapon vertical-aim lock and camera-relative movement during attached preview. See [PR #29](https://github.com/cravvnn/deadlock-dolly/pull/29) and the [original aim-lock contribution](https://github.com/cravvnn/deadlock-dolly/commit/f8e23dbdb811ccf76e51f88f72e8ff6086d317ed). |

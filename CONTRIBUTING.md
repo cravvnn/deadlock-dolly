@@ -2,6 +2,10 @@
 
 ## Contributors and credits
 
+Thanks to [EsteemFPS](https://www.youtube.com/@EsteemFPS) for creating a
+[Dolly tutorial](https://www.youtube.com/watch?v=6l0pWXf1sVo) and helping
+more players get started with the editor.
+
 [@paralin](https://github.com/paralin) contributed
 Linux/Proton Steam discovery, Wine mount-point handling and interrupted
 plugin-cleanup recovery. The full [credits](CREDITS.md) record Dolly's creator,

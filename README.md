@@ -22,7 +22,7 @@
 Capture views from a local replay, shape a camera path and play it back with
 animated framing and effects. Edit through the desktop or directly in the game.
 
-**Current source: 0.7.26-beta · Windows x64 · DirectX 11.**
+**Current source: 0.7.33-beta · Windows x64 · DirectX 11.**
 Native source changes need a matching rebuilt helper. The portable app includes
 Python and Tcl/Tk; no separate installation is needed.
 
@@ -54,6 +54,9 @@ Start the editing game through Dolly. It launches its own process with
 Bindings can be changed under **Controls**; existing saved bindings may differ.
 See the
 [in-game editor guide](docs/UI_REWORK.md) for the full workflow.
+
+For a video walkthrough, watch the [Dolly tutorial](https://www.youtube.com/watch?v=6l0pWXf1sVo)
+by [EsteemFPS](https://www.youtube.com/@EsteemFPS).
 
 ## Features
 
@@ -198,6 +201,7 @@ separate terms in [assets/README.md](assets/README.md).
 ## Releases
 
 - [Downloads and published release notes](https://github.com/cravvnn/deadlock-dolly/releases)
+- [0.7.33-beta release notes](docs/RELEASE_NOTES_0.7.33-beta.md)
 - [0.7.26-beta release notes](docs/RELEASE_NOTES_0.7.26-beta.md)
 - [0.7.2-beta release notes](docs/RELEASE_NOTES_0.7.2-beta.md)
 - [0.7.0-beta release notes](docs/RELEASE_NOTES_0.7.0-beta.md)

@@ -1098,6 +1098,52 @@ void follow_anchor_guard_checks(Fixture& f) {
     std::shared_ptr<const Command> rejected_command;
     require(!follow_anchor_session(rejected_config, rejected_command),
             "Non-release camera command retained Follow correction ownership");
+    // Exercise the actual session gate in each game-owned POV clock mode.
+    const auto pov_valid = [&] {
+        dolly::EditorFollowConfig observed{};
+        std::shared_ptr<const Command> selected;
+        const auto current = std::atomic_load(&gCommand);
+        return follow_anchor_session(observed, selected) && selected == current;
+    };
+    for (const auto mode : {Mode::Hold, Mode::Play, Mode::HoldCurrent}) {
+        f.command(mode, 0, kGamePov);
+        require(pov_valid(), "Game-owned POV clock lost Follow anchor correction");
+        const auto pov_command = std::atomic_load(&gCommand);
+        config->flags = 1;
+        require(!pov_valid(), "POV clock bypassed inactive Follow ownership");
+        config->flags = 3;
+        gHeartbeatTime = now_seconds() - 3;
+        require(!pov_valid(), "POV clock bypassed the editor lease");
+        gHeartbeatTime = now_seconds();
+        gWorkerError = 1;
+        require(!pov_valid(), "Faulted POV worker retained correction ownership");
+        gWorkerError = 0;
+        seeking = true;
+        require(!pov_valid(), "Seeking POV replay retained correction ownership");
+        seeking = false;
+        std::snprintf(demo_name, sizeof(demo_name), "replays/other-demo.dem");
+        require(!pov_valid(), "Changed POV replay retained correction ownership");
+        std::snprintf(demo_name, sizeof(demo_name), "replays/native-smoke.dem");
+        put(cvar.address() + 0x58, static_cast<unsigned char>(0));
+        require(!pov_valid(), "POV clock bypassed disabled overrides");
+        put(cvar.address() + 0x58, static_cast<unsigned char>(1));
+        for (const auto flags : {0u, kAspect, kGamePov | kAspect, kGamePov | kFrozen}) {
+            f.command(mode, 0, flags);
+            require(!pov_valid(), "Camera-writing command gained POV correction ownership");
+        }
+        auto invalid = std::make_shared<Command>(*pov_command);
+        invalid->manual = true;
+        std::atomic_store(&gCommand, std::shared_ptr<const Command>(invalid));
+        require(!pov_valid(), "Manual POV command retained correction ownership");
+        invalid = std::make_shared<Command>(*pov_command);
+        invalid->path.reset();
+        std::atomic_store(&gCommand, std::shared_ptr<const Command>(invalid));
+        require(!pov_valid(), "Unprepared POV command retained correction ownership");
+        std::atomic_store(&gCommand, pov_command);
+        require(pov_valid(), "Valid POV clock failed to recover after refusals");
+    }
+    f.command(Mode::Manual, 0, kGamePov);
+    require(!pov_valid(), "Manual mode gained POV correction ownership");
     std::atomic_store(&gCommand, command);
     put(cvar.address() + 0x58, static_cast<unsigned char>(0));
     require(!session_valid(), "Disabled camera overrides retained correction ownership");

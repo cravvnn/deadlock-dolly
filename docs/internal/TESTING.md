@@ -1,5 +1,10 @@
 # Development checks
 
+The native callback smoke also checks Follow anchor ownership during game-owned
+POV arm/play/hold, retaining replay, lease, active Follow and camera-writing
+refusals. These synthetic-memory checks do not execute installed game hooks.
+
+
 Regular Follow keeps its crouching pivot equal to the current standing pivot
 so a brief crouch blend cannot lower the selected view. P12 exercises the real
 controller/console write and full F9 restoration; `test_follow_stance.py` adds
