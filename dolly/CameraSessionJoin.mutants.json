@@ -1,0 +1,32 @@
+[
+  {
+    "name": "ignore still-running worker",
+    "replace": [
+      [
+        "IF workerLive' THEN \"refused\" ELSE \"release\"",
+        "\"release\""
+      ]
+    ],
+    "expect": "QuietBeforeRelease"
+  },
+  {
+    "name": "retire on failed release",
+    "replace": [
+      [
+        "lease' = (alive /\\ ~ack')",
+        "lease' = FALSE"
+      ]
+    ],
+    "expect": "ReleaseEvidence"
+  },
+  {
+    "name": "restore on Players completion",
+    "replace": [
+      [
+        "restoreAttempted' = ~pending",
+        "restoreAttempted' = TRUE"
+      ]
+    ],
+    "expect": "PendingCaptureHeld"
+  }
+]

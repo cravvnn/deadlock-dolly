@@ -1,0 +1,4 @@
+[
+ {"name":"omit second sequence comparison","replace":[["RequireStable == first=seq","RequireStable == TRUE"]],"expect":"CoherentRead"},
+ {"name":"accept writer-in-progress sequence","replace":[["RequireEven == first # 1 /\\ seq # 1","RequireEven == TRUE"]],"expect":"CoherentRead"}
+]

@@ -429,3 +429,20 @@ owners are real. Keep existing P01/P13 and reviewed-runtime fallback/preservatio
 assertions. The obsolete private loaded flag disappears from its save/restore
 fixture without changing assertions. DefinitionsFirstRead/ProjectOpenSnapshot run
 in the normal model gate with three expected mutants and bounded API projections.
+
+
+The combined camera/bridge ownership keepers are test_camera_session_contracts
+(ledger and prepared/release/worker/capture contracts) and test_bridge_lifetime
+(real owned anonymous mmap heartbeat teardown, command-lock independence and
+coherent native-status readback). No game is launched. The mmap test uses the
+qualified local atomic helper on Windows, a real heartbeat thread paused by a
+thread-local trace at _store entry, and actual bounded close/join. Release can
+time out because there is no native consumer; its ordinary cleanup must still
+run. Resume/join cleanup runs even on a failed assertion. These keepers cover
+distinct failure schedules; P06 remains the owner of end-to-end drain/retry.
+
+The ledger checks all exported code/model roles and normalized implementation
+fingerprints. Review changed source dispositions and model assumptions before
+refreshing hashes. New guarded models are required by tools/check_tla.py; native
+snapshot publication has an explicit native/src target. A green finite model
+does not establish whole-program, live-game or native weak-memory correctness.

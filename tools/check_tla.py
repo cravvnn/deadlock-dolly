@@ -25,7 +25,8 @@ def check(root=ROOT):
                              str(root / "native" / "src" / "VideoCompleteness.cfg"),
                              str(root / "native" / "src" / "DrawProof.cfg"),
                              str(root / "native" / "src" / "CaptureFailure.cfg"),
-                             str(root / "native" / "src" / "MediaDetach.cfg")],
+                             str(root / "native" / "src" / "MediaDetach.cfg"),
+                             str(root / "native" / "src" / "NativeSnapshotClose.cfg")],
                             cwd=root, text=True, capture_output=True)
     rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     checked = {Path(row["name"]).name for row in rows if row.get("kind") == "model"}
@@ -73,6 +74,8 @@ REQUIRED.update({"VideoStopOwnership.cfg", "RecorderReadUncertainty.cfg", "Works
 
 REQUIRED.update({"DefinitionsFirstRead.cfg", "ProjectOpenSnapshot.cfg"})
 REQUIRED.add("PopupSelection.cfg")
+REQUIRED.add("CameraSessionJoin-success.cfg")
+REQUIRED.update({'ReleaseJoin.cfg', 'NativeSnapshotClose.cfg', 'CameraSessionJoin.cfg', 'CaptureRestoreJoin.cfg', 'PreparedShot.cfg', 'HeartbeatUnmap.cfg', 'StatusSnapshot.cfg'})
 
 
 def main():

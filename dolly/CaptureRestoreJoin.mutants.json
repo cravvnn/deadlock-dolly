@@ -1,0 +1,5 @@
+[
+ {"name":"skip native terminal acknowledgement","replace":[["IF ack' THEN \"context\" ELSE \"retained\"","\"context\""]],"expect":"AckBeforeRetirement"},
+ {"name":"skip post-wait identity check","replace":[["IF current = 1 THEN \"console\" ELSE \"retained\"","\"console\""]],"expect":"SameOwner"},
+ {"name":"treat console timeout as restore permission","replace":[["IF attempt < 2 THEN \"context\" ELSE \"retained\"","\"retire\""]],"expect":"ReadyBeforeRetirement"}
+]

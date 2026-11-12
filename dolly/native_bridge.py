@@ -211,6 +211,7 @@ class NativeBridge(MediaTransport):
         self._lock = threading.RLock()
         self._operations = threading.RLock()
         self._heartbeat_stop = threading.Event()
+        self._heartbeat_lock = threading.Lock()
         self._thread = None
         self._closed = False
         self._command = 0
@@ -291,10 +292,11 @@ class NativeBridge(MediaTransport):
         # The heartbeat slot is independent of every command snapshot, so it
         # must not queue behind the controller lock: a long lock hold once
         # starved the beat until the native worker ended an active take.
-        if self._closed or self._heartbeat_stop.is_set():
-            return
-        self._heartbeat = (self._heartbeat + 1) & 0xFFFFFFFFFFFFFFFF
-        self._store(32, self._heartbeat, 64)
+        with self._heartbeat_lock:
+            if self._closed or self._heartbeat_stop.is_set():
+                return
+            self._heartbeat = (self._heartbeat + 1) & 0xFFFFFFFFFFFFFFFF
+            self._store(32, self._heartbeat, 64)
 
     def _heartbeat_loop(self):
         last = time.monotonic()
@@ -1487,7 +1489,7 @@ class NativeBridge(MediaTransport):
                     self._heartbeat_stop.set()
                     if self._thread is not None and self._thread is not threading.current_thread():
                         self._thread.join(timeout=0.5)
-                    with self._lock:
+                    with self._lock, self._heartbeat_lock:
                         self._close_visualization_preview()
                         self._close_visualization()
                         self._closed = True

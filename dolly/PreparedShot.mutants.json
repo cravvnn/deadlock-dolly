@@ -1,0 +1,4 @@
+[
+ {"name":"ignore prepared session replay tick identity","replace":[["CheckIdentity == TRUE","CheckIdentity == FALSE"]],"expect":"OwnPreparedTake"},
+ {"name":"start before recorder readiness","replace":[["CheckReady == TRUE","CheckReady == FALSE"]],"expect":"ReadyBeforeStart"}
+]

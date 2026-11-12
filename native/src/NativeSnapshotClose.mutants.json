@@ -1,0 +1,5 @@
+[
+ {"name":"drop callback shared ownership","replace":[["oldAlive' = (local=1)","oldAlive' = FALSE"]],"expect":"SnapshotAlive"},
+ {"name":"unmap native view on editor close","replace":[["nativeMapped'=TRUE","nativeMapped'=FALSE"]],"expect":"NativeViewAlive"},
+ {"name":"publication counts as release acknowledgement","replace":[["oldAlive' = (local=1) /\\ UNCHANGED <<pc,local,desktopMapped,nativeMapped,ack,badWrite>>","oldAlive' = (local=1) /\\ ack'=2 /\\ UNCHANGED <<pc,local,desktopMapped,nativeMapped,badWrite>>"]],"expect":"NoWriteAfterSuccessfulRelease"}
+]

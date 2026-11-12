@@ -912,3 +912,55 @@ fault, override, manual/path and camera-writing exclusions. Existing exact
 caller/target/cvar gates and private descriptor-copy limits remain unchanged.
 These source checks do not certify game frames; bounded POV exports qualify
 that separately. No whole-program or state-reduction claim follows.
+
+
+## Camera, capture and bridge ownership joins
+
+FORMAL_COVERAGE.md/JSON in docs/internal account for all309implementation/tool
+units with explicit partial/open obligations. Draft80scopes/94configs do not
+constitute a whole-program tree or proof. A named owner may have unmodeled paths.
+
+PreparedShot/PreparedShotApi join Controller's single-use prepared session/replay/
+tick/paused identity with ordinary recorder readiness. Identity is fixed under
+the operation lock. Players marker admission, later failure and real clocks/I/O
+are excluded. ReleaseJoin follows NativeBridge release/wait through source-mapped
+native effect restoration and controller lease retirement. It covers old faults,
+current refusal and one retry; callback timing/memory ordering are excluded.
+
+CameraSessionJoin refines CameraRetirementApi's quiet-old-worker and release-
+evidence contract. _halt's timed join can refuse; a later caller cannot retire
+that worker early. Two generations/one retry/fixed process presence are bounded.
+It excludes self-halt, native_hold/manual transitions and arbitrary caller races.
+CaptureRestoreJoin refines CaptureRestoreApi: native capture acknowledgement,
+same session/replay/request and console readiness precede capture retirement.
+Three returning console attempts may refuse and retain originals. Context is
+fixed after final validation; GPU drain and late replacement races are excluded.
+
+HeartbeatUnmap covers an already-admitted beat outlasting close's timed join.
+The independent heartbeat lifetime mutex excludes store/unmap overlap without
+queuing behind the command lock. Close may wait beyond its timed join for an
+in-flight store; no real-time lock-return guarantee is proved. This is hardening,
+not equivalence or reachable-state reduction. NativeSnapshotClose beside bridge
+models shared command snapshots and resident native mapping/hook across desktop
+close. One serialized callback/two commands and coherent publication are assumed;
+no reentrancy, sequence wrap, C++ memory-model or actual hook-unload proof follows.
+
+StatusSnapshot checks correlated command/state fields under one odd/body/even
+native write and one reader attempt. Stable/even observations reject torn status;
+rejection is allowed. No weak-memory legality, multiple-writer ordering or byte/
+clock-duration guarantee is claimed. Existing real native/platform tests remain
+necessary at their boundaries. Normal deadlock checks and intentional terminal
+stuttering are retained. Abstract fairness assumes returning operations.
+
+test_camera_session_contracts binds admission, acknowledgement, retirement and
+capture restoration to actual Python owners using simulated game/bridge and
+owned files. test_bridge_lifetime adds an owned real-mmap/thread teardown race,
+heartbeat progress while the command lock is held, and torn-status command wait.
+Native callback fields/engine layouts/pixels are not exercised by those Python
+keepers. Integration evidence and remaining limits must accompany source/model
+changes; hashes detect drift, not semantic synchronization.
+
+CameraSessionJoin-success additionally requires a successful live-process join
+and acknowledgement environment and checks eventual new-generation completion.
+It prevents safety-only verification from silently excluding that required
+success path; general refusal/retry remains in the default configuration.
