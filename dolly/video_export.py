@@ -6,7 +6,7 @@ run on Dolly's operation worker; status reads only inspect bridge telemetry.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 import logging
 import math
@@ -227,8 +227,24 @@ class VideoOptions:
     # Output container: "mp4", "mkv" or "mov". Empty keeps the historical
     # codec-derived choice; validated() records the resolved container.
     container: str = ""
+    camera_only: bool = False
 
     def validated(self) -> VideoOptions:
+        if type(self.camera_only) is not bool:
+            raise ValueError("Camera-only capture must be on or off.")
+        if self.camera_only:
+            from .media_wire import pack_command
+            path = Path(self.path).expanduser().absolute()
+            if (self.speed != 1 or self.layers or self.bundle_audio or self.container
+                    or self.codec != "auto" or self.ffmpeg_path is not None
+                    or not path.parent.is_dir() or path.exists() or path.is_symlink()):
+                raise ValueError("Camera-only export requires normal speed, no media/layers, and a new JSON path.")
+            pack_command(2, "start_video", path=str(path), fps=self.fps,
+                         bitrate=self.bitrate, fixed_step=self.fixed_step,
+                         shot_only=self.shot_only, camera_track=self.camera_track,
+                         camera_only=True, max_frames=self.max_frames, depth=self.depth,
+                         depth_exr=self.depth_exr, white_clear=self.white_clear)
+            return replace(self, path=path)
         if type(self.camera_track) is not bool:
             raise ValueError("Camera track must be on or off.")
         if type(self.max_frames) is not int or not 0 <= self.max_frames <= 65535:
@@ -546,6 +562,8 @@ class VideoExport:
     def _start(self, options: VideoOptions, project=None, *, frozen=False,
                before_record=None, capture_only=False, pov=False) -> dict:
         options = options.validated()
+        if options.camera_only and (project is None or frozen or capture_only or pov):
+            raise ValueError("Camera-only export requires a normal-speed native camera path.")
         if self.status().get("state") in ACTIVE_STATES or self.finish_pending:
             raise RuntimeError("Finish the current recording before starting another.")
         if not recording_ready(self.controller.status()):
@@ -554,7 +572,7 @@ class VideoExport:
         if bridge is None:
             raise RuntimeError("The native recorder is not connected.")
         encoder, codec_id, codec_name = (0, 0, "")
-        if not capture_only:
+        if not capture_only and not options.camera_only:
             encoder, codec_id, codec_name = self._resolve_recording_backend(options)
         if "players" in options.layers:
             # Reject an impossible Players pass before spending time on Color,
@@ -642,6 +660,8 @@ class VideoExport:
             limited = {"max_frames": options.max_frames} if options.max_frames else {}
             if options.camera_track:
                 limited["camera_track"] = True
+            if options.camera_only:
+                limited["camera_only"] = True
             bridge.start_video(str(color_path), fps=options.fps, bitrate=options.bitrate,
                                encoder=encoder, codec=codec_id, quality=options.quality,
                                preset=options.preset,

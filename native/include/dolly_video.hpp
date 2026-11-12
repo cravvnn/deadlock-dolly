@@ -70,6 +70,10 @@ struct Options {
     bool white_clear = false;
     // Optional per-encoded-frame camera metadata; no collection when off.
     bool camera_track = false;
+    // Dedicated numerical capture: no pixel copies, codec, movie or audio.
+    // Requires fixed_step, shot_only, camera_track and a nonzero frame budget.
+    // path is the actual .json camera trace destination, created without overwrite.
+    bool camera_only = false;
     // Hard cap on admitted GPU copies, including paired depth (0 unlimited).
     // Reaching it closes admission and finalizes through the normal drain.
     std::uint32_t max_frames = 0;

@@ -177,6 +177,90 @@ int main(int argc, char** argv) {
     hr = swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&buffer));
     if (SUCCEEDED(hr))
         hr = device->CreateRenderTargetView(buffer, nullptr, &view);
+    if (argc == 2 && std::strcmp(argv[1], "--camera-only") == 0) {
+        bool ok = check(SUCCEEDED(hr), "camera-only backbuffer view");
+        for (unsigned variant = 0; variant < 6 && ok; ++variant) {
+            const auto trace_path = path + L"-camera-" + std::to_wstring(variant) + L".json";
+            if (GetFileAttributesW(trace_path.c_str()) != INVALID_FILE_ATTRIBUTES)
+                return 1;
+            Options options;
+            options.path = trace_path.c_str();
+            options.fps = 30;
+            options.fixed_step = options.shot_only = options.camera_track = options.camera_only = true;
+            options.max_frames = 3;
+            ok = check(start(options), "start bounded numerical capture");
+            const auto until = GetTickCount64() + 5000;
+            while (status().state == State::starting && GetTickCount64() < until)
+                Sleep(1);
+            ok = ok && check(status().state == State::recording, "camera-only ready without codec");
+            CameraSample camera{{10, 20, 30}, {0, 90, 0}, 90};
+            const auto frame = [&](double phase, bool pose = true) {
+                publish_path_replay_time(true, phase, false, pose ? &camera : nullptr);
+                capture(swapchain, device, context, nullptr, phase, true);
+            };
+            frame(0);
+            if (variant == 0) {
+                capture(swapchain, device, context, nullptr, 0, true); // No fresh view.
+                frame(0); // A paused main view is not another frame.
+                ok = ok && check(status().frames_written == 1, "duplicate views do not invent frames");
+                frame(1.0 / 30);
+                frame(2.0 / 30);
+            } else if (variant == 1) {
+                frame(2.0 / 30); // Missing fixed-step frame.
+            } else if (variant == 2) {
+                frame(1.0 / 30, false); // Clock without its same-view pose.
+            } else if (variant == 3) {
+                stop(true);
+            } else if (variant == 4) {
+                stop(false); // A short take cannot publish success.
+            } else {
+                // A foreign destination appearing after start must be preserved.
+                HANDLE foreign = CreateFileW(trace_path.c_str(), GENERIC_WRITE, 0, nullptr,
+                                             CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+                ok = ok && check(foreign != INVALID_HANDLE_VALUE, "late foreign trace fixture");
+                if (foreign != INVALID_HANDLE_VALUE) {
+                    DWORD written = 0;
+                    WriteFile(foreign, "foreign", 7, &written, nullptr);
+                    CloseHandle(foreign);
+                }
+                frame(1.0 / 30);
+                frame(2.0 / 30);
+            }
+            ok = ok && check(wait_terminal(), "camera-only terminal without encoder drain");
+            const auto result = status();
+            const auto expected = variant == 0 ? State::completed
+                                : variant == 3 ? State::cancelled : State::failed;
+            ok = ok && check(result.state == expected, "honest camera-only terminal state");
+            if (variant == 1)
+                ok = ok && check(std::wcsstr(result.error, L"frame 1") &&
+                                 std::wcsstr(result.error, L"0.066666667") &&
+                                 std::wcsstr(result.error, L"0.033333333"),
+                                 "cadence refusal retains measured and expected phase");
+            if (variant == 0 || variant == 5) {
+                std::ifstream input(trace_path, std::ios::binary);
+                const std::string text((std::istreambuf_iterator<char>(input)), {});
+                ok = ok && check(variant == 0 ? text.find("\"complete\": true") != std::string::npos
+                                              && text.find("\"frames_written\": 3") != std::string::npos
+                                              && result.frames_written == 3
+                                              && result.width == 320 && result.height == 240
+                                            : text == "foreign", "trace completeness/foreign preservation");
+                input.close();
+                DeleteFileW(trace_path.c_str()); // Exact fixture created by this test only.
+            } else {
+                ok = ok && check(GetFileAttributesW(trace_path.c_str()) == INVALID_FILE_ATTRIBUTES,
+                                 "failed/cancelled takes publish no trace");
+            }
+            reset_resources();
+        }
+        shutdown();
+        release(view);
+        release(buffer);
+        release(context);
+        release(device);
+        release(swapchain);
+        DestroyWindow(window);
+        return ok ? 0 : 1;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--cap-only") == 0) {
         bool ok = check(SUCCEEDED(hr), "bounded backbuffer view");
         for (unsigned variant = 0; variant < 4; ++variant) {

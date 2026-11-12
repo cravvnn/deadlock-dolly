@@ -86,7 +86,7 @@ void consume() noexcept {
     command_error = 0;
     command_message[0] = 0;
     if (std::memcmp(command.magic, "DLYMED01", 8) || command.abi != kMediaAbi ||
-        (command.reserved & ~0xffff003fu) != 0 ||
+        (command.reserved & ~0xffff007fu) != 0 ||
         (command.command != 1 && (command.reserved >> 16) != 0) || !terminated(command.path) ||
         !terminated(command.config_path) || !terminated(command.ffmpeg_path) ||
         command.encoder > static_cast<std::uint32_t>(video::Encoder::ffmpeg) ||
@@ -120,6 +120,7 @@ void consume() noexcept {
         options.shot_only = (command.reserved & 8u) != 0;
         options.white_clear = (command.reserved & 16u) != 0;
         options.camera_track = (command.reserved & 32u) != 0;
+        options.camera_only = (command.reserved & 64u) != 0;
         options.max_frames = command.reserved >> 16;
         if (!video::start(options)) {
             const auto state = video::status();
