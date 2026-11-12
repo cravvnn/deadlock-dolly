@@ -1237,6 +1237,7 @@ dolly/ui/PopupSelectionApi.tla
 dolly/ui/PopupSelection.cfg
 dolly/ui/PopupSelection.mutants.json
 tests/test_authoring_audit_boundaries.py
+tests/test_bone_picker_recovery.py
 
 docs/RELEASE_NOTES_0.7.30-beta.md
 
@@ -1248,3 +1249,5 @@ native/profiles/soundsystem-2026-11-11-6861.json
 third_party/cvar_unlocker/cvar_slots_6861.inc
 third_party/cvar_unlocker/unlocker-build-6861.patch
 docs/RELEASE_NOTES_0.7.32-beta.md
+tests/test_follow_stance.py
+docs/RELEASE_NOTES_0.7.33-beta.md

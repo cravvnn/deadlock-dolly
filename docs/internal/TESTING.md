@@ -1,5 +1,25 @@
 # Development checks
 
+Regular Follow keeps its crouching pivot equal to the current standing pivot
+so a brief crouch blend cannot lower the selected view. P12 exercises the real
+controller/console write and full F9 restoration; `test_follow_stance.py` adds
+nondefault XYZ/update and failed-write/restore-retry checks. FollowLens projects
+the added stance write and restoration; existing identity, lease and native
+anchor guards are unchanged. This does not qualify every hero or replay.
+
+The native rail owner checks recovery from an attached Bone Picker preview in
+Campaths. Active picker inspection now disables Delete/Clear in the drawer,
+matching existing native admission, and exposes the existing Cancel Bone Picker
+action. Delete/Clear remain refused while preview owns the camera; the visible
+Detach preview control sends the existing AttachPreview-off action. It remains
+inert during an operation, an unpaused view, shot playback or recording. After
+the existing detach operation acknowledges a free view, Delete and confirmed
+Clear All are available. The regression fails on the UI without that recovery
+control. This presentation change adds no stored state, wire action or worker
+transition; existing preview/detach ownership and camera-edit guards are retained.
+The fixture checks the real native controls with observed enqueue output, not a
+live game transition or the reporter's exact session.
+
 The mod-inspection owner also checks a real replay-storage junction beside a
 mixed skin VPK, preservation through session mount merging, no target traversal,
 and continued refusal of malformed packs and render-only content. Replay folders
@@ -30,7 +50,7 @@ settings are accessed. ManifestScan includes recursive completion-marker failure
 and six mutants. Byte bounds stay with real readers. Packaged GUI/update checks
 remain receiving-release obligations. Existing tests and assertions are unchanged.
 
-[Maintainer references](README.md) Ã‚Â· [Current user documentation](../README.md)
+[Maintainer references](README.md) Ãƒâ€šÃ‚Â· [Current user documentation](../README.md)
 
 Run the core user contracts and compact supplements from the checkout root:
 

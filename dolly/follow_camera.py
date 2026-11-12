@@ -69,8 +69,9 @@ class FollowTransaction:
 
     read/write are caller-supplied typed, ownership-checked operations. Capability
     discovery belongs to the controller and must precede this transaction.
-    ADS offsets and wall settings stay as found. The aimed FOV starts from the
-    normal lens so the weapon's own zoom is applied once, not a second time.
+    Standing and crouching share the current standing pivot while Follow owns
+    the rig. ADS offsets and wall settings stay as found. The aimed FOV starts
+    from the normal lens so the weapon's own zoom is applied once, not a second time.
     """
     def __init__(self, read, write):
         self.read = read
@@ -96,6 +97,15 @@ class FollowTransaction:
             values[PREFIX + "ads_fov"] = validate_value(PREFIX + "ads_fov", normal_fov)
         except ValueError as exc:
             raise ValueError("Game Follow needs a normal FOV between 50 and 120 to preserve weapon zoom.") from exc
+        # The stock crouch blend can briefly pulse at slide boundaries. Keep
+        # Follow's pivot fixed through it, without changing the hero's world
+        # movement, aiming, collision or the native anchor correction.
+        for axis in "xyz":
+            standing = PREFIX + "pivot_" + axis + "_offset"
+            crouching = standing + "_crouching"
+            pivot = (validate_value(standing, self.read(standing))
+                     if self.originals else snapshot[standing])
+            values[crouching] = validate_value(crouching, pivot)
         if not self.originals:
             self.originals = snapshot
         try:

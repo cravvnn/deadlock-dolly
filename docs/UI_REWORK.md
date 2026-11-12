@@ -86,7 +86,9 @@ again when preparation finishes.
 Select, view, seek and edit controls require the appropriate paused, idle
 editor state. Finish a recording or finalization and detach a bone preview
 before changing saved cameras. **Save Path**, **Delete**, **Clear All** and
-shot Undo/Redo are below the Campaths table.
+shot Undo/Redo are below the Campaths table. If Bone Picker is active, Campaths
+shows **Cancel Bone Picker**. If an attachment preview owns the view, it shows
+**Detach preview** instead. These controls appear only while that mode is active.
 
 ## Finish a recording before editing cameras
 
@@ -229,7 +231,9 @@ if one is active. Selecting a player does not change the tick or resume playback
 Replay seeks and tick steps keep that participant selected and resolve their
 current hero after the seek. Choose **Fly camera** to leave Follow and compose a
 fixed view. If the hero is absent, Dolly shows a status message and never moves
-the camera to a guessed or stale target.
+the camera to a guessed or stale target. Follow uses the same standing pivot
+through crouch and slide blends; switching out of Follow restores the original
+standing and crouching settings.
 
 When you close the game, Dolly returns to the launcher and keeps your open shot
 and editing history.

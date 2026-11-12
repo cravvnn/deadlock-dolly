@@ -702,7 +702,8 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
         draw_kara_footer(s, false);
     }
     if (tab == 5) {
-        const bool can = live && s.paused && !s.playing && !s.attach_preview && !locked && list_ok;
+        const bool can = live && s.paused && !s.playing && !s.attach_preview &&
+                         !s.bone_picker && !locked && list_ok;
         auto request = [&](EditorAction action, double value, double arg = 0) {
             CameraPose p{};
             p[0] = list.revision;
@@ -737,6 +738,19 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 k::Notice(rec.state == video::State::finalizing
                               ? "Saving video. Please wait."
                               : "Finish recording before editing cameras.");
+                k::VGap(10);
+            }
+            if (s.bone_picker) {
+                k::Notice("Finish or cancel Bone Picker before editing cameras.");
+                k::VGap(10);
+                button("Cancel Bone Picker", EditorAction::CancelBonePicker, 0, 0,
+                       !live || locked);
+                k::VGap(10);
+            } else if (s.attach_preview) {
+                k::Notice("Detach preview before deleting or clearing cameras.");
+                k::VGap(10);
+                button("Detach preview", EditorAction::AttachPreview, 0, 0,
+                       !live || !s.paused || s.playing || locked);
                 k::VGap(10);
             }
             if (!list_ok) {

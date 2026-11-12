@@ -330,6 +330,64 @@ static void rail_regressions(const char* output, bool motion = false) {
             require(observed_actions.size() == 3 &&
                         observed_actions.back().action == dolly::EditorAction::SaveShot,
                     "Campaths Save Path changed its action");
+            observed_actions.clear();
+            snapshot.bone_picker = true;
+            activate(paths, "Delete");
+            activate(paths, "Clear All");
+            require(observed_actions.empty(), "Campaths offers deletion during Bone Picker inspection");
+            activate(paths, "Cancel Bone Picker");
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::CancelBonePicker,
+                    "Campaths offers no way to finish inspecting before editing cameras");
+            snapshot.bone_picker = false;
+            observed_actions.clear();
+            snapshot.attach_preview = true;
+            activate(paths, "Delete");
+            activate(paths, "Clear All");
+            require(observed_actions.empty(), "Attached preview permits camera deletion before detaching");
+            const auto detach = activate(paths, "Detach preview");
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::AttachPreview &&
+                        observed_actions[0].value == 0,
+                    "Campaths offers no way to detach after finishing Bone Picker");
+            observed_actions.clear();
+            io.AddMousePosEvent(detach.GetCenter().x, detach.GetCenter().y);
+            frame(); frame();
+            io.AddMouseButtonEvent(0, true); frame();
+            io.AddMouseButtonEvent(0, false); frame();
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::AttachPreview &&
+                        observed_actions[0].value == 0,
+                    "Campaths mouse detach is disconnected");
+            observed_actions.clear();
+            snapshot.busy = true;
+            activate(paths, "Detach preview");
+            snapshot.busy = false;
+            snapshot.paused = false;
+            activate(paths, "Detach preview");
+            snapshot.paused = true;
+            snapshot.playing = true;
+            activate(paths, "Detach preview");
+            snapshot.playing = false;
+            dolly::recording_status_stub.state = dolly::video::State::recording;
+            activate(paths, "Detach preview");
+            require(observed_actions.empty(), "Campaths detach bypasses operation/recording guards");
+            dolly::recording_status_stub = {};
+            snapshot.attach_preview = false; // Existing detach operation has acknowledged free view.
+            activate(paths, "Delete");
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::DeleteCamera,
+                    "Campaths Delete remains unavailable after detaching");
+            observed_actions.clear();
+            activate(paths, "Clear All");
+            settle();
+            require(observed_actions.empty(), "Campaths Clear All skipped confirmation after detaching");
+            activate(paths, "Clear");
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::ClearCameraPath,
+                    "Campaths Clear remains unavailable after detaching");
+            observed_actions.clear();
+            settle();
             for (const auto r : {seek, replace, save}) {
                 require(std::abs(r.Min.x - paths->Pos.x - 21 * scale) <= 1.1f &&
                             std::abs(paths->Pos.x + paths->Size.x - r.Max.x - 20 * scale) <= 1.1f &&

@@ -159,9 +159,12 @@ Current settings schema and graphics recovery are unchanged.
 `restore`: a saved descriptor, two updates, one write/readback or restoration
 failure, ownership loss, retry, and disable/restore/enable ordering. Normal FOV90
 and unsupported150 exercise the neutral aimed-lens admission boundary. One
-opaque offset represents the independent position fields. Its five mutants
+opaque offset represents the independent position fields, and a standing/crouching
+pivot pair checks the stance write and exact restoration. The pivot scalar
+projects the three XYZ fields; external ConVar edits between operations are
+excluded. Its six mutants
 protect neutral zoom, the first snapshot, pending restoration, reviewed ranges,
-and write ownership. Core contract P12 checks a neutral aimed lens, concrete
+write ownership, and matching stance pivots. Core contract P12 checks a neutral aimed lens, concrete
 rig restoration, target identity and F9 handoff. The retired detailed Python
 suite covered additional callbacks, ranges and descriptor fields; those checks
 are not all retained. This projection does not certify the game or all camera state.

@@ -17,6 +17,7 @@ def exercise_camera_modes(case, root):
                            for name, (low, high) in BOUNDS.items()})
     console.values.update({ENABLED: 0., 'citadel_camera_spectator_auto_target_view': 0.,
                            'citadel_spectator_mode': 0., PREFIX + 'fov': 90., PREFIX + 'ads_fov': 45.})
+    console.values.update({PREFIX + 'pivot_z_offset': 86., PREFIX + 'pivot_z_offset_crouching': 55.})
     player = {'handle': 0x10002, 'entity_index': 2, 'model': 0x123456789abcdef,
               'model_path': 'models/heroes/frank/frank.vmdl'}
 
@@ -71,6 +72,7 @@ def exercise_camera_modes(case, root):
         case.assertEqual(console.values['citadel_spectator_mode'], 2)
         case.assertEqual(console.values[ENABLED], 1)
         case.assertEqual(console.values[PREFIX + 'x_offset'], -250)
+        case.assertEqual(console.values[PREFIX + 'pivot_z_offset_crouching'], 86.)
         # The engine applies weapon zoom itself; ADS starts from the normal lens.
         case.assertEqual(console.values[PREFIX + 'ads_fov'] - 40, 50)
         case.assertEqual(bridge.owner, 'panel')
