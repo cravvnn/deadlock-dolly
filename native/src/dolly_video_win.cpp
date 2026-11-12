@@ -130,6 +130,8 @@ struct Session {
     bool shot_only = false;
     bool white_clear = false;
     bool camera_enabled = false;
+    bool camera_only = false;
+    std::uint64_t camera_view_serial = 0; // Present owner only.
     const char* camera_partial = nullptr;
     std::uint32_t max_frames = 0;
     // Depth layer folder and its ProRes master, derived from the color path's
@@ -241,6 +243,7 @@ std::mutex gCameraMutex;
 CameraSample gCamera{};
 bool gCameraValid = false;
 double gCameraPhase = -1;
+std::uint64_t gCameraSerial = 0; // Protected by gCameraMutex.
 
 std::uint64_t now_qpc() noexcept {
     LARGE_INTEGER result{};
@@ -358,7 +361,7 @@ bool write_camera_sidecar(const Session& s) noexcept {
     std::wstring temporary;
     bool owned = false;
     try {
-        const auto destination = s.path + L".camera-track.json";
+        const auto destination = s.camera_only ? s.path : s.path + L".camera-track.json";
         temporary = destination + L".pending-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
                     std::to_wstring(s.first_qpc.load());
         HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
@@ -379,7 +382,8 @@ bool write_camera_sidecar(const Session& s) noexcept {
             return false;
         }
         const auto count = s.written.load(std::memory_order_acquire);
-        const bool complete = !s.camera_partial && count > 0 && s.camera_trace.size() == count;
+        const bool complete = !s.camera_partial && count > 0 && s.camera_trace.size() == count &&
+                              (!s.camera_only || count == s.max_frames);
         const char* reason = s.camera_partial ? s.camera_partial : "missing camera frames";
         std::fprintf(
             file,
@@ -1192,7 +1196,49 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     s->done.store(true, std::memory_order_release);
 }
 
+// Numerical-only worker. The Present callback is the sole vector writer until
+// ready is closed and admitted callbacks drain. No GPU/codec/audio is initialized.
+// See CameraOnlyCapture.tla; this publishes a raw trace, never a final .crav.
+void finish_camera_only(std::shared_ptr<Session> s) noexcept {
+    s->ready.store(true, std::memory_order_release);
+    s->state.store(State::recording, std::memory_order_release);
+    auto progress = s->written.load(std::memory_order_acquire);
+    auto changed = GetTickCount64();
+    while (!s->stopping.load(std::memory_order_acquire)) {
+        std::unique_lock<std::mutex> lock(s->wait_mutex);
+        s->wake.wait_for(lock, std::chrono::milliseconds(20));
+        apply_deferred_stop(*s);
+        const auto count = s->written.load(std::memory_order_acquire);
+        if (count != progress) {
+            progress = count;
+            changed = GetTickCount64();
+        }
+        if (GetTickCount64() - changed > 10000)
+            fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                 L"Camera-only capture made no progress for 10 seconds.");
+    }
+    s->state.store(State::finalizing, std::memory_order_release);
+    s->ready.store(false, std::memory_order_release);
+    while (s->producer_active.load(std::memory_order_acquire))
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (!s->cancel.load() && SUCCEEDED(s->error.load())) {
+        if (s->written.load() != s->max_frames || s->camera_partial ||
+            s->camera_trace.size() != s->max_frames)
+            fail(*s, E_FAIL, L"Camera-only capture ended before its complete frame budget.");
+        else if (!write_camera_sidecar(*s))
+            fail(*s, E_FAIL, L"Camera-only trace could not be published without overwrite.");
+    }
+    s->state.store(FAILED(s->error.load()) ? State::failed
+                   : s->cancel.load() ? State::cancelled : State::completed,
+                   std::memory_order_release);
+    s->done.store(true, std::memory_order_release);
+    s->wake.notify_all();
+}
 void encode(std::shared_ptr<Session> s) noexcept {
+    if (s->camera_only) {
+        finish_camera_only(s);
+        return;
+    }
     if (s->encoder == Encoder::ffmpeg) {
         encode_ffmpeg(s);
         return;
@@ -1438,7 +1484,16 @@ bool start(const Options& options) noexcept {
         const bool mp4 = length >= 4 && _wcsicmp(path + length - 4, L".mp4") == 0;
         const bool mkv = length >= 4 && _wcsicmp(path + length - 4, L".mkv") == 0;
         const bool mov = length >= 4 && _wcsicmp(path + length - 4, L".mov") == 0;
-        if (!absolute_path(path, length) || length < 4 || (!mp4 && !mkv && !mov))
+        const bool json = length >= 5 && _wcsicmp(path + length - 5, L".json") == 0;
+        if (options.camera_only &&
+            (!json || !options.fixed_step || !options.shot_only || !options.camera_track ||
+             !options.max_frames || options.depth || options.depth_exr || options.white_clear ||
+             options.encoder != Encoder::media_foundation || options.codec != Codec::auto_select))
+            return false;
+        if (!absolute_path(path, length) || length < 4 ||
+            (options.camera_only ? !json : (!mp4 && !mkv && !mov)))
+            return false;
+        if (options.camera_only && GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES)
             return false;
         if (mov && options.encoder != Encoder::ffmpeg)
             return false;
@@ -1485,7 +1540,10 @@ bool start(const Options& options) noexcept {
         next->shot_only = options.shot_only;
         next->white_clear = options.white_clear;
         next->camera_enabled = options.camera_track;
+        next->camera_only = options.camera_only;
         next->max_frames = options.max_frames;
+        if (options.camera_only)
+            next->camera_trace.reserve(options.max_frames);
         if (options.ffmpeg)
             next->ffmpeg = options.ffmpeg;
         if (next->depth_enabled) {
@@ -1615,8 +1673,10 @@ void publish_path_replay_time(bool playing, double phase, bool completed,
         std::lock_guard<std::mutex> lock(gCameraMutex);
         gCameraValid = playing && std::isfinite(phase) && camera != nullptr;
         gCameraPhase = phase;
-        if (gCameraValid)
+        if (gCameraValid) {
             gCamera = *camera;
+            ++gCameraSerial;
+        }
     }
     if (playing && std::isfinite(phase)) {
         gPathPhase.store(phase, std::memory_order_relaxed);
@@ -1673,6 +1733,83 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     }
     D3D11_TEXTURE2D_DESC desc{};
     backbuffer->GetDesc(&desc);
+    if (s.camera_only) {
+        // Increment before testing ready. The worker closes ready, then waits
+        // for all admitted callbacks before reading camera_trace.
+        struct CameraProducer {
+            Session& session;
+            explicit CameraProducer(Session& value) : session(value) {
+                session.producer_active.fetch_add(1, std::memory_order_acq_rel);
+            }
+            ~CameraProducer() {
+                session.producer_active.fetch_sub(1, std::memory_order_release);
+            }
+        } producer(s);
+        if (!s.ready.load(std::memory_order_acquire) || s.stopping.load())
+            return;
+        if (!desc.Width || !desc.Height || desc.Width > 32768 || desc.Height > 32768) {
+            fail(s, E_FAIL, L"Camera-only capture received invalid output dimensions.");
+            return;
+        }
+        if (!s.configured.load(std::memory_order_acquire)) {
+            s.width = desc.Width;
+            s.height = desc.Height;
+            s.configured.store(true, std::memory_order_release);
+        } else if (s.width != desc.Width || s.height != desc.Height) {
+            fail(s, E_FAIL, L"Camera-only capture output dimensions changed.");
+            return;
+        }
+        if (!native_clock) {
+            if (!s.camera_trace.empty())
+                fail(s, E_FAIL, L"Camera-only capture lost its verified native path clock.");
+            return; // Prepared before playback; never manufacture a frame.
+        }
+        CameraSample camera{};
+        std::uint64_t serial = 0;
+        {
+            std::lock_guard<std::mutex> lock(gCameraMutex);
+            if (!gCameraValid || std::abs(gCameraPhase - replay_time) >= 1e-9) {
+                fail(s, E_FAIL, L"Camera-only capture has no camera for this rendered phase.");
+                return;
+            }
+            serial = gCameraSerial;
+            camera = gCamera;
+        }
+        if (serial == s.camera_view_serial)
+            return; // Another Present without a new verified main view.
+        s.camera_view_serial = serial;
+        const auto count = s.camera_trace.size();
+        if (count && std::abs(replay_time - s.camera_trace.back().phase) < 1e-9) {
+            if (gPathCompleted.load(std::memory_order_acquire))
+                request_stop(s, false);
+            return; // A paused/clamped view is not another simulation frame.
+        }
+        bool valid = std::isfinite(replay_time) &&
+                     std::abs(replay_time - double(count) / s.fps) <= 1e-6 &&
+                     std::isfinite(camera.horizontal_fov) && camera.horizontal_fov > 1 &&
+                     camera.horizontal_fov < 179 && count < s.max_frames;
+        for (unsigned i = 0; i < 3; ++i)
+            valid = valid && std::isfinite(camera.position[i]) && std::isfinite(camera.angles[i]);
+        if (!valid) {
+            wchar_t detail[256]{};
+            std::swprintf(detail, 256,
+                L"Camera-only frame %llu: phase %.9f s, expected %.9f s, FOV %.6f. Missing or invalid fixed-step sample.",
+                static_cast<unsigned long long>(count), replay_time, double(count) / s.fps,
+                camera.horizontal_fov);
+            fail(s, E_FAIL, detail);
+            return;
+        }
+        const double time = double(count) / s.fps;
+        s.camera_trace.push_back({count, time, replay_time, camera, time}); // Capacity reserved at start.
+        if (!count)
+            s.first_qpc.store(now_qpc(), std::memory_order_release);
+        s.duration.store((count + 1) * 10000000ull / s.fps, std::memory_order_relaxed);
+        s.written.store(count + 1, std::memory_order_release);
+        if (count + 1 == s.max_frames)
+            request_stop(s, false);
+        s.wake.notify_one();
+        return;
+    }
     if (!s.configured.load(std::memory_order_acquire)) {
         if (s.stopping.load())
             return;

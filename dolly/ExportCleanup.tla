@@ -3,7 +3,7 @@ EXTENDS Naturals
 \* Production-only design. Private baseline comparisons are not shipped.
 \* Weak fairness assumes returning calls; terminal Done deliberately stutters.
 \* API refinement checks completion shape only; safety obligations stay here.
-\* export_jsx/export_usda call camera_export.write_script; builders and external
+\* export_jsx/export_usda and crav_export.export_crav call camera_export.write_script; builders and external
 \* applications are not modeled. camera_export.write_script after temporary creation; file is private and closed
 \* before no-overwrite publication. Body abstracts write/ASCII/flush/fsync errors.
 \* Windows rename consumes the temporary; link keeps a private alias until cleanup.

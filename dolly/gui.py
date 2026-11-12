@@ -1031,6 +1031,41 @@ class DollyApp:
             self.video_path.set(path)
             self._remember_export_folder()
 
+    def _cancel_renderlock_export(self):
+        token = getattr(self, "_renderlock_cancel", None)
+        if token is not None:
+            token.set()
+
+    def _export_renderlock(self):
+        from .crav_capture import capture_to_crav
+        from .crav_export import validate_crav_project
+        if self.busy:
+            self.status_text.set("Finish the current operation before exporting the camera.")
+            return
+        try:
+            project = self._snapshot()
+            validate_crav_project(project)
+            if _finite(self.speed.get(), "Playback speed") != 1 or self.frozen.get():
+                raise ValueError("RenderLock camera export supports normal-speed shots only.")
+            fps = int(self.video_fps.get())
+        except (ValueError, RuntimeError) as exc:
+            self.status_text.set(str(exc))
+            return
+        destination = filedialog.asksaveasfilename(parent=self.root, title="Export for RenderLock",
+            defaultextension=".crav", initialfile="shot.crav",
+            filetypes=(("RenderLock camera", "*.crav"),))
+        if not destination:
+            return
+        token = self._renderlock_cancel = threading.Event()
+
+        def complete(result):
+            self.status_text.set(f"RenderLock camera saved: {result['frames']} frames, {result['bytes']} bytes.")
+            self._log("RenderLock camera saved to " + result["path"])
+
+        self._submit("Exporting RenderLock camera", lambda: capture_to_crav(
+            self.controller, self.video_export, project, destination, fps=fps,
+            cancelled=token.is_set), complete)
+
     def _export_camera(self, video, status=None):
         """Freeze UI intent, then validate and write optional exports on the worker."""
         from . import camera_export
@@ -5181,6 +5216,7 @@ class DollyApp:
         self.log_dialog.withdraw()
 
     def _on_close(self):
+        self._cancel_renderlock_export()
         if self.busy:
             messagebox.showinfo("Operation in progress", "Wait for the current operation to finish before closing Dolly.", parent=self.root)
             return

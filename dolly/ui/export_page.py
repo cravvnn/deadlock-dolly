@@ -88,6 +88,8 @@ class ExportActions:
     use_bundled_ffmpeg: Callable[..., object]
     video_source_changed: Callable[..., object]
     discard_recording: Callable[..., object]
+    export_renderlock: Callable[..., object] | None = None
+    cancel_renderlock: Callable[..., object] | None = None
 
 
 def _dropdown(row, variable, values, width="fill"):
@@ -224,6 +226,14 @@ class ExportPage:
         self.video_cancel_button = row.button("Discard recording", commands.discard_recording, state="disabled")
         card.text(textvariable=state.video_status_text, top=15)
         self.export_camera_note = card.text("Camera: Free path", top=4)
+        if commands.export_renderlock is not None:
+            card = page.add_card("RenderLock camera")
+            card.text("Capture this shot as .crav without recording video. Normal speed and supported camera settings only.")
+            row = card.row()
+            row.button("Export for RenderLock...", commands.export_renderlock)
+            if commands.cancel_renderlock is not None:
+                row.gap(10)
+                row.button("Cancel camera export", commands.cancel_renderlock)
 
         # gui_layout still hands screenshot_ui.build "export_page.body" until it passes card= (PLAN-5 3.3).
         page.body = self.screenshot_card

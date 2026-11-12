@@ -1,0 +1,8 @@
+[
+ {"name":"skip replay byte recheck", "replace":[["/\\ raw /\\ sameReplay /\\ restored", "/\\ raw /\\ restored"]], "expect":"FaithfulSuccess"},
+ {"name":"ignore incomplete native result", "replace":[["pc' = IF owner /\\ ~cancelled /\\ raw THEN", "pc' = IF owner /\\ ~cancelled THEN"],["restored' = (owner /\\ ~cancelled /\\ raw)", "restored' = (owner /\\ ~cancelled)"],["active' = IF owner /\\ ~cancelled /\\ raw THEN", "active' = IF owner /\\ ~cancelled THEN"],["published' = (owner /\\ ~cancelled /\\ raw /\\ sameReplay", "published' = (owner /\\ ~cancelled /\\ sameReplay"]], "expect":"FaithfulSuccess"},
+ {"name":"publish without restoration", "replace":[["restored' = (owner /\\ ~cancelled /\\ raw)", "restored' = FALSE"],["published' = (owner /\\ ~cancelled /\\ raw /\\ sameReplay /\\ restored /\\ ~active)", "published' = (owner /\\ ~cancelled /\\ raw /\\ sameReplay /\\ ~active)"]], "expect":"FaithfulSuccess"},
+ {"name":"publish after session replacement", "replace":[["published' = (owner /\\ ~cancelled", "published' = (~cancelled"]], "expect":"OwnedSuccess"},
+ {"name":"publish after cancellation", "replace":[["published' = (owner /\\ ~cancelled", "published' = (owner"]], "expect":"FaithfulSuccess"},
+ {"name":"restore into replacement session", "replace":[["foreignControl \\/ (~owner /\\ FALSE)", "foreignControl \\/ (~owner /\\ active)"]], "expect":"NoForeignControl"}
+]
