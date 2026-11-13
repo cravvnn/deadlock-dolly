@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <vector>
 namespace dolly {
@@ -579,7 +580,9 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
         draw_kara_footer(s);
     } else if (tab == 4) {
         {
-            f::Greyed dim(!live);
+            // Optional so the RenderLock section can leave the busy dimming:
+            // a running .crav export keeps Dolly busy but must stay cancellable.
+            std::optional<f::Greyed> dim(std::in_place, !live);
             const bool recording =
                 rec.state == video::State::starting || rec.state == video::State::recording;
             const bool finishing = rec.state == video::State::finalizing;
@@ -682,6 +685,28 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 k::VGap(10);
                 check("Export USD camera (.usda)", s.video_usd_camera,
                       EditorAction::SetVideoUsdCamera);
+            }
+            {
+                // RenderLock camera: a subheader under Camera source's camera files. It
+                // leaves the drawer's busy dimming only while its own export runs, so
+                // Cancel stays live; otherwise it dims with the drawer.
+                dim.reset();
+                f::Greyed own(!live && !s.renderlock_exporting);
+                k::VGap(15);
+                k::Text("RenderLock camera (.crav)", t::text_primary, k::Role::BodyMedium, 18);
+                k::ItemTooltip("Saves this shot's camera as .crav beside your video output, "
+                               "without recording video. Normal speed; uses Video FPS.");
+                k::VGap(10);
+                if (s.renderlock_exporting)
+                    button("Cancel camera export", EditorAction::CancelRenderLock);
+                else
+                    button("Export .crav", EditorAction::ExportRenderLock, 0, 0,
+                           !live || locked || recording || finishing || s.busy || s.playing ||
+                               s.video_pov || s.camera_count < 2);
+            }
+            dim.emplace(!live);
+            {
+                f::Inert inert(locked || s.playing);
                 split();
                 k::SectionTitle("Capture layers", nullptr, "Color included");
                 k::VGap(15);

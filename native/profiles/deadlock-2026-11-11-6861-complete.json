@@ -57,7 +57,38 @@
       "fallback_rva": "0x3472d60",
       "current_time_offset": "0x30",
       "interval_offset": "0x54",
-      "replay_clock_review": null
+      "replay_clock_review": {
+        "client_sha256": "d0341ce77398614af905ef8669d328fd4d45958282acef66789a250492e466b5",
+        "render_fraction_offset": "0x38",
+        "time_source": "(engine replay tick + client render fraction) * interval_per_tick",
+        "validation": "6861 exact installed-image offline review, re-derived from the 6860 review by normalised instruction shape: CSource2Client RTTI vtable0x2c44038 slot11 SetGlobals0x197b710 pins globals pointer0x3472cc0; unique consumer0x1732cd0 loads int tick+0x44/float fraction+0x38 into normalizer0x21a5440, which stores and normalizes the pair (wrap constant 1.0); unique render-time consumer0x780650 scales fraction by interval+0x54. No 6861 runtime cadence or replay-tick alignment claim yet; isolated CRAV qualification only.",
+        "reviewed_functions": [
+          {
+            "name": "CSource2Client.SetGlobals",
+            "rva": "0x197b710",
+            "end_rva": "0x197b752",
+            "sha256": "0f4786b61fcfb5f1a8beb050080f61dbc81d5e70981f59b58bc39574542548e1"
+          },
+          {
+            "name": "fractional_time_consumer",
+            "rva": "0x1732cd0",
+            "end_rva": "0x1732d4d",
+            "sha256": "2a732ad0a52ab437eef8a6cbf31ed7780daf7cc1ad8b9ec52039e124be8de097"
+          },
+          {
+            "name": "tick_fraction_normalizer",
+            "rva": "0x21a5440",
+            "end_rva": "0x21a54f7",
+            "sha256": "ea92c25fcf9109c456cd59a20e5287ed5dd48b0d285f44a1146ddca2718b7fe1"
+          },
+          {
+            "name": "render_time_consumer",
+            "rva": "0x780650",
+            "end_rva": "0x7806d4",
+            "sha256": "1d6094351f8538a3331eb3bc1bd7cf81bbb1498228b9fc0c51b76738954ffbb2"
+          }
+        ]
+      }
     },
     "camera_layout_review": {
       "client_sha256": "d0341ce77398614af905ef8669d328fd4d45958282acef66789a250492e466b5",

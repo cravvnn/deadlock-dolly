@@ -298,6 +298,52 @@ static void rail_regressions(const char* output, bool motion = false) {
             snapshot.scene_appearance_flags = 0;
         }
         {
+            // RenderLock camera: Kara's section pattern in the Export drawer's right column.
+            activate_tab(4);
+            auto* exporter = find("##rail-tab4");
+            const auto saved = snapshot;
+            snapshot.camera_count = 2;
+            snapshot.busy = snapshot.playing = snapshot.video_pov = false;
+            snapshot.renderlock_exporting = false;
+            frame();
+            observed_actions.clear();
+            ctx->NavNextActivateId = exporter->GetID("Export .crav");
+            frame();
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::ExportRenderLock,
+                    "Export .crav lost its RenderLock export dispatch");
+            auto* nav = ctx->NavWindow;
+            require(nav != nullptr, "Export .crav is not keyboard accessible");
+            auto rect = nav->NavRectRel[ImGuiNavLayer_Main];
+            rect.Translate(nav->Pos);
+            require(rect.Min.x >= exporter->Pos.x && rect.Max.x <= exporter->Pos.x + exporter->Size.x &&
+                        rect.Min.x > exporter->Pos.x + exporter->Size.x * .4f,
+                    "Export .crav escapes the drawer or left the right-hand column");
+            for (unsigned guard = 0; guard < 3; ++guard) {
+                snapshot.playing = guard == 0;
+                snapshot.video_pov = guard == 1;
+                snapshot.camera_count = guard == 2 ? 1 : 2;
+                frame();
+                observed_actions.clear();
+                ctx->NavNextActivateId = exporter->GetID("Export .crav");
+                frame();
+                require(observed_actions.empty(), "Export .crav bypasses its playback/POV/camera guard");
+            }
+            snapshot.playing = snapshot.video_pov = false;
+            snapshot.camera_count = 2;
+            snapshot.busy = snapshot.renderlock_exporting = true;
+            frame();
+            observed_actions.clear();
+            ctx->NavNextActivateId = exporter->GetID("Cancel camera export");
+            frame();
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::CancelRenderLock,
+                    "A running RenderLock export cannot be cancelled from the drawer");
+            snapshot = saved;
+            frame();
+            observed_actions.clear();
+        }
+        {
             // Relocated camera actions keep their real dispatch and use the same
             // full-width rows, drawer insets and gaps as Save Path at every scale.
             const float scale = size.y / 1080;
@@ -731,7 +777,7 @@ static void rail_regressions(const char* output, bool motion = false) {
                 io.DeltaTime = 1.f / 60;
                 settle();
             }
-            for (unsigned shot = 0; shot < (motion ? 180u : 12u); ++shot) {
+            for (unsigned shot = 0; shot < (motion ? 180u : 13u); ++shot) {
                 const unsigned tab = motion ? 0 : shot;
                 if (motion) {
                     const float scale = size.y / 1080;
@@ -786,6 +832,14 @@ static void rail_regressions(const char* output, bool motion = false) {
                     snapshot.bone_picker = snapshot.object_picker = false;
                     snapshot.scene_appearance_flags = 7;
                     activate_tab(3);
+                }
+                if (tab == 12) {
+                    // Export drawer while a RenderLock .crav export runs (Dolly busy).
+                    snapshot.scene_appearance_flags = 0;
+                    snapshot.busy = snapshot.renderlock_exporting = true;
+                    std::snprintf(snapshot.message, sizeof(snapshot.message), "%s",
+                                  "Exporting camera: Dolly plays the shot once without recording video...");
+                    activate_tab(4);
                 }
                 if (tab == 5) {
                     ctx->NavNextActivateId = find("##rail-tab0")->GetID("##rail-button");

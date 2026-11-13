@@ -1,0 +1,7 @@
+[
+  {"name":"publish short take", "replace":[["~cancelled /\\ ~failed /\\ count = 2", "~cancelled /\\ ~failed"]], "expect":"CompletePublication"},
+  {"name":"publish cancelled take", "replace":[["~cancelled /\\ ~failed /\\ count = 2", "~failed /\\ count = 2"]], "expect":"CompletePublication"},
+  {"name":"publish invalid camera", "replace":[["~cancelled /\\ ~failed /\\ count = 2", "~cancelled /\\ count = 2"]], "expect":"CompletePublication"},
+  {"name":"leave admission open", "replace":[["ready' = FALSE", "ready' = TRUE"]], "expect":"QuiescentReader"},
+  {"name":"ignore active callback", "replace":[["pc = \"draining\" /\\ callback = \"none\"", "pc = \"draining\""]], "expect":"QuiescentReader"}
+]

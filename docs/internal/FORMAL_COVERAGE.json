@@ -1,11 +1,11 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 309,
+  "accounted_units": 313,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
-  "classification": "Current0733semantic reconciliation plus explicitly proposed heartbeat/gate changes; complete inventory accounting, no full-file or whole-program proof",
+  "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
     "no independent lifecycle": 39,
-    "stateful partial/open": 120,
+    "stateful partial/open": 124,
     "generated data/schema": 10,
     "native owner/delegated contract open": 108,
     "offline-tool scope": 27,
@@ -17,8 +17,8 @@
     "L05": 21,
     "generated": 10,
     "L01": 70,
-    "L03": 27,
-    "L02": 48,
+    "L03": 29,
+    "L02": 50,
     "L04": 67,
     "L06": 27
   },
@@ -68,8 +68,44 @@
   },
   "files": [
     {
+      "path": "Launch_Dolly.bat",
+      "sha256": "17df4d60afa7d721e92a195b6c26de9784c3390efbedc47c97f3ef8724d6e1c6",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "entrypoint delegated contract open",
+      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "Recover_Game_Config.bat",
+      "sha256": "082f71d0697671f98a768f2cd5a5cc961809e8c42b07e6ba12e769b18f815e18",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L03",
+      "disposition": "entrypoint delegated contract open",
+      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
       "path": "dolly/__init__.py",
-      "sha256": "23eb7f380b30885a98387e8c82d42b456cafb3b02ee588ad54de8d6203a9b329",
+      "sha256": "57214f9b00667d9db34ae7296b149766da4630cc071f1d0ad358726ece928cf0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -99,7 +135,7 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "Version metadata0733; no independent lifecycle added."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/__main__.py",
@@ -875,6 +911,82 @@
       "full_formal_signoff": false
     },
     {
+      "path": "dolly/crav_capture.py",
+      "sha256": "5d4e50f497b83640ab2af8402e4e9b3c2ec3dfeaa393296b0d9783257776698b",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L02",
+      "disposition": "stateful partial/open",
+      "reason": "Owns worker camera-only capture, session/replay checks, cancellation, restoration and final publication; CravCapture bounds the safety join; native/game and filesystem assumptions remain open.",
+      "bounded_models": [
+        {
+          "spec": "dolly/CravCapture.tla",
+          "scope": "Worker ownership, cancellation, exact replay, restoration and final publication safety",
+          "configs": [
+            "dolly/CravCapture.cfg"
+          ]
+        }
+      ],
+      "test_reference_leads": [
+        "tests/test_crav_capture.py",
+        "tests/test_crav_export.py"
+      ],
+      "test_reference_limits": "Owner simulations and local files; no whole-program/game proof.",
+      "source_structure": {},
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+    },
+    {
+      "path": "dolly/crav_contract.py",
+      "sha256": "d21ebf6d80e2476dccaa6efb254d65d2e12ddbec76d9dd302bfcae7328747c08",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L03",
+      "disposition": "stateful partial/open",
+      "reason": "Strict bounded interchange validation and atomic publication; ExportCleanup supplies local publication scope, not hostile filesystem or crash proof.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_crav_capture.py",
+        "tests/test_crav_export.py"
+      ],
+      "test_reference_limits": "Owner simulations and local files; no whole-program/game proof.",
+      "source_structure": {},
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+    },
+    {
+      "path": "dolly/crav_export.py",
+      "sha256": "b7e5c879c380905c477c0a4ad306f384dc4f604759a863692f554b85162b2be8",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L02",
+      "disposition": "stateful partial/open",
+      "reason": "Converts complete identity-bound recorded camera samples and delegates exclusive publication; full caller contract remains open.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_crav_capture.py",
+        "tests/test_crav_export.py"
+      ],
+      "test_reference_limits": "Owner simulations and local files; no whole-program/game proof.",
+      "source_structure": {},
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+    },
+    {
+      "path": "dolly/crav_replay.py",
+      "sha256": "ea49de27a10f56ceecaf11e515d37d7575d380e3ccff24e7e8aff0e0aea49e5d",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L03",
+      "disposition": "stateful partial/open",
+      "reason": "Pins stable bounded replay bytes with cancellation and metadata checks; hostile timestamp restoration remains outside scope.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_crav_capture.py",
+        "tests/test_crav_export.py"
+      ],
+      "test_reference_limits": "Owner simulations and local files; no whole-program/game proof.",
+      "source_structure": {},
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+    },
+    {
       "path": "dolly/curve.py",
       "sha256": "f43789708ef7a136cec01efea38ebdd20b688af7b43ff0889a23e280924e94f5",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -1201,7 +1313,7 @@
     },
     {
       "path": "dolly/desktop.py",
-      "sha256": "2ec64768b4c2f8bd680aab1ef6940202ea267f4466e4e27a5f3afa65fc38423e",
+      "sha256": "91ae81a3a97eb2dd1bf6a322ddab069811cb4570c1665f6cbd0448050806b723",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -1239,7 +1351,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/dialogs.py",
@@ -1533,7 +1646,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "8b9ddc33fdc75fc091bf647fc8bee9eeda70834d19cde5d1d860d928d79fa0c6",
+      "sha256": "9a7ec24b7aacbb4f6ee25b3f7509f176ff708df5892514a02f3cef37616b7d1b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1584,7 +1697,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/editor_dof.py",
@@ -1620,7 +1734,7 @@
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "45246841d0bd633b2841dc54a21ac6bca46c2ad9a3da6f188583be5d35809538",
+      "sha256": "4087c1fd9f01b561f5b1ebc6fbacb1c6f5b47d3c871bdd33f0870f1387ccc6dd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1658,7 +1772,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/editor_session.py",
@@ -1704,7 +1819,7 @@
     },
     {
       "path": "dolly/editor_view.py",
-      "sha256": "4126b47496ee4418f517ca3625e3e0b19beb75d722e54a93843b0dffde5ef1db",
+      "sha256": "e60364674335078387d7de533fb9ccd1749a39fcfa3c8bd5992468ecce54b9a4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -1735,11 +1850,12 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "13d29b5a45e12702f916ac0a7c4bce3eef27ec7300cefad401acfd15509cad10",
+      "sha256": "25152065aa8cbed61bbe638391688ae9de8e49103234f708bed6541ac459a158",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -1783,7 +1899,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/encoder_select.py",
@@ -1971,7 +2088,7 @@
       "bounded_models": [
         {
           "spec": "dolly/FollowLens.tla",
-          "scope": "FollowTransaction.apply/restore",
+          "scope": "FollowTransaction apply/update/restore including standing/crouch pivot equality and original-value retry ownership",
           "configs": [
             "dolly/FollowLens.cfg"
           ]
@@ -2360,7 +2477,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "e8e160dee1182cd869b7e0d8ca60daf37b6c8c06d0071f21a65d70172df01300",
+      "sha256": "21e78beb4db8635768907bf0f559ac5ec744ada9739ad525ffa476d9029e2fd2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2466,11 +2583,12 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/gui_layout.py",
-      "sha256": "945b5cc0966ccc48ea3ddefbdf712f64bfbcb251995d432adbfb18f253766b78",
+      "sha256": "13a97bb3c6731e5eccd074ffae4593ba0912c8192d1cc001324d696073a22060",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2505,7 +2623,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/gui_theme.py",
@@ -2816,7 +2935,7 @@
     },
     {
       "path": "dolly/media_transport.py",
-      "sha256": "d14cef5b450533b8643cb2250504adc54ec9aa1e38d661878aaf91abe0333463",
+      "sha256": "f7da23fd01b2db9204e4627ba19f4db489d7b49d0cb8c1237fcecb0bf567f8b2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -2858,11 +2977,12 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/media_wire.py",
-      "sha256": "0e18e3bb0e3d5f67e2f59c19c69d554be5ea55946216fe877686e215fdab55d0",
+      "sha256": "cd3b2cb51e1e89dc85d01af5a3dc550132c89c399f03cae9daf4e385c3bdb7ba",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2887,7 +3007,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/memory_watch.py",
@@ -5207,7 +5328,7 @@
     },
     {
       "path": "dolly/ui/export_page.py",
-      "sha256": "a27211223b99b7b4d56d3525ccb0c22c0f1d08d2ca2f7ed678edcbf989b12bcc",
+      "sha256": "4fbd0814ab93d689761bc2603d469528b453014392f08fd5950b567a98582b28",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -5239,7 +5360,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/ui/fade.py",
@@ -6549,7 +6671,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77",
+      "sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -6647,7 +6769,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -6929,7 +7052,7 @@
     },
     {
       "path": "native/include/dolly_editor.hpp",
-      "sha256": "fdf4f21a6e4bb86004048f46d083a24549b9ce9692bcb8447b7f9b6ebc1fc070",
+      "sha256": "6cd74c2495da3fc420a212bf8beafe06013c9bfdc815d2aad8511e817e9cca0d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -6956,7 +7079,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/include/dolly_effects.hpp",
@@ -7120,7 +7244,7 @@
     },
     {
       "path": "native/include/dolly_media.hpp",
-      "sha256": "76c4a28bb09178c8c47d115079b684592d8c7247e8b0ad21c3d22de2ae19772c",
+      "sha256": "f2ae7c1aaf6e380adfa3468ba4732865dda077711f130c48371962aab69be505",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7138,7 +7262,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/include/dolly_minimap_guard.hpp",
@@ -7806,7 +7931,7 @@
     },
     {
       "path": "native/include/dolly_video.hpp",
-      "sha256": "a3fccb63631113af538eacf2c6753b4619f8e427101fd1758a7efcabfc8d192d",
+      "sha256": "ec6b04deb94047287038eaf29d9b9c295d6113492de7bfe4b6a77b4986ac825e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7826,7 +7951,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/include/dolly_video_math.hpp",
@@ -7897,6 +8023,26 @@
           "memory"
         ],
         "persistent_state_signals": []
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "native/replay_index/Program.cs",
+      "sha256": "dfc8156aa6e599f93473f2fd8d81874cd787e3da69c27a46c48b8a50e43e4b6b",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "child-job contract open",
+      "reason": "One scoped C# replay parser job with using-owned file, bounded kills/players, JSON outcome or failure exit. Python ReplayEventReader owns timeout/process admission; external parser resource behavior and full async contract remain open.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_core_workflows.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
       },
       "full_formal_signoff": false
     },
@@ -8084,7 +8230,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "05fcf727ccbe1caf5f3d3c28d614c2ceddbf77bd9dfe70e2ed1969e5c0bb85b3",
+      "sha256": "17d5d325137151be453ad605a2e9e4f41319294ee82f91a43d10722a76218b40",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8100,7 +8246,7 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "Generated client6861identity; validation remains with generation and native admission tests."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/src/dolly_compat_runtime.hpp",
@@ -8327,7 +8473,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "a8a7846f46bff80395bf2b50a77b4e0a5376d4b2a9cc2d9876af3e381f87df04",
+      "sha256": "f0d3efcb381389f8b91aea863756757bcd1b847cd2696a9e988291bbfe7307f1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8362,7 +8508,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/src/dolly_effects.cpp",
@@ -8506,7 +8653,7 @@
     },
     {
       "path": "native/src/dolly_media_win.cpp",
-      "sha256": "39c33c2b4ef3e368f141e85e2fda154d5ef0c22f7dde9316604176f2fec985d4",
+      "sha256": "ff90f61da0f311333e174b041def777b80e6c9dc647e9233dac6e398c2a3be64",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8542,7 +8689,8 @@
           "thread/lock"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/src/dolly_object_picker.cpp",
@@ -8914,7 +9062,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "95ec0e0755867d2c68b71cb5f77289a237783d9918e5eb3cab71d422719a4041",
+      "sha256": "1550b9690119d0f449105dfe4b27270972c51ee8d13904fb8674e4fecd05c450",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8937,7 +9085,7 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "Campaths admission excludes BonePicker; exposes existing cancel/detach actions. No new state/wire action. Actual rail drawer enqueue/regression controls bind visible recovery; full native UI lifetime remains open."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/src/dolly_rail_fields.cpp",
@@ -9449,7 +9597,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "4a7b6e3535437f94c5245ac38509ed6039a971b01cade1bcfef2e8721a30e18d",
+      "sha256": "a4d59018b1ad620e0881da37a882d3db96328008b2289bfac8380e3b8157dd2a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9460,6 +9608,13 @@
           "scope": "quiescent publication and counted loss",
           "configs": [
             "native/src/VideoCompleteness.cfg"
+          ]
+        },
+        {
+          "spec": "native/src/CameraOnlyCapture.tla",
+          "scope": "Native camera-only admission, callback drain and complete publication safety",
+          "configs": [
+            "native/src/CameraOnlyCapture.cfg"
           ]
         }
       ],
@@ -9504,7 +9659,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -9694,6 +9850,100 @@
           "cstring"
         ],
         "persistent_state_signals": []
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "packaging/bootstrap_entrypoint.py",
+      "sha256": "342685f44c3ecf9201357c34e63202929190ddf20188ad698e006daf4208a9b8",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "entrypoint delegated contract open",
+      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "One public executable; no dependency on the replaceable editor runtime.",
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "dolly.release_launcher",
+          "dolly.update_worker"
+        ],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "packaging/dolly.spec",
+      "sha256": "f2cc4f1daafc8137423f529e373093bcce935394171cd8fc818edd19dcf0e7cf",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L06",
+      "disposition": "offline-tool scope",
+      "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/camera_modes.py",
+        "tests/test_admission_cleanup.py",
+        "tests/test_audio_boundaries.py",
+        "tests/test_audio_inventory.py",
+        "tests/test_authoring_audit_boundaries.py",
+        "tests/test_capture_boundaries.py",
+        "tests/test_capture_completion.py",
+        "tests/test_completion_boundaries.py",
+        "tests/test_core_install.py",
+        "tests/test_core_native.py",
+        "tests/test_core_workflows.py",
+        "tests/test_metadata_boundaries.py",
+        "tests/test_next_ten.py",
+        "tests/test_numeric_boundaries.py",
+        "tests/test_output_ownership.py",
+        "tests/test_player_scratch.py",
+        "tests/test_recorder_updater.py",
+        "tests/test_replay_repair.py",
+        "tests/test_resource_boundaries.py",
+        "tests/test_review_hardening.py",
+        "tests/test_reviewed_owners.py",
+        "tests/test_reviewed_runtime.py",
+        "tests/test_scene_appearance.py",
+        "tests/test_shot_definitions_audit.py",
+        "tests/test_source2viewer.py",
+        "tests/test_startup_audit_boundaries.py",
+        "tests/test_update_handoff_process.py",
+        "tests/video_workflow.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "packaging/entrypoint.py",
+      "sha256": "0cd4b56dd627ecc75f4cf404afc97f18bc5502d6c36851f74fffb20c26f6fd54",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "entrypoint delegated contract open",
+      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "PyInstaller's windowed executable starts directly, without a BAT or child Python.",
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "dolly.desktop"
+        ],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
       },
       "full_formal_signoff": false
     },
@@ -9983,7 +10233,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "51ea7e49fcfa521a66d2095fc1ce673c7da5cc5c79da6969a3973c8601796c28",
+      "sha256": "cbe71cef8d46bf54ba002731300235d3bdf8ed2eb64e43e52fd527f8a577be5a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10007,7 +10257,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "Old ledger fingerprint came from unmerged proposal adding PreparedShot/ReleaseJoin to required set. Current committed gate has86configs; those two models remain pending, not silently counted.",
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_draft": "Proposed required gate adds seven maintained bounded scopes, including explicit native/src/NativeSnapshotClose.cfg target. Checker version remains pinned."
     },
     {
@@ -10525,155 +10775,6 @@
       "full_formal_signoff": false
     },
     {
-      "path": "tools/update_game.py",
-      "sha256": "a12389ac679277092ce26f4c6e25caefe610b16f446111cf8b562efeedc2a51e",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L06",
-      "disposition": "offline-tool scope",
-      "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
-      "bounded_models": [],
-      "test_reference_leads": [],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "module_purpose": "Add reviewed support for a new Deadlock build by driving the update pipeline.",
-        "classes": [],
-        "functions": [
-          "sha256",
-          "run_dir_identity",
-          "latest_run",
-          "read_names",
-          "shift",
-          "first_match",
-          "read_steam_inf",
-          "parse_version_date",
-          "resolve_game_dir",
-          "build_pairs",
-          "_normalize_patched",
-          "_client_autofix",
-          "_prepare_autofix",
-          "_finalize_autofix",
-          "generate_client",
-          "generate_unlocker",
-          "run_script",
-          "refresh_confetti_table",
-          "main"
-        ],
-        "imports": [
-          "__future__",
-          "datetime",
-          "dolly.settings",
-          "pathlib"
-        ],
-        "persistent_state_signals": [
-          "file/process"
-        ]
-      },
-      "full_formal_signoff": false
-    },
-    {
-      "path": "Launch_Dolly.bat",
-      "sha256": "17df4d60afa7d721e92a195b6c26de9784c3390efbedc47c97f3ef8724d6e1c6",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L05",
-      "disposition": "entrypoint delegated contract open",
-      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
-      "bounded_models": [],
-      "test_reference_leads": [],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "includes": [],
-        "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
-        ]
-      },
-      "full_formal_signoff": false
-    },
-    {
-      "path": "Recover_Game_Config.bat",
-      "sha256": "082f71d0697671f98a768f2cd5a5cc961809e8c42b07e6ba12e769b18f815e18",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L03",
-      "disposition": "entrypoint delegated contract open",
-      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
-      "bounded_models": [],
-      "test_reference_leads": [],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "includes": [],
-        "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
-        ]
-      },
-      "full_formal_signoff": false
-    },
-    {
-      "path": "native/replay_index/Program.cs",
-      "sha256": "dfc8156aa6e599f93473f2fd8d81874cd787e3da69c27a46c48b8a50e43e4b6b",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L05",
-      "disposition": "child-job contract open",
-      "reason": "One scoped C# replay parser job with using-owned file, bounded kills/players, JSON outcome or failure exit. Python ReplayEventReader owns timeout/process admission; external parser resource behavior and full async contract remain open.",
-      "bounded_models": [],
-      "test_reference_leads": [
-        "tests/test_core_workflows.py"
-      ],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "includes": [],
-        "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
-        ]
-      },
-      "full_formal_signoff": false
-    },
-    {
-      "path": "packaging/dolly.spec",
-      "sha256": "f2cc4f1daafc8137423f529e373093bcce935394171cd8fc818edd19dcf0e7cf",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L06",
-      "disposition": "offline-tool scope",
-      "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
-      "bounded_models": [],
-      "test_reference_leads": [
-        "tests/camera_modes.py",
-        "tests/test_admission_cleanup.py",
-        "tests/test_audio_boundaries.py",
-        "tests/test_audio_inventory.py",
-        "tests/test_authoring_audit_boundaries.py",
-        "tests/test_capture_boundaries.py",
-        "tests/test_capture_completion.py",
-        "tests/test_completion_boundaries.py",
-        "tests/test_core_install.py",
-        "tests/test_core_native.py",
-        "tests/test_core_workflows.py",
-        "tests/test_metadata_boundaries.py",
-        "tests/test_next_ten.py",
-        "tests/test_numeric_boundaries.py",
-        "tests/test_output_ownership.py",
-        "tests/test_player_scratch.py",
-        "tests/test_recorder_updater.py",
-        "tests/test_replay_repair.py",
-        "tests/test_resource_boundaries.py",
-        "tests/test_review_hardening.py",
-        "tests/test_reviewed_owners.py",
-        "tests/test_reviewed_runtime.py",
-        "tests/test_scene_appearance.py",
-        "tests/test_shot_definitions_audit.py",
-        "tests/test_source2viewer.py",
-        "tests/test_startup_audit_boundaries.py",
-        "tests/test_update_handoff_process.py",
-        "tests/video_workflow.py"
-      ],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "includes": [],
-        "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
-        ]
-      },
-      "full_formal_signoff": false
-    },
-    {
       "path": "tools/test-lite-policy.cmd",
       "sha256": "0bc5d71949f7a2ffda67c0f78fbba275f077ac3073a04a6494963a5b9d5287aa",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -10716,48 +10817,47 @@
       "full_formal_signoff": false
     },
     {
-      "path": "packaging/bootstrap_entrypoint.py",
-      "sha256": "342685f44c3ecf9201357c34e63202929190ddf20188ad698e006daf4208a9b8",
+      "path": "tools/update_game.py",
+      "sha256": "a12389ac679277092ce26f4c6e25caefe610b16f446111cf8b562efeedc2a51e",
       "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L05",
-      "disposition": "entrypoint delegated contract open",
-      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
+      "family": "L06",
+      "disposition": "offline-tool scope",
+      "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
       "bounded_models": [],
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
-        "module_purpose": "One public executable; no dependency on the replaceable editor runtime.",
+        "module_purpose": "Add reviewed support for a new Deadlock build by driving the update pipeline.",
         "classes": [],
-        "functions": [],
+        "functions": [
+          "sha256",
+          "run_dir_identity",
+          "latest_run",
+          "read_names",
+          "shift",
+          "first_match",
+          "read_steam_inf",
+          "parse_version_date",
+          "resolve_game_dir",
+          "build_pairs",
+          "_normalize_patched",
+          "_client_autofix",
+          "_prepare_autofix",
+          "_finalize_autofix",
+          "generate_client",
+          "generate_unlocker",
+          "run_script",
+          "refresh_confetti_table",
+          "main"
+        ],
         "imports": [
-          "dolly.release_launcher",
-          "dolly.update_worker"
+          "__future__",
+          "datetime",
+          "dolly.settings",
+          "pathlib"
         ],
         "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
-        ]
-      },
-      "full_formal_signoff": false
-    },
-    {
-      "path": "packaging/entrypoint.py",
-      "sha256": "0cd4b56dd627ecc75f4cf404afc97f18bc5502d6c36851f74fffb20c26f6fd54",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L05",
-      "disposition": "entrypoint delegated contract open",
-      "reason": "Batch or packaged entry invokes bootstrap, desktop or recovery; log handles, exit status and recovery assumptions delegate to their Python owner. No separate game launch is exercised by the inventory.",
-      "bounded_models": [],
-      "test_reference_leads": [],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "module_purpose": "PyInstaller's windowed executable starts directly, without a BAT or child Python.",
-        "classes": [],
-        "functions": [],
-        "imports": [
-          "dolly.desktop"
-        ],
-        "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
+          "file/process"
         ]
       },
       "full_formal_signoff": false
@@ -11026,7 +11126,7 @@
       "instances": [
         "MediaAdmissionApi"
       ],
-      "owner_utf8_lf_sha256": "d14cef5b450533b8643cb2250504adc54ec9aa1e38d661878aaf91abe0333463"
+      "owner_utf8_lf_sha256": "f7da23fd01b2db9204e4627ba19f4db489d7b49d0cb8c1237fcecb0bf567f8b2"
     },
     "dolly/MediaFinalize.tla": {
       "path": "dolly/media_transport.py",
@@ -11037,7 +11137,7 @@
       "instances": [
         "MediaFinalizeApi"
       ],
-      "owner_utf8_lf_sha256": "d14cef5b450533b8643cb2250504adc54ec9aa1e38d661878aaf91abe0333463"
+      "owner_utf8_lf_sha256": "f7da23fd01b2db9204e4627ba19f4db489d7b49d0cb8c1237fcecb0bf567f8b2"
     },
     "dolly/MemoryWatch.tla": {
       "path": "dolly/memory_watch.py",
@@ -11099,7 +11199,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77"
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11108,7 +11208,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77"
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11117,7 +11217,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77"
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11154,7 +11254,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "e8e160dee1182cd869b7e0d8ca60daf37b6c8c06d0071f21a65d70172df01300"
+      "owner_utf8_lf_sha256": "21e78beb4db8635768907bf0f559ac5ec744ada9739ad525ffa476d9029e2fd2"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11199,7 +11299,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77"
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
     "dolly/ReshadeResult.tla": {
       "path": "dolly/reshade_setup.py",
@@ -11444,7 +11544,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77"
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
@@ -11506,7 +11606,7 @@
       "instances": [
         "MediaDetachApi"
       ],
-      "owner_utf8_lf_sha256": "39c33c2b4ef3e368f141e85e2fda154d5ef0c22f7dde9316604176f2fec985d4"
+      "owner_utf8_lf_sha256": "ff90f61da0f311333e174b041def777b80e6c9dc647e9233dac6e398c2a3be64"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -11515,7 +11615,7 @@
         "native/src/VideoCompleteness.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4a7b6e3535437f94c5245ac38509ed6039a971b01cade1bcfef2e8721a30e18d"
+      "owner_utf8_lf_sha256": "a4d59018b1ad620e0881da37a882d3db96328008b2289bfac8380e3b8157dd2a"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",
@@ -11592,7 +11692,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "6013c14ddb7025afe77bbe5fc3750c1dfa6fddfee74e79060205203b7bfcad77"
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",
@@ -11617,6 +11717,24 @@
         "dolly/StatusSnapshot.cfg"
       ],
       "owner_utf8_lf_sha256": "529ecdcf5cfa47272ff00be007b46ff3a1a0ce479faf5a6ef5dd385c98604f04"
+    },
+    "dolly/CravCapture.tla": {
+      "path": "dolly/crav_capture.py",
+      "scope": "Worker ownership, cancellation, exact replay, restoration and final publication safety",
+      "configs": [
+        "dolly/CravCapture.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "5d4e50f497b83640ab2af8402e4e9b3c2ec3dfeaa393296b0d9783257776698b"
+    },
+    "native/src/CameraOnlyCapture.tla": {
+      "path": "native/src/dolly_video_win.cpp",
+      "scope": "Native camera-only admission, callback drain and complete publication safety",
+      "configs": [
+        "native/src/CameraOnlyCapture.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "a4d59018b1ad620e0881da37a882d3db96328008b2289bfac8380e3b8157dd2a"
     }
   },
   "export_census": [
@@ -12694,6 +12812,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.35-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.4-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -12767,6 +12890,21 @@
       "path": "docs/VIDEO_SCRIPT_0.6.49-alpha.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "docs/interchange/CRAV-CAPTURED-SCENE.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "docs/interchange/CRAV.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "docs/interchange/minimal.crav",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
       "path": "docs/internal/CAMERA_VISIBILITY.md",
@@ -13146,6 +13284,21 @@
       "path": "dolly/ConsoleStartApi.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/CravCapture.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "dolly/CravCapture.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "dolly/CravCapture.tla",
+      "category": "formal spec/interface",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
       "path": "dolly/DefinitionsFirstRead.cfg",
@@ -14213,6 +14366,26 @@
       "path": "dolly/crash_dumps.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/crav_capture.py",
+      "category": "implementation/tool",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "dolly/crav_contract.py",
+      "category": "implementation/tool",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "dolly/crav_export.py",
+      "category": "implementation/tool",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "dolly/crav_replay.py",
+      "category": "implementation/tool",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
       "path": "dolly/curve.py",
@@ -15867,6 +16040,21 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/src/CameraOnlyCapture.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "native/src/CameraOnlyCapture.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "native/src/CameraOnlyCapture.tla",
+      "category": "formal spec/interface",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "native/src/CaptureFailure.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16814,6 +17002,16 @@
       "path": "tests/test_core_workflows.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_crav_capture.py",
+      "category": "test/support input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "tests/test_crav_export.py",
+      "category": "test/support input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
       "path": "tests/test_follow_stance.py",
@@ -17944,15 +18142,15 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 512,
-    "implementation/tool": 309,
+    "metadata/configuration/documentation input": 520,
+    "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 145,
-    "test/support input": 77,
+    "formal spec/interface": 147,
+    "test/support input": 79,
     "external dependency/resource": 201
   },
   "unclassified": 0,
   "full_program_formal_verified": false,
   "pending_formal_packages": [],
-  "integration_status": "reviewed branch proposal; not released or whole-program proof"
+  "integration_status": "CRAV merged with main heartbeat/ownership contracts, new producer scopes and receiving version reconciled."
 }

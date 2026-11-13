@@ -2,7 +2,8 @@
 
 The page is a :class:`.kit_page.KitPage` of kit cards in one column like Replay's
 (USER-ADDITIONS UPDATE 13): Camera Source, Destination, Encoder & Quality, Capture,
-Output Passes, Screenshot, FFmpeg Runtime and Recording, 613 design px wide, 15 apart.
+Output Passes, Screenshot, FFmpeg Runtime and Recording, 613 design px wide,
+15 apart. RenderLock camera export, when wired, is a subsection of Camera Source.
 The whole page scrolls as one (no pinned card). Every card button is canvas-drawn
 (N21); fields, dropdowns and checkboxes are kit ttk widgets placed on their card. The
 old help labels are info bubbles with the same text. ``screenshot_ui.build`` fills the
@@ -31,6 +32,10 @@ SCRATCH_INFO = ("Blank uses the output folder. Raw Players files need a fast dri
 SCREENSHOT_INFO = ("Captures the current paused view: plate.png, hero_alpha.png, hero_rgba.png, "
                    "hero_isolated.png and depth.exr in one folder beside the output file. "
                    "Hero = every player and their equipment, no NPCs.")
+LAUNCH_HINT = "Launch a replay to export a camera."
+RENDERLOCK_INFO = ("Saves this shot's camera as a .crav file for RenderLock, without recording video. "
+                   "Dolly plays the shot once at normal speed and uses Video FPS from Capture. "
+                   "Open the .crav in RenderLock with the same replay and a prepared map.")
 PASSES_INFO = "Color video always records first. Ticked passes are extra takes recorded automatically after it."
 DEPTH_INFO = ("Depth and its extra passes use 100% render scale; your scale is restored afterward. "
               "This can make export slower.")
@@ -88,6 +93,8 @@ class ExportActions:
     use_bundled_ffmpeg: Callable[..., object]
     video_source_changed: Callable[..., object]
     discard_recording: Callable[..., object]
+    export_renderlock: Callable[..., object] | None = None
+    cancel_renderlock: Callable[..., object] | None = None
 
 
 def _dropdown(row, variable, values, width="fill"):
@@ -127,6 +134,21 @@ class ExportPage:
         self.video_ae_camera_check = _check(row, "Export After Effects camera (.jsx)", state.video_ae_camera)
         row.gap(20)
         self.video_usd_camera_check = _check(row, "Export USD camera (.usda)", state.video_usd_camera)
+
+        # Keep camera-file exports together using the kit's group label, info
+        # bubble and row spacing. The section retains the app's reveal target.
+        self.renderlock_card = None
+        if commands.export_renderlock is not None:
+            section = self.renderlock_card = card.section(top=15)
+            section.row(height=18).label("RenderLock camera (.crav)", tone="text", info=RENDERLOCK_INFO)
+            row = section.row()
+            self.renderlock_export_button = row.button("Export .crav...", commands.export_renderlock,
+                                                       state="disabled")
+            row.gap(10)
+            self.renderlock_cancel_button = row.button("Cancel export", commands.cancel_renderlock,
+                                                       state="disabled")
+            self.renderlock_status_text = tk.StringVar(master=page, value=LAUNCH_HINT)
+            section.text(textvariable=self.renderlock_status_text, top=15)
 
         card = self.video_destination_card = page.add_card("Destination")
         row = card.row()

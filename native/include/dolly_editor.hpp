@@ -156,7 +156,10 @@ enum class EditorAction : std::uint32_t {
     SeekCamera,
     SetVideoAeCamera,
     SetVideoUsdCamera,
-    SetAttachVerticalAimLock
+    SetAttachVerticalAimLock,
+    // RenderLock .crav camera export from the in-game Export drawer.
+    ExportRenderLock,
+    CancelRenderLock
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -181,6 +184,9 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetVideoUsdCamera) == 121
               "Stable USD camera export action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetAttachVerticalAimLock) == 122,
               "Stable per-camera vertical aim lock action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::ExportRenderLock) == 123 &&
+                  static_cast<std::uint32_t>(EditorAction::CancelRenderLock) == 124,
+              "Stable RenderLock camera export action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&
@@ -611,6 +617,7 @@ struct EditorSnapshot {
     bool video_layer_effects = false;
     bool video_ae_camera = false;
     bool video_usd_camera = false;
+    bool renderlock_exporting = false; // camera_export_flags bit 1, published by Dolly
     double video_speed = 1;
     double horizontal_fov = 0;
     std::uint32_t view_width = 0, view_height = 0;

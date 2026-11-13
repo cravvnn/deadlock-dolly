@@ -37,7 +37,8 @@ def _path(value: str, required: bool = False) -> bytes:
 
 def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=20000000,
                  encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
-                 depth=False, depth_exr=False, shot_only=False, white_clear=False, max_frames=0, camera_track=False):
+                 depth=False, depth_exr=False, shot_only=False, white_clear=False, max_frames=0, camera_track=False,
+                 camera_only=False):
     if type(sequence) is not int or not 0 < sequence <= 0xfffffffe or sequence & 1:
         raise ValueError("Invalid media command sequence")
     if command not in COMMANDS:
@@ -70,6 +71,13 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
         raise ValueError("Shot-only recording must be a boolean")
     if type(white_clear) is not bool:
         raise ValueError("The white matte background must be a boolean")
+    if type(camera_only) is not bool:
+        raise ValueError("Camera-only capture must be on or off")
+    if camera_only and (command != "start_video" or not fixed_step or not shot_only
+                        or not camera_track or not max_frames or depth or depth_exr
+                        or white_clear or encoder != 0 or codec != 0
+                        or not str(path).lower().endswith(".json")):
+        raise ValueError("Camera-only capture requires a bounded fixed-step camera shot and .json output")
     needs_ffmpeg = command == "start_video" and encoder == 1
     if codec == len(CODECS) - 1 and path and not str(path).lower().endswith(".mkv"):
         raise ValueError("Lossless video requires a .mkv destination")
@@ -77,12 +85,13 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
     # Bit 2: also write the float EXR sequence. Bit 3: capture only frames
     # with a replay time so layered takes stay aligned. Bit 4: force a white
     # clear for the matte pass. Bits 16..31: hard admission limit (0 unlimited).
-    # Bit 5 requests camera metadata; bits 6..15 remain invalid.
+    # Bit 5 requests camera metadata; bit 6 requests camera-only capture.
     # Older native builds reject an unsupported camera flag or nonzero limit.
     if type(camera_track) is not bool:
         raise ValueError("Camera track must be on or off")
     reserved = ((1 if fixed_step else 0) | (2 if depth else 0) | (4 if depth_exr else 0)
-                | (8 if shot_only else 0) | (16 if white_clear else 0) | (32 if camera_track else 0) | (max_frames << 16))
+                | (8 if shot_only else 0) | (16 if white_clear else 0) | (32 if camera_track else 0)
+                | (64 if camera_only else 0) | (max_frames << 16))
     return COMMAND.pack(b"DLYMED01", sequence, ABI, COMMANDS[command], fps, bitrate,
                         reserved,
                         encoder, codec, quality, preset,

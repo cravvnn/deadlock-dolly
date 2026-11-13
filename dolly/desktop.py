@@ -91,7 +91,10 @@ def bundle_self_test(report_path: Path, *, hidden: bool = False) -> int:
                     or y + widget.winfo_height() > root.winfo_height()):
                 raise RuntimeError(f"Layout clips {name} at the minimum window size")
         # Recording is the page's last card: each action scrolls into view and fits there.
-        for name in ("video_path_entry", "video_start_button", "video_stop_button", "video_cancel_button"):
+        names = ["video_path_entry", "video_start_button", "video_stop_button", "video_cancel_button"]
+        if getattr(app_ui, "renderlock_card", None) is not None:
+            names[1:1] = ["renderlock_export_button", "renderlock_cancel_button"]
+        for name in names:
             app_ui.export_page.reveal(getattr(app_ui, name))
             visible(name)
         app_ui.notebook.select(app_ui.settings_tab)
