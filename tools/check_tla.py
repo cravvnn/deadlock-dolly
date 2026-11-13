@@ -26,7 +26,8 @@ def check(root=ROOT):
                              str(root / "native" / "src" / "DrawProof.cfg"),
                              str(root / "native" / "src" / "CaptureFailure.cfg"),
                              str(root / "native" / "src" / "MediaDetach.cfg"),
-                             str(root / "native" / "src" / "NativeSnapshotClose.cfg")],
+                             str(root / "native" / "src" / "NativeSnapshotClose.cfg"),
+                             str(root / "native" / "src" / "CameraOnlyCapture.cfg")],
                             cwd=root, text=True, capture_output=True)
     rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     checked = {Path(row["name"]).name for row in rows if row.get("kind") == "model"}
@@ -42,6 +43,8 @@ REQUIRED.update({'PublishReplay-link.cfg', 'ScratchStatus.cfg', 'PublishReplay.c
 REQUIRED.update({"SaveResult.cfg", "ManifestScan.cfg"})
 REQUIRED.update({"MemoryWatch.cfg", "RestoreHandles.cfg"})
 REQUIRED.update({"SocketSetup.cfg", "Admission.cfg", "ExportCleanup.cfg", "ExportCleanup-link.cfg"})
+REQUIRED.add("CameraOnlyCapture.cfg")
+REQUIRED.add("CravCapture.cfg")
 
 
 REQUIRED.update({'LayerAdmission.cfg', 'ScratchCreate.cfg', 'UpdateStart.cfg', 'HistoryShare.cfg', 'ReaderStart.cfg', 'ReshadeResult.cfg'})

@@ -504,6 +504,10 @@ def _dispatch(app, event, bridge, *, publish):
                           app.controller.near_player_opacity_fix, bridge)
     elif action == "start_video":
         app._start_video_recording()
+    elif action == "export_renderlock":
+        app._export_renderlock(destination=app._renderlock_auto_path())
+    elif action == "cancel_renderlock":
+        app._cancel_renderlock_export()
     elif action == "stop_video":
         app._stop_video_recording(cancel=False)
     elif action == "take_screenshot":

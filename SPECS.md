@@ -6,6 +6,33 @@ coverage; this document records the owners and limits rather than a stale tally.
 
 The worker/file-output, resource-boundary and reviewed failure-handling
 supplements are described at the end of this inventory.
+The experimental `crav_export.build_crav` and vendored `crav_contract` are pure
+functions and need no lifecycle model. `crav_export.export_crav` validates and
+encodes before delegating all file publication to `camera_export.write_script`,
+covered by the adjacent ExportCleanup model. No new lock, worker, retry, capture
+session or game operation is introduced by those pure builders.
+The new `crav_capture.capture_to_crav` worker delegates native/timing ownership
+to the existing `VideoExport` and `Controller`. Adjacent CravCapture.tla models
+commit admission after complete capture, equal replay SHA, successful restoration,
+current session ownership and cancellation checks. Each controller mutation and
+owner recheck share its existing RLock. The GUI adds an Event cancellation input
+to this same worker, not a second capture worker. pin_replay is a bounded read-only
+hash/metadata pass with before/after file fences; owner tests exercise file mutation
+and cancellation. It has no persistent cache, publication or independent lifecycle.
+native/src/CameraOnlyCapture.tla models the dedicated no-video branch of
+video::capture/finish_camera_only: close admission, wait admitted callbacks, then
+read the reserved trace and refuse a short/failed/cancelled take. Late cancellation
+during raw trace file I/O can leave that trace, but cannot establish final .crav
+success. Native C++/WARP tests qualify the real worker/file boundary separately.
+The models are bounded safety projections; no whole-program, game/render or
+universal crash-durability claim. The simplification decision is to reuse one
+existing Session/VideoExport owner instead of adding a parallel recorder lifecycle;
+no state-count reduction claim is made against the unimplemented alternative.
+The publisher inherits that owner's no-overwrite, flush and cleanup semantics;
+there is no claim of universal crash durability or whole-program verification.
+
+The worker/file-output and resource-boundary supplements are described at the
+end of this inventory.
 
 This inventory covers the models currently maintained beside their source. It
 does not claim whole-program coverage. Models run locally via

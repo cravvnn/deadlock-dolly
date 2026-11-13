@@ -57,7 +57,38 @@
       "fallback_rva": "0x347cce0",
       "current_time_offset": "0x30",
       "interval_offset": "0x54",
-      "replay_clock_review": null
+      "replay_clock_review": {
+        "client_sha256": "2007fddaf9f48211e1ed188aff3c31ad47ba667cbaace16f5dd30e9376b884c7",
+        "render_fraction_offset": "0x38",
+        "time_source": "(engine replay tick + client render fraction) * interval_per_tick",
+        "validation": "6860 exact installed-image offline review: CSource2Client RTTI vtable0x2c44018 slot11 SetGlobals0x197b900 pins globals pointer0x347cc40; consumer0x1732df0 loads int tick+0x44/float fraction+0x38 into normalizer0x21a5660, which stores and normalizes the pair; render-time consumer0x7806c0 scales fraction by interval+0x54. No runtime cadence or replay-tick alignment claim yet; isolated CRAV qualification only.",
+        "reviewed_functions": [
+          {
+            "name": "CSource2Client.SetGlobals",
+            "rva": "0x197b900",
+            "end_rva": "0x197b942",
+            "sha256": "096b6c3d0c8473193ddc97b85072be7b4f983d6e746c7bc89406d34499c4674d"
+          },
+          {
+            "name": "fractional_time_consumer",
+            "rva": "0x1732df0",
+            "end_rva": "0x1732e6d",
+            "sha256": "7b98f7b596c3c3e0b41a531885f298f4d9ab643ea210081c80716520968ff3b5"
+          },
+          {
+            "name": "tick_fraction_normalizer",
+            "rva": "0x21a5660",
+            "end_rva": "0x21a5717",
+            "sha256": "234446eecf919f9ce0883a05fa95cdfb00d990da5ef666396fcd2083e8b5d9b0"
+          },
+          {
+            "name": "render_time_consumer",
+            "rva": "0x7806c0",
+            "end_rva": "0x780744",
+            "sha256": "b524e2ba31ab3ecc4dbf60e98776b4825cdfc11ea8f8143a2d6c185a639722aa"
+          }
+        ]
+      }
     },
     "camera_layout_review": {
       "client_sha256": "2007fddaf9f48211e1ed188aff3c31ad47ba667cbaace16f5dd30e9376b884c7",

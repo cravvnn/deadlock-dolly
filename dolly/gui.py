@@ -1031,6 +1031,69 @@ class DollyApp:
             self.video_path.set(path)
             self._remember_export_folder()
 
+    def _cancel_renderlock_export(self):
+        token = getattr(self, "_renderlock_cancel", None)
+        if token is not None:
+            token.set()
+            self._renderlock_status("Cancelling camera export\u2026")
+
+    def _renderlock_status(self, text):
+        self.status_text.set(text)
+        variable = getattr(self, "renderlock_status_text", None)
+        if variable is not None:
+            _set_var(variable, text)
+
+    def _renderlock_auto_path(self):
+        """In-game exports have no file dialog: save beside the video output, never overwrite."""
+        import re
+        chosen = self.video_path.get().strip()
+        folder = Path(chosen).expanduser().parent if chosen else None
+        if folder is None or not folder.is_dir():
+            remembered = getattr(self.app_settings, "export_folder", None)
+            folder = Path(remembered) if remembered else None
+        if folder is None or not folder.is_dir():
+            raise ValueError("Choose an output file on the desktop Export tab first.")
+        stem = Path(chosen).stem if chosen else ""
+        stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", stem or self.project.name or "shot").strip(" .") or "shot"
+        for index in range(1, 1000):
+            candidate = folder / (f"{stem}.crav" if index == 1 else f"{stem}-{index}.crav")
+            if not candidate.exists() and not candidate.is_symlink():
+                return candidate
+        raise ValueError("Too many .crav files with this name; choose another output name.")
+
+    def _export_renderlock(self, destination=None):
+        from .crav_capture import capture_to_crav
+        from .crav_export import validate_crav_project
+        if self.busy:
+            self._renderlock_status("Finish the current operation before exporting the camera.")
+            return
+        try:
+            project = self._snapshot()
+            validate_crav_project(project)
+            if _finite(self.speed.get(), "Playback speed") != 1 or self.frozen.get():
+                raise ValueError("RenderLock camera export supports normal-speed shots only.")
+            fps = int(self.video_fps.get())
+        except (ValueError, RuntimeError) as exc:
+            self._renderlock_status(str(exc))
+            return
+        if destination is None:
+            destination = filedialog.asksaveasfilename(parent=self.root, title="Export for RenderLock",
+                defaultextension=".crav", initialfile="shot.crav",
+                filetypes=(("RenderLock camera", "*.crav"),))
+            if not destination:
+                return
+        token = self._renderlock_cancel = threading.Event()
+        self._renderlock_status("Exporting camera: Dolly plays the shot once without recording video\u2026")
+
+        def complete(result):
+            self._renderlock_cancel = None
+            self._renderlock_status(f"Saved {Path(result['path']).name}: {result['frames']} frames at {fps} FPS.")
+            self._log("RenderLock camera saved to " + result["path"])
+
+        self._submit("Exporting RenderLock camera", lambda: capture_to_crav(
+            self.controller, self.video_export, project, destination, fps=fps,
+            cancelled=token.is_set), complete)
+
     def _export_camera(self, video, status=None):
         """Freeze UI intent, then validate and write optional exports on the worker."""
         from . import camera_export
@@ -1998,6 +2061,24 @@ class DollyApp:
         if str(self.video_cancel_button.cget("text")) != cancel_text:
             self.video_cancel_button.configure(text=cancel_text)
         _set_widget_state(self.video_cancel_button, "normal" if can_stop or processing else "disabled")
+        if getattr(self, "renderlock_card", None) is not None:
+            token = getattr(self, "_renderlock_cancel", None)
+            exporting = token is not None and self.busy
+            if token is not None and not self.busy:
+                # Failed or cancelled exports end through the error path; drop the token.
+                self._renderlock_cancel = None
+                if token.is_set():
+                    self._renderlock_status("Camera export cancelled; no .crav was written.")
+            _set_widget_state(self.renderlock_export_button,
+                              "normal" if ready and not active and not self.busy else "disabled")
+            _set_widget_state(self.renderlock_cancel_button,
+                              "normal" if exporting and not token.is_set() else "disabled")
+            if not exporting and token is None:
+                current = self.renderlock_status_text.get()
+                if not ready:
+                    _set_var(self.renderlock_status_text, export_page.LAUNCH_HINT)
+                elif current == export_page.LAUNCH_HINT:
+                    _set_var(self.renderlock_status_text, "Ready: exports the current shot's camera.")
         if processing:
             _set_var(self.video_status_text,
                      "Building Players MOV: %d frames converted (%s)." %
@@ -5181,6 +5262,7 @@ class DollyApp:
         self.log_dialog.withdraw()
 
     def _on_close(self):
+        self._cancel_renderlock_export()
         if self.busy:
             messagebox.showinfo("Operation in progress", "Wait for the current operation to finish before closing Dolly.", parent=self.root)
             return

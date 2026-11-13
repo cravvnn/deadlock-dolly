@@ -309,6 +309,8 @@ def build_export(app):
         use_bundled_ffmpeg=app._use_bundled_ffmpeg,
         video_source_changed=app._video_source_changed,
         discard_recording=lambda: app._stop_video_recording(cancel=True),
+        export_renderlock=app._export_renderlock,
+        cancel_renderlock=app._cancel_renderlock_export,
     )
     view = ExportPage(app.export_tab, state, commands)
     app.export_view = view
@@ -355,3 +357,8 @@ def build_export(app):
     app.video_speed_combo = view.video_speed_combo
     app.video_start_button = view.video_start_button
     app.video_stop_button = view.video_stop_button
+    app.renderlock_card = view.renderlock_card
+    if view.renderlock_card is not None:
+        app.renderlock_export_button = view.renderlock_export_button
+        app.renderlock_cancel_button = view.renderlock_cancel_button
+        app.renderlock_status_text = view.renderlock_status_text

@@ -934,7 +934,6 @@ tests/test_source2viewer.py
 tests/test_update_handoff_process.py
 docs/RELEASE_NOTES_0.7.9-beta.md
 docs/internal/CORE_TEST_INTEGRATION.json
-
 # Bounded worker cleanup, still PNG and preset publication.
 dolly/CleanupWorker.cfg
 dolly/CleanupWorker.mutants.json
@@ -978,7 +977,6 @@ dolly/SocketSetup.mutants.json
 dolly/SocketSetup.tla
 dolly/SocketSetupApi.tla
 tests/test_admission_cleanup.py
-
 docs/RELEASE_NOTES_0.7.12-beta.md
 dolly/HistoryShare.cfg
 dolly/HistoryShare.mutants.json
@@ -1104,7 +1102,6 @@ tools/WindowCreate.cfg
 tools/WindowCreate.mutants.json
 tests/test_audio_boundaries.py
 docs/RELEASE_NOTES_0.7.18-beta.md
-
 dolly/ArchiveCreate.tla
 dolly/ArchiveCreateApi.tla
 dolly/ArchiveCreate.cfg
@@ -1238,11 +1235,8 @@ dolly/ui/PopupSelection.cfg
 dolly/ui/PopupSelection.mutants.json
 tests/test_authoring_audit_boundaries.py
 tests/test_bone_picker_recovery.py
-
 docs/RELEASE_NOTES_0.7.30-beta.md
-
 docs/RELEASE_NOTES_0.7.31-beta.md
-
 native/profiles/deadlock-2026-11-11-6861-complete.json
 native/profiles/scenesystem-2026-11-11-6861.json
 native/profiles/soundsystem-2026-11-11-6861.json
@@ -1251,7 +1245,6 @@ third_party/cvar_unlocker/unlocker-build-6861.patch
 docs/RELEASE_NOTES_0.7.32-beta.md
 tests/test_follow_stance.py
 docs/RELEASE_NOTES_0.7.33-beta.md
-
 docs/internal/FORMAL_COVERAGE.json
 docs/internal/FORMAL_COVERAGE.md
 dolly/CameraRetirementApi.tla
@@ -1281,5 +1274,20 @@ native/src/NativeSnapshotClose.tla
 tests/test_bridge_lifetime.py
 tests/test_camera_session_contracts.py
 dolly/CameraSessionJoin-success.cfg
-
 docs/RELEASE_NOTES_0.7.34-beta.md
+docs/interchange/CRAV.md
+docs/interchange/CRAV-CAPTURED-SCENE.md
+docs/interchange/minimal.crav
+dolly/crav_contract.py
+dolly/crav_export.py
+tests/test_crav_export.py
+dolly/crav_capture.py
+dolly/crav_replay.py
+dolly/CravCapture.tla
+dolly/CravCapture.cfg
+dolly/CravCapture.mutants.json
+native/src/CameraOnlyCapture.tla
+native/src/CameraOnlyCapture.cfg
+native/src/CameraOnlyCapture.mutants.json
+tests/test_crav_capture.py
+docs/RELEASE_NOTES_0.7.35-beta.md

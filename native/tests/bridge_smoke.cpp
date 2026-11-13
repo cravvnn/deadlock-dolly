@@ -3056,10 +3056,17 @@ void run() {
                     editor_snapshot().video_ae_camera,
                 "USD camera export flag was rejected with the whole config");
         config->sequence += 2;
-        config->camera_export_flags = 2;
+        config->camera_export_flags = 3;  // bit 1: a RenderLock .crav export is running
         std::memcpy(f.mapping.data() + kEditorConfigOffset, config.get(), sizeof(*config));
         editor_worker_tick(f.mapping.data(), true);
-        require(std::atomic_load(&dolly::gConfig)->camera_export_flags == 1,
+        require(std::atomic_load(&dolly::gConfig)->camera_export_flags == 3 &&
+                    editor_snapshot().renderlock_exporting && editor_snapshot().video_usd_camera,
+                "RenderLock export state flag was rejected with the whole config");
+        config->sequence += 2;
+        config->camera_export_flags = 4;
+        std::memcpy(f.mapping.data() + kEditorConfigOffset, config.get(), sizeof(*config));
+        editor_worker_tick(f.mapping.data(), true);
+        require(std::atomic_load(&dolly::gConfig)->camera_export_flags == 3,
                 "An unknown camera export flag was accepted");
         config->sequence += 2;
         config->video_flags = 0;
