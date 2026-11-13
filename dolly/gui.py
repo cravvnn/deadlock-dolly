@@ -1043,7 +1043,25 @@ class DollyApp:
         if variable is not None:
             _set_var(variable, text)
 
-    def _export_renderlock(self):
+    def _renderlock_auto_path(self):
+        """In-game exports have no file dialog: save beside the video output, never overwrite."""
+        import re
+        chosen = self.video_path.get().strip()
+        folder = Path(chosen).expanduser().parent if chosen else None
+        if folder is None or not folder.is_dir():
+            remembered = getattr(self.app_settings, "export_folder", None)
+            folder = Path(remembered) if remembered else None
+        if folder is None or not folder.is_dir():
+            raise ValueError("Choose an output file on the desktop Export tab first.")
+        stem = Path(chosen).stem if chosen else ""
+        stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", stem or self.project.name or "shot").strip(" .") or "shot"
+        for index in range(1, 1000):
+            candidate = folder / (f"{stem}.crav" if index == 1 else f"{stem}-{index}.crav")
+            if not candidate.exists() and not candidate.is_symlink():
+                return candidate
+        raise ValueError("Too many .crav files with this name; choose another output name.")
+
+    def _export_renderlock(self, destination=None):
         from .crav_capture import capture_to_crav
         from .crav_export import validate_crav_project
         if self.busy:
@@ -1058,11 +1076,12 @@ class DollyApp:
         except (ValueError, RuntimeError) as exc:
             self._renderlock_status(str(exc))
             return
-        destination = filedialog.asksaveasfilename(parent=self.root, title="Export for RenderLock",
-            defaultextension=".crav", initialfile="shot.crav",
-            filetypes=(("RenderLock camera", "*.crav"),))
-        if not destination:
-            return
+        if destination is None:
+            destination = filedialog.asksaveasfilename(parent=self.root, title="Export for RenderLock",
+                defaultextension=".crav", initialfile="shot.crav",
+                filetypes=(("RenderLock camera", "*.crav"),))
+            if not destination:
+                return
         token = self._renderlock_cancel = threading.Event()
         self._renderlock_status("Exporting camera: Dolly plays the shot once without recording video\u2026")
 
