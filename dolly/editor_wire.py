@@ -68,6 +68,7 @@ EXTRA_ACTIONS += ("seek_camera",)
 EXTRA_ACTIONS += ("set_video_ae_camera",)
 EXTRA_ACTIONS += ("set_video_usd_camera",)
 EXTRA_ACTIONS += ("set_attach_vertical_aim_lock",)
+EXTRA_ACTIONS += ("export_renderlock", "cancel_renderlock")  # IDs 123, 124
 
 # Optional completion signal in the unused mapping tail; existing offsets stay fixed.
 CINEMATIC_OFFSET = 2 * 1024 * 1024 + 60000
@@ -474,7 +475,10 @@ def pack_config(sequence, owner_sequence, ack_event, values):
     if type(values.get("video_usd_camera", False)) is not bool:
         raise ValueError("USD camera export must be a boolean")
     # The video flags byte is full; further camera formats use their own byte.
-    camera_export_flags = 1 if values.get("video_usd_camera") else 0
+    if type(values.get("renderlock_exporting", False)) is not bool:
+        raise ValueError("RenderLock export state must be a boolean")
+    camera_export_flags = ((1 if values.get("video_usd_camera") else 0)
+                           | (2 if values.get("renderlock_exporting") else 0))
     video_flags = ((1 if values.get("video_fixed_step") else 0)
                    | (2 if values.get("video_depth") else 0)
                    | (4 if values.get("video_depth_exr") else 0)
