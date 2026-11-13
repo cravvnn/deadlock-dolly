@@ -656,6 +656,25 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             k::VGap(15);
             k::Divider();
             k::NextColumn();
+            {
+                // RenderLock camera leads the right column. It leaves the drawer's
+                // busy dimming only while its own export runs, so Cancel stays live.
+                dim.reset();
+                f::Greyed own(!live && !s.renderlock_exporting);
+                k::SectionTitle("RenderLock camera",
+                                "Saves this shot's camera as .crav beside your video output, "
+                                "without recording video. Normal speed; uses Video FPS.",
+                                ".crav");
+                k::VGap(15);
+                if (s.renderlock_exporting)
+                    button("Cancel camera export", EditorAction::CancelRenderLock);
+                else
+                    button("Export .crav", EditorAction::ExportRenderLock, 0, 0,
+                           !live || locked || recording || finishing || s.busy || s.playing ||
+                               s.video_pov || s.camera_count < 2);
+            }
+            dim.emplace(!live);
+            split();
             k::SectionTitle("Camera source", nullptr, "Export");
             k::VGap(15);
             if (!s.video_pov && !s.camera_count) {
@@ -699,20 +718,6 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 k::VGap(10);
                 check("Effects layer", s.video_layer_effects, EditorAction::SetVideoLayerEffects);
             }
-            dim.reset();
-            f::Greyed own(!live && !s.renderlock_exporting);
-            split();
-            k::SectionTitle("RenderLock camera",
-                            "Saves this shot's camera as .crav beside your video output, without "
-                            "recording video. Normal speed; uses Video FPS.",
-                            ".crav");
-            k::VGap(15);
-            if (s.renderlock_exporting)
-                button("Cancel camera export", EditorAction::CancelRenderLock);
-            else
-                button("Export .crav", EditorAction::ExportRenderLock, 0, 0,
-                       !live || locked || recording || finishing || s.busy || s.playing ||
-                           s.video_pov || s.camera_count < 2);
             k::EndColumns();
         }
         k::VGap(15);
