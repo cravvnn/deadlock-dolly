@@ -61,7 +61,7 @@
     },
     "L07": {
       "title": "Root end-to-end formal composition",
-      "status": "open; no whole-program correctness claim",
+      "status": "first bounded root composition (DollyRoot) over refined camera-lease and recorder interfaces; other component interfaces not yet composed; no whole-program proof",
       "priority": 1,
       "remaining": "strengthen semantic owner interfaces and connect the complete caller tree; root proof cannot be inferred from 86 passing local configs"
     }
@@ -770,6 +770,13 @@
           "configs": [
             "dolly/CameraSessionJoin.cfg",
             "dolly/CameraSessionJoin-success.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/DollyRoot.tla",
+          "configs": [
+            "dolly/DollyRoot.cfg",
+            "dolly/DollyRoot-success.cfg"
           ]
         }
       ],
@@ -10236,7 +10243,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "cbe71cef8d46bf54ba002731300235d3bdf8ed2eb64e43e52fd527f8a577be5a",
+      "sha256": "22b232dc994f01b328039e2a16abb5662671affedb381cdf34064a4b7f8d7f0f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10261,7 +10268,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_draft": "Proposed required gate adds seven maintained bounded scopes, including explicit native/src/NativeSnapshotClose.cfg target. Checker version remains pinned."
+      "reconciliation_draft": "Proposed required gate adds seven maintained bounded scopes, including explicit native/src/NativeSnapshotClose.cfg target. Checker version remains pinned.",
+      "reconciliation_20261113": "2026-11-13 root composition: DollyRoot.cfg and DollyRoot-success.cfg added to REQUIRED (dolly/ was already scanned). No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -11674,11 +11682,14 @@
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
-      "scope": "Current Release acknowledgement/restoration failure/retry/controller lease join; environment Probe without restoration is refused (deadline) with lease retained; no arbitrary writers or real I/O liveness",
+      "scope": "Current Release acknowledgement/restoration failure/retry/controller lease join; environment Probe without restoration is refused (deadline) with lease retained; no arbitrary writers or real I/O liveness; refines CameraLeaseApi (RefinesLease)",
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
+      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7",
+      "instances": [
+        "CameraLeaseApi"
+      ]
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -11732,12 +11743,27 @@
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
-      "scope": "Native camera-only admission, callback drain and complete publication safety; 2026-11-13: cancel may arrive until done, one cancel decision drives raw-trace publication and terminal state (OutcomeAgrees); handshake race modeled in VideoCompleteness",
+      "scope": "Native camera-only admission, callback drain and complete publication safety; 2026-11-13: cancel may arrive until done, one cancel decision drives raw-trace publication and terminal state (OutcomeAgrees); handshake race modeled in VideoCompleteness; refines RecorderApi without its late-capture-fault gap (RefinesRecorder)",
       "configs": [
         "native/src/CameraOnlyCapture.cfg"
       ],
-      "instances": [],
+      "instances": [
+        "RecorderApi"
+      ],
       "owner_utf8_lf_sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d"
+    },
+    "dolly/DollyRoot.tla": {
+      "path": "dolly/controller.py",
+      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin) and RecorderApi (refined by CameraOnlyCapture): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (late capture fault is a named known gap), close returns and releases via acknowledged Release or heartbeat-expiry fault. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; not whole-program proof",
+      "instances": [
+        "CameraLeaseApi",
+        "RecorderApi"
+      ],
+      "configs": [
+        "dolly/DollyRoot.cfg",
+        "dolly/DollyRoot-success.cfg"
+      ],
+      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
     }
   },
   "export_census": [
@@ -13158,6 +13184,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/CameraLeaseApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/CameraRetirementApi.tla",
       "category": "formal spec/interface"
     },
@@ -13320,6 +13351,26 @@
     },
     {
       "path": "dolly/DefinitionsFirstReadApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/DollyRoot-success.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/DollyRoot.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/DollyRoot.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/DollyRoot.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18126,6 +18177,11 @@
     {
       "path": "tools/tla/check.mjs",
       "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tools/tla/modules/RecorderApi.tla",
+      "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {

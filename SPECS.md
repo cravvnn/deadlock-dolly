@@ -1016,3 +1016,36 @@ CameraSessionJoin-success additionally requires a successful live-process join
 and acknowledgement environment and checks eventual new-generation completion.
 It prevents safety-only verification from silently excluding that required
 success path; general refusal/retry remains in the default configuration.
+
+## Root composition (DollyRoot)
+
+`dolly/DollyRoot.tla` is the first root model. It composes two component
+interfaces, never implementation specs: `dolly/CameraLeaseApi.tla` (controller
+lease, native camera writer, effect restoration, game process) and
+`tools/tla/modules/RecorderApi.tla` (terminal recording state and kept files;
+shared because its users span `dolly/` and `native/src/`). ReleaseJoin refines
+CameraLeaseApi (`RefinesLease`) and CameraOnlyCapture refines RecorderApi
+(`RefinesRecorder`); private negatives showed each refinement fails when its
+implementation drops the lease after failed restoration or re-reads cancel.
+
+Checked promises: no camera writer after a reported release, and a new shot only
+after the previous lease is retired; unrestored effects always have an owner
+while the game runs (a lease ends without restoration only for a dead process);
+a terminal recording state agrees with the kept files; close returns, then the
+camera is released by the acknowledged Release or the native heartbeat-expiry
+fault (which restores effects and retries every frame), and media detach stops an
+active take. The late capture-thread fault after the encoder's decision is a
+named exception in RecorderApi: the default root excludes it and the
+"known gap" mutant shows it breaks HonestOutcome. Six mutants remove the root's
+own guards (new-shot admission, heartbeat stop on close, expiry release, detach
+stop, restoration retry) or admit the gap.
+
+DollyRoot-success.cfg fixes a live game and returning restoration and requires
+every shot's lease to retire unless the app closes first; it fails if the
+controller's retirement is not fair or the game may exit. Assumptions: a live
+game keeps rendering main views, restoration eventually succeeds, takes are
+finite; the game may exit and the user may close at any time. Two shot
+generations and one take. This root covers the camera-lease and recorder
+interfaces only; storage, UI, Players, screenshots and update flows are not yet
+composed through interfaces, and nothing here proves engine threading, the C++
+memory model, GPU output or real timing.

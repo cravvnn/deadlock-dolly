@@ -1291,3 +1291,9 @@ native/src/CameraOnlyCapture.cfg
 native/src/CameraOnlyCapture.mutants.json
 tests/test_crav_capture.py
 docs/RELEASE_NOTES_0.7.35-beta.md
+dolly/CameraLeaseApi.tla
+dolly/DollyRoot.tla
+dolly/DollyRoot.cfg
+dolly/DollyRoot-success.cfg
+dolly/DollyRoot.mutants.json
+tools/tla/modules/RecorderApi.tla
