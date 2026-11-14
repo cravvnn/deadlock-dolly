@@ -1297,3 +1297,4 @@ dolly/DollyRoot.cfg
 dolly/DollyRoot-success.cfg
 dolly/DollyRoot.mutants.json
 tools/tla/modules/RecorderApi.tla
+docs/RELEASE_NOTES_0.7.36-beta.md
