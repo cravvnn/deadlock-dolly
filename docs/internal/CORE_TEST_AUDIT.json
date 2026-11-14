@@ -1,7 +1,7 @@
 {
-  "scope": "Opus5.5 product-risk portfolio: exactly 15 named user contracts, not whole-program coverage equivalence.",
-  "recommended_by": "Claude Opus 5.5, independent read-only product/source/release-history review",
-  "implemented_by": "Three GPT-6.1 Terra agents plus parent integration and independent cross-review",
+  "scope": "Product-risk portfolio: exactly 15 named user contracts, not whole-program coverage equivalence.",
+  "recommended_by": "Independent read-only product/source/release-history review",
+  "implemented_by": "Parallel implementation plus integration and independent cross-review",
   "basis_revision": "7f16ec5",
   "baseline_revision": "c2f23819d9322225dec2d25587e6e40cfd4bb9ac",
   "priority": [
