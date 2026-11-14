@@ -21,9 +21,13 @@ hash/metadata pass with before/after file fences; owner tests exercise file muta
 and cancellation. It has no persistent cache, publication or independent lifecycle.
 native/src/CameraOnlyCapture.tla models the dedicated no-video branch of
 video::capture/finish_camera_only: close admission, wait admitted callbacks, then
-read the reserved trace and refuse a short/failed/cancelled take. Late cancellation
-during raw trace file I/O can leave that trace, but cannot establish final .crav
-success. Native C++/WARP tests qualify the real worker/file boundary separately.
+read the reserved trace and refuse a short/failed/cancelled take. The worker takes
+one cancel decision after quiesce_producers; raw-trace publication and the
+terminal state both follow it (OutcomeAgrees), so a cancel after that point
+completes consistently instead of reporting cancelled beside a published trace.
+Python's own cancel check still refuses final .crav success. The callback's
+increment/ready test and the worker's barrier are seq_cst; that store/load race
+is modeled in VideoCompleteness, so Enter stays atomic here. Native C++/WARP tests qualify the real worker/file boundary separately.
 The models are bounded safety projections; no whole-program, game/render or
 universal crash-durability claim. The simplification decision is to reuse one
 existing Session/VideoExport owner instead of adding a parallel recorder lifecycle;
@@ -530,7 +534,7 @@ with no extra flag or UI draft cache. No prior state machine was removed.
 
 | Component | Model | Scope |
 | --- | --- | --- |
-| `dolly/native_bridge.py`: NativeBridge.close | [BridgeClose.tla](dolly/BridgeClose.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
+| `dolly/native_bridge.py`: NativeBridge.close | [BridgeClose.tla](dolly/BridgeClose.tla) | Local returning-operation safety and completion, with three guard mutants. `_close_media` and the forced diagnostic sample share one try, so a media fault skips the sample (FaultSkipsSample); release, heartbeat stop and unmap still run. See module comments for callers/bounds/exclusions. |
 | `dolly/media_transport.py`: MediaTransport._ensure_media | [MediaAdmission.tla](dolly/MediaAdmission.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
 | `dolly/editor_session.py`: poll | [AttachObservation.tla](dolly/AttachObservation.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
 | `dolly/screenshot.py`: cleanup | [StillCleanup.tla](dolly/StillCleanup.tla) | Local returning-operation safety and completion, with two guard mutants; see module comments for callers/bounds/exclusions. |
@@ -625,7 +629,7 @@ lock/DLL-directory, owned-peer-process and larger comparisons are separate proof
 | ShotHistory.mark_saved; GUI after successful save | [SavedSnapshot](dolly/SavedSnapshot.tla), [API](dolly/SavedSnapshotApi.tla) | Four calls, three contents, immutable fresh snapshots and a mutable caller. Share only equal history content; unmatched saves remain detached. HistoryShare covers reset separately. Full undo/redo/merge/revision behavior stays in actual method checks. |
 | ExportTimingMixin.suspend_export_timing/resume_export_timing; Controller.play | [TimingSwitch](dolly/TimingSwitch.tla), [API](dolly/TimingSwitchApi.tla) | Two transitions; commands may be applied or ignored; returning coherent host/wait reads. Publish the local flag only after both match. Retry and clear restoration are actual-owner tests. No concurrent cvar writer, game pacing or live readback qualification. |
 | preload.game_file; preload/replay-camera/Follow monitors | [GameFileCache](dolly/GameFileCache.tla), [API](dolly/GameFileCacheApi.tla) | One cached generation, one read, two replacements retaining size/mtime, budget1 and representative sizes1/2. Distinct full path metadata identifies generations; hashes identify consumed bytes. Multi-entry accounting/warm hits are actual tests. No read-memory cap, hostile metadata forgery, identity reuse, parallel callers or module-load lock. |
-| SequenceWriter.open; native arm_capture noexcept | [WriterAdmission](native/include/WriterAdmission.tla), [API](native/include/WriterAdmissionApi.tla) | Existing writer, two worker-start attempts, stream/handle admission, system_error refusal, returning successful close and retry. Native generated-header fault tests keep the real ownership and I/O code. No unrelated allocation failure, GPU, concurrent open/finish or weak-memory proof. |
+| SequenceWriter.open; native arm_capture noexcept | [WriterAdmission](native/include/WriterAdmission.tla), [API](native/include/WriterAdmissionApi.tla) | Existing writer, two worker-start attempts, stream/handle admission, system_error refusal, returning successful close and retry. Native generated-header fault tests keep the real ownership and I/O code. No unrelated allocation failure, GPU, concurrent open/finish or weak-memory proof. push/push_blocking read opened_/closing_ unlocked; CaptureDrainOwnership orders this (pushes run only in admitted callbacks, begin_finish only after finish_close). Native player_scratch tests race a pinned push_blocking against the real gate close. Used without that gate, the class could accept a frame after closing. |
 
 The six production-only specs run via `tools/check_tla.py`; the native header's
 configuration is explicitly included. Ten invariant mutants protect their
@@ -669,6 +673,8 @@ GUI startup, live media finalization or packaged-output qualification is inferre
 
 `native/src/VideoCompleteness.tla` models the final producer-quiescence, late GPU loss, fixed-step timeout and publication boundary in `dolly_video_win.cpp`. Four mode combinations, one pending frame and one cancellation; three guard mutants. FFmpeg and fixed-step takes cannot publish successfully after counted loss; fixed-step queue timeout stops instead of dropping. Ordinary real-time Media Foundation retains timestamped partial capture semantics. Does not establish game-clock accuracy, GPU pixels, throughput or whole-program correctness. Simplification keeps one shared terminal check across both writers, with no new runtime state.
 
+Stop handshake and cancel decision (2026-11-12): one looping producer meets the encoder's `quiesce_producers` barrier. An explicit store-buffer entry stands for the encoder's `ready=false` store, so a release/acquire handshake can let a producer see `ready` after the encoder observed no producers and publish a frame past the drain and `gpu_pending` exchange (NoUncountedFrame). All four handshake operations are now seq_cst; every barrier, including the post-catch one, is kept. Finalization takes one cancel snapshot (`decide_cancel`, which applies a deferred stop once) after the final barrier; termination, drop accounting, the incomplete-take check, depth finish/discard, colour delete, sidecars and state follow it (OutcomeAgrees). A cancel after the decision completes the take; the previous re-reads could report cancelled while keeping the MP4, or delete colour while keeping depth (reproduced privately on one injected schedule). Seven mutants, 552 states with a larger scope than the earlier 72-state model, so the counts are not comparable. The store-buffer abstraction covers x86-TSO store-to-load reordering only, not the C++ memory model. A `fail()` from capture after the decision point (GetBuffer failure, resolution change) is still outside the model.
+
 ## Startup refusal and configuration compensation
 
 | Owner and callers | Spec / API | Scope |
@@ -711,6 +717,8 @@ Live failure follow-up: terminal pacing publication bypasses the 250ms progress 
 ## Reviewed runtime ownership and metadata
 
 CameraOwnership beside shot_commands models isolation of a returned mutable key; MediaDetach beside dolly_media_win models audio retirement after existing video grace; EncoderUnwind beside player_layer models refused monitor admission and locked-partial cleanup preserving the primary failure. Each has a minimal active/done caller API, production safety config and load-bearing mutants. These bounded contracts allow terminal stuttering and retain deadlock checks. They assume returning cleanup; no real-I/O liveness, whole-program refinement, GPU/output quality or state-count reduction is claimed. Parent ProcessJob fallback remains separate.
+
+MediaDetach was rewritten on 2026-11-12 to follow `media_worker_tick` as it runs: `video_active()` is re-read every tick, reconnect during grace resets the grace clock, an ended take detaches at once, the unnamed-session exit skips grace, the bridge catch path cleans up, and `video::stop(false)` is only a request finalized by `video::shutdown`'s join. Time is abstracted to unset/fresh/old (270 states, previously 8 with a frozen video flag). Eight mutants. The catch path's audio stop and the expiry `disconnected_since` reset are defensive: removing either survives, so they are not counted as guards. Native media_disconnect tests drive the real tick with reconnect, mid-grace completion, finalizing-after-expiry, unnamed and catch-path cases. No encoder liveness, heartbeat timing or weak-memory claim.
 
 reference_frame_count, definitions.decode and VideoExport._audit_take change synchronous parsing/exception boundaries; actual reader/launcher/finalizer probes cover them without inventing lifecycle state. The Players reader now accepts current per-frame audio metadata up to40MiB with an actual bounded UTF8 read. The optional audit's independent1MiB limit remains unchanged.
 
@@ -953,6 +961,10 @@ the operation lock. Players marker admission, later failure and real clocks/I/O
 are excluded. ReleaseJoin follows NativeBridge release/wait through source-mapped
 native effect restoration and controller lease retirement. It covers old faults,
 current refusal and one retry; callback timing/memory ordering are excluded.
+Release accepts only Stopped, the state that follows effect restoration. The
+model adds an environment Probe carrying this release's ack without restoration
+(unreachable while native never clears gCommand); it times out with the lease
+retained, and accepting it breaks NoUnrestoredWriter.
 
 CameraSessionJoin refines CameraRetirementApi's quiet-old-worker and release-
 evidence contract. _halt's timed join can refuse; a later caller cannot retire
@@ -969,12 +981,25 @@ queuing behind the command lock. Close may wait beyond its timed join for an
 in-flight store; no real-time lock-return guarantee is proved. This is hardening,
 not equivalence or reachable-state reduction. NativeSnapshotClose beside bridge
 models shared command snapshots and resident native mapping/hook across desktop
-close. One serialized callback/two commands and coherent publication are assumed;
-no reentrancy, sequence wrap, C++ memory-model or actual hook-unload proof follows.
+close. The engine's SetUpView threading is not established, so the model runs
+two callback threads for the verified main view. After the caller/vtable filter
+a gMainViewBusy CAS (acquire; release on exit) admits one callback to the
+function statics, gEffects, gRenderAttach and command acknowledgement; an
+overlapping main view is skipped and counted internally (gMainViewOverlaps, not
+exported). ExclusiveStatics and NoWriteAfterSuccessfulRelease hold and
+ReleaseAcknowledged is required under weak fairness. Without admission,
+ExclusiveStatics breaks, and with that rule waived a stale camera write lands
+after Release is acknowledged. bridge_smoke reproduces that interleaving through
+the real on_view by pausing a synthetic engine accessor. Non-main views, the
+thread_local reentry guard and prop_runtime::tick stay before the filter. Engine
+threading, sequence wrap, C++ memory-model legality and hook unload are not proved.
 
 StatusSnapshot checks correlated command/state fields under one odd/body/even
-native write and one reader attempt. Stable/even observations reject torn status;
-rejection is allowed. No weak-memory legality, multiple-writer ordering or byte/
+native write. Stable/even observations reject torn status; a single read may be
+refused. status() raises NativeStatusBusy after its bounded rereads and _wait
+polls again until its deadline, so with writer and reader fairness a finished
+publication is accepted unless the deadline fires (AcceptsBeforeDeadline). Other
+status errors still end the wait and are not modeled. No weak-memory legality, multiple-writer ordering or byte/
 clock-duration guarantee is claimed. Existing real native/platform tests remain
 necessary at their boundaries. Normal deadlock checks and intentional terminal
 stuttering are retained. Abstract fairness assumes returning operations.

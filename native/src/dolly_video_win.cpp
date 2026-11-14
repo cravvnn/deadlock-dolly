@@ -269,6 +269,26 @@ void apply_deferred_stop(Session& s) noexcept {
     s.stop_qpc.compare_exchange_strong(unset, timestamp);
     request_stop(s, request == 2);
 }
+// Stop barrier with capture()'s ProducerScope (VideoCompleteness.tla). This is
+// a store/load handshake on both sides (ready, then producer_active; and
+// producer_active, then ready), so all four operations are seq_cst: with
+// release/acquire each side may read the other's stale value and a producer
+// could publish a frame after the encoder's drain and gpu_pending exchange.
+void quiesce_producers(Session& s) noexcept {
+    s.ready.store(false, std::memory_order_seq_cst);
+    while (s.producer_active.load(std::memory_order_seq_cst))
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+// The one cancel decision for finalization, taken after quiesce_producers().
+// stop(true) or a Present's deferred stop can still set cancel until done is
+// published; re-reading it could delete the color file but keep depth, or keep
+// the files and sidecars while reporting the take cancelled. Cancel is
+// monotonic, so earlier reads that saw it agree with this snapshot; a cancel
+// after this point is too late and the take completes consistently.
+bool decide_cancel(Session& s) noexcept {
+    apply_deferred_stop(s);
+    return s.cancel.load(std::memory_order_acquire);
+}
 // The published error text must stay valid after the caller's frame returns:
 // several failure paths format into a local buffer, and the Python side reads
 // the message later on its poll cadence.
@@ -944,8 +964,8 @@ bool spawn_depth_ffmpeg(Session& s, Child& child, std::uint32_t width, std::uint
 // Called only after the render producer is quiescent and CPU draining has ended.
 // FFmpeg rawvideo cannot represent a hole in its constant-rate input. Fixed-step
 // exports promise every captured frame regardless of the selected encoder.
-void reject_incomplete_take(Session& s, bool& finalized) noexcept {
-    if (!finalized || s.cancel.load() || FAILED(s.error.load()) ||
+void reject_incomplete_take(Session& s, bool& finalized, bool cancelled) noexcept {
+    if (!finalized || cancelled || FAILED(s.error.load()) ||
         !(s.fixed_step || s.encoder == Encoder::ffmpeg) || !s.dropped.load())
         return;
     fail(s, HRESULT_FROM_WIN32(ERROR_INVALID_DATA),
@@ -1078,9 +1098,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             std::unique_lock<std::mutex> lock(s->wait_mutex);
             s->wake.wait_for(lock, std::chrono::milliseconds(5));
         }
-        s->ready.store(false, std::memory_order_release);
-        while (s->producer_active.load(std::memory_order_acquire))
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        quiesce_producers(*s);
         s->dropped.fetch_add(s->gpu_pending.exchange(0), std::memory_order_relaxed);
         while (child.process && !s->cancel.load() && SUCCEEDED(s->error.load()) &&
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
@@ -1146,14 +1164,13 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         fail(*s, E_OUTOFMEMORY,
              L"Video recording ran out of memory or the encoder could not continue.");
     }
-    s->ready.store(false, std::memory_order_release);
-    while (s->producer_active.load(std::memory_order_acquire))
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    if (child.process && (s->cancel.load() || FAILED(s->error.load()))) {
+    quiesce_producers(*s);
+    const bool cancelled = decide_cancel(*s);
+    if (child.process && (cancelled || FAILED(s->error.load()))) {
         TerminateProcess(child.process, 1);
         WaitForSingleObject(child.process, 5000);
     }
-    if (depth_child.process && (s->cancel.load() || FAILED(s->error.load()))) {
+    if (depth_child.process && (cancelled || FAILED(s->error.load()))) {
         TerminateProcess(depth_child.process, 1);
         WaitForSingleObject(depth_child.process, 5000);
     }
@@ -1161,15 +1178,15 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     child.close_process();
     depth_child.close_input();
     depth_child.close_process();
-    if (s->cancel.load() || FAILED(s->error.load()))
+    if (cancelled || FAILED(s->error.load()))
         s->dropped.fetch_add(s->produced.load() - s->consumed.load(), std::memory_order_relaxed);
     if (!child.log.empty())
         DeleteFileW(child.log.c_str());
     if (!depth_child.log.empty())
         DeleteFileW(depth_child.log.c_str());
-    reject_incomplete_take(*s, finalized);
+    reject_incomplete_take(*s, finalized, cancelled);
     if (s->depth_enabled) {
-        if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
+        if (finalized && !cancelled && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
             std::swprintf(
                 message, 256,
@@ -1179,19 +1196,19 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
-        if (!finalized || s->cancel.load())
+        if (!finalized || cancelled)
             s->depth_output.discard();
     }
-    if (created && (!finalized || s->cancel.load()))
+    if (created && (!finalized || cancelled))
         DeleteFileW(s->path.c_str());
-    if (finalized && !s->cancel.load() && SUCCEEDED(s->error.load())) {
+    if (finalized && !cancelled && SUCCEEDED(s->error.load())) {
         if (s->shot.open())
             write_shot_sidecar(*s);
         write_camera_sidecar(*s);
     }
-    s->state.store(FAILED(s->error.load())          ? State::failed
-                   : (s->cancel.load() || !created) ? State::cancelled
-                                                    : State::completed,
+    s->state.store(FAILED(s->error.load())  ? State::failed
+                   : (cancelled || !created) ? State::cancelled
+                                             : State::completed,
                    std::memory_order_release);
     s->done.store(true, std::memory_order_release);
 }
@@ -1218,10 +1235,9 @@ void finish_camera_only(std::shared_ptr<Session> s) noexcept {
                  L"Camera-only capture made no progress for 10 seconds.");
     }
     s->state.store(State::finalizing, std::memory_order_release);
-    s->ready.store(false, std::memory_order_release);
-    while (s->producer_active.load(std::memory_order_acquire))
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    if (!s->cancel.load() && SUCCEEDED(s->error.load())) {
+    quiesce_producers(*s);
+    const bool cancelled = decide_cancel(*s);
+    if (!cancelled && SUCCEEDED(s->error.load())) {
         if (s->written.load() != s->max_frames || s->camera_partial ||
             s->camera_trace.size() != s->max_frames)
             fail(*s, E_FAIL, L"Camera-only capture ended before its complete frame budget.");
@@ -1229,7 +1245,7 @@ void finish_camera_only(std::shared_ptr<Session> s) noexcept {
             fail(*s, E_FAIL, L"Camera-only trace could not be published without overwrite.");
     }
     s->state.store(FAILED(s->error.load()) ? State::failed
-                   : s->cancel.load() ? State::cancelled : State::completed,
+                   : cancelled ? State::cancelled : State::completed,
                    std::memory_order_release);
     s->done.store(true, std::memory_order_release);
     s->wake.notify_all();
@@ -1317,9 +1333,7 @@ void encode(std::shared_ptr<Session> s) noexcept {
             std::unique_lock<std::mutex> lock(s->wait_mutex);
             s->wake.wait_for(lock, std::chrono::milliseconds(5));
         }
-        s->ready.store(false, std::memory_order_release);
-        while (s->producer_active.load(std::memory_order_acquire))
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        quiesce_producers(*s);
         // No Present after alt-tab/shutdown is required to finish the file.
         // Pending GPU copies are counted as lost, then released at the next
         // serialized render/reset boundary, never by the encoder thread.
@@ -1358,10 +1372,9 @@ void encode(std::shared_ptr<Session> s) noexcept {
         fail(*s, E_OUTOFMEMORY,
              L"Video recording ran out of memory or the encoder could not continue.");
     }
-    s->ready.store(false, std::memory_order_release);
-    while (s->producer_active.load(std::memory_order_acquire))
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    if (s->cancel.load() || FAILED(s->error.load()))
+    quiesce_producers(*s);
+    const bool cancelled = decide_cancel(*s);
+    if (cancelled || FAILED(s->error.load()))
         s->dropped.fetch_add(s->produced.load() - s->consumed.load() + (previous.p ? 1 : 0));
     previous.reset();
     writer.reset();
@@ -1373,9 +1386,9 @@ void encode(std::shared_ptr<Session> s) noexcept {
     if (com_started)
         CoUninitialize();
     api.unload();
-    reject_incomplete_take(*s, finalized);
+    reject_incomplete_take(*s, finalized, cancelled);
     if (s->depth_enabled) {
-        if (finalized && !s->cancel.load() && !s->depth_output.finish(s->written.load())) {
+        if (finalized && !cancelled && !s->depth_output.finish(s->written.load())) {
             wchar_t message[256]{};
             std::swprintf(
                 message, 256,
@@ -1385,21 +1398,21 @@ void encode(std::shared_ptr<Session> s) noexcept {
             fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
-        if (!finalized || s->cancel.load())
+        if (!finalized || cancelled)
             s->depth_output.discard();
     }
     // Delete only an output atomically created by this recording, never an
     // existing destination rejected by MF_OPENMODE_FAIL_IF_EXIST.
-    if (created && (!finalized || s->cancel.load()))
+    if (created && (!finalized || cancelled))
         DeleteFileW(s->path.c_str());
-    if (finalized && !s->cancel.load() && SUCCEEDED(s->error.load())) {
+    if (finalized && !cancelled && SUCCEEDED(s->error.load())) {
         if (s->shot.open())
             write_shot_sidecar(*s);
         write_camera_sidecar(*s);
     }
-    s->state.store(FAILED(s->error.load())          ? State::failed
-                   : (s->cancel.load() || !created) ? State::cancelled
-                                                    : State::completed,
+    s->state.store(FAILED(s->error.load())  ? State::failed
+                   : (cancelled || !created) ? State::cancelled
+                                             : State::completed,
                    std::memory_order_release);
     s->done.store(true, std::memory_order_release);
 }
@@ -1735,17 +1748,19 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     backbuffer->GetDesc(&desc);
     if (s.camera_only) {
         // Increment before testing ready. The worker closes ready, then waits
-        // for all admitted callbacks before reading camera_trace.
+        // for all admitted callbacks before reading camera_trace. Both sides
+        // are a store/load handshake, so the increment and ready load are
+        // seq_cst to match quiesce_producers().
         struct CameraProducer {
             Session& session;
             explicit CameraProducer(Session& value) : session(value) {
-                session.producer_active.fetch_add(1, std::memory_order_acq_rel);
+                session.producer_active.fetch_add(1, std::memory_order_seq_cst);
             }
             ~CameraProducer() {
                 session.producer_active.fetch_sub(1, std::memory_order_release);
             }
         } producer(s);
-        if (!s.ready.load(std::memory_order_acquire) || s.stopping.load())
+        if (!s.ready.load(std::memory_order_seq_cst) || s.stopping.load())
             return;
         if (!desc.Width || !desc.Height || desc.Width > 32768 || desc.Height > 32768) {
             fail(s, E_FAIL, L"Camera-only capture received invalid output dimensions.");
@@ -1826,11 +1841,11 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     struct ProducerScope {
         Session& session;
         explicit ProducerScope(Session& value) : session(value) {
-            session.producer_active.fetch_add(1, std::memory_order_acq_rel);
+            session.producer_active.fetch_add(1, std::memory_order_seq_cst);
         }
         ~ProducerScope() { session.producer_active.fetch_sub(1, std::memory_order_release); }
     } producer(s);
-    if (!s.ready.load(std::memory_order_acquire)) {
+    if (!s.ready.load(std::memory_order_seq_cst)) {
         s.capture_not_ready.fetch_add(1, std::memory_order_relaxed);
         return;
     }

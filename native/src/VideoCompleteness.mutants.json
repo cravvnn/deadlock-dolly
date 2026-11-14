@@ -23,10 +23,50 @@
     "name": "publish cancelled take",
     "replace": [
       [
-        "published' = (~cancelled /\\ ~error",
-        "published' = (~error"
+        "CancelSeen == IF ReReadCancel THEN cancelled ELSE decided",
+        "CancelSeen == FALSE"
       ]
     ],
     "expect": "NoCancelledSuccess"
+  },
+  {
+    "name": "release/acquire barrier (buffered ready store)",
+    "replace": [
+      [
+        "SeqCstBarrier == TRUE",
+        "SeqCstBarrier == FALSE"
+      ]
+    ],
+    "expect": "NoUncountedFrame"
+  },
+  {
+    "name": "encoder skips producer_active wait",
+    "replace": [
+      [
+        "pc = \"quiesce\" /\\ active = 0 /\\ pc' = \"decide\"",
+        "pc = \"quiesce\" /\\ pc' = \"decide\""
+      ]
+    ],
+    "expect": "NoUncountedFrame"
+  },
+  {
+    "name": "producer skips ready check",
+    "replace": [
+      [
+        "IF ready THEN ppc' = \"admitted\"",
+        "IF TRUE THEN ppc' = \"admitted\""
+      ]
+    ],
+    "expect": "NoUncountedFrame"
+  },
+  {
+    "name": "re-read cancel",
+    "replace": [
+      [
+        "ReReadCancel == FALSE",
+        "ReReadCancel == TRUE"
+      ]
+    ],
+    "expect": "OutcomeAgrees"
   }
 ]
