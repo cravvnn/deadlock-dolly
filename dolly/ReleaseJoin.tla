@@ -50,4 +50,8 @@ TypeOK == /\ pc \in {"publish","wait","blocked","idle"} /\ command \in 0..2 /\ a
 MatchingFailure == pc = "blocked" => ack = command
 NoUnrestoredWriter == ~lease => (~nativeOwned /\ restored)
 Settles == <>(pc = "idle" \/ (pc = "blocked" /\ command = 2 /\ ~pending))
+\* Refinement of the caller-visible ownership interface composed by DollyRoot.
+Lease == INSTANCE CameraLeaseApi WITH writer <- IF nativeOwned THEN "shot" ELSE "none",
+    alive <- TRUE
+RefinesLease == Lease!Spec
 ====

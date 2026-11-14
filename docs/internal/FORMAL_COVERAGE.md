@@ -5,10 +5,11 @@ have explicit roles in FORMAL_COVERAGE.json. This is accounting, not full-file
 semantic review or whole-program proof. Test-reference leads are navigation,
 not execution coverage. No row has full formal signoff.
 
-The draft has82bounded model scopes/96configurations, with244expected failing
+The draft has83bounded model scopes/98configurations, with250expected failing
 mutants (0.7.35 added CameraOnlyCapture/CravCapture; the 2026-11-13 native sweep
 added 17 across VideoCompleteness, NativeSnapshotClose, MediaDetach,
-StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture). The seven additions cover prepared recording, release/retry, worker
+StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture, and the DollyRoot
+root composition added 2 configurations and 6 mutants). The seven additions cover prepared recording, release/retry, worker
 retirement, capture restoration, heartbeat mapping lifetime, shared native
 snapshot residence and coherent status readback. SPECS.md states their bounds.
 The main-view callback is no longer assumed serialized: on_view admits one
@@ -27,7 +28,10 @@ publication composition. L02media still needs GPU/drain/device-removal and nativ
 buffer lifetime. L03storage needs full caller-lock/crash composition. L04UI needs
 complete queued/modal/timer interfaces. L05process integration needs reconnect/
 shutdown composition. L06tools retains actual generation/build/package evidence.
-L07root end-to-end refinement is open: no whole-program proof exists.
+L07root end-to-end refinement has a first bounded root, DollyRoot, composing
+CameraLeaseApi (refined by ReleaseJoin) and RecorderApi (refined by
+CameraOnlyCapture) for four promises; other components are not yet composed
+through interfaces, so no whole-program proof exists.
 
 The keeper checks implementation/export/model accounting and normalized owner
 fingerprints. Source changes require semantic review of dispositions, caller
