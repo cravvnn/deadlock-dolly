@@ -1,0 +1,52 @@
+[
+  {
+    "name": "editor wait ignores game exit",
+    "replace": [
+      [
+        "/\\ (stage = \"editor\" => ~Exited)",
+        "/\\ TRUE"
+      ]
+    ],
+    "expect": "ExitLatency"
+  },
+  {
+    "name": "ack wait ignores game exit",
+    "replace": [
+      [
+        "/\\ (stage = \"ack\" => ~Exited)",
+        "/\\ TRUE"
+      ]
+    ],
+    "expect": "ExitLatency"
+  },
+  {
+    "name": "flight starts on a closed bridge",
+    "replace": [
+      [
+        "/\\ flight = \"idle\" /\\ ops = \"none\" /\\ ~closed",
+        "/\\ flight = \"idle\" /\\ ops = \"none\""
+      ]
+    ],
+    "expect": "NoFlightAfterClose"
+  },
+  {
+    "name": "second close repeats release and unmap",
+    "replace": [
+      [
+        "bodies' = IF closed THEN bodies ELSE bodies + 1",
+        "bodies' = bodies + 1"
+      ]
+    ],
+    "expect": "CloseOnce"
+  },
+  {
+    "name": "watcher close skips when the bridge is busy",
+    "replace": [
+      [
+        "WatcherClose == /\\ watcher = \"observed\" /\\ ops = \"none\" /\\ ops' = \"watcher\"",
+        "WatcherClose == /\\ watcher = \"observed\" /\\ ops = \"none\" /\\ ops' = \"none\""
+      ]
+    ],
+    "expect": "ExitCloses"
+  }
+]

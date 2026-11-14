@@ -210,6 +210,7 @@ class NativeBridge(MediaTransport):
         self.token = token
         self.editor_pid = editor_pid
         self.game_pid = 0
+        self._game_exited = None
         self._clock = clock
         self._sleep = sleep
         self._lock = threading.RLock()
@@ -341,7 +342,13 @@ class NativeBridge(MediaTransport):
             self._mode = mode
             return command
 
-    def bind_game(self, pid):
+    def bind_game(self, pid, exited=None):
+        """Attach to the game process. ``exited`` reports whether it has ended.
+
+        Acknowledgment waits poll it, so a game that dies mid-command ends the
+        wait on the next poll instead of after the full timeout (which would
+        hold ``_operations`` and delay the exit watcher's close).
+        """
         pid = _pid(pid)
         with self._operations, self._lock:
             self._check_open()
@@ -350,7 +357,13 @@ class NativeBridge(MediaTransport):
                     raise NativeBridgeError("Native camera cannot attach to another game process")
                 return
             self.game_pid = pid
+            self._game_exited = exited
             self._publish(self._mode, increment=False)
+
+    def _check_game(self):
+        exited = self._game_exited
+        if exited is not None and exited():
+            raise NativeBridgeError("Deadlock exited before the native camera answered.")
 
     def _confetti_diagnostics(self):
         """Optional bounded Dolly-side confetti counters, or None when unwritten."""
@@ -535,6 +548,7 @@ class NativeBridge(MediaTransport):
                 if acknowledged and snapshot["state"] in states:
                     return snapshot
                 pending = snapshot.get("message", snapshot["state"])
+            self._check_game()
             remaining = deadline - self._clock()
             if remaining <= 0:
                 raise NativeBridgeError("Native camera did not acknowledge the command in time: " + pending)
@@ -703,6 +717,7 @@ class NativeBridge(MediaTransport):
             else:
                 if all(editor.get(key) for key in required):
                     return editor
+            self._check_game()
             remaining = deadline - self._clock()
             if remaining <= 0:
                 missing = [label for key, label in (("overlay_available", "DX11 panel"),

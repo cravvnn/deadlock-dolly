@@ -116,7 +116,7 @@ class CameraSessionContracts(unittest.TestCase):
 
                 bridge = SimpleNamespace(status=read, _clock=lambda: clock[0],
                     _sleep=lambda delay: clock.__setitem__(0, clock[0] + delay),
-                    _operations=threading.RLock(), _check_open=lambda: None,
+                    _operations=threading.RLock(), _check_open=lambda: None, _check_game=lambda: None,
                     _publish=lambda mode: 2, game_pid=123)
                 bridge._wait = lambda *args: NativeBridge._wait(bridge, *args)
                 if accepted:

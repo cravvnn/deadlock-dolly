@@ -49,9 +49,9 @@
     },
     "L05": {
       "title": "Optional process/platform integrations",
-      "status": "source/platform/test evidence; complete temporal specs open",
+      "status": "source/platform/test evidence; GameExitClose bounds game exit versus native flight waits and close; complete temporal specs open",
       "priority": 2,
-      "remaining": "console/IPC reconnect/shutdown, process visibility, watchdog/assert/hotkey/Discord resources and bounded retry/cancel behavior"
+      "remaining": "console/IPC reconnect/shutdown, Controller._op_lock/GUI recovery composition, Session.close double-run idempotence, watchdog/assert/hotkey/Discord resources and bounded retry/cancel behavior"
     },
     "L06": {
       "title": "Build/generation/tooling scope",
@@ -2797,12 +2797,20 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "32e5d513996265f50302c76e6ab14dace7a71205c5d4e73c765e16649ea7ef3d",
+      "sha256": "4a5226ae2564e0213131638cc056cbaa52db5f5a6d8bb397392a06e28a83af26",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
       "reason": "Persistent/context/transaction state belongs to this source family. Retain any bounded scopes and tests; full caller/lifecycle contract is tracked under L03.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "dolly/GameExitClose.tla",
+          "scope": "start_flight's editor/ack waits under _operations versus the dolly-game-exit watcher and a user quit reaching NativeBridge.close; after exit a wait takes no further timeout poll (ExitLatency), close runs its body once, no flight on a closed bridge, exit and quit both close under fairness. Controller._op_lock/GUI recovery and Session.close restore not modeled",
+          "configs": [
+            "dolly/GameExitClose.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [
         "tests/test_core_install.py",
         "tests/test_metadata_boundaries.py",
@@ -2883,7 +2891,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114": "2026-11-14 process hardening: the game-exit watcher's bind_game call now passes process.poll() as the bridge's exit signal. GameExitClose checks the watcher's close against start_flight's _operations hold. Session.close configuration restore, double-close idempotence of overlay/config restore and GUI recovery remain open."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -3156,7 +3165,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7",
+      "sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3188,6 +3197,13 @@
           "scope": "One serialized native publication and one reader attempt; stable/even sequence rejects mixed ack/state, no wrap/weak-memory proof",
           "configs": [
             "dolly/StatusSnapshot.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/GameExitClose.tla",
+          "scope": "start_flight's editor/ack waits under _operations versus the dolly-game-exit watcher and a user quit reaching NativeBridge.close; after exit a wait takes no further timeout poll (ExitLatency), close runs its body once, no flight on a closed bridge, exit and quit both close under fairness. Controller._op_lock/GUI recovery and Session.close restore not modeled",
+          "configs": [
+            "dolly/GameExitClose.cfg"
           ]
         }
       ],
@@ -3231,7 +3247,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_draft": "Proposed heartbeat lifetime mutex covers open-check/store and final closed/unmap. Independent of command/operations locks; close may wait beyond timed join for store completion. Release/status/command behavior otherwise unchanged.",
-      "reconciliation_20261113": "2026-11-13 native sweep: status() raises NativeStatusBusy (a NativeBridgeError subclass) after its bounded rereads; _wait polls busy refusals until its deadline, other status errors still end the wait. Release accepts only Stopped (Probe skips effect restoration and cannot follow a command). Close/heartbeat/publication unchanged."
+      "reconciliation_20261113": "2026-11-13 native sweep: status() raises NativeStatusBusy (a NativeBridgeError subclass) after its bounded rereads; _wait polls busy refusals until its deadline, other status errors still end the wait. Release accepts only Stopped (Probe skips effect restoration and cannot follow a command). Close/heartbeat/publication unchanged.",
+      "reconciliation_20261114": "2026-11-14 process hardening: bind_game(pid, exited) stores the game's exit check; _wait and _wait_editor_input raise after a status read once the game has exited, so start_flight leaves _operations within one poll instead of up to 8 s + 8 s. GameExitClose (bounded, watcher/user close vs flight wait) added; existing BridgeClose/ReleaseJoin/HeartbeatUnmap/StatusSnapshot scopes unchanged (close's release(0.25) now also ends at once on a dead game)."
     },
     {
       "path": "dolly/native_capabilities.py",
@@ -8057,7 +8074,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "a8030b0ed4e16c2c75460ce31dad27986a34f507a70fa76bcf15b5131af21145",
+      "sha256": "f838952bb8c3c61a04a4eed3b8e0aa2b64b7077ef29908aaabdf06764c06d8d5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8133,7 +8150,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "6861engine/sound identity and offset admission, additional movie_audio_install layout argument. Command shared_ptr publication, heartbeat/Release/finish and native resident mapping lifetime unchanged; private publication/heartbeat study pins these facts.",
-      "reconciliation_20261113": "2026-11-13 native sweep: on_view admits one main-view callback at a time via gMainViewBusy CAS (acquire; release on exit) after the caller/vtable filter; overlapping main views are skipped and counted internally (gMainViewOverlaps, no ABI change). thread_local reentry guard, prop_runtime::tick placement, command publication, heartbeat/Release/finish and resident mapping unchanged. Engine SetUpView threading remains unestablished."
+      "reconciliation_20261113": "2026-11-13 native sweep: on_view admits one main-view callback at a time via gMainViewBusy CAS (acquire; release on exit) after the caller/vtable filter; overlapping main views are skipped and counted internally (gMainViewOverlaps, no ABI change). thread_local reentry guard, prop_runtime::tick placement, command publication, heartbeat/Release/finish and resident mapping unchanged. Engine SetUpView threading remains unestablished.",
+      "reconciliation_20261114": "2026-11-14 process hardening: prop_runtime::tick moved after the main-view filter and gMainViewBusy admission, matching its header contract (confetti frame thread). bridge_smoke prop_probe_main_view_only fails on the old placement. NativeSnapshotClose scope unchanged (tick touches none of its state)."
     },
     {
       "path": "native/src/dolly_attach.cpp",
@@ -10244,7 +10262,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "22b232dc994f01b328039e2a16abb5662671affedb381cdf34064a4b7f8d7f0f",
+      "sha256": "6924027173df870997bfb80b53d33cd99b5d6325bf04a84cae9ddd1ab6a58316",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10270,7 +10288,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_draft": "Proposed required gate adds seven maintained bounded scopes, including explicit native/src/NativeSnapshotClose.cfg target. Checker version remains pinned.",
-      "reconciliation_20261113": "2026-11-13 root composition: DollyRoot.cfg and DollyRoot-success.cfg added to REQUIRED (dolly/ was already scanned). No checker behavior change."
+      "reconciliation_20261113": "2026-11-13 root composition: DollyRoot.cfg and DollyRoot-success.cfg added to REQUIRED (dolly/ was already scanned). No checker behavior change.",
+      "reconciliation_20261114": "2026-11-14 process hardening: GameExitClose.cfg added to REQUIRED. No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -10953,7 +10972,7 @@
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11687,7 +11706,7 @@
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7",
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5",
       "instances": [
         "CameraLeaseApi"
       ]
@@ -11715,7 +11734,7 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     },
     "native/src/NativeSnapshotClose.tla": {
       "path": "native/src/bridge_win.cpp",
@@ -11723,7 +11742,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "a8030b0ed4e16c2c75460ce31dad27986a34f507a70fa76bcf15b5131af21145"
+      "owner_utf8_lf_sha256": "f838952bb8c3c61a04a4eed3b8e0aa2b64b7077ef29908aaabdf06764c06d8d5"
     },
     "dolly/StatusSnapshot.tla": {
       "path": "dolly/native_bridge.py",
@@ -11731,7 +11750,7 @@
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     },
     "dolly/CravCapture.tla": {
       "path": "dolly/crav_capture.py",
@@ -11765,6 +11784,15 @@
         "dolly/DollyRoot-success.cfg"
       ],
       "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
+    },
+    "dolly/GameExitClose.tla": {
+      "path": "dolly/native_bridge.py",
+      "scope": "start_flight's editor/ack waits under _operations versus the dolly-game-exit watcher and a user quit reaching NativeBridge.close; after exit a wait takes no further timeout poll (ExitLatency), close runs its body once, no flight on a closed bridge, exit and quit both close under fairness. Controller._op_lock/GUI recovery and Session.close restore not modeled",
+      "configs": [
+        "dolly/GameExitClose.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     }
   },
   "export_census": [
@@ -13457,6 +13485,21 @@
     },
     {
       "path": "dolly/FollowSelection.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameExitClose.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameExitClose.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameExitClose.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18207,10 +18250,10 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 524,
+    "metadata/configuration/documentation input": 526,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 150,
+    "formal spec/interface": 151,
     "test/support input": 79,
     "external dependency/resource": 201
   },

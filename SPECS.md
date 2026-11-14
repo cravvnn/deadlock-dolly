@@ -990,8 +990,10 @@ exported). ExclusiveStatics and NoWriteAfterSuccessfulRelease hold and
 ReleaseAcknowledged is required under weak fairness. Without admission,
 ExclusiveStatics breaks, and with that rule waived a stale camera write lands
 after Release is acknowledged. bridge_smoke reproduces that interleaving through
-the real on_view by pausing a synthetic engine accessor. Non-main views, the
-thread_local reentry guard and prop_runtime::tick stay before the filter. Engine
+the real on_view by pausing a synthetic engine accessor. Non-main views and the
+thread_local reentry guard stay before the filter; the experimental prop probe
+(prop_runtime::tick) runs only on the admitted main view, as its header requires,
+and bridge_smoke shows a non-main or overlapping view leaves its request queued. Engine
 threading, sequence wrap, C++ memory-model legality and hook unload are not proved.
 
 StatusSnapshot checks correlated command/state fields under one odd/body/even
@@ -1016,6 +1018,24 @@ CameraSessionJoin-success additionally requires a successful live-process join
 and acknowledgement environment and checks eventual new-generation completion.
 It prevents safety-only verification from silently excluding that required
 success path; general refusal/retry remains in the default configuration.
+
+## Game exit during native flight waits (GameExitClose)
+
+`dolly/GameExitClose.tla` is the first L05 process model. NativeBridge.start_flight
+holds `_operations` while it waits for editor input and then for the Armed
+acknowledgment, each up to 8 s. The dolly-game-exit watcher and a user quit both
+reach Session.close and then NativeBridge.close, which needs `_operations`.
+Before 2026-11-14 neither wait looked at the process, so close after a game exit
+could sit up to 16 s behind the flight. launch() now binds the bridge with the
+process's poll(), and both waits check it after each status read: an
+acknowledgment already visible still wins, otherwise the wait raises on its next
+poll and start_flight unwinds. ExitLatency (no timeout poll after the exit),
+CloseOnce, NoFlightAfterClose, ExitCloses and QuitCloses hold for N = 3 polls;
+five mutants (either wait ignoring the exit, a flight on a closed bridge, a
+repeated close body, a watcher that drops its close) fail. One poll is an atomic
+read/check/sleep, so the real cost of an exit is at most one poll interval.
+Controller._op_lock, GUI recovery, Session.close's configuration restore and its
+double-run idempotence, and console reconnect are not modeled.
 
 ## Root composition (DollyRoot)
 

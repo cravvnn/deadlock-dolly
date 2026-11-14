@@ -134,6 +134,40 @@ class BridgeLifetime(unittest.TestCase):
                     with patch.object(bridge, 'release', return_value=None):
                         bridge.close()
 
+    def test_game_exit_ends_acknowledgment_waits_on_the_next_poll(self):
+        # The exit watcher's close queues behind _operations, so a wait that
+        # ignored the dead game held it for the full timeout (8 s per wait).
+        status = slice(native.CONTROL_BYTES, native.CONTROL_BYTES + native.STATUS.size)
+        for label in ('acknowledgment', 'editor input'):
+            with self.subTest(wait=label):
+                memory, clock, sleeps, dead = bytearray(native.MAPPING_BYTES), [0.0], [], [False]
+
+                def sleep(delay):
+                    sleeps.append(delay)
+                    clock[0] += delay
+                    if len(sleeps) == 3:
+                        dead[0] = True
+
+                bridge = native.NativeBridge.create(mapping_factory=lambda n, s: memory,
+                    start_heartbeat=False, clock=lambda: clock[0], sleep=sleep)
+                bridge.bind_game(123, exited=lambda: dead[0])
+                memory[status] = packet(2, 0, 'probe')
+                try:
+                    with self.assertRaisesRegex(native.NativeBridgeError, 'exited'):
+                        if label == 'acknowledgment':
+                            bridge.release(timeout=8)
+                        else:
+                            with patch.object(bridge, 'editor_status', return_value={}):
+                                bridge._wait_editor_input(8)
+                    self.assertEqual(len(sleeps), 3)
+                    self.assertLess(clock[0], 0.1)
+                    # An acknowledgment already visible still wins over the exit.
+                    command = bridge._publish(0)
+                    memory[status] = packet(4, command, 'stopped')
+                    self.assertEqual(bridge._wait(command, {'stopped'}, 8)['state'], 'stopped')
+                finally:
+                    bridge.close()
+
     def test_torn_status_cannot_turn_an_old_fault_into_a_current_command_refusal(self):
         class Memory(bytearray):
             first = True

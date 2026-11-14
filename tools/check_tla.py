@@ -46,6 +46,7 @@ REQUIRED.update({"SocketSetup.cfg", "Admission.cfg", "ExportCleanup.cfg", "Expor
 REQUIRED.add("CameraOnlyCapture.cfg")
 REQUIRED.add("CravCapture.cfg")
 REQUIRED.update({"DollyRoot.cfg", "DollyRoot-success.cfg"})
+REQUIRED.add("GameExitClose.cfg")
 
 
 REQUIRED.update({'LayerAdmission.cfg', 'ScratchCreate.cfg', 'UpdateStart.cfg', 'HistoryShare.cfg', 'ReaderStart.cfg', 'ReshadeResult.cfg'})

@@ -2568,6 +2568,51 @@ void overlapping_main_view(Fixture& f) {
     require(failure.empty(), failure.c_str());
 }
 
+// The experimental prop probe calls into the client entity system, so it may
+// only run on the admitted main view (the confetti frame's thread). A synthetic
+// client matching the reviewed row, with an empty entity-system global, makes
+// the probe stop at "no entity system" instead of calling the engine.
+void prop_probe_main_view_only(Fixture& f) {
+    constexpr std::uintptr_t kCreate = 0x20915c0, kGlobal = 0x3e1ed10, kPage = 0x1000;
+    auto* region = static_cast<unsigned char*>(
+        VirtualAlloc(nullptr, kGlobal + kPage, MEM_RESERVE, PAGE_NOACCESS));
+    require(region != nullptr, "Could not reserve the synthetic probe client");
+    const auto base = reinterpret_cast<std::uintptr_t>(region);
+    require(VirtualAlloc(region + (kCreate & ~(kPage - 1)), 2 * kPage, MEM_COMMIT,
+                         PAGE_READWRITE) &&
+                VirtualAlloc(region + (kGlobal & ~(kPage - 1)), kPage, MEM_COMMIT,
+                             PAGE_READWRITE),
+            "Could not commit the synthetic probe client");
+    const unsigned char prologue[] = {0x48, 0x89, 0x5c, 0x24, 0x08, 0x48,
+                                      0x89, 0x6c, 0x24, 0x10, 0x48, 0x89};
+    std::memcpy(region + kCreate, prologue, sizeof prologue);
+    std::string failure;
+    if (!prop_runtime::initialize(base) || prop_runtime::diagnostics().state != 1) {
+        failure = "Synthetic client did not match the reviewed probe row";
+    } else {
+        prop_runtime::request(false);
+        gHeartbeatTime = now_seconds();
+        f.original_view();
+        on_view(f.view.pointer, gClient + gCompat.caller + 1);
+        if (prop_runtime::diagnostics().state != 1)
+            failure = "A non-main view consumed the prop probe";
+        gMainViewBusy = true;
+        f.original_view();
+        on_view(f.view.pointer, gClient + gCompat.caller);
+        gMainViewBusy = false;
+        if (failure.empty() && prop_runtime::diagnostics().state != 1)
+            failure = "An overlapping main view consumed the prop probe";
+        f.original_view();
+        on_view(f.view.pointer, gClient + gCompat.caller);
+        const auto d = prop_runtime::diagnostics();
+        if (failure.empty() && (d.state != 3 || d.error != 2))
+            failure = "The admitted main view did not run the prop probe";
+    }
+    prop_runtime::disable();
+    VirtualFree(region, 0, MEM_RELEASE);
+    require(failure.empty(), failure.c_str());
+}
+
 void run() {
     gameplay_effect_filter_checks();
     confetti_control_updates();
@@ -2720,6 +2765,7 @@ void run() {
             "Expired lease prevented explicit release");
     f.unchanged();
     overlapping_main_view(f);
+    prop_probe_main_view_only(f);
 
     f.fresh_hold();
     f.command(Mode::Play);

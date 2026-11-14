@@ -848,10 +848,6 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         ~Exit() { flag = false; }
     } exit{entered};
     ++gHookCalls;
-    // Experimental prop-persistence probe: consume a one-shot request on the
-    // game/render thread regardless of camera mode. Idempotent and inert when
-    // no request is queued.
-    prop_runtime::tick();
     std::uintptr_t table = 0;
     if (caller != gClient + gCompat.caller ||
         !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
@@ -869,6 +865,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     struct Admission {
         ~Admission() { gMainViewBusy.store(false, std::memory_order_release); }
     } admission;
+    // Experimental prop-persistence probe: consume a one-shot request on the
+    // admitted main view (the confetti frame's thread), regardless of camera
+    // mode. Idempotent and inert when no request is queued.
+    prop_runtime::tick();
     auto view = reinterpret_cast<std::uintptr_t>(self) + 0x10;
     static std::uint32_t seen = 0;
     static double phase = 0, play_base = 0, anchor = 0, real_anchor = 0, last_game = 0,

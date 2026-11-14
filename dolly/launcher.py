@@ -1049,7 +1049,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         # no cleanup until the next manual launch.
         threading.Thread(target=watch, name="dolly-game-exit", daemon=True).start()
         if bridge is not None:
-            bridge.bind_game(process.pid)
+            bridge.bind_game(process.pid, exited=lambda: process.poll() is not None)
         try:
             session.log(f"Created development process PID {session.pid}; -dev and -insecure are mandatory.")
             session.log("Loaded Dolly's verified stock editing configuration and separate session settings. "

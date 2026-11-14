@@ -181,7 +181,13 @@ class InstallTests(unittest.TestCase):
              patch.object(launcher, 'verify_stock_ui_assets'), patch.object(launcher.NativeBridge, 'create', return_value=bridge), \
              patch.object(launcher.threading, 'Thread'), patch.object(launcher.subprocess, 'Popen', side_effect=native_spawn):
             session = launcher.launch(self.paths.root, replay, native=True)
-            bridge.bind_game.assert_called_once_with(process.pid)
+            bridge.bind_game.assert_called_once()
+            (pid,), kwargs = bridge.bind_game.call_args
+            # The bridge's acknowledgment waits end when this process exits.
+            self.assertEqual((pid, kwargs['exited']()), (process.pid, True))
+            process.poll.return_value = None
+            self.assertFalse(kwargs['exited']())
+            process.poll.return_value = 0
             self.assertTrue(session.close())
         self.assertEqual(tree(self.game), before)
         for name, processes in [('running', {'steam.exe', 'deadlock.exe'}), ('steam', set())]:
