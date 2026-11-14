@@ -1134,6 +1134,7 @@ dolly/ReaderTerminalApi.tla
 dolly/ReaderTerminal.cfg
 dolly/ReaderTerminal.mutants.json
 dolly/MediaFinalize.tla
+dolly/MediaCloseApi.tla
 dolly/MediaFinalizeApi.tla
 dolly/MediaFinalize.cfg
 dolly/MediaFinalize.mutants.json

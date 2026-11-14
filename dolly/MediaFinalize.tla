@@ -14,6 +14,10 @@ VARIABLES pc,pending,intent,command,attempted,failures
 vars == <<pc,pending,intent,command,attempted,failures>>
 phase == IF pc = "done" THEN "done" ELSE "active"
 API == INSTANCE MediaFinalizeApi WITH phase <- phase
+\* The caller-visible ordering DollyRoot composes: the video stop is attempted
+\* (pending intent captured before audio mutates the command) before unmap.
+Close == INSTANCE MediaCloseApi WITH stopAsked <- "video" \in attempted,
+         unmapped <- "unmap" \in attempted
 Init == /\ pc = "snapshot" /\ pending \in BOOLEAN /\ intent = FALSE
         /\ command = "startVideo" /\ attempted = {}
         /\ failures \in SUBSET {"audio","video"}
@@ -42,4 +46,5 @@ TypeOK == /\ pc \in {"snapshot","audio","video","reshade","unmap","done"}
 IndependentAttempts == pc = "done" => attempted = {"audio","video","reshade","unmap"}
 Returns == <>(pc = "done")
 Refines == API!Spec
+RefinesClose == Close!Spec
 ====

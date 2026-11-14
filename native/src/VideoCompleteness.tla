@@ -94,6 +94,16 @@ TypeOK == /\ pc \in {"capture","quiesce","decide","depth","color","sidecar","sta
           /\ ppc \in {"idle","entered","admitted"} /\ late \in BOOLEAN
           /\ decided \in BOOLEAN /\ depthKept \in BOOLEAN /\ kept \in BOOLEAN
           /\ sidecar \in BOOLEAN
+\* Refines the shared RecorderApi (no late capture fault: other threads'
+\* errors after the barrier are not modeled). The terminal state is published,
+\* else cancelled when the single decision saw a cancel, else failed; kept is
+\* the color file.
+recState == IF pc # "done" THEN "active"
+            ELSE IF published THEN "completed"
+            ELSE IF decided THEN "cancelled" ELSE "failed"
+Recorder == INSTANCE RecorderApi WITH AllowLateCaptureFault <- FALSE,
+    outcome <- recState, kept <- kept
+RefinesRecorder == Recorder!Spec
 NoIncompleteSuccess == published /\ (fixed \/ ffmpeg) => ~lost
 \* A cancel observed at the decision point never yields a completed take.
 NoCancelledSuccess == published => ~decided

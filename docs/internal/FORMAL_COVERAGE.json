@@ -25,13 +25,13 @@
   "backlog": {
     "L01": {
       "title": "Camera/session/native command ownership",
-      "status": "expanded bounded joins and heartbeat fix in review draft; full semantic composition still open",
+      "status": "expanded bounded joins and heartbeat fix; DollyRoot composes the lease and worker-retirement interfaces; full semantic composition still open",
       "priority": 1,
       "remaining": "manual/hold/play transitions, mixed-session observation and command publication, heartbeat/process exit, bridge close and callback races"
     },
     "L02": {
       "title": "Capture/media/native completion",
-      "status": "capture ack/context restoration join plus existing local models; whole GPU/media lifecycle open",
+      "status": "capture ack/context restoration join plus local models; DollyRoot composes RecorderApi (CameraOnlyCapture, VideoCompleteness), CaptureRestoreApi and MediaCloseApi; whole GPU/media lifecycle open",
       "priority": 1,
       "remaining": "GPU producer/drain/encoder lifetime composition and C++ memory-order obligations, device removal and process exit"
     },
@@ -2967,7 +2967,7 @@
         },
         {
           "spec": "dolly/MediaFinalize.tla",
-          "scope": "_finish_media_and_unmap",
+          "scope": "_finish_media_and_unmap; refines MediaCloseApi: the video stop is attempted (pending intent captured before audio) before unmap",
           "configs": [
             "dolly/MediaFinalize.cfg"
           ]
@@ -9633,7 +9633,7 @@
       "bounded_models": [
         {
           "spec": "native/src/VideoCompleteness.tla",
-          "scope": "quiescent publication and counted loss",
+          "scope": "quiescent publication and counted loss; seq_cst stop handshake with x86-TSO store-buffer abstraction; single cancel decision drives depth/color/sidecar/state; refines RecorderApi (terminal state from the single decision, kept = color file)",
           "configs": [
             "native/src/VideoCompleteness.cfg"
           ]
@@ -11161,12 +11161,13 @@
     },
     "dolly/MediaFinalize.tla": {
       "path": "dolly/media_transport.py",
-      "scope": "_finish_media_and_unmap",
+      "scope": "_finish_media_and_unmap; refines MediaCloseApi: the video stop is attempted (pending intent captured before audio) before unmap",
       "configs": [
         "dolly/MediaFinalize.cfg"
       ],
       "instances": [
-        "MediaFinalizeApi"
+        "MediaFinalizeApi",
+        "MediaCloseApi"
       ],
       "owner_utf8_lf_sha256": "f7da23fd01b2db9204e4627ba19f4db489d7b49d0cb8c1237fcecb0bf567f8b2"
     },
@@ -11641,11 +11642,13 @@
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
-      "scope": "quiescent publication and counted loss; seq_cst stop handshake with x86-TSO store-buffer abstraction; single cancel decision drives depth/color/sidecar/state",
+      "scope": "quiescent publication and counted loss; seq_cst stop handshake with x86-TSO store-buffer abstraction; single cancel decision drives depth/color/sidecar/state; refines RecorderApi (terminal state from the single decision, kept = color file)",
       "configs": [
         "native/src/VideoCompleteness.cfg"
       ],
-      "instances": [],
+      "instances": [
+        "RecorderApi"
+      ],
       "owner_utf8_lf_sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d"
     },
     "tools/AssetEnvironment.tla": {
@@ -11713,7 +11716,7 @@
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
-      "scope": "Serialized old worker join/release/retry and abstract new generation; self-halt/concurrent callers excluded",
+      "scope": "Serialized old worker join/release/retry and abstract new generation; self-halt/concurrent callers excluded; refines CameraRetirementApi, now multi-generation (Begin) for DollyRoot; this one-generation model never begins",
       "configs": [
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
@@ -11774,10 +11777,13 @@
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
-      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin) and RecorderApi (refined by CameraOnlyCapture): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (late capture fault is a named known gap), close returns and releases via acknowledged Release or heartbeat-expiry fault. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; not whole-program proof",
+      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and MediaCloseApi (refined by MediaFinalize): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (late capture fault is a named known gap), close returns and releases via acknowledged Release or heartbeat-expiry fault, the playback worker is quiet before a lease retires (Release published only after join, including dead-session recovery), a Players capture context is restored only after the terminal readback and a verified console, and close asks the encoder to stop before unmap. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; a hung worker or refused console only keeps the lease/originals; not whole-program proof",
       "instances": [
         "CameraLeaseApi",
-        "RecorderApi"
+        "RecorderApi",
+        "CameraRetirementApi",
+        "CaptureRestoreApi",
+        "MediaCloseApi"
       ],
       "configs": [
         "dolly/DollyRoot.cfg",
@@ -13652,6 +13658,11 @@
     },
     {
       "path": "dolly/MediaAdmissionApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/MediaCloseApi.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18253,7 +18264,7 @@
     "metadata/configuration/documentation input": 526,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 151,
+    "formal spec/interface": 152,
     "test/support input": 79,
     "external dependency/resource": 201
   },

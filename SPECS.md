@@ -654,7 +654,7 @@ do not establish live game timing, native rendering or packaged-release behavior
 | Owner and caller | Spec / interface | Scope |
 | --- | --- | --- |
 | ReplayEventReader._read, worker from snapshot; editor_publication.configure | [ReaderTerminal](dolly/ReaderTerminal.tla), [API](dolly/ReaderTerminalApi.tla) | One current identity; success, ValueError or RecursionError; decode and terminal publication are separate. ReaderStart continues to cover admission. Helper I/O, replacement identity, arbitrary exceptions and crashes are excluded; real-parser owner tests cover valid/malformed bytes and stale-result rejection. |
-| MediaTransport._finish_media_and_unmap; NativeBridge.close via _close_media | [MediaFinalize](dolly/MediaFinalize.tla), [API](dolly/MediaFinalizeApi.tla) | Active or pending video plus source audio and ReShade; independent stop refusals. Snapshot pending intent before audio changes command identity, attempt remaining cleanup before unmap. BridgeClose still covers outer teardown. Status read and mapping close succeed; real acknowledgements, wait duration, heartbeat fallback, GPU and process crashes are excluded. |
+| MediaTransport._finish_media_and_unmap; NativeBridge.close via _close_media | [MediaFinalize](dolly/MediaFinalize.tla), [API](dolly/MediaFinalizeApi.tla), [MediaCloseApi](dolly/MediaCloseApi.tla) | Active or pending video plus source audio and ReShade; independent stop refusals. Snapshot pending intent before audio changes command identity, attempt remaining cleanup before unmap. BridgeClose still covers outer teardown. Status read and mapping close succeed; real acknowledgements, wait duration, heartbeat fallback, GPU and process crashes are excluded. |
 
 Both production-only configs check safety, weakly fair returning-operation
 completion and a minimal completion-shape refinement. Terminal Done stutters;
@@ -1069,3 +1069,28 @@ generations and one take. This root covers the camera-lease and recorder
 interfaces only; storage, UI, Players, screenshots and update flows are not yet
 composed through interfaces, and nothing here proves engine threading, the C++
 memory model, GPU output or real timing.
+
+Second composition (2026-11-14). Three more interfaces join the root, each with a
+refinement from its implementation spec and a private negative showing that
+refinement can fail:
+- `dolly/CameraRetirementApi.tla`, refined by CameraSessionJoin, now admits a
+  new generation (Begin) after retirement. Root promise QuietWhenRetired: a lease
+  retires only after the playback worker is quiet, because Release is published
+  only after the join, including dead-session recovery. JoinMayHang lets a worker
+  never stop; then the lease is kept and only heartbeat expiry after close
+  releases the camera. Negative: CameraSessionJoin releasing after a refused join.
+- `dolly/CaptureRestoreApi.tla`, refined by CaptureRestoreJoin. Root promise
+  CaptureAfterOutcome: a Players capture's reserved context is restored only
+  after the recorder's terminal state (the validated readback) and a verified
+  console; a refused console keeps the originals. The success profile requires
+  the context to be restored. Negative: restoring before the readback.
+- `dolly/MediaCloseApi.tla` (new), refined by MediaFinalize (`RefinesClose`).
+  Root promise StopBeforeUnmap: close asks the encoder to stop before unmap.
+  Negative: MediaFinalize losing the pending video intent.
+VideoCompleteness now also refines RecorderApi (`RefinesRecorder`: terminal
+state from the single decision, kept = colour file); re-reading cancel fails it.
+Four new root mutants: Release before the worker joined, dead-session recovery
+without the join, capture restore before readback, unmap without a stop.
+Still not composed: MediaDetach (its abstract stop already sits behind
+RecordingSettles), CameraSessionJoin's manual/hold/play and self-halt
+exclusions, GameExitClose (latency, not a root promise), storage and UI.
