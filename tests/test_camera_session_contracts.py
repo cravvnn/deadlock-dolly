@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import hashlib
 import json
 import sys
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -97,27 +98,37 @@ class CameraSessionContracts(unittest.TestCase):
                     case.doCleanups()
 
     def test_release_matches_ack_and_retains_lease_until_success(self):
+        # Probe is published only without a native command and skips effect
+        # restoration, so even a matching ack cannot complete a release.
         for label, packets, accepted in (
             ('old fault', [dict(ack_command=1, state='fault'), dict(ack_command=2, state='stopped')], True),
             ('old stopped', [dict(ack_command=1, state='stopped'), dict(ack_command=2, state='stopped')], True),
             ('current fault', [dict(ack_command=2, state='fault')], False),
-            ('unsupported session', [dict(ack_command=1, state='unsupported')], False)):
+            ('unsupported session', [dict(ack_command=1, state='unsupported')], False),
+            ('matching probe', [dict(ack_command=2, state='probe')], False)):
             with self.subTest(label=label):
                 clock, reads = [0.0], []
-                queue = iter(packets)
 
                 def read():
-                    value = next(queue)
+                    value = packets[min(len(reads), len(packets) - 1)]
                     reads.append(value)
                     return value
 
                 bridge = SimpleNamespace(status=read, _clock=lambda: clock[0],
-                    _sleep=lambda delay: clock.__setitem__(0, clock[0] + delay))
+                    _sleep=lambda delay: clock.__setitem__(0, clock[0] + delay),
+                    _operations=threading.RLock(), _check_open=lambda: None,
+                    _publish=lambda mode: 2, game_pid=123)
+                bridge._wait = lambda *args: NativeBridge._wait(bridge, *args)
                 if accepted:
-                    NativeBridge._wait(bridge, 2, {'stopped', 'probe'}, 1)
+                    self.assertEqual(NativeBridge.release(bridge, timeout=1)['state'], 'stopped')
+                elif label == 'matching probe':
+                    with self.assertRaisesRegex(NativeBridgeError, 'in time'):
+                        NativeBridge.release(bridge, timeout=1)
+                    self.assertGreaterEqual(clock[0], 1)
+                    continue
                 else:
                     with self.assertRaises(NativeBridgeError):
-                        NativeBridge._wait(bridge, 2, {'stopped', 'probe'}, 1)
+                        NativeBridge.release(bridge, timeout=1)
                 self.assertEqual(len(reads), len(packets))
         case = native_cases.NativeWorkflows()
         case.setUp()

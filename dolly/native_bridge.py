@@ -71,6 +71,10 @@ CONFETTI_DIAGNOSTIC_FIELDS = ("state", "handles", "starts", "start_failures", "f
                               "stop_create_failed", "state_changes", "max_backward_delta")
 
 
+class NativeStatusBusy(NativeBridgeError):
+    """Every bounded status reread saw an odd or torn sequence; poll again."""
+
+
 def _winerror_from(exc):
     """Find a Windows error code anywhere in a wrapped exception chain."""
     seen = set()
@@ -460,7 +464,7 @@ class NativeBridge(MediaTransport):
                     break
                 self._sleep(0.0005)
             else:
-                raise NativeBridgeError("Native camera status is busy; retry the operation")
+                raise NativeStatusBusy("Native camera status is busy; retry the operation")
             if data == b"\0" * STATUS.size:
                 return {"state": "starting", "state_code": 0, "abi": ABI,
                         "game_pid": self.game_pid, "ack_command": 0, "complete": False,
@@ -513,20 +517,27 @@ class NativeBridge(MediaTransport):
     def _wait(self, command, states, timeout):
         deadline = self._clock() + timeout
         while True:
-            snapshot = self.status()
-            acknowledged = snapshot["ack_command"] == command
-            # A previous command's fault remains visible until the callback
-            # processes this command. In particular, Release and a fresh Hold
-            # must be allowed to recover instead of failing on that old error.
-            # Unsupported is a session-wide startup/build failure, independent
-            # of command acknowledgments, and cannot be recovered by a shot.
-            if snapshot["state"] == "unsupported" or (acknowledged and snapshot["state"] == "fault"):
-                raise NativeBridgeError(snapshot.get("message") or "Native camera refused this game build or view")
-            if acknowledged and snapshot["state"] in states:
-                return snapshot
+            # A writer holding the status sequence odd is still progress: poll
+            # it like an unacknowledged snapshot. Other status errors end here.
+            try:
+                snapshot = self.status()
+            except NativeStatusBusy as busy:
+                pending = str(busy)
+            else:
+                acknowledged = snapshot["ack_command"] == command
+                # A previous command's fault remains visible until the callback
+                # processes this command. In particular, Release and a fresh Hold
+                # must be allowed to recover instead of failing on that old error.
+                # Unsupported is a session-wide startup/build failure, independent
+                # of command acknowledgments, and cannot be recovered by a shot.
+                if snapshot["state"] == "unsupported" or (acknowledged and snapshot["state"] == "fault"):
+                    raise NativeBridgeError(snapshot.get("message") or "Native camera refused this game build or view")
+                if acknowledged and snapshot["state"] in states:
+                    return snapshot
+                pending = snapshot.get("message", snapshot["state"])
             remaining = deadline - self._clock()
             if remaining <= 0:
-                raise NativeBridgeError("Native camera did not acknowledge the command in time: " + snapshot.get("message", snapshot["state"]))
+                raise NativeBridgeError("Native camera did not acknowledge the command in time: " + pending)
             self._sleep(min(0.01, remaining))
 
     def prepare(self, project, start, speed, frozen, demo_name, timeout=5, *, pov=False):
@@ -657,7 +668,9 @@ class NativeBridge(MediaTransport):
             command = self._publish(0)
             if not self.game_pid:
                 return self.status()
-            return self._wait(command, {"stopped", "probe"}, timeout)
+            # Only Stopped follows native effect restoration. Probe means no
+            # native command exists, so it cannot acknowledge this release.
+            return self._wait(command, {"stopped"}, timeout)
 
     def hold(self, timeout=3):
         """Freeze the native callback's latest phase without a read/write race."""

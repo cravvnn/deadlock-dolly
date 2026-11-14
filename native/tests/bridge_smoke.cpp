@@ -2489,6 +2489,85 @@ void confetti_diagnostics_publish() {
             "The synthetic client must not create real particle effects");
 }
 
+// The synthetic engine's IsPlaying accessor pauses one chosen thread inside the
+// real on_view, after its command snapshot and main-view filter.
+struct ViewPause {
+    std::atomic<DWORD> thread{0};
+    HANDLE arrived = nullptr, resume = nullptr;
+} gViewPause;
+bool __fastcall paused_is_playing(void*) {
+    if (gViewPause.thread.load() == GetCurrentThreadId()) {
+        gViewPause.thread = 0;
+        SetEvent(gViewPause.arrived);
+        WaitForSingleObject(gViewPause.resume, 10000);
+    }
+    return playing;
+}
+
+void overlapping_main_view(Fixture& f) {
+    // Thread A holds a camera command inside the verified main view while the
+    // editor publishes Release and thread B runs another verified main view.
+    // B must not acknowledge Release ahead of A's stale camera write.
+    const auto hold_id = f.command(Mode::Hold, .25);
+    auto status = f.frame();
+    require(status.ack_command == hold_id && status.state == unsigned(State::Armed),
+            "Overlap setup did not arm a held camera");
+    gViewPause.arrived = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    gViewPause.resume = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    require(gViewPause.arrived && gViewPause.resume, "Could not create overlap events");
+    thunk(gEngine + gEngineLayout.playing, paused_is_playing);
+    const auto before = status.frame_count;
+    const auto overlaps = gMainViewOverlaps.load();
+    f.original_view();
+    gHeartbeatTime = now_seconds();
+    std::thread holder([&] {
+        gViewPause.thread = GetCurrentThreadId();
+        on_view(f.view.pointer, gClient + gCompat.caller);
+    });
+    std::string failure;
+    if (WaitForSingleObject(gViewPause.arrived, 10000) != WAIT_OBJECT_0) {
+        failure = "First main view never reached the synthetic engine accessor";
+    } else {
+        const auto release_id = f.command(Mode::Release);
+        const auto calls = gHookCalls.load();
+        on_view(f.view.pointer, gClient + gCompat.caller + 1);
+        if (gHookCalls.load() != calls + 1 || gMainViewOverlaps.load() != overlaps)
+            failure = "A non-main view was counted as a main-view overlap";
+        on_view(f.view.pointer, gClient + gCompat.caller);
+        status = f.status();
+        if (failure.empty() && (status.frame_count != before || status.ack_command != hold_id))
+            failure = "Overlapping main view ran the callback and acknowledged Release early";
+        else if (failure.empty() && gMainViewOverlaps.load() != overlaps + 1)
+            failure = "Overlapping main view was not counted";
+        SetEvent(gViewPause.resume);
+        holder.join();
+        if (failure.empty()) {
+            status = f.status();
+            if (status.frame_count != before + 1 || status.ack_command != hold_id ||
+                status.state != unsigned(State::Armed))
+                failure = "Admitted main view did not finish its held camera frame";
+        }
+        thunk(gEngine + gEngineLayout.playing, is_playing);
+        if (failure.empty()) {
+            status = f.frame();
+            if (status.ack_command != release_id || status.state != unsigned(State::Stopped) ||
+                status.error)
+                failure = "Release was not acknowledged on the next admitted main view";
+            else
+                f.unchanged();
+        }
+    }
+    if (holder.joinable()) {
+        SetEvent(gViewPause.resume);
+        holder.join();
+        thunk(gEngine + gEngineLayout.playing, is_playing);
+    }
+    CloseHandle(gViewPause.arrived);
+    CloseHandle(gViewPause.resume);
+    gViewPause.arrived = gViewPause.resume = nullptr;
+    require(failure.empty(), failure.c_str());
+}
+
 void run() {
     gameplay_effect_filter_checks();
     confetti_control_updates();
@@ -2640,6 +2719,7 @@ void run() {
     require(status.state == static_cast<unsigned>(State::Stopped),
             "Expired lease prevented explicit release");
     f.unchanged();
+    overlapping_main_view(f);
 
     f.fresh_hold();
     f.command(Mode::Play);

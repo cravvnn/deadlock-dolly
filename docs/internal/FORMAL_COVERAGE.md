@@ -5,12 +5,17 @@ have explicit roles in FORMAL_COVERAGE.json. This is accounting, not full-file
 semantic review or whole-program proof. Test-reference leads are navigation,
 not execution coverage. No row has full formal signoff.
 
-The draft has80bounded model scopes/94configurations, with216expected failing
-mutants. The seven additions cover prepared recording, release/retry, worker
+The draft has82bounded model scopes/96configurations, with244expected failing
+mutants (0.7.35 added CameraOnlyCapture/CravCapture; the 2026-11-13 native sweep
+added 17 across VideoCompleteness, NativeSnapshotClose, MediaDetach,
+StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture). The seven additions cover prepared recording, release/retry, worker
 retirement, capture restoration, heartbeat mapping lifetime, shared native
 snapshot residence and coherent status readback. SPECS.md states their bounds.
-The native models assume coherent atomics/serialized callbacks; they do not prove
-the C++ memory model or game/GPU behavior. The camera worker model excludes
+The main-view callback is no longer assumed serialized: on_view admits one
+callback at a time, and NativeSnapshotClose checks two callback threads. Other
+native models (DrawProof, CaptureFailure) still assume serialized immediate-context
+callbacks. VideoCompleteness models x86-TSO store buffering for the encoder stop
+handshake only. None of them prove the C++ memory model or game/GPU behavior. The camera worker model excludes
 self-halt and arbitrary concurrent callers. These assumptions are open work.
 
 The ledger distinguishes39modules without independent lifecycles,10generated

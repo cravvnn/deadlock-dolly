@@ -3,7 +3,7 @@
     "name": "abort remaining cleanup after media failure",
     "replace": [
       [
-        "pc' = pc + 1",
+        "pc' = IF fault = pc THEN 3 ELSE pc + 1",
         "pc' = IF fault = pc THEN 6 ELSE pc + 1"
       ]
     ],
@@ -18,5 +18,15 @@
       ]
     ],
     "expect": "FinishOthers"
+  },
+  {
+    "name": "sample after media failure",
+    "replace": [
+      [
+        "pc' = IF fault = pc THEN 3 ELSE pc + 1",
+        "pc' = pc + 1"
+      ]
+    ],
+    "expect": "FaultSkipsSample"
   }
 ]

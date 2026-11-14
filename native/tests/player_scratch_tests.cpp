@@ -1,6 +1,8 @@
 #include <windows.h>
 #include "dolly_player_scratch.hpp"
 #include "dolly_player_sequence_writer.hpp"
+#include "dolly_player_capture_lifecycle.hpp"
+#include <atomic>
 #include <filesystem>
 #include <iostream>
 #include <chrono>
@@ -177,6 +179,84 @@ int main() {
         CHECK(stuck.refused() == 1);
         CHECK(stuck.finish());
         CHECK(stuck.written() == 2 && fs::file_size(stuckPath) == 2 * 72);
+    }
+    // push/push_blocking read opened_/closing_ before taking mutex_. That is
+    // race-free only because begin_finish happens after the caller's closing
+    // handoff: here a thread join, in production CaptureDrainOwnership.
+    {
+        SequenceWriter late;
+        auto latePath = root / "closed-before-push.bin";
+        CHECK(late.open(latePath.wstring(), 2, false));
+        std::thread closer([&] { late.begin_finish(); });
+        closer.join();
+        bool blockingAccepted = true, pushAccepted = true;
+        SequenceWriter::Buffer a(8, 3), b(8, 4);
+        std::thread pusher([&] {
+            blockingAccepted = late.push_blocking(header, std::move(a), 500);
+            pushAccepted = late.push(header, std::move(b));
+        });
+        pusher.join();
+        CHECK(!blockingAccepted && !pushAccepted);
+        CHECK(a == SequenceWriter::Buffer(8, 3) && b == SequenceWriter::Buffer(8, 4));
+        CHECK(late.refused() == 0);
+        CHECK(late.finish());
+        CHECK(late.written() == 0 && fs::file_size(latePath) == 0);
+    }
+    // The production order: render pushes only inside an admitted callback,
+    // and tick calls begin_finish only after finish_close retires them. A
+    // pinned push_blocking waiting on a held writer delays closure until its
+    // own timeout; nothing is accepted after closing and nothing hangs.
+    {
+        CaptureDrainOwnership owner;
+        SequenceWriter gated;
+        gated.hold_worker_for_tests(true);
+        auto gatedPath = root / "gated-close.bin";
+        owner.open();
+        CHECK(gated.open(gatedPath.wstring(), 1, false));
+        SequenceWriter::Buffer first(8, 1), second(8, 2), third(8, 3);
+        CHECK(gated.push_blocking(header, std::move(first), 500));
+        const auto ready = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!gated.in_flight() && std::chrono::steady_clock::now() < ready)
+            std::this_thread::yield();
+        CHECK(gated.in_flight() == 1);
+        CHECK(gated.push_blocking(header, std::move(second), 500)); // Queue is now full.
+        std::atomic<unsigned> order{0}, pushReturned{0};
+        std::atomic<bool> admitted{false}, pushAccepted{true};
+        const auto started = std::chrono::steady_clock::now();
+        std::thread render([&] {
+            CaptureCallbackPin pin(owner, 12);
+            if (!pin)
+                return;
+            admitted.store(true);
+            pushAccepted.store(gated.push_blocking(header, std::move(third), 300));
+            pushReturned.store(order.fetch_add(1) + 1);
+        });
+        while (!admitted.load() && std::chrono::steady_clock::now() - started < std::chrono::seconds(2))
+            std::this_thread::yield();
+        CHECK(admitted.load());
+        owner.begin_drain();
+        CHECK(owner.try_close(true)); // Forced deadline: admission closes now.
+        bool closed = false;
+        while (!(closed = owner.finish_close()) &&
+               std::chrono::steady_clock::now() - started < std::chrono::seconds(3))
+            std::this_thread::yield();
+        CHECK(closed);
+        const unsigned closeOrder = order.fetch_add(1) + 1;
+        gated.begin_finish();
+        render.join();
+        CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(3));
+        CHECK(pushReturned.load() != 0 && pushReturned.load() < closeOrder);
+        CHECK(!pushAccepted.load() && third == SequenceWriter::Buffer(8, 3));
+        CHECK(gated.refused() == 1);
+        {
+            CaptureCallbackPin after(owner, 12);
+            CHECK(!after);
+        }
+        SequenceWriter::Buffer fourth(8, 4);
+        CHECK(!gated.push_blocking(header, std::move(fourth), 500));
+        CHECK(gated.refused() == 1);
+        CHECK(gated.finish());
+        CHECK(gated.written() == 2 && fs::file_size(gatedPath) == 2 * 72);
     }
     CHECK(scratch_directory(hex,request,path));
     std::ofstream(folder / ".dolly-players-owner",std::ios::app) << 'x';

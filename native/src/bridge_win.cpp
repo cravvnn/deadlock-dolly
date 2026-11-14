@@ -143,6 +143,10 @@ std::atomic<double> gHeartbeatTime{0};
 std::atomic<unsigned> gWorkerError{0};
 std::atomic_flag gStatusLock = ATOMIC_FLAG_INIT;
 std::atomic<std::uint64_t> gHookCalls{0};
+// One main-view callback owns on_view's statics at a time; an overlapping
+// main view from another thread is skipped and only counted (not exported).
+std::atomic<bool> gMainViewBusy{false};
+std::atomic<std::uint64_t> gMainViewOverlaps{0};
 LARGE_INTEGER gFrequency{};
 using SetupFn = void(__fastcall*)(void*, std::uintptr_t);
 SetupFn gOriginalSetup = nullptr;
@@ -622,7 +626,7 @@ static void rendered_attach_sample(unsigned index, std::shared_ptr<const void> o
                                    std::uint64_t view, int tick, bool paused) noexcept {
     if (segment.point == AttachPoint::eyes || !sample.valid)
         return;
-    static bool requested = false; // Only the main-view thread calls this.
+    static bool requested = false; // Only the admitted main-view callback calls this.
     if (!requested) {
         player_capture::set_pose_observer(observe_attach_pose);
         requested = true;
@@ -853,6 +857,18 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         !read_value(reinterpret_cast<std::uintptr_t>(self), table) ||
         table != gClient + gCompat.view_table)
         return;
+    // The engine's SetUpView threading is not established. The statics below,
+    // gEffects, gRenderAttach and the command acknowledgement assume one
+    // callback; a concurrent main view keeps the game's camera for that view.
+    bool idle = false;
+    if (!gMainViewBusy.compare_exchange_strong(idle, true, std::memory_order_acquire,
+                                               std::memory_order_relaxed)) {
+        gMainViewOverlaps.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    struct Admission {
+        ~Admission() { gMainViewBusy.store(false, std::memory_order_release); }
+    } admission;
     auto view = reinterpret_cast<std::uintptr_t>(self) + 0x10;
     static std::uint32_t seen = 0;
     static double phase = 0, play_base = 0, anchor = 0, real_anchor = 0, last_game = 0,

@@ -1,4 +1,5 @@
 [
  {"name":"reject previous command fault during release retry","replace":[["RequireCurrentFault == TRUE","RequireCurrentFault == FALSE"]],"expect":"MatchingFailure"},
- {"name":"clear controller lease after failed restoration","replace":[["RetainFailedLease == TRUE","RetainFailedLease == FALSE"]],"expect":"NoUnrestoredWriter"}
+ {"name":"clear controller lease after failed restoration","replace":[["RetainFailedLease == TRUE","RetainFailedLease == FALSE"]],"expect":"NoUnrestoredWriter"},
+ {"name":"release accepts probe","replace":[["ReleaseAccepts == {\"stopped\"}","ReleaseAccepts == {\"stopped\",\"probe\"}"]],"expect":"NoUnrestoredWriter"}
 ]

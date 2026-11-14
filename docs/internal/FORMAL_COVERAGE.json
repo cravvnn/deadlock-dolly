@@ -3148,7 +3148,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "529ecdcf5cfa47272ff00be007b46ff3a1a0ce479faf5a6ef5dd385c98604f04",
+      "sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3222,7 +3222,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_draft": "Proposed heartbeat lifetime mutex covers open-check/store and final closed/unmap. Independent of command/operations locks; close may wait beyond timed join for store completion. Release/status/command behavior otherwise unchanged."
+      "reconciliation_draft": "Proposed heartbeat lifetime mutex covers open-check/store and final closed/unmap. Independent of command/operations locks; close may wait beyond timed join for store completion. Release/status/command behavior otherwise unchanged.",
+      "reconciliation_20261113": "2026-11-13 native sweep: status() raises NativeStatusBusy (a NativeBridgeError subclass) after its bounded rereads; _wait polls busy refusals until its deadline, other status errors still end the wait. Release accepts only Stopped (Probe skips effect restoration and cannot follow a command). Close/heartbeat/publication unchanged."
     },
     {
       "path": "dolly/native_capabilities.py",
@@ -8048,7 +8049,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "0986058953630052513a083ad702040de57357c9df318fbea3cb0f83c4c860a2",
+      "sha256": "a8030b0ed4e16c2c75460ce31dad27986a34f507a70fa76bcf15b5131af21145",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8123,7 +8124,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "6861engine/sound identity and offset admission, additional movie_audio_install layout argument. Command shared_ptr publication, heartbeat/Release/finish and native resident mapping lifetime unchanged; private publication/heartbeat study pins these facts."
+      "reconciliation": "6861engine/sound identity and offset admission, additional movie_audio_install layout argument. Command shared_ptr publication, heartbeat/Release/finish and native resident mapping lifetime unchanged; private publication/heartbeat study pins these facts.",
+      "reconciliation_20261113": "2026-11-13 native sweep: on_view admits one main-view callback at a time via gMainViewBusy CAS (acquire; release on exit) after the caller/vtable filter; overlapping main views are skipped and counted internally (gMainViewOverlaps, no ABI change). thread_local reentry guard, prop_runtime::tick placement, command publication, heartbeat/Release/finish and resident mapping unchanged. Engine SetUpView threading remains unestablished."
     },
     {
       "path": "native/src/dolly_attach.cpp",
@@ -9597,7 +9599,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "a4d59018b1ad620e0881da37a882d3db96328008b2289bfac8380e3b8157dd2a",
+      "sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9660,7 +9662,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261113": "2026-11-13 native sweep: quiesce_producers() makes the ready/producer_active stop handshake seq_cst on the worker side for the FFmpeg, Media Foundation and camera-only workers (all barriers kept); capture ProducerScope and CameraProducer fetch_add and ready load seq_cst. decide_cancel() applies a deferred stop once and takes one cancel snapshot after the final barrier; terminate/drop accounting/reject_incomplete_take/depth/color delete/sidecars/camera-trace publication/state follow it. A cancel after that point completes the take; Python's own cancel check still refuses a .crav."
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -10934,14 +10937,14 @@
     },
     "dolly/BridgeClose.tla": {
       "path": "dolly/native_bridge.py",
-      "scope": "NativeBridge.close",
+      "scope": "NativeBridge.close; a media fault skips the forced diagnostic sample (FaultSkipsSample), release/heartbeat stop/unmap still run",
       "configs": [
         "dolly/BridgeClose.cfg"
       ],
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "529ecdcf5cfa47272ff00be007b46ff3a1a0ce479faf5a6ef5dd385c98604f04"
+      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11599,7 +11602,7 @@
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",
-      "scope": "media_worker_tick audio after grace",
+      "scope": "media_worker_tick audio after grace; 2026-11-13: per-tick video_active re-read, reconnect resets grace, unnamed exit, catch path, stop request vs shutdown finalize (owner unchanged)",
       "configs": [
         "native/src/MediaDetach.cfg"
       ],
@@ -11610,12 +11613,12 @@
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
-      "scope": "quiescent publication and counted loss",
+      "scope": "quiescent publication and counted loss; seq_cst stop handshake with x86-TSO store-buffer abstraction; single cancel decision drives depth/color/sidecar/state",
       "configs": [
         "native/src/VideoCompleteness.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "a4d59018b1ad620e0881da37a882d3db96328008b2289bfac8380e3b8157dd2a"
+      "owner_utf8_lf_sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",
@@ -11671,11 +11674,11 @@
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
-      "scope": "Current Release acknowledgement/restoration failure/retry/controller lease join; no arbitrary writers or real I/O liveness",
+      "scope": "Current Release acknowledgement/restoration failure/retry/controller lease join; environment Probe without restoration is refused (deadline) with lease retained; no arbitrary writers or real I/O liveness",
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "529ecdcf5cfa47272ff00be007b46ff3a1a0ce479faf5a6ef5dd385c98604f04"
+      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -11700,23 +11703,23 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "529ecdcf5cfa47272ff00be007b46ff3a1a0ce479faf5a6ef5dd385c98604f04"
+      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
     },
     "native/src/NativeSnapshotClose.tla": {
       "path": "native/src/bridge_win.cpp",
-      "scope": "Immutable shared command snapshot and resident native mapping versus desktop close; one serialized callback, no C++ weak-memory proof",
+      "scope": "Immutable shared command snapshot and resident native mapping versus desktop close; two callback threads with main-view admission CAS (ExclusiveStatics), ReleaseAcknowledged required; engine threading and C++ weak memory not proved",
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "0986058953630052513a083ad702040de57357c9df318fbea3cb0f83c4c860a2"
+      "owner_utf8_lf_sha256": "a8030b0ed4e16c2c75460ce31dad27986a34f507a70fa76bcf15b5131af21145"
     },
     "dolly/StatusSnapshot.tla": {
       "path": "dolly/native_bridge.py",
-      "scope": "One serialized native publication and one reader attempt; stable/even sequence rejects mixed ack/state, no wrap/weak-memory proof",
+      "scope": "One serialized native publication; the waiter retries busy reads until its deadline; stable/even sequence rejects mixed ack/state; acceptance before deadline under writer fairness; no wrap/weak-memory proof",
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "529ecdcf5cfa47272ff00be007b46ff3a1a0ce479faf5a6ef5dd385c98604f04"
+      "owner_utf8_lf_sha256": "4f5fa76e2d78b24c9b399d1bdce082e1de8344f9b463d95f8897ad52bb58b0a7"
     },
     "dolly/CravCapture.tla": {
       "path": "dolly/crav_capture.py",
@@ -11729,12 +11732,12 @@
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
-      "scope": "Native camera-only admission, callback drain and complete publication safety",
+      "scope": "Native camera-only admission, callback drain and complete publication safety; 2026-11-13: cancel may arrive until done, one cancel decision drives raw-trace publication and terminal state (OutcomeAgrees); handshake race modeled in VideoCompleteness",
       "configs": [
         "native/src/CameraOnlyCapture.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "a4d59018b1ad620e0881da37a882d3db96328008b2289bfac8380e3b8157dd2a"
+      "owner_utf8_lf_sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d"
     }
   },
   "export_census": [
