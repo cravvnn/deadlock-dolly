@@ -5,13 +5,14 @@ have explicit roles in FORMAL_COVERAGE.json. This is accounting, not full-file
 semantic review or whole-program proof. Test-reference leads are navigation,
 not execution coverage. No row has full formal signoff.
 
-The draft has84bounded model scopes/99configurations, with259expected failing
+The draft has85bounded model scopes/101configurations, with263expected failing
 mutants (0.7.35 added CameraOnlyCapture/CravCapture; the 2026-11-13 native sweep
 added 17 across VideoCompleteness, NativeSnapshotClose, MediaDetach,
 StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture, and the DollyRoot
 root composition added 2 configurations and 6 mutants; the 2026-11-14 GameExitClose
 process model added 1 configuration and 5 mutants, and the second root
-composition added 4 root mutants). The seven additions cover prepared recording, release/retry, worker
+composition added 4 root mutants; CameraSessionModes added 2 configurations and 4
+mutants). The seven additions cover prepared recording, release/retry, worker
 retirement, capture restoration, heartbeat mapping lifetime, shared native
 snapshot residence and coherent status readback. SPECS.md states their bounds.
 The main-view callback is no longer assumed serialized: on_view admits one
@@ -28,7 +29,8 @@ delegated partial/open owner records. These are dispositions, not pass rates.
 L01camera/session still needs manual/hold/play, self-halt/reentrancy and native
 publication composition. L02media still needs GPU/drain/device-removal and native
 buffer lifetime. L03storage needs full caller-lock/crash composition. L04UI needs
-complete queued/modal/timer interfaces. L05process has GameExitClose (game exit
+complete queued/modal/timer interfaces. L01 adds CameraSessionModes (free flight, worker self-finish, halt races).
+L05process has GameExitClose (game exit
 versus start_flight waits and close) and still needs console reconnect, GUI
 recovery/_op_lock and shutdown composition. L06tools retains actual generation/build/package evidence.
 L07root end-to-end refinement has a bounded root, DollyRoot, composing

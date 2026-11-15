@@ -1249,6 +1249,10 @@ docs/RELEASE_NOTES_0.7.33-beta.md
 docs/internal/FORMAL_COVERAGE.json
 docs/internal/FORMAL_COVERAGE.md
 dolly/CameraRetirementApi.tla
+dolly/CameraSessionModes.tla
+dolly/CameraSessionModes.cfg
+dolly/CameraSessionModes-success.cfg
+dolly/CameraSessionModes.mutants.json
 dolly/CameraSessionJoin.cfg
 dolly/CameraSessionJoin.mutants.json
 dolly/CameraSessionJoin.tla

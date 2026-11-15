@@ -27,7 +27,7 @@
       "title": "Camera/session/native command ownership",
       "status": "expanded bounded joins and heartbeat fix; DollyRoot composes the lease and worker-retirement interfaces; full semantic composition still open",
       "priority": 1,
-      "remaining": "manual/hold/play transitions, mixed-session observation and command publication, heartbeat/process exit, bridge close and callback races"
+      "remaining": "mixed-session observation and command publication, bridge close and callback races; CameraSessionModes now bounds manual/hold/play and worker self-finish"
     },
     "L02": {
       "title": "Capture/media/native completion",
@@ -51,7 +51,7 @@
       "title": "Optional process/platform integrations",
       "status": "source/platform/test evidence; GameExitClose bounds game exit versus native flight waits and close; complete temporal specs open",
       "priority": 2,
-      "remaining": "console/IPC reconnect/shutdown, Controller._op_lock/GUI recovery composition, Session.close double-run idempotence, watchdog/assert/hotkey/Discord resources and bounded retry/cancel behavior"
+      "remaining": "console/IPC reconnect beyond the serialized connect path, watchdog/assert/hotkey/Discord resources and bounded retry/cancel behavior; Session.close double-run is serialized and per-step idempotent"
     },
     "L06": {
       "title": "Build/generation/tooling scope",
@@ -780,6 +780,14 @@
             "dolly/DollyRoot.cfg",
             "dolly/DollyRoot-success.cfg"
           ]
+        },
+        {
+          "spec": "dolly/CameraSessionModes.tla",
+          "scope": "Controller modes around _halt: free flight without a worker, a played shot whose worker finishes by itself (re-arming free flight only while _native_active) and Stop/Pause racing it; 10 s join timeout raises before _thread is cleared so a retry joins the same worker; manual camera on a stopped native path released instead of held; native may stop by itself. No writer without the lease, a returned Stop leaves no lease/writer/live worker, a returned hold leaves no moving camera, the worker quiets after stop; refines CameraRetirementApi. Release ack is ReleaseJoin's; two operations; console/recorder excluded",
+          "configs": [
+            "dolly/CameraSessionModes.cfg",
+            "dolly/CameraSessionModes-success.cfg"
+          ]
         }
       ],
       "test_reference_leads": [
@@ -863,7 +871,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114b": "2026-11-14 session modes: CameraSessionModes added (code unchanged). It closes CameraSessionJoin's manual/hold/play and worker self-finish exclusions; CameraRetirementApi Begin now allows free flight (no worker)."
     },
     {
       "path": "dolly/convar_response.py",
@@ -2798,7 +2807,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "4a5226ae2564e0213131638cc056cbaa52db5f5a6d8bb397392a06e28a83af26",
+      "sha256": "d16cd6046ef42470c9f6dc5595ee306e055336d6f39d08250e1be7b8c3617d10",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2893,7 +2902,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114": "2026-11-14 process hardening: the game-exit watcher's bind_game call now passes process.poll() as the bridge's exit signal. GameExitClose checks the watcher's close against start_flight's _operations hold. Session.close configuration restore, double-close idempotence of overlay/config restore and GUI recovery remain open."
+      "reconciliation_20261114": "2026-11-14 process hardening: the game-exit watcher's bind_game call now passes process.poll() as the bridge's exit signal. GameExitClose checks the watcher's close against start_flight's _operations hold. Session.close configuration restore, double-close idempotence of overlay/config restore and GUI recovery remain open.",
+      "reconciliation_20261114b": "2026-11-14 session close: Session.close now holds _restore_lock across config restoration, the journal read and overlay removal, so the exit watcher and dead-session recovery closing together serialize with each other and with record_exit (previously the unlocked journal read could meet the exit write and overlay removal could race itself). Sequential double close was already a no-op per step (journal early return, per-session overlay marker, hash-checked restore)."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -10263,7 +10273,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "6924027173df870997bfb80b53d33cd99b5d6325bf04a84cae9ddd1ab6a58316",
+      "sha256": "550fce0ef68cb6f4d6c2234d21c298c4478ba36510fea5338912cff1ea03df6d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10290,7 +10300,8 @@
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_draft": "Proposed required gate adds seven maintained bounded scopes, including explicit native/src/NativeSnapshotClose.cfg target. Checker version remains pinned.",
       "reconciliation_20261113": "2026-11-13 root composition: DollyRoot.cfg and DollyRoot-success.cfg added to REQUIRED (dolly/ was already scanned). No checker behavior change.",
-      "reconciliation_20261114": "2026-11-14 process hardening: GameExitClose.cfg added to REQUIRED. No checker behavior change."
+      "reconciliation_20261114": "2026-11-14 process hardening: GameExitClose.cfg added to REQUIRED. No checker behavior change.",
+      "reconciliation_20261114b": "2026-11-14 session modes: CameraSessionModes.cfg and -success.cfg added to REQUIRED. No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -10976,6 +10987,35 @@
       ],
       "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     },
+    "dolly/CameraSessionJoin.tla": {
+      "path": "dolly/controller.py",
+      "scope": "Serialized old worker join/release/retry and abstract new generation; self-halt/concurrent callers excluded; refines CameraRetirementApi, now multi-generation (Begin) for DollyRoot; this one-generation model never begins",
+      "configs": [
+        "dolly/CameraSessionJoin.cfg",
+        "dolly/CameraSessionJoin-success.cfg"
+      ],
+      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
+    },
+    "dolly/CameraSessionModes.tla": {
+      "path": "dolly/controller.py",
+      "scope": "Controller modes around _halt: free flight without a worker, a played shot whose worker finishes by itself (re-arming free flight only while _native_active) and Stop/Pause racing it; 10 s join timeout raises before _thread is cleared so a retry joins the same worker; manual camera on a stopped native path released instead of held; native may stop by itself. No writer without the lease, a returned Stop leaves no lease/writer/live worker, a returned hold leaves no moving camera, the worker quiets after stop; refines CameraRetirementApi. Release ack is ReleaseJoin's; two operations; console/recorder excluded",
+      "configs": [
+        "dolly/CameraSessionModes.cfg",
+        "dolly/CameraSessionModes-success.cfg"
+      ],
+      "instances": [
+        "CameraRetirementApi"
+      ],
+      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
+    },
+    "dolly/CaptureRestoreJoin.tla": {
+      "path": "dolly/video_export.py",
+      "scope": "Capture terminal ack plus same-owner console readiness before reservation retirement; final validation/write race excluded",
+      "configs": [
+        "dolly/CaptureRestoreJoin.cfg"
+      ],
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
+    },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
       "scope": "remove_overlay",
@@ -11031,6 +11071,15 @@
       ],
       "owner_utf8_lf_sha256": "25f50fd458c83051b8bb85827e0870852695e26b4718fbb6eeb2f5dcff95ffbb"
     },
+    "dolly/CravCapture.tla": {
+      "path": "dolly/crav_capture.py",
+      "scope": "Worker ownership, cancellation, exact replay, restoration and final publication safety",
+      "configs": [
+        "dolly/CravCapture.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "5d4e50f497b83640ab2af8402e4e9b3c2ec3dfeaa393296b0d9783257776698b"
+    },
     "dolly/DefinitionsFirstRead.tla": {
       "path": "dolly/definitions.py",
       "scope": "serialized first local read versus refresh/withdrawal",
@@ -11041,6 +11090,22 @@
         "DefinitionsFirstReadApi"
       ],
       "owner_utf8_lf_sha256": "1e78a7b7074b4ee64679f32abbbcb81ec4ffa904f6e43505e8b4ed71c8b20123"
+    },
+    "dolly/DollyRoot.tla": {
+      "path": "dolly/controller.py",
+      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and MediaCloseApi (refined by MediaFinalize): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (late capture fault is a named known gap), close returns and releases via acknowledged Release or heartbeat-expiry fault, the playback worker is quiet before a lease retires (Release published only after join, including dead-session recovery), a Players capture context is restored only after the terminal readback and a verified console, and close asks the encoder to stop before unmap. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; a hung worker or refused console only keeps the lease/originals; not whole-program proof",
+      "instances": [
+        "CameraLeaseApi",
+        "RecorderApi",
+        "CameraRetirementApi",
+        "CaptureRestoreApi",
+        "MediaCloseApi"
+      ],
+      "configs": [
+        "dolly/DollyRoot.cfg",
+        "dolly/DollyRoot-success.cfg"
+      ],
+      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
     },
     "dolly/EncoderUnwind.tla": {
       "path": "dolly/player_layer.py",
@@ -11083,6 +11148,15 @@
       "instances": [],
       "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
     },
+    "dolly/GameExitClose.tla": {
+      "path": "dolly/native_bridge.py",
+      "scope": "start_flight's editor/ack waits under _operations versus the dolly-game-exit watcher and a user quit reaching NativeBridge.close; after exit a wait takes no further timeout poll (ExitLatency), close runs its body once, no flight on a closed bridge, exit and quit both close under fairness. Controller._op_lock/GUI recovery and Session.close restore not modeled",
+      "configs": [
+        "dolly/GameExitClose.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
+    },
     "dolly/GameFileCache.tla": {
       "path": "dolly/preload.py",
       "scope": "game_file cached generation",
@@ -11093,6 +11167,14 @@
         "GameFileCacheApi"
       ],
       "owner_utf8_lf_sha256": "955a05ebab22b7aa55a98acd6789e5d068c92e467e922260e5a0ce80bd30f10f"
+    },
+    "dolly/HeartbeatUnmap.tla": {
+      "path": "dolly/native_bridge.py",
+      "scope": "Dedicated heartbeat lifetime lock prevents beat/unmap overlap; timed join may outlive writer, lock acquisition not wall-clock bounded",
+      "configs": [
+        "dolly/HeartbeatUnmap.cfg"
+      ],
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     },
     "dolly/HelperWorkspace.tla": {
       "path": "dolly/source2viewer.py",
@@ -11266,6 +11348,14 @@
       ],
       "owner_utf8_lf_sha256": "3c2f97d2c16face643fc6b7046bd7440d07ae4bf1be9a3ae16acccb56ccf4935"
     },
+    "dolly/PreparedShot.tla": {
+      "path": "dolly/controller.py",
+      "scope": "Single-use prepared identity and ordinary-recorder readiness; Players marker path excluded",
+      "configs": [
+        "dolly/PreparedShot.cfg"
+      ],
+      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
+    },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
       "scope": "_install_presets",
@@ -11335,6 +11425,17 @@
       ],
       "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
     },
+    "dolly/ReleaseJoin.tla": {
+      "path": "dolly/native_bridge.py",
+      "scope": "Current Release acknowledgement/restoration failure/retry/controller lease join; environment Probe without restoration is refused (deadline) with lease retained; no arbitrary writers or real I/O liveness; refines CameraLeaseApi (RefinesLease)",
+      "configs": [
+        "dolly/ReleaseJoin.cfg"
+      ],
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5",
+      "instances": [
+        "CameraLeaseApi"
+      ]
+    },
     "dolly/ReshadeResult.tla": {
       "path": "dolly/reshade_setup.py",
       "scope": "_write_config cleanup",
@@ -11368,17 +11469,6 @@
       ],
       "owner_utf8_lf_sha256": "3401b4592e203bb2a6284e716924d14c88931ec136cf5328c77b5e3cab0d720b"
     },
-    "dolly/SavedSnapshot.tla": {
-      "path": "dolly/shot_history.py",
-      "scope": "mark_saved immutable snapshot",
-      "configs": [
-        "dolly/SavedSnapshot.cfg"
-      ],
-      "instances": [
-        "SavedSnapshotApi"
-      ],
-      "owner_utf8_lf_sha256": "f571a39696ee41a23de16c6e75d6121c53829b385b0211ca4328e9f660d784fb"
-    },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",
       "scope": "save_settings result",
@@ -11389,6 +11479,17 @@
         "SaveResultApi"
       ],
       "owner_utf8_lf_sha256": "ab68f7f7f58521e244275dd079da262f436e60811a2008f3af0bcf539bad29df"
+    },
+    "dolly/SavedSnapshot.tla": {
+      "path": "dolly/shot_history.py",
+      "scope": "mark_saved immutable snapshot",
+      "configs": [
+        "dolly/SavedSnapshot.cfg"
+      ],
+      "instances": [
+        "SavedSnapshotApi"
+      ],
+      "owner_utf8_lf_sha256": "f571a39696ee41a23de16c6e75d6121c53829b385b0211ca4328e9f660d784fb"
     },
     "dolly/SceneOpacity.tla": {
       "path": "dolly/controller.py",
@@ -11447,6 +11548,14 @@
       ],
       "owner_utf8_lf_sha256": "25f50fd458c83051b8bb85827e0870852695e26b4718fbb6eeb2f5dcff95ffbb"
     },
+    "dolly/StatusSnapshot.tla": {
+      "path": "dolly/native_bridge.py",
+      "scope": "One serialized native publication; the waiter retries busy reads until its deadline; stable/even sequence rejects mixed ack/state; acceptance before deadline under writer fairness; no wrap/weak-memory proof",
+      "configs": [
+        "dolly/StatusSnapshot.cfg"
+      ],
+      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
+    },
     "dolly/StillCleanup.tla": {
       "path": "dolly/screenshot.py",
       "scope": "cleanup",
@@ -11468,6 +11577,62 @@
         "TimingSwitchApi"
       ],
       "owner_utf8_lf_sha256": "1f7b858981cd4ec2aa52893ce241210b5705455be89584bfb39e1a9a6c0a7716"
+    },
+    "dolly/UpdateRollback.tla": {
+      "path": "dolly/update_worker.py",
+      "scope": "rollback",
+      "configs": [
+        "dolly/UpdateRollback.cfg"
+      ],
+      "instances": [
+        "FileOpsApi",
+        "RollbackApi"
+      ],
+      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
+    },
+    "dolly/UpdateStart.tla": {
+      "path": "dolly/update_ui.py",
+      "scope": "check/update_now worker admission",
+      "configs": [
+        "dolly/UpdateStart.cfg"
+      ],
+      "instances": [
+        "UpdateStartApi"
+      ],
+      "owner_utf8_lf_sha256": "0e34362d8c655c79ccc64414ba0fac8a509ffcb68b5b92f9145d6a51c317f970"
+    },
+    "dolly/VideoStopOwnership.tla": {
+      "path": "dolly/video_export.py",
+      "scope": "stop failure preserves timing/scale/POV until terminal retry",
+      "configs": [
+        "dolly/VideoStopOwnership.cfg"
+      ],
+      "instances": [
+        "VideoStopOwnershipApi"
+      ],
+      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
+    },
+    "dolly/WorkspaceCleanup.tla": {
+      "path": "dolly/update_worker.py",
+      "scope": "cleanup_workspaces",
+      "configs": [
+        "dolly/WorkspaceCleanup.cfg"
+      ],
+      "instances": [
+        "RecoveryResourcesApi"
+      ],
+      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
+    },
+    "dolly/WorkspaceEligibility.tla": {
+      "path": "dolly/update_worker.py",
+      "scope": "workspace eligibility classification before cleanup",
+      "configs": [
+        "dolly/WorkspaceEligibility.cfg"
+      ],
+      "instances": [
+        "WorkspaceEligibilityApi"
+      ],
+      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",
@@ -11546,62 +11711,6 @@
       ],
       "owner_utf8_lf_sha256": "3ec6507ca8a9efba958ad17d2d7b74518ead1eb4a34697b035ed63c2b7ef37cd"
     },
-    "dolly/UpdateRollback.tla": {
-      "path": "dolly/update_worker.py",
-      "scope": "rollback",
-      "configs": [
-        "dolly/UpdateRollback.cfg"
-      ],
-      "instances": [
-        "FileOpsApi",
-        "RollbackApi"
-      ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
-    },
-    "dolly/UpdateStart.tla": {
-      "path": "dolly/update_ui.py",
-      "scope": "check/update_now worker admission",
-      "configs": [
-        "dolly/UpdateStart.cfg"
-      ],
-      "instances": [
-        "UpdateStartApi"
-      ],
-      "owner_utf8_lf_sha256": "0e34362d8c655c79ccc64414ba0fac8a509ffcb68b5b92f9145d6a51c317f970"
-    },
-    "dolly/VideoStopOwnership.tla": {
-      "path": "dolly/video_export.py",
-      "scope": "stop failure preserves timing/scale/POV until terminal retry",
-      "configs": [
-        "dolly/VideoStopOwnership.cfg"
-      ],
-      "instances": [
-        "VideoStopOwnershipApi"
-      ],
-      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
-    },
-    "dolly/WorkspaceCleanup.tla": {
-      "path": "dolly/update_worker.py",
-      "scope": "cleanup_workspaces",
-      "configs": [
-        "dolly/WorkspaceCleanup.cfg"
-      ],
-      "instances": [
-        "RecoveryResourcesApi"
-      ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
-    },
-    "dolly/WorkspaceEligibility.tla": {
-      "path": "dolly/update_worker.py",
-      "scope": "workspace eligibility classification before cleanup",
-      "configs": [
-        "dolly/WorkspaceEligibility.cfg"
-      ],
-      "instances": [
-        "WorkspaceEligibilityApi"
-      ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
-    },
     "native/include/WriterAdmission.tla": {
       "path": "native/include/dolly_player_sequence_writer.hpp",
       "scope": "SequenceWriter.open refused worker",
@@ -11612,6 +11721,17 @@
         "WriterAdmissionApi"
       ],
       "owner_utf8_lf_sha256": "9b40a7d66d5b55d458eb94d6194fe223ca6c848bdbca28072247f2c7c59edf86"
+    },
+    "native/src/CameraOnlyCapture.tla": {
+      "path": "native/src/dolly_video_win.cpp",
+      "scope": "Native camera-only admission, callback drain and complete publication safety; 2026-11-13: cancel may arrive until done, one cancel decision drives raw-trace publication and terminal state (OutcomeAgrees); handshake race modeled in VideoCompleteness; refines RecorderApi without its late-capture-fault gap (RefinesRecorder)",
+      "configs": [
+        "native/src/CameraOnlyCapture.cfg"
+      ],
+      "instances": [
+        "RecorderApi"
+      ],
+      "owner_utf8_lf_sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d"
     },
     "native/src/CaptureFailure.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11641,6 +11761,14 @@
         "MediaDetachApi"
       ],
       "owner_utf8_lf_sha256": "ff90f61da0f311333e174b041def777b80e6c9dc647e9233dac6e398c2a3be64"
+    },
+    "native/src/NativeSnapshotClose.tla": {
+      "path": "native/src/bridge_win.cpp",
+      "scope": "Immutable shared command snapshot and resident native mapping versus desktop close; two callback threads with main-view admission CAS (ExclusiveStatics), ReleaseAcknowledged required; engine threading and C++ weak memory not proved",
+      "configs": [
+        "native/src/NativeSnapshotClose.cfg"
+      ],
+      "owner_utf8_lf_sha256": "f838952bb8c3c61a04a4eed3b8e0aa2b64b7077ef29908aaabdf06764c06d8d5"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -11696,111 +11824,6 @@
         "WindowCreateApi"
       ],
       "owner_utf8_lf_sha256": "d1ef5c32112f7f71fbbab122172981cfc977526469c5a3381269f19c50aea926"
-    },
-    "dolly/PreparedShot.tla": {
-      "path": "dolly/controller.py",
-      "scope": "Single-use prepared identity and ordinary-recorder readiness; Players marker path excluded",
-      "configs": [
-        "dolly/PreparedShot.cfg"
-      ],
-      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
-    },
-    "dolly/ReleaseJoin.tla": {
-      "path": "dolly/native_bridge.py",
-      "scope": "Current Release acknowledgement/restoration failure/retry/controller lease join; environment Probe without restoration is refused (deadline) with lease retained; no arbitrary writers or real I/O liveness; refines CameraLeaseApi (RefinesLease)",
-      "configs": [
-        "dolly/ReleaseJoin.cfg"
-      ],
-      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5",
-      "instances": [
-        "CameraLeaseApi"
-      ]
-    },
-    "dolly/CameraSessionJoin.tla": {
-      "path": "dolly/controller.py",
-      "scope": "Serialized old worker join/release/retry and abstract new generation; self-halt/concurrent callers excluded; refines CameraRetirementApi, now multi-generation (Begin) for DollyRoot; this one-generation model never begins",
-      "configs": [
-        "dolly/CameraSessionJoin.cfg",
-        "dolly/CameraSessionJoin-success.cfg"
-      ],
-      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
-    },
-    "dolly/CaptureRestoreJoin.tla": {
-      "path": "dolly/video_export.py",
-      "scope": "Capture terminal ack plus same-owner console readiness before reservation retirement; final validation/write race excluded",
-      "configs": [
-        "dolly/CaptureRestoreJoin.cfg"
-      ],
-      "owner_utf8_lf_sha256": "d2690efac8b3ab5a824788a4e3a4c36a2818a59301b5a954ac2703c32b226d46"
-    },
-    "dolly/HeartbeatUnmap.tla": {
-      "path": "dolly/native_bridge.py",
-      "scope": "Dedicated heartbeat lifetime lock prevents beat/unmap overlap; timed join may outlive writer, lock acquisition not wall-clock bounded",
-      "configs": [
-        "dolly/HeartbeatUnmap.cfg"
-      ],
-      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
-    },
-    "native/src/NativeSnapshotClose.tla": {
-      "path": "native/src/bridge_win.cpp",
-      "scope": "Immutable shared command snapshot and resident native mapping versus desktop close; two callback threads with main-view admission CAS (ExclusiveStatics), ReleaseAcknowledged required; engine threading and C++ weak memory not proved",
-      "configs": [
-        "native/src/NativeSnapshotClose.cfg"
-      ],
-      "owner_utf8_lf_sha256": "f838952bb8c3c61a04a4eed3b8e0aa2b64b7077ef29908aaabdf06764c06d8d5"
-    },
-    "dolly/StatusSnapshot.tla": {
-      "path": "dolly/native_bridge.py",
-      "scope": "One serialized native publication; the waiter retries busy reads until its deadline; stable/even sequence rejects mixed ack/state; acceptance before deadline under writer fairness; no wrap/weak-memory proof",
-      "configs": [
-        "dolly/StatusSnapshot.cfg"
-      ],
-      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
-    },
-    "dolly/CravCapture.tla": {
-      "path": "dolly/crav_capture.py",
-      "scope": "Worker ownership, cancellation, exact replay, restoration and final publication safety",
-      "configs": [
-        "dolly/CravCapture.cfg"
-      ],
-      "instances": [],
-      "owner_utf8_lf_sha256": "5d4e50f497b83640ab2af8402e4e9b3c2ec3dfeaa393296b0d9783257776698b"
-    },
-    "native/src/CameraOnlyCapture.tla": {
-      "path": "native/src/dolly_video_win.cpp",
-      "scope": "Native camera-only admission, callback drain and complete publication safety; 2026-11-13: cancel may arrive until done, one cancel decision drives raw-trace publication and terminal state (OutcomeAgrees); handshake race modeled in VideoCompleteness; refines RecorderApi without its late-capture-fault gap (RefinesRecorder)",
-      "configs": [
-        "native/src/CameraOnlyCapture.cfg"
-      ],
-      "instances": [
-        "RecorderApi"
-      ],
-      "owner_utf8_lf_sha256": "700b02e01548d2055b1f00f4488fedbd833d6752ff2a3a0a2e86d0ec89002a5d"
-    },
-    "dolly/DollyRoot.tla": {
-      "path": "dolly/controller.py",
-      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and MediaCloseApi (refined by MediaFinalize): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (late capture fault is a named known gap), close returns and releases via acknowledged Release or heartbeat-expiry fault, the playback worker is quiet before a lease retires (Release published only after join, including dead-session recovery), a Players capture context is restored only after the terminal readback and a verified console, and close asks the encoder to stop before unmap. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; a hung worker or refused console only keeps the lease/originals; not whole-program proof",
-      "instances": [
-        "CameraLeaseApi",
-        "RecorderApi",
-        "CameraRetirementApi",
-        "CaptureRestoreApi",
-        "MediaCloseApi"
-      ],
-      "configs": [
-        "dolly/DollyRoot.cfg",
-        "dolly/DollyRoot-success.cfg"
-      ],
-      "owner_utf8_lf_sha256": "6212c59cdc0b510688ea800d931a6b5d76314e86c43fabdd90c20cc09282d5ac"
-    },
-    "dolly/GameExitClose.tla": {
-      "path": "dolly/native_bridge.py",
-      "scope": "start_flight's editor/ack waits under _operations versus the dolly-game-exit watcher and a user quit reaching NativeBridge.close; after exit a wait takes no further timeout poll (ExitLatency), close runs its body once, no flight on a closed bridge, exit and quit both close under fairness. Controller._op_lock/GUI recovery and Session.close restore not modeled",
-      "configs": [
-        "dolly/GameExitClose.cfg"
-      ],
-      "instances": [],
-      "owner_utf8_lf_sha256": "4c2e90aa493431ecf73137d167c003bb56dd573aaaff3c575ae9863ca36adad5"
     }
   },
   "export_census": [
@@ -13254,6 +13277,26 @@
     {
       "path": "dolly/CameraSessionJoin.tla",
       "category": "formal spec/interface"
+    },
+    {
+      "path": "dolly/CameraSessionModes-success.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/CameraSessionModes.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/CameraSessionModes.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/CameraSessionModes.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
     },
     {
       "path": "dolly/CaptureRestoreApi.tla",
@@ -18268,10 +18311,10 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 527,
+    "metadata/configuration/documentation input": 530,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 152,
+    "formal spec/interface": 153,
     "test/support input": 79,
     "external dependency/resource": 201
   },

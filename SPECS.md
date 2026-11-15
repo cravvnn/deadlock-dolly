@@ -1092,5 +1092,34 @@ state from the single decision, kept = colour file); re-reading cancel fails it.
 Four new root mutants: Release before the worker joined, dead-session recovery
 without the join, capture restore before readback, unmap without a stop.
 Still not composed: MediaDetach (its abstract stop already sits behind
-RecordingSettles), CameraSessionJoin's manual/hold/play and self-halt
-exclusions, GameExitClose (latency, not a root promise), storage and UI.
+RecordingSettles), GameExitClose (latency, not a root promise), storage
+and UI. CameraSessionJoin's manual/hold/play and self-finish exclusions are now
+covered separately by CameraSessionModes (below).
+
+## Camera modes and worker self-finish (CameraSessionModes)
+
+`dolly/CameraSessionModes.tla` covers what CameraSessionJoin excluded: free
+flight (manual camera, no worker), a played shot whose `_run_native` worker
+finishes by itself, and Stop or Pause racing that finish. On natural completion
+with resume_free_camera the worker re-arms free flight through start_flight
+(only while `_native_active`); otherwise it holds or hands off. `_halt` sets the
+stop event and joins for up to 10 s; a timeout raises before `self._thread` is
+cleared, so a retry joins the same worker. Stop then releases; Pause/flight hold
+holds, except that a manual camera whose native path already stopped is
+released. The native path may stop by itself while the lease is kept.
+WriterOwned (no writer without the lease), StopRetires (a returned Stop leaves
+no lease, writer or live worker), HoldFreezes, QuietWhenRetired and WorkerQuiets
+hold, and HaltReturns under fairness; the success profile (no join timeout)
+requires every Stop to complete. It refines CameraRetirementApi, whose Begin now
+allows free flight without a worker. Four mutants: release without the join,
+forgetting the worker after a join timeout, ending the lease before the native
+release, a worker that ignores the stop event. Private negatives show the
+refinement and the success property can fail. The re-arm's `_native_active`
+check is not exercised (no reachable state has a finishing worker without the
+lease). Release acknowledgement/refusal stays with ReleaseJoin; two operations.
+
+Session.close (2026-11-14): a second close was already a per-step no-op (the
+journal's restored state returns early, overlays are per session and
+marker-checked, restore is hash-checked). Concurrent closes from the exit
+watcher and dead-session recovery now hold `_restore_lock` across restoration,
+the journal read and overlay removal, serializing them with record_exit.

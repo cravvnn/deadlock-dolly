@@ -1,0 +1,6 @@
+[
+  {"name": "release without joining the worker", "replace": [["JoinOk == /\\ cpc = \"joining\" /\\ (~thread \\/ wpc = \"done\")", "JoinOk == /\\ cpc = \"joining\""]], "expect": "StopRetires"},
+  {"name": "forget the worker after a join timeout", "replace": [["               /\\ cpc' = \"failed\"\n               /\\ UNCHANGED <<wpc, finished, resume, stopEv, thread, lease,", "               /\\ cpc' = \"failed\" /\\ thread' = FALSE\n               /\\ UNCHANGED <<wpc, finished, resume, stopEv, lease,"]], "expect": "StopRetires"},
+  {"name": "end the lease before the native release", "replace": [["/\\ writer' = \"none\" /\\ lease' = FALSE /\\ manual' = FALSE /\\ cpc' = \"done\"", "/\\ writer' = writer /\\ lease' = FALSE /\\ manual' = FALSE /\\ cpc' = \"done\""]], "expect": "WriterOwned"},
+  {"name": "worker ignores the stop event", "replace": [["StopSeen == /\\ wpc = \"playing\" /\\ stopEv /\\", "StopSeen == /\\ FALSE /\\ wpc = \"playing\" /\\ stopEv /\\"]], "expect": "WorkerQuiets"}
+]
