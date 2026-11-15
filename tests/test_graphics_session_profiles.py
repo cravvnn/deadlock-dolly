@@ -90,6 +90,33 @@ class GraphicsSessionProfiles(unittest.TestCase):
             editing_session.save_session_graphics(session, name="recording")
         self.assertEqual(self.normal.read_bytes(), normal)
 
+    def test_settings_the_game_rewrites_untouched_are_not_reported_or_saved(self):
+        # From game-written files: applying any setting in-game rewrites
+        # video.txt with every setting, 1.000000 as 1, and the upscaler values
+        # a Dolly launch never writes at the game's own defaults.
+        launched = {"setting.r_citadel_shadow_quality": "2", "setting.r_citadel_upscaling": "0",
+                    "setting.mat_viewportscale": "1.000000", "setting.defaultres": "1920"}
+        rewritten = {**launched, "setting.mat_viewportscale": "1",
+                     "setting.r_citadel_dlss_settings_mode": "0", "setting.r_dlss_preset": "5",
+                     "setting.r_citadel_fsr_rcas_sharpness": "0.25", "setting.r_citadel_fsr2_sharpness": "0.5",
+                     # Not written by this launch and no known default: cannot be called a change.
+                     "setting.defaultresheight": "1080",
+                     # Not a profile field; the user changed only this.
+                     "setting.gamma": "2.4"}
+        self.assertIsNone(editing_session.session_graphics(self.session(launched, rewritten)))
+        (self.root / "session").rename(self.root / "untouched")
+        profile = self.profile("Rec", {"setting.r_citadel_shadow_quality": "2"})
+        session = self.session(launched, {**rewritten, "setting.r_citadel_dlss_settings_mode": "3"}, profile)
+        found = editing_session.session_graphics(session)
+        self.assertEqual(found["changes"], {"setting.r_citadel_dlss_settings_mode": "3"})
+        # Saving keeps exactly what the prompt listed.
+        editing_session.save_session_graphics(session, profile_id=profile["id"])
+        saved = next(p for p in graphics_profiles.load_library()["profiles"] if p["id"] == profile["id"])
+        self.assertEqual(saved["values"], {"setting.r_citadel_shadow_quality": "2",
+                                           "setting.r_citadel_dlss_settings_mode": "3"})
+        created = editing_session.save_session_graphics(session, name="DLSS")
+        self.assertEqual(created["values"], {"setting.r_citadel_dlss_settings_mode": "3"})
+
     def test_format_one_library_still_loads(self):
         identifier = "b" * 32
         self.library.write_text(json.dumps({"format": 1, "selected": identifier, "profiles": [

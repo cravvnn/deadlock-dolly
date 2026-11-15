@@ -398,6 +398,11 @@ def session_graphics(session_dir: Path) -> dict | None:
     launch wrote, over the profile allowlist. Returns None when nothing
     changed or the session has no comparable record. Normal settings are
     never read or written here.
+
+    Applying any setting in-game makes the game rewrite every setting, in its
+    own number format and including fields this launch never wrote. Only real
+    differences count: a field the launch did not write is compared with the
+    game's default, and is left out when that is unknown.
     """
     session_dir = Path(session_dir)
     try:
@@ -408,23 +413,29 @@ def session_graphics(session_dir: Path) -> dict | None:
         written = _values(_read(session_dir / DIRECTORY / "cfg" / "video.txt"))
     except (OSError, ValueError, LaunchError):
         return None
-    values = {key: value for key, value in written.items() if key in graphics_profiles.FIELD_LABELS}
-    changes = {key: value for key, value in values.items() if launched.get(key) != value}
+    changes = {}
+    for key, value in written.items():
+        if key not in graphics_profiles.FIELD_LABELS:
+            continue
+        before = launched.get(key, graphics_profiles.GAME_DEFAULTS.get(key))
+        if isinstance(before, str) and not graphics_profiles.same_value(before, value):
+            changes[key] = value
     if not changes:
         return None
     try:
-        graphics_profiles._quality(values)
+        graphics_profiles._quality(changes)
     except LaunchError:
         return None
     profile = audit.get("profile") if isinstance(audit.get("profile"), dict) else None
-    return {"profile": profile, "values": values, "changes": changes}
+    return {"profile": profile, "changes": changes}
 
 
 def save_session_graphics(session_dir: Path, *, profile_id: str = "", name: str = "") -> dict:
-    """Save a finished session's graphics into a Dolly profile.
+    """Save the graphics changed in a finished session into a Dolly profile.
 
-    With profile_id, that profile takes the session's values; otherwise a new
-    profile named ``name`` is created and selected for the next launch.
+    Exactly the changed settings are saved, so a profile never pins values the
+    user did not choose. With profile_id, that profile takes them; otherwise a
+    new profile named ``name`` is created and selected for the next launch.
     """
     found = session_graphics(session_dir)
     if found is None:
@@ -434,13 +445,13 @@ def save_session_graphics(session_dir: Path, *, profile_id: str = "", name: str 
         profile = next((p for p in library["profiles"] if p["id"] == profile_id), None)
         if profile is None:
             raise LaunchError("That graphics profile no longer exists. Choose a profile in Settings.")
-        profile["values"] = graphics_profiles._quality({**profile["values"], **found["values"]})
+        profile["values"] = graphics_profiles._quality({**profile["values"], **found["changes"]})
     else:
         if any(p["name"].casefold() == name.strip().casefold() for p in library["profiles"]):
             raise LaunchError("A graphics profile with that name already exists.")
         profile = {"id": uuid.uuid4().hex, "name": name.strip(),
                    "video_version": graphics_profiles.VIDEO_VERSION,
-                   "values": graphics_profiles._quality(dict(found["values"]))}
+                   "values": graphics_profiles._quality(dict(found["changes"]))}
         graphics_profiles._validate_profile(profile)
         library["profiles"].append(profile)
         library["selected"] = profile["id"]

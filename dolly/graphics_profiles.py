@@ -73,6 +73,25 @@ DISPLAY_FIELDS = {
 FIELD_LABELS = {**QUALITY_FIELDS, **UPSCALER_FIELDS,
                 **{key: spec[0] for key, spec in DISPLAY_FIELDS.items()}}
 LIBRARY_FORMATS = (1, 2)
+# The game's own defaults for the profile fields a Dolly launch does not write
+# (its cvar defaults, as it writes them to video.txt). Used only to tell a real
+# in-game change from an untouched setting; a launch never writes these.
+GAME_DEFAULTS = {
+    "setting.r_citadel_dlss_settings_mode": "0",
+    "setting.r_dlss_preset": "5",
+    "setting.r_citadel_fsr_rcas_sharpness": "0.25",
+    "setting.r_citadel_fsr2_sharpness": "0.5",
+}
+_PLAIN_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def same_value(first: str, second: str) -> bool:
+    """Whether two video.txt values mean the same; the game rewrites 1.000000 as 1."""
+    if first == second:
+        return True
+    if _PLAIN_NUMBER.fullmatch(first) and _PLAIN_NUMBER.fullmatch(second):
+        return Decimal(first) == Decimal(second)
+    return first.casefold() == second.casefold()
 
 
 def _read(path: Path) -> bytes:

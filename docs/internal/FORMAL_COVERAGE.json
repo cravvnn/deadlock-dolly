@@ -1584,7 +1584,7 @@
     },
     {
       "path": "dolly/editing_session.py",
-      "sha256": "9e0611396097694d3bc15b2e14c81c9f03a253f8cd7e12383a940e787f837252",
+      "sha256": "a8808890a908e1405ac504276d072fce187c3a59156a3d26d29f37a81b260d04",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -1630,7 +1630,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114d": "2026-11-14 profiles: launch layering is baseline, normal display identity, profile, then explicit Display launch options; the session record keeps the profile fields written. session_graphics compares the session's own video.txt after the game exits; save_session_graphics updates the selected profile or creates and selects a new one. Normal settings are never read for this or written."
+      "reconciliation_20261114d": "2026-11-14 profiles: launch layering is baseline, normal display identity, profile, then explicit Display launch options; the session record keeps the profile fields written. session_graphics compares the session's own video.txt after the game exits; save_session_graphics updates the selected profile or creates and selects a new one. Normal settings are never read for this or written.",
+      "reconciliation_20261114h": "2026-11-14 after-session offer: checked against real session files. The game rewrites every setting when any is applied in-game, so session_graphics now counts only real differences (numeric compare; unwritten fields against the game's default, left out when unknown) and save_session_graphics saves exactly the changed settings instead of every session value."
     },
     {
       "path": "dolly/editor_actions.py",
@@ -2407,7 +2408,7 @@
     },
     {
       "path": "dolly/graphics_profiles.py",
-      "sha256": "044b30db488f627b5a3288466b6aaa9567e7e053c7420c8791daedff400e3774",
+      "sha256": "f8928435092af68cf2f65494702b8218bb2c2fa69527e7a23b85b7b6519ccff6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2469,7 +2470,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114d": "2026-11-14 profiles: the allowlist adds upscaler/DLSS (upscaling, DLSS mode/preset, render scale, FSR sharpness) and bounded display fields (resolution, refresh, window mode, vsync, aspect); monitor/device IDs stay out. Library format 2 is written; format 1 still loads."
+      "reconciliation_20261114d": "2026-11-14 profiles: the allowlist adds upscaler/DLSS (upscaling, DLSS mode/preset, render scale, FSR sharpness) and bounded display fields (resolution, refresh, window mode, vsync, aspect); monitor/device IDs stay out. Library format 2 is written; format 1 still loads.",
+      "reconciliation_20261114h": "2026-11-14 after-session offer: GAME_DEFAULTS holds the game's own defaults for the four upscaler fields a launch does not write (from its cvar list and game-written video.txt files); same_value compares settings numerically (the game rewrites 1.000000 as 1). Comparison only; no launch writes these."
     },
     {
       "path": "dolly/graphics_profiles_ui.py",
