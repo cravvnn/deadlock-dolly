@@ -504,6 +504,13 @@ startup. The portable launcher opens the editor without a Python console window.
 **Controls** contains shortcuts, camera sensitivity and movement speed.
 **Settings** contains saved paths, ReShade and troubleshooting.
 
+**Settings → Replay Graphics Profiles** keeps Dolly-only graphics: quality,
+upscaler/DLSS, resolution and window settings. Dolly applies the selected
+profile to its own session settings when it starts a replay; your normal
+Deadlock settings are never changed. Change graphics in the game during a Dolly
+session and, when the game closes, Dolly offers to save them to the selected
+profile (or as a new one). Display launch options still win for one launch.
+
 **Settings → NVIDIA DLSS**, directly below Replay Graphics Profiles, has an optional
 **Enable NVIDIA DLSS support** switch. It applies to the next launch. On a compatible
 NVIDIA GPU, choose NVIDIA DLSS and the scaling mode in the game's Video settings;

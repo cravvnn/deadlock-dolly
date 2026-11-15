@@ -594,6 +594,7 @@ tests/camera_modes.py
 tests/core_helpers.py
 tests/native_helpers.py
 tests/test_core_install.py
+tests/test_graphics_session_profiles.py
 tests/test_core_native.py
 tests/test_core_workflows.py
 tests/video_workflow.py

@@ -12,6 +12,7 @@ import json
 import ntpath
 from pathlib import Path
 import re
+import uuid
 
 from . import gameinfo_transaction, graphics_profiles
 from .file_ops import _atomic_write, _plain_ancestors
@@ -177,7 +178,11 @@ def _display() -> tuple[dict[str, str], str | None]:
         return {}, f"Display settings were unavailable ({type(exc).__name__}); using Dolly/game defaults."
 
 
-def _video(baseline: bytes | None, display: dict[str, str], profile_id: str) -> tuple[bytes | None, dict]:
+def _video(baseline: bytes | None, display: dict[str, str], profile_id: str,
+           overrides: dict[str, str] | None = None) -> tuple[bytes | None, dict]:
+    """Baseline, then normal display identity, then the profile, then explicit
+    Display launch options (which win for this launch)."""
+    overrides = overrides or {}
     values = _values(baseline) if baseline is not None else {"version": graphics_profiles.VIDEO_VERSION}
     values.update(display)
     profile = None
@@ -189,7 +194,8 @@ def _video(baseline: bytes | None, display: dict[str, str], profile_id: str) -> 
         if profile is None:
             raise LaunchError("Selected graphics profile is missing. Choose a profile in Settings.")
         values.update(profile["values"])
-    if baseline is None and not display:
+    values.update(overrides)
+    if baseline is None and not display and not overrides:
         return None, {"baseline": "game_defaults", "quality_values": {}}
     # Baselines are pinned data, and copied display values are bounded integers.
     # Escaping also keeps future reviewed flat video values in their own token.
@@ -201,6 +207,8 @@ def _video(baseline: bytes | None, display: dict[str, str], profile_id: str) -> 
     audit = {
         "baseline": "reviewed" if baseline is not None else "game_defaults_with_display",
         "quality_values": {key: value for key, value in values.items() if key in graphics_profiles.QUALITY_FIELDS},
+        # What this launch wrote, so in-game changes can be offered for saving.
+        "profile_fields": {key: value for key, value in values.items() if key in graphics_profiles.FIELD_LABELS},
     }
     if profile is not None:
         audit["profile"] = {"id": profile["id"], "name": profile["name"]}
@@ -328,20 +336,21 @@ def prepare(session_dir: Path, paths: GamePaths, *, graphics_profile: str = "",
         baseline = _baseline(editing_root)
         display, warning = _display()
         options = parse_launch_options(launch_options)
+        overrides: dict[str, str] = {}
         if '-windowed' in options:
-            display.update({'setting.fullscreen': '0', 'setting.coop_fullscreen': '0'})
+            overrides.update({'setting.fullscreen': '0', 'setting.coop_fullscreen': '0'})
         if '-fullscreen' in options:
-            display.update({'setting.fullscreen': '1', 'setting.coop_fullscreen': '0',
-                            'setting.nowindowborder': '0'})
+            overrides.update({'setting.fullscreen': '1', 'setting.coop_fullscreen': '0',
+                              'setting.nowindowborder': '0'})
         if '-noborder' in options:
-            display['setting.nowindowborder'] = '1'
+            overrides['setting.nowindowborder'] = '1'
         for flag, field in (('-w', 'setting.defaultres'), ('-h', 'setting.defaultresheight')):
             if flag in options:
-                display[field] = options[options.index(flag) + 1]
+                overrides[field] = options[options.index(flag) + 1]
         if '-refresh' in options:
-            display['setting.refreshrate_numerator'] = options[options.index('-refresh') + 1]
-            display['setting.refreshrate_denominator'] = '1'
-        video, video_audit = _video(baseline, display, graphics_profile)
+            overrides['setting.refreshrate_numerator'] = options[options.index('-refresh') + 1]
+            overrides['setting.refreshrate_denominator'] = '1'
+        video, video_audit = _video(baseline, display, graphics_profile, overrides)
         audio, audio_warning = _audio()
         files = {
             "cfg/machine_convars.vcfg": _convars(audio),
@@ -366,6 +375,7 @@ def prepare(session_dir: Path, paths: GamePaths, *, graphics_profile: str = "",
             "environment_keys": sorted(environment),
             "files": {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
             "display_fields_preserved": sorted(display),
+            "launch_option_fields": sorted(overrides),
             "audio_convar_count": len(audio),
             "audio_convar_names": sorted(audio),
             "user_configuration_gate": "host_readconfig_ignore_userconfig",
@@ -380,3 +390,59 @@ def prepare(session_dir: Path, paths: GamePaths, *, graphics_profile: str = "",
         return {"environment": environment, "audit": audit}
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise LaunchError(f"Could not prepare Dolly's isolated editing settings: {exc}") from exc
+
+def session_graphics(session_dir: Path) -> dict | None:
+    """Graphics the user changed in-game during a finished Dolly session.
+
+    Compares the session's own video.txt (written by the game) with what the
+    launch wrote, over the profile allowlist. Returns None when nothing
+    changed or the session has no comparable record. Normal settings are
+    never read or written here.
+    """
+    session_dir = Path(session_dir)
+    try:
+        audit = json.loads(_read(session_dir / JOURNAL))
+        launched = audit.get("profile_fields") if isinstance(audit, dict) else None
+        if not isinstance(launched, dict):
+            return None
+        written = _values(_read(session_dir / DIRECTORY / "cfg" / "video.txt"))
+    except (OSError, ValueError, LaunchError):
+        return None
+    values = {key: value for key, value in written.items() if key in graphics_profiles.FIELD_LABELS}
+    changes = {key: value for key, value in values.items() if launched.get(key) != value}
+    if not changes:
+        return None
+    try:
+        graphics_profiles._quality(values)
+    except LaunchError:
+        return None
+    profile = audit.get("profile") if isinstance(audit.get("profile"), dict) else None
+    return {"profile": profile, "values": values, "changes": changes}
+
+
+def save_session_graphics(session_dir: Path, *, profile_id: str = "", name: str = "") -> dict:
+    """Save a finished session's graphics into a Dolly profile.
+
+    With profile_id, that profile takes the session's values; otherwise a new
+    profile named ``name`` is created and selected for the next launch.
+    """
+    found = session_graphics(session_dir)
+    if found is None:
+        raise LaunchError("This Dolly session has no graphics changes to save.")
+    library = graphics_profiles.load_library()
+    if profile_id:
+        profile = next((p for p in library["profiles"] if p["id"] == profile_id), None)
+        if profile is None:
+            raise LaunchError("That graphics profile no longer exists. Choose a profile in Settings.")
+        profile["values"] = graphics_profiles._quality({**profile["values"], **found["values"]})
+    else:
+        if any(p["name"].casefold() == name.strip().casefold() for p in library["profiles"]):
+            raise LaunchError("A graphics profile with that name already exists.")
+        profile = {"id": uuid.uuid4().hex, "name": name.strip(),
+                   "video_version": graphics_profiles.VIDEO_VERSION,
+                   "values": graphics_profiles._quality(dict(found["values"]))}
+        graphics_profiles._validate_profile(profile)
+        library["profiles"].append(profile)
+        library["selected"] = profile["id"]
+    graphics_profiles.save_library(library)
+    return profile

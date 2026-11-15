@@ -11,8 +11,8 @@ from .ui import question_dialog as messagebox
 
 # The help text under the controls; on the Settings card it is the title's info bubble.
 PROFILES_INFO = ("Profiles apply when Dolly starts a replay. Dolly uses separate replay settings; your normal game settings stay untouched. "
-                 "Close the game before saving its graphics. Profiles copy quality settings, excluding display mode, "
-                 "resolution, GPU and upscaler settings; use Display launch options for window size.")
+                 "A profile holds quality, upscaler/DLSS, resolution and window settings. Change graphics in a Dolly session "
+                 "and Dolly offers to save them when the game closes. Display launch options still win for one launch.")
 # The Settings card's form (Figma [design reference], design px): the label column, and the
 # indent of the button rows (label + 10) so they start under the dropdown.
 LABEL_WIDTH = 125
@@ -136,7 +136,7 @@ class GraphicsProfiles:
         if name is None:
             return
         profile = profiles.profile_from_bytes(name.strip(), data)
-        kept = "\n".join(f"{profiles.QUALITY_FIELDS[k]}: {v}" for k, v in profile["values"].items())
+        kept = "\n".join(f"{profiles.FIELD_LABELS[k]}: {v}" for k, v in profile["values"].items())
         excluded = profiles.excluded_fields(data, profile)
         text = f"Source: {path}\n\nQuality values to save:\n{kept}\n\nExcluded fields (kept from the destination):\n" + "\n".join(excluded)
         def save():
@@ -152,7 +152,7 @@ class GraphicsProfiles:
         from .editing_session import preview_video
         _data, audit = preview_video(profile['id'])
         text = f"Separate Dolly session settings\nProfile: {profile['name']}\n\n"
-        text += '\n'.join(f"{profiles.QUALITY_FIELDS[key]}: {value}" for key, value in audit['quality_values'].items())
+        text += '\n'.join(f"{profiles.FIELD_LABELS[key]}: {value}" for key, value in audit['profile_fields'].items())
         text += "\n\nNo game files are changed by this preview. Your normal-play settings and startup scripts are not imported. "
         text += "Only these reviewed quality values and display/device fields are written to Dolly's new session folder."
         self.show_preview("Next-launch graphics preview", text)

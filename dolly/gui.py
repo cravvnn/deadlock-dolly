@@ -3609,11 +3609,68 @@ class DollyApp:
                 self._restore_from_taskbar()
             if self.startup_cancel is not None:
                 self.startup_cancel.set()
+            self.root.after_idle(lambda: self._offer_session_graphics(session))
         if not self.busy and getattr(self,'_game_exit_cleanup',None) is not session:
             if getattr(self,'_base_capture',None) is not None:
                 self._clear_layer_pipeline()
             if self._submit('Clearing closed game session',self.controller.recover_dead_session):
                 self._game_exit_cleanup = session
+
+    def _offer_session_graphics(self, session):
+        """Offer to keep graphics the user changed in-game during this session.
+
+        Only Dolly's own session files are read and only the Dolly profile
+        library is written; normal Deadlock settings are never touched.
+        """
+        from . import editing_session, graphics_profiles
+        if self.closed:
+            return
+        try:
+            found = editing_session.session_graphics(session.session_dir)
+        except (AttributeError, OSError, ValueError, graphics_profiles.LaunchError):
+            return
+        if not found:
+            return
+        changed = "\n".join(f"{graphics_profiles.FIELD_LABELS[key]}: {value}"
+                            for key, value in sorted(found["changes"].items()))
+        profile = found["profile"]
+        try:
+            if profile:
+                save = messagebox.askchoice(
+                    "Save graphics changes?",
+                    f"You changed graphics in this Dolly session:\n{changed}\n\n"
+                    f"Save them to your Dolly profile \"{profile['name']}\"? "
+                    "Your normal Deadlock settings are not affected.",
+                    f"Save to {profile['name']}", "Don't save", parent=self.root)
+                if not save:
+                    return
+                editing_session.save_session_graphics(session.session_dir, profile_id=profile["id"])
+                message = f"Saved this session's graphics to \"{profile['name']}\"."
+            else:
+                save = messagebox.askchoice(
+                    "Save graphics changes?",
+                    f"You changed graphics in this Dolly session:\n{changed}\n\n"
+                    "Save them as a Dolly profile for future replays? "
+                    "Your normal Deadlock settings are not affected.",
+                    "Save as a profile", "Don't save", parent=self.root)
+                if not save:
+                    return
+                name = simpledialog.askstring("Save graphics profile", "Profile name (for example, Recording):",
+                                              parent=self.root)
+                if not name or not name.strip():
+                    return
+                saved = editing_session.save_session_graphics(session.session_dir, name=name)
+                message = f"Saved this session's graphics as \"{saved['name']}\" and selected it for the next replay."
+        except (OSError, ValueError, graphics_profiles.LaunchError) as exc:
+            self._error("Graphics profiles", exc)
+            return
+        panel = getattr(self, "graphics_profiles", None)
+        if panel is not None:
+            try:
+                panel.refresh()
+            except (OSError, ValueError, graphics_profiles.LaunchError):
+                pass
+        self.status_text.set(message)
 
     def _restore_from_taskbar(self):
         """Bring the minimized window back, activated as a click on its taskbar button does.

@@ -1,7 +1,8 @@
-"""Local quality presets and recovery for older video.txt transactions.
+"""Local Dolly-only graphics presets and recovery for older video.txt transactions.
 
-Profiles copy a small allowlist of quality values from an existing video.cfg.
-They never replay gameinfo, commands, device IDs or display/upscaler settings.
+Profiles copy an allowlist of quality, upscaler/DLSS and display (resolution,
+window mode, refresh, vsync) values from a video.cfg. They never replay
+gameinfo, commands, GPU/device IDs or the monitor choice.
 New launches apply presets inside editing_session's separate settings folder.
 Legacy journals remain recoverable until the older owned game process exits.
 """
@@ -49,6 +50,29 @@ QUALITY_FIELDS = {
     "setting.r_citadel_shadow_quality": "Shadow quality",
     "setting.useadvanced": "Advanced graphics controls",
 }
+UPSCALER_FIELDS = {
+    "setting.r_citadel_upscaling": "Upscaler",
+    "setting.r_citadel_dlss_settings_mode": "DLSS mode",
+    "setting.r_dlss_preset": "DLSS preset",
+    "setting.mat_viewportscale": "Render scale",
+    "setting.r_citadel_fsr_rcas_sharpness": "FSR sharpness",
+    "setting.r_citadel_fsr2_sharpness": "FSR 2 sharpness",
+}
+# Bounded integers, as editing_session copies them from normal settings.
+DISPLAY_FIELDS = {
+    "setting.defaultres": ("Width", 320, 16384),
+    "setting.defaultresheight": ("Height", 200, 16384),
+    "setting.refreshrate_numerator": ("Refresh rate", 0, 1_000_000),
+    "setting.refreshrate_denominator": ("Refresh rate divisor", 0, 1_000_000),
+    "setting.fullscreen": ("Fullscreen", 0, 1),
+    "setting.coop_fullscreen": ("Borderless fullscreen", 0, 1),
+    "setting.nowindowborder": ("No window border", 0, 1),
+    "setting.mat_vsync": ("Vertical sync", 0, 1),
+    "setting.aspectratiomode": ("Aspect ratio", 0, 4),
+}
+FIELD_LABELS = {**QUALITY_FIELDS, **UPSCALER_FIELDS,
+                **{key: spec[0] for key, spec in DISPLAY_FIELDS.items()}}
+LIBRARY_FORMATS = (1, 2)
 
 
 def _read(path: Path) -> bytes:
@@ -110,7 +134,7 @@ def _values(data: bytes) -> dict[str, str]:
 
 def _semantic_values(data: bytes) -> dict:
     values = _values(data)
-    for key in values.keys() & QUALITY_FIELDS.keys():
+    for key in values.keys() & FIELD_LABELS.keys():
         value = values[key].casefold()
         if value in ("true", "false"):
             values[key] = Decimal(int(value == "true"))
@@ -120,11 +144,16 @@ def _semantic_values(data: bytes) -> dict:
 
 
 def _quality(values):
-    if not isinstance(values, dict) or not values or not values.keys() <= QUALITY_FIELDS.keys():
+    if not isinstance(values, dict) or not values or not values.keys() <= FIELD_LABELS.keys():
         raise LaunchError("Graphics profile has missing or unsupported quality fields.")
     for key, value in values.items():
         if not isinstance(value, str) or len(value) > 32:
             raise LaunchError(f"Invalid graphics value: {key}")
+        if key in DISPLAY_FIELDS:
+            _label, minimum, maximum = DISPLAY_FIELDS[key]
+            if not re.fullmatch(r"[0-9]{1,7}", value) or not minimum <= int(value) <= maximum:
+                raise LaunchError(f"Invalid display value: {key}")
+            continue
         if value.casefold() in ("true", "false"):
             continue
         if not re.fullmatch(r"-?\d+(?:\.\d+)?", value) or not math.isfinite(float(value)) or abs(float(value)) > 10000:
@@ -135,7 +164,7 @@ def _quality(values):
 def profile_from_bytes(name: str, data: bytes) -> dict:
     values = _values(data)
     profile = {"id": uuid.uuid4().hex, "name": name, "video_version": VIDEO_VERSION,
-               "values": _quality({key: value for key, value in values.items() if key in QUALITY_FIELDS})}
+               "values": _quality({key: value for key, value in values.items() if key in FIELD_LABELS})}
     _validate_profile(profile)
     return profile
 
@@ -160,7 +189,7 @@ def library_path() -> Path:
 
 def _validate_library(library):
     if (not isinstance(library, dict) or set(library) != {"format", "selected", "profiles"}
-            or type(library["format"]) is not int or library["format"] != 1
+            or type(library["format"]) is not int or library["format"] not in LIBRARY_FORMATS
             or not isinstance(library["profiles"], list) or len(library["profiles"]) > MAX_PROFILES):
         raise LaunchError("Unrecognized graphics profile library format.")
     ids, names = {""}, set()
@@ -186,6 +215,8 @@ def load_library() -> dict:
 
 
 def save_library(library: dict) -> None:
+    # Format 2 profiles may carry upscaler and display values.
+    library = {**library, "format": 2}
     _validate_library(library)
     data = (json.dumps(library, indent=2) + "\n").encode("utf-8")
     if len(data) > MAX_BYTES:
@@ -247,7 +278,7 @@ def preview(profile: dict, data: bytes) -> tuple[bytes, list[str]]:
         token = entries[key].value
         if value != token.value:
             edits.append((token.start, token.end, '"' + value + '"'))
-        lines.append(f"{QUALITY_FIELDS[key]}: {token.value} → {value}")
+        lines.append(f"{FIELD_LABELS[key]}: {token.value} → {value}")
     for start, end, replacement in sorted(edits, reverse=True):
         text = text[:start] + replacement + text[end:]
     result = (b"\xef\xbb\xbf" if data.startswith(b"\xef\xbb\xbf") else b"") + text.encode("utf-8")

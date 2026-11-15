@@ -39,7 +39,7 @@
       "title": "Storage/recovery/update publication",
       "status": "bounded per-operation models plus GameinfoTransaction across Dolly, game, helper and reopen recovery; complete filesystem/crash composition open",
       "priority": 1,
-      "remaining": "graphics profile library and session-folder capture, editing-session/bootstrap/desktop startup files, replay/crav identity, native UI storage, file-system failure modes"
+      "remaining": "editing-session/bootstrap/desktop startup files, replay/crav identity, native UI storage, file-system failure modes; graphics profiles are tested, not modeled (session-owned files only)"
     },
     "L04": {
       "title": "Desktop input/UI lifetimes and publication",
@@ -1583,7 +1583,7 @@
     },
     {
       "path": "dolly/editing_session.py",
-      "sha256": "0e41cb060a8f6d77f5946fe97cafc70336853fd4f7366e2809373fef6b7612b6",
+      "sha256": "9e0611396097694d3bc15b2e14c81c9f03a253f8cd7e12383a940e787f837252",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -1628,7 +1628,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114d": "2026-11-14 profiles: launch layering is baseline, normal display identity, profile, then explicit Display launch options; the session record keeps the profile fields written. session_graphics compares the session's own video.txt after the game exits; save_session_graphics updates the selected profile or creates and selects a new one. Normal settings are never read for this or written."
     },
     {
       "path": "dolly/editor_actions.py",
@@ -2405,7 +2406,7 @@
     },
     {
       "path": "dolly/graphics_profiles.py",
-      "sha256": "ebd58e51cc79092511d22faa12803d302be6b1157c0c4eae68b664ee683da96f",
+      "sha256": "044b30db488f627b5a3288466b6aaa9567e7e053c7420c8791daedff400e3774",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2466,11 +2467,12 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114d": "2026-11-14 profiles: the allowlist adds upscaler/DLSS (upscaling, DLSS mode/preset, render scale, FSR sharpness) and bounded display fields (resolution, refresh, window mode, vsync, aspect); monitor/device IDs stay out. Library format 2 is written; format 1 still loads."
     },
     {
       "path": "dolly/graphics_profiles_ui.py",
-      "sha256": "8094533661ddc7e25cb16eff48f9215c3dd0be82dc574f707f1582e53cab1c97",
+      "sha256": "0a6fdc74897e26bb156a98aa5b2c6c747b22dedfae138a3b9a698e1bd3ce4fc2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2501,11 +2503,12 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114d": "2026-11-14 profiles: labels cover every profile field and the help text describes the wider profile and the after-session offer."
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "1647482e0ef87e0af3aa3f92f139816ae88d459d9cb2f821426cfb3930f112ed",
+      "sha256": "97e991a13f227419c8c7d96adb013c2ca08e82cbf81d213fa8782d1317240734",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2613,7 +2616,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261114c": "2026-11-14 storage: the startup scan runs recover_at_startup after discovery; a GameinfoConflict from any operation opens a two-button choice (put my original back / keep the current file) instead of an error."
+      "reconciliation_20261114c": "2026-11-14 storage: the startup scan runs recover_at_startup after discovery; a GameinfoConflict from any operation opens a two-button choice (put my original back / keep the current file) instead of an error.",
+      "reconciliation_20261114d": "2026-11-14 profiles: when the game exits, Dolly offers to save graphics changed in that session to the Dolly profile (or a new one)."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -11426,7 +11430,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "1647482e0ef87e0af3aa3f92f139816ae88d459d9cb2f821426cfb3930f112ed"
+      "owner_utf8_lf_sha256": "97e991a13f227419c8c7d96adb013c2ca08e82cbf81d213fa8782d1317240734"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -17255,6 +17259,11 @@
       "category": "test/support input"
     },
     {
+      "path": "tests/test_graphics_session_profiles.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_metadata_boundaries.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18388,7 +18397,7 @@
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
     "formal spec/interface": 154,
-    "test/support input": 80,
+    "test/support input": 81,
     "external dependency/resource": 201
   },
   "unclassified": 0,
