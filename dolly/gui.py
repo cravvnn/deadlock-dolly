@@ -3631,9 +3631,15 @@ class DollyApp:
             return
         if not found:
             return
+        if getattr(self, "_error_dialog_open", False):
+            # One dialog at a time (see _error); offer again once it is closed.
+            self.root.after(1000, lambda: self._offer_session_graphics(session))
+            return
         changed = "\n".join(f"{graphics_profiles.FIELD_LABELS[key]}: {value}"
                             for key, value in sorted(found["changes"].items()))
         profile = found["profile"]
+        failure = None
+        self._error_dialog_open = True
         try:
             if profile:
                 save = messagebox.askchoice(
@@ -3662,7 +3668,11 @@ class DollyApp:
                 saved = editing_session.save_session_graphics(session.session_dir, name=name)
                 message = f"Saved this session's graphics as \"{saved['name']}\" and selected it for the next replay."
         except (OSError, ValueError, graphics_profiles.LaunchError) as exc:
-            self._error("Graphics profiles", exc)
+            failure = exc
+        finally:
+            self._error_dialog_open = False
+        if failure is not None:
+            self._error("Graphics profiles", failure)
             return
         panel = getattr(self, "graphics_profiles", None)
         if panel is not None:
@@ -3788,13 +3798,23 @@ class DollyApp:
         """The user's explicit choice; Dolly never overwrites outside changes itself."""
         if self.closed:
             return
-        choice = messagebox.askchoice(
-            "Game configuration changed",
-            "Something changed Deadlock's gameinfo.gi while Dolly's version was in place "
-            "(for example a mod manager or a Steam file check). Dolly did not overwrite it.\n\n"
-            f"Current file: {conflict.target}\nYour original, saved by Dolly: {conflict.backup}\n\n"
-            "Put your original back, or keep the current file?",
-            "Put my original back", "Keep the current file", parent=self.root)
+        if getattr(self, "_error_dialog_open", False):
+            # One dialog at a time (see _error). Nothing was changed; the same
+            # question comes back before the next launch.
+            self.status_text.set("Deadlock's gameinfo.gi was changed outside Dolly. Dolly will ask what to do before the next launch.")
+            self._log("Game configuration choice postponed: another dialog is open.")
+            return
+        self._error_dialog_open = True
+        try:
+            choice = messagebox.askchoice(
+                "Game configuration changed",
+                "Something changed Deadlock's gameinfo.gi while Dolly's version was in place "
+                "(for example a mod manager or a Steam file check). Dolly did not overwrite it.\n\n"
+                f"Current file: {conflict.target}\nYour original, saved by Dolly: {conflict.backup}\n\n"
+                "Put your original back, or keep the current file?",
+                "Put my original back", "Keep the current file", parent=self.root)
+        finally:
+            self._error_dialog_open = False
         if choice is None:
             self.status_text.set("Game configuration left unchanged. Dolly will ask again before the next launch.")
             return

@@ -125,5 +125,36 @@ class GraphicsSessionProfiles(unittest.TestCase):
         self.assertEqual(graphics_profiles.load_library()["profiles"][0]["name"], "Old")
 
 
+class OnePromptAtATime(unittest.TestCase):
+    """The save-graphics and gameinfo prompts follow the one-dialog rule."""
+
+    def app(self, **state):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        return SimpleNamespace(closed=False, root=MagicMock(), status_text=MagicMock(), _log=MagicMock(),
+                               _error=MagicMock(), _submit=MagicMock(), **state)
+
+    def test_prompts_wait_while_another_dialog_is_open(self):
+        from types import SimpleNamespace
+        from dolly import gui
+        found = {"profile": None, "changes": {"setting.r_citadel_shadow_quality": "3"}}
+        conflict = SimpleNamespace(target="gameinfo.gi", backup="original.gameinfo.gi", session_dir="session")
+        with patch.object(gui.messagebox, "askchoice") as ask, patch.object(gui.simpledialog, "askstring"), \
+                patch.object(editing_session, "session_graphics", return_value=found):
+            app = self.app(_error_dialog_open=True)
+            gui.DollyApp._offer_session_graphics(app, SimpleNamespace(session_dir="session"))
+            gui.DollyApp._ask_gameinfo_conflict(app, conflict)
+            ask.assert_not_called()
+            app.root.after.assert_called_once()  # The offer comes back; the conflict is asked at the next launch.
+            app._submit.assert_not_called()
+            # While one of these prompts is open, a later error is logged, not stacked on top.
+            app = self.app(_error_dialog_open=False)
+            seen = []
+            ask.side_effect = lambda *args, **kwargs: seen.append(app._error_dialog_open)
+            gui.DollyApp._offer_session_graphics(app, SimpleNamespace(session_dir="session"))
+            gui.DollyApp._ask_gameinfo_conflict(app, conflict)
+            self.assertEqual((seen, app._error_dialog_open), ([True, True], False))
+
+
 if __name__ == "__main__":
     unittest.main()
