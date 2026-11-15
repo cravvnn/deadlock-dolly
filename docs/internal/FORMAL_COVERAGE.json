@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "e6822c73933754d2176d434ab1f276a084e7d98d14fcf97a020107dded275a01",
+      "sha256": "6d70d891eaacf905a4a0a8983feea4a2a28582f5ff8a41904b36c6e454ee002d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -137,7 +137,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261113_version": "0.7.36-beta version string only.",
-      "reconciliation_20261114_version": "0.7.37-beta version string only."
+      "reconciliation_20261114_version": "0.7.37-beta version string only.",
+      "reconciliation_20261114b_version": "0.7.38-beta version string only."
     },
     {
       "path": "dolly/__main__.py",
@@ -12917,6 +12918,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.38-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.4-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18317,7 +18323,7 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 530,
+    "metadata/configuration/documentation input": 531,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
     "formal spec/interface": 153,
