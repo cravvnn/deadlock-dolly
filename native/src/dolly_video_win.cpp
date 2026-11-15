@@ -1737,31 +1737,51 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
     }
     if (FAILED(s.error.load()) || s.cancel.load())
         return;
+    const auto read_backbuffer = [&](Com<ID3D11Texture2D>& texture,
+                                     D3D11_TEXTURE2D_DESC& texture_desc) {
+        HRESULT hr = swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                          reinterpret_cast<void**>(texture.put()));
+        if (FAILED(hr)) {
+            fail(s, hr, L"The game's DirectX 11 backbuffer became unavailable.");
+            return false;
+        }
+        texture->GetDesc(&texture_desc);
+        return true;
+    };
     Com<ID3D11Texture2D> backbuffer;
-    HRESULT hr = swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D),
-                                      reinterpret_cast<void**>(backbuffer.put()));
-    if (FAILED(hr)) {
-        fail(s, hr, L"The game's DirectX 11 backbuffer became unavailable.");
+    D3D11_TEXTURE2D_DESC desc{};
+    HRESULT hr = S_OK;
+    if (!s.camera_only && !s.configured.load(std::memory_order_acquire)) {
+        // Startup configuration: the worker waits for it before creating any
+        // output, so a failure here cannot disagree with kept files.
+        if (s.stopping.load() || !read_backbuffer(backbuffer, desc))
+            return;
+        initialize_resources(s, swapchain, device, backbuffer.p, desc);
         return;
     }
-    D3D11_TEXTURE2D_DESC desc{};
-    backbuffer->GetDesc(&desc);
+    // Every later failure point runs inside the producer gate. Increment
+    // before testing ready: the worker closes ready, then waits for admitted
+    // callbacks before its single stop decision, so a failure is either
+    // counted before that decision or never observed (the backbuffer is not
+    // read once admission has closed). Both sides are a store/load handshake,
+    // so the increment and ready load are seq_cst to match quiesce_producers().
+    struct ProducerScope {
+        Session& session;
+        explicit ProducerScope(Session& value) : session(value) {
+            session.producer_active.fetch_add(1, std::memory_order_seq_cst);
+        }
+        ~ProducerScope() { session.producer_active.fetch_sub(1, std::memory_order_release); }
+    } producer(s);
+    if (!s.ready.load(std::memory_order_seq_cst)) {
+        if (!s.camera_only)
+            s.capture_not_ready.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    if (s.camera_only && s.stopping.load())
+        return;
+    if (!read_backbuffer(backbuffer, desc))
+        return;
     if (s.camera_only) {
-        // Increment before testing ready. The worker closes ready, then waits
-        // for all admitted callbacks before reading camera_trace. Both sides
-        // are a store/load handshake, so the increment and ready load are
-        // seq_cst to match quiesce_producers().
-        struct CameraProducer {
-            Session& session;
-            explicit CameraProducer(Session& value) : session(value) {
-                session.producer_active.fetch_add(1, std::memory_order_seq_cst);
-            }
-            ~CameraProducer() {
-                session.producer_active.fetch_sub(1, std::memory_order_release);
-            }
-        } producer(s);
-        if (!s.ready.load(std::memory_order_seq_cst) || s.stopping.load())
-            return;
         if (!desc.Width || !desc.Height || desc.Width > 32768 || desc.Height > 32768) {
             fail(s, E_FAIL, L"Camera-only capture received invalid output dimensions.");
             return;
@@ -1825,28 +1845,11 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         s.wake.notify_one();
         return;
     }
-    if (!s.configured.load(std::memory_order_acquire)) {
-        if (s.stopping.load())
-            return;
-        initialize_resources(s, swapchain, device, backbuffer.p, desc);
-        return;
-    }
     if (gpu.swapchain != swapchain || gpu.device != device || desc.Width != gpu.description.Width ||
         desc.Height != gpu.description.Height || desc.Format != gpu.description.Format ||
         desc.SampleDesc.Count != gpu.description.SampleDesc.Count) {
         fail(s, E_FAIL,
              L"The game resolution, swapchain or color format changed during recording.");
-        return;
-    }
-    struct ProducerScope {
-        Session& session;
-        explicit ProducerScope(Session& value) : session(value) {
-            session.producer_active.fetch_add(1, std::memory_order_seq_cst);
-        }
-        ~ProducerScope() { session.producer_active.fetch_sub(1, std::memory_order_release); }
-    } producer(s);
-    if (!s.ready.load(std::memory_order_seq_cst)) {
-        s.capture_not_ready.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     auto* timing = s.capture_trace.begin(s.max_frames != 0, replay_time, capture_entry,

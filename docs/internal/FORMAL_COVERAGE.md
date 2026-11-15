@@ -5,14 +5,15 @@ have explicit roles in FORMAL_COVERAGE.json. This is accounting, not full-file
 semantic review or whole-program proof. Test-reference leads are navigation,
 not execution coverage. No row has full formal signoff.
 
-The draft has85bounded model scopes/101configurations, with263expected failing
+The draft has85bounded model scopes/101configurations, with264expected failing
 mutants (0.7.35 added CameraOnlyCapture/CravCapture; the 2026-11-13 native sweep
 added 17 across VideoCompleteness, NativeSnapshotClose, MediaDetach,
 StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture, and the DollyRoot
 root composition added 2 configurations and 6 mutants; the 2026-11-14 GameExitClose
 process model added 1 configuration and 5 mutants, and the second root
 composition added 4 root mutants; CameraSessionModes added 2 configurations and 4
-mutants). The seven additions cover prepared recording, release/retry, worker
+mutants; the capture-fault fix removed the root's known-gap mutant and added two
+outside-the-gate mutants). The seven additions cover prepared recording, release/retry, worker
 retirement, capture restoration, heartbeat mapping lifetime, shared native
 snapshot residence and coherent status readback. SPECS.md states their bounds.
 The main-view callback is no longer assumed serialized: on_view admits one

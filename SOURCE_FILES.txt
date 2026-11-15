@@ -537,6 +537,7 @@ native/tests/replay_events_tests.cpp
 native/tests/reviewed_contract_tests.cpp
 native/tests/sound_compat_tests.cpp
 native/tests/video_color_smoke.cpp
+native/tests/video_late_fault_smoke.cpp
 native/tests/video_math_tests.cpp
 native/tests/video_smoke.cpp
 native/tests/visualization_tests.cpp

@@ -3,7 +3,6 @@
   {"name": "close keeps heartbeat running", "replace": [["app' = \"closed\" /\\ link' = FALSE", "app' = \"closed\" /\\ link' = link"]], "expect": "CloseReleases"},
   {"name": "no heartbeat-expiry release", "replace": [["Expire == /\\ ~link /\\ game /\\ writer = \"shot\"", "Expire == /\\ FALSE /\\ ~link /\\ game /\\ writer = \"shot\""]], "expect": "CloseReleases"},
   {"name": "no media detach stop after close", "replace": [["RecFinish == /\\ rec = \"on\" /\\ game /\\", "RecFinish == /\\ rec = \"on\" /\\ game /\\ app # \"closed\" /\\"]], "expect": "RecordingSettles"},
-  {"name": "known gap: late capture fault", "replace": [["AllowLateCaptureFault == FALSE", "AllowLateCaptureFault == TRUE"]], "expect": "HonestOutcome"},
   {"name": "no restoration retry", "replace": [["Restore == /\\ Camera!Restore /\\", "Restore == /\\ FALSE /\\ Camera!Restore /\\"]], "expect": "CloseReleases"},
   {"name": "publish Release before the playback worker joined", "replace": [["/\\ writer = \"shot\"\n                   /\\ ~worker", "/\\ writer = \"shot\""]], "expect": "QuietWhenRetired"},
   {"name": "recover a dead session without joining the worker", "replace": [["RecoverDead == /\\ app \\in {\"running\", \"closing\"} /\\ ~worker /\\ Camera!Lost", "RecoverDead == /\\ app \\in {\"running\", \"closing\"} /\\ Camera!Lost"]], "expect": "QuietWhenRetired"},

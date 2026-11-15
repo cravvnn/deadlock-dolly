@@ -23,8 +23,12 @@ EXTENDS Naturals
 \* barrier (after one apply_deferred_stop). Depth/Color/Sidecar/State model the
 \* depth discard, color DeleteFileW, sidecar writes and state store. Cancel
 \* (stop(true) or capture's apply_deferred_stop) may land at any step until done;
-\* one after Decide is too late and the take completes. Process termination and
-\* errors raised by other threads after the barrier are not modeled.
+\* one after Decide is too late and the take completes. Process termination is
+\* not modeled. CaptureFault is a capture-thread fail() (GetBuffer loss,
+\* resolution/swapchain change): since 2026-11-14 capture reads the backbuffer
+\* only inside the producer gate after the ready check, so it is enabled only
+\* for an admitted producer and is counted before the decision. Startup
+\* configuration failures happen before any output exists and are excluded.
 VARIABLES pc,fixed,ffmpeg,lost,error,cancelled,pending,overflow,published,
           ready,buffered,active,ppc,late,decided,depthKept,kept,sidecar
 vars == <<pc,fixed,ffmpeg,lost,error,cancelled,pending,overflow,published,
@@ -65,6 +69,8 @@ CheckReady == /\ ppc = "entered"
               /\ IF ready THEN ppc' = "admitted" /\ UNCHANGED active
                           ELSE ppc' = "idle" /\ active' = active - 1
               /\ UNCHANGED <<pc,take,cancelled,pending,out,ready,buffered,late>>
+CaptureFault == /\ ppc = "admitted" /\ ~error /\ error' = TRUE
+                /\ UNCHANGED <<pc,fixed,ffmpeg,lost,overflow,cancelled,pending,out,prod>>
 Publish == /\ ppc = "admitted" /\ ppc' = "idle" /\ active' = active - 1
            /\ IF pc \in {"capture","quiesce"} THEN pending' = TRUE /\ UNCHANGED late
                                               ELSE late' = TRUE /\ UNCHANGED pending
@@ -83,7 +89,7 @@ StoreState == /\ pc = "state" /\ pc' = "done" /\ published' = (Ok /\ ~CancelSeen
               /\ UNCHANGED <<take,cancelled,pending,decided,depthKept,kept,sidecar,prod>>
 Done == /\ pc = "done" /\ UNCHANGED vars
 Next == \/ Drain \/ Overflow \/ Cancel \/ ClearReady \/ FlushReady \/ ObserveIdle
-        \/ Enter \/ CheckReady \/ Publish
+        \/ Enter \/ CheckReady \/ Publish \/ CaptureFault
         \/ Decide \/ DepthStep \/ ColorStep \/ SidecarStep \/ StoreState \/ Done
 Spec == Init /\ [][Next]_vars
 TypeOK == /\ pc \in {"capture","quiesce","decide","depth","color","sidecar","state","done"}
@@ -94,15 +100,13 @@ TypeOK == /\ pc \in {"capture","quiesce","decide","depth","color","sidecar","sta
           /\ ppc \in {"idle","entered","admitted"} /\ late \in BOOLEAN
           /\ decided \in BOOLEAN /\ depthKept \in BOOLEAN /\ kept \in BOOLEAN
           /\ sidecar \in BOOLEAN
-\* Refines the shared RecorderApi (no late capture fault: other threads'
-\* errors after the barrier are not modeled). The terminal state is published,
+\* Refines the shared RecorderApi. The terminal state is published,
 \* else cancelled when the single decision saw a cancel, else failed; kept is
 \* the color file.
 recState == IF pc # "done" THEN "active"
             ELSE IF published THEN "completed"
             ELSE IF decided THEN "cancelled" ELSE "failed"
-Recorder == INSTANCE RecorderApi WITH AllowLateCaptureFault <- FALSE,
-    outcome <- recState, kept <- kept
+Recorder == INSTANCE RecorderApi WITH outcome <- recState, kept <- kept
 RefinesRecorder == Recorder!Spec
 NoIncompleteSuccess == published /\ (fixed \/ ffmpeg) => ~lost
 \* A cancel observed at the decision point never yields a completed take.

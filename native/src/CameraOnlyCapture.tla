@@ -36,6 +36,9 @@ Stop == /\ pc = "running" /\ ~stopping /\ stopping' = TRUE
 Cancel == /\ pc # "done" /\ ~cancelled
           /\ cancelled' = TRUE /\ stopping' = TRUE
           /\ UNCHANGED <<ready, failed, callback, count, pc, published>> /\ UNCHANGED frozen
+\* Worker-side fault while running (the 10 s no-progress timeout). Capture-
+\* thread faults (GetBuffer loss, dimensions, clock, pose) happen inside the
+\* producer gate since 2026-11-14 and are the "invalid" callback above.
 Fault == /\ pc = "running" /\ ~failed
          /\ failed' = TRUE /\ stopping' = TRUE
          /\ UNCHANGED <<ready, cancelled, callback, count, pc, published>> /\ UNCHANGED frozen
@@ -62,11 +65,8 @@ Bounded == count <= 2
 QuiescentPublication == published => (~ready /\ callback = "none" /\ stopping)
 CompletePublication == published => (count = 2 /\ decision = "keep" /\ ~failed)
 OutcomeAgrees == pc = "done" => (published <=> status = "completed")
-\* Refines the shared RecorderApi without its documented gap: this model has no
-\* capture fail() after the decision (GetBuffer loss before the camera-only
-\* branch is outside the gate; see RecorderApi and DollyRoot).
-Recorder == INSTANCE RecorderApi WITH AllowLateCaptureFault <- FALSE,
-    outcome <- status, kept <- published
+\* Refines the shared RecorderApi.
+Recorder == INSTANCE RecorderApi WITH outcome <- status, kept <- published
 RefinesRecorder == Recorder!Spec
 QuiescentReader == (pc \in {"publishing", "done"}) => (~ready /\ callback = "none")
 ====

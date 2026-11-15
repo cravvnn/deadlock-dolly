@@ -285,6 +285,33 @@ if(WIN32)
             add_test(NAME native_camera_only_smoke COMMAND video_smoke --camera-only)
             set_tests_properties(native_camera_only_smoke PROPERTIES TIMEOUT 45)
             set_tests_properties(native_video_cap_smoke PROPERTIES TIMEOUT 40)
+            # A late capture fault after the encoder's stop decision: a generated
+            # test copy calls a hook after each decide_cancel. Never add the hook
+            # to the production recorder.
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/dolly_video_win.cpp")
+            file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/dolly_video_win.cpp" video_source)
+            set(video_decision "const bool cancelled = decide_cancel(*s);")
+            string(REPLACE "${video_decision}" "" video_without_decision "${video_source}")
+            string(LENGTH "${video_source}" video_length)
+            string(LENGTH "${video_without_decision}" video_without_length)
+            string(LENGTH "${video_decision}" video_decision_length)
+            math(EXPR video_decisions "(${video_length} - ${video_without_length}) / ${video_decision_length}")
+            if(NOT video_decisions EQUAL 3)
+                message(FATAL_ERROR "Reconcile late capture fault instrumentation with the recorder workers")
+            endif()
+            string(REPLACE "${video_decision}"
+                "${video_decision} if (dolly_test_hooks::after_decision) dolly_test_hooks::after_decision();"
+                video_fault_source "${video_source}")
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dolly_video_late_fault.cpp"
+                "namespace dolly_test_hooks { extern void (*after_decision)(); }\n${video_fault_source}")
+            add_executable(video_late_fault_smoke tests/video_late_fault_smoke.cpp
+                "${CMAKE_CURRENT_BINARY_DIR}/dolly_video_late_fault.cpp")
+            target_include_directories(video_late_fault_smoke PRIVATE include src)
+            target_compile_definitions(video_late_fault_smoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+            target_link_libraries(video_late_fault_smoke PRIVATE dolly_overlay)
+            add_test(NAME native_video_late_fault_smoke COMMAND video_late_fault_smoke)
+            set_tests_properties(native_video_late_fault_smoke PROPERTIES TIMEOUT 45)
         endif()
 endif()
     if(MSVC)

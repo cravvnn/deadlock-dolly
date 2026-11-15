@@ -673,7 +673,7 @@ GUI startup, live media finalization or packaged-output qualification is inferre
 
 `native/src/VideoCompleteness.tla` models the final producer-quiescence, late GPU loss, fixed-step timeout and publication boundary in `dolly_video_win.cpp`. Four mode combinations, one pending frame and one cancellation; three guard mutants. FFmpeg and fixed-step takes cannot publish successfully after counted loss; fixed-step queue timeout stops instead of dropping. Ordinary real-time Media Foundation retains timestamped partial capture semantics. Does not establish game-clock accuracy, GPU pixels, throughput or whole-program correctness. Simplification keeps one shared terminal check across both writers, with no new runtime state.
 
-Stop handshake and cancel decision (2026-11-12): one looping producer meets the encoder's `quiesce_producers` barrier. An explicit store-buffer entry stands for the encoder's `ready=false` store, so a release/acquire handshake can let a producer see `ready` after the encoder observed no producers and publish a frame past the drain and `gpu_pending` exchange (NoUncountedFrame). All four handshake operations are now seq_cst; every barrier, including the post-catch one, is kept. Finalization takes one cancel snapshot (`decide_cancel`, which applies a deferred stop once) after the final barrier; termination, drop accounting, the incomplete-take check, depth finish/discard, colour delete, sidecars and state follow it (OutcomeAgrees). A cancel after the decision completes the take; the previous re-reads could report cancelled while keeping the MP4, or delete colour while keeping depth (reproduced privately on one injected schedule). Seven mutants, 552 states with a larger scope than the earlier 72-state model, so the counts are not comparable. The store-buffer abstraction covers x86-TSO store-to-load reordering only, not the C++ memory model. A `fail()` from capture after the decision point (GetBuffer failure, resolution change) is still outside the model.
+Stop handshake and cancel decision (2026-11-12): one looping producer meets the encoder's `quiesce_producers` barrier. An explicit store-buffer entry stands for the encoder's `ready=false` store, so a release/acquire handshake can let a producer see `ready` after the encoder observed no producers and publish a frame past the drain and `gpu_pending` exchange (NoUncountedFrame). All four handshake operations are now seq_cst; every barrier, including the post-catch one, is kept. Finalization takes one cancel snapshot (`decide_cancel`, which applies a deferred stop once) after the final barrier; termination, drop accounting, the incomplete-take check, depth finish/discard, colour delete, sidecars and state follow it (OutcomeAgrees). A cancel after the decision completes the take; the previous re-reads could report cancelled while keeping the MP4, or delete colour while keeping depth (reproduced privately on one injected schedule). Seven mutants, 552 states with a larger scope than the earlier 72-state model, so the counts are not comparable. The store-buffer abstraction covers x86-TSO store-to-load reordering only, not the C++ memory model. Capture failures (2026-11-14): capture now reads the backbuffer only inside the producer gate, after the ready check, so a GetBuffer loss or resolution/swapchain change is counted before the decision or not observed at all once admission has closed; startup configuration (before any output exists) stays outside the gate. CaptureFault models it; a mutant enabling it outside the gate breaks OutcomeAgrees. Before the fix, a late backbuffer loss left a kept MP4 reported as failed and destroyed a complete camera-only trace; `video_late_fault_smoke` reproduces both through a generated test copy that calls `capture()` with a lost swapchain right after each worker's decision, and passes with the fix.
 
 ## Startup refusal and configuration compensation
 
@@ -1054,11 +1054,11 @@ while the game runs (a lease ends without restoration only for a dead process);
 a terminal recording state agrees with the kept files; close returns, then the
 camera is released by the acknowledged Release or the native heartbeat-expiry
 fault (which restores effects and retries every frame), and media detach stops an
-active take. The late capture-thread fault after the encoder's decision is a
-named exception in RecorderApi: the default root excludes it and the
-"known gap" mutant shows it breaks HonestOutcome. Six mutants remove the root's
-own guards (new-shot admission, heartbeat stop on close, expiry release, detach
-stop, restoration retry) or admit the gap.
+active take. The late capture-thread fault that RecorderApi used to name as an
+exception was fixed on 2026-11-14 (capture failures run inside the producer
+gate), so RecorderApi has no exception and its "known gap" mutant was removed.
+Five mutants remove the root's own guards (new-shot admission, heartbeat stop on
+close, expiry release, detach stop, restoration retry).
 
 DollyRoot-success.cfg fixes a live game and returning restoration and requires
 every shot's lease to retire unless the app closes first; it fails if the

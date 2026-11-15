@@ -13,9 +13,9 @@ EXTENDS Naturals
 \*    _stop_before_new_shot -> acknowledged release before prepare).
 \*  2 RestorationOwned: while the game runs, unrestored effects always have an
 \*    owner; refusal/timeout keeps the lease (ReleaseJoin, CameraSessionJoin).
-\*  3 HonestOutcome: a terminal recording state agrees with the kept files,
-\*    except RecorderApi's documented late capture fault (off by default; the
-\*    "known gap" mutant shows the exception is real).
+\*  3 HonestOutcome: a terminal recording state agrees with the kept files
+\*    (no exception: capture failures are ordered before the encoder's
+\*    decision since 2026-11-14).
 \*  4 CloseReturns / CloseReleases / RecordingSettles: NativeBridge.close returns
 \*    (bounded release(0.25), timed joins); afterwards the camera is released
 \*    either by the acknowledged Release or by the native heartbeat-expiry fault
@@ -41,7 +41,6 @@ EXTENDS Naturals
 \* Players/screenshot paths, and the internal steps of each component (they
 \* belong to the component specs that refine these interfaces).
 CONSTANTS GameMayExit, RestoreMayFail, JoinMayHang
-AllowLateCaptureFault == FALSE
 VARIABLES lease, writer, restored, game, outcome, kept, rec, app, link,
           gen, retiredGen, released, worker, ctx, ctxReady, stopAsked, unmapped
 vars == <<lease, writer, restored, game, outcome, kept, rec, app, link,
@@ -102,7 +101,7 @@ StartRecord == /\ app = "running" /\ game /\ rec = "none" /\ rec' = "on"
                               worker, ctxReady, stopAsked, unmapped>>
 RecStage == /\ rec = "on" /\ Recorder!Stage /\ UNCHANGED <<camVars, ctlVars, extVars>>
 \* Stop/cancel/frame cap/failure, or media detach after the editor leaves.
-RecFinish == /\ rec = "on" /\ game /\ (Recorder!Finish \/ Recorder!GapFinish)
+RecFinish == /\ rec = "on" /\ game /\ Recorder!Finish
              /\ UNCHANGED <<camVars, ctlVars, extVars>>
 \* VideoExport.stop(capture_only): the console context check after readback.
 CtxReady == /\ ctx = "held" /\ game /\ ~ctxReady /\ ctxReady' = TRUE

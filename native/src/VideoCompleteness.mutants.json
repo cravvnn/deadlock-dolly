@@ -68,5 +68,15 @@
       ]
     ],
     "expect": "OutcomeAgrees"
+  },
+  {
+    "name": "capture fault outside the producer gate",
+    "replace": [
+      [
+        "CaptureFault == /\\ ppc = \"admitted\" /\\ ~error",
+        "CaptureFault == /\\ pc # \"done\" /\\ ~error"
+      ]
+    ],
+    "expect": "OutcomeAgrees"
   }
 ]
