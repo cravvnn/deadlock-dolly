@@ -3,8 +3,8 @@
     "name": "acknowledge before all files restored",
     "replace": [
       [
-        "pc = 4 /\\ journal'",
-        "pc \\in {2,4} /\\ journal'"
+        "pc = SavePc /\\ journal'",
+        "pc \\in {2, SavePc} /\\ journal'"
       ]
     ],
     "expect": "NoPrematureAck"
@@ -13,8 +13,8 @@
     "name": "release pending marker before recovery",
     "replace": [
       [
-        "pc = 5 /\\ marker'",
-        "pc \\in {1,5} /\\ marker'"
+        "pc = ReleasePc /\\ marker'",
+        "pc \\in {1, ReleasePc} /\\ marker'"
       ]
     ],
     "expect": "RecoveryComplete"
@@ -23,10 +23,43 @@
     "name": "consume a supposedly immutable backup",
     "replace": [
       [
-        "ELSE Disk!Copy(pc)",
-        "ELSE Disk!Move(pc)"
+        "THEN /\\ Disk!Copy(Current)",
+        "THEN /\\ Disk!Move(Current)"
       ]
     ],
     "expect": "ImmutableCopyBackups"
+  },
+  {
+    "name": "rollback restores in name order",
+    "config": "UpdateRollback-fileToDir.cfg",
+    "replace": [
+      [
+        "RKey(f) == IF Original[f] = \"absent\" THEN 10 - f ELSE 20 + f",
+        "RKey(f) == f"
+      ]
+    ],
+    "expect": "NoRecoveryError"
+  },
+  {
+    "name": "install writes before it removes",
+    "config": "UpdateRollback-dirToFile.cfg",
+    "replace": [
+      [
+        "Key(f) == IF Updated[f] = \"absent\" THEN 10 - f ELSE 20 + f",
+        "Key(f) == f"
+      ]
+    ],
+    "expect": "UpdateInstallable"
+  },
+  {
+    "name": "remove a file without pruning the folder it empties",
+    "config": "UpdateRollback-fileToDir.cfg",
+    "replace": [
+      [
+        "Pruned(f) == folders\n",
+        "Pruned(f) == folders \\cup {p \\in Files: Inside(f, p)}\n"
+      ]
+    ],
+    "expect": "NoRecoveryError"
   }
 ]

@@ -41,7 +41,7 @@ def atomic_json(path, value):
             pass  # A locked temporary must not replace the primary write error.
 
 
-def checked_file(root, name):
+def checked_file(root, name, *, allow_dir=False):
     if name != MANIFEST and not owned_name(name):
         raise ValueError("Unmanaged update target")
     root = Path(root).resolve()
@@ -53,9 +53,36 @@ def checked_file(root, name):
             break
         if item.is_symlink() or getattr(item, "is_junction", lambda: False)():
             raise ValueError("Linked application files cannot be updated")
-    if path.exists() and not path.is_file():
+    if path.exists() and not path.is_file() and not (allow_dir and path.is_dir()):
         raise ValueError("Application file is occupied by a directory")
     return path
+
+
+def _prune(directory, root):
+    """Remove folders a removal left empty, up to the installation root.
+
+    rmdir only succeeds on an empty folder, so nothing with content is touched.
+    A release that turns a folder into a file needs the empty folder gone.
+    """
+    root = Path(root).resolve()
+    directory = Path(directory)
+    while directory.resolve() != root and directory.resolve().is_relative_to(root):
+        try:
+            directory.rmdir()
+        except OSError:
+            return
+        directory = directory.parent
+
+
+def _vacated(path, target, removed):
+    """True when the folder at path holds only owned files this update removes."""
+    root = Path(target).resolve()
+    for item in path.rglob("*"):
+        if item.is_symlink() or getattr(item, "is_junction", lambda: False)():
+            return False
+        if item.is_file() and item.resolve().relative_to(root).as_posix() not in removed:
+            return False
+    return True
 
 
 def _clear_readonly(path):
@@ -115,17 +142,25 @@ def rollback(plan):
     # Backups are complete before any installed file is touched. Repeating this
     # operation after interruption is safe. Keep originals immutable until the
     # completed workspace is cleaned up, including after a partial rollback.
+    # Remove what the update added first (deepest first, pruning emptied
+    # folders), then restore: a release may have turned a file into a folder
+    # or the reverse (UpdateRollback.tla, fileToDir/dirToFile).
+    added = sorted((name for name, old_digest in state["before"].items() if old_digest is None), reverse=True)
+    for name in added:
+        path = checked_file(target, name, allow_dir=True)
+        if path.is_file():
+            path.unlink()
+            _prune(path.parent, target)
     for name, old_digest in state["before"].items():
-        path = checked_file(target, name)
         if old_digest is None:
-            path.unlink(missing_ok=True)
-        else:
-            if path.is_file() and digest_file(path) == old_digest:
-                continue
-            backup = checked_file(work / "backup", name)
-            if digest_file(backup) != old_digest:
-                raise ValueError("Update backup is damaged")
-            replace_file(backup, path)
+            continue
+        path = checked_file(target, name)
+        if path.is_file() and digest_file(path) == old_digest:
+            continue
+        backup = checked_file(work / "backup", name)
+        if digest_file(backup) != old_digest:
+            raise ValueError("Update backup is damaged")
+        replace_file(backup, path)
     state["state"] = "rolled_back"
     atomic_json(work / "journal.json", state)
     (target / PENDING).unlink(missing_ok=True)
@@ -140,14 +175,19 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
     if (target / PENDING).exists() or (work / "journal.json").exists():
         raise ValueError("An unfinished update must be recovered first")
     names = sorted(set(old["files"]) | set(new["files"]) | {MANIFEST})
+    removed = set(old["files"]) - set(new["files"])
     before = {}
     modified = set()
     for name in names:
-        path = checked_file(target, name)
+        # A folder may stand where the new release has a file, but only if it
+        # holds nothing except owned files this update removes.
+        vacated = (name in new["files"] and (target / name).is_dir()
+                   and _vacated(checked_file(target, name, allow_dir=True), target, removed))
+        path = checked_file(target, name, allow_dir=vacated)
         if name != MANIFEST:
             if name in new["files"] and digest_file(checked_file(payload, name)) != new["files"][name]:
                 raise ValueError("Staged update changed")
-            if path.exists() and name not in old["files"]:
+            if path.exists() and name not in old["files"] and not vacated:
                 raise ValueError("Update would overwrite an unowned file: " + name)
             if name in old["files"] and path.is_file() and digest_file(path) != old["files"][name]:
                 # A locally modified application file (for example a hand-built
@@ -167,13 +207,15 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
     atomic_json(work / "journal.json", state)
     atomic_json(target / PENDING, plan)
     try:
-        # Manifest is last so it describes a fully installed set.
-        for name in [n for n in names if n != MANIFEST] + [MANIFEST]:
+        # Removals first (deepest first, pruning emptied folders), then writes,
+        # so a file can replace a folder and the reverse. Manifest is last so
+        # it describes a fully installed set.
+        for name in sorted(removed, reverse=True):
             path = checked_file(target, name)
-            if name == MANIFEST or name in new["files"]:
-                replace(checked_file(payload, name), path)
-            else:
-                path.unlink(missing_ok=True)
+            path.unlink(missing_ok=True)
+            _prune(path.parent, target)
+        for name in [n for n in names if n != MANIFEST and n in new["files"]] + [MANIFEST]:
+            replace(checked_file(payload, name), checked_file(target, name))
         health_check(target)
         state["state"] = "complete"
         atomic_json(work / "journal.json", state)
