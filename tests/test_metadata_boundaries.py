@@ -127,6 +127,21 @@ class MetadataBoundaryTests(unittest.TestCase):
             finally:
                 link.rmdir() if os.name == "nt" else link.unlink()
 
+    def test_game_content_roots_match_deadlock_and_visual_packs_stay_out(self):
+        # Deadlock stores audio under sounds/ and character animation under
+        # animgraphs/ (read from the shipped pak01). Packs that only change
+        # how the game renders stay out of a recording session.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            cases = [("sounds", "vo/hero/line"), ("animgraphs", "heroes/hero"),
+                     ("particles", "abilities/low"), ("postprocessing", "grade"),
+                     ("materials", "environment/flat")]
+            for index, (top, rest) in enumerate(cases):
+                mount = root / f"case{index}"; mount.mkdir()
+                vpk(mount / "pak01_dir.vpk", [(f"{top}/{rest}", "asset")])
+                verdict = mod_policy.classify_mount(mount)
+                self.assertEqual(verdict["allowed"], top in ("sounds", "animgraphs"), (top, verdict))
+
     def test_minidump_actual_read_budget_survives_growth_after_stat(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "owned.dmp"; valid = bytes(minidump())

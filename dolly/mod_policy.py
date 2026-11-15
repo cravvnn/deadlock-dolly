@@ -21,7 +21,10 @@ from .panorama_assets import _iter_vpk_tree, _read_vpk_tree
 LOG = logging.getLogger(__name__)
 
 # Content roots a Dolly session may load.
-ALLOWED_ROOTS = frozenset({"models", "maps", "sound", "soundevents", "scenes", "animations", "materials"})
+# Deadlock ships audio under sounds/ and character animation under animgraphs/
+# (checked against its pak01); sound/ and animations/ are kept for older packs.
+ALLOWED_ROOTS = frozenset({"models", "maps", "sound", "sounds", "soundevents", "scenes", "animations",
+                           "animgraphs", "materials"})
 # Material overrides are only content when they belong to a model or map. Any
 # other material path is a visual/render override (environment, effects, ...).
 ALLOWED_MATERIAL_ROOTS = frozenset({"models", "maps"})
