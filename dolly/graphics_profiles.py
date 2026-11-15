@@ -14,7 +14,6 @@ import math
 from decimal import Decimal
 from pathlib import Path
 import re
-import stat
 import uuid
 
 from .launch_errors import LaunchError
@@ -312,27 +311,6 @@ def _save_journal(session: Path, record: dict) -> None:
     _atomic_write(session / JOURNAL, (json.dumps(record, indent=2) + "\n").encode("utf-8"))
 
 
-def prepare(session: Path, profile_id: str) -> None:
-    """Back up both files and journal before any installed graphics write."""
-    _load_record(session)
-    library = load_library()
-    profile = next((p for p in library["profiles"] if p["id"] == profile_id), None)
-    if profile is None:
-        raise LaunchError("Selected graphics profile is missing. Choose a profile in Settings.")
-    account, root = active_account(), steam_root()
-    target = video_path(account, root)
-    original = _read(target)
-    mode = stat.S_IMODE(target.stat().st_mode)
-    if not mode & stat.S_IWRITE:
-        raise LaunchError(f"video.txt is read-only. Make it writable or use current game settings: {target}")
-    applied, changes = preview(profile, original)
-    _atomic_write(session / ORIGINAL, original)
-    _atomic_write(session / APPLIED, applied)
-    _save_journal(session, {"format": 1, "state": "prepared", "target": str(target),
-        "steam_root": str(root), "account": account, "profile": profile, "changes": changes,
-        "original_sha256": _hash(original), "applied_sha256": _hash(applied), "original_mode": mode})
-
-
 def _transaction(session: Path):
     _load_record(session)
     try:
@@ -356,17 +334,6 @@ def _transaction(session: Path):
         return record, target, original, applied
     except (OSError, ValueError, KeyError, TypeError, LaunchError) as exc:
         raise LaunchError(f"Graphics recovery needs attention: {exc}. Original backup: {session / ORIGINAL}") from exc
-
-
-def apply(session: Path) -> None:
-    record, target, original, applied = _transaction(session)
-    if current_video() != target or _read(target) != original:
-        raise LaunchError("Steam user or video.txt changed during launch preparation; graphics were left untouched.")
-    _atomic_write(target, applied, record["original_mode"])
-    if _read(target) != applied:
-        raise LaunchError("Graphics profile write did not read back correctly; recovery is required.")
-    record["state"] = "applied"
-    _save_journal(session, record)
 
 
 def pending(session: Path) -> bool:
