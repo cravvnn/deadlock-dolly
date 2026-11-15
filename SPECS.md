@@ -1069,7 +1069,8 @@ Mod managers (checked against their sources, 2026-11-14): Grimoire mounts
 `citadel/grimoire`, `citadel/addons`, overflow `citadel/addonsN` and
 `citadel/deadworks_addons/vpks`; Deadlock Mod Manager mounts
 `citadel/addons[N][/<profile>]` and keeps the Deadworks launcher's
-`citadel/deadworks_mods`. All are carried. Only packs at a mount root are
+`citadel/deadworks_mods`. All are carried, as is any other mod folder below
+`citadel/` (Hyperline, hand-made folders) that passes the same content check. Only packs at a mount root are
 inspected, since the game loads nothing else there: Grimoire's
 `citadel/addons/.disabled` and DMM's other profile folders no longer affect
 the decision.

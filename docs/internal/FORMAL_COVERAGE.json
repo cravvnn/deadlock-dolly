@@ -2822,7 +2822,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "92eb9d4a13ccf8e97e52857cd1f7c09ca68695b8d652cb4c84e3373e6d097f8d",
+      "sha256": "d8a15a0c75b8bf71546cf7d0665aeb15b9333a7950882449e7d30e57dcd72e9f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2927,7 +2927,8 @@
       "reconciliation_20261114": "2026-11-14 process hardening: the game-exit watcher's bind_game call now passes process.poll() as the bridge's exit signal. GameExitClose checks the watcher's close against start_flight's _operations hold. Session.close configuration restore, double-close idempotence of overlay/config restore and GUI recovery remain open.",
       "reconciliation_20261114b": "2026-11-14 session close: Session.close now holds _restore_lock across config restoration, the journal read and overlay removal, so the exit watcher and dead-session recovery closing together serialize with each other and with record_exit (previously the unlocked journal read could meet the exit write and overlay removal could race itself). Sequential double close was already a no-op per step (journal early return, per-session overlay marker, hash-checked restore).",
       "reconciliation_20261114c": "2026-11-14 storage: recover_at_startup (skipped while any Deadlock runs) finishes an interrupted session when Dolly opens; resolve_gameinfo_conflict applies the user's choice then finishes recovery. GameinfoTransaction covers launch/restore/helper/recovery.",
-      "reconciliation_20261114e": "2026-11-14 mod managers: carried Game mounts add the Deadworks launcher's citadel/deadworks_mods (kept by Deadlock Mod Manager); Grimoire's grimoire/addons/addonsN/deadworks_addons/vpks and DMM's addons[N]/<profile> were already matched. Checked against both managers' sources."
+      "reconciliation_20261114e": "2026-11-14 mod managers: carried Game mounts add the Deadworks launcher's citadel/deadworks_mods (kept by Deadlock Mod Manager); Grimoire's grimoire/addons/addonsN/deadworks_addons/vpks and DMM's addons[N]/<profile> were already matched. Checked against both managers' sources.",
+      "reconciliation_20261114f": "2026-11-14 custom mod folders: any extra Game mount below citadel/ (Hyperline, modlock, hand-made folders) is a candidate; mod_policy still refuses render-only packs and paths resolving outside the game folder."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -11220,7 +11221,7 @@
         "dolly/GameinfoTransaction.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "92eb9d4a13ccf8e97e52857cd1f7c09ca68695b8d652cb4c84e3373e6d097f8d"
+      "owner_utf8_lf_sha256": "d8a15a0c75b8bf71546cf7d0665aeb15b9333a7950882449e7d30e57dcd72e9f"
     },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",

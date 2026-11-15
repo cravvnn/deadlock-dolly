@@ -189,6 +189,37 @@ class MetadataBoundaryTests(unittest.TestCase):
             vpk(addons / ".disabled" / "pak02_dir.vpk", [("models", "skin")])
             self.assertFalse(mod_policy.classify_mount(addons)["allowed"])
 
+    def test_custom_mod_folders_are_carried_under_the_same_check(self):
+        # Any extra folder under citadel/ (Hyperline, modlock, a hand-made
+        # folder) is carried when it holds content; render-only packs still stay
+        # out and nothing outside citadel/ or the game folder is mounted.
+        from dolly import launcher
+        text = '''"GameInfo" { FileSystem { SearchPaths {
+            Game citadel/my_recording_mods
+            Game citadel/hyperline_addons/vpks
+            Game citadel/low_settings
+            Game citadel/../outside
+            Game somewhere_else
+            Game citadel
+            Game core
+        } } }'''
+        mounts = launcher.mod_search_paths(text)
+        self.assertEqual([path for _key, path in mounts],
+                         ["citadel/my_recording_mods", "citadel/hyperline_addons/vpks", "citadel/low_settings",
+                          "citadel/../outside"])
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "game"
+            for name, rows in (("my_recording_mods", [("models", "skin")]),
+                               ("hyperline_addons/vpks", [("sounds", "vo")]),
+                               ("low_settings", [("particles", "low")])):
+                (root / "citadel" / name).mkdir(parents=True)
+                vpk(root / "citadel" / name / "pak01_dir.vpk", rows)
+            (Path(folder) / "outside").mkdir()
+            vpk(Path(folder) / "outside" / "pak01_dir.vpk", [("models", "skin")])
+            carried, excluded = mod_policy.split_mounts(mounts, root)
+            self.assertEqual([r["path"] for r in carried], ["citadel/my_recording_mods", "citadel/hyperline_addons/vpks"])
+            self.assertEqual([r["path"] for r in excluded], ["citadel/low_settings", "citadel/../outside"])
+
     def test_minidump_actual_read_budget_survives_growth_after_stat(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "owned.dmp"; valid = bytes(minidump())

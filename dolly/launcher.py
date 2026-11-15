@@ -75,7 +75,10 @@ STEAM_APP_ID = "1422450"
 # omits them, and mod_policy decides which are carried into a session.
 # Grimoire: citadel/grimoire, citadel/addons, citadel/addonsN and
 # citadel/deadworks_addons/vpks. DMM: citadel/addons[N][/<profile>] and the
-# Deadworks launcher's citadel/deadworks_mods.
+# Deadworks launcher's citadel/deadworks_mods. Hyperline, modlock and
+# hand-made folders use other names, so any extra Game mount below citadel/ is
+# a candidate; mod_policy refuses render-only packs and anything that resolves
+# outside the game folder.
 ADDON_MOUNT_KEYS = {
     "game": "Game",
     "mod": "Mod",
@@ -83,7 +86,7 @@ ADDON_MOUNT_KEYS = {
     "addonroot": "AddonRoot",
     "officialaddonroot": "OfficialAddonRoot",
 }
-ADDON_GAME_MOUNTS = re.compile(r"^citadel/(?:addons\d*|grimoire|deadworks_addons|deadworks_mods|hyperline)(?:/.*)?$", re.IGNORECASE)
+ADDON_GAME_MOUNTS = re.compile(r"^citadel/[^/].*$", re.IGNORECASE)
 ADDON_WRITE_PATHS = {"citadel", "core"}
 
 
