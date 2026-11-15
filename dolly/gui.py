@@ -5419,6 +5419,8 @@ class DollyApp:
             return
         # Whether the unsaved-changes question was already answered for this close.
         self._discard_asked = bool(discard_confirmed)
+        # Whether controller.close has run for this close (CloseFlow.tla).
+        self._close_submitted = False
         # Record the user's intent to close now, so a failure in any teardown
         # step (for example the game already exited) still closes the window
         # instead of stacking an error dialog behind an unclosable app.
@@ -5436,6 +5438,7 @@ class DollyApp:
             return
         self._discard_asked = True
         editor_session.close(self)
+        self._close_submitted = True
         self._submit("Closing replay connection", self.controller.close, lambda _result: self._destroy())
 
     def _close_after_failure(self):
@@ -5455,6 +5458,15 @@ class DollyApp:
                 self._closing = False
                 return
             self._discard_asked = True
+        if getattr(self, "_close_submitted", False):
+            # controller.close itself failed. It can fail every time (a pending
+            # gameinfo conflict raises on each restore); retrying would loop
+            # forever. Its cleanup handoff already ran in its finally block,
+            # and the next Dolly start recovers anything left.
+            LOG.warning("Closing Dolly after the replay connection close failed.")
+            self._destroy()
+            return
+        self._close_submitted = True
         if self._submit("Closing replay connection", self.controller.close,
                         lambda _result: self._destroy()):
             return

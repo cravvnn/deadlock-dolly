@@ -1,0 +1,42 @@
+[
+  {
+    "name": "close after a failed stop without asking",
+    "replace": [
+      [
+        "IF ~asked THEN ui' = \"prompt\" /\\ UNCHANGED submitted",
+        "IF FALSE THEN ui' = \"prompt\" /\\ UNCHANGED submitted"
+      ]
+    ],
+    "expect": "NoSilentLoss"
+  },
+  {
+    "name": "retry a failing close forever",
+    "replace": [
+      [
+        "ELSE IF submitted THEN ui' = \"destroyed\" /\\ UNCHANGED submitted",
+        "ELSE IF FALSE THEN ui' = \"destroyed\" /\\ UNCHANGED submitted"
+      ]
+    ],
+    "expect": "CloseEnds"
+  },
+  {
+    "name": "update restart closes without asking",
+    "replace": [
+      [
+        "                   \\/ /\\ dirty /\\ consent' = TRUE /\\ UNCHANGED dirty\n",
+        "                   \\/ /\\ dirty /\\ UNCHANGED <<dirty, consent>>\n"
+      ]
+    ],
+    "expect": "NoSilentLoss"
+  },
+  {
+    "name": "finish skips the question when it was not asked",
+    "replace": [
+      [
+        "/\\ IF asked THEN SubmitClose",
+        "/\\ IF TRUE THEN SubmitClose"
+      ]
+    ],
+    "expect": "NoSilentLoss"
+  }
+]
