@@ -166,13 +166,15 @@ def _run(argv: list[str]) -> int:
     group.add_argument("--self-test", metavar="REPORT_JSON", type=Path, help="Check this bundle without launching a game")
     group.add_argument("--self-test-hidden", metavar="REPORT_JSON", type=Path,
                        help=argparse.SUPPRESS)
-    group.add_argument("--cleanup-session", nargs=2, metavar=("SESSION", "HANDLE"), help=argparse.SUPPRESS)
+    group.add_argument("--cleanup-session", nargs="+", metavar="SESSION_AND_HANDLES", help=argparse.SUPPRESS)
     group.add_argument("--updated", action="store_true", help=argparse.SUPPRESS)
     options = parser.parse_args(argv)
     if options.cleanup_session:
         from .session_cleanup import wait_and_cleanup
-        directory, handle = options.cleanup_session
-        return wait_and_cleanup(Path(directory), int(handle))
+        if len(options.cleanup_session) not in (2, 3):
+            parser.error("--cleanup-session takes a session folder and one or two handles")
+        directory, *handles = options.cleanup_session
+        return wait_and_cleanup(Path(directory), *(int(handle) for handle in handles))
     if options.self_test:
         return bundle_self_test(options.self_test)
     if options.self_test_hidden:

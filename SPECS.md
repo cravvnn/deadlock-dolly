@@ -1045,19 +1045,28 @@ mod mounts carried; the user's ConVars and other edits never reach the
 session) and creates the overlay. The game reads the file once while loading.
 The original goes back after the unlocker initializes or as Dolly closes; the
 overlay stays while the game runs. Cleanup (restore, then overlay removal)
-runs in Dolly's exit watcher, in the detached helper Dolly starts when it
-closes before the game, and, since 2026-11-14, when Dolly opens again
-(recover_at_startup, skipped while any Deadlock runs), so a crash before the
-unlocker initialized no longer leaves Dolly's file until the next launch. An
+runs in Dolly's exit watcher, in the detached helper, and, since 2026-11-14,
+when Dolly opens again (recover_at_startup, skipped while any Deadlock runs).
+The helper now starts with the game instead of only when Dolly closes. It
+holds the game's and Dolly's process handles and acts once the game has
+exited and that Dolly is gone, so a Dolly that crashes or is killed (even
+before the unlocker initialized) is cleaned up at game exit without waiting
+for the next open; while Dolly is alive its own watcher cleans up and the
+helper stands by. A lost helper (failed start, kill, power loss) is covered
+by recovery when Dolly opens. An
 outside change (mod manager, Steam verify) becomes a conflict that is never
 overwritten; Dolly now asks the user to put the original back or keep the
 current file (refused if it still mounts Dolly's overlay) instead of blocking
 every launch. Invariants NeverOverwriteEdit, RunningGameKeepsPlugin,
-NoDanglingMount, RestoredStandalone; property ExitCleansUp. Six mutants: an
+NoDanglingMount, RestoredStandalone; properties ExitCleansUp (no reopen
+needed while the helper survives) and ReopenCleansUp. Seven mutants: an
 overwriting restore, a helper or recovery that cleans while a game runs, no
-close helper, no recovery on reopen, keeping a file that still mounts the
-overlay. One session; Steam starts between a crash and the next Dolly open,
-PID reuse and file-system failures are not modeled.
+helper started with the game, a helper that ignores a crashed Dolly, no
+recovery on reopen, keeping a file that still mounts the overlay. A
+real-process test (test_p05) drives the helper against a stand-in Dolly and
+game. One session; atomic steps, so the two-cleaner race the helper avoids by
+deferring to a live Dolly is not modeled; PID reuse and file-system failures
+are not modeled.
 
 Mods (2026-11-14): Deadlock's own pak01 stores audio under `sounds/` and
 character animation under `animgraphs/`; both are now content roots, so
@@ -1070,7 +1079,10 @@ Mod managers (checked against their sources, 2026-11-14): Grimoire mounts
 `citadel/deadworks_addons/vpks`; Deadlock Mod Manager mounts
 `citadel/addons[N][/<profile>]` and keeps the Deadworks launcher's
 `citadel/deadworks_mods`. All are carried, as is any other mod folder below
-`citadel/` (Hyperline, hand-made folders) that passes the same content check. Only packs at a mount root are
+`citadel/` (Hyperline, hand-made folders) that passes the same content check.
+A folder of unpacked compiled files directly below a mount (for example
+`postprocessing/*.vpost_c`) is treated as the asset folder it is and refused
+like its packed form, not looked into as a mod-manager container. Only packs at a mount root are
 inspected, since the game loads nothing else there: Grimoire's
 `citadel/addons/.disabled` and DMM's other profile folders no longer affect
 the decision.

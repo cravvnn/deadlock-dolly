@@ -859,22 +859,33 @@ class Session:
         except (OSError, ValueError, TypeError):
             pass  # Diagnostics must not prevent configuration recovery.
 
-    def handoff_cleanup(self) -> bool:
-        """Keep game-exit cleanup alive when the desktop editor is closing."""
-        if not self.running:
-            return self.close()
+    def start_cleanup_helper(self) -> bool:
+        """Start the background helper that cleans up if Dolly is gone at game exit.
+
+        Called as soon as the game starts, so a Dolly that crashes or is killed
+        still gets its game files put back when this game exits.
+        """
         if self._cleanup_handed_off:
             return True
-        self.record_native_diagnostics()
         from .session_cleanup import start_waiter
         try:
             start_waiter(self)
             self._cleanup_handed_off = True
-            self.log("Dolly is closing; a background cleanup helper will remove its temporary plugin files after this game process exits.")
+            self.log("Started the background cleanup helper for this game process.")
             return True
-        except (OSError, ValueError) as exc:
-            self.log(f"Could not start background cleanup; the next Dolly launch will retry temporary-file removal: {exc}")
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            self.log(f"Could not start background cleanup; Dolly will retry when it closes or next opens: {exc}")
             return False
+
+    def handoff_cleanup(self) -> bool:
+        """Keep game-exit cleanup alive when the desktop editor is closing."""
+        if not self.running:
+            return self.close()
+        self.record_native_diagnostics()
+        if self.start_cleanup_helper():
+            self.log("Dolly is closing; the background cleanup helper will remove its temporary plugin files after this game process exits.")
+            return True
+        return False
 
 
 def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] | None = None, port: int = 29090, protocol: str = "netcon", native: bool = False, launch_options: str = "", graphics_profile: str = "", allow_mod_overrides: bool = False, nvidia_dlss: bool = False) -> Session:
@@ -1043,6 +1054,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                         "Run as administrator on Dolly.exe before retrying.\n\n"
                         f"Launch log: {log_path}") from exc
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge, nvidia_dlss=nvidia_dlss)
+        session.start_cleanup_helper()
 
         def watch() -> None:
             while True:

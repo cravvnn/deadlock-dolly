@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -273,6 +276,50 @@ class InstallTests(unittest.TestCase):
                 launcher.resolve_gameinfo_conflict(session, keep_current=False)
         self.assertEqual(self.paths.gameinfo.read_bytes(), patched + b'// edited')
         self.assertTrue(overlay.exists())
+
+    @unittest.skipUnless(sys.platform == 'win32', 'the cleanup helper waits on Windows process handles')
+    def test_p05_helper_started_at_launch_cleans_up_only_when_dolly_is_gone(self):
+        # Real processes: a stand-in Dolly starts a stand-in game and the real
+        # helper, as launch now does. The helper must leave a live Dolly's
+        # session alone and take over once that Dolly has been killed.
+        if game_processes._game_is_running(game_processes.running_processes()):
+            self.skipTest('a real Deadlock is running; the helper would defer to it')
+        session, overlay, backup, record, patched = self.journal_fixture('helper')
+        stop = self.root / 'game-exit'
+        owner_script = (
+            "import subprocess, sys, types\n"
+            "from pathlib import Path\n"
+            "from dolly import session_cleanup\n"
+            "game = subprocess.Popen([sys.executable, '-c', 'import os, sys, time; "
+            "[time.sleep(0.05) for _ in iter(lambda: os.path.exists(sys.argv[1]), True)]', sys.argv[2]])\n"
+            "session_cleanup.start_waiter(types.SimpleNamespace(process=game, session_dir=Path(sys.argv[1])))\n"
+            "print('ready', flush=True)\n"
+            "game.wait()\n"
+            "print('exited', flush=True)\n"
+            "sys.stdin.read()\n")
+        owner = subprocess.Popen([sys.executable, '-c', owner_script, str(session), str(stop)], cwd=str(ROOT),
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(owner.stdout.readline().strip(), 'ready')
+            time.sleep(4)  # Let the helper finish starting and reach its wait.
+            stop.write_bytes(b'')  # The game exits while Dolly is still open.
+            self.assertEqual(owner.stdout.readline().strip(), 'exited')
+            time.sleep(3)  # A helper that did not defer to Dolly would have cleaned by now.
+            self.assertEqual(self.paths.gameinfo.read_bytes(), patched)
+            self.assertTrue(overlay.exists())
+            owner.kill()  # Dolly crashes without cleaning up.
+            owner.wait(timeout=10)
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline and (overlay.exists() or self.paths.gameinfo.read_bytes() != GAMEINFO):
+                time.sleep(0.1)
+            self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO)
+            self.assertFalse(overlay.exists())
+            self.assertEqual(gameinfo_transaction.load_record(session)['config_state'], 'restored')
+        finally:
+            stop.write_bytes(b'')
+            if owner.poll() is None:
+                owner.kill()
+            owner.stdout.close(); owner.stdin.close()
 
     def test_p03_interrupted_recovery_preserves_foreign_and_modified_files(self):
         session, overlay, backup, record, patched = self.journal_fixture('normal')

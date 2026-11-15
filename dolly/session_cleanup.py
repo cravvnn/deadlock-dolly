@@ -280,7 +280,12 @@ def _append_log(session_dir: Path, message: str) -> None:
 
 
 def start_waiter(session) -> None:
-    """Hand an exact, wait-only process handle to a child that survives UI exit."""
+    """Hand exact, wait-only process handles to a child that survives Dolly.
+
+    The child receives the launched game's handle and Dolly's own. It cleans
+    up only once the game has exited and Dolly is gone (closed, crashed or
+    killed); while Dolly is open, Dolly's own exit watcher does the cleanup.
+    """
     from .runtime import is_frozen
     if sys.platform != "win32":
         raise OSError("Detached game cleanup is available on Windows only.")
@@ -293,21 +298,27 @@ def start_waiter(session) -> None:
     api.CloseHandle.argtypes = [ctypes.c_void_p]
     api.CloseHandle.restype = ctypes.c_int
     duplicate = ctypes.c_void_p()
+    owner = ctypes.c_void_p()
     own_process = api.GetCurrentProcess()
     # Popen owns this actual process object; a PID lookup could instead select
     # an unrelated process after Windows reused an exited game's PID.
     if not api.DuplicateHandle(own_process, int(session.process._handle), own_process,
                                ctypes.byref(duplicate), 0x00100000, True, 0):
         raise ctypes.WinError(ctypes.get_last_error())
+    if not api.DuplicateHandle(own_process, own_process, own_process,
+                               ctypes.byref(owner), 0x00100000, True, 0):
+        error = ctypes.WinError(ctypes.get_last_error())
+        api.CloseHandle(duplicate)
+        raise error
     try:
         command = [sys.executable]
         if is_frozen():
             command += ["--cleanup-session"]
         else:
             command += ["-m", "dolly.session_cleanup"]
-        command += [str(session.session_dir.resolve()), str(duplicate.value)]
+        command += [str(session.session_dir.resolve()), str(duplicate.value), str(owner.value)]
         startup = subprocess.STARTUPINFO()
-        startup.lpAttributeList = {"handle_list": [duplicate.value]}
+        startup.lpAttributeList = {"handle_list": [duplicate.value, owner.value]}
         environment = dict(os.environ)
         environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
         with (session.session_dir / "launch.log").open("ab") as output:
@@ -317,10 +328,26 @@ def start_waiter(session) -> None:
                              env=environment)
     finally:
         api.CloseHandle(duplicate)
+        api.CloseHandle(owner)
 
 
-def wait_and_cleanup(session_dir: Path, handle: int) -> int:
-    """Internal helper entry; no injection, console connection, or GUI startup."""
+def _already_clean(session_dir: Path) -> bool:
+    """Whether the Dolly that launched this session finished its own cleanup."""
+    from .gameinfo_transaction import load_record as _load_record
+    try:
+        record = _load_record(session_dir)
+        return record.get("config_state") == "restored" and not Path(record["overlay_dir"]).exists()
+    except (OSError, ValueError, KeyError, LaunchError):
+        return False  # Mid-write or unreadable: keep waiting for Dolly.
+
+
+def wait_and_cleanup(session_dir: Path, handle: int, owner: int = 0) -> int:
+    """Internal helper entry; no injection, console connection, or GUI startup.
+
+    Waits for the game. With ``owner`` (Dolly's own process handle) it then
+    leaves the cleanup to that Dolly while it is alive, and takes over only
+    when it is gone.
+    """
     from .gameinfo_transaction import load_record as _load_record
     from .session_recovery import restore_session_configs as _restore_session_configs
     from .game_installation import validate_game
@@ -336,10 +363,22 @@ def wait_and_cleanup(session_dir: Path, handle: int) -> int:
         api.CloseHandle.restype = ctypes.c_int
         try:
             result = api.WaitForSingleObject(handle, 0xFFFFFFFF)
+            if result == 0 and owner > 0:
+                # Two cleaners at once could lose Dolly's saved exit result and
+                # its diagnostics, so only one runs: Dolly while it is alive.
+                while (waited := api.WaitForSingleObject(owner, 1000)) == 0x102:
+                    if _already_clean(session_dir):
+                        return 0
+                if waited != 0:
+                    result = waited
         finally:
             api.CloseHandle(handle)
+            if owner > 0:
+                api.CloseHandle(owner)
         if result != 0:
             raise LaunchError("Could not wait for the launched game; cleanup will retry at next launch.")
+        if _already_clean(session_dir):
+            return 0
         if _game_is_running(running_processes()):
             _append_log(session_dir, "Another Deadlock process is running; temporary-file cleanup deferred until next launch.")
             return 0
@@ -368,5 +407,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Wait for a Dolly editing session to exit and remove its temporary files.")
     parser.add_argument("session_dir", type=Path)
     parser.add_argument("handle", type=int)
+    parser.add_argument("owner", type=int, nargs="?", default=0)
     options = parser.parse_args()
-    raise SystemExit(wait_and_cleanup(options.session_dir, options.handle))
+    raise SystemExit(wait_and_cleanup(options.session_dir, options.handle, options.owner))

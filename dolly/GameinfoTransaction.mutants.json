@@ -1,8 +1,9 @@
 [
   {"name": "overwrite an outside change", "replace": [["ELSE journal' = \"conflict\" /\\ UNCHANGED file", "ELSE journal' = \"restored\" /\\ file' = \"orig\""]], "expect": "NeverOverwriteEdit"},
-  {"name": "helper cleans before the game exits", "replace": [["\\/ (helper = \"waiting\" /\\ game = \"exited\")", "\\/ (helper = \"waiting\")"]], "expect": "RunningGameKeepsPlugin"},
+  {"name": "helper cleans before the game exits", "replace": [["\\/ (helper = \"waiting\" /\\ game = \"exited\" /\\ dolly # \"up\")", "\\/ (helper = \"waiting\" /\\ dolly # \"up\")"]], "expect": "RunningGameKeepsPlugin"},
   {"name": "recovery runs while a game is open", "replace": [["\\/ (dolly = \"reopened\" /\\ ~Live)", "\\/ (dolly = \"reopened\")"]], "expect": "RunningGameKeepsPlugin"},
-  {"name": "no helper when Dolly closes before the game", "replace": [["/\\ helper' = IF game # \"none\"", "/\\ helper' = IF FALSE"]], "expect": "ExitCleansUp"},
-  {"name": "no recovery when Dolly opens again", "replace": [["            \\/ (dolly = \"reopened\" /\\ ~Live)", "            \\/ FALSE"]], "expect": "ExitCleansUp"},
+  {"name": "no helper started with the game", "replace": [["         /\\ helper' = \"waiting\"", "         /\\ helper' = \"none\""]], "expect": "ExitCleansUp"},
+  {"name": "helper ignores a crashed Dolly", "replace": [["\\/ (helper = \"waiting\" /\\ game = \"exited\" /\\ dolly # \"up\")", "\\/ (helper = \"waiting\" /\\ game = \"exited\" /\\ dolly = \"closed\")"]], "expect": "ExitCleansUp"},
+  {"name": "no recovery when Dolly opens again", "replace": [["            \\/ (dolly = \"reopened\" /\\ ~Live)", "            \\/ FALSE"]], "expect": "ReopenCleansUp"},
   {"name": "keep a file that still mounts the overlay", "replace": [["/\\ file = \"edit\" /\\ journal' = \"restored\"", "/\\ file \\in {\"edit\", \"editRef\"} /\\ journal' = \"restored\""]], "expect": "RestoredStandalone"}
 ]
