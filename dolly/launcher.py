@@ -738,9 +738,11 @@ def recover_pending(game_path: str | os.PathLike[str] | None = None) -> list[str
         record = _load_record(journal.parent)
         paths = validate_game(Path(record["original_gameinfo"]).parent)
         installations[paths.game_dir] = paths
-        _restore_session_configs(journal.parent)
-        overlay = Path(record["overlay_dir"])
-        removed = remove_overlay(overlay, paths, journal.parent)
+        from .session_recovery import game_config_lock
+        with game_config_lock():
+            _restore_session_configs(journal.parent)
+            overlay = Path(record["overlay_dir"])
+            removed = remove_overlay(overlay, paths, journal.parent)
         if pending or removed:
             recovered.append(str(journal.parent))
     if selected is None:
@@ -833,7 +835,8 @@ class Session:
         # The exit watcher and dead-session recovery can both close. Serialize
         # the whole file cleanup with record_exit so overlay removal cannot
         # race itself and the journal read cannot meet the exit write.
-        with self._restore_lock:
+        from .session_recovery import game_config_lock
+        with self._restore_lock, game_config_lock():
             _restore_session_configs(self.session_dir)
             self.log("Original session configuration restored after game exit.")
             try:

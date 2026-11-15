@@ -397,25 +397,29 @@ def wait_and_cleanup(session_dir: Path, handle: int, owner: int = 0) -> int:
                 api.CloseHandle(owner)
         if result != 0:
             raise LaunchError("Could not wait for the launched game; cleanup will retry at next launch.")
-        if _already_clean(session_dir):
-            return 0
-        if _game_is_running(running_processes()):
-            _append_log(session_dir, "Another Deadlock process is running; temporary-file cleanup deferred until next launch.")
-            return 0
-        _restore_session_configs(session_dir)
-        record = _load_record(session_dir)
-        paths = validate_game(Path(record["original_gameinfo"]).parent)
-        overlay = Path(record["overlay_dir"])
-        # Windows may release loaded DLL files just after the process signal.
-        for attempt in range(6):
-            try:
-                if remove_overlay(overlay, paths, session_dir):
-                    _append_log(session_dir, "Removed the temporary plugin directory after Dolly closed and the game exited.")
+        from .session_recovery import game_config_lock
+        with game_config_lock():
+            # Re-check inside the lock: another Dolly may have finished this
+            # session, or started a new game, while the helper waited.
+            if _already_clean(session_dir):
                 return 0
-            except OSError:
-                if attempt == 5:
-                    raise
-                time.sleep(0.5)
+            if _game_is_running(running_processes()):
+                _append_log(session_dir, "Another Deadlock process is running; temporary-file cleanup deferred until next launch.")
+                return 0
+            _restore_session_configs(session_dir)
+            record = _load_record(session_dir)
+            paths = validate_game(Path(record["original_gameinfo"]).parent)
+            overlay = Path(record["overlay_dir"])
+            # Windows may release loaded DLL files just after the process signal.
+            for attempt in range(6):
+                try:
+                    if remove_overlay(overlay, paths, session_dir):
+                        _append_log(session_dir, "Removed the temporary plugin directory after Dolly closed and the game exited.")
+                    return 0
+                except OSError:
+                    if attempt == 5:
+                        raise
+                    time.sleep(0.5)
         return 0
     except (OSError, ValueError, LaunchError) as exc:
         _append_log(session_dir, f"Temporary-file cleanup deferred: {exc}")

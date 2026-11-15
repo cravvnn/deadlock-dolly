@@ -61,6 +61,50 @@ class RecoveryBoundaries(unittest.TestCase):
             gameinfo_transaction.load_record(impostor)
         self.assertEqual(self.paths.gameinfo.read_bytes(), patched)
 
+    def test_two_cleaners_of_one_session_never_record_a_false_conflict(self):
+        # GameinfoCleaners.tla: the old session's helper pauses mid-restore
+        # while another Dolly's launch recovers the session and writes its own
+        # gameinfo.gi. Without a shared lock the helper then reads the new file
+        # and marks the old session as changed outside Dolly.
+        import threading
+        from dolly import session_recovery
+        session, overlay, backup, record, patched = self.journal_fixture('race')
+        newer = core.GAMEINFO.replace(b'Game "core"', b'Game "citadel_dolly_next/cvar_unlocker"\r\n   Game "core"')
+        paused, resume = threading.Event(), threading.Event()
+        real_read = Path.read_bytes
+        target = self.paths.gameinfo
+
+        def read_bytes(path):
+            if threading.current_thread().name == 'helper' and path == target and not paused.is_set():
+                paused.set()
+                resume.wait(10)
+            return real_read(path)
+
+        def helper():
+            try:
+                session_recovery.restore_session_configs(session)
+            except LaunchError:
+                pass
+
+        def launch():
+            a, b, c, d = self.recovery(self.package)
+            with a, b, c, d:
+                launcher.recover_pending()
+            target.write_bytes(newer)  # The new session's own file.
+
+        with patch.object(Path, 'read_bytes', read_bytes):
+            first = threading.Thread(target=helper, name='helper')
+            first.start()
+            self.assertTrue(paused.wait(10))
+            second = threading.Thread(target=launch, name='launch')
+            second.start()
+            second.join(0.5)  # Without the lock the launch finishes here.
+            resume.set()
+            first.join(10); second.join(10)
+        self.assertNotEqual(gameinfo_transaction.load_record(session)['config_state'], 'conflict')
+        self.assertEqual(target.read_bytes(), newer)
+        self.assertEqual(backup.read_bytes(), core.GAMEINFO)
+
     def test_gameinfo_that_is_not_utf8_is_a_launch_error(self):
         session, overlay, backup, record, patched = self.journal_fixture('codec')
         self.paths.gameinfo.write_bytes(core.GAMEINFO.replace(b'// user comment', b'// caf\xe9'))

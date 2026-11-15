@@ -1,0 +1,26 @@
+[
+  {
+    "name": "cleaners run without the shared lock",
+    "replace": [
+      [
+        "Acquire(who) == IF Locked THEN",
+        "Acquire(who) == IF FALSE THEN"
+      ],
+      [
+        "Release(who) == IF Locked THEN",
+        "Release(who) == IF FALSE THEN"
+      ]
+    ],
+    "expect": "NoFalseConflict"
+  },
+  {
+    "name": "helper restores without re-reading the journal",
+    "replace": [
+      [
+        "/\\ hpc' = IF journal = \"restored\" THEN \"remove\" ELSE \"readF\"",
+        "/\\ hpc' = IF FALSE THEN \"remove\" ELSE \"readF\""
+      ]
+    ],
+    "expect": "NoFalseConflict"
+  }
+]
