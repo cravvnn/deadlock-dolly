@@ -1329,3 +1329,4 @@ dolly/DialogRule.cfg
 dolly/DialogRule.mutants.json
 dolly/GameinfoInstallApi.tla
 dolly/GameinfoTransaction-api.cfg
+docs/RELEASE_NOTES_0.7.42-beta.md
