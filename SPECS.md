@@ -1065,6 +1065,15 @@ sound-only and animation mods load. Particle, post-processing, shader and
 non-model material packs stay out. A user `autoexec.cfg` in the game folder is
 shadowed by Dolly's overlay copy, which comes first in the search order.
 
+Mod managers (checked against their sources, 2026-11-14): Grimoire mounts
+`citadel/grimoire`, `citadel/addons`, overflow `citadel/addonsN` and
+`citadel/deadworks_addons/vpks`; Deadlock Mod Manager mounts
+`citadel/addons[N][/<profile>]` and keeps the Deadworks launcher's
+`citadel/deadworks_mods`. All are carried. Only packs at a mount root are
+inspected, since the game loads nothing else there: Grimoire's
+`citadel/addons/.disabled` and DMM's other profile folders no longer affect
+the decision.
+
 ## Root composition (DollyRoot)
 
 `dolly/DollyRoot.tla` is the first root model. It composes two component

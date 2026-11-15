@@ -71,9 +71,11 @@ def game_pins() -> dict[str, tuple[str, ...]]:
 
 STEAM_APP_ID = "1422450"
 # Mod managers (Deadlock Mod Manager, Grimoire, the manual guide) mount their
-# addon folders with ordinary SearchPaths entries. The reviewed editing baseline
-# omits them. Keep this parser for diagnostics and legacy helper callers;
-# current launches record these entries as excluded and restore exact originals.
+# addon folders with ordinary SearchPaths entries; the reviewed editing baseline
+# omits them, and mod_policy decides which are carried into a session.
+# Grimoire: citadel/grimoire, citadel/addons, citadel/addonsN and
+# citadel/deadworks_addons/vpks. DMM: citadel/addons[N][/<profile>] and the
+# Deadworks launcher's citadel/deadworks_mods.
 ADDON_MOUNT_KEYS = {
     "game": "Game",
     "mod": "Mod",
@@ -81,7 +83,7 @@ ADDON_MOUNT_KEYS = {
     "addonroot": "AddonRoot",
     "officialaddonroot": "OfficialAddonRoot",
 }
-ADDON_GAME_MOUNTS = re.compile(r"^citadel/(?:addons\d*|grimoire|deadworks_addons|hyperline)(?:/.*)?$", re.IGNORECASE)
+ADDON_GAME_MOUNTS = re.compile(r"^citadel/(?:addons\d*|grimoire|deadworks_addons|deadworks_mods|hyperline)(?:/.*)?$", re.IGNORECASE)
 ADDON_WRITE_PATHS = {"citadel", "core"}
 
 

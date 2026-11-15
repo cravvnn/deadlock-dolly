@@ -42,6 +42,19 @@ MAX_EVIDENCE = 4
 NON_ASSET_FOLDERS = frozenset({"replays"})
 
 
+def _not_loaded(child: Path, depth: int) -> bool:
+    """True for entries the game never loads from this mount.
+
+    The engine mounts packs only at the mount root, so a pack in a subfolder
+    (DMM's other profiles below citadel/addons) is not loaded; hidden folders
+    (Grimoire keeps disabled mods in citadel/addons/.disabled) are skipped.
+    """
+    name = child.name.casefold()
+    if name in NON_ASSET_FOLDERS or name.startswith("."):
+        return True
+    return depth > 0 and name.endswith("_dir.vpk")
+
+
 class MountInspectionError(ValueError):
     """Content could not be inspected; an override is not a successful scan."""
 
@@ -117,7 +130,7 @@ def _has_content(root: Path, depth: int = 0) -> bool:
     except OSError:
         return False
     for child in children:
-        if child.name.casefold() in NON_ASSET_FOLDERS:
+        if _not_loaded(child, depth):
             continue
         try:
             plain = _plain_path(child)
@@ -153,7 +166,7 @@ def _scan_loose(root: Path, depth: int, evidence: list[str]) -> None:
     except OSError as exc:
         raise MountInspectionError(f"{root.name or 'mount'} could not be read ({exc.__class__.__name__})") from exc
     for child in children:
-        if child.name.casefold() in NON_ASSET_FOLDERS:
+        if _not_loaded(child, depth):
             continue
         plain = _plain_path(child)
         if not plain:

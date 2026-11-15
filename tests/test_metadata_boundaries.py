@@ -142,6 +142,53 @@ class MetadataBoundaryTests(unittest.TestCase):
                 verdict = mod_policy.classify_mount(mount)
                 self.assertEqual(verdict["allowed"], top in ("sounds", "animgraphs"), (top, verdict))
 
+    def test_grimoire_and_deadlock_mod_manager_mounts_load(self):
+        # Mount lines as Grimoire and Deadlock Mod Manager write them (taken
+        # from their sources): Grimoire's priority folder, base and overflow
+        # addons and Deadworks VPKs; DMM's profile shards and the Deadworks
+        # launcher block it keeps.
+        from dolly import launcher
+        text = '''"GameInfo" { FileSystem { SearchPaths {
+            Game_UILanguage citadel_*LANGUAGE*
+            Game citadel/grimoire
+            Game citadel/addons
+            Game citadel/addons1
+            Game citadel/deadworks_addons/vpks
+            Game citadel/deadworks_mods
+            addonroot citadel/deadworks_addons
+            Game citadel/addons/profile_rec // dmm-search-path
+            Game citadel/addons2/profile_rec // dmm-search-path
+            Mod "citadel"
+            Write "citadel"
+            Game citadel
+            Game core
+        } } }'''
+        mounts = launcher.mod_search_paths(text)
+        for path in ("citadel/grimoire", "citadel/addons", "citadel/addons1", "citadel/deadworks_addons/vpks",
+                     "citadel/deadworks_mods", "citadel/addons/profile_rec", "citadel/addons2/profile_rec"):
+            self.assertIn(("Game", path), mounts)
+        self.assertIn(("AddonRoot", "citadel/deadworks_addons"), mounts)
+        self.assertNotIn(("Game", "citadel"), mounts)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            addons = root / "citadel" / "addons"
+            (addons / ".disabled").mkdir(parents=True)
+            (addons / "profile_other").mkdir()
+            vpk(addons / "pak01_dir.vpk", [("models", "skin")])
+            # The game only loads packs at the mount root. Grimoire's disabled
+            # mods and DMM's other profiles sit below it and must not decide
+            # anything, even when unreadable or render-only.
+            vpk(addons / ".disabled" / "pak02_dir.vpk", [("models", "x")], malformed=True)
+            vpk(addons / "profile_other" / "pak01_dir.vpk", [("particles", "low")])
+            carried, excluded = mod_policy.split_mounts([("Game", "citadel/addons")], root)
+            self.assertEqual((carried, excluded), ([{"key": "Game", "path": "citadel/addons"}], []))
+            # A render-only pack at the root is not made a skin pack by a
+            # disabled or other-profile skin below it.
+            vpk(addons / "pak01_dir.vpk", [("particles", "low")])
+            vpk(addons / "profile_other" / "pak01_dir.vpk", [("models", "skin")])
+            vpk(addons / ".disabled" / "pak02_dir.vpk", [("models", "skin")])
+            self.assertFalse(mod_policy.classify_mount(addons)["allowed"])
+
     def test_minidump_actual_read_budget_survives_growth_after_stat(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "owned.dmp"; valid = bytes(minidump())
