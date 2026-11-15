@@ -659,7 +659,8 @@ set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_REL
         app = SimpleNamespace(update_notice_parent=object(), app_settings=SimpleNamespace(auto_updates=True),
             root=Mock(), update_status=Mock(), update_check_button=Mock(), closed=False, busy=False,
             playing=False, dirty=False, startup_cancel=None, controller=Mock(), video_export=Mock(),
-            _on_close=Mock(), notebook=None, sidebar=None)
+            _on_close=Mock(), notebook=None, sidebar=None,
+            _allow_discard=Mock(return_value=True), _closing=True)
         app.controller.status.return_value = {'game_running': False}
         app.video_export.status.return_value = {'state': 'idle'}
         app.root.grab_current.return_value = None

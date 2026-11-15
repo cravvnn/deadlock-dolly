@@ -484,19 +484,46 @@ def launch_worker(target, work, *, recover=False, parent_pid=None):
     return launch_program(command, work)
 
 
+class PendingUpdateError(ValueError):
+    """The unfinished-update record cannot be used for recovery."""
+
+
 def pending_work(target):
     target = Path(target).resolve()
     marker = target / PENDING
     if not marker.exists():
         return None
-    plan = json.loads(marker.read_text(encoding="utf-8"))
-    work = Path(plan["work"]).resolve()
-    if Path(plan["target"]).resolve() != target or work.parent != target or not work.name.startswith(".dolly-update-"):
-        raise ValueError("Invalid pending update recovery location")
-    saved = json.loads((work / "plan.json").read_text(encoding="utf-8"))
-    if saved != plan:
-        raise ValueError("Pending update plan disagrees with recovery journal")
+    try:
+        plan = json.loads(marker.read_text(encoding="utf-8"))
+        work = Path(plan["work"]).resolve()
+        if Path(plan["target"]).resolve() != target or work.parent != target or not work.name.startswith(".dolly-update-"):
+            raise ValueError("Invalid pending update recovery location")
+        saved = json.loads((work / "plan.json").read_text(encoding="utf-8"))
+        if saved != plan:
+            raise ValueError("Pending update plan disagrees with recovery journal")
+    except PermissionError:
+        raise  # Another process may hold it; that is not a damaged record.
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as error:
+        raise PendingUpdateError(f"Dolly's unfinished update record cannot be used ({marker}): "
+                                 f"{type(error).__name__}: {error}") from error
     return work
+
+
+def clear_unusable_pending(target):
+    """Drop an unusable unfinished-update record when the installed app is whole.
+
+    Without its workspace no rollback is possible, so the only safe question
+    is whether every installed file still matches the app's own manifest. If
+    so, the record is removed and Dolly can open; otherwise it stays.
+    """
+    from .updater import read_manifest, verify_payload
+    target = Path(target).resolve()
+    try:
+        verify_payload(target, read_manifest(target)["version"])
+        (target / PENDING).unlink(missing_ok=True)
+        return True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def _workspace_finished(work, keep):

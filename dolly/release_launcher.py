@@ -52,7 +52,16 @@ def main(argv=None, *, target=None):
         return open_editor(target, args, wait=True)
     try:
         with update_worker.install_lock(target):
-            pending = update_worker.pending_work(target)
+            try:
+                pending = update_worker.pending_work(target)
+            except update_worker.PendingUpdateError as error:
+                if not update_worker.clear_unusable_pending(target):
+                    update_worker.notify(
+                        "Dolly found an unfinished update it cannot complete, and some app files do not match "
+                        "this version. Download Dolly again and extract it over this folder; your shots and "
+                        "settings are kept.\n\n" + str(error))
+                    return 1
+                pending = None
             if pending is not None:
                 ids = launcher_process_ids()
                 update_worker.check_processes(target, exclude_pid=ids)

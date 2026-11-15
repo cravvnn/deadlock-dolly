@@ -215,17 +215,23 @@ def download_update(release, target, progress=lambda text: None):
     work = Path(tempfile.mkdtemp(prefix=".dolly-update-", dir=target))
     archive = work / "download.zip"
     downloaded = 0
-    with open_url(release["url"]) as response, archive.open("xb") as output:
-        while chunk := response.read(1024 * 1024):
-            downloaded += len(chunk)
-            if downloaded > release["size"]:
-                raise ValueError("Update download exceeds advertised size")
-            output.write(chunk)
-            progress(f"Downloading Dolly {release['version']}: {downloaded * 100 // release['size']}%")
-    if downloaded != release["size"]:
-        raise ValueError("Incomplete update download")
-    extract_verified(archive, work / "payload", release)
-    (work / "verified.json").write_text(
-        json.dumps({"version": release["version"], "sha256": release["sha256"]}) + "\n", encoding="utf-8")
-    archive.unlink()
+    try:
+        with open_url(release["url"]) as response, archive.open("xb") as output:
+            while chunk := response.read(1024 * 1024):
+                downloaded += len(chunk)
+                if downloaded > release["size"]:
+                    raise ValueError("Update download exceeds advertised size")
+                output.write(chunk)
+                progress(f"Downloading Dolly {release['version']}: {downloaded * 100 // release['size']}%")
+        if downloaded != release["size"]:
+            raise ValueError("Incomplete update download")
+        extract_verified(archive, work / "payload", release)
+        (work / "verified.json").write_text(
+            json.dumps({"version": release["version"], "sha256": release["sha256"]}) + "\n", encoding="utf-8")
+        archive.unlink()
+    except BaseException:
+        # Nothing installed depends on this folder yet; a retry starts clean
+        # instead of leaving a multi-gigabyte workspace behind each time.
+        shutil.rmtree(work, ignore_errors=True)
+        raise
     return work

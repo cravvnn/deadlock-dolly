@@ -9,7 +9,8 @@ from . import __version__, definitions, updater
 from .runtime import application_root, is_frozen
 from .ui.update_notice import UpdateNotice
 from .video_export import ACTIVE_STATES
-from .update_worker import check_processes, pending_work, launch_worker
+from .update_worker import (PendingUpdateError, check_processes, clear_unusable_pending, launch_worker,
+                            pending_work)
 
 LOG = logging.getLogger("dolly")
 
@@ -210,6 +211,11 @@ class UpdateUI:
         if not self._can_update():
             return
         work, version = self.ready
+        # Settle unsaved work before the updater starts waiting for Dolly to
+        # close; a cancelled save prompt leaves Dolly open and the update ready.
+        if self.app.busy or not self.app._allow_discard():
+            self._status("Update not started. Save or discard your shot, then click Update now.")
+            return
         try:
             launch_worker(application_root().resolve(), work)
         except (OSError, RuntimeError, ValueError) as error:
@@ -217,7 +223,10 @@ class UpdateUI:
             return
         self.restarting = True
         self.app.update_status.set("Installing Dolly " + version + "; restarting...")
-        self.app._on_close()
+        self.app._on_close(discard_confirmed=True)
+        if not (self.app.closed or getattr(self.app, "_closing", False)):
+            self.restarting = False
+            self._status("Dolly did not close, so the update was not installed. Click Update now to retry.", error=True)
 
     def poll(self):
         if self.app.closed:
@@ -260,7 +269,12 @@ class UpdateUI:
                     self._render()
         except queue.Empty:
             pass
-        self.app.root.after(250, self.poll)
+        except Exception:  # noqa: BLE001 - one bad event must not end update checks for the session
+            LOG.exception("Update status handling failed")
+            self.running = False
+        finally:
+            if not self.app.closed:
+                self.app.root.after(250, self.poll)
 
 
 def recover_pending():
@@ -268,7 +282,12 @@ def recover_pending():
     if not is_frozen():
         return False
     target = application_root().resolve()
-    work = pending_work(target)
+    try:
+        work = pending_work(target)
+    except PendingUpdateError:
+        if not clear_unusable_pending(target):
+            raise
+        work = None
     if work is None:
         return False
     launch_worker(target, work, recover=True)
