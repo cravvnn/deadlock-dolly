@@ -2342,7 +2342,7 @@
     },
     {
       "path": "dolly/gameinfo_transaction.py",
-      "sha256": "75567069aa28889ff17b429622c5dae632bc247d421e55361add34214740cd44",
+      "sha256": "72162e6360cd0fc662d6a296c8baba2768c4d713fc9f0dfbe22b8c04facbd36e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2383,7 +2383,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114c": "2026-11-14 storage: conflicts raise GameinfoConflict (session/target/backup); resolve_conflict applies the user's choice (put the original back after its hash check, or keep the current file unless it still mounts Dolly's overlay). GameinfoTransaction models the transaction."
+      "reconciliation_20261114c": "2026-11-14 storage: conflicts raise GameinfoConflict (session/target/backup); resolve_conflict applies the user's choice (put the original back after its hash check, or keep the current file unless it still mounts Dolly's overlay). GameinfoTransaction models the transaction.",
+      "reconciliation_20261114k": "2026-11-14 boundaries: load_record accepts its own logs/<id> journal after the whole Dolly folder was moved or renamed (same session name, never rewritten; backup hash and game-side checks unchanged), so an unfinished session stays recoverable."
     },
     {
       "path": "dolly/graphics_diagnostics.py",
@@ -2514,7 +2515,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "7195cf4af6c48a58c25d5bb4e9c732de1b590a1c751af4277ff272c1cde401d4",
+      "sha256": "6ae3df11da8ca6bd0daa08d27777030e5f9422090137dad633fc237c2beadcb8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2624,7 +2625,8 @@
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261114c": "2026-11-14 storage: the startup scan runs recover_at_startup after discovery; a GameinfoConflict from any operation opens a two-button choice (put my original back / keep the current file) instead of an error.",
       "reconciliation_20261114d": "2026-11-14 profiles: when the game exits, Dolly offers to save graphics changed in that session to the Dolly profile (or a new one).",
-      "reconciliation_20261114i": "2026-11-14 one dialog at a time: the save-graphics offer and the gameinfo conflict choice hold the same single-dialog flag as _error; the offer retries after an open dialog closes, the conflict choice is postponed to the next launch."
+      "reconciliation_20261114i": "2026-11-14 one dialog at a time: the save-graphics offer and the gameinfo conflict choice hold the same single-dialog flag as _error; the offer retries after an open dialog closes, the conflict choice is postponed to the next launch.",
+      "reconciliation_20261114k": "2026-11-14 boundaries: a close-time failure before the unsaved-changes question still asks it; background results (recovery, replay repair, DOF check, capture replace, startup notices) go through _background_dialog under the one-dialog rule."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -2829,7 +2831,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "48a596a6b6268568eee593b9bfcd5d3c972a3b1359f638e320529908e5714bbc",
+      "sha256": "d636d95721e1a5dcbe73227f42a403d74f142b2c441cb2f526185096fbafd209",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2936,7 +2938,8 @@
       "reconciliation_20261114c": "2026-11-14 storage: recover_at_startup (skipped while any Deadlock runs) finishes an interrupted session when Dolly opens; resolve_gameinfo_conflict applies the user's choice then finishes recovery. GameinfoTransaction covers launch/restore/helper/recovery.",
       "reconciliation_20261114e": "2026-11-14 mod managers: carried Game mounts add the Deadworks launcher's citadel/deadworks_mods (kept by Deadlock Mod Manager); Grimoire's grimoire/addons/addonsN/deadworks_addons/vpks and DMM's addons[N]/<profile> were already matched. Checked against both managers' sources.",
       "reconciliation_20261114f": "2026-11-14 custom mod folders: any extra Game mount below citadel/ (Hyperline, modlock, hand-made folders) is a candidate; mod_policy still refuses render-only packs and paths resolving outside the game folder.",
-      "reconciliation_20261114i": "2026-11-14 launch-time helper: Session.start_cleanup_helper runs right after the game starts (failure is logged and retried at close); handoff_cleanup reuses it. GameinfoTransaction models the helper from Spawn."
+      "reconciliation_20261114i": "2026-11-14 launch-time helper: Session.start_cleanup_helper runs right after the game starts (failure is logged and retried at close); handoff_cleanup reuses it. GameinfoTransaction models the helper from Spawn.",
+      "reconciliation_20261114k": "2026-11-14 boundaries: the exit watcher starts before the cleanup helper and helper/handoff log failures are contained, so a full or locked launch.log cannot skip the watcher."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -3583,7 +3586,7 @@
     },
     {
       "path": "dolly/panorama_assets.py",
-      "sha256": "59dfdd001adec59df0bbd13a3b102c6c17345828b0d60dd09c6268b7a60a14a2",
+      "sha256": "e5f58c1fb3ae57b3051313c7dd58000b9739ece7b0f751b0ecf0f45015362742",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -3612,7 +3615,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114k": "2026-11-14 boundaries: the VPK index suffix is matched case-insensitively, as mod_policy selects packs."
     },
     {
       "path": "dolly/particles.py",
@@ -4046,7 +4050,7 @@
     },
     {
       "path": "dolly/release_launcher.py",
-      "sha256": "b7f6acf2a93d20dd7876b21e950fb7a8620d6913e5c1b11a181e9ff14538cd16",
+      "sha256": "2ba702d411c604732ef7c4b94fea4d26efdc28103b0cea41a3695e6dc3322dcd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4080,7 +4084,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114k": "2026-11-14 boundaries: an unusable unfinished-update record opens Dolly when the install verifies, otherwise shows a specific message; other OSError handling is unchanged."
     },
     {
       "path": "dolly/release_notes.py",
@@ -4586,7 +4591,7 @@
     },
     {
       "path": "dolly/session_cleanup.py",
-      "sha256": "a95ef36867fca68e82864405d5daecd95fc712e6bc8a8069cb650b97ef9613da",
+      "sha256": "fe1911e0c73b648cbc49d2719159076736488daaf551ece32628ce4c68f2bc2d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4644,7 +4649,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114i": "2026-11-14 launch-time helper: start_waiter also hands the helper Dolly's own process handle; wait_and_cleanup waits for the game, then leaves cleanup to that Dolly while it is alive (exiting once the journal is restored and the overlay gone) and takes over only when it is gone. Real-process test test_p05."
+      "reconciliation_20261114i": "2026-11-14 launch-time helper: start_waiter also hands the helper Dolly's own process handle; wait_and_cleanup waits for the game, then leaves cleanup to that Dolly while it is alive (exiting once the journal is restored and the overlay gone) and takes over only when it is gone. Real-process test test_p05.",
+      "reconciliation_20261114k": "2026-11-14 boundaries: remove_overlay treats the game's session-files/cache_<id>.soc and an empty cvar_unlocker/save as session output (real leftovers showed these kept every session's folder); other session-files content is still preserved. The marker accepts the same logs/<id> session after the Dolly folder moved. A non-UTF-8 gameinfo.gi is a LaunchError."
     },
     {
       "path": "dolly/session_recovery.py",
@@ -4687,7 +4693,7 @@
     },
     {
       "path": "dolly/settings.py",
-      "sha256": "ab68f7f7f58521e244275dd079da262f436e60811a2008f3af0bcf539bad29df",
+      "sha256": "d6f0b038c2b4178867cdc1392a9fd96743d95bfcb0ca78b6e4df48009be7ae57",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4746,7 +4752,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114k": "2026-11-14 boundaries: a settings file whose load failed with an I/O error is copied aside before the next save replaces it (the save fails if it still cannot be read)."
     },
     {
       "path": "dolly/shot_history.py",
@@ -6568,7 +6575,7 @@
     },
     {
       "path": "dolly/update_ui.py",
-      "sha256": "0e34362d8c655c79ccc64414ba0fac8a509ffcb68b5b92f9145d6a51c317f970",
+      "sha256": "81efe341c6c925552464956d3b790c24080bf6257037ec53ee27d8cf909bd3f2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6610,11 +6617,12 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114k": "2026-11-14 boundaries: restart settles unsaved work before the worker starts and clears restarting if the close does not begin; poll contains a failing event and always reschedules; recover_pending heals an unusable record like the launcher."
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8",
+      "sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6703,11 +6711,12 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114k": "2026-11-14 boundaries: pending_work reports an unusable record as PendingUpdateError (a locked file stays an OSError); clear_unusable_pending removes it only when every installed file matches the app's own manifest."
     },
     {
       "path": "dolly/updater.py",
-      "sha256": "ff062d936a9cba9c32fb1a2951fa9a5738cd2553dc7ec462b5a3720399f92846",
+      "sha256": "79edc6589b59c7f86d8c627efd95b72fc9e9dcb36ed557fb39c608621de814f8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6758,7 +6767,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114k": "2026-11-14 boundaries: a failed download or extraction removes its own workspace."
     },
     {
       "path": "dolly/video_export.py",
@@ -10984,7 +10994,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
+      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11030,7 +11040,7 @@
       "instances": [
         "BackupPublishApi"
       ],
-      "owner_utf8_lf_sha256": "ab68f7f7f58521e244275dd079da262f436e60811a2008f3af0bcf539bad29df"
+      "owner_utf8_lf_sha256": "d6f0b038c2b4178867cdc1392a9fd96743d95bfcb0ca78b6e4df48009be7ae57"
     },
     "dolly/BridgeClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -11081,7 +11091,7 @@
       "instances": [
         "OwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "a95ef36867fca68e82864405d5daecd95fc712e6bc8a8069cb650b97ef9613da"
+      "owner_utf8_lf_sha256": "fe1911e0c73b648cbc49d2719159076736488daaf551ece32628ce4c68f2bc2d"
     },
     "dolly/CleanupResult.tla": {
       "path": "dolly/file_ops.py",
@@ -11231,7 +11241,7 @@
         "dolly/GameinfoTransaction.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "48a596a6b6268568eee593b9bfcd5d3c972a3b1359f638e320529908e5714bbc"
+      "owner_utf8_lf_sha256": "d636d95721e1a5dcbe73227f42a403d74f142b2c441cb2f526185096fbafd209"
     },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",
@@ -11284,7 +11294,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "b7f6acf2a93d20dd7876b21e950fb7a8620d6913e5c1b11a181e9ff14538cd16"
+      "owner_utf8_lf_sha256": "2ba702d411c604732ef7c4b94fea4d26efdc28103b0cea41a3695e6dc3322dcd"
     },
     "dolly/ManifestScan.tla": {
       "path": "dolly/updater.py",
@@ -11295,7 +11305,7 @@
       "instances": [
         "ManifestScanApi"
       ],
-      "owner_utf8_lf_sha256": "ff062d936a9cba9c32fb1a2951fa9a5738cd2553dc7ec462b5a3720399f92846"
+      "owner_utf8_lf_sha256": "79edc6589b59c7f86d8c627efd95b72fc9e9dcb36ed557fb39c608621de814f8"
     },
     "dolly/MediaAdmission.tla": {
       "path": "dolly/media_transport.py",
@@ -11443,7 +11453,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "7195cf4af6c48a58c25d5bb4e9c732de1b590a1c751af4277ff272c1cde401d4"
+      "owner_utf8_lf_sha256": "6ae3df11da8ca6bd0daa08d27777030e5f9422090137dad633fc237c2beadcb8"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11543,7 +11553,7 @@
       "instances": [
         "SaveResultApi"
       ],
-      "owner_utf8_lf_sha256": "ab68f7f7f58521e244275dd079da262f436e60811a2008f3af0bcf539bad29df"
+      "owner_utf8_lf_sha256": "d6f0b038c2b4178867cdc1392a9fd96743d95bfcb0ca78b6e4df48009be7ae57"
     },
     "dolly/SavedSnapshot.tla": {
       "path": "dolly/shot_history.py",
@@ -11653,7 +11663,7 @@
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
+      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -11664,7 +11674,7 @@
       "instances": [
         "UpdateStartApi"
       ],
-      "owner_utf8_lf_sha256": "0e34362d8c655c79ccc64414ba0fac8a509ffcb68b5b92f9145d6a51c317f970"
+      "owner_utf8_lf_sha256": "81efe341c6c925552464956d3b790c24080bf6257037ec53ee27d8cf909bd3f2"
     },
     "dolly/VideoStopOwnership.tla": {
       "path": "dolly/video_export.py",
@@ -11686,7 +11696,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
+      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -11697,7 +11707,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "b57488b7ee1e950a3428418b2a1ab6a27c80a7d948fcfc61ebeb4307ce466ab8"
+      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",
@@ -17317,6 +17327,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_recovery_updater_boundaries.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_replay_repair.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18420,7 +18435,7 @@
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
     "formal spec/interface": 154,
-    "test/support input": 81,
+    "test/support input": 82,
     "external dependency/resource": 201
   },
   "unclassified": 0,

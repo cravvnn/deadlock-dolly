@@ -233,11 +233,26 @@ def load_settings(path: str | os.PathLike[str] | None = None) -> AppSettings:
             data = handle.read(MAX_SETTINGS_BYTES + 1)
     except FileNotFoundError:
         return AppSettings()
+    except OSError:
+        # The file exists but could not be read (locked, permissions). Whoever
+        # falls back to defaults must not silently replace it on the next save.
+        _UNREAD.add(os.path.normcase(os.path.abspath(target)))
+        raise
     return _decode_settings(data)
 
 
+# Settings files whose last load failed with an I/O error in this process.
+_UNREAD: set[str] = set()
+
+
 def _backup_invalid_settings(target: Path) -> None:
-    """Preserve malformed content only when an explicit save will replace it."""
+    """Preserve content an explicit save would otherwise lose.
+
+    That is malformed content, and any content of a file this process failed
+    to read earlier (the save would be built from defaults, not from it). If
+    it still cannot be read, the save fails rather than replacing it unseen.
+    """
+    unread = os.path.normcase(os.path.abspath(target)) in _UNREAD
     try:
         with target.open("rb") as handle:
             data = handle.read(MAX_SETTINGS_BYTES + 1)
@@ -245,6 +260,8 @@ def _backup_invalid_settings(target: Path) -> None:
         return
     try:
         _decode_settings(data)
+        if unread:
+            raise ValueError("kept because an earlier load failed")
     except ValueError:
         staging: Path | None = None
         try:
@@ -318,6 +335,7 @@ def save_settings(
             os.fsync(handle.fileno())
         _backup_invalid_settings(target)
         os.replace(temporary, target)
+        _UNREAD.discard(os.path.normcase(os.path.abspath(target)))
     finally:
         if temporary is not None:
             try:

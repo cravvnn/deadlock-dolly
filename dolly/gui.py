@@ -3313,9 +3313,9 @@ class DollyApp:
 
     def _recover_game_config(self):
         def complete(restored):
-            messagebox.showinfo("Game configuration",
+            self._background_dialog(messagebox.showinfo, "Game configuration",
                 f"Recovered or cleaned {len(restored)} session(s)." if restored else
-                "No pending recovery or temporary-folder cleanup is needed.", parent=self.root)
+                "No pending recovery or temporary-folder cleanup is needed.")
         # recover_pending verifies that Deadlock is closed and retains any
         # conflicting user/Steam changes. The usual worker owns this action.
         self._submit("Recovering game configuration", recover_pending, complete)
@@ -3774,6 +3774,24 @@ class DollyApp:
         finally:
             self._error_dialog_open = False
 
+    def _background_dialog(self, show, title, message, *, retry=True):
+        """Show a dialog for a result that arrived in the background.
+
+        Same rule as _error: one dialog at a time, none after close. If another
+        is open the notice waits for it (``retry``) or is skipped, returning None.
+        """
+        if self.closed:
+            return None
+        if getattr(self, "_error_dialog_open", False):
+            if retry:
+                self.root.after(1000, lambda: self._background_dialog(show, title, message))
+            return None
+        self._error_dialog_open = True
+        try:
+            return show(title, message, parent=self.root)
+        finally:
+            self._error_dialog_open = False
+
     def _guard(self, title, function):
         if self.busy or self.playing:
             self.status_text.set("Stop path playback and finish the current operation before editing the shot.")
@@ -3871,11 +3889,10 @@ class DollyApp:
 
         def finished(path):
             self.status_text.set("Replay copy saved. Select it to try it in Deadlock.")
-            messagebox.showinfo(
-                "Replay copy saved",
+            self._background_dialog(
+                messagebox.showinfo, "Replay copy saved",
                 "The experimental copy was saved to:\n" + str(path) +
-                "\n\nThe original replay was not changed. Open the copy to test whether it plays.",
-                parent=self.root)
+                "\n\nThe original replay was not changed. Open the copy to test whether it plays.")
 
         self._submit("Repairing replay", lambda: repair_replay(source, Path(destination)), finished)
 
@@ -4525,13 +4542,14 @@ class DollyApp:
             for warning in settings.migration_warnings:
                 self._enqueue_log(warning)
             if settings.migration_warnings:
-                self.root.after(300, lambda text="\n\n".join(settings.migration_warnings): messagebox.showinfo("Keybind settings", text, parent=self.root))
+                self.root.after(300, lambda text="\n\n".join(settings.migration_warnings): self._background_dialog(messagebox.showinfo, "Keybind settings", text))
             return settings
         except (ValueError, OSError) as exc:
             self._enqueue_log(f"Preferences could not be loaded; using defaults. {exc}")
-            self.root.after(200, lambda detail=str(exc): messagebox.showwarning(
+            self.root.after(200, lambda detail=str(exc): self._background_dialog(
+                messagebox.showwarning,
                 "Dolly preferences", "Dolly could not load your preferences, so this launch uses defaults (capture: Ctrl+Alt+K).\n"
-                "Open Controls to review and save your shortcuts.\n\n" + detail, parent=self.root))
+                "Open Controls to review and save your shortcuts.\n\n" + detail))
             return AppSettings()
 
     def _capture_binding_label(self):
@@ -4784,10 +4802,12 @@ class DollyApp:
                 if self.project is not original:
                     raise ValueError("The shot changed during capture. Capture again to add this view to the current shot.")
                 if action == "start":
-                    if candidate.keyframes and not replacement_confirmed and not messagebox.askyesno(
-                            "Start a new camera path?",
+                    if candidate.keyframes and not replacement_confirmed and not self._background_dialog(
+                            messagebox.askyesno, "Start a new camera path?",
                             "Replace the current camera path with this captured view? Existing lens and depth-of-field tracks will be kept.",
-                            parent=self.root):
+                            retry=False):
+                        if getattr(self, "_error_dialog_open", False):
+                            self.status_text.set("Close the open dialog, then capture the view again.")
                         return
                 shot_commands.finish_capture(candidate, action, key, tick, selected)
                 self.project = candidate
@@ -5378,7 +5398,7 @@ class DollyApp:
     def _dof_checked(self, report):
         if not report:
             return
-        messagebox.showinfo("Native DOF support", dof_preflight.format_report(report), parent=self.root)
+        self._background_dialog(messagebox.showinfo, "Native DOF support", dof_preflight.format_report(report))
         self.status_text.set(dof_preflight.summary(report))
 
     def _toggle_log(self):
@@ -5392,11 +5412,13 @@ class DollyApp:
         self.show_log.set(False)
         self.log_dialog.withdraw()
 
-    def _on_close(self):
+    def _on_close(self, discard_confirmed=False):
         self._cancel_renderlock_export()
         if self.busy:
             messagebox.showinfo("Operation in progress", "Wait for the current operation to finish before closing Dolly.", parent=self.root)
             return
+        # Whether the unsaved-changes question was already answered for this close.
+        self._discard_asked = bool(discard_confirmed)
         # Record the user's intent to close now, so a failure in any teardown
         # step (for example the game already exited) still closes the window
         # instead of stacking an error dialog behind an unclosable app.
@@ -5408,10 +5430,11 @@ class DollyApp:
 
     def _finish_close(self):
         self.playing = False
-        if not self._allow_discard():
+        if not getattr(self, "_discard_asked", False) and not self._allow_discard():
             # The user chose to keep editing; cancel the pending close intent.
             self._closing = False
             return
+        self._discard_asked = True
         editor_session.close(self)
         self._submit("Closing replay connection", self.controller.close, lambda _result: self._destroy())
 
@@ -5425,6 +5448,13 @@ class DollyApp:
         """
         self.playing = False
         self.busy = False
+        if not getattr(self, "_discard_asked", False):
+            # The failed step ran before the unsaved-changes question; a
+            # failure must not close Dolly over an unsaved shot unasked.
+            if not self._allow_discard():
+                self._closing = False
+                return
+            self._discard_asked = True
         if self._submit("Closing replay connection", self.controller.close,
                         lambda _result: self._destroy()):
             return

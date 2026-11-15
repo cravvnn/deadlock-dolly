@@ -1087,6 +1087,15 @@ inspected, since the game loads nothing else there: Grimoire's
 `citadel/addons/.disabled` and DMM's other profile folders no longer affect
 the decision.
 
+Boundaries (2026-11-14, tested in tests/test_recovery_updater_boundaries.py, not modeled): the game writes
+`session-files/cache_<id>.soc` and an empty `cvar_unlocker/save` into every session folder, which kept
+each folder forever; both are now removed as session output. An unfinished session stays recoverable
+after the Dolly folder is moved or renamed. The exit watcher starts before the helper and a log failure
+cannot skip it. A non-UTF-8 gameinfo.gi is a clear launch error. An unusable unfinished-update record
+no longer blocks every start when the installed files verify. Failed downloads remove their workspace.
+Settings that could not be read are copied aside before a save replaces them. A close-time failure still
+asks about unsaved work, and background results follow the one-dialog rule.
+
 ## Root composition (DollyRoot)
 
 `dolly/DollyRoot.tla` is the first root model. It composes two component
