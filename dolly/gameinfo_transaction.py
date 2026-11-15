@@ -49,13 +49,24 @@ def save_record(session_dir: Path, record: dict[str, Any], *, atomic_write: Atom
     atomic_write(session_dir / "session.json", (json.dumps(record, indent=2) + "\n").encode("utf-8"))
 
 
+def _same_session(recorded: str, session_dir: Path) -> bool:
+    """The journal's own folder, or that same logs/<id> folder after the whole
+    Dolly folder was moved or renamed. The stored path is never rewritten; the
+    backup's hash and the game-side checks still decide what may be restored."""
+    recorded = Path(recorded)
+    if recorded.resolve() == session_dir.resolve():
+        return True
+    return (recorded.is_absolute() and recorded.name == session_dir.name
+            and recorded.parent.name == "logs" and session_dir.resolve().parent.name == "logs")
+
+
 def load_record(session_dir: Path, *, validate_game: Callable[[Path], GameinfoPaths] = _validate_game) -> dict[str, Any]:
     try:
         from .file_ops import _plain_path, _plain_ancestors
         if not _plain_ancestors(session_dir) or not _plain_path(session_dir / "session.json"):
             raise ValueError("linked session directory or journal")
         record = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
-        if not isinstance(record, dict) or record.get("owner") != "Deadlock Dolly" or Path(record["session_dir"]).resolve() != session_dir.resolve():
+        if not isinstance(record, dict) or record.get("owner") != "Deadlock Dolly" or not _same_session(record["session_dir"], session_dir):
             raise ValueError("unrecognized session owner or directory")
         paths = validate_game(Path(record["original_gameinfo"]).parent)
         if paths.gameinfo.resolve() != Path(record["original_gameinfo"]).resolve():

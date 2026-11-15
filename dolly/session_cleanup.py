@@ -46,6 +46,13 @@ GENERATED_DIRS = frozenset({"cvar_unlocker", "cvar_unlocker/bin", "cvar_unlocker
 # given as a search path. Their names are engine-chosen, so the whole directory
 # is treated as session output rather than enumerated file by file.
 GENERATED_TREES = frozenset({"cvar_unlocker/rpt"})
+_STEAM_CACHE = re.compile(r"session-files/cache_[0-9]{1,20}\.soc")
+
+
+def _holds_user_files(session_files: Path) -> bool:
+    """Whether the session write folder holds anything besides the Steam cache."""
+    return any(not (entry.is_file() and _STEAM_CACHE.fullmatch("session-files/" + entry.name))
+               for entry in session_files.iterdir())
 
 
 def _owned_location(overlay: Path, paths) -> bool:
@@ -68,7 +75,9 @@ def _marker(overlay: Path, paths, session_dir: Path | None = None) -> dict:
         if (not recorded_session.is_absolute() or recorded_session.parent.name != "logs"
                 or recorded_session.name != overlay.name[len(PREFIX):]):
             raise ValueError("unexpected session directory")
-        if session_dir is not None and recorded_session.resolve() != session_dir.resolve():
+        # The same logs/<id> session, also after the Dolly folder was moved.
+        if session_dir is not None and (recorded_session.name != session_dir.name
+                                        or session_dir.resolve().parent.name != "logs"):
             raise ValueError("session directory mismatch")
         if (not isinstance(data.get("original_sha256"), str)
                 or re.fullmatch(r"[a-f0-9]{64}", data["original_sha256"]) is None
@@ -83,7 +92,12 @@ def _mount_is_referenced(paths, overlay: Path) -> bool:
     """Read actual SearchPaths, including conditions and wildcard mounts."""
     if not _plain_path(paths.gameinfo):
         raise LaunchError("Linked gameinfo.gi was left untouched during temporary-file cleanup.")
-    roots = _named(_parse(paths.gameinfo.read_text(encoding="utf-8-sig")), "GameInfo")
+    try:
+        text = paths.gameinfo.read_text(encoding="utf-8-sig")
+    except UnicodeError as exc:
+        raise LaunchError("Could not verify game search paths before temporary-file cleanup: "
+                          "gameinfo.gi is not UTF-8 text.") from exc
+    roots = _named(_parse(text), "GameInfo")
     if len(roots) != 1:
         raise LaunchError("Could not verify game search paths before temporary-file cleanup.")
     filesystems = _named(roots[0].children or [], "FileSystem")
@@ -173,9 +187,15 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
                 else:
                     files.append(child)
                     removed_reports.append(relative)
+            elif child.is_file() and _STEAM_CACHE.fullmatch(relative):
+                # The game's own Steam item cache for this session, rewritten on
+                # every start. It is session output, not user data.
+                files.append(child)
+            elif child.is_dir() and relative == "cvar_unlocker/save" and not any(child.iterdir()):
+                directories.append(child)  # Created empty by the game.
             elif ((child.is_dir() and relative == "cvar_unlocker/replays") or
                     (child.is_file() and relative == "cvar_unlocker/panorama_debugger.cfg") or
-                    (child.is_dir() and relative == "session-files" and any(child.iterdir()))):
+                    (child.is_dir() and relative == "session-files" and _holds_user_files(child))):
                 # Sessions can leave replay/settings data in the temporary mount.
                 # It is not ours to delete or traverse. Ownership and actual
                 # SearchPaths were verified above. Inspect other entries too.

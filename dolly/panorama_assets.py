@@ -41,7 +41,7 @@ def verify_stock_ui_assets(citadel_dir):
 def _read_vpk_tree(index_path, max_tree_bytes):
     """Read one validated VPK directory tree: (header size, tree size, tree)."""
     index = Path(index_path)
-    if not index.name.endswith('_dir.vpk'):
+    if not index.name.casefold().endswith('_dir.vpk'):
         raise ValueError('Expected a VPK directory index.')
     with index.open('rb') as stream:
         header = stream.read(12)

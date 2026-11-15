@@ -871,11 +871,14 @@ class Session:
         try:
             start_waiter(self)
             self._cleanup_handed_off = True
-            self.log("Started the background cleanup helper for this game process.")
-            return True
+            message = "Started the background cleanup helper for this game process."
         except (OSError, ValueError, TypeError, AttributeError) as exc:
-            self.log(f"Could not start background cleanup; Dolly will retry when it closes or next opens: {exc}")
-            return False
+            message = f"Could not start background cleanup; Dolly will retry when it closes or next opens: {exc}"
+        try:
+            self.log(message)
+        except OSError:
+            pass  # A full or locked log must not undo the launch or skip the watcher.
+        return self._cleanup_handed_off
 
     def handoff_cleanup(self) -> bool:
         """Keep game-exit cleanup alive when the desktop editor is closing."""
@@ -883,7 +886,10 @@ class Session:
             return self.close()
         self.record_native_diagnostics()
         if self.start_cleanup_helper():
-            self.log("Dolly is closing; the background cleanup helper will remove its temporary plugin files after this game process exits.")
+            try:
+                self.log("Dolly is closing; the background cleanup helper will remove its temporary plugin files after this game process exits.")
+            except OSError:
+                pass
             return True
         return False
 
@@ -1054,7 +1060,6 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                         "Run as administrator on Dolly.exe before retrying.\n\n"
                         f"Launch log: {log_path}") from exc
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge, nvidia_dlss=nvidia_dlss)
-        session.start_cleanup_helper()
 
         def watch() -> None:
             while True:
@@ -1092,6 +1097,7 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
         # instead of leaving the process running with Dolly's patched config and
         # no cleanup until the next manual launch.
         threading.Thread(target=watch, name="dolly-game-exit", daemon=True).start()
+        session.start_cleanup_helper()
         if bridge is not None:
             bridge.bind_game(process.pid, exited=lambda: process.poll() is not None)
         try:
