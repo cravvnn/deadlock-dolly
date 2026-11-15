@@ -1313,3 +1313,4 @@ tools/tla/modules/RecorderApi.tla
 docs/RELEASE_NOTES_0.7.36-beta.md
 docs/RELEASE_NOTES_0.7.37-beta.md
 docs/RELEASE_NOTES_0.7.38-beta.md
+docs/RELEASE_NOTES_0.7.39-beta.md
