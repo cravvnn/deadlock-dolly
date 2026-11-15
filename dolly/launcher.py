@@ -666,6 +666,30 @@ def _restore_record(session_dir: Path) -> bool:
         atomic_write=_atomic_write)
 
 
+def resolve_gameinfo_conflict(session_dir: str | os.PathLike[str], *, keep_current: bool) -> list[str]:
+    """Apply the user's conflict choice, then finish the remaining recovery."""
+    _check_runtime()
+    if _game_is_running(running_processes()):
+        raise LaunchError("Exit Deadlock before resolving the game configuration.")
+    gameinfo_transaction.resolve_conflict(
+        Path(session_dir), keep_current=keep_current, load_record=_load_record,
+        save_record=_save_record, atomic_write=_atomic_write)
+    return recover_pending()
+
+
+def recover_at_startup() -> list[str]:
+    """Finish an interrupted session's recovery when Dolly opens.
+
+    A crash before the unlocker initialized leaves Dolly's gameinfo.gi in
+    place; without this, a normal Steam start would still load it. Skipped
+    while any Deadlock runs: that game may be Dolly's own, still owned by its
+    cleanup helper, and recovery never touches a running game's files.
+    """
+    if _game_is_running(running_processes()):
+        return []
+    return recover_pending()
+
+
 def _restore_session_configs(session_dir: Path) -> None:
     session_recovery.restore_session_configs(
         session_dir, restore_gameinfo=_restore_record,

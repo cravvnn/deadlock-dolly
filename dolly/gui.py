@@ -48,6 +48,9 @@ from dolly.hotkey import CaptureHotkey
 # Compatibility import for existing callback users.
 from .gui_theme import _clear_committed_combobox_selection
 from dolly.launcher import discover_game, recover_pending, validate_game
+from dolly.launcher import recover_at_startup, resolve_gameinfo_conflict
+from dolly.gameinfo_transaction import GameinfoConflict
+from dolly.launch_errors import LaunchError as _LaunchError
 from dolly.launcher import discover_game, recover_pending
 from dolly.memory_watch import PausedMemoryWatch
 from dolly.navigation import CameraMotion
@@ -161,6 +164,22 @@ def _binding_event_key(event):
 # limit. Log lines may be dropped (and are reported); command results never are.
 from .ui.operations import EVENT_QUEUE_LIMIT, OperationQueue
 from .ui.layer_pipeline import LayerPipeline, recover_export_failure
+
+
+def _startup_scan():
+    """Find Deadlock, then finish any interrupted session's recovery.
+
+    Recovery failures are reported, never fatal; a conflict is returned so the
+    desktop can offer the user's choice once the window is ready.
+    """
+    path = discover_game()
+    try:
+        recovery = recover_at_startup()
+    except GameinfoConflict as conflict:
+        recovery = conflict
+    except (_LaunchError, OSError) as exc:
+        recovery = exc
+    return path, recovery
 
 
 class DollyApp:
@@ -472,7 +491,7 @@ class DollyApp:
         self.root.bind("<Control-y>", lambda event: self._history_shortcut(event, True))
         self.root.bind("<Control-Shift-Z>", lambda event: self._history_shortcut(event, True))
         self.root.after(80, self._poll)
-        self._submit("Looking for Deadlock", discover_game, self._discovered)
+        self._submit("Looking for Deadlock", _startup_scan, self._startup_scanned)
 
     def _px(self, value):
         """Design pixels (a number or a padding tuple) at this window's display scale."""
@@ -3377,6 +3396,8 @@ class DollyApp:
                 if cancelled:
                     self.status_text.set("Startup cancelled. You can choose a replay and try again.")
                     self._log(str(payload))
+                elif isinstance(payload, GameinfoConflict):
+                    self._ask_gameinfo_conflict(payload)
                 else:
                     self._report_operation_error(label, payload)
             elif kind == "done":
@@ -3695,6 +3716,39 @@ class DollyApp:
         except Exception as exc:
             self._error(title, exc)
             return None
+
+    def _startup_scanned(self, result):
+        path, recovery = result
+        self._discovered(path)
+        if isinstance(recovery, GameinfoConflict):
+            self._ask_gameinfo_conflict(recovery)
+        elif isinstance(recovery, Exception):
+            self._log(f"Game configuration recovery needs attention: {recovery}")
+        elif recovery:
+            self._log(f"Restored the game configuration from {len(recovery)} unfinished Dolly session(s).")
+
+    def _ask_gameinfo_conflict(self, conflict):
+        """The user's explicit choice; Dolly never overwrites outside changes itself."""
+        if self.closed:
+            return
+        choice = messagebox.askchoice(
+            "Game configuration changed",
+            "Something changed Deadlock's gameinfo.gi while Dolly's version was in place "
+            "(for example a mod manager or a Steam file check). Dolly did not overwrite it.\n\n"
+            f"Current file: {conflict.target}\nYour original, saved by Dolly: {conflict.backup}\n\n"
+            "Put your original back, or keep the current file?",
+            "Put my original back", "Keep the current file", parent=self.root)
+        if choice is None:
+            self.status_text.set("Game configuration left unchanged. Dolly will ask again before the next launch.")
+            return
+
+        def complete(_restored):
+            self.status_text.set("Original gameinfo.gi restored." if choice
+                                 else "Kept the current gameinfo.gi.")
+
+        self._submit("Resolving game configuration",
+                     lambda: resolve_gameinfo_conflict(conflict.session_dir, keep_current=not choice),
+                     complete)
 
     def _discovered(self, path):
         if path and not self.game_path.get():

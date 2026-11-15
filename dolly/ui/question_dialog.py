@@ -11,10 +11,11 @@ from .scale import px, ui_scale
 
 
 class _QuestionDialog(simpledialog.Dialog):
-    def __init__(self, parent, title, message, *, cancel, kind="question"):
+    def __init__(self, parent, title, message, *, cancel, kind="question", labels=("Yes", "No")):
         self.message = message
         self.has_cancel = cancel
         self.kind = kind
+        self.labels = labels
         super().__init__(parent, title)
 
     def body(self, master):
@@ -73,8 +74,8 @@ class _QuestionDialog(simpledialog.Dialog):
         dp = lambda value: px(ui_scale(self), value)  # noqa: E731
         actions = ttk.Frame(self, padding=dp((24, 0, 46, 20)))
         actions.pack(fill="x")
-        ttk.Button(actions, text="Yes", style="Primary.TButton", command=self.yes).pack(side="right")
-        ttk.Button(actions, text="No", command=self.no).pack(side="right", padx=dp((0, 10)))
+        ttk.Button(actions, text=self.labels[0], style="Primary.TButton", command=self.yes).pack(side="right")
+        ttk.Button(actions, text=self.labels[1], command=self.no).pack(side="right", padx=dp((0, 10)))
         if self.has_cancel:
             ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=self.cancel).pack(
                 side="right", padx=dp((0, 10)))
@@ -95,6 +96,26 @@ def _ask(title, message, *, parent, cancel):
     status = previous.grab_status() if previous is not None else None
     try:
         return _QuestionDialog(parent, title, str(message), cancel=cancel).result
+    finally:
+        if previous is not None:
+            try:
+                if previous.winfo_exists():
+                    if status == "global":
+                        previous.grab_set_global()
+                    else:
+                        previous.grab_set()
+            except tk.TclError:
+                pass
+
+
+def askchoice(title, message, first, second, *, parent=None):
+    """Return True for the first choice, False for the second, None if cancelled."""
+    previous = parent.grab_current() if parent is not None else None
+    status = previous.grab_status() if previous is not None else None
+    try:
+        return _QuestionDialog(parent, title, str(message), cancel=True, labels=(first, second)).result
+    except tk.TclError:
+        return _system.askyesnocancel(title, f"{message}\n\nYes: {first}\nNo: {second}", parent=parent)
     finally:
         if previous is not None:
             try:

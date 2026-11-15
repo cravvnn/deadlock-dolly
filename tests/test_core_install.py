@@ -228,6 +228,52 @@ class InstallTests(unittest.TestCase):
                 for overlay in self.game.glob('citadel_dolly_*'): shutil.rmtree(overlay)
                 self.assertEqual(tree(self.game), before)
 
+    def test_p03b_conflict_choice_and_recovery_when_dolly_opens(self):
+        env = lambda processes: (patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.package),
+                                 patch.object(launcher, 'running_processes', return_value=processes))
+        # A crash before the unlocker initialized leaves Dolly's file mounted.
+        session, overlay, backup, record, patched = self.journal_fixture('crashed')
+        a, b, c = env({'steam.exe', 'deadlock.exe'})
+        with a, b, c:
+            self.assertEqual(launcher.recover_at_startup(), [])  # Never touches a running game.
+        self.assertEqual(self.paths.gameinfo.read_bytes(), patched)
+        a, b, c = env({'steam.exe'})
+        with a, b, c, patch.object(launcher, 'discover_game', return_value=None):
+            self.assertEqual(launcher.recover_at_startup(), [str(session)])
+        self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO)
+        self.assertFalse(overlay.exists())
+        for keep in (True, False):
+            with self.subTest(keep_current=keep):
+                name = 'keep' if keep else 'restore'
+                session, overlay, backup, record, patched = self.journal_fixture(name)
+                outside = GAMEINFO.replace(b'Game "core"', b'Game "citadel/addons"\r\n   Game "core"')
+                self.paths.gameinfo.write_bytes(outside)  # A mod manager rewrote it.
+                a, b, c = env({'steam.exe'})
+                with a, b, c, patch.object(launcher, 'discover_game', return_value=None):
+                    with self.assertRaises(gameinfo_transaction.GameinfoConflict) as raised:
+                        launcher.recover_pending()
+                    self.assertEqual(raised.exception.session_dir, session)
+                    self.assertEqual(self.paths.gameinfo.read_bytes(), outside)  # Never overwritten unasked.
+                    launcher.resolve_gameinfo_conflict(session, keep_current=keep)
+                self.assertEqual(self.paths.gameinfo.read_bytes(), outside if keep else GAMEINFO)
+                journal = gameinfo_transaction.load_record(session)
+                self.assertEqual((journal['config_state'], journal['conflict_resolution']),
+                                 ('restored', 'kept_current' if keep else 'restored_original'))
+                self.assertFalse(overlay.exists())
+        # A file that still mounts Dolly's temporary folder cannot be kept.
+        session, overlay, backup, record, patched = self.journal_fixture('stillmounted')
+        self.paths.gameinfo.write_bytes(patched + b'// edited')
+        a, b, c = env({'steam.exe'})
+        with a, b, c, patch.object(launcher, 'discover_game', return_value=None):
+            with self.assertRaisesRegex(LaunchError, 'still loads'):
+                launcher.resolve_gameinfo_conflict(session, keep_current=True)
+            a2, b2, c2 = env({'deadlock.exe'})
+        with a2, b2, c2:
+            with self.assertRaisesRegex(LaunchError, 'Exit Deadlock'):
+                launcher.resolve_gameinfo_conflict(session, keep_current=False)
+        self.assertEqual(self.paths.gameinfo.read_bytes(), patched + b'// edited')
+        self.assertTrue(overlay.exists())
+
     def test_p03_interrupted_recovery_preserves_foreign_and_modified_files(self):
         session, overlay, backup, record, patched = self.journal_fixture('normal')
         with patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.package), patch.object(launcher, 'running_processes', return_value={'steam.exe'}):

@@ -17,6 +17,20 @@ from .file_ops import _atomic_write
 from .game_installation import validate_game as _validate_game
 
 
+class GameinfoConflict(LaunchError):
+    """gameinfo.gi changed outside Dolly while Dolly's version was mounted.
+
+    Dolly never overwrites those bytes on its own; resolve_conflict applies
+    the user's explicit choice.
+    """
+
+    def __init__(self, message: str, *, session_dir: Path, target: Path, backup: Path):
+        super().__init__(message)
+        self.session_dir = Path(session_dir)
+        self.target = Path(target)
+        self.backup = Path(backup)
+
+
 class GameinfoPaths(Protocol):
     """Only the validated installation fields consumed by a journal."""
 
@@ -84,9 +98,51 @@ def restore_record(
         else:
             record["config_state"] = "conflict"
             save_record(session_dir, record)
-            raise LaunchError(f"Deadlock gameinfo.gi changed after Dolly mounted its plugin. Dolly left those newer bytes untouched. Original backup: {backup}\nCompare the current file with this backup before another Dolly launch; recovery remains pending.")
+            raise GameinfoConflict(
+                f"Deadlock gameinfo.gi changed after Dolly mounted its plugin. Dolly left those newer bytes untouched. Original backup: {backup}\nCompare the current file with this backup before another Dolly launch; recovery remains pending.",
+                session_dir=session_dir, target=target, backup=backup)
         record["restored_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         save_record(session_dir, record)
         return True
     except OSError as exc:
         raise LaunchError(f"Could not restore Deadlock gameinfo.gi: {exc}\nOriginal backup: {backup}. Exit Deadlock, then use File > Recover game configuration in Dolly.") from exc
+
+def resolve_conflict(
+    session_dir: Path, *, keep_current: bool, load_record: Callable[[Path], dict[str, Any]] = load_record,
+    save_record: Callable[[Path, dict[str, Any]], None] = save_record, atomic_write: AtomicWriter = _atomic_write,
+) -> str:
+    """Apply the user's choice for a gameinfo.gi changed outside Dolly.
+
+    keep_current keeps the newer file and retires Dolly's backup obligation,
+    unless that file still mounts Dolly's temporary folder (it could not load
+    once the folder is removed). Otherwise the verified original is written
+    back. Callers must ensure Deadlock is not running.
+    """
+    record = load_record(session_dir)
+    if record.get("config_state") == "restored":
+        return "restored"
+    target = Path(record["original_gameinfo"])
+    backup = session_dir / record["backup_name"]
+    try:
+        from .file_ops import _plain_path
+        if not _plain_path(backup) or not _plain_path(target):
+            raise LaunchError("Linked game configuration or backup left untouched during recovery.")
+        original = backup.read_bytes()
+        if hashlib.sha256(original).hexdigest() != record["original_sha256"]:
+            raise LaunchError(f"Dolly's original gameinfo backup failed its hash check. Nothing was overwritten. Backup: {backup}")
+        if keep_current:
+            overlay = Path(record["overlay_dir"]).name
+            if overlay.encode("utf-8").lower() in target.read_bytes().lower():
+                raise LaunchError(
+                    "The current gameinfo.gi still loads Dolly's temporary folder, so it cannot be kept as is. "
+                    "Choose to put your original back instead.")
+            record["conflict_resolution"] = "kept_current"
+        else:
+            atomic_write(target, original, record.get("original_mode"))
+            record["conflict_resolution"] = "restored_original"
+        record["config_state"] = "restored"
+        record["restored_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        save_record(session_dir, record)
+        return record["conflict_resolution"]
+    except OSError as exc:
+        raise LaunchError(f"Could not update Deadlock gameinfo.gi: {exc}\nOriginal backup: {backup}") from exc
