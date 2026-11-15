@@ -189,6 +189,21 @@ class MetadataBoundaryTests(unittest.TestCase):
             vpk(addons / ".disabled" / "pak02_dir.vpk", [("models", "skin")])
             self.assertFalse(mod_policy.classify_mount(addons)["allowed"])
 
+    def test_unpacked_render_files_are_refused_like_packed_ones(self):
+        # A folder of compiled game files directly below a mount is an asset
+        # folder the game loads, not a mod-manager container to look inside.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            cases = [("postprocessing/grade.vpost_c", False), ("lowfx/flat.vmat_c", False),
+                     ("mymod/readme.txt", True), ("mymod/models/skin.vmdl_c", True),
+                     ("models/skin.vmdl_c", True)]
+            for index, (relative, allowed) in enumerate(cases):
+                mount = root / f"case{index}"
+                target = mount / relative
+                target.parent.mkdir(parents=True)
+                target.write_bytes(b"x")
+                self.assertEqual(mod_policy.classify_mount(mount)["allowed"], allowed, relative)
+
     def test_custom_mod_folders_are_carried_under_the_same_check(self):
         # Any extra folder under citadel/ (Hyperline, modlock, a hand-made
         # folder) is carried when it holds content; render-only packs still stay

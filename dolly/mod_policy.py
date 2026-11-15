@@ -59,6 +59,18 @@ class MountInspectionError(ValueError):
     """Content could not be inspected; an override is not a successful scan."""
 
 
+def _holds_compiled_files(folder: Path) -> bool:
+    """True when compiled game files (``*.v…_c``) sit directly in ``folder``.
+
+    The game loads those from an asset folder such as ``postprocessing/``; a
+    mod-manager container holds packs or content folders instead.
+    """
+    try:
+        return any(entry.is_file() and entry.suffix.casefold().endswith("_c") for entry in folder.iterdir())
+    except OSError as exc:
+        raise MountInspectionError(f"{folder.name} could not be read ({exc.__class__.__name__})") from exc
+
+
 def _content(parts: list[str]) -> bool:
     """True when this virtual path is reviewed skin/map/audio content."""
     root = parts[0].casefold()
@@ -186,7 +198,7 @@ def _scan_loose(root: Path, depth: int, evidence: list[str]) -> None:
             continue
         if name in ALLOWED_ROOTS:
             continue
-        if depth < MAX_CONTAINER_DEPTH:
+        if depth < MAX_CONTAINER_DEPTH and not _holds_compiled_files(child):
             _scan_loose(child, depth + 1, evidence)
             continue
         evidence.append(f"{child.name}/ is not skin or map content")
