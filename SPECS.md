@@ -1037,6 +1037,34 @@ read/check/sleep, so the real cost of an exit is at most one poll interval.
 Controller._op_lock, GUI recovery, Session.close's configuration restore and its
 double-run idempotence, and console reconnect are not modeled.
 
+## Game install transaction (GameinfoTransaction)
+
+`dolly/GameinfoTransaction.tla` covers Dolly's gameinfo.gi and overlay across
+processes. Launch backs up the original, writes Dolly's base gameinfo (only
+mod mounts carried; the user's ConVars and other edits never reach the
+session) and creates the overlay. The game reads the file once while loading.
+The original goes back after the unlocker initializes or as Dolly closes; the
+overlay stays while the game runs. Cleanup (restore, then overlay removal)
+runs in Dolly's exit watcher, in the detached helper Dolly starts when it
+closes before the game, and, since 2026-11-14, when Dolly opens again
+(recover_at_startup, skipped while any Deadlock runs), so a crash before the
+unlocker initialized no longer leaves Dolly's file until the next launch. An
+outside change (mod manager, Steam verify) becomes a conflict that is never
+overwritten; Dolly now asks the user to put the original back or keep the
+current file (refused if it still mounts Dolly's overlay) instead of blocking
+every launch. Invariants NeverOverwriteEdit, RunningGameKeepsPlugin,
+NoDanglingMount, RestoredStandalone; property ExitCleansUp. Six mutants: an
+overwriting restore, a helper or recovery that cleans while a game runs, no
+close helper, no recovery on reopen, keeping a file that still mounts the
+overlay. One session; Steam starts between a crash and the next Dolly open,
+PID reuse and file-system failures are not modeled.
+
+Mods (2026-11-14): Deadlock's own pak01 stores audio under `sounds/` and
+character animation under `animgraphs/`; both are now content roots, so
+sound-only and animation mods load. Particle, post-processing, shader and
+non-model material packs stay out. A user `autoexec.cfg` in the game folder is
+shadowed by Dolly's overlay copy, which comes first in the search order.
+
 ## Root composition (DollyRoot)
 
 `dolly/DollyRoot.tla` is the first root model. It composes two component

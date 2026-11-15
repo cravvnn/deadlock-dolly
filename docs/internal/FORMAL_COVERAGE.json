@@ -37,9 +37,9 @@
     },
     "L03": {
       "title": "Storage/recovery/update publication",
-      "status": "bounded per-operation models; complete filesystem/crash composition open",
+      "status": "bounded per-operation models plus GameinfoTransaction across Dolly, game, helper and reopen recovery; complete filesystem/crash composition open",
       "priority": 1,
-      "remaining": "native UI storage crash/backup publication plus all caller-held lock and restore/recovery assumptions"
+      "remaining": "graphics profile library and session-folder capture, editing-session/bootstrap/desktop startup files, replay/crav identity, native UI storage, file-system failure modes"
     },
     "L04": {
       "title": "Desktop input/UI lifetimes and publication",
@@ -2337,12 +2337,20 @@
     },
     {
       "path": "dolly/gameinfo_transaction.py",
-      "sha256": "f5375556427133632cf6fe0d4d3b6175b317240c7d1816060c2d45561d8f3f9f",
+      "sha256": "75567069aa28889ff17b429622c5dae632bc247d421e55361add34214740cd44",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
       "reason": "Persistent/context/transaction state belongs to this source family. Retain any bounded scopes and tests; full caller/lifecycle contract is tracked under L03.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "dolly/GameinfoTransaction.tla",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached close helper and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes (Dolly closed first or crashed then reopened) unless a conflict awaits the user. One session, atomic steps; Steam starts, PID reuse and file-system failures excluded",
+          "configs": [
+            "dolly/GameinfoTransaction.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [
         "tests/test_core_install.py",
         "tests/test_reviewed_owners.py"
@@ -2369,7 +2377,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114c": "2026-11-14 storage: conflicts raise GameinfoConflict (session/target/backup); resolve_conflict applies the user's choice (put the original back after its hash check, or keep the current file unless it still mounts Dolly's overlay). GameinfoTransaction models the transaction."
     },
     {
       "path": "dolly/graphics_diagnostics.py",
@@ -2496,7 +2505,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "21e78beb4db8635768907bf0f559ac5ec744ada9739ad525ffa476d9029e2fd2",
+      "sha256": "1647482e0ef87e0af3aa3f92f139816ae88d459d9cb2f821426cfb3930f112ed",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2603,7 +2612,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261114c": "2026-11-14 storage: the startup scan runs recover_at_startup after discovery; a GameinfoConflict from any operation opens a two-button choice (put my original back / keep the current file) instead of an error."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -2808,7 +2818,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "d16cd6046ef42470c9f6dc5595ee306e055336d6f39d08250e1be7b8c3617d10",
+      "sha256": "ca6294d946622a7841f2e4426f6790fc3b3d9933c1f0be6890b9698a11de2cf3",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2819,6 +2829,13 @@
           "scope": "start_flight's editor/ack waits under _operations versus the dolly-game-exit watcher and a user quit reaching NativeBridge.close; after exit a wait takes no further timeout poll (ExitLatency), close runs its body once, no flight on a closed bridge, exit and quit both close under fairness. Controller._op_lock/GUI recovery and Session.close restore not modeled",
           "configs": [
             "dolly/GameExitClose.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/GameinfoTransaction.tla",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached close helper and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes (Dolly closed first or crashed then reopened) unless a conflict awaits the user. One session, atomic steps; Steam starts, PID reuse and file-system failures excluded",
+          "configs": [
+            "dolly/GameinfoTransaction.cfg"
           ]
         }
       ],
@@ -2904,7 +2921,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261114": "2026-11-14 process hardening: the game-exit watcher's bind_game call now passes process.poll() as the bridge's exit signal. GameExitClose checks the watcher's close against start_flight's _operations hold. Session.close configuration restore, double-close idempotence of overlay/config restore and GUI recovery remain open.",
-      "reconciliation_20261114b": "2026-11-14 session close: Session.close now holds _restore_lock across config restoration, the journal read and overlay removal, so the exit watcher and dead-session recovery closing together serialize with each other and with record_exit (previously the unlocked journal read could meet the exit write and overlay removal could race itself). Sequential double close was already a no-op per step (journal early return, per-session overlay marker, hash-checked restore)."
+      "reconciliation_20261114b": "2026-11-14 session close: Session.close now holds _restore_lock across config restoration, the journal read and overlay removal, so the exit watcher and dead-session recovery closing together serialize with each other and with record_exit (previously the unlocked journal read could meet the exit write and overlay removal could race itself). Sequential double close was already a no-op per step (journal early return, per-session overlay marker, hash-checked restore).",
+      "reconciliation_20261114c": "2026-11-14 storage: recover_at_startup (skipped while any Deadlock runs) finishes an interrupted session when Dolly opens; resolve_gameinfo_conflict applies the user's choice then finishes recovery. GameinfoTransaction covers launch/restore/helper/recovery."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -3081,7 +3099,7 @@
     },
     {
       "path": "dolly/mod_policy.py",
-      "sha256": "d3d6b91f05ee0f0d74446b9aec1b85db17145d4082182e734e16d4c12ab21c8b",
+      "sha256": "7444a8bc3325f9f0c13b3cceb9082120462f209c60673a92d1140626791c9dc4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -3117,7 +3135,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114c": "2026-11-14 storage: content roots include sounds/ and animgraphs/ (Deadlock's own pak01 uses these); particles, post-processing, shaders and non-model materials stay refused."
     },
     {
       "path": "dolly/movie_audio.py",
@@ -4563,6 +4582,13 @@
           "configs": [
             "dolly/CleanupMarker.cfg"
           ]
+        },
+        {
+          "spec": "dolly/GameinfoTransaction.tla",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached close helper and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes (Dolly closed first or crashed then reopened) unless a conflict awaits the user. One session, atomic steps; Steam starts, PID reuse and file-system failures excluded",
+          "configs": [
+            "dolly/GameinfoTransaction.cfg"
+          ]
         }
       ],
       "test_reference_leads": [
@@ -4605,12 +4631,20 @@
     },
     {
       "path": "dolly/session_recovery.py",
-      "sha256": "9d4e3f193109b0edfccbcb51172bafc73f0478f48674cc09a82ae19606d7d3d0",
+      "sha256": "dbac617b15fe8cd1b288a7fc3916b3c66042a751ab38961fbcab30d5ec02cba1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
       "reason": "Persistent/context/transaction state belongs to this source family. Retain any bounded scopes and tests; full caller/lifecycle contract is tracked under L03.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "dolly/GameinfoTransaction.tla",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached close helper and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes (Dolly closed first or crashed then reopened) unless a conflict awaits the user. One session, atomic steps; Steam starts, PID reuse and file-system failures excluded",
+          "configs": [
+            "dolly/GameinfoTransaction.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [
         "tests/test_core_install.py",
         "tests/test_reviewed_owners.py"
@@ -4631,7 +4665,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114c": "2026-11-14 storage: a gameinfo conflict keeps its GameinfoConflict type through the combined restoration error so the desktop can offer the user's choice."
     },
     {
       "path": "dolly/settings.py",
@@ -5973,7 +6008,7 @@
     },
     {
       "path": "dolly/ui/question_dialog.py",
-      "sha256": "d05f244235870c307d59cb47f8ff7e990438e875a1f4def87d77c1c62a8fe03f",
+      "sha256": "9cc0a3783e4cdeb9b594a8d21f7a150839ee36877a3ee72a1298ecbd4d170342",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6006,7 +6041,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114c": "2026-11-14 storage: askchoice with custom button labels (cancel returns None)."
     },
     {
       "path": "dolly/ui/scale.py",
@@ -10275,7 +10311,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "550fce0ef68cb6f4d6c2234d21c298c4478ba36510fea5338912cff1ea03df6d",
+      "sha256": "c551d8ca8679093c8108d39bc527942ebe4d52f3e1ad91ba3b960613c014933e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10303,7 +10339,8 @@
       "reconciliation_draft": "Proposed required gate adds seven maintained bounded scopes, including explicit native/src/NativeSnapshotClose.cfg target. Checker version remains pinned.",
       "reconciliation_20261113": "2026-11-13 root composition: DollyRoot.cfg and DollyRoot-success.cfg added to REQUIRED (dolly/ was already scanned). No checker behavior change.",
       "reconciliation_20261114": "2026-11-14 process hardening: GameExitClose.cfg added to REQUIRED. No checker behavior change.",
-      "reconciliation_20261114b": "2026-11-14 session modes: CameraSessionModes.cfg and -success.cfg added to REQUIRED. No checker behavior change."
+      "reconciliation_20261114b": "2026-11-14 session modes: CameraSessionModes.cfg and -success.cfg added to REQUIRED. No checker behavior change.",
+      "reconciliation_20261114c": "2026-11-14 storage: GameinfoTransaction.cfg added to REQUIRED. No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -11170,6 +11207,15 @@
       ],
       "owner_utf8_lf_sha256": "955a05ebab22b7aa55a98acd6789e5d068c92e467e922260e5a0ce80bd30f10f"
     },
+    "dolly/GameinfoTransaction.tla": {
+      "path": "dolly/launcher.py",
+      "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached close helper and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes (Dolly closed first or crashed then reopened) unless a conflict awaits the user. One session, atomic steps; Steam starts, PID reuse and file-system failures excluded",
+      "configs": [
+        "dolly/GameinfoTransaction.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "ca6294d946622a7841f2e4426f6790fc3b3d9933c1f0be6890b9698a11de2cf3"
+    },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",
       "scope": "Dedicated heartbeat lifetime lock prevents beat/unmap overlap; timed join may outlive writer, lock acquisition not wall-clock bounded",
@@ -11380,7 +11426,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "21e78beb4db8635768907bf0f559ac5ec744ada9739ad525ffa476d9029e2fd2"
+      "owner_utf8_lf_sha256": "1647482e0ef87e0af3aa3f92f139816ae88d459d9cb2f821426cfb3930f112ed"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -13583,6 +13629,21 @@
     },
     {
       "path": "dolly/GameFileCacheApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoTransaction.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoTransaction.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoTransaction.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18323,10 +18384,10 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 531,
+    "metadata/configuration/documentation input": 533,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 153,
+    "formal spec/interface": 154,
     "test/support input": 80,
     "external dependency/resource": 201
   },
