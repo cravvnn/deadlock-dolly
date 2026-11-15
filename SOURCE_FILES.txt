@@ -790,7 +790,6 @@ native/src/dolly_rail_panel.cpp
 native/tests/rail_regressions.hpp
 native/ui_override/panorama/README.md
 tools/build_ui_art.py
-
 native/src/dolly_rail_tokens_generated.hpp
 docs/UI_REDESIGN.md
 native/src/dolly_rail_design.hpp
@@ -1317,3 +1316,8 @@ docs/RELEASE_NOTES_0.7.38-beta.md
 docs/RELEASE_NOTES_0.7.39-beta.md
 docs/RELEASE_NOTES_0.7.40-beta.md
 docs/RELEASE_NOTES_0.7.41-beta.md
+dolly/CloseFlow.tla
+dolly/CloseFlow.cfg
+dolly/CloseFlow.mutants.json
+dolly/UpdateRollback-dirToFile.cfg
+dolly/UpdateRollback-fileToDir.cfg

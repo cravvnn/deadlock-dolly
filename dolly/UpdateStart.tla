@@ -11,6 +11,8 @@ EXTENDS Naturals
 \* Returning start/final event delivery only. Request IDs, consent/safe-restart
 \* and retry event handling stay actual-method probes, not full async refinement.
 \* No concurrent consumers, post-start exceptions or OS thread-frequency claim.
+\* UpdateUI.restart's unsaved-work question and close are in CloseFlow
+\* (RestartClose); poll's exception containment is tested, not modeled.
 VARIABLES pc,status,started
 vars == <<pc,status,started>>
 phase == IF pc = "done" THEN "done" ELSE "active"

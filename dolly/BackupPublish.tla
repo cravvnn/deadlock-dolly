@@ -1,7 +1,9 @@
 ---- MODULE BackupPublish ----
 EXTENDS Naturals
 \* settings.save_settings -> _backup_invalid_settings on an explicit save over
-\* invalid data. Valid new payload is already staged/fsynced. Original snapshot
+\* invalid data, or (2026-11-14) over a file whose earlier load failed with an
+\* I/O error; if that file still cannot be read the save fails at Backup
+\* (SaveResult's IOError there) and the original stays. Valid new payload is already staged/fsynced. Original snapshot
 \* immutable during this transaction. Callers: GUI save, editor_dispatch save
 \* callbacks and tests. Their asynchronous scheduling is outside this model.
 \* Two copy chunks; flush/fsync/close/publish/error cleanup and exit separate.

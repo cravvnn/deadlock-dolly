@@ -119,6 +119,23 @@ class CloseAndDialogBoundaries(unittest.TestCase):
         gui.DollyApp._close_after_failure(app)
         app._allow_discard.assert_not_called(); app._submit.assert_called_once()
 
+    def test_a_close_that_keeps_failing_still_closes_dolly(self):
+        # CloseFlow.tla: controller.close raises every time while a gameinfo
+        # conflict is pending; each failure used to resubmit the close forever.
+        from dolly import gui
+        app = SimpleNamespace(playing=False, busy=False, _closing=True, _discard_asked=True,
+                              _allow_discard=MagicMock(), _submit=MagicMock(return_value=True),
+                              _destroy=MagicMock(), controller=MagicMock())
+        gui.DollyApp._close_after_failure(app)  # The stop failed: the close runs once.
+        app._submit.assert_called_once(); app._destroy.assert_not_called()
+        gui.DollyApp._close_after_failure(app)  # The close itself failed: exit, no retry.
+        app._submit.assert_called_once(); app._destroy.assert_called_once()
+        # A new close attempt starts fresh.
+        app = SimpleNamespace(busy=False, playing=False, _cancel_renderlock_export=MagicMock(),
+                              _finish_close=MagicMock(), _close_submitted=True)
+        gui.DollyApp._on_close(app)
+        self.assertFalse(app._close_submitted)
+
     def test_background_results_wait_for_an_open_dialog(self):
         from dolly import gui
         show = MagicMock(return_value='ok')
@@ -171,6 +188,49 @@ class UpdaterBoundaries(unittest.TestCase):
         editor.assert_not_called()
         self.assertIn('unfinished update', notify.call_args.args[0])
         self.assertTrue(marker.exists())
+
+    def path_kind_release(self, old_names, new_names):
+        target, work = self.target / 'installed', self.target / '.dolly-update-kind'
+        for folder, version, names in ((target, '1.0.0', old_names), (work / 'payload', '1.0.1', new_names)):
+            for name in names:
+                path = folder / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(version + ':' + name)
+            updater.write_manifest(folder, version)
+        (target / 'my-shot.json').write_text('keep')
+        return {'work': str(work), 'target': str(target)}, target, work
+
+    def test_update_that_turns_a_file_into_a_folder_rolls_back_and_installs(self):
+        # UpdateRollback (fileToDir/dirToFile): remove before writing, prune
+        # emptied folders, in both install and rollback.
+        common = list(handoff.REQUIRED)
+        for old, new in ((['_internal/data'], ['_internal/data/x.bin']),
+                         (['_internal/data/x.bin'], ['_internal/data'])):
+            with self.subTest(old=old, new=new):
+                shutil.rmtree(self.target, ignore_errors=True); self.target.mkdir()
+                plan, target, work = self.path_kind_release(common + old, common + new)
+                before = {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob('*') if p.is_file()}
+                def failed_health(_target):
+                    raise RuntimeError('simulated startup failure')
+                with self.assertRaisesRegex(RuntimeError, 'simulated startup failure'):
+                    update_worker.install(plan, failed_health)
+                after = {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob('*') if p.is_file()}
+                self.assertEqual(after, before)
+                self.assertFalse((target / update_worker.PENDING).exists())
+                (work / 'journal.json').unlink()
+                update_worker.install(plan)
+                self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+                for name in new:
+                    self.assertEqual((target / name).read_text(), '1.0.1:' + name)
+                self.assertEqual((target / 'my-shot.json').read_text(), 'keep')
+        # A folder that holds a user file is never removed to make room.
+        shutil.rmtree(self.target, ignore_errors=True); self.target.mkdir()
+        plan, target, work = self.path_kind_release(common + ['_internal/data/x.bin'], common + ['_internal/data'])
+        (target / '_internal/data/mine.txt').write_text('user')
+        with self.assertRaises(ValueError):
+            update_worker.install(plan)
+        self.assertEqual((target / '_internal/data/mine.txt').read_text(), 'user')
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.0')
 
     def test_failed_download_leaves_no_workspace(self):
         body = b'not the release' * 1000

@@ -28,5 +28,25 @@
       ]
     ],
     "expect": "UnfinishedJournalKept"
+  },
+  {
+    "name": "drop an unusable record without checking the install",
+    "replace": [
+      [
+        "IF marker /\\ ~readable /\\ Consistent THEN ClearUnusable",
+        "IF marker /\\ ~readable THEN ClearUnusable"
+      ]
+    ],
+    "expect": "HalfInstalledKeepsRecord"
+  },
+  {
+    "name": "an unusable record always blocks opening",
+    "replace": [
+      [
+        "IF marker /\\ ~readable /\\ Consistent THEN ClearUnusable",
+        "IF FALSE THEN ClearUnusable"
+      ]
+    ],
+    "expect": "OpensOverIntactInstall"
   }
 ]

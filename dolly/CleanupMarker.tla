@@ -5,6 +5,9 @@ EXTENDS Naturals
 \* precondition, not inferred from the directory. Callers: Session.close,
 \* recover_pending, recover_orphans and wait_and_cleanup. One attempt; retry's
 \* actual preflight is exercised by test_session_cleanup via recover_pending.
+\* The scan classifies entries first: Dolly's files, game reports, and (since
+\* 2026-11-14) the game's session-files/cache_<id>.soc and an empty
+\* cvar_unlocker/save are removable session output; unknown is anything else.
 \* One late plain user file can arrive after scan. Parent/marker identity cannot
 \* be replaced concurrently. rootFailure represents held-open/permission failure.
 \* Atomic marker repair is split into staging and publication. A returning

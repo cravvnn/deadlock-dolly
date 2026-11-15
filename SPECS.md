@@ -1096,6 +1096,25 @@ no longer blocks every start when the installed files verify. Failed downloads r
 Settings that could not be read are copied aside before a save replaces them. A close-time failure still
 asks about unsaved work, and background results follow the one-dialog rule.
 
+## Closing Dolly (CloseFlow)
+
+`dolly/CloseFlow.tla` follows DollyApp._on_close, _finish_close and
+_close_after_failure, with the update restart as a second entry. Invariant
+NoSilentLoss: Dolly never exits over an unsaved shot the user did not agree to
+discard. Properties CloseEnds (once agreed, Dolly exits even if every close
+fails) and CloseSettles. Four mutants: closing after a failed Stop without
+asking (the 0.7.41 fix), retrying a failing close forever (fixed 2026-11-14:
+a pending gameinfo conflict made controller.close fail on every attempt and
+Dolly looped), an update restart that does not ask, and a close that skips
+an unasked question.
+
+UpdateRollback (2026-11-14) adds path kinds: configs fileToDir and dirToFile
+cover a release that turns a file into a folder or back. install and rollback
+now remove before they write and prune emptied folders; mutants cover
+name-order rollback, write-before-remove install and a missing prune.
+LauncherHandoff adds the unusable-record branch: HalfInstalledKeepsRecord and
+OpensOverIntactInstall, with two mutants.
+
 ## Root composition (DollyRoot)
 
 `dolly/DollyRoot.tla` is the first root model. It composes two component

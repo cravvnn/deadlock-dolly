@@ -43,7 +43,7 @@
     },
     "L04": {
       "title": "Desktop input/UI lifetimes and publication",
-      "status": "partial guards/model scopes; complete screen/event composition open",
+      "status": "partial guards/model scopes; complete screen/event composition open; CloseFlow bounds the close sequence (2026-11-14)",
       "priority": 2,
       "remaining": "queued event identity, modal/input owner transitions, widget/timer cancellation and publication/dispatch acknowledgement joins"
     },
@@ -2516,7 +2516,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "6ae3df11da8ca6bd0daa08d27777030e5f9422090137dad633fc237c2beadcb8",
+      "sha256": "0eac1e441c0be0824e2b39ce9dabe577a764a2431ecd633d32863d97e3c6885c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2527,6 +2527,13 @@
           "scope": "one project read and matching migration metadata",
           "configs": [
             "dolly/ProjectOpenSnapshot.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/CloseFlow.tla",
+          "scope": "closing Dolly across the window's X and the update restart: Stop first when playing, the unsaved-changes question asked once per close (also after a failed Stop), controller.close on the worker. Dolly never exits over an unsaved shot the user did not agree to discard; once agreed it exits even if every close fails; every close ends. Outcomes fixed per behavior; edits after consent and busy refusal excluded",
+          "configs": [
+            "dolly/CloseFlow.cfg"
           ]
         }
       ],
@@ -2627,7 +2634,8 @@
       "reconciliation_20261114c": "2026-11-14 storage: the startup scan runs recover_at_startup after discovery; a GameinfoConflict from any operation opens a two-button choice (put my original back / keep the current file) instead of an error.",
       "reconciliation_20261114d": "2026-11-14 profiles: when the game exits, Dolly offers to save graphics changed in that session to the Dolly profile (or a new one).",
       "reconciliation_20261114i": "2026-11-14 one dialog at a time: the save-graphics offer and the gameinfo conflict choice hold the same single-dialog flag as _error; the offer retries after an open dialog closes, the conflict choice is postponed to the next launch.",
-      "reconciliation_20261114k": "2026-11-14 boundaries: a close-time failure before the unsaved-changes question still asks it; background results (recovery, replay repair, DOF check, capture replace, startup notices) go through _background_dialog under the one-dialog rule."
+      "reconciliation_20261114k": "2026-11-14 boundaries: a close-time failure before the unsaved-changes question still asks it; background results (recovery, replay repair, DOF check, capture replace, startup notices) go through _background_dialog under the one-dialog rule.",
+      "reconciliation_20261114m": "2026-11-14 close loop: once controller.close has run for a close (_close_submitted), a further failure exits instead of resubmitting it; a pending gameinfo conflict made every close fail and Dolly loop. CloseFlow models _on_close/_finish_close/_close_after_failure and the update restart entry."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -6623,7 +6631,7 @@
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc",
+      "sha256": "78168eb31505202dbb569bffb8c3fe11dbccc5190f20bfa07650ad5d58a68a88",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6638,9 +6646,11 @@
         },
         {
           "spec": "dolly/UpdateRollback.tla",
-          "scope": "rollback",
+          "scope": "rollback; path kinds (file to folder and back) with remove-before-write and pruning, since 2026-11-14",
           "configs": [
-            "dolly/UpdateRollback.cfg"
+            "dolly/UpdateRollback.cfg",
+            "dolly/UpdateRollback-fileToDir.cfg",
+            "dolly/UpdateRollback-dirToFile.cfg"
           ]
         },
         {
@@ -6713,7 +6723,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114k": "2026-11-14 boundaries: pending_work reports an unusable record as PendingUpdateError (a locked file stays an OSError); clear_unusable_pending removes it only when every installed file matches the app's own manifest."
+      "reconciliation_20261114k": "2026-11-14 boundaries: pending_work reports an unusable record as PendingUpdateError (a locked file stays an OSError); clear_unusable_pending removes it only when every installed file matches the app's own manifest.",
+      "reconciliation_20261114m": "2026-11-14 path kinds: install removes before it writes (deepest first, pruning emptied folders) and accepts a folder where the new release has a file only if it holds just owned files being removed; rollback drops added files first, then restores. UpdateRollback fileToDir/dirToFile model both directions; a folder holding a user file still refuses."
     },
     {
       "path": "dolly/updater.py",
@@ -10339,7 +10350,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "c551d8ca8679093c8108d39bc527942ebe4d52f3e1ad91ba3b960613c014933e",
+      "sha256": "f6cdd2c474a532debac325eecbc81770c26f46411c03092ab1d7de35b774ef6b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10368,7 +10379,8 @@
       "reconciliation_20261113": "2026-11-13 root composition: DollyRoot.cfg and DollyRoot-success.cfg added to REQUIRED (dolly/ was already scanned). No checker behavior change.",
       "reconciliation_20261114": "2026-11-14 process hardening: GameExitClose.cfg added to REQUIRED. No checker behavior change.",
       "reconciliation_20261114b": "2026-11-14 session modes: CameraSessionModes.cfg and -success.cfg added to REQUIRED. No checker behavior change.",
-      "reconciliation_20261114c": "2026-11-14 storage: GameinfoTransaction.cfg added to REQUIRED. No checker behavior change."
+      "reconciliation_20261114c": "2026-11-14 storage: GameinfoTransaction.cfg added to REQUIRED. No checker behavior change.",
+      "reconciliation_20261114m": "2026-11-14: UpdateRollback-fileToDir/-dirToFile and CloseFlow configs added to REQUIRED. No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -10995,7 +11007,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
+      "owner_utf8_lf_sha256": "78168eb31505202dbb569bffb8c3fe11dbccc5190f20bfa07650ad5d58a68a88"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11115,6 +11127,15 @@
         "CleanupWorkerApi"
       ],
       "owner_utf8_lf_sha256": "30a149de8c49251aaec86da724f912fb188089d853ea19045c9346a69942ab19"
+    },
+    "dolly/CloseFlow.tla": {
+      "path": "dolly/gui.py",
+      "scope": "closing Dolly across the window's X and the update restart: Stop first when playing, the unsaved-changes question asked once per close (also after a failed Stop), controller.close on the worker. Dolly never exits over an unsaved shot the user did not agree to discard; once agreed it exits even if every close fails; every close ends. Outcomes fixed per behavior; edits after consent and busy refusal excluded",
+      "configs": [
+        "dolly/CloseFlow.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "0eac1e441c0be0824e2b39ce9dabe577a764a2431ecd633d32863d97e3c6885c"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11288,7 +11309,7 @@
     },
     "dolly/LauncherHandoff.tla": {
       "path": "dolly/release_launcher.py",
-      "scope": "main install-lock handoff",
+      "scope": "main install-lock handoff; an unusable PENDING record is dropped only over a consistent install, else Dolly refuses (2026-11-14)",
       "configs": [
         "dolly/LauncherHandoff.cfg"
       ],
@@ -11454,7 +11475,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "6ae3df11da8ca6bd0daa08d27777030e5f9422090137dad633fc237c2beadcb8"
+      "owner_utf8_lf_sha256": "0eac1e441c0be0824e2b39ce9dabe577a764a2431ecd633d32863d97e3c6885c"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11656,15 +11677,17 @@
     },
     "dolly/UpdateRollback.tla": {
       "path": "dolly/update_worker.py",
-      "scope": "rollback",
+      "scope": "rollback; path kinds (file to folder and back) with remove-before-write and pruning, since 2026-11-14",
       "configs": [
-        "dolly/UpdateRollback.cfg"
+        "dolly/UpdateRollback.cfg",
+        "dolly/UpdateRollback-fileToDir.cfg",
+        "dolly/UpdateRollback-dirToFile.cfg"
       ],
       "instances": [
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
+      "owner_utf8_lf_sha256": "78168eb31505202dbb569bffb8c3fe11dbccc5190f20bfa07650ad5d58a68a88"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -11697,7 +11720,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
+      "owner_utf8_lf_sha256": "78168eb31505202dbb569bffb8c3fe11dbccc5190f20bfa07650ad5d58a68a88"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -11708,7 +11731,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "0490a429048b568c12f744b8873dead6b7705cce8cdc5564b8b05792afd345dc"
+      "owner_utf8_lf_sha256": "78168eb31505202dbb569bffb8c3fe11dbccc5190f20bfa07650ad5d58a68a88"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",
@@ -13466,6 +13489,21 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/CloseFlow.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/CloseFlow.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/CloseFlow.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/ConfigMode.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -14460,6 +14498,16 @@
     {
       "path": "dolly/TimingSwitchApi.tla",
       "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/UpdateRollback-dirToFile.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/UpdateRollback-fileToDir.cfg",
+      "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
@@ -18437,10 +18485,10 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 536,
+    "metadata/configuration/documentation input": 540,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 154,
+    "formal spec/interface": 155,
     "test/support input": 82,
     "external dependency/resource": 201
   },

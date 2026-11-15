@@ -2,7 +2,8 @@
 EXTENDS Naturals
 \* settings.save_settings after payload validation, before temporary creation.
 \* Create/write/flush/fsync/close -> real NamedTemporaryFile operations; Backup
-\* delegates _backup_invalid_settings (BackupPublish owns its internal protocol).
+\* delegates _backup_invalid_settings (BackupPublish owns its internal protocol);
+\* an unreadable file whose earlier load failed fails here as IOError.
 \* Commit is os.replace; Cleanup is Path.unlink(missing_ok=True), not exists/stat.
 \* One immutable original and one new payload; no concurrent writer, native/game,
 \* power-loss/directory durability, GUI callback or descriptor-leak claim.
