@@ -800,17 +800,20 @@ class Session:
         if self.native is not None:
             self.native.close()
             self.record_native_diagnostics()
+        from .session_cleanup import remove_overlay
+        # The exit watcher and dead-session recovery can both close. Serialize
+        # the whole file cleanup with record_exit so overlay removal cannot
+        # race itself and the journal read cannot meet the exit write.
         with self._restore_lock:
             _restore_session_configs(self.session_dir)
-        self.log("Original session configuration restored after game exit.")
-        from .session_cleanup import remove_overlay
-        try:
-            record = _load_record(self.session_dir)
-            paths = validate_game(Path(record["original_gameinfo"]).parent)
-            if remove_overlay(self.overlay_dir, paths, self.session_dir):
-                self.log("Removed the temporary plugin directory after game exit.")
-        except (OSError, ValueError, LaunchError) as exc:
-            self.log(f"Temporary plugin directory cleanup deferred: {exc}")
+            self.log("Original session configuration restored after game exit.")
+            try:
+                record = _load_record(self.session_dir)
+                paths = validate_game(Path(record["original_gameinfo"]).parent)
+                if remove_overlay(self.overlay_dir, paths, self.session_dir):
+                    self.log("Removed the temporary plugin directory after game exit.")
+            except (OSError, ValueError, LaunchError) as exc:
+                self.log(f"Temporary plugin directory cleanup deferred: {exc}")
         return True
 
     def record_native_diagnostics(self) -> None:

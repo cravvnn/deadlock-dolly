@@ -338,3 +338,24 @@ class InstallTests(unittest.TestCase):
         marker = overlay / '.dolly-session.json'; marker.write_text(json.dumps({**record, 'original_gameinfo': str(self.root / 'other')}))
         self.assertEqual(session_cleanup.recover_orphans(self.paths), [])
         self.assertTrue(marker.exists())
+
+class SessionCloseSerialization(unittest.TestCase):
+    def test_close_cleanup_holds_the_journal_lock_used_by_record_exit(self):
+        # The exit watcher and dead-session recovery may both close; the
+        # journal read and overlay removal must not interleave with
+        # record_exit or with each other.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            process = MagicMock(); process.poll.return_value = 0
+            session = launcher.Session(process, root / 'session', root / 'overlay', root / 'launch.log', (), 1)
+            session.session_dir.mkdir()
+            held = []
+
+            def observe(*args, **kwargs):
+                held.append(session._restore_lock.locked())
+                return {'original_gameinfo': str(root / 'game' / 'gameinfo.gi')}
+
+            with patch.object(launcher, '_restore_session_configs'),                  patch.object(launcher, '_load_record', side_effect=observe),                  patch.object(launcher, 'validate_game', side_effect=lambda path: held.append(session._restore_lock.locked())),                  patch.object(session_cleanup, 'remove_overlay', side_effect=lambda *a: held.append(session._restore_lock.locked())):
+                self.assertTrue(session.close())
+                self.assertTrue(session.close())
+            self.assertEqual(held, [True] * 6)
