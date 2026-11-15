@@ -10411,7 +10411,7 @@
     },
     {
       "path": "tools/fetch_ffmpeg.py",
-      "sha256": "a7321f43bf5abe3aab0aeef328fd5dfaf140c795d05a8ed6d444e8daf9ac2fc2",
+      "sha256": "4d6f9ab5adafbd8c8592eff22bda15ff5bedb3167705e30f6c9d1a561b2e93fa",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10437,7 +10437,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261114": "2026-11-14 FFmpeg pin refresh: the dated autobuild-2026-10-17 asset was pruned upstream (404). Pinned autobuild-2026-11-14-12-37 n8.1.3-35-gf1acb0a266 win64 LGPL shared; SHA-256 matches GitHub's published asset digest, proved from an empty cache; same DLL names and encoder list (NVENC/QSV/AMF/MF/FFV1, no libx264/x265), configuration --enable-version3 without GPL. Constants only; no behavior change."
     },
     {
       "path": "tools/filter_captured_audio_window.py",

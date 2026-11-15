@@ -22,10 +22,10 @@ import urllib.request
 import zipfile
 
 URL = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/"
-       "autobuild-2026-10-17-20-51/"
-       "ffmpeg-n8.1.3-18-g46d899d7a0-win64-lgpl-shared-8.1.zip")
-SHA256 = "a5b362ae7ddacb2d97974cb8dc1fa84339a77d996c274cf3fad32605f40288be"
-ARCHIVE_NAME = "ffmpeg-n8.1.3-18-g46d899d7a0-win64-lgpl-shared-8.1.zip"
+       "autobuild-2026-11-14-12-37/"
+       "ffmpeg-n8.1.3-35-gf1acb0a266-win64-lgpl-shared-8.1.zip")
+SHA256 = "97927ac5391d5e3a11dc3bce679d54f7fde04cf54380a09970c32eea49ba20a2"
+ARCHIVE_NAME = "ffmpeg-n8.1.3-35-gf1acb0a266-win64-lgpl-shared-8.1.zip"
 
 
 def sha256(path: Path) -> str:
