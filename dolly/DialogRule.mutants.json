@@ -1,0 +1,42 @@
+[
+  {
+    "name": "a background notice ignores the open dialog",
+    "replace": [
+      [
+        "ELSE IF flag",
+        "ELSE IF flag /\\ k # \"note\""
+      ]
+    ],
+    "expect": "AtMostOne"
+  },
+  {
+    "name": "a dialog that raises leaves the flag set",
+    "replace": [
+      [
+        "Dismiss(k) == /\\ k \\in open /\\ open' = open \\ {k} /\\ flag' = FALSE",
+        "Dismiss(k) == /\\ k \\in open /\\ open' = open \\ {k} /\\ (flag' = FALSE \\/ flag' = flag)"
+      ]
+    ],
+    "expect": "FlagHonest"
+  },
+  {
+    "name": "a deferred notice is never tried again",
+    "replace": [
+      [
+        "THEN /\\ waiting' = (IF k \\in Retry THEN waiting ELSE waiting \\ {k})",
+        "THEN /\\ waiting' = waiting \\ {k}"
+      ]
+    ],
+    "expect": "RetriesShow"
+  },
+  {
+    "name": "a result after close still opens a dialog",
+    "replace": [
+      [
+        "/\\ IF closed THEN /\\ waiting' = waiting \\ {k}",
+        "/\\ IF FALSE THEN /\\ waiting' = waiting \\ {k}"
+      ]
+    ],
+    "expect": "NoneAfterClose"
+  }
+]

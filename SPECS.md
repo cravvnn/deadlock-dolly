@@ -1115,6 +1115,24 @@ name-order rollback, write-before-remove install and a missing prune.
 LauncherHandoff adds the unusable-record branch: HalfInstalledKeepsRecord and
 OpensOverIntactInstall, with two mutants.
 
+## Two cleaners (GameinfoCleaners) and one dialog at a time (DialogRule)
+
+`dolly/GameinfoCleaners.tla` splits restore_record into its reads and writes and runs the old session's
+helper against another Dolly window's launch (recover_pending, backup, mount). Without a shared lock the
+helper could read the next session's gameinfo.gi and record a false outside change; a test reproduced it in
+the real code. Every cleaner now holds `session_recovery.game_config_lock`, a per-user named mutex, across
+restore and overlay removal. Invariants NoFalseConflict and BackupIsOriginal, property Settles; mutants for
+a missing lock and for a restore that does not re-read the journal (needed when the folder is kept).
+
+`dolly/DialogRule.tla` covers the one-dialog flag across _error, _background_dialog, the save-graphics offer
+and the gameinfo conflict choice, with the nested event loop of a modal. AtMostOne, FlagHonest,
+NoneAfterClose, RetriesShow; four mutants. Click-opened dialogs are outside it (the input grab).
+
+DollyRoot now composes `GameinfoInstallApi`, which GameinfoTransaction refines
+(GameinfoTransaction-api.cfg): PluginWhileRunning, NoDanglingMount and GameFilesSettle (after the game
+exits the user's file returns and the folder goes whether Dolly is open, closing or closed). Two mutants:
+cleanup only from Dolly's window, and a folder never removed after exit.
+
 ## Root composition (DollyRoot)
 
 `dolly/DollyRoot.tla` is the first root model. It composes two component

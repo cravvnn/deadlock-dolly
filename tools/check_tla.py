@@ -49,7 +49,7 @@ REQUIRED.update({"DollyRoot.cfg", "DollyRoot-success.cfg"})
 REQUIRED.add("GameExitClose.cfg")
 REQUIRED.update({"CameraSessionModes.cfg", "CameraSessionModes-success.cfg"})
 REQUIRED.add("GameinfoTransaction.cfg")
-REQUIRED.update({"UpdateRollback-fileToDir.cfg", "UpdateRollback-dirToFile.cfg", "CloseFlow.cfg"})
+REQUIRED.update({"UpdateRollback-fileToDir.cfg", "UpdateRollback-dirToFile.cfg", "CloseFlow.cfg", "GameinfoCleaners.cfg", "DialogRule.cfg", "GameinfoTransaction-api.cfg"})
 
 
 REQUIRED.update({'LayerAdmission.cfg', 'ScratchCreate.cfg', 'UpdateStart.cfg', 'HistoryShare.cfg', 'ReaderStart.cfg', 'ReshadeResult.cfg'})

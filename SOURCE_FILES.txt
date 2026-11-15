@@ -1321,3 +1321,11 @@ dolly/CloseFlow.cfg
 dolly/CloseFlow.mutants.json
 dolly/UpdateRollback-dirToFile.cfg
 dolly/UpdateRollback-fileToDir.cfg
+dolly/GameinfoCleaners.tla
+dolly/GameinfoCleaners.cfg
+dolly/GameinfoCleaners.mutants.json
+dolly/DialogRule.tla
+dolly/DialogRule.cfg
+dolly/DialogRule.mutants.json
+dolly/GameinfoInstallApi.tla
+dolly/GameinfoTransaction-api.cfg

@@ -34,6 +34,10 @@ Init == /\ file = "orig" /\ journal = "none" /\ overlay = FALSE /\ game = "none"
         /\ lost = FALSE
 
 Live == game \in {"loading", "running"}
+\* The caller-visible interface (GameinfoInstallApi) this transaction refines.
+Cfg == CASE file = "orig" -> "original" [] file = "patched" -> "dolly"
+         [] file = "edit" -> "other" [] OTHER -> "otherRef"
+API == INSTANCE GameinfoInstallApi WITH cfg <- Cfg, plugin <- overlay, alive <- Live
 \* Who may clean: the in-process watcher, the detached helper once its Dolly
 \* is gone, or recovery when Dolly opens again (only with no Deadlock running).
 CanClean == \/ (dolly = "up" /\ game = "exited")
@@ -124,4 +128,5 @@ Cleaned == journal = "conflict" \/ (journal \in {"none", "restored"} /\ ~overlay
 ExitCleansUp == game = "exited" ~> (Cleaned \/ lost)
 \* Whatever happened to the helper, opening Dolly again finishes the job.
 ReopenCleansUp == (game = "exited" /\ dolly = "reopened") ~> Cleaned
+Refines == API!Spec
 ====

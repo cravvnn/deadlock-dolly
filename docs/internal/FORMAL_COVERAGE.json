@@ -37,13 +37,13 @@
     },
     "L03": {
       "title": "Storage/recovery/update publication",
-      "status": "bounded per-operation models plus GameinfoTransaction across Dolly, game, helper and reopen recovery; complete filesystem/crash composition open",
+      "status": "bounded per-operation models plus GameinfoTransaction across Dolly, game, helper and reopen recovery; complete filesystem/crash composition open; GameinfoCleaners bounds two cleaners across processes",
       "priority": 1,
       "remaining": "editing-session/bootstrap/desktop startup files, replay/crav identity, native UI storage, file-system failure modes; graphics profiles are tested, not modeled (session-owned files only)"
     },
     "L04": {
       "title": "Desktop input/UI lifetimes and publication",
-      "status": "partial guards/model scopes; complete screen/event composition open; CloseFlow bounds the close sequence (2026-11-14)",
+      "status": "partial guards/model scopes; complete screen/event composition open; CloseFlow bounds the close sequence (2026-11-14); DialogRule bounds the one-dialog rule",
       "priority": 2,
       "remaining": "queued event identity, modal/input owner transitions, widget/timer cancellation and publication/dispatch acknowledgement joins"
     },
@@ -61,7 +61,7 @@
     },
     "L07": {
       "title": "Root end-to-end formal composition",
-      "status": "first bounded root composition (DollyRoot) over refined camera-lease and recorder interfaces; other component interfaces not yet composed; no whole-program proof",
+      "status": "first bounded root composition (DollyRoot) over refined camera-lease and recorder interfaces; other component interfaces not yet composed; no whole-program proof; GameinfoInstallApi composed (2026-11-14)",
       "priority": 1,
       "remaining": "strengthen semantic owner interfaces and connect the complete caller tree; root proof cannot be inferred from 86 passing local configs"
     }
@@ -783,7 +783,8 @@
           "configs": [
             "dolly/DollyRoot.cfg",
             "dolly/DollyRoot-success.cfg"
-          ]
+          ],
+          "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and MediaCloseApi (refined by MediaFinalize): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (no exception), close returns and releases via acknowledged Release or heartbeat-expiry fault, the playback worker is quiet before a lease retires (Release published only after join, including dead-session recovery), a Players capture context is restored only after the terminal readback and a verified console, and close asks the encoder to stop before unmap. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; a hung worker or refused console only keeps the lease/originals; not whole-program proof; composes GameinfoInstallApi: the running game keeps the plugin folder, gameinfo.gi never mounts a missing one, and after exit the user's file returns and the folder goes whether Dolly is open, closing or closed (2026-11-14)"
         },
         {
           "spec": "dolly/CameraSessionModes.tla",
@@ -2351,9 +2352,10 @@
       "bounded_models": [
         {
           "spec": "dolly/GameinfoTransaction.tla",
-          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded; refines GameinfoInstallApi (GameinfoTransaction-api.cfg)",
           "configs": [
-            "dolly/GameinfoTransaction.cfg"
+            "dolly/GameinfoTransaction.cfg",
+            "dolly/GameinfoTransaction-api.cfg"
           ]
         }
       ],
@@ -2534,6 +2536,13 @@
           "scope": "closing Dolly across the window's X and the update restart: Stop first when playing, the unsaved-changes question asked once per close (also after a failed Stop), controller.close on the worker. Dolly never exits over an unsaved shot the user did not agree to discard; once agreed it exits even if every close fails; every close ends. Outcomes fixed per behavior; edits after consent and busy refusal excluded",
           "configs": [
             "dolly/CloseFlow.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/DialogRule.tla",
+          "scope": "one dialog at a time across _error, _background_dialog (with and without retry), the save-graphics offer and the gameinfo conflict choice, with the nested event loop of a modal: never two dialogs, the flag never sticks (finally), nothing opens after close, a deferred notice is shown once the open one closes. Click-opened dialogs excluded (the input grab blocks clicks)",
+          "configs": [
+            "dolly/DialogRule.cfg"
           ]
         }
       ],
@@ -2840,7 +2849,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "d636d95721e1a5dcbe73227f42a403d74f142b2c441cb2f526185096fbafd209",
+      "sha256": "7be980fea2d2131f4c09a5072e0a9bc4bcdec646e3643a7cd756c7535234e786",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2855,9 +2864,10 @@
         },
         {
           "spec": "dolly/GameinfoTransaction.tla",
-          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded; refines GameinfoInstallApi (GameinfoTransaction-api.cfg)",
           "configs": [
-            "dolly/GameinfoTransaction.cfg"
+            "dolly/GameinfoTransaction.cfg",
+            "dolly/GameinfoTransaction-api.cfg"
           ]
         }
       ],
@@ -2948,7 +2958,8 @@
       "reconciliation_20261114e": "2026-11-14 mod managers: carried Game mounts add the Deadworks launcher's citadel/deadworks_mods (kept by Deadlock Mod Manager); Grimoire's grimoire/addons/addonsN/deadworks_addons/vpks and DMM's addons[N]/<profile> were already matched. Checked against both managers' sources.",
       "reconciliation_20261114f": "2026-11-14 custom mod folders: any extra Game mount below citadel/ (Hyperline, modlock, hand-made folders) is a candidate; mod_policy still refuses render-only packs and paths resolving outside the game folder.",
       "reconciliation_20261114i": "2026-11-14 launch-time helper: Session.start_cleanup_helper runs right after the game starts (failure is logged and retried at close); handoff_cleanup reuses it. GameinfoTransaction models the helper from Spawn.",
-      "reconciliation_20261114k": "2026-11-14 boundaries: the exit watcher starts before the cleanup helper and helper/handoff log failures are contained, so a full or locked launch.log cannot skip the watcher."
+      "reconciliation_20261114k": "2026-11-14 boundaries: the exit watcher starts before the cleanup helper and helper/handoff log failures are contained, so a full or locked launch.log cannot skip the watcher.",
+      "reconciliation_20261114n": "2026-11-14 two cleaners: recover_pending and Session.close hold game_config_lock across restore and overlay removal."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -4600,7 +4611,7 @@
     },
     {
       "path": "dolly/session_cleanup.py",
-      "sha256": "fe1911e0c73b648cbc49d2719159076736488daaf551ece32628ce4c68f2bc2d",
+      "sha256": "3a88d0d1a20f998e9d1bb2f37f867d6e0be7145702d111c5e5346dc253800ec7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4615,9 +4626,10 @@
         },
         {
           "spec": "dolly/GameinfoTransaction.tla",
-          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded; refines GameinfoInstallApi (GameinfoTransaction-api.cfg)",
           "configs": [
-            "dolly/GameinfoTransaction.cfg"
+            "dolly/GameinfoTransaction.cfg",
+            "dolly/GameinfoTransaction-api.cfg"
           ]
         }
       ],
@@ -4659,11 +4671,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261114i": "2026-11-14 launch-time helper: start_waiter also hands the helper Dolly's own process handle; wait_and_cleanup waits for the game, then leaves cleanup to that Dolly while it is alive (exiting once the journal is restored and the overlay gone) and takes over only when it is gone. Real-process test test_p05.",
-      "reconciliation_20261114k": "2026-11-14 boundaries: remove_overlay treats the game's session-files/cache_<id>.soc and an empty cvar_unlocker/save as session output (real leftovers showed these kept every session's folder); other session-files content is still preserved. The marker accepts the same logs/<id> session after the Dolly folder moved. A non-UTF-8 gameinfo.gi is a LaunchError."
+      "reconciliation_20261114k": "2026-11-14 boundaries: remove_overlay treats the game's session-files/cache_<id>.soc and an empty cvar_unlocker/save as session output (real leftovers showed these kept every session's folder); other session-files content is still preserved. The marker accepts the same logs/<id> session after the Dolly folder moved. A non-UTF-8 gameinfo.gi is a LaunchError.",
+      "reconciliation_20261114n": "2026-11-14 two cleaners: wait_and_cleanup re-checks clean and game state inside game_config_lock before restoring and removing."
     },
     {
       "path": "dolly/session_recovery.py",
-      "sha256": "dbac617b15fe8cd1b288a7fc3916b3c66042a751ab38961fbcab30d5ec02cba1",
+      "sha256": "3357dfd5d96c5a1cc69752e6d5c1146c7cbfb7add325f810792d9672934a194a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4671,9 +4684,17 @@
       "bounded_models": [
         {
           "spec": "dolly/GameinfoTransaction.tla",
-          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded",
+          "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded; refines GameinfoInstallApi (GameinfoTransaction-api.cfg)",
           "configs": [
-            "dolly/GameinfoTransaction.cfg"
+            "dolly/GameinfoTransaction.cfg",
+            "dolly/GameinfoTransaction-api.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/GameinfoCleaners.tla",
+          "scope": "two cleaners of one finished session across processes: the old session's detached helper and another Dolly's launch (recover_pending, then backup and mount of the next session), with restore_record split into its reads and writes and overlay removal that may keep the folder. Dolly never records its own file as an outside change, the next session backs up the user's file, both finish restored. One game at a time; no outside edits",
+          "configs": [
+            "dolly/GameinfoCleaners.cfg"
           ]
         }
       ],
@@ -4698,7 +4719,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114c": "2026-11-14 storage: a gameinfo conflict keeps its GameinfoConflict type through the combined restoration error so the desktop can offer the user's choice."
+      "reconciliation_20261114c": "2026-11-14 storage: a gameinfo conflict keeps its GameinfoConflict type through the combined restoration error so the desktop can offer the user's choice.",
+      "reconciliation_20261114n": "2026-11-14 two cleaners: game_config_lock (per-user named mutex, re-entrant, released by Windows if the holder dies) serializes restore and overlay removal across Dolly processes; restore_session_configs takes it. GameinfoCleaners models the helper against another Dolly's launch."
     },
     {
       "path": "dolly/settings.py",
@@ -10350,7 +10372,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "f6cdd2c474a532debac325eecbc81770c26f46411c03092ab1d7de35b774ef6b",
+      "sha256": "2a89182f686f34c4c998c2cdb531add20622004d917164b1492f703c1034a30c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10380,7 +10402,8 @@
       "reconciliation_20261114": "2026-11-14 process hardening: GameExitClose.cfg added to REQUIRED. No checker behavior change.",
       "reconciliation_20261114b": "2026-11-14 session modes: CameraSessionModes.cfg and -success.cfg added to REQUIRED. No checker behavior change.",
       "reconciliation_20261114c": "2026-11-14 storage: GameinfoTransaction.cfg added to REQUIRED. No checker behavior change.",
-      "reconciliation_20261114m": "2026-11-14: UpdateRollback-fileToDir/-dirToFile and CloseFlow configs added to REQUIRED. No checker behavior change."
+      "reconciliation_20261114m": "2026-11-14: UpdateRollback-fileToDir/-dirToFile and CloseFlow configs added to REQUIRED. No checker behavior change.",
+      "reconciliation_20261114n": "2026-11-14: CloseFlow, GameinfoCleaners, DialogRule, GameinfoTransaction-api and the UpdateRollback path-kind configs added to REQUIRED. No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -11104,7 +11127,7 @@
       "instances": [
         "OwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "fe1911e0c73b648cbc49d2719159076736488daaf551ece32628ce4c68f2bc2d"
+      "owner_utf8_lf_sha256": "3a88d0d1a20f998e9d1bb2f37f867d6e0be7145702d111c5e5346dc253800ec7"
     },
     "dolly/CleanupResult.tla": {
       "path": "dolly/file_ops.py",
@@ -11179,15 +11202,25 @@
       ],
       "owner_utf8_lf_sha256": "1e78a7b7074b4ee64679f32abbbcb81ec4ffa904f6e43505e8b4ed71c8b20123"
     },
+    "dolly/DialogRule.tla": {
+      "path": "dolly/gui.py",
+      "scope": "one dialog at a time across _error, _background_dialog (with and without retry), the save-graphics offer and the gameinfo conflict choice, with the nested event loop of a modal: never two dialogs, the flag never sticks (finally), nothing opens after close, a deferred notice is shown once the open one closes. Click-opened dialogs excluded (the input grab blocks clicks)",
+      "configs": [
+        "dolly/DialogRule.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "0eac1e441c0be0824e2b39ce9dabe577a764a2431ecd633d32863d97e3c6885c"
+    },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
-      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and MediaCloseApi (refined by MediaFinalize): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (no exception), close returns and releases via acknowledged Release or heartbeat-expiry fault, the playback worker is quiet before a lease retires (Release published only after join, including dead-session recovery), a Players capture context is restored only after the terminal readback and a verified console, and close asks the encoder to stop before unmap. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; a hung worker or refused console only keeps the lease/originals; not whole-program proof",
+      "scope": "Root composition over CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and MediaCloseApi (refined by MediaFinalize): no writer after release, new writer only after retirement, restoration owned while the game lives, honest recording outcome (no exception), close returns and releases via acknowledged Release or heartbeat-expiry fault, the playback worker is quiet before a lease retires (Release published only after join, including dead-session recovery), a Players capture context is restored only after the terminal readback and a verified console, and close asks the encoder to stop before unmap. Two generations/one take; assumes a live game keeps rendering and restoration eventually succeeds; a hung worker or refused console only keeps the lease/originals; not whole-program proof; composes GameinfoInstallApi: the running game keeps the plugin folder, gameinfo.gi never mounts a missing one, and after exit the user's file returns and the folder goes whether Dolly is open, closing or closed (2026-11-14)",
       "instances": [
         "CameraLeaseApi",
-        "RecorderApi",
         "CameraRetirementApi",
         "CaptureRestoreApi",
-        "MediaCloseApi"
+        "MediaCloseApi",
+        "RecorderApi",
+        "dolly/GameinfoInstallApi.tla"
       ],
       "configs": [
         "dolly/DollyRoot.cfg",
@@ -11256,14 +11289,26 @@
       ],
       "owner_utf8_lf_sha256": "955a05ebab22b7aa55a98acd6789e5d068c92e467e922260e5a0ce80bd30f10f"
     },
-    "dolly/GameinfoTransaction.tla": {
-      "path": "dolly/launcher.py",
-      "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded",
+    "dolly/GameinfoCleaners.tla": {
+      "path": "dolly/session_recovery.py",
+      "scope": "two cleaners of one finished session across processes: the old session's detached helper and another Dolly's launch (recover_pending, then backup and mount of the next session), with restore_record split into its reads and writes and overlay removal that may keep the folder. Dolly never records its own file as an outside change, the next session backs up the user's file, both finish restored. One game at a time; no outside edits",
       "configs": [
-        "dolly/GameinfoTransaction.cfg"
+        "dolly/GameinfoCleaners.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "d636d95721e1a5dcbe73227f42a403d74f142b2c441cb2f526185096fbafd209"
+      "owner_utf8_lf_sha256": "3357dfd5d96c5a1cc69752e6d5c1146c7cbfb7add325f810792d9672934a194a"
+    },
+    "dolly/GameinfoTransaction.tla": {
+      "path": "dolly/launcher.py",
+      "scope": "gameinfo.gi/overlay transaction across Dolly, the game, the exit watcher, the detached helper started with the game and recovery when Dolly opens: an outside change is never overwritten without the user's choice, a running game that loaded Dolly's plugin keeps its overlay, gameinfo.gi never mounts a missing overlay, a finished transaction leaves a standalone file, and after the game exits the original returns and the overlay goes without a reopen (Dolly closed, crashed or killed) while the helper survives, and on reopen otherwise, unless a conflict awaits the user. One session, atomic steps; PID reuse and file-system failures excluded; refines GameinfoInstallApi (GameinfoTransaction-api.cfg)",
+      "configs": [
+        "dolly/GameinfoTransaction.cfg",
+        "dolly/GameinfoTransaction-api.cfg"
+      ],
+      "instances": [
+        "dolly/GameinfoInstallApi.tla"
+      ],
+      "owner_utf8_lf_sha256": "7be980fea2d2131f4c09a5072e0a9bc4bcdec646e3643a7cd756c7535234e786"
     },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",
@@ -13579,6 +13624,21 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/DialogRule.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/DialogRule.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/DialogRule.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/DollyRoot-success.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -13711,6 +13771,31 @@
     {
       "path": "dolly/GameFileCacheApi.tla",
       "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoCleaners.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoCleaners.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoCleaners.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoInstallApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/GameinfoTransaction-api.cfg",
+      "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
@@ -18485,10 +18570,10 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 540,
+    "metadata/configuration/documentation input": 545,
     "implementation/tool": 313,
     "asset/compiled helper input": 28,
-    "formal spec/interface": 155,
+    "formal spec/interface": 158,
     "test/support input": 82,
     "external dependency/resource": 201
   },

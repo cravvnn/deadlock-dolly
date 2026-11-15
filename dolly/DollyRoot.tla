@@ -4,7 +4,8 @@ EXTENDS Naturals
 \* Built only on CameraLeaseApi (refined by ReleaseJoin), CameraRetirementApi
 \* (refined by CameraSessionJoin), RecorderApi (refined by CameraOnlyCapture and
 \* VideoCompleteness), CaptureRestoreApi (refined by CaptureRestoreJoin) and
-\* MediaCloseApi (refined by MediaFinalize); never on implementation specs.
+\* MediaCloseApi (refined by MediaFinalize) and GameinfoInstallApi (refined by
+\* GameinfoTransaction, since 2026-11-14); never on implementation specs.
 \*
 \* Promises (invariants/properties below):
 \*  1 NoWriterAfterRelease / NewWriterAfterRetirement: once Dolly reports the
@@ -28,6 +29,12 @@ EXTENDS Naturals
 \*    console; refusal or timeout keeps the originals (CaptureRestoreJoin).
 \*  7 StopBeforeUnmap: close asks the encoder to stop before it unmaps the
 \*    shared mapping, even when another media step fails (MediaFinalize).
+\*  8 PluginWhileRunning / NoDanglingMount / GameFilesSettle: the running game
+\*    keeps Dolly's plugin folder; gameinfo.gi never mounts a missing folder;
+\*    once the game exits, the user's gameinfo.gi is back and the folder gone
+\*    (or an outside change waits for the user's choice) whether Dolly is
+\*    open, closing or already closed: the exit watcher cleans while it runs,
+\*    the helper started with the game cleans after it (GameinfoTransaction).
 \*
 \* Environment assumptions (fairness): while the game process lives it keeps
 \* rendering main views, so Release/expiry callbacks and restoration retries run,
@@ -42,13 +49,16 @@ EXTENDS Naturals
 \* belong to the component specs that refine these interfaces).
 CONSTANTS GameMayExit, RestoreMayFail, JoinMayHang
 VARIABLES lease, writer, restored, game, outcome, kept, rec, app, link,
-          gen, retiredGen, released, worker, ctx, ctxReady, stopAsked, unmapped
+          gen, retiredGen, released, worker, ctx, ctxReady, stopAsked, unmapped,
+          cfg, plugin
 vars == <<lease, writer, restored, game, outcome, kept, rec, app, link,
-          gen, retiredGen, released, worker, ctx, ctxReady, stopAsked, unmapped>>
+          gen, retiredGen, released, worker, ctx, ctxReady, stopAsked, unmapped,
+          cfg, plugin>>
 camVars == <<lease, writer, restored, game>>
 recVars == <<outcome, kept>>
 ctlVars == <<rec, app, link, gen, retiredGen, released>>
 extVars == <<worker, ctx, ctxReady, stopAsked, unmapped>>
+giVars == <<cfg, plugin>>
 Camera == INSTANCE CameraLeaseApi WITH alive <- game
 Recorder == INSTANCE RecorderApi
 Retirement == INSTANCE CameraRetirementApi WITH retired <- ~lease,
@@ -56,6 +66,7 @@ Retirement == INSTANCE CameraRetirementApi WITH retired <- ~lease,
 Capture == INSTANCE CaptureRestoreApi WITH pending <- ctx # "restored",
     ack <- outcome \in Recorder!Terminal, context <- ctxReady
 Media == INSTANCE MediaCloseApi
+Gameinfo == INSTANCE GameinfoInstallApi WITH alive <- game
 
 Init == /\ lease = FALSE /\ writer = "none" /\ restored = TRUE /\ game = TRUE
         /\ outcome = "active" /\ kept = FALSE /\ rec = "none"
@@ -63,6 +74,7 @@ Init == /\ lease = FALSE /\ writer = "none" /\ restored = TRUE /\ game = TRUE
         /\ gen = 0 /\ retiredGen = 0 /\ released = FALSE
         /\ worker = FALSE /\ ctx = "none" /\ ctxReady = FALSE
         /\ stopAsked = FALSE /\ unmapped = FALSE
+        /\ cfg = "dolly" /\ plugin = TRUE
 
 \* Controller.play / enter_native_flight: admission requires a retired lease.
 StartShot == /\ app = "running" /\ ~lease /\ gen < 2
@@ -120,18 +132,34 @@ MediaStop == /\ app = "closing" /\ Media!AskStop
 CloseFinish == /\ app = "closing" /\ app' = "closed" /\ link' = FALSE /\ Media!Unmap
                /\ UNCHANGED <<camVars, recVars, rec, gen, retiredGen, released,
                               worker, ctx, ctxReady>>
+\* ---- game-install transaction (GameinfoInstallApi)
+others == <<camVars, recVars, ctlVars, extVars>>
+\* After the unlocker initializes, or as Controller.close starts.
+GiEarlyRestore == /\ game /\ app \in {"running", "closing"} /\ Gameinfo!Restore /\ UNCHANGED others
+\* A mod manager or Steam check rewrites Dolly's file.
+GiEdit == /\ Gameinfo!Edit /\ UNCHANGED others
+\* After the game exits: the exit watcher (Dolly open) or the helper started
+\* with the game (Dolly closing or closed).
+GiCleanRestore == /\ ~game /\ Gameinfo!Restore /\ UNCHANGED others
+GiRemove == /\ ~game /\ Gameinfo!Remove /\ UNCHANGED others
+\* The user's choice for an outside change, in an open Dolly.
+GiResolve == /\ app = "running" /\ Gameinfo!Resolve /\ UNCHANGED others
+Install == GiEarlyRestore \/ GiEdit \/ GiCleanRestore \/ GiRemove \/ GiResolve
+
 Settled == /\ app = "closed"
            /\ (~game \/ (writer = "none" /\ restored /\ (rec = "none" \/ outcome # "active")))
 Done == Settled /\ UNCHANGED vars
 
-Next == StartShot \/ WorkerJoin \/ ReleaseCallback \/ Expire \/ Restore \/ RetireLease
-        \/ GameExit \/ RecoverDead \/ StartRecord \/ RecStage \/ RecFinish
-        \/ CtxReady \/ CtxRestore \/ Close \/ MediaStop \/ CloseFinish \/ Done
-Fair == /\ WF_vars(ReleaseCallback) /\ WF_vars(Expire) /\ WF_vars(Restore)
-        /\ WF_vars(RetireLease) /\ WF_vars(RecFinish) /\ WF_vars(CloseFinish)
-        /\ WF_vars(MediaStop) /\ WF_vars(CtxRestore)
-        /\ (~JoinMayHang => WF_vars(WorkerJoin))
-        /\ (~RestoreMayFail => WF_vars(CtxReady))
+Session == StartShot \/ WorkerJoin \/ ReleaseCallback \/ Expire \/ Restore \/ RetireLease
+           \/ GameExit \/ RecoverDead \/ StartRecord \/ RecStage \/ RecFinish
+           \/ CtxReady \/ CtxRestore \/ Close \/ MediaStop \/ CloseFinish
+Next == (Session /\ UNCHANGED giVars) \/ Install \/ Done
+Fair == /\ WF_vars(ReleaseCallback /\ UNCHANGED giVars) /\ WF_vars(Expire /\ UNCHANGED giVars) /\ WF_vars(Restore /\ UNCHANGED giVars)
+        /\ WF_vars(RetireLease /\ UNCHANGED giVars) /\ WF_vars(RecFinish /\ UNCHANGED giVars) /\ WF_vars(CloseFinish /\ UNCHANGED giVars)
+        /\ WF_vars(MediaStop /\ UNCHANGED giVars) /\ WF_vars(CtxRestore /\ UNCHANGED giVars)
+        /\ (~JoinMayHang => WF_vars(WorkerJoin /\ UNCHANGED giVars))
+        /\ (~RestoreMayFail => WF_vars(CtxReady /\ UNCHANGED giVars))
+        /\ WF_vars(GiCleanRestore) /\ WF_vars(GiRemove)
 Spec == Init /\ [][Next]_vars /\ Fair
 
 TypeOK == /\ lease \in BOOLEAN /\ writer \in {"none", "shot"} /\ restored \in BOOLEAN
@@ -141,6 +169,7 @@ TypeOK == /\ lease \in BOOLEAN /\ writer \in {"none", "shot"} /\ restored \in BO
           /\ gen \in 0..2 /\ retiredGen \in 0..2 /\ released \in BOOLEAN
           /\ worker \in BOOLEAN /\ ctx \in {"none", "held", "restored"}
           /\ ctxReady \in BOOLEAN /\ stopAsked \in BOOLEAN /\ unmapped \in BOOLEAN
+          /\ cfg \in {"original", "dolly", "other", "otherRef"} /\ plugin \in BOOLEAN
 NoWriterAfterRelease == released => writer = "none"
 NewWriterAfterRetirement == writer = "shot" => retiredGen = gen - 1
 RestorationOwned == (game /\ ~restored) => lease
@@ -148,9 +177,12 @@ HonestOutcome == outcome \in Recorder!Terminal => ((outcome = "completed") <=> k
 QuietWhenRetired == ~lease => ~worker
 CaptureAfterOutcome == ctx = "restored" => (outcome \in Recorder!Terminal /\ ctxReady)
 StopBeforeUnmap == unmapped => stopAsked
+PluginWhileRunning == game => plugin
+NoDanglingMount == cfg \in {"dolly", "otherRef"} => plugin
 CloseReturns == app = "closing" ~> app = "closed"
 CloseReleases == app = "closed" ~> (~game \/ (writer = "none" /\ restored))
 RecordingSettles == rec = "on" ~> (outcome # "active" \/ ~game)
+GameFilesSettle == ~game ~> (cfg \in {"other", "otherRef"} \/ (cfg = "original" /\ ~plugin))
 \* Required success (Root-success.cfg): with a live game and returning
 \* restoration, every shot's lease is retired unless the app closes first.
 ShotRetires == writer = "shot" ~> (released \/ app = "closed")
@@ -161,4 +193,5 @@ RecorderRefined == Recorder!Spec
 RetirementRefined == Retirement!Spec
 CaptureRefined == Capture!Spec
 MediaRefined == Media!Spec
+GameinfoRefined == Gameinfo!Spec
 ====
