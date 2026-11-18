@@ -84,6 +84,7 @@ REQUIRED.update({"DefinitionsFirstRead.cfg", "ProjectOpenSnapshot.cfg"})
 REQUIRED.add("PopupSelection.cfg")
 REQUIRED.add("CameraSessionJoin-success.cfg")
 REQUIRED.update({'ReleaseJoin.cfg', 'NativeSnapshotClose.cfg', 'CameraSessionJoin.cfg', 'CaptureRestoreJoin.cfg', 'PreparedShot.cfg', 'HeartbeatUnmap.cfg', 'StatusSnapshot.cfg'})
+REQUIRED.add("HudOwnership.cfg")
 
 
 def main():

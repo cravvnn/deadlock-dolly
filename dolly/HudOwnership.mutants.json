@@ -1,0 +1,52 @@
+[
+  {
+    "name": "C1: resume during a shot journals the hidden HUD",
+    "replace": [
+      [
+        "              /\\ (IF OwnsHud\n                  THEN UNCHANGED <<game, rh>>\n                  ELSE /\\ rh' = Keep(rh)",
+        "              /\\ (IF FALSE\n                  THEN UNCHANGED <<game, rh>>\n                  ELSE /\\ rh' = Keep(rh)"
+      ]
+    ],
+    "expect": "NoDollyOriginal"
+  },
+  {
+    "name": "C2: resume during a shot shows the replay HUD in the recording",
+    "replace": [
+      [
+        "              /\\ (IF OwnsHud\n                  THEN UNCHANGED <<game, rh>>\n                  ELSE /\\ rh' = Keep(rh)",
+        "              /\\ (IF OwnsHud\n                  THEN /\\ game' = (IF showHud THEN \"shown\" ELSE game) /\\ UNCHANGED rh\n                  ELSE /\\ rh' = Keep(rh)"
+      ]
+    ],
+    "expect": "ShotHidesHud"
+  },
+  {
+    "name": "B1: a failed POV finish clears POV before the restore",
+    "replace": [
+      [
+        "/\\ pov' = pov /\\ pc' = \"povPending\"",
+        "/\\ pov' = FALSE /\\ pc' = \"povPending\""
+      ]
+    ],
+    "expect": "RetryKeepsJournal"
+  },
+  {
+    "name": "B2: a failed Follow selection leaves the HUD hidden",
+    "replace": [
+      [
+        "/\\ ui' = Keep(ui) /\\ game' = \"shown\" /\\ uiShown' = TRUE",
+        "/\\ ui' = Keep(ui) /\\ game' = \"hidden\" /\\ uiShown' = TRUE"
+      ]
+    ],
+    "expect": "FollowFailureHonest"
+  },
+  {
+    "name": "C5: Stop restores the replay HUD before joining the worker",
+    "replace": [
+      [
+        "HaltHudFail == /\\ pc = \"halt\" /\\ worker = FALSE /\\ fails = 0 /\\ fails' = 1 /\\ stopErr' = TRUE /\\ pc' = \"restorePb\"",
+        "HaltHudFail == /\\ pc = \"halt\" /\\ fails = 0 /\\ fails' = 1 /\\ stopErr' = TRUE /\\ pc' = \"stopped\""
+      ]
+    ],
+    "expect": "StopJoinsWorker"
+  }
+]
