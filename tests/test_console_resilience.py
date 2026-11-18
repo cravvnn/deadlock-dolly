@@ -214,5 +214,85 @@ class PreshowTimescaleTests(unittest.TestCase):
         self.assertTrue(c._demo_speed_changed)
 
 
+class DiagnosticsExportTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        (self.root / "logs").mkdir()
+        (self.root / "logs" / "dolly.log").write_text("hello")
+        self.session_dir = self.root / "logs" / "20261118_120000_abcdef0123"
+        self.session_dir.mkdir()
+        (self.session_dir / "launch.log").write_text("y")
+        (self.session_dir / "engine_console.log").write_text("x")
+        self.out = self.root / "out"
+        self.out.mkdir()
+
+    def test_unreadable_log_becomes_placeholder(self):
+        real_tail = C._tail_file
+
+        def locked(path, limit=2_000_000):
+            if Path(path).name == "launch.log":
+                raise PermissionError(13, "in use by another process", str(path))
+            return real_tail(path, limit)
+        engine_locked = PermissionError(13, "engine log in use", "engine_console.log")
+        with patch.object(C, "ROOT", self.root), patch.object(C, "_tail_file", locked), \
+                patch("dolly.game_logging.diagnostic_log", side_effect=engine_locked):
+            result = C._write_diagnostics_archive(
+                self.out / "dolly-diagnostics.zip", {"a": 1}, "hist",
+                ("engine_console.log", "launch.log"), SimpleNamespace(session_dir=self.session_dir), [])
+        with zipfile.ZipFile(result) as archive:
+            self.assertEqual(json.loads(archive.read("diagnostics.json")), {"a": 1})
+            self.assertIn(b"could not read", archive.read("session/launch.log"))
+            self.assertIn(b"could not read", archive.read("session/engine_console.log"))
+            self.assertEqual(archive.read("logs/dolly.log"), b"hello")
+
+    def test_failed_archive_write_leaves_no_partial_zip(self):
+        with patch.object(C, "ROOT", self.root):
+            with self.assertRaises(TypeError):
+                C._write_diagnostics_archive(self.out / "dolly-diagnostics.zip", {"bad": object()},
+                                             None, (), None, [])
+        self.assertEqual(list(self.out.iterdir()), [])
+
+    def test_crash_dump_vanishing_during_sort_keeps_the_others(self):
+        stable = self.root / "deadlock_a.mdmp"
+        gone = self.root / "deadlock_b.mdmp"
+        stable.write_bytes(b"a")
+        gone.write_bytes(b"b")
+        real_stat = Path.stat
+        seen = {}
+
+        def stat(path, *a, **k):
+            if path.name == gone.name:
+                seen[path.name] = seen.get(path.name, 0) + 1
+                if seen[path.name] > 1:
+                    raise FileNotFoundError(2, "gone", str(path))
+            return real_stat(path, *a, **k)
+        c = C.Controller(lambda *a, **k: None)
+        with patch.object(C, "ROOT", self.root), patch.object(Path, "stat", stat):
+            found = c._crash_dumps()
+        self.assertIn(stable.resolve(), [path.resolve() for path in found])
+
+    def test_crash_dump_vanishing_mid_export_does_not_fail(self):
+        dump = self.root / "deadlock_a.mdmp"
+        dump.write_bytes(b"a")
+        real_stat = Path.stat
+        seen = []
+
+        def stat(path, *a, **k):
+            if path.name == dump.name:
+                seen.append(1)
+                if len(seen) > 1:
+                    raise FileNotFoundError(2, "gone", str(path))
+            return real_stat(path, *a, **k)
+        c = C.Controller(lambda *a, **k: None)
+        c._crash_dumps = lambda: [dump]
+        with patch.object(C, "ROOT", self.root), patch.object(Path, "stat", stat):
+            result = c.export_diagnostics(self.out / "report.zip")
+        with zipfile.ZipFile(result) as archive:
+            report = json.loads(archive.read("diagnostics.json"))
+        self.assertEqual(report["crash_dumps"], [{"name": dump.name, "bytes": 1}])
+
+
 if __name__ == "__main__":
     unittest.main()

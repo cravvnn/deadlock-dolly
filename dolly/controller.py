@@ -17,6 +17,7 @@ import math
 import os
 from pathlib import Path
 import re
+import stat
 import tempfile
 import threading
 import time
@@ -154,47 +155,63 @@ def _writable(path):
     return True
 
 
+def _diagnostic_file_text(path, limit=2_000_000):
+    """One log for the support ZIP; an unreadable one becomes a note, not a failed export."""
+    try:
+        if path.name in ("engine_console.log", "console_transcript.log"):
+            from .game_logging import diagnostic_log
+            return diagnostic_log(path, limit=limit)
+        return _tail_file(path, limit)
+    except OSError as exc:
+        return f"[Dolly could not read {path.name}: {exc}]\n"
+
+
 def _write_diagnostics_archive(destination, report, history, session_files, session, dumps):
     """Write the diagnostics ZIP, preferring a free name over a locked one."""
     destination = _diagnostics_destination(destination)
-    with zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("diagnostics.json", json.dumps(report, indent=2, ensure_ascii=False))
-        if history is not None:
-            archive.writestr("logs/recent_console.txt", history)
-        for path in (ROOT / "logs").glob("*.log"):
-            if path.is_file():
-                archive.writestr("logs/" + path.name, _tail_file(path))
-        if session:
-            for name in session_files:
-                file = session.session_dir / name
-                if file.is_file():
-                    if name in ("engine_console.log", "console_transcript.log"):
-                        from .game_logging import diagnostic_log
-                        content = diagnostic_log(file)
-                    else:
-                        content = _tail_file(file)
-                    archive.writestr("session/" + name, content)
-        # A successful retry must not hide the previous crashed launch.
-        journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:8]
-        for journal in journals:
-            folder = journal.parent
-            if session and folder.resolve() == session.session_dir.resolve():
-                continue
-            for name in session_files:
-                file = folder / name
-                if file.is_file():
-                    if name in ("engine_console.log", "console_transcript.log"):
-                        from .game_logging import diagnostic_log
-                        content = diagnostic_log(file, limit=512_000)
-                    else:
-                        content = _tail_file(file, 512_000)
-                    archive.writestr("previous_sessions/" + folder.name + "/" + name, content)
-        for path in dumps:
-            try:
-                archive.write(path, "crashes/" + path.name)
-            except OSError:
-                continue
+    # Opening with "x" fails before creating anything, so a file found here is
+    # never ours to remove; only a half-written archive of our own is.
+    archive = zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED)
+    try:
+        with archive:
+            _fill_diagnostics_archive(archive, report, history, session_files, session, dumps)
+    except BaseException:
+        try:
+            os.unlink(destination)
+        except OSError:
+            pass
+        raise
     return destination
+
+
+def _fill_diagnostics_archive(archive, report, history, session_files, session, dumps):
+    archive.writestr("diagnostics.json", json.dumps(report, indent=2, ensure_ascii=False))
+    if history is not None:
+        archive.writestr("logs/recent_console.txt", history)
+    for path in (ROOT / "logs").glob("*.log"):
+        if path.is_file():
+            archive.writestr("logs/" + path.name, _diagnostic_file_text(path))
+    if session:
+        for name in session_files:
+            file = session.session_dir / name
+            if file.is_file():
+                archive.writestr("session/" + name, _diagnostic_file_text(file))
+    # A successful retry must not hide the previous crashed launch.
+    journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:8]
+    for journal in journals:
+        folder = journal.parent
+        if session and folder.resolve() == session.session_dir.resolve():
+            continue
+        for name in session_files:
+            file = folder / name
+            if file.is_file():
+                archive.writestr("previous_sessions/" + folder.name + "/" + name,
+                                 _diagnostic_file_text(file, 512_000))
+    for path in dumps:
+        try:
+            archive.write(path, "crashes/" + path.name)
+        except OSError:
+            continue
 
 
 def _mount_listing(overlay, limit: int = 60) -> dict:
@@ -6003,15 +6020,18 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         for root in roots:
             try:
                 for path in root.glob("deadlock_*.mdmp"):
-                    if path.is_file():
-                        found[path.resolve()] = path
+                    # One stat per dump: a dump removed later is skipped
+                    # alone instead of emptying the whole list during sort.
+                    try:
+                        info = path.stat()
+                    except OSError:
+                        continue
+                    if stat.S_ISREG(info.st_mode):
+                        found[path.resolve()] = (info.st_mtime, path)
             except OSError:
                 continue
-        try:
-            return sorted(found.values(), key=lambda item: item.stat().st_mtime,
-                          reverse=True)[:limit]
-        except OSError:
-            return []
+        newest = sorted(found.values(), key=lambda item: item[0], reverse=True)[:limit]
+        return [path for _mtime, path in newest]
 
     def export_diagnostics(self, destination):
         from .player_layer import DIAGNOSTIC_NAMES, preserve_diagnostics
@@ -6083,13 +6103,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         # Include the newest ones so a support ZIP does not need a second trip
         # to the game install. Oversized full-memory dumps are skipped.
         dumps = []
+        sizes = []
         for path in self._crash_dumps():
             try:
-                if path.stat().st_size <= 256 * 1024 * 1024:
-                    dumps.append(path)
+                size = path.stat().st_size
             except OSError:
                 continue
-        report["crash_dumps"] = [{"name": path.name, "bytes": path.stat().st_size} for path in dumps]
+            if size <= 256 * 1024 * 1024:
+                dumps.append(path)
+                sizes.append(size)
+        # Reuse the size read above; a dump removed since then must not fail the export.
+        report["crash_dumps"] = [{"name": path.name, "bytes": size} for path, size in zip(dumps, sizes)]
         crash_reports = []
         started = self._session_start_epoch()
         for path in dumps:
