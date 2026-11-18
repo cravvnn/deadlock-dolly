@@ -182,6 +182,20 @@ def _startup_scan():
     return path, recovery
 
 
+def _layer_frame_count(layer_dir, folder, black) -> int:
+    """Frames in a matte pass from its shot metadata, or 0 when unknown."""
+    for sidecar in (Path(str(black) + ".shot.json"), layer_dir / "shot.json", folder / "shot.json"):
+        try:
+            if not sidecar.is_file() or sidecar.stat().st_size > 64 * 1024 * 1024:
+                continue
+            frames = json.loads(sidecar.read_text(encoding="utf-8")).get("frames_written")
+        except (OSError, ValueError, AttributeError, RecursionError):
+            continue
+        if type(frames) is int and frames > 0:
+            return frames
+    return 0
+
+
 class DollyApp:
     @property
     def layer_pipeline(self):
@@ -1954,6 +1968,9 @@ class DollyApp:
         black = layer_dir / (layer + suffix)
         white = layer_dir / (layer + "_white" + suffix)
         master = layer_dir / (layer + ".mov")
+        # Encode beside the master; a failed or killed combine must not leave
+        # a truncated file under the deliverable's name.
+        partial = layer_dir / (layer + ".partial.mov")
         if not black.is_file() or not white.is_file():
             raise RuntimeError("The " + layer + " matte passes are incomplete.")
         ffmpeg = resolve_ffmpeg(base.ffmpeg_path) or bundled_ffmpeg_path()
@@ -1969,17 +1986,33 @@ class DollyApp:
                 f"[b][a]alphamerge,{REC709_SCALE},format=yuva444p10le,{REC709_FRAME_TAGS}[out]",
                 "-map", "[out]", "-an",
                 "-c:v", "prores_ks", "-profile:v", "4444",
-                "-pix_fmt", "yuva444p10le", *REC709_OUTPUT_ARGS, "-vendor", "apl0", str(master)]
+                "-pix_fmt", "yuva444p10le", *REC709_OUTPUT_ARGS, "-vendor", "apl0", str(partial)]
         from dolly.runtime import external_program_environment
-        with external_program_environment() as environment:
-            result = subprocess.run(args, capture_output=True, text=True,
-                                    timeout=max(300.0, 1.0),
-                                    env=environment,
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        if result.returncode != 0 or not master.is_file():
-            detail = (result.stderr or "").strip().splitlines()
-            raise RuntimeError("The " + layer + " alpha combine failed: "
-                               + (detail[-1] if detail else "unknown error")
+        try:
+            with external_program_environment() as environment:
+                result = subprocess.run(args, capture_output=True, text=True,
+                                        encoding="utf-8", errors="replace",
+                                        stdin=subprocess.DEVNULL,
+                                        timeout=max(300.0, _layer_frame_count(layer_dir, folder, black) * 0.5),
+                                        env=environment,
+                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            failure = None
+            if result.returncode != 0 or not partial.is_file():
+                detail = (result.stderr or "").strip().splitlines()
+                failure = detail[-1] if detail else "unknown error"
+            else:
+                os.replace(partial, master)
+        except subprocess.TimeoutExpired:
+            failure = "FFmpeg timed out"
+        except (OSError, subprocess.SubprocessError) as exc:
+            failure = str(exc) or type(exc).__name__
+        if failure is not None:
+            try:
+                if partial.is_file():
+                    partial.unlink()
+            except OSError:
+                LOG.warning("Incomplete layer alpha master could not be removed: %s", partial)
+            raise RuntimeError("The " + layer + " alpha combine failed: " + failure
                                + " (matte passes kept)")
         sidecar = layer_dir / "shot.json"
         if sidecar.is_file():

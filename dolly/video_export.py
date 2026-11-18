@@ -995,16 +995,20 @@ class VideoExport:
             frames = max(1, source.stat().st_size // max(1, width * height))
             with external_program_environment() as environment:
                 result = subprocess.run(args, capture_output=True, text=True,
+                                        encoding="utf-8", errors="replace",
+                                        stdin=subprocess.DEVNULL,
                                         timeout=max(120.0, frames * 0.5),
                                         env=environment,
                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             encoded = result.returncode == 0 and target.is_file()
         except (OSError, subprocess.SubprocessError) as exc:
             LOG.warning("Depth preview could not be encoded: %s", exc)
+            self._remove_failed_preview(target)
             return status
         if not encoded:
             detail = (result.stderr or "").strip().splitlines()
             LOG.warning("Depth preview encoder failed: %s", detail[-1] if detail else "unknown error")
+            self._remove_failed_preview(target)
             return status
         try:
             source.unlink()
@@ -1012,3 +1016,12 @@ class VideoExport:
             LOG.warning("Depth preview encoded but its raw stream could not be removed: %s", source)
         LOG.info("Depth preview saved to %s", target)
         return {**status, "depth_preview": str(target)}
+
+    @staticmethod
+    def _remove_failed_preview(target: Path) -> None:
+        """A failed or killed encoder must not leave an empty or truncated preview."""
+        try:
+            if target.is_file():
+                target.unlink()
+        except OSError:
+            LOG.warning("Incomplete depth preview could not be removed: %s", target)

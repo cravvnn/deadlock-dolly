@@ -52,7 +52,7 @@ def _viewer(progress=None) -> Path:
     return source2viewer.ensure_viewer(progress=progress)
 
 
-def _mux(video: Path, audios: list[Path], ffmpeg: Path) -> None:
+def _mux(video: Path, audios: list[Path], ffmpeg: Path, duration: float = 0.0) -> None:
     if not audios:
         return
     with tempfile.TemporaryDirectory(prefix="dolly-mux-", dir=video.parent) as folder:
@@ -68,12 +68,20 @@ def _mux(video: Path, audios: list[Path], ffmpeg: Path) -> None:
         # -shortest: audio/container rounding can otherwise discard the final
         # video packet even when the audio is only a fraction of a frame short.
         command += ["-c:v", "copy", "-c:a", "aac", "-b:a", "256k", str(target)]
-        with external_program_environment() as environment:
-            result = subprocess.run(command, capture_output=True, text=True,
-                                    env=environment,
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            with external_program_environment() as environment:
+                # FFmpeg prints paths as UTF-8, whatever the Windows code page.
+                result = subprocess.run(command, capture_output=True, text=True,
+                                        encoding="utf-8", errors="replace",
+                                        stdin=subprocess.DEVNULL,
+                                        timeout=max(300.0, 2.0 * float(duration)),
+                                        env=environment,
+                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except subprocess.TimeoutExpired as exc:
+            # subprocess.run kills and waits for the child before raising.
+            raise RuntimeError("FFmpeg timed out adding clip audio; the silent video is kept") from exc
         if result.returncode:
-            raise RuntimeError("FFmpeg could not add clip audio: " + result.stderr[-1000:])
+            raise RuntimeError("FFmpeg could not add clip audio: " + (result.stderr or "")[-1000:])
         if not target.is_file() or target.stat().st_size == 0:
             raise RuntimeError("FFmpeg did not produce the audio clip")
         os.replace(target, video)
@@ -241,7 +249,7 @@ class ClipAudioCapture:
             shutil.move(str(fitted / "sounds"), str(self.folder / "sounds"))
             shutil.move(str(fitted / "reconstructed.wav"), str(self.folder / "reconstructed.wav"))
             shutil.move(str(fitted / "fitted_usage.csv"), str(self.folder / "usage.csv"))
-        _mux(self.video, tracks, self.ffmpeg)
+        _mux(self.video, tracks, self.ffmpeg, duration)
         self._cleanup_work()
         return self.folder if self.reconstructed else None
 
@@ -285,7 +293,7 @@ class ClipAudioCapture:
             shutil.move(str(fitted / "sounds"), str(self.folder / "sounds"))
             shutil.move(str(fitted / "reconstructed.wav"), str(self.folder / "reconstructed.wav"))
             shutil.move(str(fitted / "fitted_usage.csv"), str(self.folder / "usage.csv"))
-        _mux(self.video, tracks, self.ffmpeg)
+        _mux(self.video, tracks, self.ffmpeg, duration)
         self._cleanup_work()
         return self.folder if self.reconstructed else None
 

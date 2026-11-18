@@ -95,6 +95,18 @@ def _align_movie_samples(source: Path, target: Path, rate: int,
                 aligned.write(block)
 
 
+def _run_ffmpeg(command: list[str], environment, duration: float, timeout_message: str):
+    """Run one bounded audio conversion; FFmpeg reports paths as UTF-8."""
+    try:
+        return subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", stdin=subprocess.DEVNULL,
+                              timeout=max(120.0, 4.0 * float(duration)), env=environment,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as exc:
+        # subprocess.run kills and waits for the child before raising.
+        raise RuntimeError(timeout_message) from exc
+
+
 @dataclass(frozen=True)
 class MovieOutputContext:
     root: Path
@@ -249,9 +261,9 @@ class MovieWave:
                     raise RuntimeError('Movie audio does not cover the captured frames; source WAV was kept.')
             converted = Path(work) / 'movie_resampled.wav'
             with external_program_environment() as environment:
-                result = subprocess.run([str(_ffmpeg()), '-hide_banner', '-loglevel', 'error', '-y',
+                result = _run_ffmpeg([str(_ffmpeg()), '-hide_banner', '-loglevel', 'error', '-y',
                     '-i', str(source), '-ar', str(rate), '-ac', '2', '-c:a', 'pcm_f32le', str(converted)],
-                    capture_output=True, text=True, env=environment, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    environment, duration, 'Movie audio resampling timed out; source WAV was kept.')
             if result.returncode or not converted.is_file():
                 raise RuntimeError('Movie audio resampling failed; source WAV was kept: ' + (result.stderr or '')[-1000:])
             aligned = Path(work) / 'movie_aligned.wav'
@@ -268,8 +280,8 @@ class MovieWave:
                    "-af", "apad", "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le",
                    str(target)]
         with external_program_environment() as environment:
-            result = subprocess.run(command, capture_output=True, text=True, env=environment,
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            result = _run_ffmpeg(command, environment, duration,
+                                 "The movie audio WAV conversion timed out.")
         if result.returncode or not target.is_file() or target.stat().st_size <= 0:
             detail = (result.stderr or "").strip()[-1000:]
             raise RuntimeError("The movie audio WAV could not be converted: " + detail)
