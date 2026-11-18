@@ -294,5 +294,54 @@ class DiagnosticsExportTests(unittest.TestCase):
         self.assertEqual(report["crash_dumps"], [{"name": dump.name, "bytes": 1}])
 
 
+class PovRecorderTests(unittest.TestCase):
+    def make(self, state):
+        bridge = SimpleNamespace(video_status=lambda: {"state": state})
+        c, _ = make_controller(SimpleNamespace(is_connected=True), bridge)
+        c._pov_active = True
+        c._recover_replay_for_shot = Mock(side_effect=AssertionError("POV reached replay recovery"))
+        c.finish_pov_recording = Mock()
+        return c
+
+    def test_inactive_recorder_never_reaches_replay_recovery(self):
+        c = self.make("idle")
+        with self.assertRaises(RuntimeError) as caught:
+            c.play_pov(SimpleNamespace())
+        c._recover_replay_for_shot.assert_not_called()
+        self.assertIn("start a new recording", str(caught.exception))
+        c.finish_pov_recording.assert_called_once()
+
+    def test_recorder_timeout_asks_for_a_new_recording(self):
+        c = self.make("starting")
+        with self.assertRaises(RuntimeError) as caught:
+            c._wait_for_recorder_ready(timeout=0)
+        self.assertIn("Finish recording and start a new recording", str(caught.exception))
+
+
+class PlaybackGuardTests(unittest.TestCase):
+    def test_relative_seek_refused_while_shot_plays(self):
+        c, _ = make_controller(SimpleNamespace(is_connected=True))
+        c._state["playing"] = True
+        c._require_demo = Mock()
+        with self.assertRaises(RuntimeError) as caught:
+            c.seek_relative(5)
+        self.assertIn("Stop shot playback", str(caught.exception))
+        c._require_demo.assert_not_called()
+
+    def test_speed_change_after_finished_console_shot(self):
+        c, _ = make_controller(SimpleNamespace(is_connected=True))
+        c._demo = Path("match.dem")
+        c._require_demo = Mock(return_value={"playing": True})
+        sent = []
+        c._request = lambda command, **kw: sent.append(command) or ""
+        c._playback_details = {"camera_backend": "console", "speed": 1.0}
+        c._thread = None
+        c.set_playback_speed(2)
+        self.assertEqual(sent, ["demo_timescale 2"])
+        c._thread = SimpleNamespace(is_alive=lambda: True)
+        with self.assertRaises(RuntimeError):
+            c.set_playback_speed(3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2551,8 +2551,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise RuntimeError("Prepare a POV recording before starting the segment.")
             self._native_pause_intent = None
             try:
-                self._prepare_native_shot_replay()
+                # Confirm capture first: with the recorder live the prepared
+                # take is used as is, and a POV segment never falls into the
+                # editor's replay reload.
                 self._wait_for_recorder_ready()
+                self._prepare_native_shot_replay()
                 self._native_active = True
                 self._native_manual = False
                 bridge.prepare(project, 0, speed, False, self._demo.name, pov=True)
@@ -2665,7 +2668,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if self._stop_event.is_set():
                 raise RuntimeError("Recording preparation was cancelled before the shot began.")
             if time.perf_counter() >= deadline:
-                raise RuntimeError("The recorder did not start in time. Wait for the recording counter before playing the shot.")
+                raise RuntimeError("The recorder did not start in time. Finish recording and start a new recording before playing the shot.")
             self._stop_event.wait(.05)
 
     def _prepare_native_shot_replay(self, project=None, start=0):
@@ -4136,7 +4139,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if getattr(self, "_export_timing", None) is not None:
                 raise RuntimeError("Stop the fixed-step export before changing playback speed.")
             details = self._playback_details
-            if details is not None and details.get("camera_backend") == "console":
+            playing = self._thread is not None and self._thread.is_alive()
+            if playing and details is not None and details.get("camera_backend") == "console":
                 raise RuntimeError(
                     "Live speed changes require the native camera. Stop the shot and choose a speed before playing.")
             if self._demo is None:
@@ -4516,6 +4520,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             seconds = float(seconds)
             if not math.isfinite(seconds) or abs(seconds) > 3600:
                 raise ValueError("Replay seek must be a finite number of seconds within one hour.")
+            if self.status().get("playing"):
+                raise RuntimeError("Stop shot playback before seeking the replay.")
             self._stop_event.clear()
             info = self._require_demo()
             bridge = self._native_bridge()
