@@ -2268,6 +2268,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if player.get('model_path') or _participant is None:
                 current_player_roster()
             monitor = FollowTargetMonitor(self._session)
+            handed_to_game_ui = False
             try:
                 current_player()
                 monitor.sample()
@@ -2281,6 +2282,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     self.toggle_game_ui(True)  # Restores any old rig before releasing the pose writer.
                     self._stop_event.clear()  # The owned handoff stopped its old writer.
                     self._check_paused_cancelled()
+                handed_to_game_ui = True
                 # Programmatic hero selection must not flash the replay UI:
                 # release the pose writer, then hide the game HUD/cursor while
                 # keeping the stock camera context that Follow needs.
@@ -2409,10 +2411,26 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     self.stop_game_follow()
                     raise
             except BaseException:
-                self.stop_game_follow()
+                try:
+                    self.stop_game_follow()
+                finally:
+                    if handed_to_game_ui and self._game_ui_visible and not self._follow_active:
+                        self._return_replay_ui_after_failed_follow()
                 raise
             finally:
                 monitor.close()
+
+    def _return_replay_ui_after_failed_follow(self):
+        """Best-effort: show the replay UI that the selection hid, or say it is hidden."""
+        try:
+            values = {"citadel_hud_visible": 1, "citadel_hide_replay_hud": 0, "hud_free_cursor": 1}
+            values, _ = self._safe_health_hud_values(values, keep_hud=True)
+            values, _ = self._require_own_health_hud(values, keep_hud=True)
+            self._request("; ".join(name + " " + numeric(value) for name, value in values.items()))
+            self._verify_game_ui_values(values)
+        except Exception as exc:  # noqa: BLE001 - keep the selection error visible
+            LOG.warning("Could not show the replay UI after Follow selection failed: %s", exc)
+            self._game_ui_visible = False
 
     def start_game_follow(self, settings):
         """Preview the stock rig after F9 selects a hero; no native pose writer."""
@@ -2530,6 +2548,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._stop_event.clear()
             self._game_ui_visible = True
             self._pov_active = True
+            self._pov_ui_pending = False
             try:
                 self._request("demo_pause")
                 current = self._require_demo()
@@ -2579,22 +2598,31 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def finish_pov_recording(self):
         if not getattr(self, "_pov_active", False):
             return
-        following = bool(self._follow_active)
-        self._halt(native_action="release", preserve_follow=following)
-        self._pov_active = False
-        self._finish_playback()
+        if not getattr(self, "_pov_ui_pending", False):
+            following = bool(self._follow_active)
+            self._halt(native_action="release", preserve_follow=following)
+            if following:
+                self._pov_active = False
+            self._finish_playback()
+            bridge = self._native_bridge()
+            if following:
+                # A roster-selected Game Follow is the camera the user chose, so
+                # finishing a segment must not tear the rig down or reveal the
+                # replay UI (and its build-unverifiable health panel). Keep the
+                # follow active with the HUD hidden for the next segment.
+                self._game_ui_visible = False
+                if bridge is not None and self._alive():
+                    bridge.configure_editor(owner="panel")
+                return
+            self._pov_ui_pending = True
         bridge = self._native_bridge()
-        if following:
-            # A roster-selected Game Follow is the camera the user chose, so
-            # finishing a segment must not tear the rig down or reveal the
-            # replay UI (and its build-unverifiable health panel). Keep the
-            # follow active with the HUD hidden for the next segment.
-            self._game_ui_visible = False
-            if bridge is not None and self._alive():
-                bridge.configure_editor(owner="panel")
-            return
         error = self._restore_game_ui_settings()
-        self._game_ui_visible = True
+        # A failed restore keeps POV active so the export retry restores the
+        # HUD again. A pending health panel alone belongs to Stop / restore.
+        failed = error and any(name != OWN_HEALTH_HUD for name in self._game_ui_restore)
+        if not failed:
+            self._pov_active = self._pov_ui_pending = False
+            self._game_ui_visible = True
         if bridge is not None and self._alive():
             bridge.configure_editor(owner="panel")
         if error:
@@ -3077,13 +3105,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if not self._playback_restore:
                 return None
             values, pending = self._safe_health_hud_values(self._playback_restore)
+            values, deferred = self._require_own_health_hud(values)
+            pending = pending or deferred
             if pending:
                 # Main HUD visibility also schedules the collapsed ability
                 # children. Keep its reveal in the outer camera transaction.
                 for name, value in self._playback_restore.items():
                     if values.get(name) != value:
                         self._game_ui_restore.setdefault(name, value)
-            self._require_own_health_hud(values)
             self._request("; ".join(name + " " + numeric(value)
                                     for name, value in sorted(values.items())))
             if pending:
@@ -5991,7 +6020,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._follow_mode_original = self._follow_mode_session = None
             self._follow_active = self._native_active = self._native_manual = False
             self._participant_follow = None
-            self._game_ui_visible = self._pov_active = False
+            self._game_ui_visible = self._pov_active = self._pov_ui_pending = False
             self._recording_replay = None
             self._recording_warmup = None
             self._recording_pending = False

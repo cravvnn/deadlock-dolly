@@ -116,5 +116,105 @@ class StopHud(unittest.TestCase):
         self.assertIsNone(c._halt(native_action="release"))
         self.assertEqual(console.values["citadel_hud_visible"], 1)
 
+class PovHud(unittest.TestCase):
+    def test_pov_finish_retries_a_failed_ui_restore(self):
+        c, console = controller()
+        c._pov_active = True
+        c._follow_active = False
+        c._halt = Mock()
+        c._finish_playback = Mock()
+        c._native_bridge = lambda: None
+        c._restore_spectator_view = Mock()
+        c._restore_spectator_hero = Mock()
+        console.values.update(citadel_hud_visible=0.0, citadel_hide_replay_hud=1.0, hud_free_cursor=0.0)
+        c._game_ui_restore = {"citadel_hud_visible": 1.0, "citadel_hide_replay_hud": 0.0, "hud_free_cursor": 1.0}
+        c._request = failing_once(console, "citadel_hud_visible 1")
+        restore = Mock(wraps=c._restore_game_ui_settings)
+        c._restore_game_ui_settings = restore
+        with self.assertRaises(RuntimeError):
+            c.finish_pov_recording()
+        self.assertTrue(c._pov_active)
+        c.finish_pov_recording()
+        self.assertEqual(restore.call_count, 2)
+        self.assertEqual(c._halt.call_count, 1)
+        self.assertFalse(c._pov_active)
+        self.assertTrue(c._game_ui_visible)
+        self.assertEqual({name: console.values[name] for name in HUD},
+                         {"citadel_hud_visible": 1, "citadel_hide_replay_hud": 0, "hud_free_cursor": 1})
+
+
+class FollowHud(unittest.TestCase):
+    def select(self, reveal_fails=False):
+        c, console = controller()
+        for name in ("_require_quiet_session", "_require_demo", "_require_native_demo", "_seek_tick", "_halt"):
+            setattr(c, name, Mock())
+        c._recorder_active = lambda: False
+        c._demo = "x.dem"
+        bridge = Mock()
+        bridge.status.return_value = {"paused": True, "tick": 500}
+        player = {"handle": (1 << 15) | 5, "entity_index": 5, "model": 7, "model_path": "heroes/x.vmdl"}
+        bridge.editor_roster.return_value = {"players": [dict(player)]}
+        c._native_bridge = lambda: bridge
+
+        def toggle_game_ui(enabled=None, **kwargs):
+            console.request("citadel_hud_visible 1; citadel_hide_replay_hud 0; hud_free_cursor 1")
+            c._game_ui_visible = True
+        c.toggle_game_ui = toggle_game_ui
+        if reveal_fails:
+            request = c._request
+            c._request = lambda command, **kwargs: (
+                (_ for _ in ()).throw(RuntimeError("Console timed out"))
+                if command.startswith("citadel_hud_visible 1") else request(command))
+
+        class Monitor:
+            def __init__(self, *args):
+                pass
+
+            def sample(self):
+                pass
+
+            def sample_selection_context(self):
+                pass
+
+            def sample_target(self, require_chase=True):
+                raise RuntimeError("The game did not confirm the selected Follow hero camera.")
+
+            def close(self):
+                pass
+        with patch.object(dolly.follow_target, "FollowTargetMonitor", Monitor), \
+                patch.object(dolly.follow_capabilities, "FollowCapabilityMonitor", Monitor), \
+                patch.object(dolly.replay_camera.ReplayCameraMonitor, "sample",
+                             staticmethod(lambda monitor: {"coherent": True, "ready": True})):
+            with self.assertRaisesRegex(RuntimeError, "did not confirm"):
+                c.start_selected_game_follow(FollowSettings(distance=200, shoulder=0, height=0), player)
+        return c, console
+
+    def test_failed_follow_selection_returns_the_replay_ui(self):
+        c, console = self.select()
+        self.assertFalse(c._follow_active)
+        self.assertTrue(c._game_ui_visible)
+        self.assertEqual({name: console.values[name] for name in HUD},
+                         {"citadel_hud_visible": 1, "citadel_hide_replay_hud": 0, "hud_free_cursor": 1})
+
+    def test_failed_follow_selection_reports_a_hidden_replay_ui(self):
+        c, console = self.select(reveal_fails=True)
+        self.assertEqual(console.values["citadel_hud_visible"], 0)
+        self.assertFalse(c._game_ui_visible)
+
+
+class SmallHudOwners(unittest.TestCase):
+    def test_playback_restore_keeps_a_late_unsafe_reveal_hidden(self):
+        c, console = controller()
+        console.values.update(citadel_hud_visible=0.0, citadel_hide_replay_hud=1.0)
+        c._game_ui_restore = {OWN_HEALTH_HUD: 0}
+        c._playback_restore = {"citadel_hud_visible": 1.0, "citadel_hide_replay_hud": 0.0}
+        c._verify_health_hud_handoff = Mock(side_effect=[None, RuntimeError("Hero view changed")])
+        c._restore_playback_settings()
+        self.assertEqual(console.values["citadel_hud_visible"], 0)
+        self.assertEqual(console.values["citadel_hide_replay_hud"], 1)
+        self.assertEqual(c._game_ui_restore["citadel_hud_visible"], 1)
+        self.assertEqual(c._game_ui_restore["citadel_hide_replay_hud"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
