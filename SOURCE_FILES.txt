@@ -1344,3 +1344,4 @@ native/profiles/scenesystem-2026-11-18-6864.json
 native/profiles/soundsystem-2026-11-18-6864.json
 third_party/cvar_unlocker/cvar_slots_6864.inc
 third_party/cvar_unlocker/unlocker-build-6864.patch
+docs/RELEASE_NOTES_0.7.44-beta.md
