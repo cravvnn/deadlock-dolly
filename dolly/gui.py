@@ -2492,10 +2492,24 @@ class DollyApp:
             self._filter_replays()
             self.replay_summary.set("Choose the folder containing your .dem replays.")
             return
+        if self.busy:
+            # Read the chosen folder once the current operation finishes.
+            if not getattr(self, "_replay_refresh_waiting", False):
+                self._replay_refresh_waiting = True
+                self.root.after(250, self._retry_replay_refresh)
+            return
         def finished(entries):
+            if self.replay_folder.get().strip() != folder:
+                self._refresh_replays()  # The folder changed during the read.
+                return
             self.replay_entries = entries
             self._filter_replays()
         self._submit("Reading replay folder", lambda: discover_replays(folder), finished)
+
+    def _retry_replay_refresh(self):
+        self._replay_refresh_waiting = False
+        if not self.closed:
+            self._refresh_replays()
 
     def _filter_replays(self):
         from dolly.replays import sorted_replay_indices

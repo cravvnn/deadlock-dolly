@@ -225,16 +225,24 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
         raise
 
 
+class InstallLockBusy(OSError):
+    """Another Dolly process holds the install lock."""
+
+
 @contextmanager
 def install_lock(target):
     import msvcrt
     path = Path(target) / ".dolly-update.lock"
     with path.open("a+b") as lock:
-        lock.seek(0)
-        if not lock.read(1):
-            lock.write(b"0"); lock.flush()
-        lock.seek(0)
-        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        try:
+            # Reading a byte another process has locked fails too.
+            lock.seek(0)
+            if not lock.read(1):
+                lock.write(b"0"); lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as error:
+            raise InstallLockBusy(*error.args) from error
         try:
             yield
         finally:

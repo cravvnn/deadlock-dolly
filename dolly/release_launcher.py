@@ -72,7 +72,10 @@ def main(argv=None, *, target=None):
             # launcher never downloads or installs a new release on an ordinary open.
             open_editor(target, args)
             return 0
-    except OSError as error:
+    except update_worker.InstallLockBusy as error:
         update_worker.notify("Dolly could not open safely. Another update may be in progress. "
                              "Wait for it to finish, then open Dolly again.\n\n" + str(error))
+        return 1
+    except OSError as error:
+        update_worker.notify("Dolly could not open safely.\n\n" + str(error))
         return 1

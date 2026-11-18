@@ -292,8 +292,12 @@ def recover_orphans(paths) -> list[str]:
 
 
 def _append_log(session_dir: Path, message: str) -> None:
+    log = session_dir / "launch.log"
     try:
-        with (session_dir / "launch.log").open("a", encoding="utf-8") as stream:
+        # Best effort, and never through a link like the rest of cleanup.
+        if not _plain_ancestors(session_dir) or (os.path.lexists(log) and not _plain_path(log)):
+            return
+        with log.open("a", encoding="utf-8") as stream:
             stream.write(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) + " " + message + "\n")
     except OSError:
         pass

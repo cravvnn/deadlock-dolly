@@ -1,5 +1,6 @@
 """Recovery, close, settings, mod and updater failure boundaries (0.7.41)."""
 import io
+import os
 import queue
 import shutil
 import tempfile
@@ -233,6 +234,19 @@ class UpdaterBoundaries(unittest.TestCase):
         self.assertIn('unfinished update', notify.call_args.args[0])
         self.assertTrue(marker.exists())
 
+    def test_only_a_held_install_lock_reports_another_update(self):
+        handoff.package(self.target, '1.0.0')
+        with update_worker.install_lock(self.target):
+            with patch.object(update_worker, 'notify') as notify,                     patch.object(release_launcher, 'open_editor') as editor:
+                self.assertEqual(release_launcher.main([], target=self.target), 1)
+        editor.assert_not_called()
+        self.assertIn('Another update may be in progress', notify.call_args.args[0])
+        with patch.object(update_worker, 'cleanup_workspaces', side_effect=PermissionError('folder is read-only')),                 patch.object(update_worker, 'notify') as notify,                 patch.object(release_launcher, 'open_editor') as editor:
+            self.assertEqual(release_launcher.main([], target=self.target), 1)
+        editor.assert_not_called()
+        self.assertNotIn('Another update', notify.call_args.args[0])
+        self.assertIn('folder is read-only', notify.call_args.args[0])
+
     def path_kind_release(self, old_names, new_names):
         target, work = self.target / 'installed', self.target / '.dolly-update-kind'
         for folder, version, names in ((target, '1.0.0', old_names), (work / 'payload', '1.0.1', new_names)):
@@ -317,6 +331,65 @@ class UpdaterBoundaries(unittest.TestCase):
         with self.assertLogs('dolly', level='ERROR'):
             ui.poll()
         ui.app.root.after.assert_called_once()
+
+
+class LeftoverBoundaries(unittest.TestCase):
+    def test_session_log_is_not_written_through_a_link(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            outside = root / 'outside'; outside.mkdir()
+            session = root / 'session'
+            if os.name == 'nt':
+                import _winapi
+                _winapi.CreateJunction(str(outside), str(session))
+            else:
+                session.symlink_to(outside, target_is_directory=True)
+            try:
+                session_cleanup._append_log(session, 'linked')
+                self.assertFalse((outside / 'launch.log').exists())
+            finally:
+                os.rmdir(session) if os.name == 'nt' else session.unlink()
+            session.mkdir()
+            session_cleanup._append_log(session, 'plain')
+            self.assertIn('plain', (session / 'launch.log').read_text(encoding='utf-8'))
+            (session / 'launch.log').unlink()
+            try:
+                (session / 'launch.log').symlink_to(outside / 'elsewhere.log')
+            except (OSError, NotImplementedError):
+                pass  # Windows without symlink privileges.
+            else:
+                session_cleanup._append_log(session, 'linked file')
+                self.assertFalse((outside / 'elsewhere.log').exists())
+
+    def replay_app(self, folder, busy):
+        app = SimpleNamespace(closed=False, busy=busy, replay_entries=['old'], submitted=[],
+                              replay_folder=MagicMock(), root=MagicMock(), _filter_replays=MagicMock(),
+                              replay_summary=MagicMock())
+        app.replay_folder.get.side_effect = lambda: folder[0]
+        app._submit = lambda label, function, callback: (not app.busy and app.submitted.append(callback) is None)
+        from dolly import gui
+        for name in ('_refresh_replays', '_retry_replay_refresh'):
+            if hasattr(gui.DollyApp, name):
+                setattr(app, name, getattr(gui.DollyApp, name).__get__(app))
+        return app
+
+    def test_replay_list_follows_a_folder_chosen_during_an_operation(self):
+        # Chosen while another operation is running: read once it finishes.
+        folder = ['B']
+        app = self.replay_app(folder, busy=True)
+        app._refresh_replays()
+        self.assertEqual(app.submitted, [])
+        app.root.after.assert_called_once()
+        app.busy = False
+        app.root.after.call_args.args[1]()
+        self.assertEqual(len(app.submitted), 1)
+        # Changed while the old folder was being read: discard and read again.
+        folder[0] = 'C'
+        app.submitted.pop()(['from B'])
+        self.assertEqual(app.replay_entries, ['old'])
+        self.assertEqual(len(app.submitted), 1)
+        app.submitted.pop()(['from C'])
+        self.assertEqual(app.replay_entries, ['from C'])
 
 
 if __name__ == '__main__':
