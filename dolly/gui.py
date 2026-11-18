@@ -56,7 +56,7 @@ from dolly.memory_watch import PausedMemoryWatch
 from dolly.navigation import CameraMotion
 from dolly.path import (AttachKey, CONFETTI_SPAWN_HEIGHT_DEFAULT, CURVE_CHANNELS,
                         CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value,
-                        format_cvar_value)
+                        format_cvar_value, channel_value)
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.shot_history import ShotHistory
 from dolly.particles import (LABEL_TO_ID, PARTICLE_DEFAULT, PARTICLE_INTENSITY_DEFAULT,
@@ -4285,7 +4285,11 @@ class DollyApp:
             key.attach = copy.deepcopy(existing.attach)
             key.curve_pitch = existing.curve_pitch
             key.curve_yaw = existing.curve_yaw
-            key.curve_roll = existing.curve_roll
+            if existing.curve_roll is not None:
+                # Bank shows the roll curve value; an edited Bank replaces it.
+                shown = float(_number(existing.curve_roll))
+                key.curve_roll = existing.curve_roll if key.roll == shown else key.roll
+                key.roll = existing.roll
             key.tangents = copy.deepcopy(existing.tangents)
             keys = list(self.project.keyframes)
             if any(i != index and existing.time == key.time for i, existing in enumerate(keys)):
@@ -4327,7 +4331,7 @@ class DollyApp:
             if history is not None:
                 history.select(key.time)
             for field in FIELDS:
-                self.key_vars[field].set(_number(getattr(key, field)))
+                self.key_vars[field].set(_number(channel_value(key, field) if field == "roll" else getattr(key, field)))
             self._set_time(key.time)
             if hasattr(self, "selected_text"):
                 self.selected_text.set(f"Camera {index + 1:02d}")

@@ -8,7 +8,7 @@ import math
 import time
 from .editor_wire import ATTACH_OFFSET_LIMIT
 from .native_effects import model_token
-from .path import AttachKey
+from .path import AttachKey, channel_value
 from .settings import save_settings
 from .video_export import BITRATE_PRESETS
 
@@ -154,7 +154,10 @@ def _pose_matches_key(app, index, pose):
         if not math.isfinite(pose[axis]):
             return False
         tolerance = 1.0 if axis < 3 else .05
-        if abs(pose[axis] - getattr(key, name)) > tolerance:
+        difference = pose[axis] - channel_value(key, name)
+        if axis >= 3:
+            difference = (difference + 180) % 360 - 180
+        if abs(difference) > tolerance:
             return False
     return True
 
@@ -1118,9 +1121,10 @@ def _edit_camera_value(app, action, index, value, *, snap_to_tick=False):
         app._commit_camera(keys, key.time)
         app.status_text.set(f"Camera {index + 1:02d} arrives at {key.time:.2f} s.")
     else:
-        key.roll = float(value)
+        # A roll curve override drives the bank, so the edit replaces it.
+        setattr(key, "roll" if key.curve_roll is None else "curve_roll", float(value))
         app._commit_camera(keys, key.time)
-        app.status_text.set(f"Camera {index + 1:02d} bank set to {key.roll:.1f}°.")
+        app.status_text.set(f"Camera {index + 1:02d} bank set to {float(value):.1f}°.")
 
 
 def _attach_edit(app, mutate):

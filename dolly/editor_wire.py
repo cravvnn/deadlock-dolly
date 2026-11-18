@@ -182,14 +182,16 @@ def pack_camera_list(sequence, project, revision, first=0, *, can_undo=False, ca
     data = bytearray(CAMERA_LIST_BYTES)
     CAMERA_LIST_HEADER.pack_into(data, 0, b'DLYCAMS1', _uint(sequence, 'sequence'),
                                  1, revision, total, first, len(keys), flags, 0)
+    from .path import channel_value
     for index, key in enumerate(keys):
-        if (not all(math.isfinite(v) for v in (key.time, key.aspect_ratio, key.roll))
+        roll = channel_value(key, 'roll')
+        if (not all(math.isfinite(v) for v in (key.time, key.aspect_ratio, roll))
                 or key.time < 0 or not .5 <= key.aspect_ratio <= 4
                 or key.source not in ('free', 'attach')
                 or index and key.time <= keys[index - 1].time):
             raise ValueError('Invalid camera list row')
         CAMERA_LIST_ROW.pack_into(data, CAMERA_LIST_HEADER.size + index * CAMERA_LIST_ROW.size,
-                                  key.time, key.aspect_ratio, key.roll, int(key.source == 'attach'), 0)
+                                  key.time, key.aspect_ratio, roll, int(key.source == 'attach'), 0)
     return bytes(data)
 
 DOF_OFFSET = 2 * 1024 * 1024 + 3712
