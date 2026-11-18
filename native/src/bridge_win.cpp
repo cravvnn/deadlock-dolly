@@ -368,11 +368,13 @@ static bool read_control(ControlHeader& h, std::vector<unsigned char>& payload,
             return false;
         const auto& previous = current->wire;
         const auto changed = h.flags ^ previous.flags;
-        // Confetti settings do not restart the camera's command/clock. Only
-        // these flags may change under an already acknowledged command ID.
-        return changed && !(changed & ~kConfettiControlMask) && h.mode == previous.mode &&
-               h.editor_pid == previous.editor_pid && h.game_pid == previous.game_pid &&
-               h.start_phase == previous.start_phase && h.speed == previous.speed &&
+        // Confetti and seek-relief settings do not restart the camera's
+        // command/clock. Only these flags may change under an already
+        // acknowledged command ID.
+        return changed && !(changed & ~(kConfettiControlMask | kNoSeekRelief)) &&
+               h.mode == previous.mode && h.editor_pid == previous.editor_pid &&
+               h.game_pid == previous.game_pid && h.start_phase == previous.start_phase &&
+               h.speed == previous.speed &&
                std::memcmp(h.demo_name, previous.demo_name, sizeof(h.demo_name)) == 0;
     }
     return true;

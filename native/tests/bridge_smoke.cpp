@@ -2462,6 +2462,9 @@ void confetti_control_updates() {
     };
     incoming = original;
     require(!read(), "Unchanged command should not be reprocessed");
+    incoming.flags ^= kNoSeekRelief;
+    require(read(), "Seek relief refresh was ignored under the active command");
+    incoming.flags ^= kNoSeekRelief;
     incoming.flags |= kConfetti | (250u << kConfettiHeightShift);
     require(read(), "Immediate confetti settings were ignored under the active command");
     incoming.flags |= (1u << kParticlePresetShift) | (40u << kParticleIntensityShift);
