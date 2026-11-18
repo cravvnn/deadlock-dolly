@@ -255,6 +255,7 @@ def _mount_listing(overlay, limit: int = 60) -> dict:
 
 
 CAMERA_AXES = ("x", "y", "z")
+REPLAY_HUD_NAMES = ("citadel_hud_visible", "citadel_hide_replay_hud", "hud_free_cursor")
 CAMERA_SETTLE_INTERVAL = .05
 CAMERA_SETTLE_SAMPLES = 3
 CAMERA_SETTLE_LIMIT = 18
@@ -4175,7 +4176,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._replay_hud_session = None
 
     def _apply_replay_hud(self):
-        names = ('citadel_hud_visible', 'citadel_hide_replay_hud', 'hud_free_cursor')
+        names = REPLAY_HUD_NAMES
         own_health = self._own_health_hud_value()
         if own_health is not None:
             names += (OWN_HEALTH_HUD,)
@@ -4351,10 +4352,15 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if paused:
                 with self._state_lock:
                     self._native_pause_intent = None
-            if paused:
-                self._apply_replay_hud()
-            else:
-                self._restore_replay_hud()
+            # A playing shot's restore journal owns the HUD until the shot
+            # ends. Journaling now would save its hidden values as originals.
+            shot_owns_hud = (self._thread is not None and self._thread.is_alive()
+                             and any(name in self._playback_restore for name in REPLAY_HUD_NAMES))
+            if not shot_owns_hud:
+                if paused:
+                    self._apply_replay_hud()
+                else:
+                    self._restore_replay_hud()
             if self._native_manual:
                 if paused:
                     self._toggle_replay_time(True)
@@ -5592,7 +5598,15 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._request("demo_pause")
         except Exception as exc:
             LOG.info("Could not pause replay during playback cleanup: %s", exc)
-        restoration_error = self._restore_playback_settings()
+        # Like Stop: the replay HUD returns first, then the playback restore
+        # applies the user's original over any value it would leave behind.
+        hud_error = None
+        try:
+            self._restore_replay_hud()
+        except Exception as exc:
+            LOG.warning("Replay HUD restoration remains pending: %s", exc)
+            hud_error = "Replay HUD settings could not be restored; use Stop / restore to retry. " + str(exc)
+        restoration_error = " ".join(part for part in (hud_error, self._restore_playback_settings()) if part) or None
         with self._state_lock:
             self._state["playing"] = False
             self._state["paused_flight"] = False
@@ -5775,7 +5789,6 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._message("Shot finished. Replay paused and playback settings restored; Stop restores lens/cvar values.", playing=False)
 
     def _halt(self, *, native_action="handoff", preserve_follow=False, _preserve_participant=False):
-        self._restore_replay_hud()
         if not preserve_follow:
             if _preserve_participant:
                 self.stop_game_follow(_preserve_participant=True)
@@ -5790,6 +5803,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if worker.is_alive():
                 raise RuntimeError("Playback is still waiting for the game console. Wait a moment before retrying.")
         self._thread = None
+        # The worker is stopped first so a HUD failure cannot keep it running.
+        # The journal stays for the next Stop / restore.
+        hud_error = None
+        try:
+            self._restore_replay_hud()
+        except Exception as exc:
+            LOG.warning("Replay HUD restoration remains pending: %s", exc)
+            hud_error = "Replay HUD settings could not be restored; use Stop / restore to retry. " + str(exc)
         if native_action == "release":
             self._release_native_camera()
         elif self._native_active and (self._native_manual or native_action == "native_hold"):
@@ -5808,7 +5829,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     with self._state_lock:
                         self._state["playing"] = False
                         self._state["paused_flight"] = False
-                    return
+                    return hud_error
                 bridge.hold()
                 status = bridge.status()
                 self._native_last_status = status
@@ -5823,17 +5844,18 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         with self._state_lock:
             self._state["playing"] = False
             self._state["paused_flight"] = False
+        return hud_error
 
     def pause(self):
-        self._halt(native_action="hold")
-        restoration_error = self._restore_playback_settings()
+        hud_error = self._halt(native_action="hold")
+        restoration_error = " ".join(part for part in (hud_error, self._restore_playback_settings()) if part) or None
         if self._console and self._console.is_connected and self._alive():
             self._require_demo(require_tick=False)
             self._request("demo_pause")
         self._message(restoration_error or "Paused. The current camera and lens values are held.", playing=False)
 
     def stop(self, *, preserve_layers=False, preserve_speed=False):
-        self._halt(native_action="release")
+        hud_error = self._halt(native_action="release")
         if not preserve_layers:
             self._recording_warmup = None
         bridge = self._native_bridge()
@@ -5854,7 +5876,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         restoration_error = self._restore_playback_settings()
         ui_error = self._restore_game_ui_settings()
         look_error = self._restore_look_values() if self._look_restore else None
-        restoration_error = " ".join(part for part in (restoration_error, ui_error, look_error) if part) or None
+        restoration_error = " ".join(part for part in (hud_error, restoration_error, ui_error, look_error) if part) or None
         if (self._restore or (self._demo_speed_changed and not preserve_speed)) and self._console and self._console.is_connected and self._alive():
             try:
                 self._require_demo(require_tick=False)
