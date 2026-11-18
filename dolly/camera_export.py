@@ -29,7 +29,7 @@ import math
 from pathlib import Path
 from typing import NamedTuple
 
-from .path import Project
+from .path import CURVE_CHANNELS, POSITION_CHANNELS, Project, _finite
 
 DEFAULT_LENS = .75
 DEFAULT_COMP = 1920
@@ -118,15 +118,19 @@ def sample_camera(project: Project, fps: float, speed: float = 1.0,
     if video_frames is not None:
         count = min(count, video_frames)
     has_lens = any(key.lens_scale is not None for key in project.keyframes)
+    position = [project._camera_channel_samples(name) for name in POSITION_CHANNELS]
+    angles = [project._camera_channel_samples(name) for name in CURVE_CHANNELS]
+    aspect = project._camera_channel_samples("aspect_ratio")
+    lens = project._camera_channel_samples("lens_scale") if has_lens else None
     frames = []
 
     for index in range(count):
         time = index / fps
-        pose = project.evaluate(time * speed)
-        lens = pose["lens_scale"] if has_lens else DEFAULT_LENS
-        frames.append(Frame(index, time, (pose["x"], pose["y"], pose["z"]),
-                            (pose["pitch"], pose["yaw"], pose["roll"]),
-                            horizontal_fov(lens, pose["aspect_ratio"]), time * speed))
+        phase = time * speed
+        lens_scale = lens.evaluate(phase) if lens is not None else DEFAULT_LENS
+        frames.append(Frame(index, time, tuple(channel.evaluate(phase) for channel in position),
+                            tuple(channel.evaluate(phase) for channel in angles),
+                            horizontal_fov(lens_scale, aspect.evaluate(phase)), phase))
 
     warnings = []
     if any(key.source == "attach" for key in project.keyframes):
@@ -358,12 +362,13 @@ def depth_of_field(project: Project, frames: list[Frame]):
     rendered. These are authored lens conversions rather than effective
     renderer readback; Native DOF ranges are approximate.
     """
-    if not project.keyframes:
+    if not project.keyframes or not frames:
         return None, []
 
+    project.validate()
     lenses, notes = [], set()
     for frame in frames:
-        cvars = project.evaluate(max(0.0, frame.phase))["cvars"]
+        cvars = project._evaluate_cvars(_finite(max(0.0, frame.phase), "Evaluation time"))
         aperture = float(cvars.get(CITADEL_APERTURE, 0))  # The game's default aperture has no blur.
         if all(cvars.get(name, 0) for name in CITADEL_SWITCHES) and aperture > 0:
             if CITADEL_FOCUS not in cvars:
@@ -645,7 +650,9 @@ def usd_rotations(frames: list[Frame]) -> list[tuple[float, float, float]]:
 
 
 def usd_string(text: str) -> str:
-    safe = "".join(c if " " <= c <= "~" else "?" for c in text)
+    # Keep valid Unicode and replace control characters and lone surrogates.
+    safe = "".join(c if c >= " " and not "\x7f" <= c <= "\x9f"
+                   and not "\ud800" <= c <= "\udfff" else "?" for c in text)
     return '"' + safe.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
@@ -762,7 +769,7 @@ def write_script(path: str | Path, script: str) -> None:
         with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=f".{destination.name}.",
                                          suffix=".tmp", delete=False) as handle:
             temporary = handle.name
-            handle.write(script.encode("ascii"))
+            handle.write(script.encode("utf-8"))
             handle.flush()
             os.fsync(handle.fileno())
         if os.name == "nt":

@@ -866,6 +866,11 @@ class Project:
         fields = CAMERA_FIELDS + (("lens_scale",) if any(k.lens_scale is not None for k in self.keyframes) else ())
         for name in fields:
             result[name] = self._camera_channel_samples(name).evaluate(time)
+        result["cvars"] = self._evaluate_cvars(time)
+        return result
+
+    def _evaluate_cvars(self, time: float) -> dict[str, CvarValue]:
+        """Evaluate the cvar channels for an already validated shot and time."""
         cvars = {name: validate_cvar_value(name, value) for name, value in self.setup_values.items()}
         for track in self.tracks:
             if track.keys:
@@ -878,8 +883,7 @@ class Project:
                     cvars[track.name] = tuple(_sample(
                         key_times, [value[i] for value in values], time, track.interpolation,
                     ) for i in range(count))
-        result["cvars"] = cvars
-        return result
+        return cvars
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
