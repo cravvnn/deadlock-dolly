@@ -3651,14 +3651,18 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             evidence["settings"][name] = current
             if current == 0:
                 continue
+            # Journal before writing: a failed readback must still restore it.
+            self._dof_shader_restore.setdefault(name, current)
             try:
                 self._request(name + " 0")
-                if read_cvar_value(name, self._request(name, allow_error=True)) == 0:
-                    self._dof_shader_restore[name] = current
-                    changed = True
-                    evidence["settings"][name] = 0
+                after = read_cvar_value(name, self._request(name, allow_error=True))
             except (RuntimeError, ValueError):
                 continue
+            if after == 0:
+                changed = True
+                evidence["settings"][name] = 0
+            elif after == current:
+                self._dof_shader_restore.pop(name, None)
         try:
             support = self.dof_preflight()
         except (OSError, ValueError) as exc:
@@ -3794,6 +3798,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     raise RuntimeError("The replay moved while applying DOF. Pause it and retry.")
             except Exception:
                 self._release_native_camera()
+                self._invalidate_paused_camera()
                 raise
             self._native_active = self._native_manual = True
             frame = dict(pose, time=shot_time, cvars=project.evaluate(shot_time)["cvars"])
@@ -4102,8 +4107,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if all(value is not None and value >= 0 for value in scales.values()):
                 # Build6723's live-tested panel scale controls hide existing
                 # bars without destroying their renderer. Keep exact originals.
-                self._healthbar_restore = scales
+                # A rejected write rolls itself back; journal only a hide.
                 self._write_look_values({name: 0 for name in scales})
+                self._healthbar_restore = scales
                 self._healthbars_hidden = True
                 self._message("Floating health bars hidden. The game HUD option controls the hero health panel.")
                 return
@@ -5923,8 +5929,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 if not preserve_speed:
                     self._demo_speed_changed = False
             except Exception as exc:
-                self._message("Could not restore all cvars: " + str(exc))
-                return
+                # Keep the journal for retry; matte and layer cleanup still run.
+                restoration_error = " ".join(part for part in (
+                    restoration_error, "Could not restore all cvars: " + str(exc)) if part)
         with self._state_lock:
             self._state["playing"] = False
         if not preserve_layers and self._console and self._console.is_connected and self._alive():
@@ -5979,8 +5986,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self.stop()
         except Exception as exc:  # noqa: BLE001 - a closed game must not block disconnect
             LOG.warning("Stop/restore during disconnect remains pending: %s", exc)
-        self.clear_export_resolution()
-        dof_error = self._restore_dof_shader_settings()
+        export_error = None
+        try:
+            self.clear_export_resolution()
+        except Exception as exc:  # noqa: BLE001 - the console must still close
+            LOG.warning("Export render scale restoration remains pending: %s", exc)
+            export_error = str(exc)
+        dof_error = " ".join(part for part in (export_error, self._restore_dof_shader_settings()) if part)
         if self._console:
             self._console.close()
         self._console = None

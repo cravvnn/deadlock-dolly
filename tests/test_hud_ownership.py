@@ -116,6 +116,34 @@ class StopHud(unittest.TestCase):
         self.assertIsNone(c._halt(native_action="release"))
         self.assertEqual(console.values["citadel_hud_visible"], 1)
 
+    def test_stop_continues_after_a_failed_cvar_restore(self):
+        c, console = controller()
+        c._require_demo = lambda **kwargs: {"tick": 100}
+        c._restore_game_ui_settings = lambda: "Replay UI pending."
+        c._restore = {"r_aspectratio": 1.0}
+        console.fail_commands.add("r_aspectratio 1")
+        c.end_matte_layer = Mock()
+        c.reset_layer_modes = Mock()
+        c.stop()
+        c.end_matte_layer.assert_called_once()
+        c.reset_layer_modes.assert_called_once()
+        message = c.status()["message"]
+        self.assertIn("Replay UI pending.", message)
+        self.assertIn("Could not restore all cvars", message)
+        self.assertEqual(c._restore, {"r_aspectratio": 1.0})
+
+    def test_disconnect_finishes_when_render_scale_restore_fails(self):
+        c, console = controller()
+        c.stop = Mock()
+        c.clear_export_resolution = Mock(side_effect=RuntimeError("Reconnect to restore the render scale."))
+        c.disconnect()
+        self.assertTrue(console.closed)
+        self.assertIsNone(c._console)
+        status = c.status()
+        self.assertFalse(status["connected"])
+        self.assertIn("Reconnect to restore the render scale.", status["message"])
+
+
 class PovHud(unittest.TestCase):
     def test_pov_finish_retries_a_failed_ui_restore(self):
         c, console = controller()
@@ -203,6 +231,48 @@ class FollowHud(unittest.TestCase):
 
 
 class SmallHudOwners(unittest.TestCase):
+    def test_dof_shader_original_is_journaled_before_the_write(self):
+        c, console = controller()
+        console.values["mat_disable_dynamic_shader_compile"] = 1.0
+        reads = {"count": 0}
+
+        def request(command, **kwargs):
+            if command == "mat_disable_dynamic_shader_compile":
+                reads["count"] += 1
+                if reads["count"] == 2:
+                    raise RuntimeError("Console timed out")
+            return console.request(command)
+        c._request = request
+        c.dof_preflight = lambda *args, **kwargs: {"status": "ready", "dynamic_compile": {"missing": ["vfx_dx11.dll"]}}
+        project = Mock()
+        project.setup_values = {"r_dof_override": 1}
+        project.tracks = []
+        c.ensure_native_dof_shader_support(project)
+        self.assertEqual(c._dof_shader_restore.get("mat_disable_dynamic_shader_compile"), 1.0)
+        self.assertIsNone(c._restore_dof_shader_settings())
+        self.assertEqual(console.values["mat_disable_dynamic_shader_compile"], 1.0)
+
+    def test_failed_dof_preview_drops_the_paused_camera(self):
+        c, console = controller()
+        bridge = Mock()
+        bridge.status.return_value = {"paused": True, "state": "armed", "tick": 100}
+        bridge.editor_status.return_value = {"ready": True, "input_mode": "panel"}
+        bridge.prepare.side_effect = RuntimeError("Native preparation failed")
+        c._native_bridge = lambda: bridge
+        c.status = lambda: {}
+        for name in ("_validate_project", "_require_probe", "_require_demo",
+                     "_require_native_dof_support", "_require_native_demo", "_snapshot"):
+            setattr(c, name, Mock())
+        c._shot_time = lambda project, shot_time: shot_time
+        c._native_pose = lambda status: dict(x=0, y=0, z=0, pitch=0, yaw=0, roll=0, aspect_ratio=16 / 9)
+        c._demo = Path("x.dem")
+        c._native_active = c._native_manual = True
+        c._set_paused_pose(dict(x=1), 100)
+        with self.assertRaisesRegex(RuntimeError, "Native preparation failed"):
+            c.preview_native_effects(types.SimpleNamespace(keyframes=[]), 0.0)
+        self.assertIsNone(c._paused_pose)
+        self.assertFalse(c._state["paused_camera"])
+
     def test_playback_restore_keeps_a_late_unsafe_reveal_hidden(self):
         c, console = controller()
         console.values.update(citadel_hud_visible=0.0, citadel_hide_replay_hud=1.0)

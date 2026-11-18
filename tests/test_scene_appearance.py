@@ -65,6 +65,22 @@ class SceneAppearance(unittest.TestCase):
             for n in backend:
                 self.console.values.pop(n)
 
+    def test_rejected_healthbar_scale_hide_keeps_no_restore_journal(self):
+        self.console.values.update(dict.fromkeys(HEALTHBAR_SCALE_CVARS, 1.0))
+        request = self.c._request
+        self.c._request = lambda command, **kwargs: (
+            "" if command.split()[0] in HEALTHBAR_SCALE_CVARS and command.split()[1:] == ["0"]
+            else request(command))
+        with self.assertRaisesRegex(RuntimeError, "did not accept"):
+            self.c.toggle_healthbars()
+        self.assertEqual(self.c._healthbar_restore, {})
+        self.c._request = request
+        self.c.toggle_healthbars()
+        self.assertEqual(self.c.status()["scene_appearance_flags"], 2)
+        self.assertTrue(all(self.console.values[n] == 0 for n in HEALTHBAR_SCALE_CVARS))
+        self.c.toggle_healthbars()
+        self.assertTrue(all(self.console.values[n] == 1 for n in HEALTHBAR_SCALE_CVARS))
+
     def test_wire_uses_only_previously_reserved_last_byte(self):
         baseline = pack_config(2, 0, 0, {})
         self.assertEqual(len(baseline), 448)
