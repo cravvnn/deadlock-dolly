@@ -309,8 +309,15 @@ class InstallTests(unittest.TestCase):
             self.assertTrue(overlay.exists())
             owner.kill()  # Dolly crashes without cleaning up.
             owner.wait(timeout=10)
+            def current():
+                # The helper replaces gameinfo.gi atomically; a read during the
+                # swap can hit a sharing violation on Windows.
+                try:
+                    return self.paths.gameinfo.read_bytes()
+                except PermissionError:
+                    return None
             deadline = time.monotonic() + 20
-            while time.monotonic() < deadline and (overlay.exists() or self.paths.gameinfo.read_bytes() != GAMEINFO):
+            while time.monotonic() < deadline and (overlay.exists() or current() != GAMEINFO):
                 time.sleep(0.1)
             self.assertEqual(self.paths.gameinfo.read_bytes(), GAMEINFO)
             self.assertFalse(overlay.exists())
