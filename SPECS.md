@@ -1115,6 +1115,15 @@ name-order rollback, write-before-remove install and a missing prune.
 LauncherHandoff adds the unusable-record branch: HalfInstalledKeepsRecord and
 OpensOverIntactInstall, with two mutants.
 
+## Game HUD ownership (HudOwnership)
+
+`dolly/HudOwnership.tla` follows the three journals that hold the user's HUD cvars (playback restore,
+replay HUD, game UI) through Play, pause/resume during a shot, shot finish, POV, Follow and Stop, with one
+console failure per run. NoDollyOriginal (no journal saves Dolly's own values as the original),
+UserRecoverable, StopSettles, RetryKeepsJournal, StopJoinsWorker and FollowFailureHonest. Five mutants
+reproduce the bugs fixed with it: resume during a shot journaling the hidden HUD, the HUD shown in a
+hidden shot, a POV retry reporting success, a failed Follow hiding the UI, and Stop blocked by a HUD failure.
+
 ## Two cleaners (GameinfoCleaners) and one dialog at a time (DialogRule)
 
 `dolly/GameinfoCleaners.tla` splits restore_record into its reads and writes and runs the old session's

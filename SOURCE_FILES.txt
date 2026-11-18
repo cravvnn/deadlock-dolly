@@ -1330,3 +1330,11 @@ dolly/DialogRule.mutants.json
 dolly/GameinfoInstallApi.tla
 dolly/GameinfoTransaction-api.cfg
 docs/RELEASE_NOTES_0.7.42-beta.md
+dolly/HudOwnership.tla
+dolly/HudOwnership.cfg
+dolly/HudOwnership.mutants.json
+tests/test_bridge_close.py
+tests/test_console_resilience.py
+tests/test_export_hardening.py
+tests/test_hud_ownership.py
+tests/test_shot_edit_fixes.py

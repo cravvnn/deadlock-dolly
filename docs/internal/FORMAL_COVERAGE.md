@@ -5,7 +5,7 @@ have explicit roles in FORMAL_COVERAGE.json. This is accounting, not full-file
 semantic review or whole-program proof. Test-reference leads are navigation,
 not execution coverage. No row has full formal signoff.
 
-The draft has90bounded model scopes/108configurations, with288expected failing
+The draft has91bounded model scopes/109configurations, with293expected failing
 mutants (0.7.35 added CameraOnlyCapture/CravCapture; the 2026-11-13 native sweep
 added 17 across VideoCompleteness, NativeSnapshotClose, MediaDetach,
 StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture, and the DollyRoot
