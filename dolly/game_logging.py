@@ -8,12 +8,16 @@ starts cannot be recovered by these channels.
 from contextlib import ExitStack, contextmanager
 import os
 from pathlib import Path
+import re
 import subprocess
 import threading
 
 ENGINE_LOG = "engine_console.log"
 CONSOLE_LOG = "console_transcript.log"
 SESSION_LOGS = (ENGINE_LOG, CONSOLE_LOG)
+# Sessions whose game logs are kept, and how many a diagnostics export reads.
+RETAINED_SESSIONS = 8
+_SESSION_NAME = re.compile(r"\d{8}_\d{6}_[0-9a-f]{10}", re.IGNORECASE)
 TRANSCRIPT_LIMIT = 8 * 1024 * 1024
 _HANDLE_LOCK = threading.Lock()
 
@@ -70,6 +74,28 @@ def append_transcript(path, text, *, limit=TRANSCRIPT_LIMIT):
             # Consume spare bytes after a split multibyte character so a later
             # chunk cannot append a second marker or partial character.
             stream.write(b"\n" * max(0, remaining - len(prefix) - len(marker)))
+
+
+def prune_session_logs(logs_root, *, keep=RETAINED_SESSIONS):
+    """Delete game logs from all but the newest ``keep`` session folders.
+
+    Only the engine log and console transcript are removed; journals and the
+    other small session files stay for recovery. ``keep`` matches how many
+    sessions a diagnostics export reads, so nothing it would include is lost.
+    Best-effort: a file that cannot be removed is left for the next launch.
+    """
+    try:
+        folders = sorted((path.parent for path in Path(logs_root).glob("*/session.json")
+                          if _SESSION_NAME.fullmatch(path.parent.name)),
+                         key=lambda folder: folder.name, reverse=True)
+    except OSError:
+        return
+    for folder in folders[keep:]:
+        for name in SESSION_LOGS:
+            try:
+                (folder / name).unlink(missing_ok=True)
+            except OSError:
+                continue
 
 
 def diagnostic_log(path, *, limit=2_000_000):

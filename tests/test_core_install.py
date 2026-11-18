@@ -150,6 +150,12 @@ class InstallTests(unittest.TestCase):
             self.assertIn('-dev', command); self.assertIn('-insecure', command); self.assertIn('-netconport', command)
             self.assertEqual(record['selected_demo'], str(replay.resolve()))
             self.assertNotIn('+playdemo', command)
+            # Every launch keeps the engine's own console log in its session,
+            # the only record of why a game quit before Dolly could ask.
+            self.assertIn('-condebug', command)
+            self.assertEqual(command[command.index('-con_logfile') + 1],
+                             str((session / 'engine_console.log').resolve()))
+            self.assertEqual(record['game_logging']['engine'], 'engine_console.log')
             self.assertEqual(player.read_bytes(), b'user cfg\r\n')
             return process
         with patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.package), \
@@ -161,6 +167,24 @@ class InstallTests(unittest.TestCase):
             record = json.loads((session.session_dir / 'session.json').read_text())
             self.assertTrue(any('addons' in x['path'] for x in record['carried_addon_mounts']))
             self.assertTrue(any('hyperline' in x['path'] for x in record['excluded_addon_mounts']))
+            self.assertTrue(session.close())
+        self.assertEqual(tree(self.game), before)
+        # DLSS launches keep the same engine log but never get a stdout handle.
+        shutil.rmtree(self.package)
+        def dlss_spawn(command, stderr_file, **kwargs):
+            self.assertNotIn('stdout', kwargs)
+            result = spawn(command, **kwargs)
+            record = json.loads((next((self.package / 'logs').iterdir()) / 'session.json').read_text())
+            self.assertEqual(record['game_logging']['stdout'], 'unavailable')
+            return result
+        with patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.package), \
+             patch.object(launcher, 'EDITING_ROOT', editing), patch.object(game_processes, 'running_processes', return_value={'steam.exe'}), \
+             patch.object(launcher, 'running_processes', return_value={'steam.exe'}), \
+             patch('dolly.stock_provenance.verify', return_value={}), patch.object(launcher, '_atomic_write', side_effect=check_before_game_write), \
+             patch.object(launcher.threading, 'Thread'), patch('dolly.game_logging.spawn', side_effect=dlss_spawn) as gui_spawn, \
+             patch.object(launcher.subprocess, 'Popen', side_effect=AssertionError('DLSS launch used a stdout pipe')):
+            session = launcher.launch(self.paths.root, replay, nvidia_dlss=True)
+            gui_spawn.assert_called_once()
             self.assertTrue(session.close())
         self.assertEqual(tree(self.game), before)
         # The default native mode deploys its wrapper and both capture packs.

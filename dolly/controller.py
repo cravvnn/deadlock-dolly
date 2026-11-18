@@ -197,7 +197,8 @@ def _fill_diagnostics_archive(archive, report, history, session_files, session, 
             if file.is_file():
                 archive.writestr("session/" + name, _diagnostic_file_text(file))
     # A successful retry must not hide the previous crashed launch.
-    journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:8]
+    from .game_logging import RETAINED_SESSIONS
+    journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:RETAINED_SESSIONS]
     for journal in journals:
         folder = journal.parent
         if session and folder.resolve() == session.session_dir.resolve():
@@ -1029,9 +1030,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._console = None
                 raise RuntimeError("The launched Deadlock process does not yet own the console port. Wait for loading to finish and retry. If it persists, export diagnostics and test the other console protocol in a new launch.")
             console_options = {}
-            if getattr(self._session, "nvidia_dlss", False) is True:
+            session_dir = getattr(self._session, "session_dir", None)
+            if session_dir is not None:
+                # Keep received console text in every mode: it is the only
+                # record of what the game printed just before it exited.
                 from .game_logging import CONSOLE_LOG
-                console_options["transcript_path"] = self._session.session_dir / CONSOLE_LOG
+                console_options["transcript_path"] = Path(session_dir) / CONSOLE_LOG
             console = ConsoleClient(protocol=self._protocol, **console_options)
             try:
                 console.connect(host="127.0.0.1", port=self._port, timeout=3)

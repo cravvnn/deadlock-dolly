@@ -920,6 +920,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
     # Recover any unfinished previous session first, so the original we back up
     # and journal is the user's true file, not a still-mounted Dolly session.
     recover_pending(paths.root)
+    # No game is running here, so no older session's log is still open.
+    from .game_logging import prune_session_logs
+    prune_session_logs(PACKAGE_ROOT / "logs")
     if "steam.exe" not in processes:
         raise LaunchError("Open Steam and sign in before launching Deadlock through Dolly.")
     try:
@@ -997,15 +1000,21 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
             # bundled reviewed table active.
             definitions.write_native(target / definitions.NATIVE_NAME)
         command = build_command(paths, overlay, port, demo, protocol, launch_options, native=native)
-        if nvidia_dlss:
-            from .game_logging import ENGINE_LOG
-            command.extend(["-condebug", "-con_logfile", str((session_dir / ENGINE_LOG).resolve())])
+        # The engine's own log is the only record of console output after its
+        # logger starts: DLSS launches have no stdout, and ordinary launches
+        # see nothing on stdout past early startup. Keep it in both modes so a
+        # game that quits on its own leaves its reason behind.
+        from .game_logging import ENGINE_LOG
+        command.extend(["-condebug", "-con_logfile", str((session_dir / ENGINE_LOG).resolve())])
         metadata = {**marker, "command": command, "selected_demo": str(demo) if demo is not None else None, "port": port, "protocol": protocol, "dolly_version": DOLLY_VERSION, "overlay_dir": str(overlay), "unlocker_version": _Unlocker.VERSION, "unlocker_sha256": UNLOCKER_SHA256, "validation": "Windows game startup and selected console protocol require a local probe.", "backup_name": "original.gameinfo.gi", "patched_sha256": hashlib.sha256(patched_data).hexdigest(), "original_mode": stat.S_IMODE(paths.gameinfo.stat().st_mode), "config_state": "prepared", "editing_configuration_provenance": configuration_provenance}
         metadata["nvidia_dlss"] = nvidia_dlss
         if nvidia_dlss:
             metadata["game_logging"] = {"stdout": "unavailable", "stderr": "game_stdout.log",
                 "engine": "engine_console.log", "console": "console_transcript.log",
                 "limitation": "stdout-only output before engine logging starts is unavailable"}
+        else:
+            metadata["game_logging"] = {"stdout": "game_stdout.log", "stderr": "game_stdout.log",
+                "engine": "engine_console.log", "console": "console_transcript.log"}
         metadata["editing_gameinfo_sha256"] = hashlib.sha256(editing.encode("utf-8")).hexdigest()
         metadata["carried_addon_mounts"] = carried_mounts
         metadata["excluded_addon_mounts"] = excluded_mounts

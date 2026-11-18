@@ -43,6 +43,35 @@ class ResourceBoundaryTests(unittest.TestCase):
                             self.assertTrue(definitions.load(cache).empty)
                     self.assertLessEqual(sum(received), definitions.MAX_BYTES + 1)
 
+    def test_game_logs_are_kept_only_for_the_newest_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            logs = Path(directory)
+            names = [f'202611{day:02d}_120000_{day:010x}' for day in range(1, 12)]
+            for name in names:
+                folder = logs / name; folder.mkdir()
+                for file in game_logging.SESSION_LOGS + ('session.json', 'launch.log'):
+                    (folder / file).write_text('x')
+            stranger = logs / 'my-notes'; stranger.mkdir()
+            (stranger / 'session.json').write_text('x'); (stranger / game_logging.ENGINE_LOG).write_text('x')
+            locked = logs / names[0] / game_logging.CONSOLE_LOG
+            real_unlink = Path.unlink
+            def unlink(path, *args, **kwargs):
+                if path == locked:
+                    raise PermissionError('in use')
+                return real_unlink(path, *args, **kwargs)
+            with patch.object(Path, 'unlink', unlink):
+                game_logging.prune_session_logs(logs)
+            kept = names[-game_logging.RETAINED_SESSIONS:]
+            for name in names:
+                folder = logs / name
+                # Journals stay everywhere; game logs only in the newest sessions.
+                self.assertTrue((folder / 'session.json').is_file())
+                self.assertTrue((folder / 'launch.log').is_file())
+                self.assertEqual((folder / game_logging.ENGINE_LOG).exists(), name in kept, name)
+            self.assertTrue(locked.exists())  # A busy file is left for a later launch.
+            self.assertTrue((stranger / game_logging.ENGINE_LOG).exists())  # Not a Dolly session name.
+            game_logging.prune_session_logs(logs / 'missing')  # No logs folder yet is fine.
+
     def test_warned_memory_episode_stops_reads_and_rearms_on_each_reset(self):
         gib = 1024 ** 3
         expected = ('Paused replay memory grew 2.0 GiB in 6s '
