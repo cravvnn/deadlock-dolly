@@ -13,15 +13,15 @@ import re
 from generate_profile import Image, ProfileError, ROOT, build_signature, resolve_game_dir
 
 LEGACY_PROFILE = ROOT / "native/profiles/soundsystem-2026-09-09.json"
-PROFILE = ROOT / "native/profiles/soundsystem-2026-11-11-6861.json"
+PROFILE = ROOT / "native/profiles/soundsystem-2026-11-18-6864.json"
 RECENT_PROFILE = ROOT / "native/profiles/soundsystem-2026-11-05-6853.json"
 PREVIOUS_PROFILE = ROOT / "native/profiles/soundsystem-2026-10-20-6801.json"
 HEADER = ROOT / "native/src/dolly_sound_compat_generated.hpp"
-REVIEWED_HASH = "1c8c499b7e1ad14bafddb657a956a7f6223ae0fbe046ba3f087102f4ed280acf"
+REVIEWED_HASH = "f4dd8b65101495c89ba5e97a87b698bd051c80387d392eda1b50c163c7cebe2e"
 REVIEWED_VOICE_TABLE = 0x658fa0
 # Reviewed prefixes span complete instructions. Stop has split unwind records;
 # its first .pdata entry covers only the prologue, not the function body.
-ANCHORS = (('voice_start', 614800, 283, 14), ('voice_stop', 623488, 285, 13), ('voice_map_remove', 506960, 286, 20), ('vmix_start', 1724848, 288, 14), ('event_name', 1823984, 91, 6))
+ANCHORS = (('voice_start', 614784, 283, 14), ('voice_stop', 623472, 285, 13), ('voice_map_remove', 506944, 286, 20), ('vmix_start', 1724832, 288, 14), ('event_name', 1823968, 91, 6))
 
 
 def build_sound_profile(image):

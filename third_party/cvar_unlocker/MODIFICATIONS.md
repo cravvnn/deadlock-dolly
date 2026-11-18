@@ -1,5 +1,15 @@
 # Bundled cvar unlocker modifications
 
+- `unlocker-build-6864.patch` (apply after6861), with `cvar_slots_6864.inc`:
+  adds the exact reviewed 6864 server/Tier0 pair and its relocated Config001
+  table and methods. The fourteen adapter methods kept their RVAs. Earlier
+  accepted pairs, secure-mode rejection and owned-command shutdown behavior
+  remain intact. Three compiled ABI/lifecycle suites, 1212 actual-function pair
+  checks, the 6861 predecessor rejection and the static-CRT/export/Tier0 import
+  audit pass. Bounded build6864 startup, seeking, camera/path and short
+  Color/Depth/Players export sessions also pass; this does not claim exhaustive
+  runtime or driver qualification.
+
 - `unlocker-build-6861.patch` (apply after6860), with `cvar_slots_6861.inc`:
   adds the exact reviewed server/Tier0 pair and relocated Config001 methods.
   Fourteen adapter methods were independently reviewed. Existing accepted pairs,

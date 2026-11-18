@@ -5,6 +5,24 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 18 build 6864 review
+
+Build 6864 changes every reviewed module, the server and the stock GameInfo (a
+higher network rate floor only). Client camera, startup, Follow, effects,
+particle and replay-clock consumers relocated with exact masked bodies; the
+minimap jump table and two consumed mid-function sites were requalified
+individually. Engine, Tier0, scene, sound and renderer consumers kept their
+layouts; the engine and Tier0 accessors kept their RVAs and the movie recorder
+tables moved. The exact-server unlocker was rebuilt; the 6861 predecessor
+refuses the new pair. Dolly's editing GameInfo is the new stock file plus the
+same two reviewed edits.
+
+Three bounded local checks passed: startup with four exact seeks; camera path
+playback with a 60-frame Color and paired Depth/EXR take; and a 60-frame
+Players export with full decode. Each exited normally with configuration and
+runtime restored and no new crash. This does not certify every replay,
+recording mode or driver.
+
 ## November 5 build 6860 review
 
 Build 6860 relocates reviewed client camera, startup, Follow and effects consumers,

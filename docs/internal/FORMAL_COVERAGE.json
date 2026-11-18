@@ -182,7 +182,7 @@
     },
     {
       "path": "dolly/_runtime_generated.py",
-      "sha256": "310b399e280bfee3b2a60fc38432f201834f4de0ba852eaaff7aa446055c03cb",
+      "sha256": "9b566d4474cab573070e7e374d4163557aeed4513d6f1d6296c42678852d1960",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -2191,7 +2191,7 @@
     },
     {
       "path": "dolly/follow_target.py",
-      "sha256": "582566762fc3426ca1eaecaedee83e353c8ff512f7a982c95d640a4e9ed8ae93",
+      "sha256": "6497318021527a3be3c72122e35c566314b2ecac2827607d58ff8d998c40916f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -7746,7 +7746,7 @@
     },
     {
       "path": "native/include/dolly_player_scene_generated.hpp",
-      "sha256": "28f7b8ea40c01a4143a260a8e9466a856ae78473532dcda2f4bb0d4114e61468",
+      "sha256": "1f469c03d6a362da76983f2612a6916d619b5ed510cf775cacdc80fb3e18e0f8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8026,7 +8026,7 @@
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
-      "sha256": "a3387392c4477752f361cd41872376d8a6d2c853dde8a8a754c704c8d5605e5a",
+      "sha256": "b3fbb800c94997b45e822a1a10b88c434871bd09254a9f6c15bd303ac0ba1dc8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8048,7 +8048,7 @@
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
-      "sha256": "4f5df01b504610bcb05c59a2f2411c2abab30623b176ef42fd8ac30073743e5a",
+      "sha256": "979e092484b7b17f72a8249204d210221727e6ad89e8032e81a1a9e6765a4455",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8208,7 +8208,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "24d0d18f5c6f78474a3ae292d6ac9c9d6ef7edce67d50fcdcefe61b171b7c04e",
+      "sha256": "ba79f859750ee03429c5baa80cb23a430c3d7373fb01d6125e4521027fdb2bfc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8393,7 +8393,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "17d5d325137151be453ad605a2e9e4f41319294ee82f91a43d10722a76218b40",
+      "sha256": "026299619523b57979e9c3516e2e5e08e52a90ac5ddaf0188338971ff87aa07a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8438,7 +8438,7 @@
     },
     {
       "path": "native/src/dolly_confetti.cpp",
-      "sha256": "6bb2dee76f9ac37ce7fafba5533b142acfd8611b6281dbf810ef35cfcb47b0e0",
+      "sha256": "3e540d4c4bb9774dd9c0261cf375cdaf3729a236881a1d35fd0085e02b09ce2f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8702,7 +8702,7 @@
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
-      "sha256": "990c4324c2138fac68ea31d9e94c75c601c14049efdfefae7b08cd68e672e231",
+      "sha256": "e57de01c24f08609213863c942bddcc9971f9b20932b50e343342ff0c4d95dc8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9611,7 +9611,7 @@
     },
     {
       "path": "native/src/dolly_sound_capture_win.cpp",
-      "sha256": "0c4c88c8d0734df9217f16ea6fd1f3549f6fd45670b1f46cbe5e110a380e5760",
+      "sha256": "0abd9e22281c1dfd7be1b043d311ba744eba068f8c472f29ffbacb3c1fc07e8b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9644,7 +9644,7 @@
     },
     {
       "path": "native/src/dolly_sound_compat_generated.hpp",
-      "sha256": "e283e24699fa674a8a3e891b5e73480d0b9895d34af193cdc4465eadee567eff",
+      "sha256": "801dd59716067bd08c15e3eae8d5f47e8a0386029df6a795906549781b2da605",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9899,7 +9899,7 @@
     },
     {
       "path": "native/src/native_effects_win.hpp",
-      "sha256": "80fc130f1c0ddcb8d0663eafe3ca3374e88fa4e8a5c894c6364a3d0e20682afd",
+      "sha256": "f81c9db3a3ca9ad97b3cb63b210474129518ca59b3192e4f262dc816c41d4c64",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9958,7 +9958,7 @@
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
-      "sha256": "71f355393e0f53d7205c870a3f94456a8b2b6920e5c391f6c9bf059f9b6aa950",
+      "sha256": "9472b7a870fc6867eb011257e7e7b68b94a0639fe3e9c0518936eade53200919",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10785,7 +10785,7 @@
     },
     {
       "path": "tools/generate_sound_profile.py",
-      "sha256": "9b93e372fc7bff581bc4ce7f12a7d50fdb10c3be6196c365a620ec2e3815a365",
+      "sha256": "3ed1378f107eca4e1e04cd673edf5015dfff5095b136d6be1c23042b8303ae43",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -11948,7 +11948,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "24d0d18f5c6f78474a3ae292d6ac9c9d6ef7edce67d50fcdcefe61b171b7c04e"
+      "owner_utf8_lf_sha256": "ba79f859750ee03429c5baa80cb23a430c3d7373fb01d6125e4521027fdb2bfc"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -16341,6 +16341,10 @@
       "category": "metadata/configuration/documentation input"
     },
     {
+      "path": "native/profiles/deadlock-2026-11-18-6864-complete.json",
+      "category": "metadata/configuration/documentation input"
+    },
+    {
       "path": "native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16425,6 +16429,10 @@
       "category": "metadata/configuration/documentation input"
     },
     {
+      "path": "native/profiles/scenesystem-2026-11-18-6864.json",
+      "category": "metadata/configuration/documentation input"
+    },
+    {
       "path": "native/profiles/soundsystem-2026-09-09.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16486,6 +16494,10 @@
     },
     {
       "path": "native/profiles/soundsystem-2026-11-11-6861.json",
+      "category": "metadata/configuration/documentation input"
+    },
+    {
+      "path": "native/profiles/soundsystem-2026-11-18-6864.json",
       "category": "metadata/configuration/documentation input"
     },
     {
@@ -17641,6 +17653,10 @@
       "category": "external dependency/resource"
     },
     {
+      "path": "third_party/cvar_unlocker/cvar_slots_6864.inc",
+      "category": "external dependency/resource"
+    },
+    {
       "path": "third_party/cvar_unlocker/sdk-disconnect.patch",
       "category": "external dependency/resource",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17907,6 +17923,10 @@
     },
     {
       "path": "third_party/cvar_unlocker/unlocker-build-6861.patch",
+      "category": "external dependency/resource"
+    },
+    {
+      "path": "third_party/cvar_unlocker/unlocker-build-6864.patch",
       "category": "external dependency/resource"
     },
     {

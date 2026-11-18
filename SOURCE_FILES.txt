@@ -1339,3 +1339,8 @@ tests/test_export_hardening.py
 tests/test_hud_ownership.py
 tests/test_shot_edit_fixes.py
 docs/RELEASE_NOTES_0.7.43-beta.md
+native/profiles/deadlock-2026-11-18-6864-complete.json
+native/profiles/scenesystem-2026-11-18-6864.json
+native/profiles/soundsystem-2026-11-18-6864.json
+third_party/cvar_unlocker/cvar_slots_6864.inc
+third_party/cvar_unlocker/unlocker-build-6864.patch
