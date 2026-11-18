@@ -273,6 +273,36 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertEqual((layer_dir / 'world.mov').read_bytes(), b'master')
         self.assertEqual(sorted(p.name for p in layer_dir.iterdir()), ['world.mov'])
 
+    # D6 / D7: take folder admission ------------------------------------
+    def test_existing_take_folder_is_refused_before_replay_for_bundled_audio(self):
+        (self.root / 'clip').mkdir()
+        with self.assertRaisesRegex(ValueError, 'take folder'):
+            VideoOptions(self.root / 'clip.mp4', codec='builtin', bundle_audio=True).validated()
+
+    def test_unreadable_recorder_status_leaves_no_timing_or_take_folder(self):
+        events = []
+        controller = NS(_session=object(), _demo='owned.dem', _export_timing=None,
+                        _export_resolution=None,
+                        status=lambda: dict(game_running=True, connected=True, camera_backend='native',
+                                            startup_stage='editing_ready', playing=False),
+                        mark_recording_pending=lambda *args, **kwargs: None,
+                        clear_export_resolution=lambda: None)
+        controller.set_export_timing = lambda fps, speed: (events.append('set timing'),
+                                                           setattr(controller, '_export_timing', {'fps': fps}))
+        controller.clear_export_timing = lambda: (events.append('clear timing'),
+                                                  setattr(controller, '_export_timing', None))
+        def unreadable():
+            raise OSError('media status unavailable')
+        bridge = NS(video_status=unreadable)
+        controller._native_bridge = lambda: bridge
+        owner = VideoExport(controller)
+        options = VideoOptions(self.root / 'take.mp4', codec='builtin', fixed_step=True, bundle_audio=True)
+        with self.assertRaisesRegex(OSError, 'media status unavailable'):
+            owner.start(options, before_record=lambda: events.append('movie started'))
+        self.assertIsNone(controller._export_timing)
+        self.assertFalse((self.root / 'take').exists())
+        self.assertNotIn('movie started', events)
+
 
 if __name__ == '__main__':
     unittest.main()

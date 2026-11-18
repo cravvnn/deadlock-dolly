@@ -351,7 +351,7 @@ class VideoOptions:
             if encoder != 1 or ffmpeg is None:
                 raise ValueError("Layer exports need an FFmpeg encoder for the alpha matte; "
                                  "choose Auto or a hardware encoder.")
-        if self.depth or self.layers:
+        if self.depth or self.layers or self.bundle_audio:
             folder = path.with_suffix("")
             if folder.exists() or folder.is_symlink():
                 raise ValueError("A take folder with this name already exists. Choose a new filename.")
@@ -595,6 +595,9 @@ class VideoExport:
         self._runtime_context = (session, demo) if session is not None and demo is not None else None
         if options.full_resolution:
             self.controller.set_export_resolution()
+        # Read the recorder's acknowledgement before this take creates its
+        # folder or applies fixed-step timing, so a failed read leaves neither.
+        initial_ack = None if capture_only else bridge.video_status().get("ack")
         # Layered and audio takes keep their video and sidecars in one folder.
         folder = options.path.with_suffix("") if (options.depth or options.layers or options.bundle_audio) else None
         color_path = options.path
@@ -641,7 +644,6 @@ class VideoExport:
             self.controller.mark_recording_pending(True, player_layer=True)
             return self.status()
         self._capture_only = False
-        initial_ack = bridge.video_status().get("ack")
         with self._lock:
             self._bridge = bridge
             self._last = {"state": "starting", "codec": codec_name}
