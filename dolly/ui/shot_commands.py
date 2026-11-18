@@ -34,11 +34,16 @@ def delete_camera(project, index):
         (key for i, key in enumerate(candidate.keyframes) if i != index),
         key=lambda key: key.time)
     if index == 0 and candidate.keyframes:
-        offset = candidate.keyframes[0].time
-        if offset > 0:
-            candidate.start_tick = int(round(candidate.start_tick + offset * candidate.tick_rate))
+        # Shift by whole ticks; any sub-tick remainder stays on the new first
+        # camera so no camera moves off its replay tick.
+        ticks = round(candidate.keyframes[0].time * candidate.tick_rate)
+        if ticks / candidate.tick_rate - candidate.keyframes[0].time > 1e-9:
+            ticks -= 1
+        offset = ticks / candidate.tick_rate
+        if ticks > 0:
+            candidate.start_tick = int(candidate.start_tick + ticks)
             for key in candidate.keyframes:
-                key.time -= offset
+                key.time = max(0.0, key.time - offset)
             boundary_values = project.evaluate(offset)["cvars"]
             for track in candidate.tracks:
                 if track.keys:

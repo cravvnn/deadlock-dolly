@@ -720,7 +720,11 @@ class Project:
             raise ValueError("This shot's current tick rate is invalid; set Ticks/second manually.")
         self.validate()
         keys = []
-        for key in self.keyframes:
+        for index, key in enumerate(self.keyframes):
+            if key.source_blend * factor > 10:
+                raise ValueError(
+                    f"Retiming to {rate:g} ticks/second would stretch camera {index + 1:02d}'s source blend "
+                    f"to {key.source_blend * factor:.1f} s, past the 10 s limit. Shorten that blend first.")
             # Derivatives use seconds, including while authored handles are
             # dormant in Linear or Spline. Preserve their replay-time shape.
             tangents = {

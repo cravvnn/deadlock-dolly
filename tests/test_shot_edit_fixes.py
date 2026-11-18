@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 
 from dolly import editor_dispatch, editor_wire, gui
-from dolly.path import Keyframe, Project
+from dolly.path import AttachKey, Keyframe, Project
 from dolly.ui import shot_commands
 
 
@@ -85,6 +85,34 @@ class ParkedFramingTests(unittest.TestCase):
         app = SimpleNamespace(project=Project(keyframes=[_key(0.0, yaw=180.0)]))
         self.assertTrue(editor_dispatch._pose_matches_key(app, 0, [0, 0, 0, 0, -180.0, 0, 1.0]))
         self.assertFalse(editor_dispatch._pose_matches_key(app, 0, [0, 0, 0, 0, 90.0, 0, 1.0]))
+
+
+class RebaseTests(unittest.TestCase):
+    def test_deleting_first_camera_keeps_replay_ticks(self):
+        p = Project(keyframes=[_key(0.0), _key(0.3, 1), _key(1.3, 2), _key(2.3, 3)],
+                    start_tick=1000, tick_rate=64.0)
+
+        def ticks(project):
+            return [project.start_tick + k.time * project.tick_rate for k in project.keyframes]
+
+        expected = ticks(p)
+        for _ in range(3):
+            p = shot_commands.delete_camera(p, 0)
+            expected = expected[1:]
+            for got, want in zip(ticks(p), expected):
+                self.assertAlmostEqual(got, want, places=6)
+            self.assertGreaterEqual(p.keyframes[0].time, 0)
+            self.assertLess(p.keyframes[0].time, 1 / p.tick_rate)
+
+
+class RetimeTests(unittest.TestCase):
+    def test_retime_names_the_source_blend_that_overflows(self):
+        p = Project(keyframes=[_key(0.0), _key(5.0, source="attach", attach=AttachKey(handle=1, model="m"),
+                                               source_blend=6.0)], tick_rate=64.0)
+        before = p.to_dict()
+        with self.assertRaisesRegex(ValueError, r"(?i)retim.*camera 02.*source blend.*12\.0"):
+            p.retime(32.0)
+        self.assertEqual(p.to_dict(), before)
 
 
 if __name__ == "__main__":
