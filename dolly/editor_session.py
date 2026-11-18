@@ -1,7 +1,7 @@
 """Coordinate native-editor publication, dispatch and ordered acknowledgements."""
 import logging
 import time
-from .native_bridge import NativeBridgeError
+from .native_bridge import NativeBridgeError, NativeStatusBusy
 from . import editor_publication, editor_dispatch
 from .editor_publication import (_bridge, _value, _playback_values, _video_values,
                                  _pov_duration, _attach_state, _configure_visualization)
@@ -74,16 +74,20 @@ def poll(app):
         if roster_now - getattr(app, "_attach_roster_at", 0.0) >= 2.0:
             app._attach_roster_at = roster_now
             roster = None
+            busy = False
             reader = getattr(bridge, "editor_roster", None)
             if callable(reader):
                 try:
                     roster = reader()
+                except NativeStatusBusy:
+                    busy = True  # Keep the current picker list until the next refresh.
                 except (NativeBridgeError, ValueError, OSError):
                     roster = None
-            app.attach_roster = roster
-            handler = getattr(app, "_attach_roster_changed", None)
-            if callable(handler):
-                handler(roster)
+            if not busy:
+                app.attach_roster = roster
+                handler = getattr(app, "_attach_roster_changed", None)
+                if callable(handler):
+                    handler(roster)
             bones = None
             reader = getattr(bridge, "editor_bones", None)
             if callable(reader):

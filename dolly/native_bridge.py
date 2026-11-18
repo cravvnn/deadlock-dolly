@@ -706,17 +706,21 @@ class NativeBridge(MediaTransport):
         while True:
             if cancelled is not None and cancelled():
                 raise NativeBridgeError("Opening the paused camera was cancelled.")
-            native = self.status()
-            if native["state"] == "unsupported":
-                raise NativeBridgeError(native.get("message") or "Native camera does not support this game build")
             try:
-                editor = self.editor_status()
-            except NativeBridgeError as exc:
-                if "being updated" not in str(exc):
-                    raise
+                native = self.status()
+            except NativeStatusBusy:
+                pass  # A writer mid-publication is progress, as in _wait.
             else:
-                if all(editor.get(key) for key in required):
-                    return editor
+                if native["state"] == "unsupported":
+                    raise NativeBridgeError(native.get("message") or "Native camera does not support this game build")
+                try:
+                    editor = self.editor_status()
+                except NativeBridgeError as exc:
+                    if "being updated" not in str(exc):
+                        raise
+                else:
+                    if all(editor.get(key) for key in required):
+                        return editor
             self._check_game()
             remaining = deadline - self._clock()
             if remaining <= 0:
@@ -1064,6 +1068,7 @@ class NativeBridge(MediaTransport):
                 if first != self._load_sequence(wire.ROSTER_OFFSET + 8):
                     continue
                 return wire.unpack_roster(data)
+            raise NativeStatusBusy("The native attach roster is busy; retry in a moment.")
 
     def set_prop_probe(self, request):
         """Experimental: queue one native prop-persistence probe request.
@@ -1101,8 +1106,6 @@ class NativeBridge(MediaTransport):
                 if first == self._load_sequence(offset + 8):
                     return wire.unpack_prop_probe_status(data)
             raise NativeBridgeError("The prop probe is updating; retry in a moment.")
-
-            raise NativeBridgeError("The native attach roster is busy; retry in a moment.")
 
     def editor_bones(self):
         """Bounded bone names for the natively resolved selected player."""
