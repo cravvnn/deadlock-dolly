@@ -1131,7 +1131,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 return None
             evidence = {"method": "rendered_pre_replay_scene", "initial_frame": initial_frame,
                         "rendered_frame": rendered, "demo": demo}
-        status = self._request("status", allow_error=True, allow_truncated=True)
+        try:
+            status = self._request("status", allow_error=True, allow_truncated=True)
+        except ConsoleError:
+            # Same as demo_info above: a late or flooded reply is "not ready
+            # yet". A dead game raises a plain RuntimeError and still surfaces.
+            return None
         self._startup_evidence["console_status"] = str(status or "")[:4000]
         settled = self._console_hideout_evidence(status, demo)
         if settled is None:
@@ -1475,6 +1480,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 try:
                     self._request("demo_timescale 1")
                 except Exception:  # noqa: BLE001 - a stopped replay has nothing to reset
+                    # Leave the reset to the normal speed cleanup.
+                    self._demo_speed_changed = True
                     LOG.info("Could not restore the replay timescale after the pre-show", exc_info=True)
 
     def start_editing(self, game_path, demo_path, protocol="netcon", native=True,
@@ -1899,8 +1906,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._request("disconnect", timeout=10)
             def inactive():
                 try:
-                    info = parse_demo_info(self._request("demo_info", allow_error=True))
-                except ConsoleTimeout:
+                    info = parse_demo_info(self._request("demo_info", allow_error=True, allow_truncated=True))
+                except (ConsoleError, ValueError):
+                    # A late, flooded or partial reply is "not yet"; a dead
+                    # game raises a plain RuntimeError and still surfaces.
                     return None
                 return info if not info["playing"] else None
             stopped = self._startup_wait(inactive, "waiting for the previous replay to stop",
@@ -1917,17 +1926,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._last_output["playdemo"] = "Sent: " + command
             def begun():
                 try:
-                    output = self._request("demo_goto", allow_error=True)
+                    output = self._request("demo_goto", allow_error=True, allow_truncated=True)
                     try:
                         current = parse_demo_tick(output)
                     except ValueError:
-                        output = self._request("demo_info", allow_error=True)
+                        output = self._request("demo_info", allow_error=True, allow_truncated=True)
                         current = parse_demo_info(output)
                     if not current["playing"]:
                         return None
                     info = self._resolve_demo(output)
                     return info if info["tick"] >= 2 else None
-                except ConsoleTimeout:
+                except (ConsoleError, ValueError):
                     return None
             ready = self._startup_wait(begun, "waiting for the fresh replay's initial update",
                                        self._stop_event, timeout=SHOT_REPLAY_RESET_SECONDS)
@@ -1955,14 +1964,23 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if self._glow_disabled:
                 # Reloading the replay restores the game's default glow. A take
                 # must keep the user's choice, so re-assert it before playback.
-                try:
-                    self._apply_citadel_glow()
-                except Exception:
-                    LOG.exception("Could not re-apply the Citadel glow choice after recovery")
+                self._apply_citadel_glow()
             self._message("Replay prepared. Starting the shot…", startup_stage="replay_ready")
             return checked
         except Exception as exc:
             self._invalidate_probe(str(exc))
+            if self._stop_event.is_set():
+                # The game stays open and Dolly does not retry; say what is
+                # left in the game rather than the startup "close it" advice.
+                if self._replay_recovery.get("stage") == "disconnecting":
+                    message = ("Replay preparation cancelled; the replay is unloaded. "
+                               "Load replay, then Check camera support.")
+                else:
+                    message = ("Replay preparation cancelled while the replay was reloading. "
+                               "Let it finish loading, then Check camera support.")
+                self._replay_recovery.update(stage="cancelled", error=str(exc))
+                self._message(message, startup_stage="cancelled", playing=False)
+                raise RuntimeError(message) from exc
             self._replay_recovery.update(stage="failed", error=str(exc))
             message = "Replay preparation stopped: " + str(exc) + " Dolly will not restart the game or retry automatically."
             self._message(message, startup_stage="failed", playing=False)

@@ -3479,6 +3479,7 @@ class DollyApp:
                 "unlocker_ready": "Unlocker ready — load replay",
                 "loading_replay": "Replay requested — wait for loading",
                 "recovering_replay": "Preparing replay",
+                "cancelled": "Replay preparation cancelled",
                 "replay_ready": "Replay ready",
                 "failed": "Session needs attention",
                 "game_closed": "Game closed",

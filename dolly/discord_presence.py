@@ -33,7 +33,7 @@ def activity_for(status, video, *, cameras=0, processing_players=False):
     if status.get("playing"):
         return Activity("Previewing a campath")
     stage = status.get("startup_stage", "not_launched")
-    if status.get("game_running") and stage not in ("editing_ready", "replay_ready", "failed", "game_closed"):
+    if status.get("game_running") and stage not in ("editing_ready", "replay_ready", "failed", "cancelled", "game_closed"):
         return Activity("Preparing a replay")
     if status.get("game_ui_visible"):
         return Activity("Browsing a replay")
