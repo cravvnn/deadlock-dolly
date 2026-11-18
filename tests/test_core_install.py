@@ -1,6 +1,7 @@
 """Headless installation admission, launch, recovery and cleanup contracts."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -327,6 +328,20 @@ class InstallTests(unittest.TestCase):
             if owner.poll() is None:
                 owner.kill()
             owner.stdout.close(); owner.stdin.close()
+            # The helper's last act is a line in launch.log; wait until it is
+            # written and the file is released, so removing the temporary
+            # folder does not race the exiting helper.
+            log, moved = session / 'launch.log', session / 'launch.log.probe'
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                try:
+                    if 'Removed the temporary plugin directory' in log.read_text(encoding='utf-8'):
+                        os.replace(log, moved)
+                        os.replace(moved, log)
+                        break
+                except OSError:
+                    pass
+                time.sleep(0.1)
 
     def test_p03_interrupted_recovery_preserves_foreign_and_modified_files(self):
         session, overlay, backup, record, patched = self.journal_fixture('normal')
