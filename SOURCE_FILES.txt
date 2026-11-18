@@ -1338,3 +1338,4 @@ tests/test_console_resilience.py
 tests/test_export_hardening.py
 tests/test_hud_ownership.py
 tests/test_shot_edit_fixes.py
+docs/RELEASE_NOTES_0.7.43-beta.md
