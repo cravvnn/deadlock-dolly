@@ -10,6 +10,8 @@ EXTENDS Naturals, FiniteSets
 \* returning action (success/timeout/read error); no native ack, duration, GPU,
 \* heartbeat recovery, abrupt crash, borrowed views or general caller proof.
 \* API refinement describes completion shape, not actual game finalization.
+\* Media command and finalize waits end when the bound game has exited; close
+\* then skips the stops and only unmaps. That branch is not modeled here.
 VARIABLES pc,pending,intent,command,attempted,failures
 vars == <<pc,pending,intent,command,attempted,failures>>
 phase == IF pc = "done" THEN "done" ELSE "active"

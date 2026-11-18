@@ -98,6 +98,9 @@ class MediaTransport:
                     if status.get("command_error"):
                         raise NativeBridgeError(status.get("command_message") or "Native media command was rejected")
                     return status
+                # A dead game never acknowledges; end the wait instead of
+                # holding _operations for the full timeout.
+                self._check_game()
                 self._sleep(.02)
             if not required:
                 return None
@@ -158,11 +161,20 @@ class MediaTransport:
         with self._operations:
             self._finish_media_and_unmap()
 
+    def _media_game_exited(self):
+        exited = getattr(self, "_game_exited", None)
+        return exited is not None and bool(exited())
+
     def _finish_media_and_unmap(self):
         import logging
         if self._media_mapping is None:
             return
         try:
+            if self._media_game_exited():
+                # Nothing can acknowledge a finalize request any more; the
+                # mapping is still released below.
+                logging.getLogger(__name__).warning("Deadlock exited; skipped native media finalization.")
+                return
             state = self.media_status()
             unconfirmed_audio = (self._media_last_command == "start_source_audio"
                                  and state.get("ack") != self._media_sequence)
@@ -179,6 +191,8 @@ class MediaTransport:
                     deadline = self._clock() + 10
                     while self._clock() < deadline:
                         if self.media_status().get("state") not in ("starting", "recording", "finalizing"):
+                            break
+                        if self._media_game_exited():
                             break
                         self._sleep(.05)
                     else:
