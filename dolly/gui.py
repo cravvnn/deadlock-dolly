@@ -1536,12 +1536,21 @@ class DollyApp:
             audio = self.clip_audio
             self.clip_audio = None
             if audio:
-                if cancel or status.get("state") != "completed":
-                    audio.cancel()
-                else:
-                    folder = audio.finish(status)
-                    if folder:
-                        status = {**status, "reconstructed_folder": str(folder)}
+                try:
+                    if cancel or status.get("state") != "completed":
+                        audio.cancel()
+                    else:
+                        folder = audio.finish(status)
+                        if folder:
+                            status = {**status, "reconstructed_folder": str(folder)}
+                except BaseException:
+                    # Until the game confirms endmovie it keeps writing the
+                    # movie WAV. Keep the owner so Finish or Discard retries.
+                    movie = getattr(audio, "movie", None)
+                    if (getattr(movie, "started", False) is True
+                            and getattr(movie, "finished", True) is False):
+                        self.clip_audio = audio
+                    raise
             return status
         if (getattr(self, "_pov_project", None) is not None or getattr(self, "_bone_take_project", None) is not None) and self.controller.status().get("playing"):
             # An early Finish ends this take, including its queued passes.
