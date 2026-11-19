@@ -304,6 +304,8 @@ private:
     VisualizationGeometry guide_geometry;
     float timeline_x0_ = 0, timeline_x1_ = 0, timeline_y_ = 0;
     std::uint64_t timeline_drags_ = 0;
+    // Classic reset confirmation, opened outside the busy-disabled cards.
+    bool reset_path_confirm_ = false;
     const char* timeline_view_id_ = nullptr;
     float timeline_view_start_ = 0, timeline_view_end_ = 0;
     bool timeline_panning_ = false;

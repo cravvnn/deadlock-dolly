@@ -1033,6 +1033,51 @@ static void panel_option_regressions() {
             "Ready replay kill marker no longer seeks its actual tick");
     io.AddMouseButtonEvent(0, false);
     frame(); frame();
+    {
+        // The reset confirmation stays cancellable when the replay turns busy
+        // while it is open; only its Reset button follows the busy state.
+        auto* cameras = card("##cameras-card");
+        test_context->NavNextActivateId = cameras->GetID("Reset camera path");
+        frame(); frame();
+        require(test_context->OpenPopupStack.Size == 1 &&
+                    test_context->OpenPopupStack.back().Window &&
+                    std::strstr(test_context->OpenPopupStack.back().Window->Name,
+                                "Reset camera path?"),
+                "Reset camera path did not open its confirmation");
+        auto* confirm = test_context->OpenPopupStack.back().Window;
+        // Locate both confirmation buttons by pointer while enabled. Keyboard
+        // activation bypasses BeginDisabled, so the busy checks click instead.
+        const auto reset_id = confirm->GetID("Reset here");
+        const auto cancel_id = confirm->GetID("Cancel");
+        const float row_y = confirm->DC.CursorMaxPos.y - 6;
+        float reset_x = -1, cancel_x = -1;
+        for (float x = confirm->Pos.x; x < confirm->Pos.x + confirm->Size.x; x += 3) {
+            io.AddMousePosEvent(x, row_y);
+            frame();
+            if (test_context->HoveredId == reset_id && reset_x < 0) reset_x = x;
+            if (test_context->HoveredId == cancel_id && cancel_x < 0) cancel_x = x;
+        }
+        require(reset_x >= 0 && cancel_x >= 0, "Reset confirmation buttons were not found");
+        const auto click = [&](float x) {
+            io.AddMousePosEvent(x + 4, row_y);
+            frame();
+            io.AddMouseButtonEvent(0, true);
+            frame();
+            io.AddMouseButtonEvent(0, false);
+            frame(); frame();
+        };
+        snapshot.busy = true;
+        frame(); frame();
+        observed_actions.clear();
+        click(reset_x);
+        require(observed_actions.empty() && test_context->OpenPopupStack.Size == 1,
+                "A busy replay accepted a camera path reset");
+        click(cancel_x);
+        require(test_context->OpenPopupStack.empty(),
+                "A busy replay left the reset confirmation impossible to cancel");
+        snapshot.busy = false;
+        frame(); frame();
+    }
     observed_actions.clear();
     // A row can be reordered by a different edit during live bank preview.
     // Never continue the gesture on the new occupant of the same row index.

@@ -1109,23 +1109,8 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                                  !state.camera_count || recording_locked);
             if (ImGui::Button("Reset camera path",
                               ImVec2(ImGui::GetContentRegionAvail().x, 0)))
-                ImGui::OpenPopup("Reset camera path?");
+                reset_path_confirm_ = true;
             ImGui::EndDisabled();
-            if (ImGui::BeginPopupModal("Reset camera path?", nullptr,
-                                       ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::TextUnformatted("Replace all camera views with the current view?");
-                ImGui::TextUnformatted("Lens and depth-of-field tracks will be kept.");
-                ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
-                                     !state.camera_count || recording_locked);
-                if (ImGui::Button("Reset here") &&
-                    editor_enqueue(EditorAction::ResetCameraPath))
-                    ImGui::CloseCurrentPopup();
-                ImGui::EndDisabled();
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel"))
-                    ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-            }
             ImGui::Separator();
             ImGui::BeginDisabled(!state.camera_count || state.playing);
             ImGui::BeginDisabled(recording_locked);
@@ -1247,6 +1232,26 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
         }
         end_panel_card();
         ImGui::EndDisabled();
+        // Outside the busy-disabled cards: Cancel must stay available if the
+        // replay turns busy while the confirmation is open.
+        if (reset_path_confirm_) {
+            reset_path_confirm_ = false;
+            ImGui::OpenPopup("Reset camera path?");
+        }
+        if (ImGui::BeginPopupModal("Reset camera path?", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Replace all camera views with the current view?");
+            ImGui::TextUnformatted("Lens and depth-of-field tracks will be kept.");
+            ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
+                                 !state.camera_count || recording_locked);
+            if (ImGui::Button("Reset here") && editor_enqueue(EditorAction::ResetCameraPath))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
     }
     if (lite_page_ == 1) {
         ImGui::BeginDisabled(!state.ready || state.busy);
