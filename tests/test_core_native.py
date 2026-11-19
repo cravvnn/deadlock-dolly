@@ -112,6 +112,12 @@ class NativeWorkflows(unittest.TestCase):
             self.assertNotIn('r_aspectratio ', c)
             self.assertNotIn('cl_citadel_forceangles ', c)
         self.assertIn('Native shot finished', self.controller.status()['message'])
+        # The finish stays visible after another status line replaces the message.
+        self.controller._message('Paused camera ready.')
+        self.assertTrue(self.controller.status()['shot_finished'])
+        self.controller._message('Playing native camera path at render time.', playing=True)
+        self.assertFalse(self.controller.status()['shot_finished'])
+        self.controller._message('Paused camera ready.', playing=False)
         self.controller.mark_recording_pending(False)
         self.bridge.video_status.return_value = {'state': 'idle'}
         self.controller.stop()

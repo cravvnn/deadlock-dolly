@@ -213,6 +213,28 @@ class ExportHardeningTests(unittest.TestCase):
         sf.write(wave.folder / (wave.name + '.wav'), np.zeros((44100 * 2, 2)), 44100)
         return controller, wave
 
+    def test_finished_shot_still_ends_the_take_after_a_later_status_message(self):
+        # The paused camera can start right after the shot ends: Dolly is busy for
+        # that moment and its status line replaces "Native shot finished".
+        app, _stop = self.polling_app(None, 'recording')
+        app._auto_finish_layered = True
+        app._take_playing_seen = True
+        finished = {'playing': False, 'game_running': True, 'shot_finished': True,
+                    'message': 'Paused camera ready. Use the in-game movement controls.'}
+        app.busy = True
+        DollyApp._refresh_video(app, finished)
+        self.assertEqual(app.stops, [])
+        app.busy = False
+        DollyApp._refresh_video(app, finished)
+        self.assertEqual(app.stops, [False])
+        self.assertFalse(app._auto_finish_layered)
+        # A take whose shot has not ended stays open.
+        app, _stop = self.polling_app(None, 'recording')
+        app._auto_finish_layered = True
+        app._take_playing_seen = True
+        DollyApp._refresh_video(app, {**finished, 'shot_finished': False})
+        self.assertEqual(app.stops, [])
+
     def test_movie_conversion_failure_reports_utf8_ffmpeg_text(self):
         calls = []
         controller, wave = self.finished_wave()

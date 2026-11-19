@@ -462,13 +462,16 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._thread = None
         self._state_lock = threading.RLock()
         self._op_lock = threading.RLock()
-        self._state = dict(connected=False, playing=False, playback_error=None, recording_generation=0,
+        self._state = dict(connected=False, playing=False, shot_finished=False, playback_error=None, recording_generation=0,
                            time=0.0, tick=None, total_ticks=None,
                            paused_camera=False, paused_flight=False, paused_tick=None,
                            startup_stage="not_launched",
                            message="Launch the hideout, connect and initialize the unlocker before loading your replay.")
 
     def _message(self, message, **changes):
+        if changes.get("playing"):
+            # A new playback: the previous shot's finish no longer applies.
+            changes.setdefault("shot_finished", False)
         with self._state_lock:
             self._state.update(message=message, **changes)
         if "startup_stage" in changes:
@@ -651,6 +654,19 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             reason = "Deadlock closed"
         else:
             reason = f"Deadlock crashed (exit code {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X})"
+        fatal = None
+        if exit_code:
+            from .game_logging import fatal_error
+            directory = getattr(self._session, "session_dir", None)
+            fatal = fatal_error(directory) if directory else None
+        if fatal:
+            # The game named its own reason; say that instead of guessing.
+            repair = ("In Steam, right-click Deadlock > Properties > Installed Files > Verify integrity "
+                      "of game files, then launch the replay again."
+                      if "corrupt" in fatal.lower() or "verify integrity" in fatal.lower()
+                      else "Export diagnostics if this keeps happening.")
+            return (f"{reason} while {context}. Deadlock reported: {fatal} {repair} "
+                    "Your shot remains available." + self._crash_suffix())
         if (not self._replay_requested or
                 context in ("waiting for the game console", "waiting for hideout readiness")):
             message = (f"{reason} while {context}. The game exited before the selected replay "
@@ -5620,11 +5636,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                               playing=False, paused_flight=True)
             elif finished and getattr(self, "_player_capture_pending", False):
                 self._message("Native shot finished. Finishing Players capture before restoring replay settings.",
-                              playing=False)
+                              playing=False, shot_finished=True)
             elif finished:
                 self._message("Native shot finished. POV segment paused; finishing recording." if getattr(self, "_pov_active", False)
                               else ("Native shot finished. Replay paused and final camera held. Play shot restarts; Stop / restore returns the game view and HUD." if self._native_active
-                                    else "Native shot finished. Replay paused at the final camera. Stop / restore returns the game view and HUD."), playing=False)
+                                    else "Native shot finished. Replay paused at the final camera. Stop / restore returns the game view and HUD."),
+                              playing=False, shot_finished=True)
 
     def _finish_playback(self):
         # Camera/cvar framing remains available for inspection until Stop.

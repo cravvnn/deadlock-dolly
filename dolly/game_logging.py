@@ -98,6 +98,29 @@ def prune_session_logs(logs_root, *, keep=RETAINED_SESSIONS):
                 continue
 
 
+def fatal_error(session_dir, *, tail=256_000, limit=300):
+    """The last reason the engine logged for stopping itself, or None.
+
+    Deadlock ends some crashes on purpose and says why first, for example a
+    damaged content file. Read only the end of this launch's logs.
+    """
+    for name in SESSION_LOGS:
+        try:
+            with (Path(session_dir) / name).open("rb") as stream:
+                size = stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, size - tail))
+                text = stream.read(tail).decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        found = text.rfind("FATAL ERROR:")
+        if found < 0:
+            continue
+        reason = " ".join(text[found + len("FATAL ERROR:"):].splitlines()[0].split())
+        if reason:
+            return reason if len(reason) <= limit else reason[:limit].rstrip() + "..."
+    return None
+
+
 def diagnostic_log(path, *, limit=2_000_000):
     """Keep startup and the latest failure when an engine log grows large."""
     path = Path(path)

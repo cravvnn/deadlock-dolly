@@ -2126,10 +2126,13 @@ class DollyApp:
         if (active and getattr(self, "_auto_finish_layered", False) and state == "recording"
                 and getattr(self, "_take_playing_seen", False)
                 and not self.busy and not self.playing
-                and "Native shot finished" in controller_message):
+                and (controller_status.get("shot_finished")
+                     or "Native shot finished" in controller_message)):
             # A layered take ends with its authored path. Finishing here writes
             # the manifest, preview and shot sidecar instead of leaving the
-            # recorder open until the game closes.
+            # recorder open until the game closes. The finish is a state, not
+            # only the status line: the paused camera can start and replace
+            # that line before this poll runs while Dolly is idle.
             self._auto_finish_layered = False
             self._stop_video_recording()
         _set_var(self.video_status_text,

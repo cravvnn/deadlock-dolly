@@ -343,5 +343,54 @@ class PlaybackGuardTests(unittest.TestCase):
             c.set_playback_speed(3)
 
 
+class GameFatalErrorTests(unittest.TestCase):
+    """A crash message names the reason Deadlock itself logged before it exited."""
+
+    def controller(self, folder, log=None):
+        c, process = make_controller(SimpleNamespace(is_connected=False))
+        c._session.session_dir = Path(folder)
+        c._replay_requested = True
+        c._replay_header = {"name": "1.dem"}
+        process.code = 1
+        if log is not None:
+            (Path(folder) / "engine_console.log").write_bytes(log)
+        return c
+
+    def test_corrupt_game_files_are_named_with_the_steam_repair(self):
+        log = (b"11/19 16:01:54 noise\r\n" * 4000 +
+               "11/19 16:01:55 FATAL ERROR: Content file d:\\games\\Иван\\pak01.vpk is corrupt. "
+               "Verify integrity of game files.\r\n".encode("utf-8") +
+               b"11/19 16:01:55 ResetBreakpadAppId: Universe is 1\r\n")
+        with tempfile.TemporaryDirectory() as folder:
+            message = self.controller(folder, log)._game_death_message("running a console command")
+        self.assertIn("Deadlock crashed", message)
+        self.assertIn("pak01.vpk is corrupt", message)
+        self.assertIn("Installed Files > Verify integrity of game files", message)
+        self.assertNotIn("does not establish", message)
+        self.assertIn("Your shot remains available", message)
+
+    def test_other_fatal_errors_are_quoted_and_long_ones_trimmed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            c = self.controller(folder, b"FATAL ERROR: first\nFATAL ERROR: Out of memory " + b"x" * 900 + b"\n")
+            message = c._game_death_message("running a console command")
+        self.assertIn("Deadlock reported: Out of memory", message)
+        self.assertNotIn("first", message)
+        self.assertNotIn("Installed Files", message)
+        self.assertLess(len(message), 900)
+
+    def test_without_a_fatal_line_or_log_the_message_is_unchanged(self):
+        for log in (None, b"11/19 16:01:55 nothing fatal here\n"):
+            with self.subTest(log=log), tempfile.TemporaryDirectory() as folder:
+                message = self.controller(folder, log)._game_death_message("running a console command")
+                self.assertIn("does not establish", message)
+                self.assertNotIn("Deadlock reported", message)
+
+    def test_a_clean_close_does_not_read_an_old_fatal_line(self):
+        with tempfile.TemporaryDirectory() as folder:
+            c = self.controller(folder, b"FATAL ERROR: old\n")
+            c._session.process.code = 0
+            self.assertNotIn("Deadlock reported", c._game_death_message("running a console command"))
+
+
 if __name__ == "__main__":
     unittest.main()
