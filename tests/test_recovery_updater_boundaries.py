@@ -455,6 +455,31 @@ class UpdaterBoundaries(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertIn('"complete"', (work / 'journal.json').read_text())
 
+    def test_failed_update_message_says_whether_files_were_restored(self):
+        plan, target, work, before = self.staged_release()
+        real = update_worker.replace_file
+
+        def broken_backup(source, destination):
+            if 'backup' in Path(source).parts:
+                raise OSError('simulated restore failure')
+            return real(source, destination)
+
+        def failed_health(_target):
+            raise RuntimeError('simulated startup failure')
+
+        with patch.object(update_worker, 'replace_file', broken_backup):
+            with self.assertRaises(OSError) as failure:  # the rollback failed too
+                update_worker.install(plan, failed_health)
+        self.assertTrue((target / update_worker.PENDING).exists())
+        message = update_worker._install_error_message(failure.exception, work, target)
+        self.assertNotIn('retained or restored', message)
+        self.assertIn('not finished', message)
+        self.assertIn('Open Dolly.exe again', message)
+        update_worker.rollback(plan)
+        self.assertEqual(self.installed(target, work), before)
+        message = update_worker._install_error_message(failure.exception, work, target)
+        self.assertIn('Your previous files were retained or restored', message)
+
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()
         ui._status.side_effect = RuntimeError('widget gone')

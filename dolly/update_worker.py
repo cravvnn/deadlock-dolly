@@ -451,7 +451,7 @@ def _progress_helper_window(work, target, *, recover, parent_pid):
                 atomic_json(work / "result.json", {"passed": False, "error": str(error)})
             except OSError:
                 pass
-            events.put(("failed", _install_error_message(error, work)))
+            events.put(("failed", _install_error_message(error, work, target)))
 
     def poll():
         if window.closed:
@@ -750,9 +750,14 @@ def self_test(report):
     return 0 if result["passed"] else 1
 
 
-def _install_error_message(error, work):
-    message = ("Dolly could not finish updating. Your previous files were retained or restored."
-               "\n\n" + str(error))
+def _install_error_message(error, work, target):
+    if not (Path(target) / PENDING).exists():
+        message = "Dolly could not finish updating. Your previous files were retained or restored."
+    else:
+        # The rollback did not finish either; the record stays for recovery.
+        message = ("The Dolly update is not finished. Open Dolly.exe again and it will restore your "
+                   "previous files, or finish the update if it was already installed.")
+    message += "\n\n" + str(error)
     if isinstance(error, PermissionError) or getattr(error, "winerror", None) in (5, 32):
         message += ("\n\nWindows blocked writing to the Dolly folder. Close any other Dolly "
                     "window, and if a security tool or a protected location (for example "
@@ -818,7 +823,7 @@ def main(argv=None):
         _apply_plan(plan, work, target, args.recover)
     except Exception as error:
         atomic_json(work / "result.json", {"passed": False, "error": str(error)})
-        notify(_install_error_message(error, work))
+        notify(_install_error_message(error, work, target))
         # A failure before the parent exits must not launch a duplicate instance.
         if (target / PENDING).exists():
             return 1
