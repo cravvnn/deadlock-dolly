@@ -384,6 +384,48 @@ class UpdaterBoundaries(unittest.TestCase):
         self.assertFalse(ui._can_update())
         self.assertIn('Save your shot', ui._status.call_args.args[0])
 
+    def staged_release(self):
+        target, work = self.target / 'installed', self.target / 'installed/.dolly-update-x'
+        handoff.package(target, '1.0.0')
+        handoff.package(work / 'payload', '1.0.1')
+        before = {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob('*')
+                  if p.is_file() and work not in p.parents}
+        return {'work': str(work), 'target': str(target)}, target, work, before
+
+    def installed(self, target, work):
+        return {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob('*')
+                if p.is_file() and work not in p.parents}
+
+    def test_update_whose_recovery_record_cannot_be_written_can_be_retried(self):
+        plan, target, work, before = self.staged_release()
+        real = update_worker.atomic_json
+        refused = set()
+
+        def disk_full(path, value):
+            if Path(path).name == update_worker.PENDING or value.get('state') in refused:
+                raise OSError(28, 'No space left on device (simulated)')
+            return real(path, value)
+
+        with patch.object(update_worker, 'atomic_json', disk_full):
+            with self.assertRaises(OSError):
+                update_worker.install(plan)
+        journal = (work / 'journal.json').read_text()
+        self.assertIn('"rolled_back"', journal)
+        self.assertEqual(self.installed(target, work), before)
+        self.assertFalse((target / update_worker.PENDING).exists())
+        # If even the rollback journal cannot be written, nothing was touched:
+        # the next attempt starts over instead of being blocked forever.
+        (work / 'journal.json').unlink()
+        refused.add('rolled_back')
+        with patch.object(update_worker, 'atomic_json', disk_full):
+            with self.assertRaises(OSError):
+                update_worker.install(plan)
+        self.assertIn('"applying"', (work / 'journal.json').read_text())
+        self.assertFalse((target / update_worker.PENDING).exists())
+        update_worker.install(plan)
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+        self.assertFalse((target / update_worker.PENDING).exists())
+
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()
         ui._status.side_effect = RuntimeError('widget gone')

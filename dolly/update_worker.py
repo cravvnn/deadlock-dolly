@@ -172,7 +172,7 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
     old, new = read_manifest(target), read_manifest(payload)
     if version_key(new["version"]) <= version_key(old["version"]):
         raise ValueError("Refusing a same-version update or downgrade")
-    if (target / PENDING).exists() or (work / "journal.json").exists():
+    if (target / PENDING).exists() or ((work / "journal.json").exists() and not _never_started(work, target)):
         raise ValueError("An unfinished update must be recovered first")
     names = sorted(set(old["files"]) | set(new["files"]) | {MANIFEST})
     removed = set(old["files"]) - set(new["files"])
@@ -205,8 +205,9 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
                 raise ValueError("Update backup verification failed")
     state = {"state": "applying", "target": str(target), "before": before, "modified": sorted(modified)}
     atomic_json(work / "journal.json", state)
-    atomic_json(target / PENDING, plan)
     try:
+        # The recovery record goes first: nothing installed changes without it.
+        atomic_json(target / PENDING, plan)
         # Removals first (deepest first, pruning emptied folders), then writes,
         # so a file can replace a folder and the reverse. Manifest is last so
         # it describes a fully installed set.
@@ -224,6 +225,23 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
     except BaseException:
         rollback(plan)
         raise
+
+
+def _never_started(work, target):
+    """An "applying" journal without its recovery record changed nothing.
+
+    install writes the record before it touches an installed file and rolls
+    back if the record cannot be written. Only a stop between the two writes,
+    or a failure of that rollback's own journal write, leaves this state, and
+    starting over is then safe.
+    """
+    if (target / PENDING).exists():
+        return False
+    try:
+        data = json.loads((work / "journal.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return False
+    return isinstance(data, dict) and data.get("state") == "applying"
 
 
 class InstallLockBusy(OSError):
