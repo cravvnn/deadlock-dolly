@@ -138,6 +138,22 @@ public:
     ~CaptureCallbackPin() { if (admitted) owner.leave_event(); }
     explicit operator bool() const noexcept { return admitted; }
 };
+// Producer-hook routing outside an armed capture. Hiding remembers owners
+// for the draw hook; a sequence request owns the producer table instead.
+class ProducerCaptureState {
+    std::atomic<bool> live_{false}, sequence_{false};
+public:
+    void start(bool sequence) noexcept {
+        sequence_.store(sequence, std::memory_order_relaxed);
+        live_.store(true, std::memory_order_release);
+    }
+    void finish() noexcept { live_.store(false, std::memory_order_release); }
+    bool live() const noexcept { return live_.load(std::memory_order_acquire); }
+    bool hides(bool hiding, bool capture_active) const noexcept {
+        // Mode flags outlive a take; only a live sequence request blocks hiding.
+        return hiding && !capture_active && !(live() && sequence_.load(std::memory_order_relaxed));
+    }
+};
 inline bool capture_drain_finished(bool drained, std::uint64_t elapsed_ms, bool sequence) noexcept {
     return drained || elapsed_ms >= (sequence ? 3000u : 250u);
 }

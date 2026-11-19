@@ -245,6 +245,8 @@ std::array<ColorFrame, SequenceRing> colorFrames;
 std::atomic<std::uint64_t> captureGeneration{0};
 unsigned colorIndex = 0;
 bool sequenceMode = false, sequenceV2 = false, sequenceV3 = false;
+// Request-to-terminal lifetime seen by producer workers; mode flags persist.
+ProducerCaptureState producerCapture;
 double lastSealedReplayTime = -1.0;
 unsigned sequenceCap = 2, framesSealed = 0, framesWritten = 0, framesDropped = 0;
 bool playersOnly = false;
@@ -738,8 +740,8 @@ int hook_common(std::uintptr_t a, void* object, void* mesh, void* opaque, void* 
     // Hiding runs without a capture: remember the owner for each produced
     // instance so the draw hook can skip exactly that handle. No events, no
     // allocation, no GPU work.
-    if (hidingActive.load(std::memory_order_acquire) &&
-        !captureActive.load(std::memory_order_acquire) && !sequenceV2) {
+    if (producerCapture.hides(hidingActive.load(std::memory_order_acquire),
+                              captureActive.load(std::memory_order_acquire))) {
         const int result = forward_producer(original, originalSeptember, a, object, mesh, opaque,
                                             params, mode, flag, outA, outB, outC);
         if (result >= 0 && static_cast<unsigned>(result) < HideSlots)
@@ -1230,6 +1232,8 @@ void reset_capture() noexcept {
 void tick() noexcept {
     if (!configured || directory.empty())
         return;
+    if (captured)
+        producerCapture.finish();
     std::string requestText;
     if (captured || !attempted) {
         static ULONGLONG lastRequestPoll = 0;
@@ -1364,6 +1368,7 @@ void tick() noexcept {
             captured = true;
             return;
         }
+        producerCapture.start(sequenceV2);
         wantDrawHooks.store(true, std::memory_order_release);
         started = GetTickCount64();
         status("waiting for observed game device draw hooks");
@@ -1516,6 +1521,7 @@ void tick() noexcept {
         } else
             status("failed to write diagnostic");
         captured = true;
+        producerCapture.finish();
         pacingStage.store(0);
         publish_pacing();
     }

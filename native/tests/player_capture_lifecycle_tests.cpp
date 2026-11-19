@@ -230,6 +230,19 @@ int main() {
     require(!interrupted.prepared_pending() && interrupted.enter_event(2),
             "next capture starts with no old reservation");
     interrupted.leave_event();
+    ProducerCaptureState producer;
+    require(producer.hides(true, false), "hiding owns producers before any capture");
+    producer.start(true);
+    require(!producer.hides(true, false) && !producer.hides(true, true),
+            "a live sequence request owns the producer table");
+    producer.finish();
+    require(producer.hides(true, false),
+            "first-person hiding resumes after a sequence capture ends");
+    require(!producer.hides(true, true) && !producer.hides(false, false),
+            "hiding never runs inside an armed capture or when cleared");
+    producer.start(false);
+    require(producer.hides(true, false), "non-sequence requests keep pre-arm hiding");
+    producer.finish();
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

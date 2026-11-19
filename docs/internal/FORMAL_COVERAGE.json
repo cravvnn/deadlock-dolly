@@ -7621,7 +7621,7 @@
     },
     {
       "path": "native/include/dolly_player_capture_lifecycle.hpp",
-      "sha256": "086337010b31d717bb146b5e4697a94ea368a840dba148b8efc3e5ac5ac9659f",
+      "sha256": "988d119efeeca574a1b0ab20b8a35650110d4a65cc88adcbf2b8c7c3f63673f8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7641,7 +7641,8 @@
           "thread/lock"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take."
     },
     {
       "path": "native/include/dolly_player_material_matte.hpp",
@@ -9115,7 +9116,7 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
-      "sha256": "e256d3c3e00c545fd77197d43755f3cf7cf75044beab80e7c65590a90e1f80f3",
+      "sha256": "c76919979b7aca15ab536e5dabf8e4e2216964df32d455820909d6fe8076dd92",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9176,7 +9177,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take."
     },
     {
       "path": "native/src/dolly_prop_runtime.cpp",
@@ -11922,7 +11924,7 @@
         "native/src/CaptureFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "e256d3c3e00c545fd77197d43755f3cf7cf75044beab80e7c65590a90e1f80f3"
+      "owner_utf8_lf_sha256": "c76919979b7aca15ab536e5dabf8e4e2216964df32d455820909d6fe8076dd92"
     },
     "native/src/DrawProof.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11931,7 +11933,7 @@
         "native/src/DrawProof.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "e256d3c3e00c545fd77197d43755f3cf7cf75044beab80e7c65590a90e1f80f3"
+      "owner_utf8_lf_sha256": "c76919979b7aca15ab536e5dabf8e4e2216964df32d455820909d6fe8076dd92"
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",
