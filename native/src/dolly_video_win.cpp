@@ -225,11 +225,13 @@ struct CachedStatus {
     std::atomic<State> state{State::idle};
     std::atomic<std::uint32_t> width{0}, height{0}, fps{0}, error_code{0};
     std::atomic<std::uint64_t> written{0}, dropped{0}, duration{0}, first_qpc{0}, frequency{0};
-    std::atomic<const wchar_t*> error{L""};
     std::atomic<bool> depth{false};
     std::atomic<bool> white_clear{false};
     std::atomic<bool> shot_only{false};
 } cached;
+// The take whose error text the cached snapshot reports. Holding it keeps a
+// composed error_buffer alive for lock-free readers after start() replaces it.
+std::shared_ptr<const Session> cached_owner;
 RenderResources gpu;
 // Published by the bridge for every successful Mode::Play path evaluation.
 // The recorder pairs frames with the native authored path directly instead of
@@ -1576,6 +1578,19 @@ bool start(const Options& options) noexcept {
         next->frequency = std::uint64_t(frequency.QuadPart);
         *encoder_thread = std::thread(encode, next);
         cached.depth.store(options.depth, std::memory_order_release);
+        // A lock-free status() reader must see this take, never the previous
+        // take's terminal state or counters.
+        cached.width.store(0);
+        cached.height.store(0);
+        cached.fps.store(next->fps);
+        cached.error_code.store(0);
+        cached.written.store(0);
+        cached.dropped.store(0);
+        cached.duration.store(0);
+        cached.first_qpc.store(0);
+        cached.frequency.store(next->frequency);
+        std::atomic_store(&cached_owner, std::shared_ptr<const Session>(next));
+        cached.state.store(State::starting, std::memory_order_release);
         current = std::move(next);
         return true;
     } catch (...) {
@@ -1619,7 +1634,8 @@ Status status() noexcept {
         result.duration_100ns = cached.duration.load();
         result.first_qpc = cached.first_qpc.load();
         result.qpc_frequency = cached.frequency.load();
-        std::wcsncpy(result.error, cached.error.load(), 255);
+        if (const auto owner = std::atomic_load(&cached_owner))
+            std::wcsncpy(result.error, owner->error_text.load(std::memory_order_acquire), 255);
         return result;
     }
     if (!current)
@@ -1648,7 +1664,6 @@ Status status() noexcept {
     cached.duration.store(result.duration_100ns);
     cached.first_qpc.store(result.first_qpc);
     cached.frequency.store(result.qpc_frequency);
-    cached.error.store(message);
     cached.state.store(result.state, std::memory_order_release);
     return result;
 }

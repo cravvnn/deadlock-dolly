@@ -283,6 +283,8 @@ if(WIN32)
             set_tests_properties(native_video_encoder_smoke PROPERTIES TIMEOUT 45)
             add_test(NAME native_video_cap_smoke COMMAND video_smoke --cap-only)
             add_test(NAME native_camera_only_smoke COMMAND video_smoke --camera-only)
+            add_test(NAME native_video_status_cache_smoke COMMAND video_smoke --status-cache)
+            set_tests_properties(native_video_status_cache_smoke PROPERTIES TIMEOUT 60)
             set_tests_properties(native_camera_only_smoke PROPERTIES TIMEOUT 45)
             set_tests_properties(native_video_cap_smoke PROPERTIES TIMEOUT 40)
             # A late capture fault after the encoder's stop decision: a generated

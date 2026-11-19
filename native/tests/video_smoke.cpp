@@ -5,12 +5,14 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cwchar>
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include <thread>
 #include <fstream>
 #include "dolly_video.hpp"
 
@@ -152,6 +154,42 @@ int main(int argc, char** argv) {
     // A unique temp name avoids deleting a file from any earlier test run.
     if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
         return 1;
+    if (argc == 2 && std::strcmp(argv[1], "--status-cache") == 0) {
+        // status() returns its cached snapshot when another caller holds the
+        // recorder lock. A new take must never report the previous take's
+        // terminal state through that cache.
+        std::atomic<bool> run{true};
+        std::thread hammer([&] {
+            while (run.load())
+                (void)status();
+        });
+        unsigned stale = 0, takes = 0;
+        for (unsigned round = 0; round < 150; ++round) {
+            // Never configured (no Present), so no output file is created.
+            const auto take_path = path + L"-cache-" + std::to_wstring(round) + L".mp4";
+            if (!start(take_path.c_str(), 30, 2000000))
+                continue;
+            ++takes;
+            for (int i = 0; i < 50; ++i) {
+                if (terminal(status().state)) {
+                    ++stale;
+                    break;
+                }
+            }
+            stop(true);
+            for (int i = 0; i < 2000 && !terminal(status().state); ++i)
+                Sleep(1);
+        }
+        run = false;
+        hammer.join();
+        shutdown();
+        if (stale)
+            std::fprintf(stderr, "%u of %u fresh takes reported a terminal state\n", stale, takes);
+        const bool ok = check(takes > 0 && stale == 0, "a new take reports its own state");
+        if (ok)
+            std::puts("Recorder status cache follows the current take.");
+        return ok ? 0 : 1;
+    }
     HWND window = CreateWindowExW(0, L"STATIC", L"Dolly video smoke", WS_OVERLAPPEDWINDOW, 0, 0,
                                   320, 240, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     DXGI_SWAP_CHAIN_DESC description{};
