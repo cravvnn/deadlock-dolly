@@ -253,7 +253,7 @@ std::vector<unsigned char> curve_packet(unsigned count = 10, unsigned revision =
     packet.insert(packet.end(), path.begin(), path.end());
     return packet;
 }
-std::vector<unsigned char> viewer_packet(double first_x = 100) {
+std::vector<unsigned char> viewer_packet(double first_x = 100, std::uint32_t revision = 0) {
     // These two synthetic cameras project to the right of the panel. Their
     // connecting segment and glyphs must remain visible in paused flight.
     const dolly::CameraPose a{first_x, -60, 0, 0, 0, 0, 4.0 / 3.0};
@@ -289,6 +289,11 @@ std::vector<unsigned char> viewer_packet(double first_x = 100) {
     append_u32(packet, static_cast<std::uint32_t>(path.size()));
     append_u32(packet, 128);
     append_u32(packet, 8);
+    if (revision) {
+        // ABI 2 carries the project revision the guides were compiled from.
+        packet[12] = 2;
+        append_u32(packet, revision);
+    }
     packet.resize(dolly::kVisualizationHeaderBytes);
     append_double(packet, 0);
     append_double(packet, 3);
@@ -1028,6 +1033,51 @@ static void panel_option_regressions() {
             "Ready replay kill marker no longer seeks its actual tick");
     io.AddMouseButtonEvent(0, false);
     frame(); frame();
+    {
+        // The reset confirmation stays cancellable when the replay turns busy
+        // while it is open; only its Reset button follows the busy state.
+        auto* cameras = card("##cameras-card");
+        test_context->NavNextActivateId = cameras->GetID("Reset camera path");
+        frame(); frame();
+        require(test_context->OpenPopupStack.Size == 1 &&
+                    test_context->OpenPopupStack.back().Window &&
+                    std::strstr(test_context->OpenPopupStack.back().Window->Name,
+                                "Reset camera path?"),
+                "Reset camera path did not open its confirmation");
+        auto* confirm = test_context->OpenPopupStack.back().Window;
+        // Locate both confirmation buttons by pointer while enabled. Keyboard
+        // activation bypasses BeginDisabled, so the busy checks click instead.
+        const auto reset_id = confirm->GetID("Reset here");
+        const auto cancel_id = confirm->GetID("Cancel");
+        const float row_y = confirm->DC.CursorMaxPos.y - 6;
+        float reset_x = -1, cancel_x = -1;
+        for (float x = confirm->Pos.x; x < confirm->Pos.x + confirm->Size.x; x += 3) {
+            io.AddMousePosEvent(x, row_y);
+            frame();
+            if (test_context->HoveredId == reset_id && reset_x < 0) reset_x = x;
+            if (test_context->HoveredId == cancel_id && cancel_x < 0) cancel_x = x;
+        }
+        require(reset_x >= 0 && cancel_x >= 0, "Reset confirmation buttons were not found");
+        const auto click = [&](float x) {
+            io.AddMousePosEvent(x + 4, row_y);
+            frame();
+            io.AddMouseButtonEvent(0, true);
+            frame();
+            io.AddMouseButtonEvent(0, false);
+            frame(); frame();
+        };
+        snapshot.busy = true;
+        frame(); frame();
+        observed_actions.clear();
+        click(reset_x);
+        require(observed_actions.empty() && test_context->OpenPopupStack.Size == 1,
+                "A busy replay accepted a camera path reset");
+        click(cancel_x);
+        require(test_context->OpenPopupStack.empty(),
+                "A busy replay left the reset confirmation impossible to cancel");
+        snapshot.busy = false;
+        frame(); frame();
+    }
     observed_actions.clear();
     // A row can be reordered by a different edit during live bank preview.
     // Never continue the gesture on the new occupant of the same row index.
@@ -4162,6 +4212,24 @@ int main(int argc, char** argv) {
             if (const auto* height = std::getenv("DOLLY_UI_TEST_HEIGHT"))
                 render_height = unsigned(std::clamp(std::atoi(height), 480, 2160));
         }
+        {
+            // Every function key binds (F1-F24); its chip names it exactly.
+            char cap[32]{};
+            for (unsigned vk = 0x70; vk <= 0x87; ++vk) {
+                char expected[8]{};
+                std::snprintf(expected, sizeof(expected), "F%u", vk - 0x6f);
+                require(dolly::key_cap_label(std::uint16_t(vk), 0, cap, sizeof(cap)) &&
+                            std::strcmp(cap, expected) == 0,
+                        "Function key chip text is wrong");
+            }
+            require(dolly::key_cap_label(0x7a, 5, cap, sizeof(cap)) &&
+                        std::strcmp(cap, "CTRL+SHIFT+F11") == 0,
+                    "Modified F11 chip text is wrong");
+            require(dolly::key_cap_label('Q', 2, cap, sizeof(cap)) &&
+                        std::strcmp(cap, "ALT+Q") == 0 &&
+                        !dolly::key_cap_label(0x2d, 0, cap, sizeof(cap)),
+                    "Key chip text regressed");
+        }
         dolly::reshade_set_enabled(false);
         require(!dolly::reshade_overlay_pending() && !dolly::reshade_overlay_open() &&
                     !dolly::reshade_available(),
@@ -5207,6 +5275,9 @@ int main(int argc, char** argv) {
             // exactly one revision-bound SetCameraTime on release; a plain drag
             // scrubs the slider instead of grabbing the tick.
             {
+                viewer.publish(viewer_packet(100, camera_revision_stub));
+                viewer.tick();
+                render();
                 const auto timeline = dolly::visualization_snapshot();
                 require(timeline && timeline->cameras().size() == 2,
                         "Synthetic timeline missing for the tick drag test");
@@ -5236,6 +5307,24 @@ int main(int argc, char** argv) {
                             dolly::overlay_diagnostics().timeline_drags ==
                                 before.timeline_drags,
                         "Plain timeline drag must scrub without moving a tick");
+                // A guide snapshot from an older project revision must not pair
+                // its camera index with a newer camera list.
+                require(timeline->project_revision() == 7, "Synthetic guide revision changed");
+                camera_revision_stub = 8;
+                io.AddKeyEvent(ImGuiMod_Alt, true);
+                io.MouseClickedTime[0] = -1e30;
+                drag(false, tick_x);
+                drag(true, tick_x);
+                drag(true, target_x);
+                drag(false, target_x);
+                io.AddKeyEvent(ImGuiMod_Alt, false);
+                render();
+                camera_revision_stub = 7;
+                render();
+                require(observed_actions.empty() &&
+                            dolly::overlay_diagnostics().timeline_drags ==
+                                before.timeline_drags,
+                        "Alt tick drag paired a stale guide index with a newer camera list");
                 // Alt+drag moves the tick and commits once on release.
                 io.AddKeyEvent(ImGuiMod_Alt, true);
                 io.MouseClickedTime[0] = -1e30;

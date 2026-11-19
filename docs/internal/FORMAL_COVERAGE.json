@@ -8090,7 +8090,7 @@
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
-      "sha256": "979e092484b7b17f72a8249204d210221727e6ad89e8032e81a1a9e6765a4455",
+      "sha256": "17495f925fab891ec2cbebd754a269b60d84eba5db0de91a54a6ab00be0ee64a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8108,7 +8108,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "MovieAudioLayout adds float_accessor and explicit6861layout; source installs/reads reviewed per-build pointers, no new audio worker lifetime guarantee."
+      "reconciliation": "MovieAudioLayout adds float_accessor and explicit6861layout; source installs/reads reviewed per-build pointers, no new audio worker lifetime guarantee.",
+      "reconciliation_20261119v": "2026-11-19: declares sound_capture_open_outputs(), the CREATE_NEW CSV pair creation that leaves nothing behind on failure (V4)."
     },
     {
       "path": "native/include/dolly_sound_compat.hpp",
@@ -8133,7 +8134,7 @@
     },
     {
       "path": "native/include/dolly_video.hpp",
-      "sha256": "ec6b04deb94047287038eaf29d9b9c295d6113492de7bfe4b6a77b4986ac825e",
+      "sha256": "3f441570565575f69eeb625795c9c008d53ed74963f1b71fa6eb089289cf44a9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8154,7 +8155,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261119v": "2026-11-19: declares present_should_capture(state, focused), the overlay clean-frame capture gate (V2)."
     },
     {
       "path": "native/include/dolly_video_math.hpp",
@@ -8678,7 +8680,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "f0d3efcb381389f8b91aea863756757bcd1b847cd2696a9e988291bbfe7307f1",
+      "sha256": "69d7dd26aa56c1fc1c1385f76e04b03d5321451dba42b19137845649ca05ddae",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8714,7 +8716,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1)."
     },
     {
       "path": "native/src/dolly_effects.cpp",
@@ -9016,7 +9019,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.cpp",
-      "sha256": "144504af1c4d35016af625bb3d0ca31763df6cb35ae25c81ee473ad9225224fb",
+      "sha256": "def5100c06367aefecd9ed6d797120cbffd353efe42c405eff737dd0b21f1f37",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9046,11 +9049,12 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2). the classic 'Reset camera path?' modal opens and draws after the busy-disabled camera cards, so Cancel stays usable when the replay turns busy; Reset here keeps its own busy/playing/recording guard (O3)."
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
-      "sha256": "4f14489a941fd68c729608b930e7705ff3f46d54210e3306ec1b74eaf0f2e5c7",
+      "sha256": "2f0b005c3636d92db5e1b0b2b561509be611e05ea87a2373c0e3de10cf7f9233",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9073,11 +9077,12 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3)."
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",
-      "sha256": "cfceae11716f19065eb5788eed003385bb0bc90f577188b2ad1968a941b736c2",
+      "sha256": "3bd4fb5260ade0dfc350d38075666c6ca822992e59d3f60f2b399932d97b33a0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9124,7 +9129,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119v": "2026-11-19: clean_frame gates capture() through video::present_should_capture so finalizing takes keep draining (V2)."
     },
     {
       "path": "native/src/dolly_path.cpp",
@@ -9654,7 +9660,7 @@
     },
     {
       "path": "native/src/dolly_sound_capture_win.cpp",
-      "sha256": "0abd9e22281c1dfd7be1b043d311ba744eba068f8c472f29ffbacb3c1fc07e8b",
+      "sha256": "9cd01ca6f1dafe114914d87e671ef9147b819d7242a770721e831be4aec83dc1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9683,7 +9689,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "Movie framerate recorder/accessor chosen by reviewed6861layout; hook availability/PCM drain remains native owner/platform obligation, not proved by offsets."
+      "reconciliation": "Movie framerate recorder/accessor chosen by reviewed6861layout; hook availability/PCM drain remains native owner/platform obligation, not proved by offsets.",
+      "reconciliation_20261119v": "2026-11-19: source-audio CSV pair creation moved to sound_capture_open_outputs(); a failed state-CSV create deletes the event CSV it just created, and a failed header write deletes both, so a retry on the same take path can start (V4)."
     },
     {
       "path": "native/src/dolly_sound_compat_generated.hpp",
@@ -9803,7 +9810,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "ee33a3a1a56056cff5ca931c1bdab9a2f07d07cba4236fa248199838f976532e",
+      "sha256": "d3558907caacb76aeadaff84aeb330859abdd971aeccb748e7d05fb288955ab8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9868,7 +9875,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261113": "2026-11-13 native sweep: quiesce_producers() makes the ready/producer_active stop handshake seq_cst on the worker side for the FFmpeg, Media Foundation and camera-only workers (all barriers kept); capture ProducerScope and CameraProducer fetch_add and ready load seq_cst. decide_cancel() applies a deferred stop once and takes one cancel snapshot after the final barrier; terminate/drop accounting/reject_incomplete_take/depth/color delete/sidecars/camera-trace publication/state follow it. A cancel after that point completes the take; Python's own cancel check still refuses a .crav.",
-      "reconciliation_20261114b": "2026-11-14 capture fault gap closed: capture() reads the backbuffer (GetBuffer) and checks resolution/swapchain only inside the producer gate after the ready check (one ProducerScope for video and camera-only); startup configuration before any output stays ungated. A late fault after the decision is no longer observed, so the kept take stays completed. video_late_fault_smoke (generated test copy with a post-decision hook) fails before and passes after. VideoCompleteness CaptureFault and CameraOnlyCapture outside-the-gate mutants added; RecorderApi GapFinish/AllowLateCaptureFault removed."
+      "reconciliation_20261114b": "2026-11-14 capture fault gap closed: capture() reads the backbuffer (GetBuffer) and checks resolution/swapchain only inside the producer gate after the ready check (one ProducerScope for video and camera-only); startup configuration before any output stays ungated. A late fault after the decision is no longer observed, so the kept take stays completed. video_late_fault_smoke (generated test copy with a post-decision hook) fails before and passes after. VideoCompleteness CaptureFault and CameraOnlyCapture outside-the-gate mutants added; RecorderApi GapFinish/AllowLateCaptureFault removed.",
+      "reconciliation_20261119v": "2026-11-19: present_should_capture() also feeds Presents while finalizing so the copy submitted on the last recording Present is drained, not counted as dropped (V2); capture() still admits no new frame once stopping. VideoCompleteness/CameraOnlyCapture unchanged: Drain is already enabled before the stop barrier and the overlay gate is outside both models. start() resets the lock-free status cache to the new take under control_mutex, and the cached error text is read through the owning session (cached_owner) instead of a raw pointer into a possibly freed error_buffer (V1). No model change: status caching is outside VideoCompleteness/CameraOnlyCapture. .shot.json now goes through publish_sidecar (shared with the camera track): CREATE_NEW temporary, fflush/ferror/_commit checks, no-replace MoveFileEx, temporary removed on failure; write_shot_sidecar returns false when not published and never truncates a foreign sidecar (V5). Sidecars stay additive after the color decision; VideoCompleteness SidecarStep/OutcomeAgrees unchanged (a failed optional sidecar never was modeled as success)."
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -11954,7 +11962,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "ee33a3a1a56056cff5ca931c1bdab9a2f07d07cba4236fa248199838f976532e"
+      "owner_utf8_lf_sha256": "d3558907caacb76aeadaff84aeb330859abdd971aeccb748e7d05fb288955ab8"
     },
     "native/src/CaptureFailure.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -12002,7 +12010,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "ee33a3a1a56056cff5ca931c1bdab9a2f07d07cba4236fa248199838f976532e"
+      "owner_utf8_lf_sha256": "d3558907caacb76aeadaff84aeb330859abdd971aeccb748e7d05fb288955ab8"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",

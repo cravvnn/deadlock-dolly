@@ -51,6 +51,10 @@ inline bool movie_audio_frame(std::uint64_t take, std::uint64_t frame, unsigned 
 bool movie_audio_sample(MovieAudioSample& sample) noexcept;
 void sound_capture_clock(std::int32_t tick, double engine_seconds) noexcept;
 bool sound_capture_start(const wchar_t* csv_path) noexcept;
+// Creates <csv_path> and <csv_path>.state.csv without overwriting (Windows
+// HANDLEs). On failure no file this call created is left behind, so a retry on
+// the same path can succeed.
+bool sound_capture_open_outputs(const wchar_t* csv_path, void*& csv, void*& state_csv) noexcept;
 void sound_capture_stop() noexcept;
 void sound_capture_worker_tick() noexcept;
 std::uint64_t sound_capture_dropped() noexcept;

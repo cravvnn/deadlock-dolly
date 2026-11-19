@@ -2420,6 +2420,30 @@ void editor_object_checks() {
     dolly::gAcknowledged = dolly::gLastEvent;
 }
 
+void editor_heartbeat_reconnect_checks() {
+    // A >2 s heartbeat lapse disables editor input. When the desktop heartbeat
+    // returns, the config it already published (unchanged sequence) must
+    // restore its owner instead of leaving the panel off until F8.
+    std::vector<unsigned char> memory(kMappingBytes);
+    EditorConfig config{};
+    std::memcpy(config.magic, "DLYEDIT1", 8);
+    config.sequence = 0x7000;
+    config.abi = kEditorAbi;
+    config.enabled = 1;
+    config.owner = std::uint32_t(EditorOwner::Panel);
+    config.owner_sequence = 0x7001;
+    config.speed = 400;
+    config.sensitivity = .08;
+    std::memcpy(memory.data() + kEditorConfigOffset, &config, sizeof(config));
+    editor_worker_tick(memory.data(), true);
+    require(dolly::gOwner == EditorOwner::Panel, "Published panel owner was not applied");
+    editor_worker_tick(memory.data(), false);
+    require(dolly::gOwner == EditorOwner::Disabled, "A heartbeat lapse kept editor input");
+    editor_worker_tick(memory.data(), true);
+    require(dolly::gOwner == EditorOwner::Panel,
+            "A returning heartbeat did not restore the published editor owner");
+}
+
 void independent_heartbeat() {
     alignas(8) unsigned char memory[64]{};
     auto* beat = reinterpret_cast<volatile LONG64*>(memory + 32);
@@ -3219,6 +3243,7 @@ void run() {
     f.command(Mode::Release);
     f.frame();
     f.unchanged();
+    editor_heartbeat_reconnect_checks();
 
     std::cout
         << "Actual native callback smoke tests passed (synthetic Windows memory; no game runtime claim)\n";

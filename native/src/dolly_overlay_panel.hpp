@@ -10,6 +10,10 @@ struct ImGuiSettingsHandler;
 
 namespace dolly {
 struct RailDesignState;
+// Key-cap chip text for a binding (modifier bits 1 Ctrl, 2 Alt, 4 Shift).
+// False for an unnamed key; the chip is then skipped.
+bool key_cap_label(std::uint16_t vk, std::uint32_t modifiers, char* out,
+                   std::size_t capacity) noexcept;
 // Borrowed renderer operations; the panel never creates/releases a GPU resource.
 struct PickerPortrait {
     void (*reset)() noexcept;
@@ -300,6 +304,8 @@ private:
     VisualizationGeometry guide_geometry;
     float timeline_x0_ = 0, timeline_x1_ = 0, timeline_y_ = 0;
     std::uint64_t timeline_drags_ = 0;
+    // Classic reset confirmation, opened outside the busy-disabled cards.
+    bool reset_path_confirm_ = false;
     const char* timeline_view_id_ = nullptr;
     float timeline_view_start_ = 0, timeline_view_end_ = 0;
     bool timeline_panning_ = false;

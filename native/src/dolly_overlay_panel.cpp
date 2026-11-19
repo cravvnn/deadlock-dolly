@@ -170,9 +170,8 @@ void OverlayPanel::action_button(const char* label, EditorAction action, float w
 // Stock key-cap glyph: a light cap with a dark label for the bound action,
 // rendered from the live editor binding. key_cap_width() lets a caller reserve
 // room so the chip never spills past the panel edge; key_cap() draws it.
-static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
-    const EditorBinding binding = editor_binding_snapshot(action);
-    const std::uint16_t vk = binding.vk;
+bool key_cap_label(std::uint16_t vk, std::uint32_t modifiers, char* out,
+                   std::size_t capacity) noexcept {
     if (!vk || capacity == 0)
         return false;
     std::size_t n = 0;
@@ -180,15 +179,16 @@ static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
         while (*s && n < capacity - 1)
             out[n++] = *s++;
     };
-    if (binding.modifiers & 1)
+    if (modifiers & 1)
         append("CTRL+");
-    if (binding.modifiers & 2)
+    if (modifiers & 2)
         append("ALT+");
-    if (binding.modifiers & 4)
+    if (modifiers & 4)
         append("SHIFT+");
     // Function keys and single characters read cleanly; named keys use short forms.
     if (vk >= 0x70 && vk <= 0x87) {
-        char fn[4] = {'F', char('1' + (vk - 0x70)), 0, 0};
+        char fn[4]{};
+        std::snprintf(fn, sizeof(fn), "F%u", unsigned(vk - 0x6f));
         append(fn);
     } else if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) {
         char ch[2] = {char(vk), 0};
@@ -210,6 +210,10 @@ static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
     }
     out[n] = 0;
     return n != 0;
+}
+static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
+    const EditorBinding binding = editor_binding_snapshot(action);
+    return key_cap_label(binding.vk, binding.modifiers, out, capacity);
 }
 // Total horizontal room the chip needs, including the gap after it (0 if none).
 static float key_cap_width(EditorAction action, float scale) {
@@ -447,8 +451,11 @@ OverlayPanel::SliderRow OverlayPanel::slider_row(const char* id, const char* lab
                             dragged_time = float(camera.time);
                         }
                     }
+                    // The index comes from the guide snapshot; it names the
+                    // same camera only when the guides match the camera list.
                     EditorCameraList list{};
                     if (dragged_tick >= 0 && editor_camera_list(list) &&
+                        timeline->project_revision() == list.revision &&
                         editor_lite_replay_info(dragged_clock) &&
                         dragged_clock.revision == list.revision && (dragged_clock.flags & 1)) {
                         dragged_revision = list.revision;
@@ -1102,23 +1109,8 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                                  !state.camera_count || recording_locked);
             if (ImGui::Button("Reset camera path",
                               ImVec2(ImGui::GetContentRegionAvail().x, 0)))
-                ImGui::OpenPopup("Reset camera path?");
+                reset_path_confirm_ = true;
             ImGui::EndDisabled();
-            if (ImGui::BeginPopupModal("Reset camera path?", nullptr,
-                                       ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::TextUnformatted("Replace all camera views with the current view?");
-                ImGui::TextUnformatted("Lens and depth-of-field tracks will be kept.");
-                ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
-                                     !state.camera_count || recording_locked);
-                if (ImGui::Button("Reset here") &&
-                    editor_enqueue(EditorAction::ResetCameraPath))
-                    ImGui::CloseCurrentPopup();
-                ImGui::EndDisabled();
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel"))
-                    ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-            }
             ImGui::Separator();
             ImGui::BeginDisabled(!state.camera_count || state.playing);
             ImGui::BeginDisabled(recording_locked);
@@ -1240,6 +1232,26 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
         }
         end_panel_card();
         ImGui::EndDisabled();
+        // Outside the busy-disabled cards: Cancel must stay available if the
+        // replay turns busy while the confirmation is open.
+        if (reset_path_confirm_) {
+            reset_path_confirm_ = false;
+            ImGui::OpenPopup("Reset camera path?");
+        }
+        if (ImGui::BeginPopupModal("Reset camera path?", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Replace all camera views with the current view?");
+            ImGui::TextUnformatted("Lens and depth-of-field tracks will be kept.");
+            ImGui::BeginDisabled(!state.ready || state.busy || state.playing ||
+                                 !state.camera_count || recording_locked);
+            if (ImGui::Button("Reset here") && editor_enqueue(EditorAction::ResetCameraPath))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
     }
     if (lite_page_ == 1) {
         ImGui::BeginDisabled(!state.ready || state.busy);

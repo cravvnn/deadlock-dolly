@@ -5,12 +5,14 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cwchar>
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include <thread>
 #include <fstream>
 #include "dolly_video.hpp"
 
@@ -152,6 +154,42 @@ int main(int argc, char** argv) {
     // A unique temp name avoids deleting a file from any earlier test run.
     if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
         return 1;
+    if (argc == 2 && std::strcmp(argv[1], "--status-cache") == 0) {
+        // status() returns its cached snapshot when another caller holds the
+        // recorder lock. A new take must never report the previous take's
+        // terminal state through that cache.
+        std::atomic<bool> run{true};
+        std::thread hammer([&] {
+            while (run.load())
+                (void)status();
+        });
+        unsigned stale = 0, takes = 0;
+        for (unsigned round = 0; round < 150; ++round) {
+            // Never configured (no Present), so no output file is created.
+            const auto take_path = path + L"-cache-" + std::to_wstring(round) + L".mp4";
+            if (!start(take_path.c_str(), 30, 2000000))
+                continue;
+            ++takes;
+            for (int i = 0; i < 50; ++i) {
+                if (terminal(status().state)) {
+                    ++stale;
+                    break;
+                }
+            }
+            stop(true);
+            for (int i = 0; i < 2000 && !terminal(status().state); ++i)
+                Sleep(1);
+        }
+        run = false;
+        hammer.join();
+        shutdown();
+        if (stale)
+            std::fprintf(stderr, "%u of %u fresh takes reported a terminal state\n", stale, takes);
+        const bool ok = check(takes > 0 && stale == 0, "a new take reports its own state");
+        if (ok)
+            std::puts("Recorder status cache follows the current take.");
+        return ok ? 0 : 1;
+    }
     HWND window = CreateWindowExW(0, L"STATIC", L"Dolly video smoke", WS_OVERLAPPEDWINDOW, 0, 0,
                                   320, 240, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     DXGI_SWAP_CHAIN_DESC description{};
@@ -277,6 +315,12 @@ int main(int argc, char** argv) {
             options.shot_only = shot_only;
             options.max_frames = 2;
             options.camera_track = true;
+            const auto shot_path = capped_path + L".shot.json";
+            if (variant == 0) {
+                // A foreign shot sidecar is never truncated or replaced.
+                std::ofstream foreign(shot_path, std::ios::binary);
+                foreign << "foreign";
+            }
             ok = check(start(options), "bounded recording starts") && ok;
             const auto deadline = GetTickCount64() + 15000;
             double phase = 0;
@@ -313,8 +357,25 @@ int main(int argc, char** argv) {
                            "bounded Media Foundation camera matches encoded output") &&
                      ok;
             }
+            {
+                std::ifstream sidecar(shot_path, std::ios::binary);
+                const std::string shot((std::istreambuf_iterator<char>(sidecar)), {});
+                ok = check(variant == 0 ? shot == "foreign"
+                                        : shot.find("\"deadlock-dolly-shot\"") != std::string::npos &&
+                                              shot.size() > 2 &&
+                                              shot.compare(shot.size() - 2, 2, "}\n") == 0,
+                           "shot sidecar is complete and never replaces a foreign file") &&
+                     ok;
+                WIN32_FIND_DATAW found{};
+                const HANDLE leftover =
+                    FindFirstFileW((shot_path + L".pending-*").c_str(), &found);
+                ok = check(leftover == INVALID_HANDLE_VALUE, "no partial shot sidecar is left") &&
+                     ok;
+                if (leftover != INVALID_HANDLE_VALUE)
+                    FindClose(leftover);
+            }
             DeleteFileW((capped_path + L".camera-track.json").c_str());
-            DeleteFileW((capped_path + L".shot.json").c_str());
+            DeleteFileW(shot_path.c_str());
             DeleteFileW(capped_path.c_str());
         }
         // A take that plays an authored path must not record the hold after that
@@ -494,6 +555,52 @@ int main(int argc, char** argv) {
         ok = check(GetFileAttributesW(cancel_path.c_str()) == INVALID_FILE_ATTRIBUTES,
                    "cancel removes only its incomplete output") &&
              ok;
+    }
+    // Stop clicked in the desktop app while the game is not focused: the
+    // overlay keeps feeding finalizing Presents through its gate, so the copy
+    // submitted on the last recording Present is read back instead of being
+    // counted as lost (which discards a fixed-step take).
+    const auto stop_path = path + L"-stop.mp4";
+    if (ok) {
+        Options options;
+        options.path = stop_path.c_str();
+        options.fps = 30;
+        options.bitrate = 2000000;
+        options.fixed_step = true;
+        ok = check(start(options), "fixed-step stop job starts");
+        const auto present = [&] {
+            const float color[] = {0.3f, 0.3f, 0.6f, 1.0f};
+            context->ClearRenderTargetView(view, color);
+            if (present_should_capture(status().state, false))
+                capture(swapchain, device, context);
+            swapchain->Present(0, 0);
+            Sleep(16);
+        };
+        const auto stop_deadline = GetTickCount64() + 15000;
+        while (ok && status().state == State::starting && GetTickCount64() < stop_deadline)
+            present();
+        for (int i = 0; ok && i < 20; ++i)
+            present();
+        ok = check(status().state == State::recording, "fixed-step stop job records") && ok;
+        stop(false);
+        Sleep(8); // The stop lands between two Presents.
+        while (ok && !terminal(status().state) && GetTickCount64() < stop_deadline)
+            present();
+        const auto stopped = status();
+        if (stopped.state != State::completed || stopped.frames_dropped)
+            std::fwprintf(stderr, L"Stopped take: state=%u written=%llu dropped=%llu %ls\n",
+                          unsigned(stopped.state),
+                          static_cast<unsigned long long>(stopped.frames_written),
+                          static_cast<unsigned long long>(stopped.frames_dropped),
+                          stopped.error);
+        ok = check(stopped.state == State::completed && stopped.frames_dropped == 0 &&
+                       stopped.frames_written >= 10,
+                   "a stop keeps the last submitted frame of a fixed-step take") &&
+             ok;
+        shutdown();
+        reset_resources();
+        DeleteFileW((stop_path + L".shot.json").c_str());
+        DeleteFileW(stop_path.c_str());
     }
     release(view);
     release(buffer);
