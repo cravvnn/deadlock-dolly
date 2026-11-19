@@ -253,6 +253,13 @@ bool playersOnly = false;
 std::uint32_t ownerFieldOffset = 0;
 std::uint32_t sceneNodeFieldOffset = 0;
 std::atomic<bool> sequenceStall{false};
+// First named cause of a sequence stall, for the terminal status line.
+std::atomic<const char*> sequenceStallReason{nullptr};
+void stall_sequence(const char* reason) noexcept {
+    const char* none = nullptr;
+    sequenceStallReason.compare_exchange_strong(none, reason, std::memory_order_acq_rel);
+    sequenceStall = true;
+}
 bool sequenceCadenceLost = false;
 // Set only when a fixed-step capture stops making scratch-write progress.
 // Kept separate from cadence loss so the status names the real cause.
@@ -1212,6 +1219,7 @@ void reset_capture() noexcept {
     sequenceWriterReady = false;
     colorIndex = framesSealed = framesWritten = framesDropped = 0;
     sequenceStall = false;
+    sequenceStallReason.store(nullptr);
     sequenceCadenceLost = false;
     sequenceWriterSlow = false;
     sequenceSlotWaits = sequenceSlotTimeouts = 0;
@@ -1513,6 +1521,11 @@ void tick() noexcept {
         } else if (saved && sequence_writer().error()) {
             status(
                 "failed Players scratch write or flush; raw capture kept; check storage free space and errors");
+        } else if (saved && sequenceStallReason.load()) {
+            char buf[192];
+            std::snprintf(buf, sizeof(buf), "failed Players capture stopped: %s; raw capture kept",
+                          sequenceStallReason.load());
+            status(buf);
         } else if (saved && sequenceWriterSlow) {
             status(
                 "failed Players storage made no progress for 30 seconds; raw capture kept; check free space or storage errors before retrying");
@@ -1892,12 +1905,19 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                           << slot.capture.height << " request " << captureRequest << "\n";
                 }
             }
-            const auto submitted =
-                !sequenceWriterReady ? SequenceWriter::Submit::failed
-                : sequenceV3 ? sequence_writer().submit(slot.header, std::move(slot.capture.pixels))
-                : sequence_writer().push_blocking(slot.header, std::move(slot.capture.pixels), 1500)
-                    ? SequenceWriter::Submit::accepted
-                    : SequenceWriter::Submit::failed;
+            SequenceWriter::Submit submitted = SequenceWriter::Submit::failed;
+            try {
+                submitted =
+                    !sequenceWriterReady ? SequenceWriter::Submit::failed
+                    : sequenceV3 ? sequence_writer().submit(slot.header, std::move(slot.capture.pixels))
+                    : sequence_writer().push_blocking(slot.header, std::move(slot.capture.pixels), 1500)
+                        ? SequenceWriter::Submit::accepted
+                        : SequenceWriter::Submit::failed;
+            } catch (...) {
+                // A rejected handoff leaves the pixels with this slot.
+                stall_sequence("out of memory queuing a frame for storage");
+                break;
+            }
             if (submitted == SequenceWriter::Submit::waiting) {
                 // Retain this exact completed image; Present holds the fixed
                 // step until the bounded writer queue has room. No frame drop.
@@ -1913,9 +1933,12 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             pacingStage.store(0);
             pacing_progress();
             ++framesWritten;
-            slot.capture.pixels =
-                sequence_writer().take_buffer(static_cast<std::size_t>(slot.capture.width) *
-                                              slot.capture.height * slot.capture.bytesPerPixel);
+            const auto frameBytes = static_cast<std::size_t>(slot.capture.width) *
+                                    slot.capture.height * slot.capture.bytesPerPixel;
+            slot.capture.pixels = sequence_writer().take_buffer(frameBytes);
+            // No later readback may copy into a buffer that was not allocated.
+            if (slot.capture.pixels.size() != frameBytes)
+                stall_sequence("out of memory for the next frame buffer");
             slot.capture.recycle(c);
             slot.sealed = false;
             slot.prepared = false;
@@ -2070,10 +2093,17 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
             return;
         }
         if (!image.prepared) {
-            if (!image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
-                                            static_cast<unsigned>(e->w[133])) &&
-                !image.capture.prepare(c, static_cast<unsigned>(e->w[132]),
-                                       static_cast<unsigned>(e->w[133]), nullptr, true, true)) {
+            bool ready = false;
+            try {
+                ready = image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
+                                                   static_cast<unsigned>(e->w[133])) ||
+                        image.capture.prepare(c, static_cast<unsigned>(e->w[132]),
+                                              static_cast<unsigned>(e->w[133]), nullptr, true, true);
+            } catch (...) {
+                stall_sequence("out of memory preparing a frame image");
+                return;
+            }
+            if (!ready) {
                 sequenceStall = true;
                 return;
             }

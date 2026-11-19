@@ -100,13 +100,18 @@ public:
     }
     bool finish_ready() const { return synchronous_ || finished_.load(std::memory_order_acquire); }
 
-    Buffer take_buffer(std::size_t bytes) {
+    // An empty result for a nonzero size means the buffer could not be allocated.
+    Buffer take_buffer(std::size_t bytes) noexcept {
         Buffer buffer;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (!free_.empty()) { buffer = std::move(free_.back()); free_.pop_back(); }
         }
-        buffer.resize(bytes);
+        try {
+            buffer.resize(bytes);
+        } catch (...) {
+            return Buffer();
+        }
         return buffer;
     }
 

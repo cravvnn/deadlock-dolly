@@ -258,6 +258,15 @@ int main() {
         CHECK(gated.finish());
         CHECK(gated.written() == 2 && fs::file_size(gatedPath) == 2 * 72);
     }
+    {
+        // Render-thread callers are noexcept: a frame buffer that cannot be
+        // allocated is reported as an empty buffer, never an exception.
+        SequenceWriter spare;
+        bool threw = false;
+        SequenceWriter::Buffer huge;
+        try { huge = spare.take_buffer(static_cast<std::size_t>(-1)); } catch (...) { threw = true; }
+        CHECK(!threw && huge.empty());
+    }
     CHECK(scratch_directory(hex,request,path));
     std::ofstream(folder / ".dolly-players-owner",std::ios::app) << 'x';
     CHECK(!scratch_directory(hex,request,path));

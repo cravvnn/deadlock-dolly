@@ -7793,7 +7793,7 @@
     },
     {
       "path": "native/include/dolly_player_sequence_writer.hpp",
-      "sha256": "9b40a7d66d5b55d458eb94d6194fe223ca6c848bdbca28072247f2c7c59edf86",
+      "sha256": "bf5019f0874c430447c6f56e648448739640540b77a2042d62e80cbc1ee443c4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7834,7 +7834,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks."
     },
     {
       "path": "native/include/dolly_player_snapshot.hpp",
@@ -9116,7 +9117,7 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
-      "sha256": "c0fd191ee31c172331184c387fe6580cda96f526b368185a182da1cd883fbee5",
+      "sha256": "21c323b72291dc5fa9ac62b2c52c980ec839a6ccfa486c7d49d40c1d148556c8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9178,7 +9179,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take."
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks."
     },
     {
       "path": "native/src/dolly_prop_runtime.cpp",
@@ -11904,7 +11905,7 @@
       "instances": [
         "WriterAdmissionApi"
       ],
-      "owner_utf8_lf_sha256": "9b40a7d66d5b55d458eb94d6194fe223ca6c848bdbca28072247f2c7c59edf86"
+      "owner_utf8_lf_sha256": "bf5019f0874c430447c6f56e648448739640540b77a2042d62e80cbc1ee443c4"
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -11924,7 +11925,7 @@
         "native/src/CaptureFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "c0fd191ee31c172331184c387fe6580cda96f526b368185a182da1cd883fbee5"
+      "owner_utf8_lf_sha256": "21c323b72291dc5fa9ac62b2c52c980ec839a6ccfa486c7d49d40c1d148556c8"
     },
     "native/src/DrawProof.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11933,7 +11934,7 @@
         "native/src/DrawProof.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "c0fd191ee31c172331184c387fe6580cda96f526b368185a182da1cd883fbee5"
+      "owner_utf8_lf_sha256": "21c323b72291dc5fa9ac62b2c52c980ec839a6ccfa486c7d49d40c1d148556c8"
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",
