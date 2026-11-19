@@ -267,6 +267,17 @@ int main() {
         try { huge = spare.take_buffer(static_cast<std::size_t>(-1)); } catch (...) { threw = true; }
         CHECK(!threw && huge.empty());
     }
+    {
+        // A finished take returns its recycled frame buffers to the system.
+        SequenceWriter released;
+        released.synchronous_for_tests(true);
+        const auto output = root / "released.bin";
+        CHECK(released.open(output.wstring(), 2));
+        std::uint64_t frameHeader[8]{};
+        CHECK(released.push(frameHeader, SequenceWriter::Buffer(1 << 20, 5)));
+        CHECK(released.finish());
+        CHECK(released.take_buffer(0).capacity() == 0);
+    }
     CHECK(scratch_directory(hex,request,path));
     std::ofstream(folder / ".dolly-players-owner",std::ios::app) << 'x';
     CHECK(!scratch_directory(hex,request,path));

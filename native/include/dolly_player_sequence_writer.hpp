@@ -177,6 +177,7 @@ public:
         if (worker.joinable()) worker.join();
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.clear();
+        free_.clear(); // Recycled frame buffers end with the take.
         if (file_.is_open()) {
             file_.flush();
             if (!file_) error_.store(true);

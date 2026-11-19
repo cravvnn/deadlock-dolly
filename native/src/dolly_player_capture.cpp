@@ -1475,8 +1475,13 @@ void tick() noexcept {
         }
         for (auto& slot : mattes)
             slot.capture.release_gpu();
-        for (auto& slot : colorFrames)
+        for (auto& slot : colorFrames) {
             slot.capture.release_gpu();
+            // Streamed frames are already dumped or written; free the ring now
+            // instead of holding full-resolution buffers until the next take.
+            if (sequenceV2)
+                std::vector<unsigned char>().swap(slot.capture.pixels);
+        }
         const bool writerDrained =
             sequenceV2 ? (sequenceWriterReady && sequence_writer().finish()) : true;
         // A take that ended early still completed its capture: the frames that
