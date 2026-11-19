@@ -116,6 +116,32 @@ private:
     unsigned rotate_ = 0;
 };
 
+// Owner classification cache. Never let early non-player owners crowd players
+// out: reuse a negative slot round-robin and keep every positive.
+template <class Entry, std::size_t N>
+bool owner_class_remember(std::array<Entry, N>& entries, unsigned& count, unsigned& rotate,
+                          std::uint32_t handle, bool player) noexcept {
+    unsigned slot = count;
+    if (slot < N) {
+        ++count;
+    } else {
+        for (unsigned step = 0; step < N; ++step) {
+            const unsigned candidate = static_cast<unsigned>((rotate + step) % N);
+            if (!entries[candidate].player) {
+                slot = candidate;
+                rotate = static_cast<unsigned>((candidate + 1) % N);
+                break;
+            }
+        }
+    }
+    // Every entry is a player: classify uncached rather than evict one.
+    if (slot >= N)
+        return false;
+    entries[slot].handle = handle;
+    entries[slot].player = player;
+    return true;
+}
+
 inline bool record_matches(std::uint32_t actual_id, std::uint32_t expected_id,
                            const std::uint32_t* actual, const std::uint32_t* expected) {
     if (actual_id != expected_id)

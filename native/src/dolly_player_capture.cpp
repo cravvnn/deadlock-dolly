@@ -245,12 +245,21 @@ std::array<ColorFrame, SequenceRing> colorFrames;
 std::atomic<std::uint64_t> captureGeneration{0};
 unsigned colorIndex = 0;
 bool sequenceMode = false, sequenceV2 = false, sequenceV3 = false;
+// Request-to-terminal lifetime seen by producer workers; mode flags persist.
+ProducerCaptureState producerCapture;
 double lastSealedReplayTime = -1.0;
 unsigned sequenceCap = 2, framesSealed = 0, framesWritten = 0, framesDropped = 0;
 bool playersOnly = false;
 std::uint32_t ownerFieldOffset = 0;
 std::uint32_t sceneNodeFieldOffset = 0;
 std::atomic<bool> sequenceStall{false};
+// First named cause of a sequence stall, for the terminal status line.
+std::atomic<const char*> sequenceStallReason{nullptr};
+void stall_sequence(const char* reason) noexcept {
+    const char* none = nullptr;
+    sequenceStallReason.compare_exchange_strong(none, reason, std::memory_order_acq_rel);
+    sequenceStall = true;
+}
 bool sequenceCadenceLost = false;
 // Set only when a fixed-step capture stops making scratch-write progress.
 // Kept separate from cadence loss so the status names the real cause.
@@ -565,23 +574,7 @@ bool owner_is_player(std::uint32_t handle, std::uintptr_t scene) noexcept {
                         break;
                     }
         }
-        unsigned slot = ownerClassCount;
-        if (slot < ownerClasses.size()) {
-            ++ownerClassCount;
-        } else {
-            // Never let early non-player owners crowd players out of the
-            // cache: reuse a negative slot round-robin, keep every positive.
-            for (unsigned step = 0; step < ownerClasses.size(); ++step) {
-                const unsigned candidate = (ownerClassRotate + step) % ownerClasses.size();
-                if (!ownerClasses[candidate].player) {
-                    slot = candidate;
-                    ownerClassRotate = (candidate + 1) % ownerClasses.size();
-                    break;
-                }
-            }
-        }
-        ownerClasses[slot].handle = handle;
-        ownerClasses[slot].player = player;
+        owner_class_remember(ownerClasses, ownerClassCount, ownerClassRotate, handle, player);
     }
     return player;
 }
@@ -738,8 +731,8 @@ int hook_common(std::uintptr_t a, void* object, void* mesh, void* opaque, void* 
     // Hiding runs without a capture: remember the owner for each produced
     // instance so the draw hook can skip exactly that handle. No events, no
     // allocation, no GPU work.
-    if (hidingActive.load(std::memory_order_acquire) &&
-        !captureActive.load(std::memory_order_acquire) && !sequenceV2) {
+    if (producerCapture.hides(hidingActive.load(std::memory_order_acquire),
+                              captureActive.load(std::memory_order_acquire))) {
         const int result = forward_producer(original, originalSeptember, a, object, mesh, opaque,
                                             params, mode, flag, outA, outB, outC);
         if (result >= 0 && static_cast<unsigned>(result) < HideSlots)
@@ -748,6 +741,11 @@ int hook_common(std::uintptr_t a, void* object, void* mesh, void* opaque, void* 
                                      std::memory_order_relaxed);
         return result;
     }
+    // Without a capture request, forward once and skip the shared table.
+    if (!producerCapture.records(captureActive.load(std::memory_order_acquire),
+                                 armed.load(std::memory_order_acquire)))
+        return forward_producer(original, originalSeptember, a, object, mesh, opaque, params,
+                                mode, flag, outA, outB, outC);
     // Bounded sequences record only reviewed-player producers; every other
     // producer is forwarded exactly once without consuming the event buffer.
     if (captureActive.load(std::memory_order_acquire)) {
@@ -909,6 +907,38 @@ void status(const char* text) noexcept {
     } catch (...) {
     }
 }
+// Pairing metadata for the recorder's take: authored-path replay time, epoch
+// and draw window for every streamed player frame. It stays with the frames.
+bool dump_frame_meta() noexcept {
+    if (!captureOwnership.closed())
+        return false;
+    if (!sequenceV2 || framesSealed == 0)
+        return true;
+    try {
+        std::ofstream m(captureDirectory + L"dolly_owner_frame_meta.bin",
+                        std::ios::binary | std::ios::trunc);
+        const std::uint64_t header[8] = {
+            0x314154454d564f44ULL, 1, 64, framesSealed, 0, 0, 0, 0};
+        m.write(reinterpret_cast<const char*>(header), sizeof(header));
+        for (unsigned i = 0; i < framesSealed; ++i) {
+            std::uint64_t replay = 0;
+            std::memcpy(&replay, &frameMeta[i].replay_time, 8);
+            const std::uint64_t record[8] = {i,
+                                             replay,
+                                             frameMeta[i].epoch,
+                                             frameMeta[i].draws,
+                                             frameMeta[i].first,
+                                             frameMeta[i].last,
+                                             frameMeta[i].wall_ms,
+                                             frameMeta[i].delta_ms};
+            m.write(reinterpret_cast<const char*>(record), sizeof(record));
+        }
+        m.flush();
+        return bool(m);
+    } catch (...) {
+        return false;
+    }
+}
 bool dump(const wchar_t* path) noexcept {
     if (!captureOwnership.closed())
         return false;
@@ -916,7 +946,7 @@ bool dump(const wchar_t* path) noexcept {
         const std::uint64_t header[8] = {0x31564f52504c4c44ULL,
                                          sequenceV3 ? 14ULL : 13ULL,
                                          sizeof(Event),
-                                         std::min(used.load(), Capacity),
+                                         capture_event_dump_count(used.load(), Capacity, sequenceV2),
                                          dropped.load(),
                                          startFrame,
                                          frame(),
@@ -952,31 +982,6 @@ bool dump(const wchar_t* path) noexcept {
                 m.write(reinterpret_cast<const char*>(header), sizeof(header));
                 m.write(reinterpret_cast<const char*>(capture.pixels.data()),
                         capture.pixels.size());
-            }
-            m.flush();
-            if (!m)
-                return false;
-        }
-        if (sequenceV2 && framesSealed > 0) {
-            // Pairing metadata for the recorder's take: authored-path replay
-            // time, epoch and draw window for every streamed player frame.
-            std::ofstream m(captureDirectory + L"dolly_owner_frame_meta.bin",
-                            std::ios::binary | std::ios::trunc);
-            const std::uint64_t header[8] = {
-                0x314154454d564f44ULL, 1, 64, framesSealed, 0, 0, 0, 0};
-            m.write(reinterpret_cast<const char*>(header), sizeof(header));
-            for (unsigned i = 0; i < framesSealed; ++i) {
-                std::uint64_t replay = 0;
-                std::memcpy(&replay, &frameMeta[i].replay_time, 8);
-                const std::uint64_t record[8] = {i,
-                                                 replay,
-                                                 frameMeta[i].epoch,
-                                                 frameMeta[i].draws,
-                                                 frameMeta[i].first,
-                                                 frameMeta[i].last,
-                                                 frameMeta[i].wall_ms,
-                                                 frameMeta[i].delta_ms};
-                m.write(reinterpret_cast<const char*>(record), sizeof(record));
             }
             m.flush();
             if (!m)
@@ -1198,6 +1203,7 @@ void reset_capture() noexcept {
     sequenceWriterReady = false;
     colorIndex = framesSealed = framesWritten = framesDropped = 0;
     sequenceStall = false;
+    sequenceStallReason.store(nullptr);
     sequenceCadenceLost = false;
     sequenceWriterSlow = false;
     sequenceSlotWaits = sequenceSlotTimeouts = 0;
@@ -1230,6 +1236,8 @@ void reset_capture() noexcept {
 void tick() noexcept {
     if (!configured || directory.empty())
         return;
+    if (captured)
+        producerCapture.finish();
     std::string requestText;
     if (captured || !attempted) {
         static ULONGLONG lastRequestPoll = 0;
@@ -1364,6 +1372,7 @@ void tick() noexcept {
             captured = true;
             return;
         }
+        producerCapture.start(sequenceV2);
         wantDrawHooks.store(true, std::memory_order_release);
         started = GetTickCount64();
         status("waiting for observed game device draw hooks");
@@ -1448,7 +1457,9 @@ void tick() noexcept {
             if (!sequence_writer().finish_ready())
                 return;
         }
-        const bool saved = dump((directory + L"dolly_owner_events.bin").c_str());
+        const bool metaSaved = dump_frame_meta();
+        const bool diagnosticSaved = dump((directory + L"dolly_owner_events.bin").c_str());
+        const bool saved = capture_terminal_saved(sequenceV2, metaSaved, diagnosticSaved);
         stall_report();
         bool snapshotsVerified = recordValid > 0 && recordInvalid == 0;
         for (const auto& slot : gpuSlots)
@@ -1464,8 +1475,13 @@ void tick() noexcept {
         }
         for (auto& slot : mattes)
             slot.capture.release_gpu();
-        for (auto& slot : colorFrames)
+        for (auto& slot : colorFrames) {
             slot.capture.release_gpu();
+            // Streamed frames are already dumped or written; free the ring now
+            // instead of holding full-resolution buffers until the next take.
+            if (sequenceV2)
+                std::vector<unsigned char>().swap(slot.capture.pixels);
+        }
         const bool writerDrained =
             sequenceV2 ? (sequenceWriterReady && sequence_writer().finish()) : true;
         // A take that ended early still completed its capture: the frames that
@@ -1494,6 +1510,11 @@ void tick() noexcept {
         } else if (saved && sequence_writer().error()) {
             status(
                 "failed Players scratch write or flush; raw capture kept; check storage free space and errors");
+        } else if (saved && sequenceStallReason.load()) {
+            char buf[192];
+            std::snprintf(buf, sizeof(buf), "failed Players capture stopped: %s; raw capture kept",
+                          sequenceStallReason.load());
+            status(buf);
         } else if (saved && sequenceWriterSlow) {
             status(
                 "failed Players storage made no progress for 30 seconds; raw capture kept; check free space or storage errors before retrying");
@@ -1514,8 +1535,10 @@ void tick() noexcept {
                 sequenceV2 ? (any_frame_pending() || any_snapshot_pending()) ? 1 : 0 : 0);
             status(buf);
         } else
-            status("failed to write diagnostic");
+            status(sequenceV2 ? "failed to write Players frame metadata; check free space"
+                              : "failed to write diagnostic");
         captured = true;
+        producerCapture.finish();
         pacingStage.store(0);
         publish_pacing();
     }
@@ -1827,7 +1850,9 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     // layer only ever carries validated draws.
                     ++framesDropped;
                     sequenceStall = true;
-                    slot.capture.recycle(c);
+                    if (const auto reason = capture_slot_failure(CaptureSlotStep::recycle,
+                                                                 slot.capture.recycle(c)))
+                        stall_sequence(reason);
                     slot.sealed = false;
                     slot.prepared = false;
                     slot.sceneObserved = false;
@@ -1853,28 +1878,37 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     break;
                 }
                 slot.statsReported = true;
-                std::size_t rgb = 0, alpha = 0;
-                for (std::size_t i = 0; i < count; ++i) {
-                    const auto* q = px + i * slot.capture.bytesPerPixel;
-                    if (q[0] || q[1] || q[2] || q[3] || q[4] || q[5])
-                        ++rgb;
-                    if (q[6] || q[7])
-                        ++alpha;
+                if (capture_frame_audited(framesWritten)) {
+                    std::size_t rgb = 0, alpha = 0;
+                    for (std::size_t i = 0; i < count; ++i) {
+                        const auto* q = px + i * slot.capture.bytesPerPixel;
+                        if (q[0] || q[1] || q[2] || q[3] || q[4] || q[5])
+                            ++rgb;
+                        if (q[6] || q[7])
+                            ++alpha;
+                    }
+                    std::ofstream s(directory + L"dolly_owner_frame_stats.txt",
+                                    framesWritten ? (std::ios::out | std::ios::app)
+                                                  : (std::ios::out | std::ios::trunc));
+                    if (s)
+                        s << "frame " << framesWritten << " draws " << slot.draws << " rgb "
+                          << rgb << " alpha " << alpha << " w " << slot.capture.width << " h "
+                          << slot.capture.height << " request " << captureRequest << "\n";
                 }
-                std::ofstream s(directory + L"dolly_owner_frame_stats.txt",
-                                framesWritten ? (std::ios::out | std::ios::app)
-                                              : (std::ios::out | std::ios::trunc));
-                if (s)
-                    s << "frame " << framesWritten << " draws " << slot.draws << " rgb " << rgb
-                      << " alpha " << alpha << " w " << slot.capture.width << " h "
-                      << slot.capture.height << " request " << captureRequest << "\n";
             }
-            const auto submitted =
-                !sequenceWriterReady ? SequenceWriter::Submit::failed
-                : sequenceV3 ? sequence_writer().submit(slot.header, std::move(slot.capture.pixels))
-                : sequence_writer().push_blocking(slot.header, std::move(slot.capture.pixels), 1500)
-                    ? SequenceWriter::Submit::accepted
-                    : SequenceWriter::Submit::failed;
+            SequenceWriter::Submit submitted = SequenceWriter::Submit::failed;
+            try {
+                submitted =
+                    !sequenceWriterReady ? SequenceWriter::Submit::failed
+                    : sequenceV3 ? sequence_writer().submit(slot.header, std::move(slot.capture.pixels))
+                    : sequence_writer().push_blocking(slot.header, std::move(slot.capture.pixels), 1500)
+                        ? SequenceWriter::Submit::accepted
+                        : SequenceWriter::Submit::failed;
+            } catch (...) {
+                // A rejected handoff leaves the pixels with this slot.
+                stall_sequence("out of memory queuing a frame for storage");
+                break;
+            }
             if (submitted == SequenceWriter::Submit::waiting) {
                 // Retain this exact completed image; Present holds the fixed
                 // step until the bounded writer queue has room. No frame drop.
@@ -1890,10 +1924,15 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             pacingStage.store(0);
             pacing_progress();
             ++framesWritten;
-            slot.capture.pixels =
-                sequence_writer().take_buffer(static_cast<std::size_t>(slot.capture.width) *
-                                              slot.capture.height * slot.capture.bytesPerPixel);
-            slot.capture.recycle(c);
+            const auto frameBytes = static_cast<std::size_t>(slot.capture.width) *
+                                    slot.capture.height * slot.capture.bytesPerPixel;
+            slot.capture.pixels = sequence_writer().take_buffer(frameBytes);
+            // No later readback may copy into a buffer that was not allocated.
+            if (slot.capture.pixels.size() != frameBytes)
+                stall_sequence("out of memory for the next frame buffer");
+            if (const auto reason =
+                    capture_slot_failure(CaptureSlotStep::recycle, slot.capture.recycle(c)))
+                stall_sequence(reason);
             slot.sealed = false;
             slot.prepared = false;
             slot.sceneObserved = false;
@@ -2047,10 +2086,17 @@ void gpu_select(ID3D11DeviceContext* c, Event* e, bool scratch) noexcept {
             return;
         }
         if (!image.prepared) {
-            if (!image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
-                                            static_cast<unsigned>(e->w[133])) &&
-                !image.capture.prepare(c, static_cast<unsigned>(e->w[132]),
-                                       static_cast<unsigned>(e->w[133]), nullptr, true, true)) {
+            bool ready = false;
+            try {
+                ready = image.capture.reusable_for(c, static_cast<unsigned>(e->w[132]),
+                                                   static_cast<unsigned>(e->w[133])) ||
+                        image.capture.prepare(c, static_cast<unsigned>(e->w[132]),
+                                              static_cast<unsigned>(e->w[133]), nullptr, true, true);
+            } catch (...) {
+                stall_sequence("out of memory preparing a frame image");
+                return;
+            }
+            if (!ready) {
                 sequenceStall = true;
                 return;
             }
@@ -2880,7 +2926,11 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
                 slot.sealed = true;
                 seal.event->w[6] = slot.epoch;
                 seal.event->w[7] = slot.draws;
-                seal.event->w[8] = slot.capture.finish(c);
+                const bool readback = slot.capture.finish(c);
+                seal.event->w[8] = readback;
+                if (sequenceV2)
+                    if (const auto reason = capture_slot_failure(CaptureSlotStep::seal, readback))
+                        stall_sequence(reason);
                 if (sequenceV3)
                     captureOwnership.image_sealed();
                 if (sequenceV2 && framesSealed < SequenceMaxCap) {

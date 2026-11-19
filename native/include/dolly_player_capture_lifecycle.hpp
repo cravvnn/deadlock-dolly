@@ -138,6 +138,53 @@ public:
     ~CaptureCallbackPin() { if (admitted) owner.leave_event(); }
     explicit operator bool() const noexcept { return admitted; }
 };
+// Producer-hook routing outside an armed capture. Hiding remembers owners
+// for the draw hook; a sequence request owns the producer table instead.
+class ProducerCaptureState {
+    std::atomic<bool> live_{false}, sequence_{false};
+public:
+    void start(bool sequence) noexcept {
+        sequence_.store(sequence, std::memory_order_relaxed);
+        live_.store(true, std::memory_order_release);
+    }
+    void finish() noexcept { live_.store(false, std::memory_order_release); }
+    bool live() const noexcept { return live_.load(std::memory_order_acquire); }
+    bool hides(bool hiding, bool capture_active) const noexcept {
+        // Mode flags outlive a take; only a live sequence request blocks hiding.
+        return hiding && !capture_active && !(live() && sequence_.load(std::memory_order_relaxed));
+    }
+    // Whether a producer call may touch the producer table or event ring.
+    bool records(bool capture_active, bool armed) const noexcept {
+        return capture_active || armed || live();
+    }
+};
+// The raw event dump is a diagnostic. A sequence take's evidence is its
+// frame metadata beside the streamed frames.
+constexpr std::uint64_t CaptureSequenceEventDumpLimit = 256;
+inline std::uint64_t capture_event_dump_count(std::uint64_t used, std::uint64_t capacity,
+                                              bool sequence) noexcept {
+    const auto limit = sequence && capacity > CaptureSequenceEventDumpLimit
+        ? CaptureSequenceEventDumpLimit : capacity;
+    return used < limit ? used : limit;
+}
+inline bool capture_terminal_saved(bool sequence, bool frame_meta_saved,
+                                   bool diagnostic_saved) noexcept {
+    return frame_meta_saved && (sequence || diagnostic_saved);
+}
+// A ring slot that cannot start its readback or be reused never frees itself;
+// waiting on it only ends in the progress watchdog.
+enum class CaptureSlotStep { seal, recycle };
+inline const char* capture_slot_failure(CaptureSlotStep step, bool ok) noexcept {
+    if (ok)
+        return nullptr;
+    return step == CaptureSlotStep::seal ? "GPU readback could not start for a sealed frame"
+                                         : "GPU frame image could not be reused";
+}
+// Whole-image coverage counts and their log line run on the render thread.
+constexpr unsigned CaptureFrameAuditFrames = 4;
+inline bool capture_frame_audited(unsigned frame) noexcept {
+    return frame < CaptureFrameAuditFrames;
+}
 inline bool capture_drain_finished(bool drained, std::uint64_t elapsed_ms, bool sequence) noexcept {
     return drained || elapsed_ms >= (sequence ? 3000u : 250u);
 }

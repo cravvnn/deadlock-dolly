@@ -230,6 +230,48 @@ int main() {
     require(!interrupted.prepared_pending() && interrupted.enter_event(2),
             "next capture starts with no old reservation");
     interrupted.leave_event();
+    ProducerCaptureState producer;
+    require(producer.hides(true, false), "hiding owns producers before any capture");
+    producer.start(true);
+    require(!producer.hides(true, false) && !producer.hides(true, true),
+            "a live sequence request owns the producer table");
+    producer.finish();
+    require(producer.hides(true, false),
+            "first-person hiding resumes after a sequence capture ends");
+    require(!producer.hides(true, true) && !producer.hides(false, false),
+            "hiding never runs inside an armed capture or when cleared");
+    producer.start(false);
+    require(producer.hides(true, false), "non-sequence requests keep pre-arm hiding");
+    producer.finish();
+    require(!producer.records(false, false),
+            "idle producer calls after a capture skip the producer table");
+    require(producer.records(true, false) && producer.records(false, true),
+            "armed captures still record producers");
+    producer.start(true);
+    require(producer.records(false, false), "a live request records before it arms");
+    producer.finish();
+    require(capture_terminal_saved(true, true, false),
+            "a full diagnostic folder cannot fail a sequence take with saved frame metadata");
+    require(!capture_terminal_saved(true, false, true),
+            "missing frame metadata still fails a sequence take");
+    require(capture_terminal_saved(false, true, true) && !capture_terminal_saved(false, true, false),
+            "single-image captures keep their diagnostic proof");
+    require(capture_event_dump_count(65536, 65536, true) <= CaptureSequenceEventDumpLimit &&
+                capture_event_dump_count(12, 65536, true) == 12,
+            "sequence event dump stays small");
+    require(capture_event_dump_count(70000, 65536, false) == 65536 &&
+                capture_event_dump_count(900, 65536, false) == 900,
+            "single-image event dump keeps the whole bounded ring");
+    require(capture_frame_audited(0) && capture_frame_audited(CaptureFrameAuditFrames - 1),
+            "the first frames of a take keep their coverage audit");
+    require(!capture_frame_audited(CaptureFrameAuditFrames) && !capture_frame_audited(1000),
+            "later frames skip the full-image audit on the render thread");
+    require(!capture_slot_failure(CaptureSlotStep::seal, true) &&
+                !capture_slot_failure(CaptureSlotStep::recycle, true),
+            "started readbacks and reused slots keep the take running");
+    require(capture_slot_failure(CaptureSlotStep::seal, false) &&
+                capture_slot_failure(CaptureSlotStep::recycle, false),
+            "a slot that cannot start or be reused stalls with a named reason");
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

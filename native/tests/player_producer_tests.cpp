@@ -240,5 +240,31 @@ int main() {
         worker.join();
     table.clear();
     require(table.snapshot().count == 0);
+    // Owner classification cache: a full cache of players keeps every player
+    // and declines new owners rather than writing past its last entry.
+    {
+        struct Owner { std::uint32_t handle = 0; bool player = false; };
+        std::array<Owner, 4> owners{};
+        unsigned count = 0, rotate = 0;
+        require(owner_class_remember(owners, count, rotate, 1, false));
+        for (std::uint32_t handle = 2; handle <= 4; ++handle)
+            require(owner_class_remember(owners, count, rotate, handle, true));
+        require(count == 4);
+        require(owner_class_remember(owners, count, rotate, 5, true));
+        require(owners[0].handle == 5 && owners[0].player);
+        bool remembered = true, threw = false;
+        try {
+            remembered = owner_class_remember(owners, count, rotate, 6, true);
+        } catch (...) {
+            threw = true;
+        }
+        if (threw || remembered) {
+            std::puts("FAIL full player cache wrote a slot past its last entry");
+            std::fflush(stdout);
+            std::abort();
+        }
+        for (unsigned i = 0; i < owners.size(); ++i)
+            require(owners[i].player && owners[i].handle != 6);
+    }
     std::puts("Player producer tests passed");
 }

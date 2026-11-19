@@ -7658,7 +7658,7 @@
     },
     {
       "path": "native/include/dolly_player_capture_lifecycle.hpp",
-      "sha256": "086337010b31d717bb146b5e4697a94ea368a840dba148b8efc3e5ac5ac9659f",
+      "sha256": "7ec9dbbf009c9b2954d58c16204e563bf74f8c3a9d260a5b4813f370dd39b080",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7678,7 +7678,8 @@
           "thread/lock"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog."
     },
     {
       "path": "native/include/dolly_player_material_matte.hpp",
@@ -7756,7 +7757,7 @@
     },
     {
       "path": "native/include/dolly_player_producers.hpp",
-      "sha256": "b8fa71279aa29170ad45759a90e5d49ae8b1f5442bc6a18bdaf38d7655cf6c80",
+      "sha256": "8776eadcf8ecb8d812ebe9e37069e217e661831f20293904894abb77ff75ed8e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7781,7 +7782,8 @@
           "thread/lock"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: Owner classification cache never writes past its last entry when every entry is a player."
     },
     {
       "path": "native/include/dolly_player_scene_generated.hpp",
@@ -7829,7 +7831,7 @@
     },
     {
       "path": "native/include/dolly_player_sequence_writer.hpp",
-      "sha256": "9b40a7d66d5b55d458eb94d6194fe223ca6c848bdbca28072247f2c7c59edf86",
+      "sha256": "a2173594d83962b9313c9247fa6577e6413c063f2c97071e9cddc7198230fbba",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7870,7 +7872,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks. A finished take frees the writer's recycled frame buffers and the sequence ring's CPU pixels."
     },
     {
       "path": "native/include/dolly_player_snapshot.hpp",
@@ -9152,7 +9155,7 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
-      "sha256": "e256d3c3e00c545fd77197d43755f3cf7cf75044beab80e7c65590a90e1f80f3",
+      "sha256": "d0d57b283679cdfd43e78aaf02cc2e451f136dfcba0c217ca5ebc37b4c427cdf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9213,7 +9216,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog. Owner classification cache never writes past its last entry when every entry is a player. A finished take frees the writer's recycled frame buffers and the sequence ring's CPU pixels."
     },
     {
       "path": "native/src/dolly_prop_runtime.cpp",
@@ -11939,7 +11943,7 @@
       "instances": [
         "WriterAdmissionApi"
       ],
-      "owner_utf8_lf_sha256": "9b40a7d66d5b55d458eb94d6194fe223ca6c848bdbca28072247f2c7c59edf86"
+      "owner_utf8_lf_sha256": "a2173594d83962b9313c9247fa6577e6413c063f2c97071e9cddc7198230fbba"
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -11959,7 +11963,7 @@
         "native/src/CaptureFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "e256d3c3e00c545fd77197d43755f3cf7cf75044beab80e7c65590a90e1f80f3"
+      "owner_utf8_lf_sha256": "d0d57b283679cdfd43e78aaf02cc2e451f136dfcba0c217ca5ebc37b4c427cdf"
     },
     "native/src/DrawProof.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11968,7 +11972,7 @@
         "native/src/DrawProof.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "e256d3c3e00c545fd77197d43755f3cf7cf75044beab80e7c65590a90e1f80f3"
+      "owner_utf8_lf_sha256": "d0d57b283679cdfd43e78aaf02cc2e451f136dfcba0c217ca5ebc37b4c427cdf"
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",
