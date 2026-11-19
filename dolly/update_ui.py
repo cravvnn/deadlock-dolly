@@ -160,14 +160,16 @@ class UpdateUI:
                     or app.startup_cancel is not None)
 
     def _can_update(self):
+        message = "Save your shot and close Deadlock, then click Update now. Dolly will stay open."
         try:
             if self.safe_to_restart():
                 check_processes(application_root().resolve(), exclude_pid=os.getpid())
                 return True
-        except (RuntimeError, OSError):
-            pass
+        except (RuntimeError, OSError) as error:
+            # For example another Dolly window on this installation: say so.
+            message = f"Update not started: {error}. Click Update now once that is resolved. Dolly will stay open."
         self.approved = None
-        self._status("Save your shot and close Deadlock, then click Update now. Dolly will stay open.")
+        self._status(message)
         return False
 
     def update_now(self):

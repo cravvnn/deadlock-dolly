@@ -6631,7 +6631,7 @@
     },
     {
       "path": "dolly/update_ui.py",
-      "sha256": "99707f73cfd38016bc22e26c1668d770b0707ac7ad4d2a5c304facc8829914b6",
+      "sha256": "750552c4d141052909e2127d9ddde4f29cea09520d73c0f671d3ff3a21fb5c84",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6675,7 +6675,7 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261114k": "2026-11-14 boundaries: restart settles unsaved work before the worker starts and clears restarting if the close does not begin; poll contains a failing event and always reschedules; recover_pending heals an unusable record like the launcher.",
-      "reconciliation_20261119u": "2026-11-19: restart drops a ready download whose workspace is gone so the next click downloads again."
+      "reconciliation_20261119u": "2026-11-19: restart drops a ready download whose workspace is gone so the next click downloads again. Update now shows why the process check refused (for example another Dolly window) instead of the save-and-close-Deadlock advice."
     },
     {
       "path": "dolly/update_worker.py",
@@ -11783,7 +11783,7 @@
       "instances": [
         "UpdateStartApi"
       ],
-      "owner_utf8_lf_sha256": "99707f73cfd38016bc22e26c1668d770b0707ac7ad4d2a5c304facc8829914b6"
+      "owner_utf8_lf_sha256": "750552c4d141052909e2127d9ddde4f29cea09520d73c0f671d3ff3a21fb5c84"
     },
     "dolly/VideoStopOwnership.tla": {
       "path": "dolly/video_export.py",

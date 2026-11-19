@@ -369,6 +369,21 @@ class UpdaterBoundaries(unittest.TestCase):
         self.assertIsNone(ui.ready_release)
         self.assertIn('download', ui._status.call_args.args[0].lower())
 
+    def test_update_blocked_by_another_dolly_window_says_so(self):
+        ui = self.ui()
+        ui.safe_to_restart = MagicMock(return_value=True)
+        reason = 'Another instance of this Dolly installation is still open'
+        with patch.object(update_ui, 'check_processes', side_effect=RuntimeError(reason)), \
+                patch.object(update_ui, 'application_root', return_value=self.target):
+            self.assertFalse(ui._can_update())
+        self.assertIn(reason, ui._status.call_args.args[0])
+        self.assertNotIn('close Deadlock', ui._status.call_args.args[0])
+        self.assertIsNone(ui.approved)
+        # An unsaved shot or a running game keeps the existing advice.
+        ui.safe_to_restart.return_value = False
+        self.assertFalse(ui._can_update())
+        self.assertIn('Save your shot', ui._status.call_args.args[0])
+
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()
         ui._status.side_effect = RuntimeError('widget gone')
