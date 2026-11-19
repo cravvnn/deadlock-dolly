@@ -6860,7 +6860,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334",
+      "sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -6961,7 +6961,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261118": "2026-11-18: Depth preview removes a failed output; bundled-audio takes refuse an existing folder in validated(); recorder status read before the take folder and timing.",
-      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Depth preview uses the shared FFmpeg runner and its partial cleanup."
+      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Depth preview uses the shared FFmpeg runner and its partial cleanup.",
+      "reconciliation_20261118_take_path": "2026-11-18: validated() refuses a take folder whose longest file or folder would exceed Windows MAX_PATH, naming the folder and how to shorten it."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -11174,7 +11175,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11524,7 +11525,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11533,7 +11534,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11542,7 +11543,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11632,7 +11633,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -11821,7 +11822,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "8ce0ef74f450fcf4a9cbe4b9190c47f74aaaea8b7c74ae24ad6d6f0a9937e334"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",

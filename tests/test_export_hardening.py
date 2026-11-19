@@ -279,6 +279,42 @@ class ExportHardeningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'take folder'):
             VideoOptions(self.root / 'clip.mp4', codec='builtin', bundle_audio=True).validated()
 
+    # D8: take folder paths stay within Windows MAX_PATH ---------------
+    def long_parent(self, length):
+        parent = self.root / ('a' * (length - len(str(self.root)) - 1))
+        parent.mkdir()
+        self.assertEqual(len(str(parent)), length)
+        return parent
+
+    def test_take_folder_path_too_long_for_windows_is_refused_up_front(self):
+        parent = self.long_parent(235)
+        path = parent / 'clip.mp4'
+        folder = path.with_suffix('')
+        self.assertLess(len(str(path)) + len('.shot.json'), 260)
+        # A single-file take at this path fits; its take folder's files would not.
+        VideoOptions(path, codec='builtin').validated()
+        with self.assertRaises(ValueError) as caught:
+            VideoOptions(path, codec='builtin', bundle_audio=True).validated()
+        message = str(caught.exception)
+        self.assertIn('too long', message)
+        self.assertIn(str(folder), message)
+        self.assertIn('shorter', message)
+        self.assertFalse(folder.exists())
+
+    def test_take_folder_limit_counts_its_longest_entry(self):
+        from dolly.video_export import take_folder_entries
+        folder = Path('C:/take/clip')
+        audio = take_folder_entries(folder, 'clip.mp4', VideoOptions(folder.with_suffix('.mp4'),
+                                                                     bundle_audio=True))
+        players = take_folder_entries(folder, 'clip.mp4', VideoOptions(folder.with_suffix('.mp4'),
+                                                                       layers=('players',)))
+        self.assertTrue(any('dolly-mux-' in str(entry) for entry, _directory in audio))
+        self.assertGreater(max(len(str(entry)) for entry, _directory in players),
+                           max(len(str(entry)) for entry, _directory in audio))
+        # The shortest folder that fits is accepted.
+        parent = self.long_parent(150)
+        VideoOptions(parent / 'clip.mp4', codec='builtin', bundle_audio=True).validated()
+
     def test_unreadable_recorder_status_leaves_no_timing_or_take_folder(self):
         events = []
         controller = NS(_session=object(), _demo='owned.dem', _export_timing=None,

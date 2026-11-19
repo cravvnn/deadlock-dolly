@@ -186,6 +186,49 @@ def default_video_path(shot_name: str, directory: Path | None = None, *, now: da
     return candidate
 
 
+# Windows MAX_PATH: a file path holds at most 259 characters and a new folder
+# 247 (CreateDirectoryW keeps 12 for an 8.3 name). The game's recorder and
+# Dolly's own take-folder writes use plain paths, not \\?\ long paths.
+MAX_FILE_PATH = 259
+MAX_FOLDER_PATH = 247
+
+
+def take_folder_entries(folder: Path, name: str, options: "VideoOptions") -> list[tuple[Path, bool]]:
+    """The longest paths a take creates in its folder, as (path, is_folder)."""
+    suffix = Path(name).suffix
+    entries = [(folder, True), (folder / (name + ".shot.json"), False)]
+    if options.camera_track:
+        entries.append((folder / (name + ".camera-track.json.pending-4294967295-18446744073709551615"), False))
+    if options.depth:
+        depth = folder / "depth"
+        entries += [(depth, True), (depth / "manifest.json.part", False),
+                    (depth / "preview_65535x65535.raw", False)]
+        if options.depth_exr:
+            entries += [(depth / "exr", True), (depth / "exr" / "00000000.exr.part", False)]
+    for layer in options.layers:
+        layer_dir = folder / layer
+        entries += [(layer_dir, True), (layer_dir / (layer + "_white" + suffix + ".shot.json"), False),
+                    (layer_dir / (layer + ".partial.mov"), False)]
+        if layer == "players":
+            # player_encode stages the master under a uuid4 hex token.
+            entries.append((layer_dir / ("players." + "0" * 32 + ".partial.mov"), False))
+    if options.bundle_audio:
+        mux = folder / "dolly-mux-xxxxxxxx"  # tempfile's eight-character name
+        entries += [(mux, True), (mux / ("with_audio" + suffix), False)]
+    return entries
+
+
+def _check_take_folder_length(folder: Path, name: str, options: "VideoOptions") -> None:
+    """Refuse a take whose folder files would exceed MAX_PATH mid-export."""
+    limit = min((MAX_FOLDER_PATH if is_folder else MAX_FILE_PATH) - (len(str(entry)) - len(str(folder)))
+                for entry, is_folder in take_folder_entries(folder, name, options))
+    if len(str(folder)) > limit:
+        raise ValueError(
+            f"The take folder path is too long for Windows ({len(str(folder))} characters; "
+            f"at most {limit} for this export): {folder}. Choose a shorter filename or "
+            "save to a folder closer to the drive root.")
+
+
 @dataclass(frozen=True)
 class VideoOptions:
     path: Path
@@ -356,6 +399,7 @@ class VideoOptions:
             folder = path.with_suffix("")
             if folder.exists() or folder.is_symlink():
                 raise ValueError("A take folder with this name already exists. Choose a new filename.")
+            _check_take_folder_length(folder, path.name, result)
         return result
 
 
