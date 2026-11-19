@@ -4162,6 +4162,24 @@ int main(int argc, char** argv) {
             if (const auto* height = std::getenv("DOLLY_UI_TEST_HEIGHT"))
                 render_height = unsigned(std::clamp(std::atoi(height), 480, 2160));
         }
+        {
+            // Every function key binds (F1-F24); its chip names it exactly.
+            char cap[32]{};
+            for (unsigned vk = 0x70; vk <= 0x87; ++vk) {
+                char expected[8]{};
+                std::snprintf(expected, sizeof(expected), "F%u", vk - 0x6f);
+                require(dolly::key_cap_label(std::uint16_t(vk), 0, cap, sizeof(cap)) &&
+                            std::strcmp(cap, expected) == 0,
+                        "Function key chip text is wrong");
+            }
+            require(dolly::key_cap_label(0x7a, 5, cap, sizeof(cap)) &&
+                        std::strcmp(cap, "CTRL+SHIFT+F11") == 0,
+                    "Modified F11 chip text is wrong");
+            require(dolly::key_cap_label('Q', 2, cap, sizeof(cap)) &&
+                        std::strcmp(cap, "ALT+Q") == 0 &&
+                        !dolly::key_cap_label(0x2d, 0, cap, sizeof(cap)),
+                    "Key chip text regressed");
+        }
         dolly::reshade_set_enabled(false);
         require(!dolly::reshade_overlay_pending() && !dolly::reshade_overlay_open() &&
                     !dolly::reshade_available(),

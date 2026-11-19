@@ -8979,7 +8979,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.cpp",
-      "sha256": "144504af1c4d35016af625bb3d0ca31763df6cb35ae25c81ee473ad9225224fb",
+      "sha256": "16f5d1a4030cea75e6b3b77574176aca9ac6c9b8e641de57b60305cf5cfa0f7f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9009,11 +9009,12 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4)."
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
-      "sha256": "4f14489a941fd68c729608b930e7705ff3f46d54210e3306ec1b74eaf0f2e5c7",
+      "sha256": "5fc4df64bf83732cdfc83a328665f2dddeb6925a40a7d3fbe38b77726a3383ce",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9036,7 +9037,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4)."
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",

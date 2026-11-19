@@ -170,9 +170,8 @@ void OverlayPanel::action_button(const char* label, EditorAction action, float w
 // Stock key-cap glyph: a light cap with a dark label for the bound action,
 // rendered from the live editor binding. key_cap_width() lets a caller reserve
 // room so the chip never spills past the panel edge; key_cap() draws it.
-static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
-    const EditorBinding binding = editor_binding_snapshot(action);
-    const std::uint16_t vk = binding.vk;
+bool key_cap_label(std::uint16_t vk, std::uint32_t modifiers, char* out,
+                   std::size_t capacity) noexcept {
     if (!vk || capacity == 0)
         return false;
     std::size_t n = 0;
@@ -180,15 +179,16 @@ static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
         while (*s && n < capacity - 1)
             out[n++] = *s++;
     };
-    if (binding.modifiers & 1)
+    if (modifiers & 1)
         append("CTRL+");
-    if (binding.modifiers & 2)
+    if (modifiers & 2)
         append("ALT+");
-    if (binding.modifiers & 4)
+    if (modifiers & 4)
         append("SHIFT+");
     // Function keys and single characters read cleanly; named keys use short forms.
     if (vk >= 0x70 && vk <= 0x87) {
-        char fn[4] = {'F', char('1' + (vk - 0x70)), 0, 0};
+        char fn[4]{};
+        std::snprintf(fn, sizeof(fn), "F%u", unsigned(vk - 0x6f));
         append(fn);
     } else if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) {
         char ch[2] = {char(vk), 0};
@@ -210,6 +210,10 @@ static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
     }
     out[n] = 0;
     return n != 0;
+}
+static bool key_cap_text(EditorAction action, char* out, std::size_t capacity) {
+    const EditorBinding binding = editor_binding_snapshot(action);
+    return key_cap_label(binding.vk, binding.modifiers, out, capacity);
 }
 // Total horizontal room the chip needs, including the gap after it (0 if none).
 static float key_cap_width(EditorAction action, float scale) {

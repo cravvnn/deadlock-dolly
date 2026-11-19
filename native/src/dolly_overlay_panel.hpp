@@ -10,6 +10,10 @@ struct ImGuiSettingsHandler;
 
 namespace dolly {
 struct RailDesignState;
+// Key-cap chip text for a binding (modifier bits 1 Ctrl, 2 Alt, 4 Shift).
+// False for an unnamed key; the chip is then skipped.
+bool key_cap_label(std::uint16_t vk, std::uint32_t modifiers, char* out,
+                   std::size_t capacity) noexcept;
 // Borrowed renderer operations; the panel never creates/releases a GPU resource.
 struct PickerPortrait {
     void (*reset)() noexcept;
