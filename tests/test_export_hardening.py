@@ -126,6 +126,81 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertEqual(controller.sent.count('endmovie'), 2)
         self.assertIsNone(app.clip_audio)
 
+    def polling_app(self, audio, state='completed'):
+        class Widget:
+            def __init__(self):
+                self.options = {'state': 'disabled', 'text': ''}
+            def cget(self, name):
+                return self.options[name]
+            def configure(self, **options):
+                self.options.update(options)
+        class Var:
+            value = ''
+            def get(self):
+                return self.value
+            def set(self, value):
+                self.value = value
+        app = self.app_for(audio, state)
+        app.video_export.status = lambda: {'state': state}
+        app.video_export.finish_pending = False
+        names = ('video_start_button', 'video_stop_button', 'video_cancel_button', 'video_path_entry',
+                 'video_browse_button', 'video_fps_combo', 'video_bitrate_combo',
+                 'video_game_audio_check', 'video_reconstructed_audio_check',
+                 'reshade_configure_button', 'reshade_forget_button')
+        for name in names:
+            setattr(app, name, Widget())
+        app.video_status_text, app.status_text = Var(), Var()
+        app.controller, app.playing, app._layer_queue = NS(), False, []
+        app._last_video_state = 'recording'
+        app._refresh_reshade = lambda *args: None
+        app._advance_layer_pipeline = lambda: None
+        app.errors, app.stops = [], []
+        app._error = lambda title, exc: app.errors.append(str(exc))
+        app._log = lambda text: None
+        real_stop = app._stop_video_recording = lambda cancel=False: (
+            app.stops.append(cancel), DollyApp._stop_video_recording(app, cancel=cancel))
+        return app, real_stop
+
+    def test_unconfirmed_movie_stop_stops_retrying_after_three_tries(self):
+        for state in ('completed', 'failed'):
+            with self.subTest(state=state):
+                for path in self.root.iterdir():
+                    shutil.rmtree(path) if path.is_dir() else path.unlink()
+                controller, wave, audio = self.movie_take(
+                    [ConsoleTimeout('console busy')] * 3 + ['Finishing movie take'])
+                app, _stop = self.polling_app(audio, state)
+                status = {'playing': False, 'game_running': True}
+                # Each poll retries until the third unconfirmed endmovie.
+                for attempt in range(1, 4):
+                    with self.assertRaises((ConsoleTimeout, RuntimeError)) as caught:
+                        DollyApp._refresh_video(app, status)
+                    self.assertEqual(len(app.stops), attempt)
+                    self.assertIs(app.clip_audio, audio)
+                    self.assertTrue(wave.started and not wave.finished)
+                self.assertRegex(str(caught.exception), 'stopped retrying.*Finish recording')
+                # The original engine failure stays attached for the log.
+                self.assertIn(str(caught.exception.__cause__),
+                              ('console busy', 'Movie audio stop was not confirmed; its WAV was kept.'))
+                self.assertEqual(controller.sent.count('endmovie'), 3)
+                # No more automatic attempts or repeated errors; ownership is kept and
+                # Finish stays available for the user's own retry.
+                for _ in range(5):
+                    DollyApp._refresh_video(app, status)
+                self.assertEqual((len(app.stops), app.errors), (3, []))
+                self.assertIs(app.clip_audio, audio)
+                self.assertEqual(app.video_stop_button.cget('state'), 'normal')
+                # A user retry that the engine confirms releases the owner (this
+                # fixture wrote no WAV, so a completed take then reports that).
+                if state == 'completed':
+                    with self.assertRaisesRegex(RuntimeError, 'WAV was not written'):
+                        DollyApp._stop_video_recording(app)
+                else:
+                    DollyApp._stop_video_recording(app)
+                self.assertTrue(wave.finished)
+                self.assertIsNone(app.clip_audio)
+                self.assertFalse(gui.movie_stop_held(app))
+                self.assertEqual(controller.sent.count('endmovie'), 4)
+
     # D2 / D5: movie audio and mux --------------------------------------
     def finished_wave(self):
         movie_root = self.root / 'movie'
@@ -279,6 +354,42 @@ class ExportHardeningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'take folder'):
             VideoOptions(self.root / 'clip.mp4', codec='builtin', bundle_audio=True).validated()
 
+    # D8: take folder paths stay within Windows MAX_PATH ---------------
+    def long_parent(self, length):
+        parent = self.root / ('a' * (length - len(str(self.root)) - 1))
+        parent.mkdir()
+        self.assertEqual(len(str(parent)), length)
+        return parent
+
+    def test_take_folder_path_too_long_for_windows_is_refused_up_front(self):
+        parent = self.long_parent(235)
+        path = parent / 'clip.mp4'
+        folder = path.with_suffix('')
+        self.assertLess(len(str(path)) + len('.shot.json'), 260)
+        # A single-file take at this path fits; its take folder's files would not.
+        VideoOptions(path, codec='builtin').validated()
+        with self.assertRaises(ValueError) as caught:
+            VideoOptions(path, codec='builtin', bundle_audio=True).validated()
+        message = str(caught.exception)
+        self.assertIn('too long', message)
+        self.assertIn(str(folder), message)
+        self.assertIn('shorter', message)
+        self.assertFalse(folder.exists())
+
+    def test_take_folder_limit_counts_its_longest_entry(self):
+        from dolly.video_export import take_folder_entries
+        folder = Path('C:/take/clip')
+        audio = take_folder_entries(folder, 'clip.mp4', VideoOptions(folder.with_suffix('.mp4'),
+                                                                     bundle_audio=True))
+        players = take_folder_entries(folder, 'clip.mp4', VideoOptions(folder.with_suffix('.mp4'),
+                                                                       layers=('players',)))
+        self.assertTrue(any('dolly-mux-' in str(entry) for entry, _directory in audio))
+        self.assertGreater(max(len(str(entry)) for entry, _directory in players),
+                           max(len(str(entry)) for entry, _directory in audio))
+        # The shortest folder that fits is accepted.
+        parent = self.long_parent(150)
+        VideoOptions(parent / 'clip.mp4', codec='builtin', bundle_audio=True).validated()
+
     def test_unreadable_recorder_status_leaves_no_timing_or_take_folder(self):
         events = []
         controller = NS(_session=object(), _demo='owned.dem', _export_timing=None,
@@ -302,6 +413,57 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertIsNone(controller._export_timing)
         self.assertFalse((self.root / 'take').exists())
         self.assertNotIn('movie started', events)
+
+
+class FfmpegRunTests(unittest.TestCase):
+    """The shared runner, with a real Python child standing in for FFmpeg."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='dolly-ffmpeg-run-')
+        self.addCleanup(temporary.cleanup)
+        self.partial = Path(temporary.name) / 'Иван' / 'out.partial.mov'
+        self.partial.parent.mkdir()
+
+    def child(self, body):
+        return [sys.executable, '-c',
+                'import sys, time; open(sys.argv[1], "wb").write(b"partial"); ' + body,
+                str(self.partial)]
+
+    def test_timeout_kills_child_and_removes_partial_output(self):
+        from dolly import ffmpeg_run
+        with self.assertRaises(subprocess.TimeoutExpired):
+            ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=2.0, partial=self.partial)
+        self.assertFalse(self.partial.exists())
+        with self.assertRaisesRegex(RuntimeError, 'took too long'):
+            ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=2.0, partial=self.partial,
+                                  timeout_message='took too long')
+        self.assertFalse(self.partial.exists())
+
+    def test_failure_decodes_non_ascii_stderr_and_removes_partial_output(self):
+        from dolly import ffmpeg_run
+        result = ffmpeg_run.run_ffmpeg(self.child(
+            "sys.stderr.buffer.write('Иван'.encode() + b' \\xff error'); sys.exit(1)"),
+            timeout=30.0, partial=self.partial)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, 'Иван � error')
+        self.assertEqual(ffmpeg_run.last_line(result), 'Иван � error')
+        self.assertFalse(self.partial.exists())
+
+    def test_success_keeps_output_and_runs_detached(self):
+        from dolly import ffmpeg_run
+        calls = []
+        def run(command, **options):
+            calls.append(options)
+            return REAL_RUN(command, **options)
+        with patch.object(subprocess, 'run', side_effect=run):
+            result = ffmpeg_run.run_ffmpeg(self.child('sys.exit(0)'), timeout=30.0, partial=self.partial)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.partial.read_bytes(), b'partial')
+        self.assertIs(calls[0]['stdin'], subprocess.DEVNULL)
+        self.assertEqual((calls[0]['encoding'], calls[0]['errors']), ('utf-8', 'replace'))
+        self.assertEqual(calls[0]['creationflags'], getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        self.assertEqual(ffmpeg_run.scaled_timeout(120.0, 0.5, 36000), 18000.0)
+        self.assertEqual(ffmpeg_run.scaled_timeout(120.0, 0.5, 10), 120.0)
 
 
 if __name__ == '__main__':

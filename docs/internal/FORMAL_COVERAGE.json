@@ -1,10 +1,10 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 313,
+  "accounted_units": 314,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
-    "no independent lifecycle": 39,
+    "no independent lifecycle": 40,
     "stateful partial/open": 124,
     "generated data/schema": 10,
     "native owner/delegated contract open": 108,
@@ -13,7 +13,7 @@
     "child-job contract open": 1
   },
   "families": {
-    "value": 39,
+    "value": 40,
     "L05": 21,
     "generated": 10,
     "L01": 70,
@@ -552,7 +552,7 @@
     },
     {
       "path": "dolly/clip_audio.py",
-      "sha256": "a49f18e243fb40412686db43da6c5c0d7ad7fd232f8c4713170a1cc1eba3b9a1",
+      "sha256": "1d750a9aa3297a579a0836bfda8aef922d059e542874b1c3d5d5d0a8ed358140",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -602,7 +602,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118": "2026-11-18: Mux decodes UTF-8, has a duration-scaled timeout and no stdin."
+      "reconciliation_20261118": "2026-11-18: Mux decodes UTF-8, has a duration-scaled timeout and no stdin.",
+      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Mux uses the shared FFmpeg runner; same timeout and messages."
     },
     {
       "path": "dolly/compatibility.py",
@@ -1024,7 +1025,7 @@
     },
     {
       "path": "dolly/curve.py",
-      "sha256": "f43789708ef7a136cec01efea38ebdd20b688af7b43ff0889a23e280924e94f5",
+      "sha256": "8c2428ddb1482a8b290b4f47ff62c0f5540de01f390132e99d03bceb45552dbe",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1033,37 +1034,27 @@
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
-        "module_purpose": "Editable camera graphs using the same sampler as shot playback.",
+        "module_purpose": "Shared timeline math for the camera curve graphs.",
         "classes": [
           "PlotBounds",
           "TimelineView",
-          "_GraphViewMixin",
-          "AspectCurve",
-          "RotationCurve",
-          "PositionBounds",
-          "PositionCurve"
+          "PositionBounds"
         ],
         "functions": [
-          "clamp_aspect",
-          "plot_bounds",
           "sample_channel",
-          "sample_curve",
-          "hit_key",
-          "rotation_bounds",
-          "position_bounds"
+          "hit_key"
         ],
         "imports": [
-          "",
           "__future__",
           "dataclasses",
-          "path",
-          "tkinter"
+          "path"
         ],
         "persistent_state_signals": [
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261118_curve": "2026-11-18: Removed the unused AspectCurve/RotationCurve/PositionCurve widgets and their helpers; the curve workspace keeps the shared timeline math."
     },
     {
       "path": "dolly/curve_preview.py",
@@ -2071,6 +2062,40 @@
       "full_formal_signoff": false
     },
     {
+      "path": "dolly/ffmpeg_run.py",
+      "sha256": "d9d32878cb24f3a2e6b68ad2f372a396ee5fe31aea7913e0519a7dab422303d3",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "value",
+      "disposition": "no independent lifecycle",
+      "reason": "Schema/value/compiler/parser/read-only or synchronous caller-owned transform; no independent pending worker/session/retry state. Validation and numerical/file-input behavior stay with owner tests.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_export_hardening.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "One bounded FFmpeg child run: UTF-8 text, no stdin, no console window.",
+        "classes": [],
+        "functions": [
+          "scaled_timeout",
+          "remove_partial",
+          "last_line",
+          "run_ffmpeg"
+        ],
+        "imports": [
+          "__future__",
+          "logging",
+          "pathlib",
+          "subprocess"
+        ],
+        "persistent_state_signals": [
+          "file/process"
+        ]
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Shared FFmpeg runner: UTF-8 with replacement, no stdin, hidden console, scaled timeout, partial output removed on failure or timeout."
+    },
+    {
       "path": "dolly/file_ops.py",
       "sha256": "b7d2662d23338b4e3578b448775297f6e3a758f1600436cf735e05dff700cedf",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -2535,7 +2560,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "85b92939e9cc049d5f3e8fdc5510d51bc21d8d17b775f0e3c04a3a690b9406d6",
+      "sha256": "3f855b75f691afc9eb16ec0602d9423c0319af1a3470985cdfd02553f90689ea",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2662,7 +2687,10 @@
       "reconciliation_20261114i": "2026-11-14 one dialog at a time: the save-graphics offer and the gameinfo conflict choice hold the same single-dialog flag as _error; the offer retries after an open dialog closes, the conflict choice is postponed to the next launch.",
       "reconciliation_20261114k": "2026-11-14 boundaries: a close-time failure before the unsaved-changes question still asks it; background results (recovery, replay repair, DOF check, capture replace, startup notices) go through _background_dialog under the one-dialog rule.",
       "reconciliation_20261114m": "2026-11-14 close loop: once controller.close has run for a close (_close_submitted), a further failure exits instead of resubmitting it; a pending gameinfo conflict made every close fail and Dolly loop. CloseFlow models _on_close/_finish_close/_close_after_failure and the update restart entry.",
-      "reconciliation_20261118": "2026-11-18: Movie audio owner kept until endmovie is confirmed; layer combine via a partial file with a frame-scaled timeout and UTF-8 errors; cancelled stage label; replay list refresh retried after an operation and stale folder reads discarded; Bank field shows and writes the effective roll."
+      "reconciliation_20261118": "2026-11-18: Movie audio owner kept until endmovie is confirmed; layer combine via a partial file with a frame-scaled timeout and UTF-8 errors; cancelled stage label; replay list refresh retried after an operation and stale folder reads discarded; Bank field shows and writes the effective roll.",
+      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Layer alpha combine uses the shared FFmpeg runner and its partial cleanup.",
+      "reconciliation_20261118_curve": "2026-11-18: Dropped the unused graph widget imports.",
+      "reconciliation_20261118_movie_stop_limit": "2026-11-18: An unconfirmed movie endmovie is retried by the poll at most three times; the third failure shows one final message, the owner is kept and Finish stays enabled for a manual retry."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -3198,7 +3226,7 @@
     },
     {
       "path": "dolly/movie_audio.py",
-      "sha256": "2aebc859d5f9298aeb686b7b6610b0ddedc2fbe855fb87390583088a23176f0a",
+      "sha256": "17916f598fce923c29f61eee804a0f82bd14a1899ab0c414aab59e9178b93a22",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -3251,7 +3279,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118": "2026-11-18: ffmpeg runs decode UTF-8, have a duration-scaled timeout and no stdin."
+      "reconciliation_20261118": "2026-11-18: ffmpeg runs decode UTF-8, have a duration-scaled timeout and no stdin.",
+      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Movie audio conversions use the shared FFmpeg runner; same timeout and messages."
     },
     {
       "path": "dolly/native_bridge.py",
@@ -3687,7 +3716,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "3bffaa24626fbd07d72ad0a5bd8b26219843f860457b26a7efdd6bcdf72d2422",
+      "sha256": "253da12892062aafbf7894fd301ca10e2ad1b9cc9e9f1c4786d9ceceaea5827b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3779,7 +3808,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118": "2026-11-18: retime names the source blend that would pass the 10 s limit, before changing anything."
+      "reconciliation_20261118": "2026-11-18: retime names the source blend that would pass the 10 s limit, before changing anything.",
+      "reconciliation_20261118_save_retry": "2026-11-18: Project.save retries the final replace for about a second when Windows reports the shot briefly locked (PermissionError); other errors fail at once. SaveCleanup still abstracts the body."
     },
     {
       "path": "dolly/paused_flight.py",
@@ -6832,7 +6862,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0",
+      "sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -6932,7 +6962,9 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261118": "2026-11-18: Depth preview removes a failed output; bundled-audio takes refuse an existing folder in validated(); recorder status read before the take folder and timing."
+      "reconciliation_20261118": "2026-11-18: Depth preview removes a failed output; bundled-audio takes refuse an existing folder in validated(); recorder status read before the take folder and timing.",
+      "reconciliation_20261118_ffmpeg_run": "2026-11-18: Depth preview uses the shared FFmpeg runner and its partial cleanup.",
+      "reconciliation_20261118_take_path": "2026-11-18: validated() refuses a take folder whose longest file or folder would exceed Windows MAX_PATH, naming the folder and how to shorten it."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -11093,7 +11125,7 @@
       "instances": [
         "AudioWorkRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "a49f18e243fb40412686db43da6c5c0d7ad7fd232f8c4713170a1cc1eba3b9a1"
+      "owner_utf8_lf_sha256": "1d750a9aa3297a579a0836bfda8aef922d059e542874b1c3d5d5d0a8ed358140"
     },
     "dolly/BackupPublish.tla": {
       "path": "dolly/settings.py",
@@ -11145,7 +11177,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11187,7 +11219,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "85b92939e9cc049d5f3e8fdc5510d51bc21d8d17b775f0e3c04a3a690b9406d6"
+      "owner_utf8_lf_sha256": "3f855b75f691afc9eb16ec0602d9423c0319af1a3470985cdfd02553f90689ea"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11238,7 +11270,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "85b92939e9cc049d5f3e8fdc5510d51bc21d8d17b775f0e3c04a3a690b9406d6"
+      "owner_utf8_lf_sha256": "3f855b75f691afc9eb16ec0602d9423c0319af1a3470985cdfd02553f90689ea"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11455,7 +11487,7 @@
       "instances": [
         "MovieCancelApi"
       ],
-      "owner_utf8_lf_sha256": "2aebc859d5f9298aeb686b7b6610b0ddedc2fbe855fb87390583088a23176f0a"
+      "owner_utf8_lf_sha256": "17916f598fce923c29f61eee804a0f82bd14a1899ab0c414aab59e9178b93a22"
     },
     "dolly/MovieEnvironment.tla": {
       "path": "dolly/movie_audio.py",
@@ -11466,7 +11498,7 @@
       "instances": [
         "MovieEnvironmentApi"
       ],
-      "owner_utf8_lf_sha256": "2aebc859d5f9298aeb686b7b6610b0ddedc2fbe855fb87390583088a23176f0a"
+      "owner_utf8_lf_sha256": "17916f598fce923c29f61eee804a0f82bd14a1899ab0c414aab59e9178b93a22"
     },
     "dolly/PlaybackIdentity.tla": {
       "path": "dolly/controller.py",
@@ -11495,7 +11527,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11504,7 +11536,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11513,7 +11545,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11558,7 +11590,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "85b92939e9cc049d5f3e8fdc5510d51bc21d8d17b775f0e3c04a3a690b9406d6"
+      "owner_utf8_lf_sha256": "3f855b75f691afc9eb16ec0602d9423c0319af1a3470985cdfd02553f90689ea"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11603,7 +11635,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -11647,7 +11679,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "3bffaa24626fbd07d72ad0a5bd8b26219843f860457b26a7efdd6bcdf72d2422"
+      "owner_utf8_lf_sha256": "253da12892062aafbf7894fd301ca10e2ad1b9cc9e9f1c4786d9ceceaea5827b"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",
@@ -11792,7 +11824,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "804d4390cdc754218cbd514d3943118bb74cb419e0f96977f1312bf9a9418d74"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
@@ -14995,6 +15027,11 @@
     },
     {
       "path": "dolly/ffmpeg_color.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/ffmpeg_run.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18689,7 +18726,7 @@
   ],
   "export_categories": {
     "metadata/configuration/documentation input": 554,
-    "implementation/tool": 313,
+    "implementation/tool": 314,
     "asset/compiled helper input": 28,
     "formal spec/interface": 159,
     "test/support input": 87,

@@ -12,6 +12,7 @@ import tempfile
 from types import SimpleNamespace
 
 from . import source2viewer
+from .ffmpeg_run import run_ffmpeg, scaled_timeout
 from .runtime import external_program_environment, resource_root
 
 LOG = logging.getLogger("dolly")
@@ -68,18 +69,10 @@ def _mux(video: Path, audios: list[Path], ffmpeg: Path, duration: float = 0.0) -
         # -shortest: audio/container rounding can otherwise discard the final
         # video packet even when the audio is only a fraction of a frame short.
         command += ["-c:v", "copy", "-c:a", "aac", "-b:a", "256k", str(target)]
-        try:
-            with external_program_environment() as environment:
-                # FFmpeg prints paths as UTF-8, whatever the Windows code page.
-                result = subprocess.run(command, capture_output=True, text=True,
-                                        encoding="utf-8", errors="replace",
-                                        stdin=subprocess.DEVNULL,
-                                        timeout=max(300.0, 2.0 * float(duration)),
-                                        env=environment,
-                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except subprocess.TimeoutExpired as exc:
-            # subprocess.run kills and waits for the child before raising.
-            raise RuntimeError("FFmpeg timed out adding clip audio; the silent video is kept") from exc
+        with external_program_environment() as environment:
+            result = run_ffmpeg(command, timeout=scaled_timeout(300.0, 2.0, duration),
+                                env=environment, partial=target,
+                                timeout_message="FFmpeg timed out adding clip audio; the silent video is kept")
         if result.returncode:
             raise RuntimeError("FFmpeg could not add clip audio: " + (result.stderr or "")[-1000:])
         if not target.is_file() or target.stat().st_size == 0:

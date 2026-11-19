@@ -19,6 +19,7 @@ import time
 
 from . import encoder_select, player_layer
 from .console import ConsoleTimeout
+from .ffmpeg_run import last_line, remove_partial, run_ffmpeg, scaled_timeout
 from .runtime import external_program_environment
 from .display import client_size
 
@@ -183,6 +184,49 @@ def default_video_path(shot_name: str, directory: Path | None = None, *, now: da
         candidate = Path(directory) / f"{stem}_{sequence}.mp4"
         sequence += 1
     return candidate
+
+
+# Windows MAX_PATH: a file path holds at most 259 characters and a new folder
+# 247 (CreateDirectoryW keeps 12 for an 8.3 name). The game's recorder and
+# Dolly's own take-folder writes use plain paths, not \\?\ long paths.
+MAX_FILE_PATH = 259
+MAX_FOLDER_PATH = 247
+
+
+def take_folder_entries(folder: Path, name: str, options: "VideoOptions") -> list[tuple[Path, bool]]:
+    """The longest paths a take creates in its folder, as (path, is_folder)."""
+    suffix = Path(name).suffix
+    entries = [(folder, True), (folder / (name + ".shot.json"), False)]
+    if options.camera_track:
+        entries.append((folder / (name + ".camera-track.json.pending-4294967295-18446744073709551615"), False))
+    if options.depth:
+        depth = folder / "depth"
+        entries += [(depth, True), (depth / "manifest.json.part", False),
+                    (depth / "preview_65535x65535.raw", False)]
+        if options.depth_exr:
+            entries += [(depth / "exr", True), (depth / "exr" / "00000000.exr.part", False)]
+    for layer in options.layers:
+        layer_dir = folder / layer
+        entries += [(layer_dir, True), (layer_dir / (layer + "_white" + suffix + ".shot.json"), False),
+                    (layer_dir / (layer + ".partial.mov"), False)]
+        if layer == "players":
+            # player_encode stages the master under a uuid4 hex token.
+            entries.append((layer_dir / ("players." + "0" * 32 + ".partial.mov"), False))
+    if options.bundle_audio:
+        mux = folder / "dolly-mux-xxxxxxxx"  # tempfile's eight-character name
+        entries += [(mux, True), (mux / ("with_audio" + suffix), False)]
+    return entries
+
+
+def _check_take_folder_length(folder: Path, name: str, options: "VideoOptions") -> None:
+    """Refuse a take whose folder files would exceed MAX_PATH mid-export."""
+    limit = min((MAX_FOLDER_PATH if is_folder else MAX_FILE_PATH) - (len(str(entry)) - len(str(folder)))
+                for entry, is_folder in take_folder_entries(folder, name, options))
+    if len(str(folder)) > limit:
+        raise ValueError(
+            f"The take folder path is too long for Windows ({len(str(folder))} characters; "
+            f"at most {limit} for this export): {folder}. Choose a shorter filename or "
+            "save to a folder closer to the drive root.")
 
 
 @dataclass(frozen=True)
@@ -355,6 +399,7 @@ class VideoOptions:
             folder = path.with_suffix("")
             if folder.exists() or folder.is_symlink():
                 raise ValueError("A take folder with this name already exists. Choose a new filename.")
+            _check_take_folder_length(folder, path.name, result)
         return result
 
 
@@ -996,21 +1041,16 @@ class VideoExport:
         try:
             frames = max(1, source.stat().st_size // max(1, width * height))
             with external_program_environment() as environment:
-                result = subprocess.run(args, capture_output=True, text=True,
-                                        encoding="utf-8", errors="replace",
-                                        stdin=subprocess.DEVNULL,
-                                        timeout=max(120.0, frames * 0.5),
-                                        env=environment,
-                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                # A failed or killed encoder leaves no empty or truncated preview.
+                result = run_ffmpeg(args, timeout=scaled_timeout(120.0, 0.5, frames),
+                                    env=environment, partial=target)
             encoded = result.returncode == 0 and target.is_file()
         except (OSError, subprocess.SubprocessError) as exc:
             LOG.warning("Depth preview could not be encoded: %s", exc)
-            self._remove_failed_preview(target)
+            remove_partial(target)
             return status
         if not encoded:
-            detail = (result.stderr or "").strip().splitlines()
-            LOG.warning("Depth preview encoder failed: %s", detail[-1] if detail else "unknown error")
-            self._remove_failed_preview(target)
+            LOG.warning("Depth preview encoder failed: %s", last_line(result))
             return status
         try:
             source.unlink()
@@ -1018,12 +1058,3 @@ class VideoExport:
             LOG.warning("Depth preview encoded but its raw stream could not be removed: %s", source)
         LOG.info("Depth preview saved to %s", target)
         return {**status, "depth_preview": str(target)}
-
-    @staticmethod
-    def _remove_failed_preview(target: Path) -> None:
-        """A failed or killed encoder must not leave an empty or truncated preview."""
-        try:
-            if target.is_file():
-                target.unlink()
-        except OSError:
-            LOG.warning("Incomplete depth preview could not be removed: %s", target)

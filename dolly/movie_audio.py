@@ -18,6 +18,7 @@ import tempfile
 from typing import Callable
 import uuid
 
+from .ffmpeg_run import run_ffmpeg, scaled_timeout
 from .file_ops import _plain_path
 
 MOVIE_START = re.compile(
@@ -97,14 +98,8 @@ def _align_movie_samples(source: Path, target: Path, rate: int,
 
 def _run_ffmpeg(command: list[str], environment, duration: float, timeout_message: str):
     """Run one bounded audio conversion; FFmpeg reports paths as UTF-8."""
-    try:
-        return subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", stdin=subprocess.DEVNULL,
-                              timeout=max(120.0, 4.0 * float(duration)), env=environment,
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except subprocess.TimeoutExpired as exc:
-        # subprocess.run kills and waits for the child before raising.
-        raise RuntimeError(timeout_message) from exc
+    return run_ffmpeg(command, timeout=scaled_timeout(120.0, 4.0, duration), env=environment,
+                      timeout_message=timeout_message)
 
 
 @dataclass(frozen=True)
