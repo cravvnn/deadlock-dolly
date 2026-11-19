@@ -474,7 +474,7 @@
     },
     {
       "path": "dolly/camera_export.py",
-      "sha256": "0ee5b7cf5a66770f1a44d3a10c0cbcba230440be735d63024cdbaf353bbfa7cb",
+      "sha256": "7906af20121d474b416865b4befa5d1241ebd6598e03a2c14f08bb40e33c3893",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3686,7 +3686,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "bd41ced1c6043ba1f8157a6db0c3ba050e90791dd0863a376a53a6519d359da1",
+      "sha256": "3bffaa24626fbd07d72ad0a5bd8b26219843f860457b26a7efdd6bcdf72d2422",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -11277,7 +11277,7 @@
       "instances": [
         "ExportCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "0ee5b7cf5a66770f1a44d3a10c0cbcba230440be735d63024cdbaf353bbfa7cb"
+      "owner_utf8_lf_sha256": "7906af20121d474b416865b4befa5d1241ebd6598e03a2c14f08bb40e33c3893"
     },
     "dolly/FollowLens.tla": {
       "path": "dolly/follow_camera.py",
@@ -11646,7 +11646,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "bd41ced1c6043ba1f8157a6db0c3ba050e90791dd0863a376a53a6519d359da1"
+      "owner_utf8_lf_sha256": "3bffaa24626fbd07d72ad0a5bd8b26219843f860457b26a7efdd6bcdf72d2422"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",

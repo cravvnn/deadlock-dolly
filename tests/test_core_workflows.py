@@ -18,9 +18,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from core_helpers import FakeConsole, FakeClock, CountedEvent
 from dolly import native_path, updater
-from dolly.camera_export import export_jsx, export_usda, sample_camera
+from dolly.camera_export import depth_of_field, export_jsx, export_usda, horizontal_fov, sample_camera
 from dolly.controller import Controller
-from dolly.path import CvarTrack, Keyframe, Project, TrackKey, STANDARD_ASPECT, validate_cvar_name, parse_cvar_value
+from dolly.path import (CameraTangent, CvarTrack, Keyframe, Project, TrackKey, STANDARD_ASPECT,
+                        validate_cvar_name, parse_cvar_value)
 from dolly.settings import AppSettings, load_settings, save_settings
 import dolly as _dolly
 _missing = object()
@@ -303,6 +304,39 @@ set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_REL
         self.assertIn('var FPS = 2;', script)
         self.assertIn('var FRAMES = 5;', script)
         self.assertEqual(array('dollyKeys'), [[1,0,0,0,0], [2,2,4,-12,8]])
+
+    def test_animated_export_matches_shot_evaluation(self):
+        project = Project(lens_interpolation='step', keyframes=[
+            key(0, x=40, pitch=5, yaw=170, roll=-170),
+            key(.3, x=50, pitch=10, yaw=-170, roll=170, aspect=2),
+            key(1, x=10, pitch=0, yaw=-160, roll=160)])
+        project.keyframes[0].lens_scale = .5
+        project.keyframes[2].lens_scale = .8
+        project.keyframes[1].tangents['x'] = CameraTangent('flat')
+        for frame in sample_camera(project, 24, speed=.8).frames:
+            pose = project.evaluate(frame.phase)
+            self.assertEqual(frame.position, (pose['x'], pose['y'], pose['z']))
+            self.assertEqual(frame.angles, (pose['pitch'], pose['yaw'], pose['roll']))
+            self.assertEqual(frame.fov, horizontal_fov(pose['lens_scale'], pose['aspect_ratio']))
+
+    def test_usd_export_preserves_unicode_shot_name(self):
+        project = shot()
+        project.name = 'План "закат" \\ 星 🌄'
+        path = self.root / 'camera.usda'
+        export_usda(project, path, 1)
+        content = path.read_bytes()
+        self.assertTrue(content.startswith(b'#usda 1.0\n'))
+        self.assertIn(r'string shot = "План \"закат\" \\ 星 🌄"', content.decode('utf-8'))
+
+    def test_camera_export_preserves_animated_depth_of_field(self):
+        project = Project(keyframes=[key(0), key(1)], setup_values={
+            'r_depth_of_field': 1,
+            'r_citadel_depthoffield_enable': 1,
+            'r_citadel_depthoffield_focus_distance': 100,
+        }, tracks=[CvarTrack('r_citadel_depthoffield_aperture_diameter',
+                            [TrackKey(0, 0), TrackKey(.5, 2), TrackKey(1, 0)], 'step')])
+        frames = sample_camera(project, 2).frames
+        self.assertEqual(depth_of_field(project, frames), ([(100, 0), (100, 2), (100, 0)], []))
 
     def test_p12_follow_and_bone(self):
         from camera_modes import exercise_camera_modes
