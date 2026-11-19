@@ -169,6 +169,26 @@ def video_suffix(codec_key: str, container: str | None = None, *,
     return "." + resolve_container(codec_key, container, ffmpeg_available=ffmpeg_available)
 
 
+# Characters Windows refuses in a filename, plus unpaired surrogates, which no
+# filesystem path can encode. Everything else (accents, combining marks, CJK,
+# emoji) is kept as typed.
+_UNSAFE_STEM = re.compile('[<>:"/\\\\|?*\x00-\x1f\ud800-\udfff]')
+# Opening one of these names (with any extension) reaches a device, not a file.
+_DEVICE_NAMES = frozenset(("CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+                           *(f"{port}{number}" for port in ("COM", "LPT")
+                             for number in "0123456789¹²³")))
+
+
+def safe_stem(name: str, fallback: str = "shot") -> str:
+    """A filename stem from a shot name that Windows saves as an ordinary file."""
+    stem = _UNSAFE_STEM.sub("_", str(name)).strip(" .")
+    if not stem:
+        return fallback
+    if stem.split(".", 1)[0].rstrip(" ").upper() in _DEVICE_NAMES:
+        stem = "_" + stem
+    return stem
+
+
 def default_video_path(shot_name: str, directory: Path | None = None, *, now: datetime | None = None) -> Path:
     """Choose an unused filename without creating directories or files."""
     if directory is None:

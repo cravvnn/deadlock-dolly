@@ -328,6 +328,21 @@ set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_REL
         self.assertTrue(content.startswith(b'#usda 1.0\n'))
         self.assertIn(r'string shot = "План \"закат\" \\ 星 🌄"', content.decode('utf-8'))
 
+    def test_shot_name_with_unpaired_surrogate_is_rejected_on_load(self):
+        project = shot()
+        project.name = 'ok'
+        good = self.root / 'good.json'
+        project.save(good)
+        bad = self.root / 'bad.json'
+        bad.write_text(good.read_text('utf-8').replace('"name": "ok"', '"name": "x\\ud83c"'), 'utf-8')
+        with self.assertRaisesRegex(ValueError, '(?i)project name.*surrogate'):
+            Project.load(bad)
+        project.name = 'x\ud83c'
+        with self.assertRaisesRegex(ValueError, '(?i)project name.*surrogate'):
+            project.validate()
+        project.name = '名前 \U0001f304'
+        project.validate()
+
     def test_camera_export_preserves_animated_depth_of_field(self):
         project = Project(keyframes=[key(0), key(1)], setup_values={
             'r_depth_of_field': 1,
