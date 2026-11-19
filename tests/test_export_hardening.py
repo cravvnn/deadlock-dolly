@@ -304,5 +304,56 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertNotIn('movie started', events)
 
 
+class FfmpegRunTests(unittest.TestCase):
+    """The shared runner, with a real Python child standing in for FFmpeg."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='dolly-ffmpeg-run-')
+        self.addCleanup(temporary.cleanup)
+        self.partial = Path(temporary.name) / 'Иван' / 'out.partial.mov'
+        self.partial.parent.mkdir()
+
+    def child(self, body):
+        return [sys.executable, '-c',
+                'import sys, time; open(sys.argv[1], "wb").write(b"partial"); ' + body,
+                str(self.partial)]
+
+    def test_timeout_kills_child_and_removes_partial_output(self):
+        from dolly import ffmpeg_run
+        with self.assertRaises(subprocess.TimeoutExpired):
+            ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=2.0, partial=self.partial)
+        self.assertFalse(self.partial.exists())
+        with self.assertRaisesRegex(RuntimeError, 'took too long'):
+            ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=2.0, partial=self.partial,
+                                  timeout_message='took too long')
+        self.assertFalse(self.partial.exists())
+
+    def test_failure_decodes_non_ascii_stderr_and_removes_partial_output(self):
+        from dolly import ffmpeg_run
+        result = ffmpeg_run.run_ffmpeg(self.child(
+            "sys.stderr.buffer.write('Иван'.encode() + b' \\xff error'); sys.exit(1)"),
+            timeout=30.0, partial=self.partial)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, 'Иван � error')
+        self.assertEqual(ffmpeg_run.last_line(result), 'Иван � error')
+        self.assertFalse(self.partial.exists())
+
+    def test_success_keeps_output_and_runs_detached(self):
+        from dolly import ffmpeg_run
+        calls = []
+        def run(command, **options):
+            calls.append(options)
+            return REAL_RUN(command, **options)
+        with patch.object(subprocess, 'run', side_effect=run):
+            result = ffmpeg_run.run_ffmpeg(self.child('sys.exit(0)'), timeout=30.0, partial=self.partial)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.partial.read_bytes(), b'partial')
+        self.assertIs(calls[0]['stdin'], subprocess.DEVNULL)
+        self.assertEqual((calls[0]['encoding'], calls[0]['errors']), ('utf-8', 'replace'))
+        self.assertEqual(calls[0]['creationflags'], getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        self.assertEqual(ffmpeg_run.scaled_timeout(120.0, 0.5, 36000), 18000.0)
+        self.assertEqual(ffmpeg_run.scaled_timeout(120.0, 0.5, 10), 120.0)
+
+
 if __name__ == '__main__':
     unittest.main()

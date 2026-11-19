@@ -44,6 +44,7 @@ from dolly.clip_audio import ClipAudioCapture
 from dolly.curve import AspectCurve, PositionCurve, POSITION_CHANNELS, POSITION_LIMIT, RotationCurve, TimelineView
 from dolly.display import focus_window
 from dolly.ffmpeg_color import REC709_FRAME_TAGS, REC709_OUTPUT_ARGS, REC709_SCALE
+from dolly.ffmpeg_run import last_line, remove_partial, run_ffmpeg, scaled_timeout
 from dolly.hotkey import CaptureHotkey
 # Compatibility import for existing callback users.
 from .gui_theme import _clear_committed_combobox_selection
@@ -1990,16 +1991,12 @@ class DollyApp:
         from dolly.runtime import external_program_environment
         try:
             with external_program_environment() as environment:
-                result = subprocess.run(args, capture_output=True, text=True,
-                                        encoding="utf-8", errors="replace",
-                                        stdin=subprocess.DEVNULL,
-                                        timeout=max(300.0, _layer_frame_count(layer_dir, folder, black) * 0.5),
-                                        env=environment,
-                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                result = run_ffmpeg(args, timeout=scaled_timeout(
+                    300.0, 0.5, _layer_frame_count(layer_dir, folder, black)),
+                    env=environment, partial=partial)
             failure = None
             if result.returncode != 0 or not partial.is_file():
-                detail = (result.stderr or "").strip().splitlines()
-                failure = detail[-1] if detail else "unknown error"
+                failure = last_line(result)
             else:
                 os.replace(partial, master)
         except subprocess.TimeoutExpired:
@@ -2007,11 +2004,7 @@ class DollyApp:
         except (OSError, subprocess.SubprocessError) as exc:
             failure = str(exc) or type(exc).__name__
         if failure is not None:
-            try:
-                if partial.is_file():
-                    partial.unlink()
-            except OSError:
-                LOG.warning("Incomplete layer alpha master could not be removed: %s", partial)
+            remove_partial(partial)
             raise RuntimeError("The " + layer + " alpha combine failed: " + failure
                                + " (matte passes kept)")
         sidecar = layer_dir / "shot.json"

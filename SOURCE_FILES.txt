@@ -221,6 +221,7 @@ dolly/editor_view.py
 dolly/editor_wire.py
 dolly/encoder_select.py
 dolly/ffmpeg_color.py
+dolly/ffmpeg_run.py
 dolly/export_audit.py
 dolly/export_timing.py
 dolly/file_ops.py
