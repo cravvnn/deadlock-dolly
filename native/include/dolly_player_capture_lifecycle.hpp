@@ -158,6 +158,19 @@ public:
         return capture_active || armed || live();
     }
 };
+// The raw event dump is a diagnostic. A sequence take's evidence is its
+// frame metadata beside the streamed frames.
+constexpr std::uint64_t CaptureSequenceEventDumpLimit = 256;
+inline std::uint64_t capture_event_dump_count(std::uint64_t used, std::uint64_t capacity,
+                                              bool sequence) noexcept {
+    const auto limit = sequence && capacity > CaptureSequenceEventDumpLimit
+        ? CaptureSequenceEventDumpLimit : capacity;
+    return used < limit ? used : limit;
+}
+inline bool capture_terminal_saved(bool sequence, bool frame_meta_saved,
+                                   bool diagnostic_saved) noexcept {
+    return frame_meta_saved && (sequence || diagnostic_saved);
+}
 inline bool capture_drain_finished(bool drained, std::uint64_t elapsed_ms, bool sequence) noexcept {
     return drained || elapsed_ms >= (sequence ? 3000u : 250u);
 }

@@ -250,6 +250,18 @@ int main() {
     producer.start(true);
     require(producer.records(false, false), "a live request records before it arms");
     producer.finish();
+    require(capture_terminal_saved(true, true, false),
+            "a full diagnostic folder cannot fail a sequence take with saved frame metadata");
+    require(!capture_terminal_saved(true, false, true),
+            "missing frame metadata still fails a sequence take");
+    require(capture_terminal_saved(false, true, true) && !capture_terminal_saved(false, true, false),
+            "single-image captures keep their diagnostic proof");
+    require(capture_event_dump_count(65536, 65536, true) <= CaptureSequenceEventDumpLimit &&
+                capture_event_dump_count(12, 65536, true) == 12,
+            "sequence event dump stays small");
+    require(capture_event_dump_count(70000, 65536, false) == 65536 &&
+                capture_event_dump_count(900, 65536, false) == 900,
+            "single-image event dump keeps the whole bounded ring");
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

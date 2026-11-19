@@ -916,6 +916,38 @@ void status(const char* text) noexcept {
     } catch (...) {
     }
 }
+// Pairing metadata for the recorder's take: authored-path replay time, epoch
+// and draw window for every streamed player frame. It stays with the frames.
+bool dump_frame_meta() noexcept {
+    if (!captureOwnership.closed())
+        return false;
+    if (!sequenceV2 || framesSealed == 0)
+        return true;
+    try {
+        std::ofstream m(captureDirectory + L"dolly_owner_frame_meta.bin",
+                        std::ios::binary | std::ios::trunc);
+        const std::uint64_t header[8] = {
+            0x314154454d564f44ULL, 1, 64, framesSealed, 0, 0, 0, 0};
+        m.write(reinterpret_cast<const char*>(header), sizeof(header));
+        for (unsigned i = 0; i < framesSealed; ++i) {
+            std::uint64_t replay = 0;
+            std::memcpy(&replay, &frameMeta[i].replay_time, 8);
+            const std::uint64_t record[8] = {i,
+                                             replay,
+                                             frameMeta[i].epoch,
+                                             frameMeta[i].draws,
+                                             frameMeta[i].first,
+                                             frameMeta[i].last,
+                                             frameMeta[i].wall_ms,
+                                             frameMeta[i].delta_ms};
+            m.write(reinterpret_cast<const char*>(record), sizeof(record));
+        }
+        m.flush();
+        return bool(m);
+    } catch (...) {
+        return false;
+    }
+}
 bool dump(const wchar_t* path) noexcept {
     if (!captureOwnership.closed())
         return false;
@@ -923,7 +955,7 @@ bool dump(const wchar_t* path) noexcept {
         const std::uint64_t header[8] = {0x31564f52504c4c44ULL,
                                          sequenceV3 ? 14ULL : 13ULL,
                                          sizeof(Event),
-                                         std::min(used.load(), Capacity),
+                                         capture_event_dump_count(used.load(), Capacity, sequenceV2),
                                          dropped.load(),
                                          startFrame,
                                          frame(),
@@ -959,31 +991,6 @@ bool dump(const wchar_t* path) noexcept {
                 m.write(reinterpret_cast<const char*>(header), sizeof(header));
                 m.write(reinterpret_cast<const char*>(capture.pixels.data()),
                         capture.pixels.size());
-            }
-            m.flush();
-            if (!m)
-                return false;
-        }
-        if (sequenceV2 && framesSealed > 0) {
-            // Pairing metadata for the recorder's take: authored-path replay
-            // time, epoch and draw window for every streamed player frame.
-            std::ofstream m(captureDirectory + L"dolly_owner_frame_meta.bin",
-                            std::ios::binary | std::ios::trunc);
-            const std::uint64_t header[8] = {
-                0x314154454d564f44ULL, 1, 64, framesSealed, 0, 0, 0, 0};
-            m.write(reinterpret_cast<const char*>(header), sizeof(header));
-            for (unsigned i = 0; i < framesSealed; ++i) {
-                std::uint64_t replay = 0;
-                std::memcpy(&replay, &frameMeta[i].replay_time, 8);
-                const std::uint64_t record[8] = {i,
-                                                 replay,
-                                                 frameMeta[i].epoch,
-                                                 frameMeta[i].draws,
-                                                 frameMeta[i].first,
-                                                 frameMeta[i].last,
-                                                 frameMeta[i].wall_ms,
-                                                 frameMeta[i].delta_ms};
-                m.write(reinterpret_cast<const char*>(record), sizeof(record));
             }
             m.flush();
             if (!m)
@@ -1458,7 +1465,9 @@ void tick() noexcept {
             if (!sequence_writer().finish_ready())
                 return;
         }
-        const bool saved = dump((directory + L"dolly_owner_events.bin").c_str());
+        const bool metaSaved = dump_frame_meta();
+        const bool diagnosticSaved = dump((directory + L"dolly_owner_events.bin").c_str());
+        const bool saved = capture_terminal_saved(sequenceV2, metaSaved, diagnosticSaved);
         stall_report();
         bool snapshotsVerified = recordValid > 0 && recordInvalid == 0;
         for (const auto& slot : gpuSlots)
@@ -1524,7 +1533,8 @@ void tick() noexcept {
                 sequenceV2 ? (any_frame_pending() || any_snapshot_pending()) ? 1 : 0 : 0);
             status(buf);
         } else
-            status("failed to write diagnostic");
+            status(sequenceV2 ? "failed to write Players frame metadata; check free space"
+                              : "failed to write diagnostic");
         captured = true;
         producerCapture.finish();
         pacingStage.store(0);
