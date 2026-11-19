@@ -1861,7 +1861,9 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     // layer only ever carries validated draws.
                     ++framesDropped;
                     sequenceStall = true;
-                    slot.capture.recycle(c);
+                    if (const auto reason = capture_slot_failure(CaptureSlotStep::recycle,
+                                                                 slot.capture.recycle(c)))
+                        stall_sequence(reason);
                     slot.sealed = false;
                     slot.prepared = false;
                     slot.sceneObserved = false;
@@ -1939,7 +1941,9 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
             // No later readback may copy into a buffer that was not allocated.
             if (slot.capture.pixels.size() != frameBytes)
                 stall_sequence("out of memory for the next frame buffer");
-            slot.capture.recycle(c);
+            if (const auto reason =
+                    capture_slot_failure(CaptureSlotStep::recycle, slot.capture.recycle(c)))
+                stall_sequence(reason);
             slot.sealed = false;
             slot.prepared = false;
             slot.sceneObserved = false;
@@ -2933,7 +2937,11 @@ void present_boundary(ID3D11DeviceContext* c) noexcept {
                 slot.sealed = true;
                 seal.event->w[6] = slot.epoch;
                 seal.event->w[7] = slot.draws;
-                seal.event->w[8] = slot.capture.finish(c);
+                const bool readback = slot.capture.finish(c);
+                seal.event->w[8] = readback;
+                if (sequenceV2)
+                    if (const auto reason = capture_slot_failure(CaptureSlotStep::seal, readback))
+                        stall_sequence(reason);
                 if (sequenceV3)
                     captureOwnership.image_sealed();
                 if (sequenceV2 && framesSealed < SequenceMaxCap) {

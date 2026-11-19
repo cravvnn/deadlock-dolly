@@ -266,6 +266,12 @@ int main() {
             "the first frames of a take keep their coverage audit");
     require(!capture_frame_audited(CaptureFrameAuditFrames) && !capture_frame_audited(1000),
             "later frames skip the full-image audit on the render thread");
+    require(!capture_slot_failure(CaptureSlotStep::seal, true) &&
+                !capture_slot_failure(CaptureSlotStep::recycle, true),
+            "started readbacks and reused slots keep the take running");
+    require(capture_slot_failure(CaptureSlotStep::seal, false) &&
+                capture_slot_failure(CaptureSlotStep::recycle, false),
+            "a slot that cannot start or be reused stalls with a named reason");
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

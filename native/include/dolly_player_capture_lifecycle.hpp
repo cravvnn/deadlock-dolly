@@ -171,6 +171,15 @@ inline bool capture_terminal_saved(bool sequence, bool frame_meta_saved,
                                    bool diagnostic_saved) noexcept {
     return frame_meta_saved && (sequence || diagnostic_saved);
 }
+// A ring slot that cannot start its readback or be reused never frees itself;
+// waiting on it only ends in the progress watchdog.
+enum class CaptureSlotStep { seal, recycle };
+inline const char* capture_slot_failure(CaptureSlotStep step, bool ok) noexcept {
+    if (ok)
+        return nullptr;
+    return step == CaptureSlotStep::seal ? "GPU readback could not start for a sealed frame"
+                                         : "GPU frame image could not be reused";
+}
 // Whole-image coverage counts and their log line run on the render thread.
 constexpr unsigned CaptureFrameAuditFrames = 4;
 inline bool capture_frame_audited(unsigned frame) noexcept {
