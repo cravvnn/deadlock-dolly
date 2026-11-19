@@ -100,6 +100,29 @@ LOG = logging.getLogger("dolly")
 ASPECT_PRESETS = {"16:9": 16 / 9, "16:10": 16 / 10, "21:9": 21 / 9, "4:3": 4 / 3}
 # Header game-status tones: resting states read dim, trouble reads as an error.
 _QUIET_SESSION = {"Game not connected", "Game not launched", "Game closed"}
+# Finish/Discard attempts at an unconfirmed endmovie before Dolly stops retrying
+# on its own. The movie audio owner is still kept: the engine may be recording.
+MOVIE_STOP_ATTEMPTS = 3
+MOVIE_STOP_HELD = (
+    "Deadlock did not confirm that the movie audio recording stopped after {attempts} tries, "
+    "so it may still be writing the WAV. Dolly kept the recording and stopped retrying on its own. "
+    "When Deadlock is responsive again, press Finish recording to try once more.")
+
+
+def _note_movie_stop_failure(app, audio) -> int:
+    """Count unconfirmed stops for this one movie audio owner."""
+    previous = getattr(app, "_movie_stop_failures", None)
+    attempts = previous[1] + 1 if previous is not None and previous[0] is audio else 1
+    app._movie_stop_failures = (audio, attempts)
+    return attempts
+
+
+def movie_stop_held(app) -> bool:
+    """True once the retained movie audio owner used up its automatic retries."""
+    failures = getattr(app, "_movie_stop_failures", None)
+    audio = getattr(app, "clip_audio", None)
+    return (audio is not None and failures is not None and failures[0] is audio
+            and failures[1] >= MOVIE_STOP_ATTEMPTS)
 
 
 def _session_tone(text):
@@ -1558,13 +1581,16 @@ class DollyApp:
                         folder = audio.finish(status)
                         if folder:
                             status = {**status, "reconstructed_folder": str(folder)}
-                except BaseException:
+                except BaseException as exc:
                     # Until the game confirms endmovie it keeps writing the
                     # movie WAV. Keep the owner so Finish or Discard retries.
                     movie = getattr(audio, "movie", None)
                     if (getattr(movie, "started", False) is True
                             and getattr(movie, "finished", True) is False):
                         self.clip_audio = audio
+                        attempts = _note_movie_stop_failure(self, audio)
+                        if attempts >= MOVIE_STOP_ATTEMPTS and isinstance(exc, Exception):
+                            raise RuntimeError(MOVIE_STOP_HELD.format(attempts=attempts)) from exc
                     raise
             return status
         if (getattr(self, "_pov_project", None) is not None or getattr(self, "_bone_take_project", None) is not None) and self.controller.status().get("playing"):
@@ -2059,17 +2085,22 @@ class DollyApp:
         if (getattr(self, "_pending_auto_play", False) and state == "recording"
                 and not self.busy):
             self._video_operation_done(status)
+        # After MOVIE_STOP_ATTEMPTS unconfirmed endmovie replies the poll stops
+        # retrying; the final message was shown once and Finish stays enabled.
+        movie_held = movie_stop_held(self)
         if state != previous:
             if state == "completed":
                 if self.busy:
                     return  # Final camera export needs the operation worker.
                 if (self.clip_audio is not None
                         or getattr(self.video_export, "finish_pending", False) is True):
-                    if not self.busy:
-                        self._stop_video_recording()
-                    return
-                self._video_operation_done(status)
-            elif state == "failed":
+                    if not movie_held:
+                        if not self.busy:
+                            self._stop_video_recording()
+                        return
+                else:
+                    self._video_operation_done(status)
+            elif state == "failed" and not movie_held:
                 if self.clip_audio is not None and not self.busy:
                     self._stop_video_recording(cancel=True)
                     return
@@ -2108,7 +2139,8 @@ class DollyApp:
                           "normal" if ready and not active and not self.busy else "disabled")
         screenshot_ui.refresh(self, ready and not active and not self.busy)
         can_stop = state in ("starting", "recording") and not self.busy
-        _set_widget_state(self.video_stop_button, "normal" if can_stop else "disabled")
+        _set_widget_state(self.video_stop_button,
+                          "normal" if can_stop or (movie_held and not self.busy) else "disabled")
         # While Players frames are still encoding the same button cancels that instead.
         processing = getattr(self, '_player_encode_cancel', None) is not None
         cancel_text = "Cancel processing" if processing else "Discard recording"

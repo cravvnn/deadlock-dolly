@@ -126,6 +126,81 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertEqual(controller.sent.count('endmovie'), 2)
         self.assertIsNone(app.clip_audio)
 
+    def polling_app(self, audio, state='completed'):
+        class Widget:
+            def __init__(self):
+                self.options = {'state': 'disabled', 'text': ''}
+            def cget(self, name):
+                return self.options[name]
+            def configure(self, **options):
+                self.options.update(options)
+        class Var:
+            value = ''
+            def get(self):
+                return self.value
+            def set(self, value):
+                self.value = value
+        app = self.app_for(audio, state)
+        app.video_export.status = lambda: {'state': state}
+        app.video_export.finish_pending = False
+        names = ('video_start_button', 'video_stop_button', 'video_cancel_button', 'video_path_entry',
+                 'video_browse_button', 'video_fps_combo', 'video_bitrate_combo',
+                 'video_game_audio_check', 'video_reconstructed_audio_check',
+                 'reshade_configure_button', 'reshade_forget_button')
+        for name in names:
+            setattr(app, name, Widget())
+        app.video_status_text, app.status_text = Var(), Var()
+        app.controller, app.playing, app._layer_queue = NS(), False, []
+        app._last_video_state = 'recording'
+        app._refresh_reshade = lambda *args: None
+        app._advance_layer_pipeline = lambda: None
+        app.errors, app.stops = [], []
+        app._error = lambda title, exc: app.errors.append(str(exc))
+        app._log = lambda text: None
+        real_stop = app._stop_video_recording = lambda cancel=False: (
+            app.stops.append(cancel), DollyApp._stop_video_recording(app, cancel=cancel))
+        return app, real_stop
+
+    def test_unconfirmed_movie_stop_stops_retrying_after_three_tries(self):
+        for state in ('completed', 'failed'):
+            with self.subTest(state=state):
+                for path in self.root.iterdir():
+                    shutil.rmtree(path) if path.is_dir() else path.unlink()
+                controller, wave, audio = self.movie_take(
+                    [ConsoleTimeout('console busy')] * 3 + ['Finishing movie take'])
+                app, _stop = self.polling_app(audio, state)
+                status = {'playing': False, 'game_running': True}
+                # Each poll retries until the third unconfirmed endmovie.
+                for attempt in range(1, 4):
+                    with self.assertRaises((ConsoleTimeout, RuntimeError)) as caught:
+                        DollyApp._refresh_video(app, status)
+                    self.assertEqual(len(app.stops), attempt)
+                    self.assertIs(app.clip_audio, audio)
+                    self.assertTrue(wave.started and not wave.finished)
+                self.assertRegex(str(caught.exception), 'stopped retrying.*Finish recording')
+                # The original engine failure stays attached for the log.
+                self.assertIn(str(caught.exception.__cause__),
+                              ('console busy', 'Movie audio stop was not confirmed; its WAV was kept.'))
+                self.assertEqual(controller.sent.count('endmovie'), 3)
+                # No more automatic attempts or repeated errors; ownership is kept and
+                # Finish stays available for the user's own retry.
+                for _ in range(5):
+                    DollyApp._refresh_video(app, status)
+                self.assertEqual((len(app.stops), app.errors), (3, []))
+                self.assertIs(app.clip_audio, audio)
+                self.assertEqual(app.video_stop_button.cget('state'), 'normal')
+                # A user retry that the engine confirms releases the owner (this
+                # fixture wrote no WAV, so a completed take then reports that).
+                if state == 'completed':
+                    with self.assertRaisesRegex(RuntimeError, 'WAV was not written'):
+                        DollyApp._stop_video_recording(app)
+                else:
+                    DollyApp._stop_video_recording(app)
+                self.assertTrue(wave.finished)
+                self.assertIsNone(app.clip_audio)
+                self.assertFalse(gui.movie_stop_held(app))
+                self.assertEqual(controller.sent.count('endmovie'), 4)
+
     # D2 / D5: movie audio and mux --------------------------------------
     def finished_wave(self):
         movie_root = self.root / 'movie'
