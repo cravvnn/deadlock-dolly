@@ -55,8 +55,8 @@ from dolly.launcher import discover_game, recover_pending
 from dolly.memory_watch import PausedMemoryWatch
 from dolly.navigation import CameraMotion
 from dolly.path import (AttachKey, CONFETTI_SPAWN_HEIGHT_DEFAULT, CURVE_CHANNELS,
-                        CvarTrack, Keyframe, Project, TrackKey, parse_cvar_value,
-                        format_cvar_value, channel_value)
+                        CvarTrack, Keyframe, PROJECT_NAME_LIMIT, Project, TrackKey,
+                        parse_cvar_value, format_cvar_value, channel_value)
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.shot_history import ShotHistory
 from dolly.particles import (LABEL_TO_ID, PARTICLE_DEFAULT, PARTICLE_INTENSITY_DEFAULT,
@@ -5441,7 +5441,12 @@ class DollyApp:
             return
         name = simpledialog.askstring("Rename shot", "Shot name", initialvalue=self.project.name, parent=self.root)
         if name and name.strip():
-            self.project.name = name.strip()
+            name = name.strip()
+            if len(name) > PROJECT_NAME_LIMIT:
+                self.status_text.set(f"Shot names can be at most {PROJECT_NAME_LIMIT} characters; "
+                                     f"this one has {len(name)}. The name was not changed.")
+                return
+            self.project.name = name
             self._mark_dirty()
 
     def _diagnostics(self):

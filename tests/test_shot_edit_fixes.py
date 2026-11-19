@@ -1,6 +1,7 @@
 """Shot edits keep their effect: bank with a roll curve, parked framing, rebase, retime."""
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from dolly import editor_dispatch, editor_wire, gui
 from dolly.path import AttachKey, Keyframe, Project
@@ -113,6 +114,20 @@ class RetimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"(?i)retim.*camera 02.*source blend.*12\.0"):
             p.retime(32.0)
         self.assertEqual(p.to_dict(), before)
+
+
+class RenameTests(unittest.TestCase):
+    def test_rename_refuses_name_longer_than_the_project_limit(self):
+        marks = []
+        app = SimpleNamespace(busy=False, playing=False, root=None, status_text=_Var(),
+                              project=Project(name="Opening", keyframes=[_key(0.0), _key(1.0, 10)]),
+                              _mark_dirty=lambda: marks.append(True))
+        with patch.object(gui.simpledialog, "askstring", return_value="x" * 300):
+            gui.DollyApp.rename(app)
+        app.project.validate()
+        self.assertEqual(app.project.name, "Opening")
+        self.assertEqual(marks, [])
+        self.assertIn("256", app.status_text.get())
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@ ATTACH_FORMAT_VERSION = 4
 ROTATION_FORMAT_VERSION = 5
 BLEND_FORMAT_VERSION = 6
 MAX_PROJECT_BYTES = 8 * 1024 * 1024
+PROJECT_NAME_LIMIT = 256
 MAX_KEYS = 100_000
 STANDARD_ASPECT = 16.0 / 9.0
 # Deliberate editor limits, not a claim about native attach payload bounds.
@@ -587,8 +588,8 @@ class Project:
     objects: list[PlacedObject] = field(default_factory=list)
 
     def validate(self) -> None:
-        if not isinstance(self.name, str) or len(self.name) > 256:
-            raise ValueError("Project name must be text no longer than 256 characters")
+        if not isinstance(self.name, str) or len(self.name) > PROJECT_NAME_LIMIT:
+            raise ValueError(f"Project name must be text no longer than {PROJECT_NAME_LIMIT} characters")
         _choice(self.interpolation, ("linear", "smooth", "spline"), "Camera interpolation")
         _choice(self.rotation_mode, ("shortest", "unwrapped"), "Rotation mode")
         _choice(self.lens_interpolation, ("linear", "smooth", "step"), "Zoom interpolation")
