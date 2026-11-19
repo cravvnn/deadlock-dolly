@@ -645,6 +645,31 @@ void sound_capture_clock(std::int32_t tick, double engine_seconds) noexcept {
     last_tick.store(tick, std::memory_order_relaxed);
     last_engine_time.store(engine_seconds, std::memory_order_relaxed);
 }
+bool sound_capture_open_outputs(const wchar_t* csv_path, void*& csv,
+                                void*& state_csv) noexcept {
+    csv = state_csv = nullptr;
+    if (!csv_path || !*csv_path)
+        return false;
+    try {
+        const std::wstring state_path = std::wstring(csv_path) + L".state.csv";
+        HANDLE events = CreateFileW(csv_path, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                    CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (events == INVALID_HANDLE_VALUE)
+            return false;
+        HANDLE states = CreateFileW(state_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                    CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (states == INVALID_HANDLE_VALUE) {
+            CloseHandle(events);
+            DeleteFileW(csv_path); // Created by this call (CREATE_NEW).
+            return false;
+        }
+        csv = events;
+        state_csv = states;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
 bool sound_capture_start(const wchar_t* csv_path) noexcept {
     if (!installed.load()) {
         if (error_code.load() == 0) error_code.store(1);
@@ -656,19 +681,14 @@ bool sound_capture_start(const wchar_t* csv_path) noexcept {
         return false;
     }
     if (!csv_path || !*csv_path) { error_code.store(3); return false; }
-    output = CreateFileW(csv_path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (output == INVALID_HANDLE_VALUE) { error_code.store(3); return false; }
-    std::wstring state_path(csv_path);
-    state_path += L".state.csv";
-    state_output = CreateFileW(state_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
-                               nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (state_output == INVALID_HANDLE_VALUE) {
+    void* opened = nullptr;
+    void* opened_state = nullptr;
+    if (!sound_capture_open_outputs(csv_path, opened, opened_state)) {
         error_code.store(3);
-        CloseHandle(output);
-        output = INVALID_HANDLE_VALUE;
         return false;
     }
+    output = static_cast<HANDLE>(opened);
+    state_output = static_cast<HANDLE>(opened_state);
     error_code.store(0);
     dropped.store(0);
     for (auto& id : active_ids) id.store(kNoVoice, std::memory_order_relaxed);
@@ -692,6 +712,12 @@ bool sound_capture_start(const wchar_t* csv_path) noexcept {
         state_output = INVALID_HANDLE_VALUE;
         CloseHandle(output);
         output = INVALID_HANDLE_VALUE;
+        // Both files were created by this start; a retry must be able to reuse the path.
+        try {
+            DeleteFileW((std::wstring(csv_path) + L".state.csv").c_str());
+        } catch (...) {
+        }
+        DeleteFileW(csv_path);
         return false;
     }
     recording.store(true, std::memory_order_release);

@@ -98,6 +98,10 @@ if(BUILD_TESTING)
     add_executable(sound_compat_tests tests/sound_compat_tests.cpp)
     target_include_directories(sound_compat_tests PRIVATE include src)
     add_test(NAME native_sound_compat_tests COMMAND sound_compat_tests)
+    if(WIN32)
+        # The output-file check links the real recorder (no hooks installed).
+        target_link_libraries(sound_compat_tests PRIVATE dolly_overlay)
+    endif()
 endif()
 
 if(WIN32)

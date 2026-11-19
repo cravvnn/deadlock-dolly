@@ -6,6 +6,12 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <string>
+#endif
 
 using namespace dolly_sound_compat;
 static void check(bool value) {
@@ -187,5 +193,38 @@ int main(int argc, char** argv) {
     check(!dolly::movie_audio_frame(0, 0, 60, audio));
     check(!dolly::movie_audio_frame(123, 0, 0, audio));
     check(!dolly::movie_audio_frame(123, UINT64_MAX, 60, audio));
+#ifdef _WIN32
+    {
+        // A source-audio start that cannot create its state CSV must not leave
+        // the event CSV behind; a retry on the same take path then succeeds.
+        wchar_t temp[MAX_PATH]{};
+        check(GetTempPathW(MAX_PATH, temp) != 0);
+        const std::wstring csv = std::wstring(temp) + L"DollySoundOutputs-" +
+                                 std::to_wstring(GetCurrentProcessId()) + L".csv";
+        const std::wstring state = csv + L".state.csv";
+        check(GetFileAttributesW(csv.c_str()) == INVALID_FILE_ATTRIBUTES &&
+              GetFileAttributesW(state.c_str()) == INVALID_FILE_ATTRIBUTES);
+        HANDLE blocker = CreateFileW(state.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                     FILE_ATTRIBUTE_NORMAL, nullptr);
+        check(blocker != INVALID_HANDLE_VALUE);
+        CloseHandle(blocker);
+        void* events = nullptr;
+        void* states = nullptr;
+        const bool refused = !dolly::sound_capture_open_outputs(csv.c_str(), events, states);
+        const bool left = GetFileAttributesW(csv.c_str()) != INVALID_FILE_ATTRIBUTES;
+        const bool kept = GetFileAttributesW(state.c_str()) != INVALID_FILE_ATTRIBUTES;
+        DeleteFileW(state.c_str()); // Exact fixture created above.
+        if (left)
+            std::fputs("failed source-audio start left its event CSV\n", stderr);
+        if (left)
+            DeleteFileW(csv.c_str());
+        check(refused && !left && kept && !events && !states);
+        check(dolly::sound_capture_open_outputs(csv.c_str(), events, states));
+        CloseHandle(static_cast<HANDLE>(events));
+        CloseHandle(static_cast<HANDLE>(states));
+        DeleteFileW(state.c_str());
+        DeleteFileW(csv.c_str());
+    }
+#endif
     std::puts("sound compatibility tests passed");
 }

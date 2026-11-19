@@ -8050,7 +8050,7 @@
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
-      "sha256": "979e092484b7b17f72a8249204d210221727e6ad89e8032e81a1a9e6765a4455",
+      "sha256": "17495f925fab891ec2cbebd754a269b60d84eba5db0de91a54a6ab00be0ee64a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8068,7 +8068,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "MovieAudioLayout adds float_accessor and explicit6861layout; source installs/reads reviewed per-build pointers, no new audio worker lifetime guarantee."
+      "reconciliation": "MovieAudioLayout adds float_accessor and explicit6861layout; source installs/reads reviewed per-build pointers, no new audio worker lifetime guarantee.",
+      "reconciliation_20261119v": "2026-11-19: declares sound_capture_open_outputs(), the CREATE_NEW CSV pair creation that leaves nothing behind on failure (V4)."
     },
     {
       "path": "native/include/dolly_sound_compat.hpp",
@@ -9616,7 +9617,7 @@
     },
     {
       "path": "native/src/dolly_sound_capture_win.cpp",
-      "sha256": "0abd9e22281c1dfd7be1b043d311ba744eba068f8c472f29ffbacb3c1fc07e8b",
+      "sha256": "9cd01ca6f1dafe114914d87e671ef9147b819d7242a770721e831be4aec83dc1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9645,7 +9646,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "Movie framerate recorder/accessor chosen by reviewed6861layout; hook availability/PCM drain remains native owner/platform obligation, not proved by offsets."
+      "reconciliation": "Movie framerate recorder/accessor chosen by reviewed6861layout; hook availability/PCM drain remains native owner/platform obligation, not proved by offsets.",
+      "reconciliation_20261119v": "2026-11-19: source-audio CSV pair creation moved to sound_capture_open_outputs(); a failed state-CSV create deletes the event CSV it just created, and a failed header write deletes both, so a retry on the same take path can start (V4)."
     },
     {
       "path": "native/src/dolly_sound_compat_generated.hpp",
