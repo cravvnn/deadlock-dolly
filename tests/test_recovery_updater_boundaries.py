@@ -426,6 +426,35 @@ class UpdaterBoundaries(unittest.TestCase):
         self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
         self.assertFalse((target / update_worker.PENDING).exists())
 
+    def test_completed_update_is_kept_when_its_recovery_record_is_stuck(self):
+        plan, target, work, before = self.staged_release()
+        update_worker.atomic_json(work / 'plan.json', plan)
+        marker = target / update_worker.PENDING
+        real = Path.unlink
+
+        def held(path, *args, **kwargs):
+            if path == marker:
+                raise PermissionError(13, 'The file is in use (simulated)')
+            return real(path, *args, **kwargs)
+
+        with patch.object(Path, 'unlink', held), patch.object(update_worker.time, 'sleep'):
+            with self.assertRaises(PermissionError):
+                update_worker.install(plan)
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+        self.assertIn('"complete"', (work / 'journal.json').read_text())
+        self.assertTrue(marker.exists())
+        # Opening Dolly.exe again recovers: the finished update stays and the record goes.
+        with patch.object(update_worker, 'check_processes'), \
+                patch.object(update_worker, 'launch_program') as launch, \
+                patch.object(update_worker, 'notify') as notify:
+            self.assertEqual(update_worker.main(['--plan', str(work / 'plan.json'), '--recover']), 0)
+        notify.assert_not_called(); launch.assert_called_once()
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+        self.assertTrue(all(updater.digest_file(target / name) == digest
+                            for name, digest in updater.read_manifest(target)['files'].items()))
+        self.assertFalse(marker.exists())
+        self.assertIn('"complete"', (work / 'journal.json').read_text())
+
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()
         ui._status.side_effect = RuntimeError('widget gone')

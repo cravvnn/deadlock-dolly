@@ -134,11 +134,30 @@ def replace_file(source, target):
             pass  # A locked temporary must not replace the primary write error.
 
 
+def _remove_pending(target, attempts=6, delay=0.25):
+    """Remove the recovery record, tolerating a brief scanner lock like a replace."""
+    marker = target / PENDING
+    _clear_readonly(marker)
+    for attempt in range(attempts):
+        try:
+            marker.unlink(missing_ok=True)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
+
+
 def rollback(plan):
     work, target = Path(plan["work"]).resolve(), Path(plan["target"]).resolve()
     state = json.loads((work / "journal.json").read_text(encoding="utf-8"))
     if state["target"] != str(target):
         raise ValueError("Rollback target mismatch")
+    if state["state"] == "complete":
+        # Every file was installed and the startup check passed; only the
+        # recovery record was left behind. Keep the update.
+        _remove_pending(target)
+        return
     # Backups are complete before any installed file is touched. Repeating this
     # operation after interruption is safe. Keep originals immutable until the
     # completed workspace is cleaned up, including after a partial rollback.
@@ -221,10 +240,13 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
         health_check(target)
         state["state"] = "complete"
         atomic_json(work / "journal.json", state)
-        (target / PENDING).unlink()
     except BaseException:
         rollback(plan)
         raise
+    # A complete journal is never rolled back. If the record cannot be removed
+    # now, opening Dolly.exe again finishes this step: rollback keeps a
+    # complete journal and only removes the record.
+    _remove_pending(target)
 
 
 def _never_started(work, target):
