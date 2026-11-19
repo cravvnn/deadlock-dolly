@@ -1874,21 +1874,23 @@ void gpu_poll(ID3D11DeviceContext* c) noexcept {
                     break;
                 }
                 slot.statsReported = true;
-                std::size_t rgb = 0, alpha = 0;
-                for (std::size_t i = 0; i < count; ++i) {
-                    const auto* q = px + i * slot.capture.bytesPerPixel;
-                    if (q[0] || q[1] || q[2] || q[3] || q[4] || q[5])
-                        ++rgb;
-                    if (q[6] || q[7])
-                        ++alpha;
+                if (capture_frame_audited(framesWritten)) {
+                    std::size_t rgb = 0, alpha = 0;
+                    for (std::size_t i = 0; i < count; ++i) {
+                        const auto* q = px + i * slot.capture.bytesPerPixel;
+                        if (q[0] || q[1] || q[2] || q[3] || q[4] || q[5])
+                            ++rgb;
+                        if (q[6] || q[7])
+                            ++alpha;
+                    }
+                    std::ofstream s(directory + L"dolly_owner_frame_stats.txt",
+                                    framesWritten ? (std::ios::out | std::ios::app)
+                                                  : (std::ios::out | std::ios::trunc));
+                    if (s)
+                        s << "frame " << framesWritten << " draws " << slot.draws << " rgb "
+                          << rgb << " alpha " << alpha << " w " << slot.capture.width << " h "
+                          << slot.capture.height << " request " << captureRequest << "\n";
                 }
-                std::ofstream s(directory + L"dolly_owner_frame_stats.txt",
-                                framesWritten ? (std::ios::out | std::ios::app)
-                                              : (std::ios::out | std::ios::trunc));
-                if (s)
-                    s << "frame " << framesWritten << " draws " << slot.draws << " rgb " << rgb
-                      << " alpha " << alpha << " w " << slot.capture.width << " h "
-                      << slot.capture.height << " request " << captureRequest << "\n";
             }
             const auto submitted =
                 !sequenceWriterReady ? SequenceWriter::Submit::failed

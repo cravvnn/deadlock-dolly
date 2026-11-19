@@ -171,6 +171,11 @@ inline bool capture_terminal_saved(bool sequence, bool frame_meta_saved,
                                    bool diagnostic_saved) noexcept {
     return frame_meta_saved && (sequence || diagnostic_saved);
 }
+// Whole-image coverage counts and their log line run on the render thread.
+constexpr unsigned CaptureFrameAuditFrames = 4;
+inline bool capture_frame_audited(unsigned frame) noexcept {
+    return frame < CaptureFrameAuditFrames;
+}
 inline bool capture_drain_finished(bool drained, std::uint64_t elapsed_ms, bool sequence) noexcept {
     return drained || elapsed_ms >= (sequence ? 3000u : 250u);
 }

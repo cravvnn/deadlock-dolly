@@ -262,6 +262,10 @@ int main() {
     require(capture_event_dump_count(70000, 65536, false) == 65536 &&
                 capture_event_dump_count(900, 65536, false) == 900,
             "single-image event dump keeps the whole bounded ring");
+    require(capture_frame_audited(0) && capture_frame_audited(CaptureFrameAuditFrames - 1),
+            "the first frames of a take keep their coverage audit");
+    require(!capture_frame_audited(CaptureFrameAuditFrames) && !capture_frame_audited(1000),
+            "later frames skip the full-image audit on the render thread");
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

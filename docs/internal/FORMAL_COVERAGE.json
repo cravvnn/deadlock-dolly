@@ -7621,7 +7621,7 @@
     },
     {
       "path": "native/include/dolly_player_capture_lifecycle.hpp",
-      "sha256": "b695fffe006c94ab205f852f2d06087ff4d6e268c4829eec3df1e0568b6abac6",
+      "sha256": "29f427c6226788c42775f9359946c080e926dfca80640a03e79afa77f406176b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7642,7 +7642,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic."
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take."
     },
     {
       "path": "native/include/dolly_player_material_matte.hpp",
@@ -9116,7 +9116,7 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
-      "sha256": "240755f0f871e2f1af0238f219e2d05933ca8206962edeaf15d80b128d816917",
+      "sha256": "c0fd191ee31c172331184c387fe6580cda96f526b368185a182da1cd883fbee5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9178,7 +9178,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic."
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take."
     },
     {
       "path": "native/src/dolly_prop_runtime.cpp",
@@ -11924,7 +11924,7 @@
         "native/src/CaptureFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "240755f0f871e2f1af0238f219e2d05933ca8206962edeaf15d80b128d816917"
+      "owner_utf8_lf_sha256": "c0fd191ee31c172331184c387fe6580cda96f526b368185a182da1cd883fbee5"
     },
     "native/src/DrawProof.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11933,7 +11933,7 @@
         "native/src/DrawProof.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "240755f0f871e2f1af0238f219e2d05933ca8206962edeaf15d80b128d816917"
+      "owner_utf8_lf_sha256": "c0fd191ee31c172331184c387fe6580cda96f526b368185a182da1cd883fbee5"
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",
