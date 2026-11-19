@@ -3688,7 +3688,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "5b975df1f2338cd05e429188e07f6230f67e121e6c95c5c4c9d999a3376d5d7e",
+      "sha256": "8a3a07ab7d5eb90f4649a5ab720bf6d81f0b6b589f65560675a7470ccef6671e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3781,7 +3781,7 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261118": "2026-11-18: retime names the source blend that would pass the 10 s limit, before changing anything.",
-      "reconciliation_20261119n": "2026-11-19: PROJECT_NAME_LIMIT names the 256-character shot name limit for callers."
+      "reconciliation_20261119n": "2026-11-19: PROJECT_NAME_LIMIT names the 256-character shot name limit for callers. Project.validate rejects a name with an unpaired surrogate (for example from hand-edited JSON), which loaded but could not be saved and exported to USD as ?."
     },
     {
       "path": "dolly/paused_flight.py",
@@ -11650,7 +11650,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "5b975df1f2338cd05e429188e07f6230f67e121e6c95c5c4c9d999a3376d5d7e"
+      "owner_utf8_lf_sha256": "8a3a07ab7d5eb90f4649a5ab720bf6d81f0b6b589f65560675a7470ccef6671e"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",

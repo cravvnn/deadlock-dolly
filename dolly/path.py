@@ -590,6 +590,11 @@ class Project:
     def validate(self) -> None:
         if not isinstance(self.name, str) or len(self.name) > PROJECT_NAME_LIMIT:
             raise ValueError(f"Project name must be text no longer than {PROJECT_NAME_LIMIT} characters")
+        if any("\ud800" <= character <= "\udfff" for character in self.name):
+            # Unpaired surrogates cannot be written as UTF-8, so the shot could
+            # be opened but never saved again.
+            raise ValueError("Project name contains an unpaired surrogate character; "
+                             "retype the name without it")
         _choice(self.interpolation, ("linear", "smooth", "spline"), "Camera interpolation")
         _choice(self.rotation_mode, ("shortest", "unwrapped"), "Rotation mode")
         _choice(self.lens_interpolation, ("linear", "smooth", "step"), "Zoom interpolation")
