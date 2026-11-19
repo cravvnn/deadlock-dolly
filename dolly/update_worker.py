@@ -212,6 +212,7 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
         # it describes a fully installed set.
         for name in sorted(removed, reverse=True):
             path = checked_file(target, name)
+            _clear_readonly(path)
             path.unlink(missing_ok=True)
             _prune(path.parent, target)
         for name in [n for n in names if n != MANIFEST and n in new["files"]] + [MANIFEST]:
