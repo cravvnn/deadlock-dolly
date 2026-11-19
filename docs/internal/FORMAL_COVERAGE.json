@@ -7720,7 +7720,7 @@
     },
     {
       "path": "native/include/dolly_player_producers.hpp",
-      "sha256": "b8fa71279aa29170ad45759a90e5d49ae8b1f5442bc6a18bdaf38d7655cf6c80",
+      "sha256": "8776eadcf8ecb8d812ebe9e37069e217e661831f20293904894abb77ff75ed8e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7745,7 +7745,8 @@
           "thread/lock"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261119c": "2026-11-19: Owner classification cache never writes past its last entry when every entry is a player."
     },
     {
       "path": "native/include/dolly_player_scene_generated.hpp",
@@ -9117,7 +9118,7 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
-      "sha256": "d2aa361cd034c575fa25cf6aa5ea2ef2cb6ec89a02286563050ccf15d928ee10",
+      "sha256": "e5b193cd047cee91c765ca83beba398d66a6333d4b9bc5ce7b9d3c5f1b277278",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9179,7 +9180,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog."
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog. Owner classification cache never writes past its last entry when every entry is a player."
     },
     {
       "path": "native/src/dolly_prop_runtime.cpp",
@@ -11925,7 +11926,7 @@
         "native/src/CaptureFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "d2aa361cd034c575fa25cf6aa5ea2ef2cb6ec89a02286563050ccf15d928ee10"
+      "owner_utf8_lf_sha256": "e5b193cd047cee91c765ca83beba398d66a6333d4b9bc5ce7b9d3c5f1b277278"
     },
     "native/src/DrawProof.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11934,7 +11935,7 @@
         "native/src/DrawProof.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "d2aa361cd034c575fa25cf6aa5ea2ef2cb6ec89a02286563050ccf15d928ee10"
+      "owner_utf8_lf_sha256": "e5b193cd047cee91c765ca83beba398d66a6333d4b9bc5ce7b9d3c5f1b277278"
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",

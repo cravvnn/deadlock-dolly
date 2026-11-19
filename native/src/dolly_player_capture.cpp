@@ -574,23 +574,7 @@ bool owner_is_player(std::uint32_t handle, std::uintptr_t scene) noexcept {
                         break;
                     }
         }
-        unsigned slot = ownerClassCount;
-        if (slot < ownerClasses.size()) {
-            ++ownerClassCount;
-        } else {
-            // Never let early non-player owners crowd players out of the
-            // cache: reuse a negative slot round-robin, keep every positive.
-            for (unsigned step = 0; step < ownerClasses.size(); ++step) {
-                const unsigned candidate = (ownerClassRotate + step) % ownerClasses.size();
-                if (!ownerClasses[candidate].player) {
-                    slot = candidate;
-                    ownerClassRotate = (candidate + 1) % ownerClasses.size();
-                    break;
-                }
-            }
-        }
-        ownerClasses[slot].handle = handle;
-        ownerClasses[slot].player = player;
+        owner_class_remember(ownerClasses, ownerClassCount, ownerClassRotate, handle, player);
     }
     return player;
 }
