@@ -243,6 +243,13 @@ int main() {
     producer.start(false);
     require(producer.hides(true, false), "non-sequence requests keep pre-arm hiding");
     producer.finish();
+    require(!producer.records(false, false),
+            "idle producer calls after a capture skip the producer table");
+    require(producer.records(true, false) && producer.records(false, true),
+            "armed captures still record producers");
+    producer.start(true);
+    require(producer.records(false, false), "a live request records before it arms");
+    producer.finish();
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

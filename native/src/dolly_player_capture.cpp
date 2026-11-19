@@ -750,6 +750,11 @@ int hook_common(std::uintptr_t a, void* object, void* mesh, void* opaque, void* 
                                      std::memory_order_relaxed);
         return result;
     }
+    // Without a capture request, forward once and skip the shared table.
+    if (!producerCapture.records(captureActive.load(std::memory_order_acquire),
+                                 armed.load(std::memory_order_acquire)))
+        return forward_producer(original, originalSeptember, a, object, mesh, opaque, params,
+                                mode, flag, outA, outB, outC);
     // Bounded sequences record only reviewed-player producers; every other
     // producer is forwarded exactly once without consuming the event buffer.
     if (captureActive.load(std::memory_order_acquire)) {

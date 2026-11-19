@@ -153,6 +153,10 @@ public:
         // Mode flags outlive a take; only a live sequence request blocks hiding.
         return hiding && !capture_active && !(live() && sequence_.load(std::memory_order_relaxed));
     }
+    // Whether a producer call may touch the producer table or event ring.
+    bool records(bool capture_active, bool armed) const noexcept {
+        return capture_active || armed || live();
+    }
 };
 inline bool capture_drain_finished(bool drained, std::uint64_t elapsed_ms, bool sequence) noexcept {
     return drained || elapsed_ms >= (sequence ? 3000u : 250u);
