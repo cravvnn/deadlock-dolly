@@ -451,8 +451,11 @@ OverlayPanel::SliderRow OverlayPanel::slider_row(const char* id, const char* lab
                             dragged_time = float(camera.time);
                         }
                     }
+                    // The index comes from the guide snapshot; it names the
+                    // same camera only when the guides match the camera list.
                     EditorCameraList list{};
                     if (dragged_tick >= 0 && editor_camera_list(list) &&
+                        timeline->project_revision() == list.revision &&
                         editor_lite_replay_info(dragged_clock) &&
                         dragged_clock.revision == list.revision && (dragged_clock.flags & 1)) {
                         dragged_revision = list.revision;

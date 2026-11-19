@@ -8979,7 +8979,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.cpp",
-      "sha256": "16f5d1a4030cea75e6b3b77574176aca9ac6c9b8e641de57b60305cf5cfa0f7f",
+      "sha256": "f1401e9d4c38b9885bcf40d57815ad1859f4c8300dc8b5a618f5df41c6abaafd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9010,7 +9010,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4)."
+      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2)."
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",

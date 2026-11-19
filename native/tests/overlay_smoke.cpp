@@ -253,7 +253,7 @@ std::vector<unsigned char> curve_packet(unsigned count = 10, unsigned revision =
     packet.insert(packet.end(), path.begin(), path.end());
     return packet;
 }
-std::vector<unsigned char> viewer_packet(double first_x = 100) {
+std::vector<unsigned char> viewer_packet(double first_x = 100, std::uint32_t revision = 0) {
     // These two synthetic cameras project to the right of the panel. Their
     // connecting segment and glyphs must remain visible in paused flight.
     const dolly::CameraPose a{first_x, -60, 0, 0, 0, 0, 4.0 / 3.0};
@@ -289,6 +289,11 @@ std::vector<unsigned char> viewer_packet(double first_x = 100) {
     append_u32(packet, static_cast<std::uint32_t>(path.size()));
     append_u32(packet, 128);
     append_u32(packet, 8);
+    if (revision) {
+        // ABI 2 carries the project revision the guides were compiled from.
+        packet[12] = 2;
+        append_u32(packet, revision);
+    }
     packet.resize(dolly::kVisualizationHeaderBytes);
     append_double(packet, 0);
     append_double(packet, 3);
@@ -5225,6 +5230,9 @@ int main(int argc, char** argv) {
             // exactly one revision-bound SetCameraTime on release; a plain drag
             // scrubs the slider instead of grabbing the tick.
             {
+                viewer.publish(viewer_packet(100, camera_revision_stub));
+                viewer.tick();
+                render();
                 const auto timeline = dolly::visualization_snapshot();
                 require(timeline && timeline->cameras().size() == 2,
                         "Synthetic timeline missing for the tick drag test");
@@ -5254,6 +5262,24 @@ int main(int argc, char** argv) {
                             dolly::overlay_diagnostics().timeline_drags ==
                                 before.timeline_drags,
                         "Plain timeline drag must scrub without moving a tick");
+                // A guide snapshot from an older project revision must not pair
+                // its camera index with a newer camera list.
+                require(timeline->project_revision() == 7, "Synthetic guide revision changed");
+                camera_revision_stub = 8;
+                io.AddKeyEvent(ImGuiMod_Alt, true);
+                io.MouseClickedTime[0] = -1e30;
+                drag(false, tick_x);
+                drag(true, tick_x);
+                drag(true, target_x);
+                drag(false, target_x);
+                io.AddKeyEvent(ImGuiMod_Alt, false);
+                render();
+                camera_revision_stub = 7;
+                render();
+                require(observed_actions.empty() &&
+                            dolly::overlay_diagnostics().timeline_drags ==
+                                before.timeline_drags,
+                        "Alt tick drag paired a stale guide index with a newer camera list");
                 // Alt+drag moves the tick and commits once on release.
                 io.AddKeyEvent(ImGuiMod_Alt, true);
                 io.MouseClickedTime[0] = -1e30;
