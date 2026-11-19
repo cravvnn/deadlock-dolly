@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 import os
+from pathlib import Path
 import queue
 import threading
 import webbrowser
@@ -159,14 +160,16 @@ class UpdateUI:
                     or app.startup_cancel is not None)
 
     def _can_update(self):
+        message = "Save your shot and close Deadlock, then click Update now. Dolly will stay open."
         try:
             if self.safe_to_restart():
                 check_processes(application_root().resolve(), exclude_pid=os.getpid())
                 return True
-        except (RuntimeError, OSError):
-            pass
+        except (RuntimeError, OSError) as error:
+            # For example another Dolly window on this installation: say so.
+            message = f"Update not started: {error}. Click Update now once that is resolved. Dolly will stay open."
         self.approved = None
-        self._status("Save your shot and close Deadlock, then click Update now. Dolly will stay open.")
+        self._status(message)
         return False
 
     def update_now(self):
@@ -211,6 +214,11 @@ class UpdateUI:
         if not self._can_update():
             return
         work, version = self.ready
+        if not (Path(work) / "verified.json").is_file():
+            # Another Dolly window may have cleaned the download up meanwhile.
+            self.ready = self.ready_release = None
+            self._status("The downloaded update is no longer there. Click Update now to download it again.")
+            return
         # Settle unsaved work before the updater starts waiting for Dolly to
         # close; a cancelled save prompt leaves Dolly open and the update ready.
         if self.app.busy or not self.app._allow_discard():

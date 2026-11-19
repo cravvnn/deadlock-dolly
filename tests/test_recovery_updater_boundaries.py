@@ -307,6 +307,8 @@ class UpdaterBoundaries(unittest.TestCase):
         ui.running = ui.restarting = ui.dismissed = False
         ui.available = {'version': '9.9.9', 'url': 'u', 'sha256': 's', 'size': 1}
         ui.ready = (self.target / '.dolly-update-x', '9.9.9')
+        ui.ready[0].mkdir(exist_ok=True)
+        (ui.ready[0] / 'verified.json').write_text('{}')
         ui.approved = ui.ready_release = ui.release_key(ui.available)
         ui._status = MagicMock()
         return ui
@@ -323,6 +325,160 @@ class UpdaterBoundaries(unittest.TestCase):
             ui.restart()
         ui.app._on_close.assert_called_once_with(discard_confirmed=True)
         self.assertFalse(ui.restarting)
+
+    def test_cleanup_keeps_a_verified_download_until_it_is_used(self):
+        handoff.package(self.target, '1.0.0')
+
+        def staged(name, version, *, verified=True):
+            work = self.target / name
+            handoff.package(work / 'payload', version)
+            if verified:
+                (work / 'verified.json').write_text(
+                    '{"version": "%s", "sha256": "%s"}' % (version, 'a' * 64))
+            return work
+
+        def age(work, seconds=7200):
+            old = os.path.getmtime(work) - seconds
+            for path in [work, *work.rglob('*')]:
+                os.utime(path, (old, old))
+
+        ready = staged('.dolly-update-ready', '1.0.1')
+        downloading = staged('.dolly-update-busy', '1.0.1', verified=False)
+        superseded = staged('.dolly-update-older', '0.9.0')
+        abandoned = staged('.dolly-update-gone', '1.0.1', verified=False)
+        for work in (ready, downloading, superseded, abandoned):
+            age(work)
+        # A download in progress writes into the zip; its folder time does not change.
+        (downloading / 'download.zip').write_bytes(b'partial')
+        os.utime(downloading, (os.path.getmtime(downloading) - 7200,) * 2)
+        with patch.object(release_launcher, 'open_editor') as editor:
+            self.assertEqual(release_launcher.main([], target=self.target), 0)
+        editor.assert_called_once()
+        self.assertTrue(ready.is_dir())
+        self.assertEqual(updater.staged_payload(self.target, '1.0.1', 'a' * 64), ready)
+        self.assertTrue(downloading.is_dir())
+        self.assertFalse(superseded.exists())
+        self.assertFalse(abandoned.exists())
+        # An editor whose ready download vanished downloads it again on the next click.
+        ui = self.ui(busy=False, _allow_discard=MagicMock(return_value=True), _on_close=MagicMock())
+        shutil.rmtree(ui.ready[0])
+        with patch.object(update_ui, 'launch_worker') as worker, patch.object(ui, '_can_update', return_value=True):
+            ui.restart()
+        worker.assert_not_called(); ui.app._on_close.assert_not_called()
+        self.assertIsNone(ui.ready)
+        self.assertIsNone(ui.ready_release)
+        self.assertIn('download', ui._status.call_args.args[0].lower())
+
+    def test_update_blocked_by_another_dolly_window_says_so(self):
+        ui = self.ui()
+        ui.safe_to_restart = MagicMock(return_value=True)
+        reason = 'Another instance of this Dolly installation is still open'
+        with patch.object(update_ui, 'check_processes', side_effect=RuntimeError(reason)), \
+                patch.object(update_ui, 'application_root', return_value=self.target):
+            self.assertFalse(ui._can_update())
+        self.assertIn(reason, ui._status.call_args.args[0])
+        self.assertNotIn('close Deadlock', ui._status.call_args.args[0])
+        self.assertIsNone(ui.approved)
+        # An unsaved shot or a running game keeps the existing advice.
+        ui.safe_to_restart.return_value = False
+        self.assertFalse(ui._can_update())
+        self.assertIn('Save your shot', ui._status.call_args.args[0])
+
+    def staged_release(self):
+        target, work = self.target / 'installed', self.target / 'installed/.dolly-update-x'
+        handoff.package(target, '1.0.0')
+        handoff.package(work / 'payload', '1.0.1')
+        before = {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob('*')
+                  if p.is_file() and work not in p.parents}
+        return {'work': str(work), 'target': str(target)}, target, work, before
+
+    def installed(self, target, work):
+        return {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob('*')
+                if p.is_file() and work not in p.parents}
+
+    def test_update_whose_recovery_record_cannot_be_written_can_be_retried(self):
+        plan, target, work, before = self.staged_release()
+        real = update_worker.atomic_json
+        refused = set()
+
+        def disk_full(path, value):
+            if Path(path).name == update_worker.PENDING or value.get('state') in refused:
+                raise OSError(28, 'No space left on device (simulated)')
+            return real(path, value)
+
+        with patch.object(update_worker, 'atomic_json', disk_full):
+            with self.assertRaises(OSError):
+                update_worker.install(plan)
+        journal = (work / 'journal.json').read_text()
+        self.assertIn('"rolled_back"', journal)
+        self.assertEqual(self.installed(target, work), before)
+        self.assertFalse((target / update_worker.PENDING).exists())
+        # If even the rollback journal cannot be written, nothing was touched:
+        # the next attempt starts over instead of being blocked forever.
+        (work / 'journal.json').unlink()
+        refused.add('rolled_back')
+        with patch.object(update_worker, 'atomic_json', disk_full):
+            with self.assertRaises(OSError):
+                update_worker.install(plan)
+        self.assertIn('"applying"', (work / 'journal.json').read_text())
+        self.assertFalse((target / update_worker.PENDING).exists())
+        update_worker.install(plan)
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+        self.assertFalse((target / update_worker.PENDING).exists())
+
+    def test_completed_update_is_kept_when_its_recovery_record_is_stuck(self):
+        plan, target, work, before = self.staged_release()
+        update_worker.atomic_json(work / 'plan.json', plan)
+        marker = target / update_worker.PENDING
+        real = Path.unlink
+
+        def held(path, *args, **kwargs):
+            if path == marker:
+                raise PermissionError(13, 'The file is in use (simulated)')
+            return real(path, *args, **kwargs)
+
+        with patch.object(Path, 'unlink', held), patch.object(update_worker.time, 'sleep'):
+            with self.assertRaises(PermissionError):
+                update_worker.install(plan)
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+        self.assertIn('"complete"', (work / 'journal.json').read_text())
+        self.assertTrue(marker.exists())
+        # Opening Dolly.exe again recovers: the finished update stays and the record goes.
+        with patch.object(update_worker, 'check_processes'), \
+                patch.object(update_worker, 'launch_program') as launch, \
+                patch.object(update_worker, 'notify') as notify:
+            self.assertEqual(update_worker.main(['--plan', str(work / 'plan.json'), '--recover']), 0)
+        notify.assert_not_called(); launch.assert_called_once()
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+        self.assertTrue(all(updater.digest_file(target / name) == digest
+                            for name, digest in updater.read_manifest(target)['files'].items()))
+        self.assertFalse(marker.exists())
+        self.assertIn('"complete"', (work / 'journal.json').read_text())
+
+    def test_failed_update_message_says_whether_files_were_restored(self):
+        plan, target, work, before = self.staged_release()
+        real = update_worker.replace_file
+
+        def broken_backup(source, destination):
+            if 'backup' in Path(source).parts:
+                raise OSError('simulated restore failure')
+            return real(source, destination)
+
+        def failed_health(_target):
+            raise RuntimeError('simulated startup failure')
+
+        with patch.object(update_worker, 'replace_file', broken_backup):
+            with self.assertRaises(OSError) as failure:  # the rollback failed too
+                update_worker.install(plan, failed_health)
+        self.assertTrue((target / update_worker.PENDING).exists())
+        message = update_worker._install_error_message(failure.exception, work, target)
+        self.assertNotIn('retained or restored', message)
+        self.assertIn('not finished', message)
+        self.assertIn('Open Dolly.exe again', message)
+        update_worker.rollback(plan)
+        self.assertEqual(self.installed(target, work), before)
+        message = update_worker._install_error_message(failure.exception, work, target)
+        self.assertIn('Your previous files were retained or restored', message)
 
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()

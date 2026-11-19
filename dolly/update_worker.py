@@ -134,11 +134,30 @@ def replace_file(source, target):
             pass  # A locked temporary must not replace the primary write error.
 
 
+def _remove_pending(target, attempts=6, delay=0.25):
+    """Remove the recovery record, tolerating a brief scanner lock like a replace."""
+    marker = target / PENDING
+    _clear_readonly(marker)
+    for attempt in range(attempts):
+        try:
+            marker.unlink(missing_ok=True)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
+
+
 def rollback(plan):
     work, target = Path(plan["work"]).resolve(), Path(plan["target"]).resolve()
     state = json.loads((work / "journal.json").read_text(encoding="utf-8"))
     if state["target"] != str(target):
         raise ValueError("Rollback target mismatch")
+    if state["state"] == "complete":
+        # Every file was installed and the startup check passed; only the
+        # recovery record was left behind. Keep the update.
+        _remove_pending(target)
+        return
     # Backups are complete before any installed file is touched. Repeating this
     # operation after interruption is safe. Keep originals immutable until the
     # completed workspace is cleaned up, including after a partial rollback.
@@ -172,7 +191,7 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
     old, new = read_manifest(target), read_manifest(payload)
     if version_key(new["version"]) <= version_key(old["version"]):
         raise ValueError("Refusing a same-version update or downgrade")
-    if (target / PENDING).exists() or (work / "journal.json").exists():
+    if (target / PENDING).exists() or ((work / "journal.json").exists() and not _never_started(work, target)):
         raise ValueError("An unfinished update must be recovered first")
     names = sorted(set(old["files"]) | set(new["files"]) | {MANIFEST})
     removed = set(old["files"]) - set(new["files"])
@@ -205,13 +224,15 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
                 raise ValueError("Update backup verification failed")
     state = {"state": "applying", "target": str(target), "before": before, "modified": sorted(modified)}
     atomic_json(work / "journal.json", state)
-    atomic_json(target / PENDING, plan)
     try:
+        # The recovery record goes first: nothing installed changes without it.
+        atomic_json(target / PENDING, plan)
         # Removals first (deepest first, pruning emptied folders), then writes,
         # so a file can replace a folder and the reverse. Manifest is last so
         # it describes a fully installed set.
         for name in sorted(removed, reverse=True):
             path = checked_file(target, name)
+            _clear_readonly(path)
             path.unlink(missing_ok=True)
             _prune(path.parent, target)
         for name in [n for n in names if n != MANIFEST and n in new["files"]] + [MANIFEST]:
@@ -219,10 +240,30 @@ def install(plan, health_check=lambda target: None, replace=replace_file):
         health_check(target)
         state["state"] = "complete"
         atomic_json(work / "journal.json", state)
-        (target / PENDING).unlink()
     except BaseException:
         rollback(plan)
         raise
+    # A complete journal is never rolled back. If the record cannot be removed
+    # now, opening Dolly.exe again finishes this step: rollback keeps a
+    # complete journal and only removes the record.
+    _remove_pending(target)
+
+
+def _never_started(work, target):
+    """An "applying" journal without its recovery record changed nothing.
+
+    install writes the record before it touches an installed file and rolls
+    back if the record cannot be written. Only a stop between the two writes,
+    or a failure of that rollback's own journal write, leaves this state, and
+    starting over is then safe.
+    """
+    if (target / PENDING).exists():
+        return False
+    try:
+        data = json.loads((work / "journal.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return False
+    return isinstance(data, dict) and data.get("state") == "applying"
 
 
 class InstallLockBusy(OSError):
@@ -410,7 +451,7 @@ def _progress_helper_window(work, target, *, recover, parent_pid):
                 atomic_json(work / "result.json", {"passed": False, "error": str(error)})
             except OSError:
                 pass
-            events.put(("failed", _install_error_message(error, work)))
+            events.put(("failed", _install_error_message(error, work, target)))
 
     def poll():
         if window.closed:
@@ -590,11 +631,42 @@ def _workspace_finished(work, keep):
         return isinstance(data, dict) and data.get("state") in ("complete", "rolled_back")
     if (work / "result.json").exists():
         return True
+    if _verified_download(work, work.parent):
+        # An open editor may still install this download (staged_payload).
+        return False
     try:
-        # No result yet: another instance may still be downloading.
-        return time.time() - work.stat().st_mtime >= 3600
+        # No result yet: another instance may still be downloading. Writing
+        # into the download does not change the folder's own time.
+        return time.time() - _newest_mtime(work) >= 3600
     except OSError:
         return False
+
+
+def _verified_download(work, target):
+    """True for a finished download of a release newer than the installed one."""
+    try:
+        marker = json.loads((work / "verified.json").read_text(encoding="utf-8"))
+        version = marker["version"]
+        if (not isinstance(version, str) or read_manifest(work / "payload")["version"] != version
+                or not isinstance(marker.get("sha256"), str) or len(marker["sha256"]) != 64):
+            return False
+    except (OSError, ValueError, KeyError, TypeError, RecursionError):
+        return False
+    try:
+        return version_key(version) > version_key(read_manifest(target)["version"])
+    except (OSError, ValueError, KeyError, TypeError, RecursionError):
+        return False  # No installed version (or a legacy sidecar): nothing can reuse it.
+
+
+def _newest_mtime(work):
+    newest = work.stat().st_mtime
+    for folder, folders, files in os.walk(work):
+        for name in folders + files:
+            try:
+                newest = max(newest, os.stat(os.path.join(folder, name)).st_mtime)
+            except OSError:
+                pass  # Removed while scanning.
+    return newest
 
 
 def _workspace_records_target(work, target):
@@ -621,8 +693,10 @@ def cleanup_workspaces(target, keep=None):
     The public launcher calls this before opening the editor, and after a
     successful update the relaunched launcher removes the folder it was
     installed from. Workspaces are kept while a recovery is pending or a
-    transaction is mid-apply. A recently touched folder without a result may be
-    an active download in another instance and is left alone for an hour.
+    transaction is mid-apply. A verified download of a newer release is kept
+    for an open editor to install. Any other folder without a result may be
+    an active download in another instance and is left alone until nothing in
+    it has changed for an hour.
     Releases before the in-folder change staged beside the install; those
     legacy folders are removed too when they record this installation.
     """
@@ -676,9 +750,14 @@ def self_test(report):
     return 0 if result["passed"] else 1
 
 
-def _install_error_message(error, work):
-    message = ("Dolly could not finish updating. Your previous files were retained or restored."
-               "\n\n" + str(error))
+def _install_error_message(error, work, target):
+    if not (Path(target) / PENDING).exists():
+        message = "Dolly could not finish updating. Your previous files were retained or restored."
+    else:
+        # The rollback did not finish either; the record stays for recovery.
+        message = ("The Dolly update is not finished. Open Dolly.exe again and it will restore your "
+                   "previous files, or finish the update if it was already installed.")
+    message += "\n\n" + str(error)
     if isinstance(error, PermissionError) or getattr(error, "winerror", None) in (5, 32):
         message += ("\n\nWindows blocked writing to the Dolly folder. Close any other Dolly "
                     "window, and if a security tool or a protected location (for example "
@@ -744,7 +823,7 @@ def main(argv=None):
         _apply_plan(plan, work, target, args.recover)
     except Exception as error:
         atomic_json(work / "result.json", {"passed": False, "error": str(error)})
-        notify(_install_error_message(error, work))
+        notify(_install_error_message(error, work, target))
         # A failure before the parent exits must not launch a duplicate instance.
         if (target / PENDING).exists():
             return 1

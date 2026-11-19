@@ -498,3 +498,39 @@ class SessionCloseSerialization(unittest.TestCase):
                 self.assertTrue(session.close())
                 self.assertTrue(session.close())
             self.assertEqual(held, [True] * 6)
+
+
+class UpdateRemovalTests(unittest.TestCase):
+    """Files a release drops are removed even when they carry the read-only flag."""
+
+    def release(self, folder, version, names):
+        from dolly import updater
+        for name in names:
+            path = folder / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(version + ':' + name)
+        updater.write_manifest(folder, version)
+
+    def test_update_removes_read_only_files_a_release_drops(self):
+        import stat
+        from dolly import update_worker, updater
+        common = ['Dolly.exe', 'DollyUpdater.exe', '_internal/native/bin/win64/DollyNative.dll',
+                  '_internal/third_party/ffmpeg/bin/ffmpeg.exe']
+        # A dropped file, and a folder of files that becomes a file.
+        for old, new in ((['_internal/old_removed.dll'], []),
+                         (['_internal/data/x.bin', '_internal/data/y.bin'], ['_internal/data'])):
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as temp:
+                target, work = Path(temp) / 'Dolly', Path(temp) / 'Dolly/.dolly-update-x'
+                self.release(target, '1.0.0', common + old)
+                self.release(work / 'payload', '1.0.1', common + new)
+                for name in old:
+                    os.chmod(target / name, stat.S_IREAD)  # like a file extracted from a ZIP
+                try:
+                    update_worker.install({'work': str(work), 'target': str(target)})
+                finally:
+                    for path in target.rglob('*'):
+                        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+                self.assertEqual(updater.read_manifest(target)['version'], '1.0.1')
+                self.assertFalse((target / update_worker.PENDING).exists())
+                for name in old:
+                    self.assertFalse((target / name).exists())
