@@ -3715,7 +3715,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "3bffaa24626fbd07d72ad0a5bd8b26219843f860457b26a7efdd6bcdf72d2422",
+      "sha256": "253da12892062aafbf7894fd301ca10e2ad1b9cc9e9f1c4786d9ceceaea5827b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3807,7 +3807,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118": "2026-11-18: retime names the source blend that would pass the 10 s limit, before changing anything."
+      "reconciliation_20261118": "2026-11-18: retime names the source blend that would pass the 10 s limit, before changing anything.",
+      "reconciliation_20261118_save_retry": "2026-11-18: Project.save retries the final replace for about a second when Windows reports the shot briefly locked (PermissionError); other errors fail at once. SaveCleanup still abstracts the body."
     },
     {
       "path": "dolly/paused_flight.py",
@@ -11677,7 +11678,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "3bffaa24626fbd07d72ad0a5bd8b26219843f860457b26a7efdd6bcdf72d2422"
+      "owner_utf8_lf_sha256": "253da12892062aafbf7894fd301ca10e2ad1b9cc9e9f1c4786d9ceceaea5827b"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",

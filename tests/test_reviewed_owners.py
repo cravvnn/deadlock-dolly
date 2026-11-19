@@ -56,6 +56,47 @@ class ReviewedOwnerTests(unittest.TestCase):
                 self.assertEqual(json.loads(archive.read('diagnostics.json')), {'ok': True})
                 self.assertEqual(archive.read('logs/recent_console.txt'), b'console')
 
+    def test_project_save_retries_a_briefly_locked_destination(self):
+        project = Project(keyframes=[Keyframe(0, 1, 2, 3, 4, 5, 6)])
+        real_replace = os.replace
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)/'shot.json'; target.write_bytes(b'previous shot')
+            calls, sleeps = [], []
+            def locked_twice(source, destination):
+                calls.append(destination)
+                if len(calls) <= 2:
+                    raise PermissionError(13, 'The process cannot access the file (OneDrive)')
+                return real_replace(source, destination)
+            with patch('os.replace', side_effect=locked_twice), \
+                    patch('dolly.path.time.sleep', side_effect=sleeps.append):
+                project.save(target)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(Project.load(target), project)
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ['shot.json'])
+            # A lock that outlasts about a second still fails, bounded.
+            calls.clear(); sleeps.clear()
+            def always_locked(source, destination):
+                calls.append(destination)
+                raise PermissionError(13, 'locked')
+            with patch('os.replace', side_effect=always_locked), \
+                    patch('dolly.path.time.sleep', side_effect=sleeps.append):
+                with self.assertRaises(PermissionError):
+                    project.save(target)
+            self.assertGreater(len(calls), 1)
+            self.assertLessEqual(len(calls), 6)
+            self.assertLessEqual(sum(sleeps), 1.5)
+            # Any other error fails at once.
+            calls.clear(); sleeps.clear()
+            def disk_failure(source, destination):
+                calls.append(destination)
+                raise OSError(28, 'disk full')
+            with patch('os.replace', side_effect=disk_failure), \
+                    patch('dolly.path.time.sleep', side_effect=sleeps.append):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    project.save(target)
+            self.assertEqual((len(calls), sleeps), (1, []))
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ['shot.json'])
+
     def test_project_save_cleanup_keeps_primary_error_and_completed_bytes(self):
         project = Project(keyframes=[Keyframe(0, 1, 2, 3, 4, 5, 6)])
         with tempfile.TemporaryDirectory() as folder:
