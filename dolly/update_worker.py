@@ -590,11 +590,42 @@ def _workspace_finished(work, keep):
         return isinstance(data, dict) and data.get("state") in ("complete", "rolled_back")
     if (work / "result.json").exists():
         return True
+    if _verified_download(work, work.parent):
+        # An open editor may still install this download (staged_payload).
+        return False
     try:
-        # No result yet: another instance may still be downloading.
-        return time.time() - work.stat().st_mtime >= 3600
+        # No result yet: another instance may still be downloading. Writing
+        # into the download does not change the folder's own time.
+        return time.time() - _newest_mtime(work) >= 3600
     except OSError:
         return False
+
+
+def _verified_download(work, target):
+    """True for a finished download of a release newer than the installed one."""
+    try:
+        marker = json.loads((work / "verified.json").read_text(encoding="utf-8"))
+        version = marker["version"]
+        if (not isinstance(version, str) or read_manifest(work / "payload")["version"] != version
+                or not isinstance(marker.get("sha256"), str) or len(marker["sha256"]) != 64):
+            return False
+    except (OSError, ValueError, KeyError, TypeError, RecursionError):
+        return False
+    try:
+        return version_key(version) > version_key(read_manifest(target)["version"])
+    except (OSError, ValueError, KeyError, TypeError, RecursionError):
+        return False  # No installed version (or a legacy sidecar): nothing can reuse it.
+
+
+def _newest_mtime(work):
+    newest = work.stat().st_mtime
+    for folder, folders, files in os.walk(work):
+        for name in folders + files:
+            try:
+                newest = max(newest, os.stat(os.path.join(folder, name)).st_mtime)
+            except OSError:
+                pass  # Removed while scanning.
+    return newest
 
 
 def _workspace_records_target(work, target):
@@ -621,8 +652,10 @@ def cleanup_workspaces(target, keep=None):
     The public launcher calls this before opening the editor, and after a
     successful update the relaunched launcher removes the folder it was
     installed from. Workspaces are kept while a recovery is pending or a
-    transaction is mid-apply. A recently touched folder without a result may be
-    an active download in another instance and is left alone for an hour.
+    transaction is mid-apply. A verified download of a newer release is kept
+    for an open editor to install. Any other folder without a result may be
+    an active download in another instance and is left alone until nothing in
+    it has changed for an hour.
     Releases before the in-folder change staged beside the install; those
     legacy folders are removed too when they record this installation.
     """

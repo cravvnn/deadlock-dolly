@@ -307,6 +307,8 @@ class UpdaterBoundaries(unittest.TestCase):
         ui.running = ui.restarting = ui.dismissed = False
         ui.available = {'version': '9.9.9', 'url': 'u', 'sha256': 's', 'size': 1}
         ui.ready = (self.target / '.dolly-update-x', '9.9.9')
+        ui.ready[0].mkdir(exist_ok=True)
+        (ui.ready[0] / 'verified.json').write_text('{}')
         ui.approved = ui.ready_release = ui.release_key(ui.available)
         ui._status = MagicMock()
         return ui
@@ -323,6 +325,49 @@ class UpdaterBoundaries(unittest.TestCase):
             ui.restart()
         ui.app._on_close.assert_called_once_with(discard_confirmed=True)
         self.assertFalse(ui.restarting)
+
+    def test_cleanup_keeps_a_verified_download_until_it_is_used(self):
+        handoff.package(self.target, '1.0.0')
+
+        def staged(name, version, *, verified=True):
+            work = self.target / name
+            handoff.package(work / 'payload', version)
+            if verified:
+                (work / 'verified.json').write_text(
+                    '{"version": "%s", "sha256": "%s"}' % (version, 'a' * 64))
+            return work
+
+        def age(work, seconds=7200):
+            old = os.path.getmtime(work) - seconds
+            for path in [work, *work.rglob('*')]:
+                os.utime(path, (old, old))
+
+        ready = staged('.dolly-update-ready', '1.0.1')
+        downloading = staged('.dolly-update-busy', '1.0.1', verified=False)
+        superseded = staged('.dolly-update-older', '0.9.0')
+        abandoned = staged('.dolly-update-gone', '1.0.1', verified=False)
+        for work in (ready, downloading, superseded, abandoned):
+            age(work)
+        # A download in progress writes into the zip; its folder time does not change.
+        (downloading / 'download.zip').write_bytes(b'partial')
+        os.utime(downloading, (os.path.getmtime(downloading) - 7200,) * 2)
+        with patch.object(release_launcher, 'open_editor') as editor:
+            self.assertEqual(release_launcher.main([], target=self.target), 0)
+        editor.assert_called_once()
+        self.assertTrue(ready.is_dir())
+        self.assertEqual(updater.staged_payload(self.target, '1.0.1', 'a' * 64), ready)
+        self.assertTrue(downloading.is_dir())
+        self.assertFalse(superseded.exists())
+        self.assertFalse(abandoned.exists())
+        # An editor whose ready download vanished downloads it again on the next click.
+        ui = self.ui(busy=False, _allow_discard=MagicMock(return_value=True), _on_close=MagicMock())
+        shutil.rmtree(ui.ready[0])
+        with patch.object(update_ui, 'launch_worker') as worker, patch.object(ui, '_can_update', return_value=True):
+            ui.restart()
+        worker.assert_not_called(); ui.app._on_close.assert_not_called()
+        self.assertIsNone(ui.ready)
+        self.assertIsNone(ui.ready_release)
+        self.assertIn('download', ui._status.call_args.args[0].lower())
 
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()

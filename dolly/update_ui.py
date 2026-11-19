@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 import os
+from pathlib import Path
 import queue
 import threading
 import webbrowser
@@ -211,6 +212,11 @@ class UpdateUI:
         if not self._can_update():
             return
         work, version = self.ready
+        if not (Path(work) / "verified.json").is_file():
+            # Another Dolly window may have cleaned the download up meanwhile.
+            self.ready = self.ready_release = None
+            self._status("The downloaded update is no longer there. Click Update now to download it again.")
+            return
         # Settle unsaved work before the updater starts waiting for Dolly to
         # close; a cancelled save prompt leaves Dolly open and the update ready.
         if self.app.busy or not self.app._allow_discard():

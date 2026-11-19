@@ -6631,7 +6631,7 @@
     },
     {
       "path": "dolly/update_ui.py",
-      "sha256": "81efe341c6c925552464956d3b790c24080bf6257037ec53ee27d8cf909bd3f2",
+      "sha256": "99707f73cfd38016bc22e26c1668d770b0707ac7ad4d2a5c304facc8829914b6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6674,11 +6674,12 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114k": "2026-11-14 boundaries: restart settles unsaved work before the worker starts and clears restarting if the close does not begin; poll contains a failing event and always reschedules; recover_pending heals an unusable record like the launcher."
+      "reconciliation_20261114k": "2026-11-14 boundaries: restart settles unsaved work before the worker starts and clears restarting if the close does not begin; poll contains a failing event and always reschedules; recover_pending heals an unusable record like the launcher.",
+      "reconciliation_20261119u": "2026-11-19: restart drops a ready download whose workspace is gone so the next click downloads again."
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "4e074bd3e97bb5c4c96888c9f9c3c83dd663efce52827df8a8bf64555bff6536",
+      "sha256": "abf92e9af977b99fa51ff9c0bfec8070aed022a2c5f9c10759eca4086efe7595",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6772,7 +6773,8 @@
       "full_formal_signoff": false,
       "reconciliation_20261114k": "2026-11-14 boundaries: pending_work reports an unusable record as PendingUpdateError (a locked file stays an OSError); clear_unusable_pending removes it only when every installed file matches the app's own manifest.",
       "reconciliation_20261114m": "2026-11-14 path kinds: install removes before it writes (deepest first, pruning emptied folders) and accepts a folder where the new release has a file only if it holds just owned files being removed; rollback drops added files first, then restores. UpdateRollback fileToDir/dirToFile model both directions; a folder holding a user file still refuses.",
-      "reconciliation_20261118": "2026-11-18: InstallLockBusy for lock contention."
+      "reconciliation_20261118": "2026-11-18: InstallLockBusy for lock contention.",
+      "reconciliation_20261119u": "2026-11-19: cleanup keeps a verified download of a newer release and ages other workspaces by their newest content."
     },
     {
       "path": "dolly/updater.py",
@@ -11059,7 +11061,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "4e074bd3e97bb5c4c96888c9f9c3c83dd663efce52827df8a8bf64555bff6536"
+      "owner_utf8_lf_sha256": "abf92e9af977b99fa51ff9c0bfec8070aed022a2c5f9c10759eca4086efe7595"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11770,7 +11772,7 @@
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "4e074bd3e97bb5c4c96888c9f9c3c83dd663efce52827df8a8bf64555bff6536"
+      "owner_utf8_lf_sha256": "abf92e9af977b99fa51ff9c0bfec8070aed022a2c5f9c10759eca4086efe7595"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -11781,7 +11783,7 @@
       "instances": [
         "UpdateStartApi"
       ],
-      "owner_utf8_lf_sha256": "81efe341c6c925552464956d3b790c24080bf6257037ec53ee27d8cf909bd3f2"
+      "owner_utf8_lf_sha256": "99707f73cfd38016bc22e26c1668d770b0707ac7ad4d2a5c304facc8829914b6"
     },
     "dolly/VideoStopOwnership.tla": {
       "path": "dolly/video_export.py",
@@ -11803,7 +11805,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "4e074bd3e97bb5c4c96888c9f9c3c83dd663efce52827df8a8bf64555bff6536"
+      "owner_utf8_lf_sha256": "abf92e9af977b99fa51ff9c0bfec8070aed022a2c5f9c10759eca4086efe7595"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -11814,7 +11816,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "4e074bd3e97bb5c4c96888c9f9c3c83dd663efce52827df8a8bf64555bff6536"
+      "owner_utf8_lf_sha256": "abf92e9af977b99fa51ff9c0bfec8070aed022a2c5f9c10759eca4086efe7595"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",

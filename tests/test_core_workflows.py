@@ -711,6 +711,8 @@ set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_REL
              patch.object(ui.updater, 'download_update', return_value=self.root / 'staged') as download, \
              patch.object(ui, 'check_processes'), patch.object(ui, 'launch_worker') as launch:
             (self.root / updater.MANIFEST).write_text('fixture')
+            (self.root / 'staged').mkdir(exist_ok=True)
+            (self.root / 'staged/verified.json').write_text('{}')
             manager = ui.UpdateUI(app)
             manager.check()
             self.assertEqual(len(jobs), 1)

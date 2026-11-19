@@ -247,7 +247,8 @@ def cleanup_probe(root, kind):
     if legacy:
         (work / 'plan.json').write_text('[' * 10000 + ']' * 10000 if state == 'recursive' else '[]', encoding='utf-8')
     if state == 'old':
-        os.utime(work, (time.time() - 7200,) * 2)
+        for path in (backup, backup.parent, work):
+            os.utime(path, (time.time() - 7200,) * 2)
     if state == 'pending':
         (target / w.PENDING).write_text('{}', encoding='utf-8')
     called = []
