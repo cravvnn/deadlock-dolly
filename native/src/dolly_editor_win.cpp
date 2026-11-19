@@ -1521,9 +1521,14 @@ bool editor_window_message(HWND window, UINT message, WPARAM wparam, LPARAM lpar
     return false;
 }
 void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
-    if (gConnected.exchange(connected) != connected)
-        ++gCursorRefresh;
     static std::uint32_t accepted = ~0u, owner_sequence = ~0u;
+    const bool was_connected = gConnected.exchange(connected);
+    if (was_connected != connected)
+        ++gCursorRefresh;
+    // A heartbeat lapse disabled input. The desktop does not republish an
+    // unchanged config, so re-apply it and its owner when the heartbeat returns.
+    if (connected && !was_connected)
+        accepted = owner_sequence = ~0u;
     static double configured_speed = -1;
     if (memory && connected) {
         auto source = memory + kEditorDofOffset;
