@@ -315,6 +315,12 @@ int main(int argc, char** argv) {
             options.shot_only = shot_only;
             options.max_frames = 2;
             options.camera_track = true;
+            const auto shot_path = capped_path + L".shot.json";
+            if (variant == 0) {
+                // A foreign shot sidecar is never truncated or replaced.
+                std::ofstream foreign(shot_path, std::ios::binary);
+                foreign << "foreign";
+            }
             ok = check(start(options), "bounded recording starts") && ok;
             const auto deadline = GetTickCount64() + 15000;
             double phase = 0;
@@ -351,8 +357,25 @@ int main(int argc, char** argv) {
                            "bounded Media Foundation camera matches encoded output") &&
                      ok;
             }
+            {
+                std::ifstream sidecar(shot_path, std::ios::binary);
+                const std::string shot((std::istreambuf_iterator<char>(sidecar)), {});
+                ok = check(variant == 0 ? shot == "foreign"
+                                        : shot.find("\"deadlock-dolly-shot\"") != std::string::npos &&
+                                              shot.size() > 2 &&
+                                              shot.compare(shot.size() - 2, 2, "}\n") == 0,
+                           "shot sidecar is complete and never replaces a foreign file") &&
+                     ok;
+                WIN32_FIND_DATAW found{};
+                const HANDLE leftover =
+                    FindFirstFileW((shot_path + L".pending-*").c_str(), &found);
+                ok = check(leftover == INVALID_HANDLE_VALUE, "no partial shot sidecar is left") &&
+                     ok;
+                if (leftover != INVALID_HANDLE_VALUE)
+                    FindClose(leftover);
+            }
             DeleteFileW((capped_path + L".camera-track.json").c_str());
-            DeleteFileW((capped_path + L".shot.json").c_str());
+            DeleteFileW(shot_path.c_str());
             DeleteFileW(capped_path.c_str());
         }
         // A take that plays an authored path must not record the hold after that

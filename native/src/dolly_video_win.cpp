@@ -311,79 +311,14 @@ void fail(Session& s, HRESULT hr, const wchar_t* message) noexcept {
 bool active(State state) noexcept {
     return state == State::starting || state == State::recording || state == State::finalizing;
 }
-// Sidecar metadata is additive; a failed write never invalidates the video.
-bool write_shot_sidecar(const Session& s) noexcept {
-    std::string leaf;
-    const auto slash = s.path.find_last_of(L"\\/");
-    const auto* base = slash == std::wstring::npos ? s.path.c_str() : s.path.c_str() + slash + 1;
-    const int size = WideCharToMultiByte(CP_UTF8, 0, base, -1, nullptr, 0, nullptr, nullptr);
-    if (size > 1) {
-        leaf.resize(std::size_t(size - 1));
-        WideCharToMultiByte(CP_UTF8, 0, base, -1, leaf.data(), size, nullptr, nullptr);
-    }
-    std::FILE* file = nullptr;
-    if (_wfopen_s(&file, (s.path + L".shot.json").c_str(), L"wb") != 0 || !file)
-        return false;
-    const auto frames = static_cast<unsigned long long>(s.written.load(std::memory_order_acquire));
-    const auto duration = double(s.duration.load(std::memory_order_acquire)) / 10000000.0;
-    const auto first = static_cast<unsigned long long>(s.shot.first);
-    const auto last = static_cast<unsigned long long>(s.shot.last);
-    std::fprintf(file,
-                 "{\n  \"format\": \"deadlock-dolly-shot\",\n  \"version\": 1,\n"
-                 "  \"video_file\": \"%s\",\n  \"fps\": %u,\n  \"fixed_step\": %s,\n"
-                 "  \"frames_written\": %llu,\n  \"duration_seconds\": %.7f,\n"
-                 "  \"first_frame\": %llu,\n  \"last_frame\": %llu,\n"
-                 "  \"first_replay_time\": %.9f,\n  \"last_replay_time\": %.9f,\n",
-                 leaf.c_str(), s.fps, s.fixed_step ? "true" : "false", frames, duration, first,
-                 last, s.shot.first_time, s.shot.last_time);
-    std::fprintf(file,
-                 "  \"clock_native_frames\": %llu,\n  \"clock_fallback_frames\": %llu,\n"
-                 "  \"clock_samples_limit\": %zu,\n  \"clock_samples\": [",
-                 static_cast<unsigned long long>(s.shot_clock.native_frames),
-                 static_cast<unsigned long long>(s.shot_clock.fallback_frames),
-                 s.shot_clock.samples.size());
-    for (std::size_t i = 0; i < s.shot_clock.count; ++i) {
-        const auto& sample = s.shot_clock.samples[i];
-        std::fprintf(file, "%s\n    {\"frame\": %llu, \"phase\": %.9f, \"source\": \"%s\"}",
-                     i ? "," : "", static_cast<unsigned long long>(sample.frame), sample.phase,
-                     sample.native ? "native" : "editor");
-    }
-    std::fprintf(file, "\n  ],\n  \"capture_qpc_frequency\": %llu,\n  \"capture_samples\": [",
-                 static_cast<unsigned long long>(s.frequency));
-    for (std::size_t i = 0; i < s.capture_trace.size; ++i) {
-        const auto& t = s.capture_trace.samples[i];
-        std::fprintf(file,
-                     "%s\n    {\"entry\": %llu, \"readback\": %llu, \"end\": %llu, "
-                     "\"phase\": %.9f, \"pending\": %u, \"outcome\": %u, \"missed\": %llu}",
-                     i ? "," : "", static_cast<unsigned long long>(t.entry),
-                     static_cast<unsigned long long>(t.readback),
-                     static_cast<unsigned long long>(t.end), t.phase, t.pending,
-                     static_cast<unsigned>(t.outcome), static_cast<unsigned long long>(t.missed));
-    }
-    std::fprintf(file,
-                 "\n  ],\n  \"movie_audio\": {\"version\": 1, \"complete\": %s, \"frames\": [",
-                 !s.audio_partial && s.audio_trace.size() == frames && frames ? "true" : "false");
-    for (std::size_t i = 0; i < s.audio_trace.size(); ++i) {
-        const auto& a = s.audio_trace[i];
-        std::fprintf(file, "%s\n    [%llu, %llu, %llu, %llu, %u]", i ? "," : "",
-                     static_cast<unsigned long long>(a.take),
-                     static_cast<unsigned long long>(a.first),
-                     static_cast<unsigned long long>(a.end),
-                     static_cast<unsigned long long>(a.movie_frame), a.rate);
-    }
-    std::fprintf(file, "\n  ]}\n}\n");
-    std::fclose(file);
-    return true;
-}
-// Optional metadata has independent ownership and finalization: failure never
-// removes a valid video, overwrites a foreign sidecar, or masquerades as complete.
-bool write_camera_sidecar(const Session& s) noexcept {
-    if (!s.camera_enabled)
-        return true;
+// Optional metadata is written to a CREATE_NEW temporary, flushed to disk and
+// renamed without replacing anything, so a failure never leaves a partial file
+// under the final name or overwrites a foreign one. False means not published.
+template <class Write>
+bool publish_sidecar(const Session& s, const std::wstring& destination, Write write) noexcept {
     std::wstring temporary;
     bool owned = false;
     try {
-        const auto destination = s.camera_only ? s.path : s.path + L".camera-track.json";
         temporary = destination + L".pending-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
                     std::to_wstring(s.first_qpc.load());
         HANDLE handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
@@ -403,36 +338,7 @@ bool write_camera_sidecar(const Session& s) noexcept {
             DeleteFileW(temporary.c_str());
             return false;
         }
-        const auto count = s.written.load(std::memory_order_acquire);
-        const bool complete = !s.camera_partial && count > 0 && s.camera_trace.size() == count &&
-                              (!s.camera_only || count == s.max_frames);
-        const char* reason = s.camera_partial ? s.camera_partial : "missing camera frames";
-        std::fprintf(
-            file,
-            "{\n  \"format\": \"deadlock-dolly-camera-track\",\n  \"version\": 2,\n"
-            "  \"fps\": %u,\n  \"fixed_step\": %s,\n  \"frames_written\": %llu,\n"
-            "  \"first_qpc\": %llu,\n  \"qpc_frequency\": %llu,\n"
-            "  \"width\": %u,\n  \"height\": %u,\n  \"depth\": %s,\n"
-            "  \"complete\": %s,\n  \"partial_reason\": \"%s\",\n"
-            "  \"source\": \"native-view-hook\",\n"
-            "  \"fields\": [\"frame\", \"video_time\", \"phase\", \"x\", \"y\", \"z\", "
-            "\"pitch\", \"yaw\", \"roll\", \"horizontal_fov\", \"capture_time\"],\n  \"frames\": [",
-            s.fps, s.fixed_step ? "true" : "false", static_cast<unsigned long long>(count),
-            static_cast<unsigned long long>(s.first_qpc.load()),
-            static_cast<unsigned long long>(s.frequency), s.width, s.height,
-            s.depth_enabled ? "true" : "false", complete ? "true" : "false",
-            complete ? "" : reason);
-        for (std::size_t i = 0; i < s.camera_trace.size(); ++i) {
-            const auto& f = s.camera_trace[i];
-            const auto& c = f.camera;
-            std::fprintf(
-                file,
-                "%s\n    [%llu, %.9f, %.9f, %.17g, %.17g, %.17g, %.17g, %.17g, %.17g, %.17g, %.9f]",
-                i ? "," : "", static_cast<unsigned long long>(f.frame), f.video_time, f.phase,
-                c.position[0], c.position[1], c.position[2], c.angles[0], c.angles[1], c.angles[2],
-                c.horizontal_fov, f.capture_time);
-        }
-        std::fprintf(file, "\n  ]\n}\n");
+        write(file);
         const bool flushed = std::fflush(file) == 0 && std::ferror(file) == 0 && _commit(fd) == 0;
         const bool closed = std::fclose(file) == 0;
         // No MOVEFILE_REPLACE_EXISTING: an existing destination is never ours.
@@ -445,6 +351,115 @@ bool write_camera_sidecar(const Session& s) noexcept {
     } catch (...) {
         if (owned)
             DeleteFileW(temporary.c_str());
+        return false;
+    }
+}
+// Sidecar metadata is additive; a failed write never invalidates the video.
+bool write_shot_sidecar(const Session& s) noexcept {
+    std::string leaf;
+    try {
+        const auto slash = s.path.find_last_of(L"\\/");
+        const auto* base =
+            slash == std::wstring::npos ? s.path.c_str() : s.path.c_str() + slash + 1;
+        const int size = WideCharToMultiByte(CP_UTF8, 0, base, -1, nullptr, 0, nullptr, nullptr);
+        if (size > 1) {
+            leaf.resize(std::size_t(size - 1));
+            WideCharToMultiByte(CP_UTF8, 0, base, -1, leaf.data(), size, nullptr, nullptr);
+        }
+        return publish_sidecar(s, s.path + L".shot.json", [&](std::FILE* file) {
+            const auto frames = static_cast<unsigned long long>(s.written.load(std::memory_order_acquire));
+            const auto duration = double(s.duration.load(std::memory_order_acquire)) / 10000000.0;
+            const auto first = static_cast<unsigned long long>(s.shot.first);
+            const auto last = static_cast<unsigned long long>(s.shot.last);
+            std::fprintf(file,
+                         "{\n  \"format\": \"deadlock-dolly-shot\",\n  \"version\": 1,\n"
+                         "  \"video_file\": \"%s\",\n  \"fps\": %u,\n  \"fixed_step\": %s,\n"
+                         "  \"frames_written\": %llu,\n  \"duration_seconds\": %.7f,\n"
+                         "  \"first_frame\": %llu,\n  \"last_frame\": %llu,\n"
+                         "  \"first_replay_time\": %.9f,\n  \"last_replay_time\": %.9f,\n",
+                         leaf.c_str(), s.fps, s.fixed_step ? "true" : "false", frames, duration, first,
+                         last, s.shot.first_time, s.shot.last_time);
+            std::fprintf(file,
+                         "  \"clock_native_frames\": %llu,\n  \"clock_fallback_frames\": %llu,\n"
+                         "  \"clock_samples_limit\": %zu,\n  \"clock_samples\": [",
+                         static_cast<unsigned long long>(s.shot_clock.native_frames),
+                         static_cast<unsigned long long>(s.shot_clock.fallback_frames),
+                         s.shot_clock.samples.size());
+            for (std::size_t i = 0; i < s.shot_clock.count; ++i) {
+                const auto& sample = s.shot_clock.samples[i];
+                std::fprintf(file, "%s\n    {\"frame\": %llu, \"phase\": %.9f, \"source\": \"%s\"}",
+                             i ? "," : "", static_cast<unsigned long long>(sample.frame), sample.phase,
+                             sample.native ? "native" : "editor");
+            }
+            std::fprintf(file, "\n  ],\n  \"capture_qpc_frequency\": %llu,\n  \"capture_samples\": [",
+                         static_cast<unsigned long long>(s.frequency));
+            for (std::size_t i = 0; i < s.capture_trace.size; ++i) {
+                const auto& t = s.capture_trace.samples[i];
+                std::fprintf(file,
+                             "%s\n    {\"entry\": %llu, \"readback\": %llu, \"end\": %llu, "
+                             "\"phase\": %.9f, \"pending\": %u, \"outcome\": %u, \"missed\": %llu}",
+                             i ? "," : "", static_cast<unsigned long long>(t.entry),
+                             static_cast<unsigned long long>(t.readback),
+                             static_cast<unsigned long long>(t.end), t.phase, t.pending,
+                             static_cast<unsigned>(t.outcome), static_cast<unsigned long long>(t.missed));
+            }
+            std::fprintf(file,
+                         "\n  ],\n  \"movie_audio\": {\"version\": 1, \"complete\": %s, \"frames\": [",
+                         !s.audio_partial && s.audio_trace.size() == frames && frames ? "true" : "false");
+            for (std::size_t i = 0; i < s.audio_trace.size(); ++i) {
+                const auto& a = s.audio_trace[i];
+                std::fprintf(file, "%s\n    [%llu, %llu, %llu, %llu, %u]", i ? "," : "",
+                             static_cast<unsigned long long>(a.take),
+                             static_cast<unsigned long long>(a.first),
+                             static_cast<unsigned long long>(a.end),
+                             static_cast<unsigned long long>(a.movie_frame), a.rate);
+            }
+            std::fprintf(file, "\n  ]}\n}\n");
+        });
+    } catch (...) {
+        return false;
+    }
+}
+// Optional metadata has independent ownership and finalization: failure never
+// removes a valid video, overwrites a foreign sidecar, or masquerades as complete.
+bool write_camera_sidecar(const Session& s) noexcept {
+    if (!s.camera_enabled)
+        return true;
+    try {
+        const auto destination = s.camera_only ? s.path : s.path + L".camera-track.json";
+        return publish_sidecar(s, destination, [&](std::FILE* file) {
+            const auto count = s.written.load(std::memory_order_acquire);
+            const bool complete = !s.camera_partial && count > 0 && s.camera_trace.size() == count &&
+                                  (!s.camera_only || count == s.max_frames);
+            const char* reason = s.camera_partial ? s.camera_partial : "missing camera frames";
+            std::fprintf(
+                file,
+                "{\n  \"format\": \"deadlock-dolly-camera-track\",\n  \"version\": 2,\n"
+                "  \"fps\": %u,\n  \"fixed_step\": %s,\n  \"frames_written\": %llu,\n"
+                "  \"first_qpc\": %llu,\n  \"qpc_frequency\": %llu,\n"
+                "  \"width\": %u,\n  \"height\": %u,\n  \"depth\": %s,\n"
+                "  \"complete\": %s,\n  \"partial_reason\": \"%s\",\n"
+                "  \"source\": \"native-view-hook\",\n"
+                "  \"fields\": [\"frame\", \"video_time\", \"phase\", \"x\", \"y\", \"z\", "
+                "\"pitch\", \"yaw\", \"roll\", \"horizontal_fov\", \"capture_time\"],\n  \"frames\": [",
+                s.fps, s.fixed_step ? "true" : "false", static_cast<unsigned long long>(count),
+                static_cast<unsigned long long>(s.first_qpc.load()),
+                static_cast<unsigned long long>(s.frequency), s.width, s.height,
+                s.depth_enabled ? "true" : "false", complete ? "true" : "false",
+                complete ? "" : reason);
+            for (std::size_t i = 0; i < s.camera_trace.size(); ++i) {
+                const auto& f = s.camera_trace[i];
+                const auto& c = f.camera;
+                std::fprintf(
+                    file,
+                    "%s\n    [%llu, %.9f, %.9f, %.17g, %.17g, %.17g, %.17g, %.17g, %.17g, %.17g, %.9f]",
+                    i ? "," : "", static_cast<unsigned long long>(f.frame), f.video_time, f.phase,
+                    c.position[0], c.position[1], c.position[2], c.angles[0], c.angles[1], c.angles[2],
+                    c.horizontal_fov, f.capture_time);
+            }
+            std::fprintf(file, "\n  ]\n}\n");
+        });
+    } catch (...) {
         return false;
     }
 }
