@@ -724,8 +724,7 @@ void render_overlay(IDXGISwapChain* chain) {
         const auto editor = editor_snapshot();
         const auto snapshot = video::status();
         if (!media_session_active() ||
-            (snapshot.state != video::State::starting &&
-             snapshot.state != video::State::recording && !editor.focused))
+            !video::present_should_capture(snapshot.state, editor.focused))
             return;
         const auto* sample = static_cast<const depth::SceneFrame*>(user);
         // Prefer the native path clock this view just evaluated: it is the

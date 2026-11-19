@@ -495,6 +495,52 @@ int main(int argc, char** argv) {
                    "cancel removes only its incomplete output") &&
              ok;
     }
+    // Stop clicked in the desktop app while the game is not focused: the
+    // overlay keeps feeding finalizing Presents through its gate, so the copy
+    // submitted on the last recording Present is read back instead of being
+    // counted as lost (which discards a fixed-step take).
+    const auto stop_path = path + L"-stop.mp4";
+    if (ok) {
+        Options options;
+        options.path = stop_path.c_str();
+        options.fps = 30;
+        options.bitrate = 2000000;
+        options.fixed_step = true;
+        ok = check(start(options), "fixed-step stop job starts");
+        const auto present = [&] {
+            const float color[] = {0.3f, 0.3f, 0.6f, 1.0f};
+            context->ClearRenderTargetView(view, color);
+            if (present_should_capture(status().state, false))
+                capture(swapchain, device, context);
+            swapchain->Present(0, 0);
+            Sleep(16);
+        };
+        const auto stop_deadline = GetTickCount64() + 15000;
+        while (ok && status().state == State::starting && GetTickCount64() < stop_deadline)
+            present();
+        for (int i = 0; ok && i < 20; ++i)
+            present();
+        ok = check(status().state == State::recording, "fixed-step stop job records") && ok;
+        stop(false);
+        Sleep(8); // The stop lands between two Presents.
+        while (ok && !terminal(status().state) && GetTickCount64() < stop_deadline)
+            present();
+        const auto stopped = status();
+        if (stopped.state != State::completed || stopped.frames_dropped)
+            std::fwprintf(stderr, L"Stopped take: state=%u written=%llu dropped=%llu %ls\n",
+                          unsigned(stopped.state),
+                          static_cast<unsigned long long>(stopped.frames_written),
+                          static_cast<unsigned long long>(stopped.frames_dropped),
+                          stopped.error);
+        ok = check(stopped.state == State::completed && stopped.frames_dropped == 0 &&
+                       stopped.frames_written >= 10,
+                   "a stop keeps the last submitted frame of a fixed-step take") &&
+             ok;
+        shutdown();
+        reset_resources();
+        DeleteFileW((stop_path + L".shot.json").c_str());
+        DeleteFileW(stop_path.c_str());
+    }
     release(view);
     release(buffer);
     release(context);

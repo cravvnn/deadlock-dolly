@@ -113,6 +113,9 @@ bool wants_shot_only() noexcept;
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
              const depth::SceneFrame* scene = nullptr, double replay_time = -1,
              bool native_clock = false) noexcept;
+// Whether the overlay's clean-frame Present should call capture() for a
+// recorder in `state`; the focused editor always feeds it.
+bool present_should_capture(State state, bool editor_focused) noexcept;
 // Rendered camera: Position, pitch/yaw/roll in degrees and horizontal FOV
 // Recorded per encoded frame into <video>.camera-track.json.
 struct CameraSample {

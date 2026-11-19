@@ -1707,6 +1707,12 @@ bool path_replay_time(double& seconds) noexcept {
     seconds = phase;
     return true;
 }
+// Finalizing still needs Presents: the copy submitted on the last recording
+// Present is read back by the next capture(), which admits no new frame once
+// the take is stopping. Without it that frame is counted as lost.
+bool present_should_capture(State state, bool editor_focused) noexcept {
+    return editor_focused || active(state);
+}
 void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContext* context,
              const depth::SceneFrame* scene, double replay_time, bool native_clock) noexcept {
     gCaptureAttempts.fetch_add(1, std::memory_order_relaxed);
