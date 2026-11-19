@@ -41,7 +41,7 @@ from dolly.branding import apply_window_icon
 from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknowledgementRequired,
                               tick_rate_advice, tick_rates_match)
 from dolly.clip_audio import ClipAudioCapture
-from dolly.curve import AspectCurve, PositionCurve, POSITION_CHANNELS, POSITION_LIMIT, RotationCurve, TimelineView
+from dolly.curve import POSITION_CHANNELS, POSITION_LIMIT
 from dolly.display import focus_window
 from dolly.ffmpeg_color import REC709_FRAME_TAGS, REC709_OUTPUT_ARGS, REC709_SCALE
 from dolly.ffmpeg_run import last_line, remove_partial, run_ffmpeg, scaled_timeout
