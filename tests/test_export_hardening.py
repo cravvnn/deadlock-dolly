@@ -304,5 +304,42 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertNotIn('movie started', events)
 
 
+    # Shot names as file stems --------------------------------------
+    def test_safe_stem_keeps_unicode_and_avoids_windows_device_names(self):
+        for name, expected in (
+                ('Cafe\u0301', 'Cafe\u0301'),
+                ('\u0939\u093f\u0928\u094d\u0926\u0940', '\u0939\u093f\u0928\u094d\u0926\u0940'),
+                ('\u540d\u524d \U0001f304', '\u540d\u524d \U0001f304'),
+                ('Opening-shot_2', 'Opening-shot_2'),
+                ('a<b>:c"d/e\\f|g?h*', 'a_b__c_d_e_f_g_h_'),
+                ('tab\there\x00', 'tab_here_'),
+                ('x\ud83c', 'x_'),
+                ('  name. . ', 'name'),
+                ('CON', '_CON'), ('con', '_con'), ('NUL ', '_NUL'), ('aux.backup', '_aux.backup'),
+                ('COM1', '_COM1'), ('LPT9.take', '_LPT9.take'), ('COM\u00b9', '_COM\u00b9'),
+                ('CONIN$', '_CONIN$'), ('PRN .x', '_PRN .x'),
+                ('CONSOLE', 'CONSOLE'), ('COM10', 'COM10'), ('LPT', 'LPT'),
+                ('', 'shot'), ('...', 'shot'), ('   ', 'shot')):
+            with self.subTest(name=name):
+                self.assertEqual(video_export.safe_stem(name), expected)
+        self.assertEqual(video_export.safe_stem('', 'Dolly'), 'Dolly')
+
+    def test_save_suggests_the_shot_name_as_a_safe_filename(self):
+        for name, expected in (('Cafe\u0301 \U0001f304', 'Cafe\u0301 \U0001f304.json'),
+                               ('COM1', '_COM1.json'), ('a/b', 'a_b.json')):
+            with self.subTest(name=name):
+                app = NS(project=gui.Project(name=name), file_path=None, busy=False, root=None,
+                         _sync_options=lambda: None)
+                with patch.object(gui.filedialog, 'asksaveasfilename', return_value='') as dialog:
+                    self.assertFalse(DollyApp.save(app))
+                self.assertEqual(dialog.call_args.kwargs['initialfile'], expected)
+
+    def test_in_game_crav_path_avoids_windows_device_names(self):
+        app = NS(project=gui.Project(name='COM1'), video_path=NS(get=lambda: ''),
+                 app_settings=NS(export_folder=str(self.root)))
+        self.assertEqual(DollyApp._renderlock_auto_path(app), self.root / '_COM1.crav')
+        app.video_path = NS(get=lambda: str(self.root / 'LPT1.mp4'))
+        self.assertEqual(DollyApp._renderlock_auto_path(app), self.root / '_LPT1.crav')
+
 if __name__ == '__main__':
     unittest.main()

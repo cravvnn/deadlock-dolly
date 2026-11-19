@@ -67,7 +67,8 @@ from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CO
                                 CODEC_LABEL_TO_KEY, CONTAINER_CHOICES, CONTAINER_LABEL_TO_KEY,
                                 DEFAULT_CODEC_KEY, DEFAULT_CONTAINER, VideoExport, VideoOptions,
                                 bundled_ffmpeg_path, default_video_path, format_video_status,
-                                recording_ready, resolve_container, resolve_ffmpeg, video_suffix)
+                                recording_ready, resolve_container, resolve_ffmpeg, safe_stem,
+                                video_suffix)
 
 
 FIELDS = ("time", "x", "y", "z", "pitch", "yaw", "roll", "aspect_ratio")
@@ -1078,7 +1079,6 @@ class DollyApp:
 
     def _renderlock_auto_path(self):
         """In-game exports have no file dialog: save beside the video output, never overwrite."""
-        import re
         chosen = self.video_path.get().strip()
         folder = Path(chosen).expanduser().parent if chosen else None
         if folder is None or not folder.is_dir():
@@ -1087,7 +1087,7 @@ class DollyApp:
         if folder is None or not folder.is_dir():
             raise ValueError("Choose an output file on the desktop Export tab first.")
         stem = Path(chosen).stem if chosen else ""
-        stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", stem or self.project.name or "shot").strip(" .") or "shot"
+        stem = safe_stem(stem or self.project.name)
         for index in range(1, 1000):
             candidate = folder / (f"{stem}.crav" if index == 1 else f"{stem}-{index}.crav")
             if not candidate.exists() and not candidate.is_symlink():
@@ -5410,7 +5410,7 @@ class DollyApp:
             project = copy.deepcopy(self.project)
             path = self.file_path
             if save_as or path is None:
-                filename = "".join(character if character.isalnum() or character in "-_ " else "_" for character in project.name).strip() or "shot"
+                filename = safe_stem(project.name)
                 LOG.info("Opening Save camera shot dialog.")
                 chosen = filedialog.asksaveasfilename(parent=self.root, title="Save camera shot", defaultextension=".json",
                                                        initialfile=filename + ".json", filetypes=(("Dolly shot", "*.json"),))

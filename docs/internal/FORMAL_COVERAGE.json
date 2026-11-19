@@ -2535,7 +2535,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "b9452cab326c5c5aa3941fe16ae9d1d5f8fc8f8ab2a4a95cfe95b51ddab9368e",
+      "sha256": "fafe273ad0b166c98cd348e3d9023ac5cec7ca0ea989b0dcba98b3056013cdbd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2663,7 +2663,7 @@
       "reconciliation_20261114k": "2026-11-14 boundaries: a close-time failure before the unsaved-changes question still asks it; background results (recovery, replay repair, DOF check, capture replace, startup notices) go through _background_dialog under the one-dialog rule.",
       "reconciliation_20261114m": "2026-11-14 close loop: once controller.close has run for a close (_close_submitted), a further failure exits instead of resubmitting it; a pending gameinfo conflict made every close fail and Dolly loop. CloseFlow models _on_close/_finish_close/_close_after_failure and the update restart entry.",
       "reconciliation_20261118": "2026-11-18: Movie audio owner kept until endmovie is confirmed; layer combine via a partial file with a frame-scaled timeout and UTF-8 errors; cancelled stage label; replay list refresh retried after an operation and stale folder reads discarded; Bank field shows and writes the effective roll.",
-      "reconciliation_20261119n": "2026-11-19: Rename refuses a shot name over the 256-character project limit and says why, instead of leaving a shot that cannot be evaluated, saved or exported."
+      "reconciliation_20261119n": "2026-11-19: Rename refuses a shot name over the 256-character project limit and says why, instead of leaving a shot that cannot be evaluated, saved or exported. Save suggests a filename and the in-game .crav export picks its stem through safe_stem, which keeps accents, combining marks, CJK and emoji and prefixes Windows device names (CON, COM1, LPT1, also with an extension) so the file is not opened as a device."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -6834,7 +6834,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0",
+      "sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -6934,7 +6934,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261118": "2026-11-18: Depth preview removes a failed output; bundled-audio takes refuse an existing folder in validated(); recorder status read before the take folder and timing."
+      "reconciliation_20261118": "2026-11-18: Depth preview removes a failed output; bundled-audio takes refuse an existing folder in validated(); recorder status read before the take folder and timing.",
+      "reconciliation_20261119n": "2026-11-19: safe_stem(): one filename-stem rule for shot names (Windows-forbidden and control characters and unpaired surrogates to _, trailing spaces/dots stripped, device names prefixed with _, empty to a fallback). default_video_path keeps its own rule; its Dolly_ prefix already avoids device names."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -11147,7 +11148,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11189,7 +11190,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "b9452cab326c5c5aa3941fe16ae9d1d5f8fc8f8ab2a4a95cfe95b51ddab9368e"
+      "owner_utf8_lf_sha256": "fafe273ad0b166c98cd348e3d9023ac5cec7ca0ea989b0dcba98b3056013cdbd"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11240,7 +11241,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "b9452cab326c5c5aa3941fe16ae9d1d5f8fc8f8ab2a4a95cfe95b51ddab9368e"
+      "owner_utf8_lf_sha256": "fafe273ad0b166c98cd348e3d9023ac5cec7ca0ea989b0dcba98b3056013cdbd"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11497,7 +11498,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11506,7 +11507,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11515,7 +11516,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11560,7 +11561,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "b9452cab326c5c5aa3941fe16ae9d1d5f8fc8f8ab2a4a95cfe95b51ddab9368e"
+      "owner_utf8_lf_sha256": "fafe273ad0b166c98cd348e3d9023ac5cec7ca0ea989b0dcba98b3056013cdbd"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11605,7 +11606,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -11794,7 +11795,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "4c19c005b8d181d583d155cc33af39518cc8239927dd5e8d43a0257db92a48d0"
+      "owner_utf8_lf_sha256": "0615028b9cf3d8b2d5c0820d867757094d863b1825a81661cb8281ddf6940484"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
