@@ -8412,7 +8412,7 @@
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
-      "sha256": "7e2076d1f8f8230e353245c8bc5e91b2df03440aefff87f1a43c31dfb226f5be",
+      "sha256": "ca78148198a187d8a22e53d95cee290bc7e43acf2e94d3d2f4eb55817ecb9d87",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8428,7 +8428,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_attach_retry": "2026-11-20: bone lookup looks again when the pose buffer is replaced mid-read"
     },
     {
       "path": "native/src/dolly_bone_picker.cpp",

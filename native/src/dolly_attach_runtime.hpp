@@ -778,17 +778,24 @@ inline bool resolve_bone(const Offsets& offsets, std::uintptr_t node,
         }
     }
     std::uintptr_t bone_array = 0;
-    if (!locate_bone_array(offsets, node, model_state, bone_array)) {
-        error = "The attach weapon point could not locate the target pose transforms.";
-        return false;
-    }
-    std::uintptr_t current_array = 0;
     std::uint32_t pose_count = 0;
-    if (!read_value(model_state + 0x80, current_array) || current_array != bone_array ||
-        !read_value(model_state + 0x90, pose_count) || pose_count < hit.entries ||
-        pose_count > 4096) {
-        error = "The model skeleton does not match its current pose buffer. Choose Eyes.";
-        return false;
+    // The game can replace the pose buffer between these reads. That passes
+    // within a frame or two, so look again before refusing the bone.
+    for (unsigned attempt = 0;; ++attempt) {
+        if (!locate_bone_array(offsets, node, model_state, bone_array)) {
+            error = "The attach weapon point could not locate the target pose transforms.";
+            return false;
+        }
+        std::uintptr_t current_array = 0;
+        if (read_value(model_state + 0x80, current_array) && current_array == bone_array &&
+            read_value(model_state + 0x90, pose_count) && pose_count >= hit.entries &&
+            pose_count <= 4096)
+            break;
+        if (attempt == 4) {
+            error = "The model skeleton does not match its current pose buffer. Choose Eyes.";
+            return false;
+        }
+        Sleep(4);
     }
     cache.bone_count = pose_count;
     cache.bone_array = bone_array;
