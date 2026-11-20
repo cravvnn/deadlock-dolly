@@ -1623,7 +1623,10 @@ class DollyApp:
             return
         self.video_status_text.set(format_video_status(status))
         self.status_text.set(self.video_status_text.get())
-        self._last_video_state = state
+        if "layer" not in status:
+            # A layer step's result is not the recorder's state; recording it
+            # made the next poll treat the last finished take as a new one.
+            self._last_video_state = state
         if state == "completed" and self.video_export.output_path:
             if status.get("reconstructed_folder"):
                 self._log("Reconstructed audio saved to " + status["reconstructed_folder"])

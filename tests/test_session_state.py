@@ -371,6 +371,11 @@ class FailedTakeRelease(unittest.TestCase):
 
 
 class TakeAutoFinish(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='dolly-session-state-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
     def test_a_take_finishes_even_if_no_poll_saw_its_shot_playing(self):
         # A very short shot, or a window that was not polling while it ran
         # (an open error dialog), ends before any poll reads "playing".
@@ -395,6 +400,27 @@ class TakeAutoFinish(unittest.TestCase):
                     'message': 'Paused camera ready. Use the in-game movement controls.'}
         DollyApp._refresh_video(app, finished)
         self.assertEqual(app.stops, [False])
+
+    def test_cancelled_players_processing_does_not_report_a_saved_video(self):
+        # The cancelled step is not the recorder's state; the next poll used to
+        # see the last finished capture as new and log it as a saved video.
+        export = NS(status=lambda: {'state': 'completed'}, finish_pending=False,
+                    output_path=self.root / 'take' / 'players' / 'players.mov')
+        controller = NS(_pov_active=False, _export_resolution=None, _export_timing=None)
+        logged = []
+        app = video_app(export, controller, _last_video_state='completed', _pending_auto_play=False,
+                        _ae_camera_take=None, _usd_camera_take=None, _still_run=None,
+                        _base_capture=None, _active_layer_take=None, _pending_capture=None,
+                        _pending_combine=None, _bone_take_project=None,
+                        layer_pipeline=NS(completed=lambda status: False, failed=lambda: False),
+                        _export_camera=lambda *args: None, _next_take_directory=lambda: self.root,
+                        video_path=Var(), project=NS(name='shot'), _log=logged.append)
+        app._video_operation_done = lambda status: DollyApp._video_operation_done(app, status)
+        app._video_operation_done({'state': 'cancelled', 'layer': 'players',
+                                   'reason': 'processing_cancelled'})
+        DollyApp._refresh_video(app, dict(READY))
+        self.assertEqual(logged, [])
+        self.assertEqual(app.video_path.get(), '')
 
 
 if __name__ == '__main__':
