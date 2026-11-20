@@ -422,6 +422,37 @@ class FailedTakeRelease(unittest.TestCase):
         self.assertEqual(app.finishes, [False] * 4)
 
 
+class DeclinedRecording(unittest.TestCase):
+    def test_declining_the_audio_helper_leaves_no_layered_run_behind(self):
+        # A queued layer run that never started kept camera editing, the curve
+        # editor and screenshots locked with "Finish recording before editing".
+        from dolly.path import Keyframe, Project
+        app = MagicMock()
+        app.busy = False
+        app._bone_picker_context = None
+        app.project = Project(keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0), Keyframe(1, 10, 0, 0, 0, 0, 0)])
+        app.video_source.get.return_value = 'Camera path'
+        app.video_path.get.return_value = 'C:/takes/shot.mp4'
+        app.video_fps.get.return_value = '60'
+        app.video_bitrate.get.return_value = '20 Mbps'
+        app.video_export_speed.get.return_value = '1'
+        app.ffmpeg_path.get.return_value = ''
+        app.players_scratch.get.return_value = ''
+        app.player_processing.get.return_value = 'Background'
+        app.video_reconstructed_audio.get.return_value = True
+        app._layer_queue = app._base_capture = app._pending_auto_play = 'untouched'
+        options = NS(layers=('world', 'effects'), fixed_step=True, speed=1.0, fps=60,
+                     path=Path('C:/takes/shot.mp4'))
+        with patch.object(gui, 'VideoOptions', return_value=NS(validated=lambda: options)), \
+                patch.object(gui, 'resolve_container', return_value='mp4'), \
+                patch.object(gui, 'focus_window'), patch.object(gui, 'find_viewer', return_value=None), \
+                patch.object(gui, 'ask_reconstructed_helper', return_value=False):
+            DollyApp._start_video_recording(app)
+        app._submit.assert_not_called()
+        self.assertEqual((app._layer_queue, app._base_capture, app._pending_auto_play),
+                         ('untouched',) * 3)
+
+
 class TakeAutoFinish(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='dolly-session-state-')

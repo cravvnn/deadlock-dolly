@@ -1472,6 +1472,15 @@ class DollyApp:
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             self._error("Record video", exc)
             return
+        game_audio = self.video_game_audio.get()
+        reconstructed = self.video_reconstructed_audio.get()
+        # Asked before this take's state is set up: a declined download must
+        # not leave a queued layer run that never starts.
+        if reconstructed and find_viewer() is None:
+            if not ask_reconstructed_helper(self.root, size_mb=HELP_SIZE_MB):
+                self.status_text.set(
+                    "Reconstructed audio helper download cancelled; the video was not started.")
+                return
         self._remember_export_folder()
         # The generated endpoint belongs to this take, not the authored shot.
         # Keep the single attached view editable for another chosen duration.
@@ -1519,13 +1528,6 @@ class DollyApp:
             # Bring the game into view for recording. Capture also works if Windows
             # refuses this request or desktop controls take focus during setup.
             focus_window(game_pid())
-        game_audio = self.video_game_audio.get()
-        reconstructed = self.video_reconstructed_audio.get()
-        if reconstructed and find_viewer() is None:
-            if not ask_reconstructed_helper(self.root, size_mb=HELP_SIZE_MB):
-                self.status_text.set(
-                    "Reconstructed audio helper download cancelled; the video was not started.")
-                return
         game_executable = self.game_path.get() if game_audio or reconstructed else None
         start_engine_seconds = (float(project.start_tick) / float(project.tick_rate)
                                 if project is not None else None)
