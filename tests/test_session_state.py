@@ -5,11 +5,13 @@ against simulated widgets, controller and bridge.
 """
 from pathlib import Path
 import tempfile
+import threading
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
 from dolly import gui
+from dolly.controller import Controller
 from dolly.gui import DollyApp
 from dolly.video_export import VideoExport, VideoOptions
 
@@ -50,6 +52,73 @@ class StartupControls(unittest.TestCase):
                 self.assertEqual(button_state(app.probe_button), 'normal')
         app = polled_app(self.session('unlocker_ready'))
         self.assertEqual(button_state(app.probe_button), 'disabled')
+
+
+class StartupCrash(unittest.TestCase):
+    """A game crash during startup is reported as the crash, with its reason."""
+
+    def test_startup_reports_the_crash_when_the_window_cancelled_its_wait(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'engine_console.log').write_bytes(
+                b'11/20 01:02:03 FATAL ERROR: Content file pak01.vpk is corrupt.\r\n')
+            controller = Controller(lambda *args, **kwargs: None)
+            controller._crash_suffix = lambda: ''
+            cancel = threading.Event()
+            crashed = NS(pid=42, native=None, session_dir=Path(folder), command=[],
+                         process=NS(poll=lambda: 1), owns_console_port=lambda: False)
+
+            def launch(*args, **kwargs):
+                # Deadlock dies while loading; the window sees the exit first
+                # and cancels the wait, as its poll does.
+                controller._session = crashed
+                cancel.set()
+            controller.launch = launch
+            with self.assertRaises(RuntimeError) as raised:
+                controller.start_editing('deadlock.exe', 'replay.dem', cancel_event=cancel)
+        message = str(raised.exception)
+        self.assertIn('Deadlock crashed', message)
+        self.assertIn('pak01.vpk is corrupt', message)
+        self.assertNotIn('cancelled', message)
+
+    def test_a_cancelled_startup_with_the_game_open_stays_a_cancellation(self):
+        controller = Controller(lambda *args, **kwargs: None)
+        cancel = threading.Event()
+        running = NS(pid=42, native=None, session_dir=Path('x'), command=[],
+                     process=NS(poll=lambda: None), owns_console_port=lambda: False)
+
+        def launch(*args, **kwargs):
+            controller._session = running
+            cancel.set()
+        controller.launch = launch
+        with self.assertRaisesRegex(RuntimeError, 'Editing startup cancelled'):
+            controller.start_editing('deadlock.exe', 'replay.dem', cancel_event=cancel)
+        self.assertEqual(controller.status()['startup_stage'], 'cancelled')
+
+    def exited(self, stage):
+        session, cancel = object(), threading.Event()
+        app = NS(controller=NS(_session=session, recover_dead_session=None), _last_game_session=session,
+                 startup_cancel=cancel, busy=True, root=MagicMock())
+        DollyApp._handle_game_exit(app, {'game_running': False, 'startup_stage': stage})
+        self.assertTrue(cancel.is_set())
+        polled = polled_app({'game_running': False, 'startup_stage': stage, 'message': ''},
+                            startup_cancel=cancel, _closing=False,
+                            _startup_crash_cancel=getattr(app, '_startup_crash_cancel', None),
+                            _handle_game_exit=lambda status: None)
+        polled.operations.pending_events.return_value = [
+            ('error', 'Starting replay editor', RuntimeError('Deadlock crashed (exit code 1)'))]
+        with patch.object(gui, 'editor_session'):
+            DollyApp._poll_once(polled)
+        return polled
+
+    def test_a_crash_during_startup_is_shown_as_an_error_not_a_cancel(self):
+        polled = self.exited('failed')
+        polled._report_operation_error.assert_called_once()
+        self.assertIsNone(polled.startup_cancel)
+
+    def test_closing_the_game_during_startup_stays_quiet(self):
+        polled = self.exited('game_closed')
+        polled._report_operation_error.assert_not_called()
+        polled.status_text.set.assert_any_call('Startup cancelled. You can choose a replay and try again.')
 
 
 class Widget:

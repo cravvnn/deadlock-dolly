@@ -1569,16 +1569,28 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._check_startup_cancelled(cancel_event)
                 return self._finish_replay_startup(bridge, initial_frame, cancel_event)
             except Exception as exc:
-                self._startup_failed(exc, cancel_event)
+                failure = self._startup_failed(exc, cancel_event)
+                if failure is not exc:
+                    raise failure from exc
                 raise
 
     def _startup_failed(self, exc, cancel_event):
+        """Record a failed startup and return the error to report."""
+        cancelled = cancel_event is not None and cancel_event.is_set()
+        session = self._session
+        if cancelled and session is not None and session.process.poll() is not None:
+            # The window cancels a running startup when it sees the game exit.
+            # That is the game ending, not a cancellation the user asked for.
+            cancelled = False
+            if not str(exc).startswith("Deadlock "):
+                exc = RuntimeError(self._game_death_message("starting the replay editor"))
         if not self._probe_result:
             self._probe_failure = str(exc)
-        stage = ("cancelled" if cancel_event is not None and cancel_event.is_set()
+        stage = ("cancelled" if cancelled
                  else "waiting_game_screen" if isinstance(exc, StartupAcknowledgementRequired)
                  else "failed")
         self._message(str(exc), startup_stage=stage)
+        return exc
 
     def resume_startup(self, demo_path, cancel_event=None):
         """Explicitly recheck the same owned hideout after a user dismisses its UI.
@@ -1614,7 +1626,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._check_startup_cancelled(cancel_event)
                 return self._finish_replay_startup(bridge, initial_frame, cancel_event)
             except Exception as exc:
-                self._startup_failed(exc, cancel_event)
+                failure = self._startup_failed(exc, cancel_event)
+                if failure is not exc:
+                    raise failure from exc
                 raise
 
     def _finish_replay_startup(self, bridge, initial_frame, cancel_event):

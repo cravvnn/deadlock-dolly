@@ -3486,7 +3486,8 @@ class DollyApp:
                     return
                 if kind == "export_error":
                     self._clear_layer_pipeline()
-                cancelled = self.startup_cancel is not None and self.startup_cancel.is_set()
+                cancelled = (self.startup_cancel is not None and self.startup_cancel.is_set()
+                             and getattr(self, "_startup_crash_cancel", None) is not self.startup_cancel)
                 if self.startup_cancel is not None:
                     self.startup_cancel = None
                     self.startup_bar.stop()
@@ -3707,6 +3708,9 @@ class DollyApp:
             if self.root.state() == 'iconic':
                 self._restore_from_taskbar()
             if self.startup_cancel is not None:
+                if status.get('startup_stage') == 'failed':
+                    # A crash ends this startup; its error is not a user cancel.
+                    self._startup_crash_cancel = self.startup_cancel
                 self.startup_cancel.set()
             self.root.after_idle(lambda: self._offer_session_graphics(session))
         if not self.busy and getattr(self,'_game_exit_cleanup',None) is not session:
