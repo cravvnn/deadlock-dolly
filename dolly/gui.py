@@ -1643,9 +1643,10 @@ class DollyApp:
                             raise RuntimeError(MOVIE_STOP_HELD.format(attempts=attempts)) from exc
                     raise
             return status
-        if (getattr(self, "_pov_project", None) is not None or getattr(self, "_bone_take_project", None) is not None) and self.controller.status().get("playing"):
+        if self.controller.status().get("playing"):
             # An early Finish ends this take, including its queued passes.
             # Do not silently export longer layer takes than the color video.
+            # The base capture stays, so the run still ends with its scene restore.
             self._layer_queue = []
         done = self._video_operation_done
         if then is not None:

@@ -611,5 +611,40 @@ class RecordingInProgress(unittest.TestCase):
         self.assertEqual(state['state'], 'recording')
 
 
+class EarlyFinish(unittest.TestCase):
+    """Finish pressed before the shot ends keeps the color take and ends the run."""
+
+    def take(self, playing):
+        export = NS(status=lambda: {'state': 'recording'}, stop=lambda cancel=False: {'state': 'completed'})
+        controller = NS(status=lambda: {**READY, 'playing': playing},
+                        _pov_active=False, _export_resolution=None, _export_timing=None)
+        return video_app(export, controller, _pov_project=None, _bone_take_project=None,
+                         _layer_queue=[('world', 'black'), ('effects', 'black'), ('effects', 'white')])
+
+    def test_an_early_finish_on_a_camera_path_take_skips_its_remaining_passes(self):
+        app = self.take(playing=True)
+        DollyApp._stop_video_recording(app)
+        self.assertEqual(app.submitted, ['Finishing video recording'])
+        self.assertEqual(app._layer_queue, [])
+
+    def test_the_finish_at_the_end_of_the_shot_still_records_the_passes(self):
+        app = self.take(playing=False)
+        app._auto_finish_layered = app._take_playing_seen = True
+        DollyApp._refresh_video(app, {**READY, 'shot_finished': True})
+        self.assertEqual(app.submitted, ['Finishing video recording'])
+        self.assertEqual(len(app._layer_queue), 3)
+
+    def test_a_run_that_ended_early_still_restores_the_scene(self):
+        from dolly.ui.layer_pipeline import LayerPipeline
+        pipeline = LayerPipeline(base_capture='base', queue=[])
+        self.assertFalse(pipeline.completed({'state': 'completed'}))
+        steps, audited = [], []
+        pipeline.advance(busy=False, recorder_active=lambda: False,
+                         submit=lambda label, function, callback: steps.append(label),
+                         finish_capture=None, combine=None, start_next=None, complete=None,
+                         audit=audited.append, restore=None)
+        self.assertEqual((steps, audited), (['Restoring scene layers'], ['base']))
+
+
 if __name__ == '__main__':
     unittest.main()

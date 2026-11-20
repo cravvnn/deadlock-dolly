@@ -95,7 +95,7 @@ class ExportHardeningTests(unittest.TestCase):
 
     def app_for(self, audio, state='completed'):
         exporter = NS(stop=lambda cancel=False: {'state': state, 'duration': 1.0})
-        return NS(busy=False, video_export=exporter, clip_audio=audio,
+        return NS(busy=False, video_export=exporter, clip_audio=audio, controller=NS(status=lambda: {}),
                   _video_operation_done=lambda status: None,
                   _submit=lambda label, operation, callback: operation())
 
@@ -150,7 +150,7 @@ class ExportHardeningTests(unittest.TestCase):
         for name in names:
             setattr(app, name, Widget())
         app.video_status_text, app.status_text = Var(), Var()
-        app.controller, app.playing, app._layer_queue = NS(), False, []
+        app.controller, app.playing, app._layer_queue = NS(status=lambda: {}), False, []
         app._last_video_state = 'recording'
         app._refresh_reshade = lambda *args: None
         app._advance_layer_pipeline = lambda: None

@@ -75,7 +75,7 @@ def stop_probe(root, mode, *, pov=False):
         return dict(pre_admission_unwinds=True)
     owner.start(options, pov=pov)
     stop_owner = owner.stop
-    app = NS(busy=False, video_export=owner, clip_audio=None, _video_operation_done=lambda status: None, _submit=lambda label, operation, callback: operation())
+    app = NS(busy=False, video_export=owner, clip_audio=None, controller=NS(status=lambda: {}), _video_operation_done=lambda status: None, _submit=lambda label, operation, callback: operation())
     with patch.object(owner, 'stop', side_effect=lambda **kwargs: stop_owner(timeout=0, **kwargs)):
         try:
             DollyApp._stop_video_recording(app)
