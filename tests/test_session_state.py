@@ -121,6 +121,22 @@ class StartupCrash(unittest.TestCase):
         polled.status_text.set.assert_any_call('Startup cancelled. You can choose a replay and try again.')
 
 
+class PlaybackSpeed(unittest.TestCase):
+    def test_choosing_the_shown_speed_again_applies_it_again(self):
+        # A take, Play or a new game session returns the replay to 1x while
+        # the dropdown still shows the earlier choice; picking it again must
+        # reach the game.
+        speed, sent = Var(), []
+        speed.set('0.5')
+        controller = NS(status=lambda: {'connected': True},
+                        set_playback_speed=lambda value: sent.append(value))
+        app = NS(closed=False, busy=False, speed=speed, controller=controller,
+                 _submit=lambda label, operation: operation() or True)
+        DollyApp._apply_playback_speed(app)
+        DollyApp._apply_playback_speed(app)
+        self.assertEqual(sent, [0.5, 0.5])
+
+
 class Widget:
     def __init__(self):
         self.options = {'state': 'disabled', 'text': ''}

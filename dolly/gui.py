@@ -5021,11 +5021,10 @@ class DollyApp:
             return
         if not self.controller.status().get("connected"):
             return
-        if speed == getattr(self, "_live_playback_speed", None):
-            return
-        if self._submit("Applying playback speed",
-                        lambda: self.controller.set_playback_speed(speed)):
-            self._live_playback_speed = speed
+        # Always sent: a take, Play or a new game session can have returned the
+        # replay to 1x since this speed was last chosen.
+        self._submit("Applying playback speed",
+                     lambda: self.controller.set_playback_speed(speed))
 
     def _play(self, *, project=None):
         def operation():
