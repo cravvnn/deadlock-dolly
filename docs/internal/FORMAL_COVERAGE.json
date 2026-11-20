@@ -1679,7 +1679,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "3d1a2d7959c1036a4dfdfc6a4399c2818b2b25d881f3cf33f5d1acc69192fc99",
+      "sha256": "7c1d6e5471373000dc1e4b31553ff701b4bb6c1d8aa3f16f96365aec54d61699",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1732,7 +1732,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261118": "2026-11-18: Bank edits write the effective roll (curve_roll when set); parked check compares channel values with wrapped angles."
+      "reconciliation_20261118": "2026-11-18: Bank edits write the effective roll (curve_roll when set); parked check compares channel values with wrapped angles.",
+      "reconciliation_20261120e": "2026-11-20: In-game bank edits merge in history by the edited camera, so a bank drag on an unselected camera is one undo step."
     },
     {
       "path": "dolly/editor_dof.py",

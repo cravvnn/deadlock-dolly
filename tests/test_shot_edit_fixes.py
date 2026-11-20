@@ -156,6 +156,38 @@ class RenameTests(unittest.TestCase):
         self.assertIn("256", app.status_text.get())
 
 
+class BankDragHistoryTests(unittest.TestCase):
+    def test_bank_drag_on_an_unselected_camera_is_one_undo_step(self):
+        from dolly.shot_history import ShotHistory
+        project = Project(keyframes=[_key(0.0), _key(2.0, 100), _key(4.0, 200)])
+        history = ShotHistory(project)
+        selection = ["0"]
+        app = SimpleNamespace(
+            project=project, shot_history=history, busy=False, playing=False, dirty=False,
+            status_text=_Var(), shot_time=_Var(0.0), preview_attach=False,
+            camera_tree=SimpleNamespace(selection=lambda: tuple(selection)),
+            _shot_edit_ready=lambda: True, _title=lambda: None)
+
+        def refresh_keys(selected_time=None):
+            # The edited camera becomes the selected one, as in the camera list.
+            for index, key in enumerate(app.project.keyframes):
+                if key.time == selected_time:
+                    selection[0] = str(index)
+                    app.shot_time.set(key.time)
+
+        app._refresh_keys = refresh_keys
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
+        app._commit_project = lambda candidate, time=None: gui.DollyApp._commit_project(app, candidate, time)
+        app._commit_camera = lambda keys, time=None: gui.DollyApp._commit_camera(app, keys, time)
+        for step in range(1, 6):
+            event = {"action": "set_camera_roll", "value": 2.0,
+                     "pose": [history.revision, step * .25, 0, 0, 0, 0, 0]}
+            self.assertTrue(editor_dispatch.dispatch(app, event, None, publish=lambda: None))
+        self.assertEqual(app.project.keyframes[2].roll, 1.25)
+        self.assertEqual(history.move().project.keyframes[2].roll, 0.0)
+
+
 class ReplaceCaptureTests(unittest.TestCase):
     def test_replacing_a_view_keeps_its_blend_in(self):
         project = Project(keyframes=[

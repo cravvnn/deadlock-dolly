@@ -165,10 +165,15 @@ def _pose_matches_key(app, index, pose):
 def dispatch(app, event, bridge, *, publish):
     action = event["action"]
     previous = getattr(app, "_history_edit_group", None)
-    app._history_edit_group = ((action, app._selection_index(app.camera_tree),
-                                float(_value(app, "shot_time", 0) or 0))
-                               if action.startswith("set_") and action not in (
-                                   "set_camera_position", "set_camera_curve_value", "set_camera_position_tangents") else None)
+    if action == "set_camera_roll":
+        # A bank drag names its camera. The first step also selects that
+        # camera, so the selection cannot identify the gesture.
+        app._history_edit_group = (action, event.get("value"))
+    else:
+        app._history_edit_group = ((action, app._selection_index(app.camera_tree),
+                                    float(_value(app, "shot_time", 0) or 0))
+                                   if action.startswith("set_") and action not in (
+                                       "set_camera_position", "set_camera_curve_value", "set_camera_position_tangents") else None)
     try:
         return _dispatch(app, event, bridge, publish=publish)
     finally:
