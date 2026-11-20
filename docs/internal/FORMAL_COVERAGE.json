@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "a22d81b2201a0c0296db1361eaf3e467ef5bcc713512fdd7e961716d425cf1c6",
+      "sha256": "9954b13a9d81c1162837461dbfee6d07c1ab963013abe6ff78dca5352c916fdf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -146,7 +146,8 @@
       "reconciliation_20261118v_version": "0.7.43-beta version string only.",
       "reconciliation_20261118w_version": "0.7.44-beta version string only.",
       "reconciliation_20261118x_version": "0.7.45-beta version string only.",
-      "reconciliation_20261119z_version": "0.7.46-beta version string only."
+      "reconciliation_20261119z_version": "0.7.46-beta version string only.",
+      "reconciliation_20261120z_version": "0.7.47-beta version string only."
     },
     {
       "path": "dolly/__main__.py",
@@ -13255,6 +13256,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.47-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.5-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17723,6 +17729,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_session_state.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_shot_definitions_audit.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18805,11 +18816,11 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 555,
+    "metadata/configuration/documentation input": 556,
     "implementation/tool": 314,
     "asset/compiled helper input": 28,
     "formal spec/interface": 159,
-    "test/support input": 87,
+    "test/support input": 88,
     "external dependency/resource": 203
   },
   "unclassified": 0,

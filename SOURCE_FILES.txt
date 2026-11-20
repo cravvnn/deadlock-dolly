@@ -1348,3 +1348,5 @@ third_party/cvar_unlocker/unlocker-build-6864.patch
 docs/RELEASE_NOTES_0.7.44-beta.md
 docs/RELEASE_NOTES_0.7.45-beta.md
 docs/RELEASE_NOTES_0.7.46-beta.md
+docs/RELEASE_NOTES_0.7.47-beta.md
+tests/test_session_state.py
