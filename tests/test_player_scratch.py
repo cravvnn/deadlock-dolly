@@ -143,5 +143,24 @@ class ScratchTests(unittest.TestCase):
             self.assertIsNone(player_scratch.update(folder, 'captured'))
         self.assertEqual(json.loads((folder/player_scratch.MANIFEST).read_text(encoding='utf-8'))['state'], 'captured')
 
+    def test_unsupported_game_build_is_named_at_once(self):
+        self.begin()
+        request = player_layer.capture_request_id(self.deploy)
+        (self.deploy/player_layer.STATUS_NAME).write_text(
+            'rejected exact module/layout gate\nrequest ' + request + '\n', encoding='ascii')
+        with self.assertRaises(RuntimeError) as raised:
+            player_layer.wait_until_armed(self.deploy, timeout=.2)
+        self.assertIn('this Deadlock build', str(raised.exception))
+        self.assertNotIn(request, str(raised.exception))
+
+    def test_other_refusals_show_one_line(self):
+        self.begin()
+        request = player_layer.capture_request_id(self.deploy)
+        (self.deploy/player_layer.STATUS_NAME).write_text(
+            'rejected sequence frame cap\nrequest ' + request + '\n', encoding='ascii')
+        with self.assertRaises(RuntimeError) as raised:
+            player_layer.wait_until_armed(self.deploy, timeout=.2)
+        self.assertEqual(str(raised.exception), 'Player capture could not start: rejected sequence frame cap')
+
 
 if __name__=='__main__':unittest.main()

@@ -370,6 +370,38 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertEqual((layer_dir / 'world.mov').read_bytes(), b'master')
         self.assertEqual(sorted(p.name for p in layer_dir.iterdir()), ['world.mov'])
 
+    def test_layer_combine_keeps_its_master_for_a_mov_take(self):
+        # A MOV take's black pass already has the master's name.
+        base = VideoOptions(self.root / 'take' / 'clip.mov', codec='hevc_amf', fps=60,
+                            ffmpeg_path=Path(sys.executable), container='mov')
+        layer_dir = self.root / 'take' / 'clip' / 'world'
+        layer_dir.mkdir(parents=True)
+        (layer_dir / 'world.mov').write_bytes(b'black')
+        (layer_dir / 'world_white.mov').write_bytes(b'white')
+        (layer_dir / 'world.mov.shot.json').write_text(json.dumps({'frames_written': 60}), encoding='utf-8')
+        app = NS(_base_capture=base, controller=NS(end_matte_layer=lambda: None))
+        def run(command, **options):
+            Path(command[-1]).write_bytes(b'master')
+            return NS(returncode=0, stderr='')
+        with patch.object(gui.subprocess, 'run', side_effect=run):
+            result = DollyApp._combine_layer(app, 'world')
+        self.assertEqual(result['master'], str(layer_dir / 'world.mov'))
+        self.assertEqual(sorted(p.name for p in layer_dir.iterdir()), ['world.mov'])
+        self.assertEqual((layer_dir / 'world.mov').read_bytes(), b'master')
+
+    def test_still_frame_failure_reports_utf8_text_and_removes_partial_image(self):
+        from dolly import screenshot
+        folder = self.root / 'Иван'
+        folder.mkdir()
+        for child, expected in ((ffmpeg_child, 'FFmpeg failed: А .*error'), (timeout_child, 'timed out')):
+            with self.subTest(child=child.__name__):
+                calls = []
+                with patch.object(subprocess, 'run', side_effect=child(calls)):
+                    with self.assertRaisesRegex(RuntimeError, expected):
+                        screenshot.extract_plate(Path(sys.executable), folder / 'clip.mkv', 3, folder / 'plate.png')
+                self.assertEqual(calls[0][1].get('encoding'), 'utf-8')
+                self.assertEqual(list(folder.iterdir()), [])
+
     # D6 / D7: take folder admission ------------------------------------
     def test_existing_take_folder_is_refused_before_replay_for_bundled_audio(self):
         (self.root / 'clip').mkdir()

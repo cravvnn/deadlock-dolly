@@ -197,10 +197,8 @@ def _fill_diagnostics_archive(archive, report, history, session_files, session, 
             if file.is_file():
                 archive.writestr("session/" + name, _diagnostic_file_text(file))
     # A successful retry must not hide the previous crashed launch.
-    from .game_logging import RETAINED_SESSIONS
-    journals = sorted((ROOT / "logs").glob("*/session.json"), key=lambda p: p.parent.name, reverse=True)[:RETAINED_SESSIONS]
-    for journal in journals:
-        folder = journal.parent
+    from .game_logging import RETAINED_SESSIONS, newest_sessions
+    for folder in newest_sessions(ROOT / "logs")[:RETAINED_SESSIONS]:
         if session and folder.resolve() == session.session_dir.resolve():
             continue
         for name in session_files:

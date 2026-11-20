@@ -37,6 +37,7 @@ GENERATED_FILES = frozenset({
         "dolly_owner_stall.txt", "dolly_owner_timeline.txt", "dolly_owner_draws.txt",
         "dolly_owner_producers.txt", "dolly_owner_records.txt",
         "dolly_owner_frame_stats.txt", "dolly_owner_stop.txt",
+        "dolly_owner_pacing.txt", "dolly_owner_pacing.txt.tmp",
         "dolly_owner_captures.txt")),
     "cvar_unlocker/pak01_dir.vpk",
     "cvar_unlocker/pak02_dir.vpk",

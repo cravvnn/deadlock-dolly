@@ -2,6 +2,7 @@
 #include "dolly_capture_timing.hpp"
 #include "dolly_player_producers.hpp"
 #include <atomic>
+#include <string>
 
 namespace dolly::player_capture {
 // Completed endpoints are not video images. A distinct internal negative
@@ -209,5 +210,19 @@ inline bool capture_sequence_complete(bool writer_drained, bool stalled, unsigne
     return writer_drained && !stalled && written + dropped == sealed && written >= 2 &&
            refused == 0 && !writer_error &&
            (!shot_aligned || (!cadence_lost && dropped == 0 && written == cap));
+}
+// The request id a start marker carries ("... request <32 hex> ..."), or empty.
+// A marker refused before it is parsed still answers the take that wrote it.
+inline std::string capture_marker_request(const std::string& text) {
+    constexpr char key[] = " request ";
+    const auto at = text.find(key);
+    if (at == std::string::npos)
+        return {};
+    const auto first = at + sizeof(key) - 1;
+    const auto last = text.find_first_not_of("0123456789abcdef", first);
+    const auto size = (last == std::string::npos ? text.size() : last) - first;
+    if (size != 32 || (last != std::string::npos && text[last] != ' '))
+        return {};
+    return text.substr(first, 32);
 }
 } // namespace dolly::player_capture

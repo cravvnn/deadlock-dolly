@@ -21,6 +21,10 @@ PENDING = "DOLLY_UPDATE_PENDING.json"
 # users never see the editor close and reopen with nothing in between. Even a
 # fast install stays visible for at least this long so it never just flashes.
 MIN_PROGRESS_SECONDS = 2.0
+# How long a recovery waits for another recovery of the same folder to finish.
+RECOVERY_LOCK_WAIT = 30.0
+# How long the updated Dolly gets to pass its startup check.
+SMOKE_TIMEOUT = 60
 
 
 def atomic_json(path, value):
@@ -271,19 +275,25 @@ class InstallLockBusy(OSError):
 
 
 @contextmanager
-def install_lock(target):
+def install_lock(target, wait=0.0):
+    """Hold the installation's lock; ``wait`` seconds are allowed for a holder to finish."""
     import msvcrt
     path = Path(target) / ".dolly-update.lock"
+    deadline = time.monotonic() + wait
     with path.open("a+b") as lock:
-        try:
-            # Reading a byte another process has locked fails too.
-            lock.seek(0)
-            if not lock.read(1):
-                lock.write(b"0"); lock.flush()
-            lock.seek(0)
-            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError as error:
-            raise InstallLockBusy(*error.args) from error
+        while True:
+            try:
+                # Reading a byte another process has locked fails too.
+                lock.seek(0)
+                if not lock.read(1):
+                    lock.write(b"0"); lock.flush()
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                break
+            except OSError as error:
+                if time.monotonic() >= deadline:
+                    raise InstallLockBusy(*error.args) from error
+                time.sleep(0.1)
         try:
             yield
         finally:
@@ -310,13 +320,48 @@ def wait_parent(pid):
         api.CloseHandle(handle)
 
 
+def _run_bounded(command, cwd, timeout):
+    """Run a program to its exit code; at the timeout end everything it started.
+
+    Dolly.exe starts the editor as a separate process. Ending only Dolly.exe
+    would leave a hidden editor running, which keeps the app files in use so
+    they can be neither restored nor updated again.
+    """
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    api.CreateJobObjectW.restype = ctypes.c_void_p
+    api.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    api.TerminateJobObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    api.CloseHandle.argtypes = [ctypes.c_void_p]
+    job = api.CreateJobObjectW(None, None)
+    try:
+        process = subprocess.Popen(command, cwd=cwd)
+        # Processes it starts from here on join the job with it.
+        grouped = bool(job) and bool(api.AssignProcessToJobObject(job, int(process._handle)))
+        try:
+            return process.wait(timeout)
+        except subprocess.TimeoutExpired:
+            if grouped:
+                api.TerminateJobObject(job, 1)
+            process.kill()
+            process.wait()
+            raise
+    finally:
+        if job:
+            api.CloseHandle(job)
+
+
 def smoke(target, work):
     report = work / "installed-smoke.json"
     report.unlink(missing_ok=True)
     # Hidden: the check must not paint a window over the update progress window.
-    result = subprocess.run([str(target / "Dolly.exe"), "--self-test-hidden", str(report)], cwd=work, timeout=60)
+    try:
+        returncode = _run_bounded([str(target / "Dolly.exe"), "--self-test-hidden", str(report)], work, SMOKE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Updated Dolly failed its startup check: it did not answer in %d seconds"
+                           % SMOKE_TIMEOUT) from None
     data = json.loads(report.read_text(encoding="utf-8")) if report.exists() else {}
-    if result.returncode or data.get("passed") is not True or data.get("frozen") is not True or data.get("game_launched") is not False:
+    if returncode or data.get("passed") is not True or data.get("frozen") is not True or data.get("game_launched") is not False:
         raise RuntimeError("Updated Dolly failed its startup check")
 
 
@@ -497,6 +542,31 @@ def _progress_helper_window(work, target, *, recover, parent_pid):
     return 0 if result.get("passed") else 1
 
 
+class DollyStillOpen(RuntimeError):
+    """This installation has another process open; launcher is True for Dolly.exe."""
+
+    def __init__(self, message, *, launcher=False):
+        super().__init__(message)
+        self.launcher = launcher
+
+
+def check_processes_settled(target, exclude_pid=0, timeout=10.0):
+    """check_processes, allowing a second Dolly.exe start a moment to exit.
+
+    A double-click starts Dolly.exe twice. The extra one closes by itself when
+    it finds an update in progress, so it is waited for rather than reported.
+    An open editor is refused at once.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return check_processes(target, exclude_pid)
+        except DollyStillOpen as error:
+            if not error.launcher or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+
+
 def check_processes(target, exclude_pid=0):
     """Conservative last-moment guard, independent of desktop telemetry."""
     excluded = {exclude_pid} if isinstance(exclude_pid, int) else set(exclude_pid)
@@ -534,8 +604,10 @@ def check_processes(target, exclude_pid=0):
                     buffer = ctypes.create_unicode_buffer(32768); length = wt.DWORD(len(buffer))
                     if not api.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(length)):
                         raise OSError("Cannot identify another Dolly process")
-                    if Path(buffer.value).resolve() in (target / "Dolly.exe", target / "_internal/DollyApp.exe"):
-                        raise RuntimeError("Another instance of this Dolly installation is still open")
+                    image = Path(buffer.value).resolve()
+                    if image in (target / "Dolly.exe", target / "_internal/DollyApp.exe"):
+                        raise DollyStillOpen("Another instance of this Dolly installation is still open",
+                                             launcher=image == target / "Dolly.exe")
                 finally:
                     api.CloseHandle(handle)
             more = api.Process32NextW(snapshot, ctypes.byref(entry))
@@ -770,22 +842,26 @@ def _install_error_message(error, work, target):
 def _apply_plan(plan, work, target, recover, *, on_status=None):
     """Shared install/recover body for the headless and windowed paths.
 
-    Returns the exit code; raises on failure so the caller can report it. A
-    failure before the parent exits must not launch a duplicate instance, so an
-    incomplete-pending failure returns 1.
+    Returns True when it did the work and False when another recovery already
+    had; raises on failure so the caller can report it. A failure before the
+    parent exits must not launch a duplicate instance, so an incomplete-pending
+    failure returns 1.
     """
     if on_status:
         on_status("Restoring your previous Dolly files..." if recover
                   else "Replacing application files...")
-    with install_lock(target):
-        check_processes(target)
+    # Two quick starts of Dolly.exe can each hand off to a recovery. The second
+    # waits for the first, then finds nothing left to do and stays silent.
+    with install_lock(target, wait=RECOVERY_LOCK_WAIT if recover else 0.0):
+        if recover and not (target / PENDING).exists():
+            return False
+        check_processes_settled(target)
         if recover:
-            if (target / PENDING).exists():
-                rollback(plan)
+            rollback(plan)
         else:
             install(plan, lambda path: smoke(path, work))
     atomic_json(work / "result.json", {"passed": True, "recovered": recover})
-    return 0
+    return True
 
 
 def main(argv=None):
@@ -820,7 +896,8 @@ def main(argv=None):
     try:
         if args.parent:
             wait_parent(args.parent)
-        _apply_plan(plan, work, target, args.recover)
+        if not _apply_plan(plan, work, target, args.recover):
+            return 0  # The recovery that did the work opens Dolly.
     except Exception as error:
         atomic_json(work / "result.json", {"passed": False, "error": str(error)})
         notify(_install_error_message(error, work, target))

@@ -574,7 +574,12 @@ float __fastcall movie_get_framerate_hook(void* self) noexcept {
 
 bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair, bool season2, bool build6861,
                          bool build6864) noexcept {
-    if (movie_installed.load(std::memory_order_acquire))
+    // A second call only adds the sample map: soundsystem.dll can load after
+    // the accessor was redirected, and the map needs the reviewed pair.
+    const bool installed_before = movie_installed.load(std::memory_order_acquire);
+    const bool add_reader = exact_pcm_pair && sound_module &&
+                            !movie_reader_base.load(std::memory_order_acquire);
+    if (installed_before && !add_reader)
         return true;
     if (!engine_module)
         return false;
@@ -584,13 +589,16 @@ bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm
     const auto target = reinterpret_cast<void*>(base + kMovieGetFramerateRva);
     // Exact reviewed accessor: movss xmm0, [rcx+0xf4]; ret.
     constexpr unsigned char expected[] = {0xF3, 0x0F, 0x10, 0x81, 0xF4, 0x00, 0x00, 0x00, 0xC3};
-    if (*slot != target || std::memcmp(reinterpret_cast<const void*>(base + kMovieGetFramerateRva),
-                                       expected, sizeof(expected))) {
-        return false;
+    if (!installed_before) {
+        if (*slot != target ||
+            std::memcmp(reinterpret_cast<const void*>(base + kMovieGetFramerateRva), expected,
+                        sizeof(expected))) {
+            return false;
+        }
+        convar_float = reinterpret_cast<ConVarFloatFn>(base + layout.float_accessor);
+        host_framerate_cvar = reinterpret_cast<void*>(base + layout.host_cvar);
     }
-    convar_float = reinterpret_cast<ConVarFloatFn>(base + layout.float_accessor);
-    host_framerate_cvar = reinterpret_cast<void*>(base + layout.host_cvar);
-    if (exact_pcm_pair && sound_module) {
+    if (add_reader) {
         // Read-only clock support is restricted to the reviewed engine/sound
         // pair. The native video frame samples this same stream clock.
         const auto time_slot = reinterpret_cast<void**>(base + layout.audio_table);
@@ -600,16 +608,18 @@ bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm
             *frame_slot != reinterpret_cast<void*>(base + 0xfc7b0) ||
             std::memcmp(reinterpret_cast<void*>(base + 0xfc7b0), frame_getter,
                         sizeof(frame_getter)))
-            return false;
+            return installed_before;
         movie_reader_base.store(base, std::memory_order_release);
     }
-    DWORD old = 0;
-    if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old))
-        return false;
-    *slot = reinterpret_cast<void*>(&movie_get_framerate_hook);
-    DWORD ignored = 0;
-    VirtualProtect(slot, sizeof(void*), old, &ignored);
-    movie_installed.store(true, std::memory_order_release);
+    if (!installed_before) {
+        DWORD old = 0;
+        if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old))
+            return false;
+        *slot = reinterpret_cast<void*>(&movie_get_framerate_hook);
+        DWORD ignored = 0;
+        VirtualProtect(slot, sizeof(void*), old, &ignored);
+        movie_installed.store(true, std::memory_order_release);
+    }
     // Publish a process-scoped capability marker. The desktop can then refuse a
     // fixed-step audio take before it records the wrong speed.
     wchar_t temp[MAX_PATH]{};

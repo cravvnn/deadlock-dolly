@@ -72,6 +72,26 @@ class ResourceBoundaryTests(unittest.TestCase):
             self.assertTrue((stranger / game_logging.ENGINE_LOG).exists())  # Not a Dolly session name.
             game_logging.prune_session_logs(logs / 'missing')  # No logs folder yet is fine.
 
+    def test_sessions_named_while_the_clock_was_ahead_do_not_outrank_real_ones(self):
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            logs = Path(directory)
+            year = time.gmtime().tm_year
+            ahead = [f'{year + 3}01{day:02d}_120000_{day:010x}' for day in range(1, 10)]
+            recent = [time.strftime('%Y%m%d_%H%M%S', time.gmtime(time.time() - 3600 * hours)) + f'_{hours:010x}'
+                      for hours in (30, 20, 10)]
+            for name in ahead + recent:
+                folder = logs / name; folder.mkdir()
+                for file in game_logging.SESSION_LOGS + ('session.json',):
+                    (folder / file).write_text('x')
+            game_logging.prune_session_logs(logs)
+            for name in recent:
+                self.assertTrue((logs / name / game_logging.ENGINE_LOG).exists(), name)
+            kept = [name for name in ahead if (logs / name / game_logging.ENGINE_LOG).exists()]
+            self.assertEqual(kept, ahead[-(game_logging.RETAINED_SESSIONS - len(recent)):])
+            order = [folder.name for folder in game_logging.newest_sessions(logs)]
+            self.assertEqual(order, recent[::-1] + ahead[::-1])
+
     def test_warned_memory_episode_stops_reads_and_rearms_on_each_reset(self):
         gib = 1024 ** 3
         expected = ('Paused replay memory grew 2.0 GiB in 6s '

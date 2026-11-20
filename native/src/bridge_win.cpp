@@ -1752,19 +1752,23 @@ static DWORD WINAPI worker(void*) {
         // The movie-WAV owner, virtual methods and host_framerate registration
         // are reviewed for these exact engines. The hook only changes the movie
         // clock while host_framerate is positive; real-time recording is unchanged.
-        if (gReviewedMovieAudioEngine)
-            movie_audio_install(engine, sound,
+        const auto install_movie_audio = [engine](HMODULE sound_module) {
+            if (!gReviewedMovieAudioEngine)
+                return;
+            movie_audio_install(engine, sound_module,
                 (module_matches(engine, kBuild6801EngineHash, 0x906000) &&
-                 module_matches(sound, kSound6801Hash, 0x6bf000)) ||
+                 module_matches(sound_module, kSound6801Hash, 0x6bf000)) ||
                 (module_matches(engine, kBuild6853EngineHash, 0x906000) &&
-                 module_matches(sound, kSound6853Hash, 0x6c1000)) ||
+                 module_matches(sound_module, kSound6853Hash, 0x6c1000)) ||
                 (module_matches(engine, kBuild6861EngineHash, 0x905000) &&
-                 module_matches(sound, kSound6861Hash, 0x6c0000)) ||
+                 module_matches(sound_module, kSound6861Hash, 0x6c0000)) ||
                 (module_matches(engine, kBuild6864EngineHash, 0x905000) &&
-                 module_matches(sound, kSound6864Hash, 0x6c0000)),
+                 module_matches(sound_module, kSound6864Hash, 0x6c0000)),
                 module_matches(engine, kBuild6853EngineHash, 0x906000),
                 module_matches(engine, kBuild6861EngineHash, 0x905000),
                 module_matches(engine, kBuild6864EngineHash, 0x905000));
+        };
+        install_movie_audio(sound);
         // Hook and original trampoline remain resident until process exit. Losing
         // the editor only releases ownership, avoiding code-unload races in a view.
         std::shared_ptr<const NativeShot> shot;
@@ -1797,6 +1801,10 @@ static DWORD WINAPI worker(void*) {
                 ++sound_attempts;
                 const auto module = GetModuleHandleW(L"soundsystem.dll");
                 if (module) {
+                    // The fixed-step sample map was skipped if the module was
+                    // not loaded at startup; add it now.
+                    if (!sound)
+                        install_movie_audio(module);
                     sound = module;
                     sound_capture_install(module, exact_sound_profile(module));
                 }

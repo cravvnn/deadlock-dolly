@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import subprocess
 import threading
+import time
 
 ENGINE_LOG = "engine_console.log"
 CONSOLE_LOG = "console_transcript.log"
@@ -76,6 +77,18 @@ def append_transcript(path, text, *, limit=TRANSCRIPT_LIMIT):
             stream.write(b"\n" * max(0, remaining - len(prefix) - len(marker)))
 
 
+def newest_sessions(logs_root):
+    """Session folders, newest first by the launch time in their names.
+
+    A name later than tomorrow was made while the clock was set ahead. Those
+    go last, or they would outrank every real session until that date arrives.
+    """
+    limit = time.strftime("%Y%m%d_%H%M%S", time.gmtime(time.time() + 86400))
+    folders = [path.parent for path in Path(logs_root).glob("*/session.json")
+               if _SESSION_NAME.fullmatch(path.parent.name)]
+    return sorted(folders, key=lambda folder: (folder.name[:15] <= limit, folder.name), reverse=True)
+
+
 def prune_session_logs(logs_root, *, keep=RETAINED_SESSIONS):
     """Delete game logs from all but the newest ``keep`` session folders.
 
@@ -85,9 +98,7 @@ def prune_session_logs(logs_root, *, keep=RETAINED_SESSIONS):
     Best-effort: a file that cannot be removed is left for the next launch.
     """
     try:
-        folders = sorted((path.parent for path in Path(logs_root).glob("*/session.json")
-                          if _SESSION_NAME.fullmatch(path.parent.name)),
-                         key=lambda folder: folder.name, reverse=True)
+        folders = newest_sessions(logs_root)
     except OSError:
         return
     for folder in folders[keep:]:
