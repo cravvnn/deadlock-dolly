@@ -45,6 +45,19 @@ class RecoveryBoundaries(unittest.TestCase):
         self.assertFalse(session_cleanup.remove_overlay(overlay, self.paths, session))
         self.assertEqual((overlay / 'session-files' / 'my-notes.txt').read_bytes(), b'keep')
 
+    def test_session_folder_is_removed_after_a_players_capture(self):
+        from dolly import player_layer
+        session, overlay, backup, record, patched = self.journal_fixture('players')
+        self.paths.gameinfo.write_bytes(core.GAMEINFO)
+        deployment = overlay / 'cvar_unlocker' / 'bin' / 'win64'
+        deployment.mkdir(parents=True, exist_ok=True)
+        # What the native capture leaves beside its DLL, progress file included.
+        for name in (player_layer.STATUS_NAME, player_layer.MARKER_NAME, player_layer.STOP_NAME,
+                     player_layer.PACING_NAME, player_layer.PACING_NAME + '.tmp'):
+            (deployment / name).write_text('x')
+        self.assertTrue(session_cleanup.remove_overlay(overlay, self.paths, session))
+        self.assertFalse(overlay.exists())
+
     def test_unfinished_session_is_recovered_after_the_dolly_folder_moves(self):
         session, overlay, backup, record, patched = self.journal_fixture('moved')
         moved = self.root / 'Dolly renamed'

@@ -4675,7 +4675,7 @@
     },
     {
       "path": "dolly/session_cleanup.py",
-      "sha256": "dddaae9bbb5e93682b8da6fd044956b039586b692ad65042e248fc3f1a195193",
+      "sha256": "97aa5f46da931744395083da83849d8afec00a86cd86d0c76ea9ede75bdf0d19",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4737,7 +4737,8 @@
       "reconciliation_20261114i": "2026-11-14 launch-time helper: start_waiter also hands the helper Dolly's own process handle; wait_and_cleanup waits for the game, then leaves cleanup to that Dolly while it is alive (exiting once the journal is restored and the overlay gone) and takes over only when it is gone. Real-process test test_p05.",
       "reconciliation_20261114k": "2026-11-14 boundaries: remove_overlay treats the game's session-files/cache_<id>.soc and an empty cvar_unlocker/save as session output (real leftovers showed these kept every session's folder); other session-files content is still preserved. The marker accepts the same logs/<id> session after the Dolly folder moved. A non-UTF-8 gameinfo.gi is a LaunchError.",
       "reconciliation_20261114n": "2026-11-14 two cleaners: wait_and_cleanup re-checks clean and game state inside game_config_lock before restoring and removing.",
-      "reconciliation_20261118": "2026-11-18: _append_log refuses linked session folders and log files."
+      "reconciliation_20261118": "2026-11-18: _append_log refuses linked session folders and log files.",
+      "reconciliation_20261120": "2026-11-20: The Players capture progress file and its temporary are generated files removed with the session folder."
     },
     {
       "path": "dolly/session_recovery.py",
@@ -11219,7 +11220,7 @@
       "instances": [
         "OwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "dddaae9bbb5e93682b8da6fd044956b039586b692ad65042e248fc3f1a195193"
+      "owner_utf8_lf_sha256": "97aa5f46da931744395083da83849d8afec00a86cd86d0c76ea9ede75bdf0d19"
     },
     "dolly/CleanupResult.tla": {
       "path": "dolly/file_ops.py",
