@@ -23,6 +23,8 @@ PENDING = "DOLLY_UPDATE_PENDING.json"
 MIN_PROGRESS_SECONDS = 2.0
 # How long a recovery waits for another recovery of the same folder to finish.
 RECOVERY_LOCK_WAIT = 30.0
+# How long the updated Dolly gets to pass its startup check.
+SMOKE_TIMEOUT = 60
 
 
 def atomic_json(path, value):
@@ -318,13 +320,48 @@ def wait_parent(pid):
         api.CloseHandle(handle)
 
 
+def _run_bounded(command, cwd, timeout):
+    """Run a program to its exit code; at the timeout end everything it started.
+
+    Dolly.exe starts the editor as a separate process. Ending only Dolly.exe
+    would leave a hidden editor running, which keeps the app files in use so
+    they can be neither restored nor updated again.
+    """
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    api.CreateJobObjectW.restype = ctypes.c_void_p
+    api.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    api.TerminateJobObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    api.CloseHandle.argtypes = [ctypes.c_void_p]
+    job = api.CreateJobObjectW(None, None)
+    try:
+        process = subprocess.Popen(command, cwd=cwd)
+        # Processes it starts from here on join the job with it.
+        grouped = bool(job) and bool(api.AssignProcessToJobObject(job, int(process._handle)))
+        try:
+            return process.wait(timeout)
+        except subprocess.TimeoutExpired:
+            if grouped:
+                api.TerminateJobObject(job, 1)
+            process.kill()
+            process.wait()
+            raise
+    finally:
+        if job:
+            api.CloseHandle(job)
+
+
 def smoke(target, work):
     report = work / "installed-smoke.json"
     report.unlink(missing_ok=True)
     # Hidden: the check must not paint a window over the update progress window.
-    result = subprocess.run([str(target / "Dolly.exe"), "--self-test-hidden", str(report)], cwd=work, timeout=60)
+    try:
+        returncode = _run_bounded([str(target / "Dolly.exe"), "--self-test-hidden", str(report)], work, SMOKE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Updated Dolly failed its startup check: it did not answer in %d seconds"
+                           % SMOKE_TIMEOUT) from None
     data = json.loads(report.read_text(encoding="utf-8")) if report.exists() else {}
-    if result.returncode or data.get("passed") is not True or data.get("frozen") is not True or data.get("game_launched") is not False:
+    if returncode or data.get("passed") is not True or data.get("frozen") is not True or data.get("game_launched") is not False:
         raise RuntimeError("Updated Dolly failed its startup check")
 
 

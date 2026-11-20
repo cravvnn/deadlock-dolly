@@ -554,6 +554,44 @@ class UpdaterBoundaries(unittest.TestCase):
             with self.assertRaises(update_worker.DollyStillOpen):
                 update_worker.check_processes_settled(target, timeout=0)
 
+    def test_startup_check_that_never_answers_leaves_no_process_behind(self):
+        import ctypes, subprocess, sys, time
+        plan, target, work, before = self.staged_release()
+        note = work / 'grandchild.txt'
+        script = work / 'stuck.py'
+        # Stands in for Dolly.exe: it starts the editor and waits for it.
+        script.write_text('\n'.join((
+            'import subprocess, sys, time',
+            'child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])',
+            'open(sys.argv[1], "w").write(str(child.pid))',
+            'time.sleep(120)')))
+        real = subprocess.Popen
+
+        def stand_in(command, *args, **kwargs):
+            return real([sys.executable, str(script), str(note)], *args, **kwargs)
+
+        def alive(pid):
+            handle = ctypes.windll.kernel32.OpenProcess(0x100000, False, pid)
+            if not handle:
+                return False
+            try:
+                return ctypes.windll.kernel32.WaitForSingleObject(handle, 0) != 0
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+
+        with patch.object(update_worker.subprocess, 'Popen', stand_in), \
+                patch.object(update_worker, 'SMOKE_TIMEOUT', 3, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'startup check'):
+                update_worker.smoke(target, work)
+        pid = int(note.read_text())
+        deadline = time.monotonic() + 5
+        while alive(pid) and time.monotonic() < deadline:
+            time.sleep(.1)
+        left = alive(pid)
+        if left:
+            subprocess.run(['taskkill', '/F', '/PID', str(pid)], capture_output=True)
+        self.assertFalse(left, 'the editor started by the startup check kept running')
+
     def test_failed_update_message_says_whether_files_were_restored(self):
         plan, target, work, before = self.staged_release()
         real = update_worker.replace_file

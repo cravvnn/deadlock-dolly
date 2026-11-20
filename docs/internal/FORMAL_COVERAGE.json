@@ -6719,7 +6719,7 @@
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5",
+      "sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6815,7 +6815,7 @@
       "reconciliation_20261114m": "2026-11-14 path kinds: install removes before it writes (deepest first, pruning emptied folders) and accepts a folder where the new release has a file only if it holds just owned files being removed; rollback drops added files first, then restores. UpdateRollback fileToDir/dirToFile model both directions; a folder holding a user file still refuses.",
       "reconciliation_20261118": "2026-11-18: InstallLockBusy for lock contention.",
       "reconciliation_20261119u": "2026-11-19: cleanup keeps a verified download of a newer release and ages other workspaces by their newest content. Install clears the read-only flag before removing a file a release drops. A failed recovery-record write rolls back inside the transaction, and an applying journal without its record (nothing installed changed) no longer blocks a retry. A complete journal is never rolled back: install and recovery only retry removing the recovery record. The failure message says the update is not finished and that opening Dolly.exe again recovers it while the recovery record remains.",
-      "reconciliation_20261120": "2026-11-20: A recovery waits for another recovery of the same folder and does nothing (no result, no relaunch) when the record is already gone. check_processes_settled gives a second Dolly.exe launcher time to exit; an open editor still refuses at once."
+      "reconciliation_20261120": "2026-11-20: A recovery waits for another recovery of the same folder and does nothing (no result, no relaunch) when the record is already gone. check_processes_settled gives a second Dolly.exe launcher time to exit; an open editor still refuses at once. smoke ends every process the startup check started when it times out, and reports the timeout as a failed startup check."
     },
     {
       "path": "dolly/updater.py",
@@ -11121,7 +11121,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
+      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11832,7 +11832,7 @@
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
+      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -11865,7 +11865,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
+      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -11876,7 +11876,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
+      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",
