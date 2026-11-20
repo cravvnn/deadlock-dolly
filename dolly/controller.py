@@ -942,6 +942,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
 
     def launch(self, game_path, demo_path, protocol="netcon", *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False, nvidia_dlss=False):
         with self._op_lock:
+            self._refuse_second_launch()
             self._launch_attempt = {
                 "game_path": str(game_path),
                 "demo_path": str(demo_path or ""),
@@ -970,6 +971,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise
             self._launch_attempt.update(status="started", pid=result["pid"], session_dir=result["session_dir"])
             return result
+
+    def _refuse_second_launch(self):
+        # Refused before anything is recorded: the running session keeps its
+        # startup stage, launch record and readiness.
+        if self._alive():
+            raise RuntimeError("Close the existing Dolly game session before launching again.")
 
     def _launch(self, game_path, demo_path, protocol, *, native=False, launch_options="", graphics_profile="", allow_mod_overrides=False, nvidia_dlss=False):
         with self._op_lock:
@@ -1532,6 +1539,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         The existing manual launch/initialize/load/probe actions remain usable.
         """
         with self._op_lock:
+            self._refuse_second_launch()
             try:
                 self._check_startup_cancelled(cancel_event)
                 profile_options = {"graphics_profile": graphics_profile} if graphics_profile else {}

@@ -2942,6 +2942,9 @@ class DollyApp:
         def operation():
             if self.controller.status().get("startup_stage") == "waiting_game_screen":
                 return self._resume_startup()
+            if self.controller.status().get("game_running"):
+                # Before anything below resets the running session's editor setup.
+                raise ValueError("Close the existing Dolly game session before launching again.")
             game, demo = self.game_path.get().strip(), self.demo_path.get().strip()
             if not game or not demo:
                 raise ValueError("Choose your Deadlock executable and a .dem replay first.")

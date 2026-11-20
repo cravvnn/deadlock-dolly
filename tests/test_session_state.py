@@ -121,6 +121,51 @@ class StartupCrash(unittest.TestCase):
         polled.status_text.set.assert_any_call('Startup cancelled. You can choose a replay and try again.')
 
 
+class SecondLaunch(unittest.TestCase):
+    """Play replay pressed while a session is running must leave that session usable."""
+
+    def test_a_refused_launch_leaves_the_running_session_ready(self):
+        controller = Controller(lambda *args, **kwargs: None)
+        controller._session = NS(pid=42, native=None, session_dir=Path('x'), command=[],
+                                 process=NS(poll=lambda: None))
+        controller._state['startup_stage'] = 'editing_ready'
+        controller._launch_attempt = {'status': 'started', 'demo_path': 'first.dem'}
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        second = Path(folder.name) / 'second.dem'
+        second.write_bytes(b'replay')
+        for start in (controller.start_editing, controller.launch):
+            with self.subTest(start=start.__name__):
+                with self.assertRaisesRegex(RuntimeError, 'Close the existing Dolly game session'):
+                    start('deadlock.exe', str(second))
+                self.assertEqual(controller.status()['startup_stage'], 'editing_ready')
+                self.assertEqual(controller._launch_attempt, {'status': 'started', 'demo_path': 'first.dem'})
+
+    def test_play_replay_with_a_running_session_keeps_its_editor_setup(self):
+        from dolly.settings import AppSettings
+        app = MagicMock()
+        app.app_settings = AppSettings()
+        app.attach_fields = {'fields': 'ready'}
+        app.launch_options.get.return_value = ''
+        for variable in (app.game_path, app.demo_path, app.replay_folder):
+            variable.get.return_value = 'chosen'
+        app.controller.status.return_value = {**READY}
+        raised = []
+
+        def guard(title, operation):
+            try:
+                return operation()
+            except Exception as exc:
+                raised.append(str(exc))
+        app._guard = guard
+        with patch('dolly.graphics_profiles_ui.launch_options', return_value={}):
+            DollyApp._start_editing_session(app)
+        self.assertEqual(raised, ['Close the existing Dolly game session before launching again.'])
+        app._submit.assert_not_called()
+        app._disable_external_input.assert_not_called()
+        self.assertEqual(app.attach_fields, {'fields': 'ready'})
+
+
 class PlaybackSpeed(unittest.TestCase):
     def test_choosing_the_shown_speed_again_applies_it_again(self):
         # A take, Play or a new game session returns the replay to 1x while
