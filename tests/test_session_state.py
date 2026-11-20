@@ -355,6 +355,20 @@ class FailedTakeRelease(unittest.TestCase):
         self.assertIsNone(app.clip_audio)
         self.assertEqual(app.errors, [])
 
+    def test_a_finish_that_keeps_failing_stops_after_three_tries(self):
+        # Disconnect pressed during a fixed-step take: the take completes but
+        # its timing cannot be restored, so every automatic Finish fails.
+        export = NS(status=lambda: {'state': 'completed'}, finish_pending=True)
+        controller = NS(_pov_active=False, _export_resolution=None, _export_timing={'fps': 60})
+        app = video_app(export, controller, finishes=[])
+        app._stop_video_recording = lambda cancel=False: app.finishes.append(cancel)
+        lost = {**READY, 'connected': False}
+        for _ in range(8):
+            DollyApp._refresh_video(app, lost)
+        self.assertEqual(app.finishes, [False] * 3)
+        DollyApp._refresh_video(app, dict(READY))
+        self.assertEqual(app.finishes, [False] * 4)
+
 
 class TakeAutoFinish(unittest.TestCase):
     def test_a_take_finishes_even_if_no_poll_saw_its_shot_playing(self):

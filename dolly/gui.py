@@ -1599,8 +1599,8 @@ class DollyApp:
             # An early Finish ends this take, including its queued passes.
             # Do not silently export longer layer takes than the color video.
             self._layer_queue = []
-        self._submit("Discarding recording" if cancel else "Finishing video recording",
-                     finish, self._video_operation_done)
+        return self._submit("Discarding recording" if cancel else "Finishing video recording",
+                            finish, self._video_operation_done)
 
     def _next_take_directory(self):
         """The folder that receives new takes, never the inside of a take."""
@@ -2094,6 +2094,13 @@ class DollyApp:
         # After MOVIE_STOP_ATTEMPTS unconfirmed endmovie replies the poll stops
         # retrying; the final message was shown once and Finish stays enabled.
         movie_held = movie_stop_held(self)
+        # Every failed automatic finish or restore ends in an error dialog, so
+        # the tries are bounded. A changed connection (the user reconnected) is
+        # a new chance.
+        situation = (state, bool(controller_status.get("connected")),
+                     bool(controller_status.get("game_running")))
+        tries = getattr(self, "_take_restore_tries", None)
+        tried = tries[1] if tries is not None and tries[0] == situation else 0
         if state != previous:
             if state == "completed":
                 if self.busy:
@@ -2101,8 +2108,10 @@ class DollyApp:
                 if (self.clip_audio is not None
                         or getattr(self.video_export, "finish_pending", False) is True):
                     if not movie_held:
-                        if not self.busy:
-                            self._stop_video_recording()
+                        # Out of tries, Finish recording stays for a manual one.
+                        if (tried < TAKE_RESTORE_ATTEMPTS
+                                and self._stop_video_recording() is not False):
+                            self._take_restore_tries = (situation, tried + 1)
                         return
                 else:
                     self._video_operation_done(status)
@@ -2122,19 +2131,14 @@ class DollyApp:
                     self._error("Recording", RuntimeError(status.get("error") or message))
             self._last_video_state = state
         active = state in ACTIVE_STATES
-        if active:
+        if active or state == previous == "completed":
+            # A new take, or this one finished: later tries start from zero.
             self._take_restore_tries = None
         # A take that failed on its own (the recorder stopped, the game exited,
         # a rejected start) is still reserved until the worker lets it go;
         # without that no later recording can start.
         unreleased = (getattr(self.video_export, "finish_pending", False) is True
                       and getattr(self.video_export, "_capture_only", False) is not True)
-        # Every failed try ends in an error dialog, so the tries are bounded.
-        # A changed connection (the user reconnected) is a new chance.
-        situation = (state, bool(controller_status.get("connected")),
-                     bool(controller_status.get("game_running")))
-        tries = getattr(self, "_take_restore_tries", None)
-        tried = tries[1] if tries is not None and tries[0] == situation else 0
         if (state in ("failed", "cancelled") and not self.busy
                 and tried < TAKE_RESTORE_ATTEMPTS
                 and ((getattr(self, "_pov_project", None) is not None
