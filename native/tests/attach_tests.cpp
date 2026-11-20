@@ -430,6 +430,58 @@ void early_tick_lag() {
     require(near(after_seek.motion_anchor[0], speed * 5) && !stuck.lagging(), "A seek starts over");
 }
 
+void stepped_aim() {
+    // The stored aim turns at 180 degrees/s but only changes every third
+    // frame, in one jump, and crosses from 359 to 0 on the way.
+    const double frame = 1.0 / 128;
+    dolly::AttachAimFilter filter;
+    auto sample_at = [&](int index) {
+        dolly::AttachSample sample;
+        sample.valid = true;
+        sample.point = dolly::AttachPoint::bone;
+        const double yaw = std::fmod(350 + 180 * frame * (index - index % 3), 360.0);
+        sample.aim = sample.angles = {358, yaw, 0};
+        return sample;
+    };
+    double previous = 0, largest = 0;
+    for (int index = 0; index < 96; ++index) {
+        auto sample = sample_at(index);
+        const double stored = sample.aim[1];
+        filter.apply(sample, index * frame, false);
+        require(near(sample.aim[0], 358) && near(sample.angles[1], sample.aim[1]),
+                "A bone point's direction follows the eased aim");
+        if (index > 32) {
+            largest = std::max(largest, std::abs(std::remainder(sample.aim[1] - previous, 360.0)));
+            require(std::abs(std::remainder(stored - sample.aim[1], 360.0)) < 12,
+                    "The eased aim stays close to the stored aim");
+        }
+        previous = sample.aim[1];
+    }
+    // The stored aim jumps 4.2 degrees at a time; the eased one never moves
+    // more than half of that in a frame.
+    require(largest < 2.1, "A stepped aim is eased");
+    // A paused replay shows the stored aim exactly, and playback resumes from it.
+    auto paused = sample_at(96);
+    const double exact = paused.aim[1];
+    filter.apply(paused, 96 * frame, true);
+    require(near(paused.aim[1], exact), "A paused replay shows the stored aim");
+    auto resumed = sample_at(97);
+    filter.apply(resumed, 97 * frame, false);
+    require(near(resumed.aim[1], sample_at(97).aim[1]), "Playback resumes from the stored aim");
+    // The eyes point keeps its body angles; only the aim is eased.
+    dolly::AttachAimFilter eyes;
+    dolly::AttachSample body;
+    body.valid = true;
+    body.point = dolly::AttachPoint::eyes;
+    body.angles = {0, 40, 0};
+    body.aim = {5, 50, 0};
+    eyes.apply(body, 1, false);
+    body.aim = {5, 60, 0};
+    eyes.apply(body, 1 + frame, false);
+    require(near(body.angles[1], 40) && body.aim[1] > 50 && body.aim[1] < 60,
+            "The eyes point eases only the aim");
+}
+
 void offset_application() {
     dolly::AttachSample sample;
     sample.valid = true;
@@ -1198,6 +1250,7 @@ int main() {
         offset_application();
         wrapped_aim();
         early_tick_lag();
+        stepped_aim();
         clearance_behavior();
         identity_gates();
         smoothing_behavior();

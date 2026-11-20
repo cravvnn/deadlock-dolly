@@ -7068,7 +7068,7 @@
     },
     {
       "path": "native/include/dolly_attach.hpp",
-      "sha256": "a0a5eb3e436e3e953c1e35332017ecea75944b44b160e971f6ecad38010da3ed",
+      "sha256": "c0e83ceef12cefa3636eb7180b292daf169faf4bd96c0c830a7ba97fdad9ce44",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7093,7 +7093,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261120e": "2026-11-20: attach_offset_entry keeps a typed position offset within the supported limit.",
-      "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag"
+      "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag",
+      "reconciliation_attach_aim": "2026-11-20: aim easing filter"
     },
     {
       "path": "native/include/dolly_bone_picker.hpp",
@@ -8295,7 +8296,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "e7bec7b76e1d12569875d25e8cd17c93a888e182af2870b0ac1edf46caf277f1",
+      "sha256": "96944ce8aac4e788b3453a3f385443cb8e3d9ae60707024b7e1177670f82c895",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8376,11 +8377,12 @@
       "reconciliation_20261118": "2026-11-18: Same-command refresh accepts kNoSeekRelief with the particle bits.",
       "reconciliation_20261120": "2026-11-20: The late soundsystem probe also offers the module to movie_audio_install.",
       "reconciliation_attach_pitch": "2026-11-20: attached flight starts from the pitch limit so idle frames keep the offsets",
-      "reconciliation_attach_hitch": "2026-11-20: attach samples pass through the anchor filter in preview and playback"
+      "reconciliation_attach_hitch": "2026-11-20: attach samples pass through the anchor filter in preview and playback",
+      "reconciliation_attach_aim": "2026-11-20: attach samples pass through the aim easing in preview and playback"
     },
     {
       "path": "native/src/dolly_attach.cpp",
-      "sha256": "3d475c9f681835b9c3afb2713a5a13484d12f23438c60cc50e5b8b7359393e9a",
+      "sha256": "0a757dc4fbeb655040d9e61dca4fe015b1d45f4f7566d4553353b08038a060cf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8405,7 +8407,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_attach_pitch": "2026-11-20: attach base angles are signed; composed and input pitch stop at vertical",
-      "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag"
+      "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag",
+      "reconciliation_attach_aim": "2026-11-20: aim easing filter"
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
@@ -12053,7 +12056,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "e7bec7b76e1d12569875d25e8cd17c93a888e182af2870b0ac1edf46caf277f1"
+      "owner_utf8_lf_sha256": "96944ce8aac4e788b3453a3f385443cb8e3d9ae60707024b7e1177670f82c895"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",

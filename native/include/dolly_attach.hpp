@@ -148,6 +148,23 @@ private:
     bool primed_ = false, lagging_ = false;
 };
 
+// A replay stores a player's aim in coarse steps and refreshes it unevenly, so
+// a camera that turns with the aim turns in jerks. Ease the aim over a few
+// hundredths of a second of replay time. A paused replay shows the stored aim
+// exactly, which is what offsets are authored against. Reset on camera command
+// or target changes.
+inline constexpr double kAttachAimEase = 0.02;
+class AttachAimFilter {
+public:
+    void reset() noexcept { primed_ = false; }
+    void apply(AttachSample& sample, double replay_time, bool paused) noexcept;
+
+private:
+    std::array<double, 3> first_{}, second_{};
+    double time_ = 0;
+    bool primed_ = false;
+};
+
 // Exponential pose smoothing across rendered views. reset() on mode or target
 // changes; apply_anchored follows whole-player movement before filtering.
 class AttachSmoothing {

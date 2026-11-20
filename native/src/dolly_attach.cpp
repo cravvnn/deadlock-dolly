@@ -243,6 +243,32 @@ void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double 
     shift_sample();
 }
 
+void AttachAimFilter::apply(AttachSample& sample, double replay_time, bool paused) noexcept {
+    if (!sample.valid || !finite3(sample.aim, 1e6) || !std::isfinite(replay_time) || paused) {
+        reset();
+        return;
+    }
+    const double dt = replay_time - time_;
+    if (!primed_ || dt < 0 || dt > .1) {
+        first_ = second_ = sample.aim;
+        time_ = replay_time;
+        primed_ = true;
+        return;
+    }
+    // Two equal stages leave no corner where the aim starts or stops turning.
+    const double alpha = dt > 0 ? 1 - std::exp(-dt / kAttachAimEase) : 0;
+    for (unsigned i = 0; i < 3; ++i) {
+        first_[i] += std::remainder(sample.aim[i] - first_[i], 360.0) * alpha;
+        second_[i] += std::remainder(first_[i] - second_[i], 360.0) * alpha;
+    }
+    time_ = replay_time;
+    // Bone and weapon points take their direction from the aim as well.
+    const bool shared = sample.point != AttachPoint::eyes;
+    sample.aim = second_;
+    if (shared)
+        sample.angles = second_;
+}
+
 void AttachSmoothing::reset() noexcept {
     primed_ = false;
     pose_.fill(0);

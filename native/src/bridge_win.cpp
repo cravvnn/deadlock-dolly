@@ -1145,6 +1145,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         static AttachSmoothing preview_smoothing;
         static PausedAttachSample<AttachSample> preview_paused_sample;
         static AttachAnchorFilter preview_anchor;
+        static AttachAimFilter preview_aim;
         static CameraPose preview_offsets;
         static std::uint32_t preview_seed = 0;
         static AttachPreviewContinuity preview_continuity;
@@ -1203,6 +1204,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         if (!preview_active) {
             preview_paused_sample.reset();
             preview_anchor.reset();
+            preview_aim.reset();
             preview_continuity.reset();
         }
         if (snap_requested && !picker_active && !preview_active && preview_current &&
@@ -1235,6 +1237,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                     preview_smoothing.reset();
                     preview_paused_sample.reset();
                     preview_anchor.reset();
+                    preview_aim.reset();
                 }
                 preview_dirty = true;
             }
@@ -1261,6 +1264,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                    preview_sample, now, status.frame_count, demo.tick, demo.paused);
             preview_paused_sample.apply(preview_sample, demo.paused, demo.tick);
             preview_anchor.apply(preview_sample, demo.time, demo.interval, demo.paused);
+            preview_aim.apply(preview_sample, demo.time, demo.paused);
             {
                 CameraPose pre_flight = manual_pose;
                 if (!resolve_attach_pose(preview_sample, segment, pre_flight)) {
@@ -1449,6 +1453,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     static std::array<AttachSmoothing, AttachTrack::max_segments> attach_smoothing;
     static std::array<PausedAttachSample<AttachSample>, AttachTrack::max_segments> paused_samples;
     static std::array<AttachAnchorFilter, AttachTrack::max_segments> anchor_filters;
+    static std::array<AttachAimFilter, AttachTrack::max_segments> aim_filters;
     static std::uint32_t smoothing_command = 0;
     static double smoothing_phase = 0;
     if (smoothing_command != c.command || phase < smoothing_phase) {
@@ -1457,6 +1462,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         for (auto& sample : paused_samples)
             sample.reset();
         for (auto& filter : anchor_filters)
+            filter.reset();
+        for (auto& filter : aim_filters)
             filter.reset();
         smoothing_command = c.command;
     }
@@ -1490,6 +1497,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                demo.paused);
         paused_samples[segment_index].apply(attach_sample, demo.paused, demo.tick);
         anchor_filters[segment_index].apply(attach_sample, demo.time, demo.interval, demo.paused);
+        aim_filters[segment_index].apply(attach_sample, demo.time, demo.paused);
         CameraPose resolved = applied;
         if (!resolve_attach_view(attach_sample, *attach_segment, resolved,
                                  attach_smoothing[segment_index], real_delta)) {
@@ -1524,6 +1532,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                    demo.paused);
             paused_samples[index].apply(sample, demo.paused, demo.tick);
             anchor_filters[index].apply(sample, demo.time, demo.interval, demo.paused);
+            aim_filters[index].apply(sample, demo.time, demo.paused);
             if (!resolve_attach_view(sample, *arriving, destination, attach_smoothing[index],
                                      real_delta)) {
                 fault = 42;
