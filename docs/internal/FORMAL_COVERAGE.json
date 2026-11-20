@@ -729,7 +729,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5",
+      "sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -895,7 +895,8 @@
       "reconciliation_20261118": "2026-11-18: HUD ownership: toggle_replay leaves the HUD to a playing shot; _finish_playback returns the replay HUD first; _halt joins the worker before the HUD restore; POV finish keeps a failed UI restore pending; failed Follow returns the replay UI; stop/disconnect continue after a failed restore; DOF shader original journaled before the write; health-bar originals only after a verified hide (HudOwnership). Console: late or flooded replies poll again during startup and shot reload; cancel reports cancelled; glow re-apply fails closed; failed intro speed restore tracked; diagnostics tolerate unreadable logs and vanished dumps; POV waits for the recorder; seek_relative guarded while playing; console speed check needs a live shot.",
       "reconciliation_20261119f": "2026-11-19: shot_finished state set when a native shot ends and cleared by the next playback; a crash message quotes the engine's own FATAL ERROR line with the Steam repair steps for corrupt content.",
       "reconciliation_20261120s4": "2026-11-20: _startup_failed returns the error to report: when the cancel event is set but the game process has exited, the startup error is the game-exit message (with the engine's FATAL ERROR line) and the stage is failed, not cancelled.",
-      "reconciliation_20261120s8": "2026-11-20: launch and start_editing refuse a second launch before recording a launch attempt or a failed startup stage, so the running session stays ready."
+      "reconciliation_20261120s8": "2026-11-20: launch and start_editing refuse a second launch before recording a launch attempt or a failed startup stage, so the running session stays ready.",
+      "reconciliation_20261120s13": "2026-11-20: connect continues when its Stop / restore fails only because the console is lost (a Game Follow rig restore needs it); the restore stays pending for the next Stop instead of making reconnection impossible."
     },
     {
       "path": "dolly/convar_response.py",
@@ -11115,7 +11116,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -11192,7 +11193,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -11204,7 +11205,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -11322,7 +11323,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/EncoderUnwind.tla": {
       "path": "dolly/player_layer.py",
@@ -11363,7 +11364,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -11455,7 +11456,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/LauncherHandoff.tla": {
       "path": "dolly/release_launcher.py",
@@ -11542,7 +11543,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -11553,7 +11554,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -11601,7 +11602,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -11745,7 +11746,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "18db8d74f7d61758d58ab6966f0bc3c33e3ec7d7d589a16ec99d89f6020a31e5"
+      "owner_utf8_lf_sha256": "47f9068d7e169445ef6933ea69947c4c0537b9f430d99a2d151041a03f90db96"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",

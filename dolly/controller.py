@@ -1045,7 +1045,15 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         with self._op_lock:
             if not self._alive():
                 raise RuntimeError("Use Launch first. Dolly only connects to its own running development session.")
-            self.stop()
+            try:
+                self.stop()
+            except Exception as exc:
+                if self._console is not None and self._console.is_connected:
+                    raise
+                # A restore that needs the console (Game Follow's rig) cannot
+                # run while it is lost. It stays pending for Stop / restore
+                # after this connection; refusing here made Connect impossible.
+                LOG.warning("Stop/restore before reconnecting remains pending: %s", exc)
             self._reset_camera_position()
             if self._console:
                 self._console.close()

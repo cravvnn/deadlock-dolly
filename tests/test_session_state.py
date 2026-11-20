@@ -176,6 +176,37 @@ class SecondLaunch(unittest.TestCase):
         self.assertEqual(app.attach_fields, {'fields': 'ready'})
 
 
+class Reconnect(unittest.TestCase):
+    def test_connect_works_while_game_follow_still_needs_the_console(self):
+        # Game Follow restores its rig through the console. With the connection
+        # lost that restore cannot run, and Connect used to fail on it before
+        # it ever reconnected.
+        controller = Controller(lambda *args, **kwargs: None)
+        controller._session = NS(pid=42, native=None, session_dir=None, command=[],
+                                 process=NS(poll=lambda: None), owns_console_port=lambda: True)
+        controller._console = NS(is_connected=False, close=lambda: None)
+        restore = Mock(side_effect=RuntimeError('The console is disconnected.'))
+        controller._follow_transaction = NS(restore=restore)
+        fresh = NS(is_connected=True, connect=lambda **options: None, close=lambda: None,
+                   request=lambda command, **options: '', recent_output=lambda **options: '')
+        with patch('dolly.controller.ConsoleClient', lambda **options: fresh), \
+                self.assertLogs('dolly', level='WARNING'):
+            status = controller.connect()
+        self.assertTrue(status['connected'])
+        restore.assert_called_once()
+        # The pending restore is kept for the next Stop / restore.
+        self.assertIsNotNone(controller._follow_transaction)
+
+    def test_connect_still_reports_a_failed_restore_on_a_live_console(self):
+        controller = Controller(lambda *args, **kwargs: None)
+        controller._session = NS(pid=42, native=None, session_dir=None, command=[],
+                                 process=NS(poll=lambda: None), owns_console_port=lambda: True)
+        controller._console = NS(is_connected=True, close=lambda: None)
+        controller._follow_transaction = NS(restore=Mock(side_effect=RuntimeError('readback mismatch')))
+        with self.assertRaisesRegex(RuntimeError, 'readback mismatch'):
+            controller.connect()
+
+
 class PlaybackSpeed(unittest.TestCase):
     def test_choosing_the_shown_speed_again_applies_it_again(self):
         # A take, Play or a new game session returns the replay to 1x while
