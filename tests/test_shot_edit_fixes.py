@@ -156,5 +156,34 @@ class RenameTests(unittest.TestCase):
         self.assertIn("256", app.status_text.get())
 
 
+class AttachedFlyHistoryTests(unittest.TestCase):
+    def test_one_attached_fly_is_one_undo_step(self):
+        from dolly.native_effects import model_token
+        from dolly.shot_history import ShotHistory
+        attach = AttachKey(handle=7, model="models/hero.vmdl")
+        project = Project(keyframes=[_key(0.0), _key(2.0, 100, source="attach", attach=attach)])
+        history = ShotHistory(project)
+        bridge = SimpleNamespace(_editor_attach_sequence=3)
+        app = SimpleNamespace(
+            project=project, shot_history=history, preview_attach=True, dirty=False,
+            camera_tree=SimpleNamespace(selection=lambda: ("1",)),
+            controller=SimpleNamespace(_native_bridge=lambda: bridge),
+            _title=lambda: None, _refresh_attach_card=lambda _key: None)
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
+        # An earlier edit the user may still want to undo after flying.
+        earlier = shot_commands.commit_camera(project, [_key(0.0, 5), project.keyframes[1]])
+        app.project = earlier
+        app._mark_dirty()
+        for step in range(1, 151):
+            gui.DollyApp._attach_result_changed(app, {
+                "config_sequence": 3, "handle": 7, "entity_index": 0,
+                "model": model_token(attach.model), "point": 0,
+                "offset": (float(step), 0.0, 0.0, 0.0, 0.0, 0.0)})
+        self.assertEqual(app.project.keyframes[1].attach.offset[0], 150.0)
+        self.assertEqual(history.move().project, earlier)
+        self.assertEqual(history.move().project, project)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4535,7 +4535,14 @@ class DollyApp:
             candidate.keyframes[index].attach.orientation_mode = "rigid"
         candidate.validate()
         self.project = candidate
-        self._mark_dirty()
+        # Attached flight reports new offsets on every poll; keep the whole
+        # flight as one undo step so it cannot push older edits out of history.
+        previous_group = getattr(self, "_history_edit_group", None)
+        self._history_edit_group = None if snap_pending else ("attach_fly", index)
+        try:
+            self._mark_dirty()
+        finally:
+            self._history_edit_group = previous_group
         self._refresh_attach_card(candidate.keyframes[index])
 
     def _apply_attach(self, apply_all):
