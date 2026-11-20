@@ -281,7 +281,21 @@ OverlayPanel::SliderRow OverlayPanel::slider_row(const char* id, const char* lab
         const bool stale = timeline_view_id_ == nullptr
                            || std::strcmp(timeline_view_id_, id) != 0
                            || timeline_view_end_ - timeline_view_start_ <= 0.0f;
-        if (stale || timeline_view_end_ > maximum || timeline_view_start_ < minimum
+        // A camera added, removed or moved at either end changes the range
+        // the view was fitted to; fit again so no camera is left out of
+        // sight. Other edits keep a deliberate zoom.
+        bool range_changed = false;
+        if (timeline) {
+            const auto& keys = timeline->graph_keys();
+            const double first = keys.empty() ? 0 : keys.front().time;
+            const double last = keys.empty() ? 0 : keys.back().time;
+            range_changed = keys.size() != timeline_fit_count_ ||
+                            first != timeline_fit_first_ || last != timeline_fit_last_;
+            timeline_fit_count_ = keys.size();
+            timeline_fit_first_ = first;
+            timeline_fit_last_ = last;
+        }
+        if (stale || range_changed || timeline_view_end_ > maximum || timeline_view_start_ < minimum
                 || timeline_view_end_ - timeline_view_start_ > full) {
             timeline_view_id_ = id;
             // Campath timelines fit the authored camera range, not the longer
@@ -1525,6 +1539,9 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                                    -position_range, position_range,
                                    position ? "%.2f" : "%.1f", 74.0f,
                                    nullptr, false, position);
+                    if (position)
+                        attach_draft[index] = attach_offset_entry(
+                            attach_draft[index], state.attach_offsets[index]);
                     attach_active = attach_active || row.active;
                     attach_commit = attach_commit || row.committed;
                 }

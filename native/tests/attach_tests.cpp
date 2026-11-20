@@ -986,6 +986,19 @@ void envelope_loading() {
 
 } // namespace
 
+void typed_offset_entry() {
+    // A typed distance beyond the supported range is kept at the limit, not
+    // sent on to be refused with no message.
+    require(dolly::attach_offset_entry(20000.f, 5) == 10000.f &&
+                dolly::attach_offset_entry(-20000.f, 5) == -10000.f &&
+                dolly::attach_offset_entry(std::numeric_limits<float>::infinity(), 5) == 10000.f,
+            "A typed attach offset beyond the limit was not clamped");
+    require(dolly::attach_offset_entry(-42.5f, 5) == -42.5f &&
+                dolly::attach_offset_entry(10000.f, 5) == 10000.f,
+            "A typed attach offset within the limit changed");
+    require(dolly::attach_offset_entry(std::numeric_limits<float>::quiet_NaN(), 5) == 5.f,
+            "An unreadable attach offset did not keep the saved value");
+}
 void rendered_pose_history() {
     dolly::AttachRenderHistory history;
     dolly::AttachSample sample{};
@@ -1061,6 +1074,7 @@ int main() {
         camera_relative_preview_motion();
         snap_round_trip();
         python_fixture_loads();
+        typed_offset_entry();
         std::cout << "Native attach camera tests passed.\n";
         return 0;
     } catch (const std::exception& error) {

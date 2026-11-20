@@ -3,10 +3,12 @@
 #include <windows.h>
 #include <atomic>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <memory>
+#include <thread>
 #include "MinHook.h"
 #include "dolly_editor.hpp"
 #include "dolly_lite.hpp"
@@ -1122,6 +1124,11 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
          (std::abs(value) != 1 && std::abs(value) != 2 && std::abs(value) != 5 &&
           std::abs(value) != 10 && std::abs(value) != 25)))
         return false;
+    // The Shot slider holds a float, which at the end of the shot can read
+    // just past the duration. That is a seek to the shot's last moment.
+    if (action == EditorAction::SeekShot && value > state.duration &&
+        float(value) <= float(state.duration))
+        value = state.duration;
     if (action == EditorAction::SeekShot &&
         (!state.ready || state.playing || state.busy || !state.camera_count ||
          state.owner != EditorOwner::Panel || value < 0 || value > state.duration))
@@ -1181,9 +1188,15 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if ((action == EditorAction::Capture || action == EditorAction::Replace) && !state.ready)
         return false;
-    if (gEventLock.test_and_set(std::memory_order_acquire)) {
-        ++gDropped;
-        return false;
+    // The worker holds the ring only while it copies it. Wait that out rather
+    // than drop a click or the end of a drag; give up only if it stays held.
+    const auto lock_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+    while (gEventLock.test_and_set(std::memory_order_acquire)) {
+        if (std::chrono::steady_clock::now() >= lock_deadline) {
+            ++gDropped;
+            return false;
+        }
+        std::this_thread::yield();
     }
     if (gLastEvent - gAcknowledged >= kEditorEventCount) {
         gEventLock.clear(std::memory_order_release);

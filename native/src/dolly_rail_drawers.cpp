@@ -94,8 +94,10 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
     EditorCameraList list{};
     const bool list_ok = editor_camera_list(list) && list.total == s.camera_count;
     // Never carry a scalar gesture onto a different camera or a replacement shot.
-    if (!measuring &&
-        (d.selected != s.selected_camera || (tab != 5 && list_ok && d.revision != list.revision))) {
+    // Campaths rows are keyed by their own camera and guard their own edits: a
+    // Bank drag selects its camera with the first step and must carry on.
+    if (!measuring && tab != 5 &&
+        (d.selected != s.selected_camera || (list_ok && d.revision != list.revision))) {
         bool active = false;
         for (auto& it : d.numbers)
             active |= it.second.active;
@@ -382,6 +384,8 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                     opt.unclamped_entry = i < 3;
                     auto e = f::SliderLine(axes[i], &v, -range, range, i < 3 ? "%.2f" : "%.1f",
                                            64 - indent, indent, opt);
+                    if (i < 3)
+                        v = attach_offset_entry(v, s.attach_offsets[i]);
                     n.value = v;
                     n.active = e.active;
                     offsets[i] = v;

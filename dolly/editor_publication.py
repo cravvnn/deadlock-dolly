@@ -213,16 +213,16 @@ def configure(app):
             app._native_level_bridge, app._native_level_cache = bridge, level
     publish_dof = getattr(bridge, "configure_editor_dof", None)
     if callable(publish_dof):
-        from .editor_dof import values_at
-        dof = (active, values_at(app.project, max(0.0, playhead)))
+        from .editor_dof import published_values_at
+        dof = (active, published_values_at(app.project, max(0.0, playhead)))
         if (getattr(app, "_native_dof_bridge", None) is not bridge
                 or getattr(app, "_native_dof_cache", None) != dof):
             publish_dof(dof[1], enabled=active)
             app._native_dof_bridge, app._native_dof_cache = bridge, dof
     publish_citadel = getattr(bridge, "configure_editor_citadel_dof", None)
     if callable(publish_citadel):
-        from .editor_dof import citadel_values_at
-        enabled, sensor, focus = citadel_values_at(app.project, max(0.0, playhead))
+        from .editor_dof import published_citadel_values_at
+        enabled, sensor, focus = published_citadel_values_at(app.project, max(0.0, playhead))
         citadel = (active, enabled, round(sensor, 6), round(focus, 6))
         if (getattr(app, "_native_citadel_dof_bridge", None) is not bridge
                 or getattr(app, "_native_citadel_dof_cache", None) != citadel):

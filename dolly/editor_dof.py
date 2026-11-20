@@ -4,7 +4,7 @@ from dataclasses import replace
 import math
 
 from .path import CvarTrack, Keyframe, TrackKey, validate_cvar_value
-from .native_effects import EFFECTS
+from .native_effects import EFFECTS, FLOAT32_MAX
 
 # Appended action IDs 41..51; vector components remain one authored track.
 CONTROLS = (
@@ -66,6 +66,19 @@ def values_at(project, time):
                  for name, component, default in CONTROLS)
 
 
+def published_values_at(project, time):
+    """values_at, kept within what the in-game controls can show.
+
+    A shot may hold values these controls cannot represent, such as a switch
+    that fades between off and on. Publishing must still succeed: a refused
+    block would stop the editor poll and with it every in-game action.
+    """
+    values = values_at(project, time)
+    return tuple(float(bool(value)) if index < 2
+                 else min(FLOAT32_MAX, max(-FLOAT32_MAX, value))
+                 for index, value in enumerate(values))
+
+
 def _cvars_at(project, time):
     view = project if project.keyframes else replace(project, keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0)])
     return view.evaluate(time)["cvars"]
@@ -119,6 +132,15 @@ def citadel_values_at(project, time):
     sensor = float(cvars.get(CITADEL_SENSOR, CITADEL_SENSOR_DEFAULT))
     focus = float(cvars.get(CITADEL_FOCUS, CITADEL_FOCUS_DEFAULT))
     return bool(enabled), sensor, focus
+
+
+def published_citadel_values_at(project, time):
+    """citadel_values_at, kept within the in-game sliders' ranges."""
+    enabled, sensor, focus = citadel_values_at(project, time)
+    _id, sensor_low, sensor_high, _discrete = EFFECTS[CITADEL_SENSOR]
+    _id, focus_low, focus_high, _discrete = EFFECTS[CITADEL_FOCUS]
+    return (enabled, min(float(sensor_high), max(float(sensor_low), sensor)),
+            min(float(focus_high), max(float(focus_low), focus)))
 
 
 def edited_citadel_project(project, time, control, value):

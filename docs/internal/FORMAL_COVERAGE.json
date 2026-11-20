@@ -1682,7 +1682,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "3d1a2d7959c1036a4dfdfc6a4399c2818b2b25d881f3cf33f5d1acc69192fc99",
+      "sha256": "7c1d6e5471373000dc1e4b31553ff701b4bb6c1d8aa3f16f96365aec54d61699",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1735,11 +1735,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261118": "2026-11-18: Bank edits write the effective roll (curve_roll when set); parked check compares channel values with wrapped angles."
+      "reconciliation_20261118": "2026-11-18: Bank edits write the effective roll (curve_roll when set); parked check compares channel values with wrapped angles.",
+      "reconciliation_20261120e": "2026-11-20: In-game bank edits merge in history by the edited camera, so a bank drag on an unselected camera is one undo step."
     },
     {
       "path": "dolly/editor_dof.py",
-      "sha256": "80d827bd2c1e5323f709818be0db41bd20610794d4567b33a913c1570eeeb9d5",
+      "sha256": "a1a16cc73c5494ec813d50909c724c657dbfe1fc60434aaceabacc3226e0eadf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1767,11 +1768,12 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261120e": "2026-11-20: published_values_at and published_citadel_values_at keep effect values within what the in-game controls can show."
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "4087c1fd9f01b561f5b1ebc6fbacb1c6f5b47d3c871bdd33f0870f1387ccc6dd",
+      "sha256": "5315ac110870b821d2432f842314bbcf9cd264d3281efcf090be9c182424187e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1810,7 +1812,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261120e": "2026-11-20: DOF blocks publish range-limited values, so an out-of-range saved effect value cannot stop the editor poll."
     },
     {
       "path": "dolly/editor_session.py",
@@ -2566,7 +2569,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "32d411b4d2e8a0a6eeb963cf49e0b8eb1c7db32a9a4e7d3b0148ac95e882325d",
+      "sha256": "72bc0a17146e523657f7647969b61dda84f9d5f1e57c52adf00286b26c01eca0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2712,7 +2715,8 @@
       "reconciliation_20261120s11": "2026-11-20: The automatic Finish of a completed take that still owes restoration is tried at most three times per connection state; Finish recording stays enabled for a manual try. _stop_video_recording returns whether its operation was accepted.",
       "reconciliation_20261120s12": "2026-11-20: A layer step result (Players processing, alpha combine) no longer overwrites the remembered recorder state; a cancelled step made the next poll report the last capture as a newly saved video.",
       "reconciliation_20261120s14": "2026-11-20: Finishing or discarding a take after the game exited drops its audio owner: an unconfirmed movie stop is not retained or retried when no game is left to confirm it.",
-      "reconciliation_20261120s15": "2026-11-20: Record asks about the reconstructed-audio helper download before it sets up the take; a declined download used to leave the layer queue and base capture of a run that never started, which kept camera editing and screenshots locked."
+      "reconciliation_20261120s15": "2026-11-20: Record asks about the reconstructed-audio helper download before it sets up the take; a declined download used to leave the layer queue and base capture of a run that never started, which kept camera editing and screenshots locked.",
+      "reconciliation_20261120e": "2026-11-20: Attached-flight offset updates share one history merge key, so a flight is one undo step."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -6253,7 +6257,7 @@
     },
     {
       "path": "dolly/ui/shot_commands.py",
-      "sha256": "c939a8dcad8f6c268bb9853a5a7dc1812fa6922eb61e1330fc1c44cc37bd303f",
+      "sha256": "fbf5219ece72b7eacb2f9254ed252643d8eb9ed34849d4856d9b033cde4a5679",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6292,7 +6296,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118": "2026-11-18: Deleting the first camera moves the start by whole ticks and keeps every replay tick."
+      "reconciliation_20261118": "2026-11-18: Deleting the first camera moves the start by whole ticks and keeps every replay tick.",
+      "reconciliation_20261120e": "2026-11-20: Replacing a camera's view keeps its source blend, like its tangents."
     },
     {
       "path": "dolly/ui/sidebar.py",
@@ -7050,7 +7055,7 @@
     },
     {
       "path": "native/include/dolly_attach.hpp",
-      "sha256": "729514c734dfa532f54848bedd19e293bb23ad9970962e235e6fd5c47dd3667f",
+      "sha256": "74f6edfc8941ea6639840962845f8205e4fe7d0bd03cd6ef110fbeb44fca6fd0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7073,7 +7078,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261120e": "2026-11-20: attach_offset_entry keeps a typed position offset within the supported limit."
     },
     {
       "path": "native/include/dolly_bone_picker.hpp",
@@ -8701,7 +8707,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "69d7dd26aa56c1fc1c1385f76e04b03d5321451dba42b19137845649ca05ddae",
+      "sha256": "d09143877a85d2362405574bc032c71336e1ee2592e4ae1ada2657cad41c5c02",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8738,7 +8744,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1)."
+      "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1).",
+      "reconciliation_20261120e": "2026-11-20: editor_enqueue waits up to 10 ms for the event ring instead of dropping the action when the worker holds it. A shot seek whose float slider value rounds just past the duration is clamped to the duration."
     },
     {
       "path": "native/src/dolly_effects.cpp",
@@ -9040,7 +9047,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.cpp",
-      "sha256": "def5100c06367aefecd9ed6d797120cbffd353efe42c405eff737dd0b21f1f37",
+      "sha256": "f1a3cc73c2a991d43e28563bd8b405b1965c7149466fe5f6015c11fb39e860a5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9071,11 +9078,12 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2). the classic 'Reset camera path?' modal opens and draws after the busy-disabled camera cards, so Cancel stays usable when the replay turns busy; Reset here keeps its own busy/playing/recording guard (O3)."
+      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2). the classic 'Reset camera path?' modal opens and draws after the busy-disabled camera cards, so Cancel stays usable when the replay turns busy; Reset here keeps its own busy/playing/recording guard (O3).",
+      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit. The Shot timeline refits its view when the camera range changes."
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
-      "sha256": "2f0b005c3636d92db5e1b0b2b561509be611e05ea87a2373c0e3de10cf7f9233",
+      "sha256": "088605f773a9bb31f01a604970ee45c07c723b7cf2629129a0ff9696e6181706",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9099,7 +9107,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3)."
+      "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3).",
+      "reconciliation_20261120e": "2026-11-20: Remembers the camera range the Shot timeline view was fitted to."
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",
@@ -9295,7 +9304,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "1550b9690119d0f449105dfe4b27270972c51ee8d13904fb8674e4fecd05c450",
+      "sha256": "a79cdd2ac7de664a6df88146bda35e9acf1795e85ee39cc1710220244c3a26bb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9318,7 +9327,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit. Campaths rows keep their gesture when the selected camera changes."
     },
     {
       "path": "native/src/dolly_rail_fields.cpp",
@@ -11257,7 +11267,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "32d411b4d2e8a0a6eeb963cf49e0b8eb1c7db32a9a4e7d3b0148ac95e882325d"
+      "owner_utf8_lf_sha256": "72bc0a17146e523657f7647969b61dda84f9d5f1e57c52adf00286b26c01eca0"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11308,7 +11318,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "32d411b4d2e8a0a6eeb963cf49e0b8eb1c7db32a9a4e7d3b0148ac95e882325d"
+      "owner_utf8_lf_sha256": "72bc0a17146e523657f7647969b61dda84f9d5f1e57c52adf00286b26c01eca0"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11628,7 +11638,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "32d411b4d2e8a0a6eeb963cf49e0b8eb1c7db32a9a4e7d3b0148ac95e882325d"
+      "owner_utf8_lf_sha256": "72bc0a17146e523657f7647969b61dda84f9d5f1e57c52adf00286b26c01eca0"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11906,7 +11916,7 @@
       "instances": [
         "CameraOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "c939a8dcad8f6c268bb9853a5a7dc1812fa6922eb61e1330fc1c44cc37bd303f"
+      "owner_utf8_lf_sha256": "fbf5219ece72b7eacb2f9254ed252643d8eb9ed34849d4856d9b033cde4a5679"
     },
     "dolly/ui/FadeSurface.tla": {
       "path": "dolly/ui/fade.py",

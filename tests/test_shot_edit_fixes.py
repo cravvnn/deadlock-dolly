@@ -156,5 +156,110 @@ class RenameTests(unittest.TestCase):
         self.assertIn("256", app.status_text.get())
 
 
+class EffectPublicationTests(unittest.TestCase):
+    """A saved effect value the in-game controls cannot show must not stop the editor poll."""
+
+    def _published(self, project, playhead):
+        from dolly import editor_dof
+        enabled, sensor, focus = editor_dof.published_citadel_values_at(project, playhead)
+        editor_wire.pack_citadel_dof(2, True, enabled, sensor, focus)
+        values = editor_dof.published_values_at(project, playhead)
+        editor_wire.pack_dof(2, True, values)
+        return values, sensor, focus
+
+    def test_out_of_range_effect_values_still_publish(self):
+        from dolly.path import CvarTrack, TrackKey
+        keys = [_key(0.0), _key(5.0, 10)]
+        far = Project(keyframes=keys, setup_values={
+            "r_citadel_depthoffield_focus_distance": 20000.0,
+            "r_citadel_depthoffield_sensor_size": 0.1})
+        self.assertEqual(self._published(far, 0.0)[1:], (0.5, 10000.0))
+        fade = Project(keyframes=keys, tracks=[
+            CvarTrack("r_dof_override", [TrackKey(0.0, 0.0), TrackKey(5.0, 1.0)], "linear")])
+        self.assertEqual(self._published(fade, 2.5)[0][1], 1.0)
+        self.assertEqual(self._published(fade, 0.0)[0][1], 0.0)
+
+    def test_in_range_effect_values_publish_unchanged(self):
+        from dolly import editor_dof
+        project = Project(keyframes=[_key(0.0), _key(5.0, 10)], setup_values={
+            "r_depth_of_field": 1.0, "r_citadel_depthoffield_focus_distance": 350.0,
+            "r_dof_override_near_blurry": -40.0})
+        self.assertEqual(editor_dof.published_values_at(project, 1.0),
+                         editor_dof.values_at(project, 1.0))
+        self.assertEqual(editor_dof.published_citadel_values_at(project, 1.0),
+                         editor_dof.citadel_values_at(project, 1.0))
+
+
+class BankDragHistoryTests(unittest.TestCase):
+    def test_bank_drag_on_an_unselected_camera_is_one_undo_step(self):
+        from dolly.shot_history import ShotHistory
+        project = Project(keyframes=[_key(0.0), _key(2.0, 100), _key(4.0, 200)])
+        history = ShotHistory(project)
+        selection = ["0"]
+        app = SimpleNamespace(
+            project=project, shot_history=history, busy=False, playing=False, dirty=False,
+            status_text=_Var(), shot_time=_Var(0.0), preview_attach=False,
+            camera_tree=SimpleNamespace(selection=lambda: tuple(selection)),
+            _shot_edit_ready=lambda: True, _title=lambda: None)
+
+        def refresh_keys(selected_time=None):
+            # The edited camera becomes the selected one, as in the camera list.
+            for index, key in enumerate(app.project.keyframes):
+                if key.time == selected_time:
+                    selection[0] = str(index)
+                    app.shot_time.set(key.time)
+
+        app._refresh_keys = refresh_keys
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
+        app._commit_project = lambda candidate, time=None: gui.DollyApp._commit_project(app, candidate, time)
+        app._commit_camera = lambda keys, time=None: gui.DollyApp._commit_camera(app, keys, time)
+        for step in range(1, 6):
+            event = {"action": "set_camera_roll", "value": 2.0,
+                     "pose": [history.revision, step * .25, 0, 0, 0, 0, 0]}
+            self.assertTrue(editor_dispatch.dispatch(app, event, None, publish=lambda: None))
+        self.assertEqual(app.project.keyframes[2].roll, 1.25)
+        self.assertEqual(history.move().project.keyframes[2].roll, 0.0)
+
+
+class ReplaceCaptureTests(unittest.TestCase):
+    def test_replacing_a_view_keeps_its_blend_in(self):
+        project = Project(keyframes=[
+            _key(0.0, source="attach", attach=AttachKey(handle=1, model="m")),
+            _key(2.0, 100, source_blend=0.5)])
+        shot_commands.finish_capture(project, "replace", _key(2.0, 250), 128, selected=1)
+        self.assertEqual(project.keyframes[1].x, 250)
+        self.assertEqual(project.keyframes[1].source_blend, 0.5)
+
+
+class AttachedFlyHistoryTests(unittest.TestCase):
+    def test_one_attached_fly_is_one_undo_step(self):
+        from dolly.native_effects import model_token
+        from dolly.shot_history import ShotHistory
+        attach = AttachKey(handle=7, model="models/hero.vmdl")
+        project = Project(keyframes=[_key(0.0), _key(2.0, 100, source="attach", attach=attach)])
+        history = ShotHistory(project)
+        bridge = SimpleNamespace(_editor_attach_sequence=3)
+        app = SimpleNamespace(
+            project=project, shot_history=history, preview_attach=True, dirty=False,
+            camera_tree=SimpleNamespace(selection=lambda: ("1",)),
+            controller=SimpleNamespace(_native_bridge=lambda: bridge),
+            _title=lambda: None, _refresh_attach_card=lambda _key: None)
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
+        # An earlier edit the user may still want to undo after flying.
+        earlier = shot_commands.commit_camera(project, [_key(0.0, 5), project.keyframes[1]])
+        app.project = earlier
+        app._mark_dirty()
+        for step in range(1, 151):
+            gui.DollyApp._attach_result_changed(app, {
+                "config_sequence": 3, "handle": 7, "entity_index": 0,
+                "model": model_token(attach.model), "point": 0,
+                "offset": (float(step), 0.0, 0.0, 0.0, 0.0, 0.0)})
+        self.assertEqual(app.project.keyframes[1].attach.offset[0], 150.0)
+        self.assertEqual(history.move().project, earlier)
+        self.assertEqual(history.move().project, project)
+
+
 if __name__ == "__main__":
     unittest.main()
