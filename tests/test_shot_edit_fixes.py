@@ -231,6 +231,28 @@ class ReplaceCaptureTests(unittest.TestCase):
         self.assertEqual(project.keyframes[1].x, 250)
         self.assertEqual(project.keyframes[1].source_blend, 0.5)
 
+    def test_replacing_an_attached_view_keeps_it_attached(self):
+        attach = AttachKey(handle=7, entity_id=3, model="m", point="bone", bone="head",
+                           offset=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0), smoothing=0.25)
+        project = Project(keyframes=[_key(0.0), _key(2.0, 100, source="attach", attach=attach)])
+        shot_commands.finish_capture(project, "replace", _key(2.0, 250), 128, selected=1)
+        replaced = project.keyframes[1]
+        self.assertEqual((replaced.x, replaced.source, replaced.attach), (250, "attach", attach))
+        self.assertIsNot(replaced.attach, attach)
+
+    def test_replacing_with_an_attached_view_uses_that_view_s_attachment(self):
+        project = Project(keyframes=[
+            _key(0.0), _key(2.0, 100, source="attach", attach=AttachKey(handle=7, model="m"))])
+        other = AttachKey(handle=9, model="n")
+        shot_commands.finish_capture(project, "replace", _key(2.0, 250, source="attach", attach=other),
+                                     128, selected=1)
+        self.assertEqual(project.keyframes[1].attach, other)
+
+    def test_replacing_a_free_view_keeps_it_free(self):
+        project = Project(keyframes=[_key(0.0), _key(2.0, 100)])
+        shot_commands.finish_capture(project, "replace", _key(2.0, 250), 128, selected=1)
+        self.assertEqual((project.keyframes[1].source, project.keyframes[1].attach), ("free", None))
+
 
 class AttachedFlyHistoryTests(unittest.TestCase):
     def test_one_attached_fly_is_one_undo_step(self):

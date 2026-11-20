@@ -6266,7 +6266,7 @@
     },
     {
       "path": "dolly/ui/shot_commands.py",
-      "sha256": "fbf5219ece72b7eacb2f9254ed252643d8eb9ed34849d4856d9b033cde4a5679",
+      "sha256": "a1d9eb4ebf538e68c3a8cecf544ba752c67bdac109ac2589aee705d21668f6db",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6306,7 +6306,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261118": "2026-11-18: Deleting the first camera moves the start by whole ticks and keeps every replay tick.",
-      "reconciliation_20261120e": "2026-11-20: Replacing a camera's view keeps its source blend, like its tangents."
+      "reconciliation_20261120e": "2026-11-20: Replacing a camera's view keeps its source blend, like its tangents.",
+      "reconciliation_20261120d3": "2026-11-20: Replace selected on an attached camera keeps its attach target, point, bone, offsets and options; the captured free pose replaces only the saved pose. A captured key that is itself attached keeps its own attach data."
     },
     {
       "path": "dolly/ui/sidebar.py",
@@ -11930,7 +11931,7 @@
       "instances": [
         "CameraOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "fbf5219ece72b7eacb2f9254ed252643d8eb9ed34849d4856d9b033cde4a5679"
+      "owner_utf8_lf_sha256": "a1d9eb4ebf538e68c3a8cecf544ba752c67bdac109ac2589aee705d21668f6db"
     },
     "dolly/ui/FadeSurface.tla": {
       "path": "dolly/ui/fade.py",
