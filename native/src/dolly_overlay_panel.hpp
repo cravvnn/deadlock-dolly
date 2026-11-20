@@ -308,6 +308,9 @@ private:
     bool reset_path_confirm_ = false;
     const char* timeline_view_id_ = nullptr;
     float timeline_view_start_ = 0, timeline_view_end_ = 0;
+    // Camera range the Shot timeline was last fitted to.
+    std::size_t timeline_fit_count_ = 0;
+    double timeline_fit_first_ = 0, timeline_fit_last_ = 0;
     bool timeline_panning_ = false;
     float timeline_pan_anchor_ = 0, timeline_pan_start_ = 0, timeline_pan_end_ = 0;
 };

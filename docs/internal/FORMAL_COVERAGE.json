@@ -9028,7 +9028,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.cpp",
-      "sha256": "453617d3a6fee1d32b56d251688913549d31c6ef95427153ead0d2537b23f473",
+      "sha256": "f1a3cc73c2a991d43e28563bd8b405b1965c7149466fe5f6015c11fb39e860a5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9060,11 +9060,11 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2). the classic 'Reset camera path?' modal opens and draws after the busy-disabled camera cards, so Cancel stays usable when the replay turns busy; Reset here keeps its own busy/playing/recording guard (O3).",
-      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit."
+      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit. The Shot timeline refits its view when the camera range changes."
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
-      "sha256": "2f0b005c3636d92db5e1b0b2b561509be611e05ea87a2373c0e3de10cf7f9233",
+      "sha256": "088605f773a9bb31f01a604970ee45c07c723b7cf2629129a0ff9696e6181706",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9088,7 +9088,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3)."
+      "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3).",
+      "reconciliation_20261120e": "2026-11-20: Remembers the camera range the Shot timeline view was fitted to."
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",

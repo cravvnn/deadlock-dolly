@@ -5393,6 +5393,35 @@ int main(int argc, char** argv) {
                         "Wheel out did not restore the full Shot timeline");
                 std::puts("Rendered timeline: wheel zoom, right-drag pan and full-range restore passed.");
             }
+            // A camera captured past the visible range comes into view; the
+            // window is not left on the older, shorter path.
+            {
+                const auto saved = snapshot;
+                viewer.publish(curve_packet(3, camera_revision_stub));
+                viewer.tick();
+                snapshot.camera_count = 3;
+                snapshot.duration = 6;
+                render();
+                render();
+                require(std::abs(dolly::overlay_diagnostics().timeline_view_end - 6) < 1e-3f,
+                        "Shot timeline did not fit a longer camera path");
+                viewer.publish(curve_packet(4, camera_revision_stub));
+                viewer.tick();
+                snapshot.camera_count = 4;
+                snapshot.duration = 9;
+                render();
+                render();
+                const auto grown = dolly::overlay_diagnostics();
+                require(grown.timeline_view_start < 1e-3f &&
+                            std::abs(grown.timeline_view_end - 9) < 1e-3f,
+                        "A camera added past the visible range stayed off the Shot timeline");
+                snapshot = saved;
+                viewer.publish(viewer_packet(100, camera_revision_stub));
+                viewer.tick();
+                render();
+                render();
+                std::puts("Rendered timeline: a longer camera path refits the view passed.");
+            }
             // Framing grid: fixed thirds and centre cross while the paused
             // editor owns the view; independent of the path-guides toggle.
             {
