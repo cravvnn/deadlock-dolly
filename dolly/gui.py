@@ -2111,14 +2111,25 @@ class DollyApp:
                 self._error("Recording", RuntimeError(status.get("error") or message))
             self._last_video_state = state
         active = state in ACTIVE_STATES
+        if active:
+            self._failed_take_release_tried = False
+        # A take that failed on its own (the recorder stopped, the game exited,
+        # a rejected start) is still reserved until the worker lets it go;
+        # without that no later recording can start. One try per failed take.
+        unreleased = (getattr(self.video_export, "finish_pending", False) is True
+                      and getattr(self.video_export, "_capture_only", False) is not True
+                      and not getattr(self, "_failed_take_release_tried", False))
         if (state in ("failed", "cancelled") and not self.busy
                 and ((getattr(self, "_pov_project", None) is not None
                       and getattr(self.controller, "_pov_active", False))
                      or getattr(self.controller, "_export_resolution", None) is not None
-                     or getattr(self.controller, "_export_timing", None) is not None)):
+                     or getattr(self.controller, "_export_timing", None) is not None
+                     or unreleased)):
             self._layer_queue = []
             self._auto_finish_layered = False
-            self._submit("Restoring recording settings", self.video_export.stop)
+            if (self._submit("Restoring recording settings", self.video_export.stop) is not False
+                    and unreleased):
+                self._failed_take_release_tried = True
         ready = recording_ready(controller_status)
         controller_message = str(controller_status.get("message") or "")
         if controller_status.get("playing") or "Playing native camera path" in controller_message:
