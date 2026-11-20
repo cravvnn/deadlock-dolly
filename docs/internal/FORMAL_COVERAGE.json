@@ -4554,7 +4554,7 @@
     },
     {
       "path": "dolly/screenshot.py",
-      "sha256": "3c2f97d2c16face643fc6b7046bd7440d07ae4bf1be9a3ae16acccb56ccf4935",
+      "sha256": "a092923236754d6f95248d4e5c020d327709330f3b5571688fd5cd4260a3552f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -4622,7 +4622,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261120": "2026-11-20: Still-frame FFmpeg runs go through ffmpeg_run.run_ffmpeg: UTF-8 error text, a bounded timeout message, no partial image left."
     },
     {
       "path": "dolly/screenshot_ui.py",
@@ -11590,7 +11591,7 @@
       "instances": [
         "PngStageApi"
       ],
-      "owner_utf8_lf_sha256": "3c2f97d2c16face643fc6b7046bd7440d07ae4bf1be9a3ae16acccb56ccf4935"
+      "owner_utf8_lf_sha256": "a092923236754d6f95248d4e5c020d327709330f3b5571688fd5cd4260a3552f"
     },
     "dolly/PreparedShot.tla": {
       "path": "dolly/controller.py",
@@ -11809,7 +11810,7 @@
       "instances": [
         "StillCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "3c2f97d2c16face643fc6b7046bd7440d07ae4bf1be9a3ae16acccb56ccf4935"
+      "owner_utf8_lf_sha256": "a092923236754d6f95248d4e5c020d327709330f3b5571688fd5cd4260a3552f"
     },
     "dolly/TimingSwitch.tla": {
       "path": "dolly/export_timing.py",

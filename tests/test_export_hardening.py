@@ -389,6 +389,19 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in layer_dir.iterdir()), ['world.mov'])
         self.assertEqual((layer_dir / 'world.mov').read_bytes(), b'master')
 
+    def test_still_frame_failure_reports_utf8_text_and_removes_partial_image(self):
+        from dolly import screenshot
+        folder = self.root / 'Иван'
+        folder.mkdir()
+        for child, expected in ((ffmpeg_child, 'FFmpeg failed: А .*error'), (timeout_child, 'timed out')):
+            with self.subTest(child=child.__name__):
+                calls = []
+                with patch.object(subprocess, 'run', side_effect=child(calls)):
+                    with self.assertRaisesRegex(RuntimeError, expected):
+                        screenshot.extract_plate(Path(sys.executable), folder / 'clip.mkv', 3, folder / 'plate.png')
+                self.assertEqual(calls[0][1].get('encoding'), 'utf-8')
+                self.assertEqual(list(folder.iterdir()), [])
+
     # D6 / D7: take folder admission ------------------------------------
     def test_existing_take_folder_is_refused_before_replay_for_bundled_audio(self):
         (self.root / 'clip').mkdir()
