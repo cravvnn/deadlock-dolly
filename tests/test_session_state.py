@@ -278,6 +278,20 @@ class FailedTakeRelease(unittest.TestCase):
         self.assertIsNone(app.clip_audio)
         self.assertFalse(export.finish_pending)
 
+    def test_audio_capture_is_cancelled_when_a_failed_shot_start_discards_the_take(self):
+        # A POV segment that cannot start discards its recording on the worker;
+        # nothing else would stop the take's audio capture afterwards.
+        export, controller, bridge, state = recorder()
+        bridge.stop_video.side_effect = lambda cancel: state.update(state='cancelled')
+        export.start(VideoOptions(self.root / 'first.mp4'))
+        audio = NS(movie=None, cancel=Mock())
+        app = video_app(export, controller, clip_audio=audio)
+        export.stop(cancel=True)
+        DollyApp._refresh_video(app, dict(READY))
+        audio.cancel.assert_called_once()
+        self.assertIsNone(app.clip_audio)
+        self.assertEqual(app.errors, [])
+
 
 class TakeAutoFinish(unittest.TestCase):
     def test_a_take_finishes_even_if_no_poll_saw_its_shot_playing(self):
