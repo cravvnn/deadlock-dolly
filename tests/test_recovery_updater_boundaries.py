@@ -237,7 +237,8 @@ class UpdaterBoundaries(unittest.TestCase):
     def test_only_a_held_install_lock_reports_another_update(self):
         handoff.package(self.target, '1.0.0')
         with update_worker.install_lock(self.target):
-            with patch.object(update_worker, 'notify') as notify,                     patch.object(release_launcher, 'open_editor') as editor:
+            with patch.object(update_worker, 'notify') as notify,                     patch.object(release_launcher, 'open_editor') as editor, \
+                    patch.object(release_launcher, 'LOCK_WAIT_SECONDS', .2):
                 self.assertEqual(release_launcher.main([], target=self.target), 1)
         editor.assert_not_called()
         self.assertIn('Another update may be in progress', notify.call_args.args[0])
@@ -454,6 +455,104 @@ class UpdaterBoundaries(unittest.TestCase):
                             for name, digest in updater.read_manifest(target)['files'].items()))
         self.assertFalse(marker.exists())
         self.assertIn('"complete"', (work / 'journal.json').read_text())
+
+    def interrupted_update(self):
+        plan, target, work, before = self.staged_release()
+        update_worker.atomic_json(work / 'plan.json', plan)
+
+        def power_loss(_target):
+            raise KeyboardInterrupt
+
+        with patch.object(update_worker, 'rollback'), self.assertRaises(KeyboardInterrupt):
+            update_worker.install(plan, power_loss)
+        self.assertTrue((target / update_worker.PENDING).exists())
+        return target, work
+
+    def test_two_starts_during_recovery_restore_once_and_open_one_editor(self):
+        target, work = self.interrupted_update()
+        argv = ['--plan', str(work / 'plan.json'), '--recover']
+        # Two quick starts each hand off to a recovery helper.
+        with patch.object(update_worker, 'check_processes'), \
+                patch.object(update_worker, 'launch_program') as launch, \
+                patch.object(update_worker, 'notify') as notify:
+            self.assertEqual(update_worker.main(argv), 0)
+            # The first helper's editor is open by now; the second must not mind.
+            with patch.object(update_worker, 'check_processes',
+                              side_effect=RuntimeError('Another instance of this Dolly installation is still open')):
+                self.assertEqual(update_worker.main(argv), 0)
+        notify.assert_not_called(); launch.assert_called_once()
+        self.assertEqual(updater.read_manifest(target)['version'], '1.0.0')
+        self.assertIn('"passed": true', (work / 'result.json').read_text())
+
+    def test_recovery_waits_for_another_start_that_holds_the_lock(self):
+        import threading
+        target, work = self.interrupted_update()
+        held, release = threading.Event(), threading.Event()
+
+        def other_start():
+            with update_worker.install_lock(target):
+                held.set(); release.wait(10)
+
+        thread = threading.Thread(target=other_start); thread.start()
+        self.assertTrue(held.wait(10))
+        threading.Timer(.3, release.set).start()
+        try:
+            with patch.object(update_worker, 'check_processes'), \
+                    patch.object(update_worker, 'launch_program') as launch, \
+                    patch.object(update_worker, 'notify') as notify:
+                self.assertEqual(update_worker.main(['--plan', str(work / 'plan.json'), '--recover']), 0)
+        finally:
+            release.set(); thread.join()
+        notify.assert_not_called(); launch.assert_called_once()
+        self.assertFalse((target / update_worker.PENDING).exists())
+
+    def test_second_start_leaves_a_running_recovery_alone(self):
+        target, work = self.interrupted_update()
+        with update_worker.install_lock(target):
+            with patch.object(update_worker, 'notify') as notify, \
+                    patch.object(update_worker, 'launch_worker') as helper, \
+                    patch.object(release_launcher, 'open_editor') as editor:
+                self.assertEqual(release_launcher.main([], target=target), 0)
+        notify.assert_not_called(); helper.assert_not_called(); editor.assert_not_called()
+
+    def test_start_waits_out_a_briefly_held_lock(self):
+        import threading
+        handoff.package(self.target, '1.0.0')
+        held, release = threading.Event(), threading.Event()
+
+        def other_start():
+            with update_worker.install_lock(self.target):
+                held.set(); release.wait(10)
+
+        thread = threading.Thread(target=other_start); thread.start()
+        self.assertTrue(held.wait(10))
+        threading.Timer(.3, release.set).start()
+        try:
+            with patch.object(update_worker, 'notify') as notify, \
+                    patch.object(release_launcher, 'open_editor') as editor:
+                self.assertEqual(release_launcher.main([], target=self.target), 0)
+        finally:
+            release.set(); thread.join()
+        notify.assert_not_called(); editor.assert_called_once()
+
+    def test_recovery_gives_a_second_launcher_time_to_exit(self):
+        target, work = self.interrupted_update()
+        closing = update_worker.DollyStillOpen('still open', launcher=True)
+        editor_open = update_worker.DollyStillOpen('still open', launcher=False)
+        with patch.object(update_worker, 'check_processes', side_effect=[closing, closing, None]) as check, \
+                patch.object(update_worker.time, 'sleep'):
+            update_worker.check_processes_settled(target)
+        self.assertEqual(check.call_count, 3)
+        # An open editor is not going away by itself: refuse at once.
+        with patch.object(update_worker, 'check_processes', side_effect=editor_open) as check, \
+                patch.object(update_worker.time, 'sleep'):
+            with self.assertRaises(update_worker.DollyStillOpen):
+                update_worker.check_processes_settled(target)
+        self.assertEqual(check.call_count, 1)
+        with patch.object(update_worker, 'check_processes', side_effect=closing), \
+                patch.object(update_worker.time, 'sleep'):
+            with self.assertRaises(update_worker.DollyStillOpen):
+                update_worker.check_processes_settled(target, timeout=0)
 
     def test_failed_update_message_says_whether_files_were_restored(self):
         plan, target, work, before = self.staged_release()

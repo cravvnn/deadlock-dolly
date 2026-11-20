@@ -4131,7 +4131,7 @@
     },
     {
       "path": "dolly/release_launcher.py",
-      "sha256": "9e08f3d6a1c24d69a19651e4ac2dab0730c1e22e636c69e53b2f3fc2dd2d7710",
+      "sha256": "7051ccd60cb623a922cc5c5daf9098bea5eed48def55eae34f4d65cbb2dd5af1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4167,7 +4167,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261114k": "2026-11-14 boundaries: an unusable unfinished-update record opens Dolly when the install verifies, otherwise shows a specific message; other OSError handling is unchanged.",
-      "reconciliation_20261118": "2026-11-18: Only a held install lock reports another update; other errors show their reason."
+      "reconciliation_20261118": "2026-11-18: Only a held install lock reports another update; other errors show their reason.",
+      "reconciliation_20261120": "2026-11-20: A start that finds the lock held exits silently while an update record exists, and otherwise waits up to LOCK_WAIT_SECONDS before reporting. Outside LauncherHandoff.tla, which models one launcher."
     },
     {
       "path": "dolly/release_notes.py",
@@ -6718,7 +6719,7 @@
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "5e8a8c2c9cc1213c3a666e497ace71dc4160ab1ab4c9b6846cdc73be5f8b0939",
+      "sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6813,7 +6814,8 @@
       "reconciliation_20261114k": "2026-11-14 boundaries: pending_work reports an unusable record as PendingUpdateError (a locked file stays an OSError); clear_unusable_pending removes it only when every installed file matches the app's own manifest.",
       "reconciliation_20261114m": "2026-11-14 path kinds: install removes before it writes (deepest first, pruning emptied folders) and accepts a folder where the new release has a file only if it holds just owned files being removed; rollback drops added files first, then restores. UpdateRollback fileToDir/dirToFile model both directions; a folder holding a user file still refuses.",
       "reconciliation_20261118": "2026-11-18: InstallLockBusy for lock contention.",
-      "reconciliation_20261119u": "2026-11-19: cleanup keeps a verified download of a newer release and ages other workspaces by their newest content. Install clears the read-only flag before removing a file a release drops. A failed recovery-record write rolls back inside the transaction, and an applying journal without its record (nothing installed changed) no longer blocks a retry. A complete journal is never rolled back: install and recovery only retry removing the recovery record. The failure message says the update is not finished and that opening Dolly.exe again recovers it while the recovery record remains."
+      "reconciliation_20261119u": "2026-11-19: cleanup keeps a verified download of a newer release and ages other workspaces by their newest content. Install clears the read-only flag before removing a file a release drops. A failed recovery-record write rolls back inside the transaction, and an applying journal without its record (nothing installed changed) no longer blocks a retry. A complete journal is never rolled back: install and recovery only retry removing the recovery record. The failure message says the update is not finished and that opening Dolly.exe again recovers it while the recovery record remains.",
+      "reconciliation_20261120": "2026-11-20: A recovery waits for another recovery of the same folder and does nothing (no result, no relaunch) when the record is already gone. check_processes_settled gives a second Dolly.exe launcher time to exit; an open editor still refuses at once."
     },
     {
       "path": "dolly/updater.py",
@@ -11119,7 +11121,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "5e8a8c2c9cc1213c3a666e497ace71dc4160ab1ab4c9b6846cdc73be5f8b0939"
+      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11459,7 +11461,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "9e08f3d6a1c24d69a19651e4ac2dab0730c1e22e636c69e53b2f3fc2dd2d7710"
+      "owner_utf8_lf_sha256": "7051ccd60cb623a922cc5c5daf9098bea5eed48def55eae34f4d65cbb2dd5af1"
     },
     "dolly/ManifestScan.tla": {
       "path": "dolly/updater.py",
@@ -11830,7 +11832,7 @@
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "5e8a8c2c9cc1213c3a666e497ace71dc4160ab1ab4c9b6846cdc73be5f8b0939"
+      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -11863,7 +11865,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "5e8a8c2c9cc1213c3a666e497ace71dc4160ab1ab4c9b6846cdc73be5f8b0939"
+      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -11874,7 +11876,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "5e8a8c2c9cc1213c3a666e497ace71dc4160ab1ab4c9b6846cdc73be5f8b0939"
+      "owner_utf8_lf_sha256": "f1c95515c1019cdcf0f94fab907369d030dec3f17b10931c9d71cd19dfbb8fd5"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",

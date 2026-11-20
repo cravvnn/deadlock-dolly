@@ -8,7 +8,11 @@ import ctypes
 import os
 from pathlib import Path
 import sys
+import time
 from . import update_worker
+
+# How long a start waits for another start of the same folder to get out of the way.
+LOCK_WAIT_SECONDS = 3.0
 
 
 def launcher_process_ids():
@@ -50,32 +54,47 @@ def main(argv=None, *, target=None):
     # Installation health checks run while a journal is intentionally pending.
     if any(flag in args for flag in ("--self-test", "--self-test-hidden", "--cleanup-session", "--help")):
         return open_editor(target, args, wait=True)
-    try:
-        with update_worker.install_lock(target):
-            try:
-                pending = update_worker.pending_work(target)
-            except update_worker.PendingUpdateError as error:
-                if not update_worker.clear_unusable_pending(target):
-                    update_worker.notify(
-                        "Dolly found an unfinished update it cannot complete, and some app files do not match "
-                        "this version. Download Dolly again and extract it over this folder; your shots and "
-                        "settings are kept.\n\n" + str(error))
-                    return 1
-                pending = None
-            if pending is not None:
-                ids = launcher_process_ids()
-                update_worker.check_processes(target, exclude_pid=ids)
-                update_worker.launch_worker(target, pending, recover=True, parent_pid=ids[-1])
+    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+    while True:
+        try:
+            with update_worker.install_lock(target):
+                return _start(target, args)
+        except update_worker.InstallLockBusy as error:
+            if (target / update_worker.PENDING).exists():
+                # An update or its recovery is running, started by an earlier
+                # Dolly.exe. It reopens Dolly itself; a second window or an
+                # error box from this start would only get in its way.
                 return 0
-            update_worker.cleanup_workspaces(target)
-            # Release discovery belongs to the already-open desktop editor. The public
-            # launcher never downloads or installs a new release on an ordinary open.
-            open_editor(target, args)
-            return 0
-    except update_worker.InstallLockBusy as error:
-        update_worker.notify("Dolly could not open safely. Another update may be in progress. "
-                             "Wait for it to finish, then open Dolly again.\n\n" + str(error))
-        return 1
-    except OSError as error:
-        update_worker.notify("Dolly could not open safely.\n\n" + str(error))
-        return 1
+            if time.monotonic() < deadline:
+                time.sleep(0.1)  # Another start is passing through.
+                continue
+            update_worker.notify("Dolly could not open safely. Another update may be in progress. "
+                                 "Wait for it to finish, then open Dolly again.\n\n" + str(error))
+            return 1
+        except OSError as error:
+            update_worker.notify("Dolly could not open safely.\n\n" + str(error))
+            return 1
+
+
+def _start(target, args):
+    """Recover an unfinished update or open the editor; the caller holds the lock."""
+    try:
+        pending = update_worker.pending_work(target)
+    except update_worker.PendingUpdateError as error:
+        if not update_worker.clear_unusable_pending(target):
+            update_worker.notify(
+                "Dolly found an unfinished update it cannot complete, and some app files do not match "
+                "this version. Download Dolly again and extract it over this folder; your shots and "
+                "settings are kept.\n\n" + str(error))
+            return 1
+        pending = None
+    if pending is not None:
+        ids = launcher_process_ids()
+        update_worker.check_processes_settled(target, exclude_pid=ids)
+        update_worker.launch_worker(target, pending, recover=True, parent_pid=ids[-1])
+        return 0
+    update_worker.cleanup_workspaces(target)
+    # Release discovery belongs to the already-open desktop editor. The public
+    # launcher never downloads or installs a new release on an ordinary open.
+    open_editor(target, args)
+    return 0
