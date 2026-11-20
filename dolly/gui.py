@@ -1655,6 +1655,10 @@ class DollyApp:
             # encoder may still be initializing. Play needs responsive views.
             if state == "recording":
                 self._pending_auto_play = False
+                # The take's shot is playing once its start returns. Do not
+                # wait for a poll to see it: a short shot can end first.
+                def started(_result=None):
+                    self._take_playing_seen = True
                 if getattr(self, "_pov_project", None) is not None:
                     project = self._pov_project
                     speed = float(self.video_export_speed.get())
@@ -1664,11 +1668,11 @@ class DollyApp:
                         except Exception:
                             self.video_export.stop(cancel=True)
                             raise
-                    self._submit("Starting POV segment", start_pov)
+                    self._submit("Starting POV segment", start_pov, started)
                 elif getattr(self, "_bone_take_project", None) is not None:
-                    self._play(project=self._bone_take_project)
+                    self._play(project=self._bone_take_project, started=started)
                 else:
-                    self._play()
+                    self._play(started=started)
             elif state in ("failed", "cancelled", "completed", "idle"):
                 self._pending_auto_play = False
         self._advance_layer_pipeline()
@@ -5026,7 +5030,7 @@ class DollyApp:
         self._submit("Applying playback speed",
                      lambda: self.controller.set_playback_speed(speed))
 
-    def _play(self, *, project=None):
+    def _play(self, *, project=None, started=None):
         def operation():
             # One last chance to repair a shot authored at another replay rate
             # before the path runs; the controller only warns from here.
@@ -5047,7 +5051,7 @@ class DollyApp:
             smoothing_window(smoothing)
             submitted = self._submit("Starting shot playback", lambda: self.controller.play(
                 playback_project, time=0.0, speed=speed, rate=rate, frozen=frozen, hide_hud=hide_hud,
-                smoothing=smoothing))
+                smoothing=smoothing), started)
             if submitted:
                 self._set_time(0.0)
         self._guard("Play shot", operation)

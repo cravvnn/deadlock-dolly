@@ -279,5 +279,32 @@ class FailedTakeRelease(unittest.TestCase):
         self.assertFalse(export.finish_pending)
 
 
+class TakeAutoFinish(unittest.TestCase):
+    def test_a_take_finishes_even_if_no_poll_saw_its_shot_playing(self):
+        # A very short shot, or a window that was not polling while it ran
+        # (an open error dialog), ends before any poll reads "playing".
+        played = []
+        export = NS(status=lambda: {'state': 'recording'}, finish_pending=False, output_path=None)
+        controller = NS(play=lambda project, **options: played.append(project),
+                        _pov_active=False, _export_resolution=None, _export_timing=None)
+        app = video_app(export, controller, _pending_auto_play=True, _take_playing_seen=False,
+                        _auto_finish_layered=True, _pov_project=None, _bone_take_project=None,
+                        layer_pipeline=NS(completed=lambda status: False, failed=lambda: False),
+                        speed=Var(), rate=Var(), smoothing=Var(), frozen=Var(), hide_hud=Var(),
+                        _offer_replay_tick_rate=lambda: None, _snapshot=lambda: 'shot',
+                        _set_time=lambda time: None, stops=[])
+        app.speed.set('1'), app.rate.set('60'), app.smoothing.set('Off')
+        app.frozen.set(False), app.hide_hud.set(True)
+        app._guard = lambda title, function: function()
+        app._play = lambda **options: DollyApp._play(app, **options)
+        app._stop_video_recording = lambda cancel=False: app.stops.append(cancel)
+        DollyApp._video_operation_done(app, {'state': 'recording'})
+        self.assertEqual(played, ['shot'])
+        finished = {**READY, 'shot_finished': True,
+                    'message': 'Paused camera ready. Use the in-game movement controls.'}
+        DollyApp._refresh_video(app, finished)
+        self.assertEqual(app.stops, [False])
+
+
 if __name__ == '__main__':
     unittest.main()
