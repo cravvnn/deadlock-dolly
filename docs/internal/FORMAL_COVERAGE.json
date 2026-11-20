@@ -1737,7 +1737,7 @@
     },
     {
       "path": "dolly/editor_dof.py",
-      "sha256": "80d827bd2c1e5323f709818be0db41bd20610794d4567b33a913c1570eeeb9d5",
+      "sha256": "a1a16cc73c5494ec813d50909c724c657dbfe1fc60434aaceabacc3226e0eadf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1765,11 +1765,12 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261120e": "2026-11-20: published_values_at and published_citadel_values_at keep effect values within what the in-game controls can show."
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "4087c1fd9f01b561f5b1ebc6fbacb1c6f5b47d3c871bdd33f0870f1387ccc6dd",
+      "sha256": "5315ac110870b821d2432f842314bbcf9cd264d3281efcf090be9c182424187e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1808,7 +1809,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261120e": "2026-11-20: DOF blocks publish range-limited values, so an out-of-range saved effect value cannot stop the editor poll."
     },
     {
       "path": "dolly/editor_session.py",

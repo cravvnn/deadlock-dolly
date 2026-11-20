@@ -156,6 +156,40 @@ class RenameTests(unittest.TestCase):
         self.assertIn("256", app.status_text.get())
 
 
+class EffectPublicationTests(unittest.TestCase):
+    """A saved effect value the in-game controls cannot show must not stop the editor poll."""
+
+    def _published(self, project, playhead):
+        from dolly import editor_dof
+        enabled, sensor, focus = editor_dof.published_citadel_values_at(project, playhead)
+        editor_wire.pack_citadel_dof(2, True, enabled, sensor, focus)
+        values = editor_dof.published_values_at(project, playhead)
+        editor_wire.pack_dof(2, True, values)
+        return values, sensor, focus
+
+    def test_out_of_range_effect_values_still_publish(self):
+        from dolly.path import CvarTrack, TrackKey
+        keys = [_key(0.0), _key(5.0, 10)]
+        far = Project(keyframes=keys, setup_values={
+            "r_citadel_depthoffield_focus_distance": 20000.0,
+            "r_citadel_depthoffield_sensor_size": 0.1})
+        self.assertEqual(self._published(far, 0.0)[1:], (0.5, 10000.0))
+        fade = Project(keyframes=keys, tracks=[
+            CvarTrack("r_dof_override", [TrackKey(0.0, 0.0), TrackKey(5.0, 1.0)], "linear")])
+        self.assertEqual(self._published(fade, 2.5)[0][1], 1.0)
+        self.assertEqual(self._published(fade, 0.0)[0][1], 0.0)
+
+    def test_in_range_effect_values_publish_unchanged(self):
+        from dolly import editor_dof
+        project = Project(keyframes=[_key(0.0), _key(5.0, 10)], setup_values={
+            "r_depth_of_field": 1.0, "r_citadel_depthoffield_focus_distance": 350.0,
+            "r_dof_override_near_blurry": -40.0})
+        self.assertEqual(editor_dof.published_values_at(project, 1.0),
+                         editor_dof.values_at(project, 1.0))
+        self.assertEqual(editor_dof.published_citadel_values_at(project, 1.0),
+                         editor_dof.citadel_values_at(project, 1.0))
+
+
 class BankDragHistoryTests(unittest.TestCase):
     def test_bank_drag_on_an_unselected_camera_is_one_undo_step(self):
         from dolly.shot_history import ShotHistory
