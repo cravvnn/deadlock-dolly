@@ -104,6 +104,8 @@ _QUIET_SESSION = {"Game not connected", "Game not launched", "Game closed"}
 # Finish/Discard attempts at an unconfirmed endmovie before Dolly stops retrying
 # on its own. The movie audio owner is still kept: the engine may be recording.
 MOVIE_STOP_ATTEMPTS = 3
+# Automatic tries at restoring a failed or discarded take's game settings.
+TAKE_RESTORE_ATTEMPTS = 3
 MOVIE_STOP_HELD = (
     "Deadlock did not confirm that the movie audio recording stopped after {attempts} tries, "
     "so it may still be writing the WAV. Dolly kept the recording and stopped retrying on its own. "
@@ -2121,14 +2123,20 @@ class DollyApp:
             self._last_video_state = state
         active = state in ACTIVE_STATES
         if active:
-            self._failed_take_release_tried = False
+            self._take_restore_tries = None
         # A take that failed on its own (the recorder stopped, the game exited,
         # a rejected start) is still reserved until the worker lets it go;
-        # without that no later recording can start. One try per failed take.
+        # without that no later recording can start.
         unreleased = (getattr(self.video_export, "finish_pending", False) is True
-                      and getattr(self.video_export, "_capture_only", False) is not True
-                      and not getattr(self, "_failed_take_release_tried", False))
+                      and getattr(self.video_export, "_capture_only", False) is not True)
+        # Every failed try ends in an error dialog, so the tries are bounded.
+        # A changed connection (the user reconnected) is a new chance.
+        situation = (state, bool(controller_status.get("connected")),
+                     bool(controller_status.get("game_running")))
+        tries = getattr(self, "_take_restore_tries", None)
+        tried = tries[1] if tries is not None and tries[0] == situation else 0
         if (state in ("failed", "cancelled") and not self.busy
+                and tried < TAKE_RESTORE_ATTEMPTS
                 and ((getattr(self, "_pov_project", None) is not None
                       and getattr(self.controller, "_pov_active", False))
                      or getattr(self.controller, "_export_resolution", None) is not None
@@ -2136,9 +2144,8 @@ class DollyApp:
                      or unreleased)):
             self._layer_queue = []
             self._auto_finish_layered = False
-            if (self._submit("Restoring recording settings", self.video_export.stop) is not False
-                    and unreleased):
-                self._failed_take_release_tried = True
+            if self._submit("Restoring recording settings", self.video_export.stop) is not False:
+                self._take_restore_tries = (situation, tried + 1)
         ready = recording_ready(controller_status)
         controller_message = str(controller_status.get("message") or "")
         if controller_status.get("playing") or "Playing native camera path" in controller_message:

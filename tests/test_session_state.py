@@ -305,15 +305,23 @@ class FailedTakeRelease(unittest.TestCase):
             state='recording', ack=2, command_error=0)
         self.assertEqual(export.start(VideoOptions(self.root / 'second.mp4'))['state'], 'recording')
 
-    def test_a_release_that_fails_is_not_repeated_on_every_poll(self):
+    def test_a_restore_that_keeps_failing_stops_after_three_tries(self):
+        # Each failed try ends in an error dialog. With the console connection
+        # lost the restore cannot succeed, and retrying on every poll left the
+        # user dismissing dialogs with no chance to reconnect.
         export, controller, bridge, state = recorder()
         export.start(VideoOptions(self.root / 'first.mp4'))
         state.update(state='failed', error='encoder stopped')
+        controller._export_timing = {'fps': 60}
         app = video_app(export, controller)
         app._submit = lambda label, operation, callback=None: app.submitted.append(label) or True
-        for _ in range(3):
-            DollyApp._refresh_video(app, dict(READY))
-        self.assertEqual(app.submitted, ['Restoring recording settings'])
+        lost = {**READY, 'connected': False}
+        for _ in range(8):
+            DollyApp._refresh_video(app, lost)
+        self.assertEqual(len(app.submitted), 3)
+        # Reconnecting is a new chance for the restore.
+        DollyApp._refresh_video(app, dict(READY))
+        self.assertEqual(len(app.submitted), 4)
 
     def test_audio_capture_is_cancelled_when_the_game_exits_mid_take(self):
         export, controller, bridge, state = recorder()
