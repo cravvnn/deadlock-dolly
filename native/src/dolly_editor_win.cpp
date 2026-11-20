@@ -3,10 +3,12 @@
 #include <windows.h>
 #include <atomic>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <memory>
+#include <thread>
 #include "MinHook.h"
 #include "dolly_editor.hpp"
 #include "dolly_lite.hpp"
@@ -1181,9 +1183,15 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if ((action == EditorAction::Capture || action == EditorAction::Replace) && !state.ready)
         return false;
-    if (gEventLock.test_and_set(std::memory_order_acquire)) {
-        ++gDropped;
-        return false;
+    // The worker holds the ring only while it copies it. Wait that out rather
+    // than drop a click or the end of a drag; give up only if it stays held.
+    const auto lock_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+    while (gEventLock.test_and_set(std::memory_order_acquire)) {
+        if (std::chrono::steady_clock::now() >= lock_deadline) {
+            ++gDropped;
+            return false;
+        }
+        std::this_thread::yield();
     }
     if (gLastEvent - gAcknowledged >= kEditorEventCount) {
         gEventLock.clear(std::memory_order_release);

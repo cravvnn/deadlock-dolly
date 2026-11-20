@@ -13,6 +13,8 @@ static HWND editor_fixture_foreground_window() noexcept {
 #include "../src/dolly_editor_win.cpp"
 #undef GetForegroundWindow
 
+#include <chrono>
+#include <thread>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -2939,6 +2941,31 @@ void run() {
     close_to(editor_snapshot().sensitivity, 10,
              "Native sensitivity limit differs from Python settings");
     require(editor_enqueue(EditorAction::Capture), "Acknowledged ring space was not reusable");
+    // An action that arrives while the worker briefly holds the ring waits
+    // for it instead of being dropped.
+    {
+        std::atomic<bool> go{false};
+        std::thread holder([&go] {
+            while (!go.load(std::memory_order_acquire)) {
+            }
+            const auto until =
+                std::chrono::steady_clock::now() + std::chrono::microseconds(100);
+            while (std::chrono::steady_clock::now() < until) {
+            }
+            dolly::gEventLock.clear(std::memory_order_release);
+        });
+        const auto dropped = dolly::gDropped.load();
+        const auto serial = dolly::gLastEvent;
+        require(!dolly::gEventLock.test_and_set(std::memory_order_acquire),
+                "Synthetic event lock was already occupied");
+        go.store(true, std::memory_order_release);
+        const bool queued = editor_enqueue(EditorAction::Capture);
+        holder.join();
+        dolly::gEventLock.clear(std::memory_order_release);
+        require(queued && dolly::gDropped.load() == dropped && dolly::gLastEvent == serial + 1,
+                "A briefly held event ring dropped an editor action");
+        dolly::gLastEvent = serial; // Leave the ring as the following checks expect.
+    }
     // Playback settings use appended event IDs and the existing shared
     // configuration; they must never alter the live camera clock.
     config.sequence += 2;
