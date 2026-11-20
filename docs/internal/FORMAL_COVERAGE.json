@@ -7373,7 +7373,7 @@
     },
     {
       "path": "native/include/dolly_flight.hpp",
-      "sha256": "70d9e2f29fa187d234f9195c6b0635dc236a4d66546dd8e9e21155edfd5e3b3c",
+      "sha256": "1c15744dcbc6948050a6ecd3545456c2c66c78ae48e221eaf3b2ffac8ba4b16e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7392,7 +7392,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_attach_pitch": "2026-11-20: flight pitch is read signed before the vertical limit"
     },
     {
       "path": "native/include/dolly_follow_anchor.hpp",
@@ -8293,7 +8294,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "b920708e06d521b261fa0df69b5638e7f289254811ed85cd9ca81bac5d3bf536",
+      "sha256": "ee6be68a3ddd21193f40b4c235c5c1402ccd0ab7aec0dc6b797137eabd710e50",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8372,11 +8373,12 @@
       "reconciliation_20261113": "2026-11-13 native sweep: on_view admits one main-view callback at a time via gMainViewBusy CAS (acquire; release on exit) after the caller/vtable filter; overlapping main views are skipped and counted internally (gMainViewOverlaps, no ABI change). thread_local reentry guard, prop_runtime::tick placement, command publication, heartbeat/Release/finish and resident mapping unchanged. Engine SetUpView threading remains unestablished.",
       "reconciliation_20261114": "2026-11-14 process hardening: prop_runtime::tick moved after the main-view filter and gMainViewBusy admission, matching its header contract (confetti frame thread). bridge_smoke prop_probe_main_view_only fails on the old placement. NativeSnapshotClose scope unchanged (tick touches none of its state).",
       "reconciliation_20261118": "2026-11-18: Same-command refresh accepts kNoSeekRelief with the particle bits.",
-      "reconciliation_20261120": "2026-11-20: The late soundsystem probe also offers the module to movie_audio_install."
+      "reconciliation_20261120": "2026-11-20: The late soundsystem probe also offers the module to movie_audio_install.",
+      "reconciliation_attach_pitch": "2026-11-20: attached flight starts from the pitch limit so idle frames keep the offsets"
     },
     {
       "path": "native/src/dolly_attach.cpp",
-      "sha256": "5a79e92656e0acfeb8267394a9acc87612fd2128e1429193004e60d769652501",
+      "sha256": "0da73490d5e41eb9ba154009f7e9e9325836da917d49b43837ad9606c962b271",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8399,7 +8401,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_attach_pitch": "2026-11-20: attach base angles are signed; composed and input pitch stop at vertical"
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
@@ -12047,7 +12050,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "b920708e06d521b261fa0df69b5638e7f289254811ed85cd9ca81bac5d3bf536"
+      "owner_utf8_lf_sha256": "ee6be68a3ddd21193f40b4c235c5c1402ccd0ab7aec0dc6b797137eabd710e50"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",

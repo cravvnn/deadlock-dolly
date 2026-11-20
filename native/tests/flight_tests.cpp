@@ -107,6 +107,18 @@ int main() {
     input.mouse_y = 100000;
     integrate_flight(stalled, input, .01, 400, .08);
     require(near_value(stalled[3], 89.9));
+    // A pitch the game reports just under 360 is a view slightly above level,
+    // not one past straight down.
+    CameraPose wrapped = start;
+    wrapped[3] = 435.1;
+    input = {};
+    integrate_flight(wrapped, input, .01, 400, .08);
+    require(near_value(wrapped[3], 75.1));
+    input.mouse_y = -100;
+    integrate_flight(wrapped, input, .01, 400, .08);
+    require(near_value(wrapped[3], 67.1));
+    require(near_value(flight_pitch(359.3), -.7) && near_value(flight_pitch(95), 89.9) &&
+            near_value(flight_pitch(-95), -89.9));
     // Projection and authored bank are not silently changed by translation.
     require(near_value(at60[5], start[5]) && near_value(at60[6], start[6]));
     std::cout << "Native flight integration tests passed.\n";

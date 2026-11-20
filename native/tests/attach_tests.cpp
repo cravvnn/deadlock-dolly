@@ -297,6 +297,72 @@ void eye_resolution() {
     require(near(pose[6], 2.0), "Resolving preserves the authored aspect");
 }
 
+void wrapped_aim() {
+    // The game reports an aim above the horizon as a pitch just under 360.
+    dolly::AttachSample sample;
+    sample.valid = true;
+    sample.point = dolly::AttachPoint::bone;
+    sample.origin = {100, 200, 300};
+    sample.motion_anchor = sample.origin;
+    sample.angles = {359.3, 278.6, 0};
+    sample.aim = sample.angles;
+    dolly::AttachSegment segment = enabled_segment();
+    segment.target = {0, 0, 0};
+    segment.point = dolly::AttachPoint::bone;
+    segment.offset = {-40, 80, 50, 75.84, 53.88, 0};
+    dolly::CameraPose pose{};
+    require(dolly::resolve_attach_pose(sample, segment, pose), "A wrapped aim resolves");
+    require(near(pose[3], 75.14) && near(pose[4], -27.52),
+            "A wrapped aim composes to a signed camera angle");
+    dolly::AttachSample signed_sample = sample;
+    signed_sample.angles = signed_sample.aim = {-.7, -81.4, 0};
+    dolly::CameraPose signed_pose{};
+    require(dolly::resolve_attach_pose(signed_sample, segment, signed_pose) &&
+                near(signed_pose[0], pose[0]) && near(signed_pose[1], pose[1]) &&
+                near(signed_pose[2], pose[2]) && near(signed_pose[3], pose[3]) &&
+                near(signed_pose[4], pose[4]),
+            "Wrapped and signed aims give the same camera");
+    // Flying with no input must leave the authored offsets alone.
+    dolly::CameraPose before = pose, after = pose;
+    after[3] = dolly::flight_pitch(before[3]);
+    dolly::CameraPose offsets{};
+    for (int index = 0; index < 6; ++index)
+        offsets[index] = segment.offset[index];
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets),
+            "Idle attached flight is accepted");
+    for (int index = 0; index < 6; ++index)
+        require(near(offsets[index], segment.offset[index]),
+                "Idle attached flight keeps the offsets");
+    // A smoothed view can sit below the limit while the composed one is at
+    // it. Looking further down must stop at the limit, and looking up works.
+    before[3] = 60;
+    after = before;
+    after[3] = 80;
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
+                near(offsets[3], 75.84 + 89.9 - 75.14),
+            "Attached look stops at straight down");
+    segment.offset[3] = offsets[3];
+    after[3] = 70;
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
+                near(offsets[3], 75.84 + 89.9 - 75.14),
+            "Attached look stays at the limit");
+    after[3] = 50;
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
+                near(offsets[3], 75.84 + 89.9 - 75.14 - 10),
+            "Attached look returns from the limit");
+    // The target looking down carries the view to straight down, not past it,
+    // and the first look up answers from there.
+    segment.offset[3] = offsets[3] = 75.84;
+    sample.angles = sample.aim = {30, 278.6, 0};
+    require(dolly::resolve_attach_pose(sample, segment, pose) && near(pose[3], 89.9),
+            "The target's aim cannot tip the camera over");
+    before = after = pose;
+    after[3] = 87.9;
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
+                near(offsets[3], 57.9),
+            "Looking up from a carried view answers at once");
+}
+
 void offset_application() {
     dolly::AttachSample sample;
     sample.valid = true;
@@ -1063,6 +1129,7 @@ int main() {
         source_blending();
         eye_resolution();
         offset_application();
+        wrapped_aim();
         clearance_behavior();
         identity_gates();
         smoothing_behavior();

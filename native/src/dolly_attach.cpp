@@ -304,6 +304,10 @@ const char* attach_hero_name(const char* model_path) noexcept {
 static std::array<double, 3> effective_attach_angles(const AttachSample& sample,
                                                      AttachPoint point, bool locked) noexcept {
     auto angles = point == AttachPoint::eyes ? sample.aim : sample.angles;
+    // The game reports a view above the horizon as a pitch just under 360.
+    // Use the signed form so offsets add up to an ordinary camera angle.
+    for (auto& angle : angles)
+        angle = std::remainder(angle, 360.0);
     if (locked && point != AttachPoint::eyes) {
         angles[0] = 0;
         angles[2] = 0;
@@ -400,6 +404,9 @@ bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segmen
     } else {
         for (int i = 0; i < 3; ++i)
             out[i + 3] = base_angles[i] + segment.offset[i + 3];
+        // The target's aim adds to the authored pitch. Stop at straight up or
+        // down instead of tipping the camera over onto its back.
+        out[3] = std::clamp(out[3], -89.9, 89.9);
     }
     for (int i = 0; i < 6; ++i)
         if (!std::isfinite(out[i]) || std::abs(out[i]) > 1e8)
@@ -442,8 +449,17 @@ bool attach_apply_camera_motion(const AttachSample& sample, const AttachSegment&
         if (!std::isfinite(difference))
             return false;
         angle_delta[axis] = std::remainder(difference, 360.0);
-        turned = turned || std::abs(angle_delta[axis]) > 1e-10;
     }
+    // Input may not push the composed view past straight up or down. A
+    // smoothed view trails the composed one, so limit against the latter. The
+    // target's own aim can still carry the view past; input can bring it back.
+    const double pitch = std::remainder(current[3], 360.0);
+    if (angle_delta[0] > 0)
+        angle_delta[0] = std::max(0.0, std::min(angle_delta[0], 89.9 - pitch));
+    else if (angle_delta[0] < 0)
+        angle_delta[0] = std::min(0.0, std::max(angle_delta[0], -89.9 - pitch));
+    for (int axis = 0; axis < 3; ++axis)
+        turned = turned || std::abs(angle_delta[axis]) > 1e-10;
     if (turned) {
         const std::array<double, 3> desired_angles{
             current[3] + angle_delta[0], current[4] + angle_delta[1], current[5] + angle_delta[2]};

@@ -28,6 +28,7 @@
 #include "dolly_minimap_guard.hpp"
 #include "dolly_replay_clock.hpp"
 #include "dolly_editor.hpp"
+#include "dolly_flight.hpp"
 #include "dolly_bone_picker.hpp"
 #include "dolly_overlay.hpp"
 #include "dolly_player_capture.hpp"
@@ -1269,6 +1270,9 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                 if (continued)
                     for (int axis = 3; axis < 6; ++axis)
                         flight_before[axis] = manual_pose[axis];
+                // The target's aim can carry the view past the flight limit.
+                // Start from the limit so only real input changes the offsets.
+                flight_before[3] = flight_pitch(flight_before[3]);
                 flight_before[6] = preview_offsets[6];
                 CameraPose flight_after = flight_before;
                 editor_integrate_flight(flight_after, real_delta);
