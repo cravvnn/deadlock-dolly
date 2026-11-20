@@ -2045,6 +2045,8 @@ class DollyApp:
                      layer_dir / (layer + suffix + ".shot.json")):
             if os.environ.get("DOLLY_KEEP_MATTE") == "1":
                 break
+            if path == master:
+                continue  # A MOV take's black pass had the master's name and was replaced by it.
             try:
                 if path.is_file():
                     path.unlink()
