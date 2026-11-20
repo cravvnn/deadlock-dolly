@@ -602,6 +602,45 @@ static void rail_regressions(const char* output, bool motion = false) {
         observed_actions.clear();
         io.AddMousePosEvent(-100, -100);
         frame();
+        // The first step of a Bank drag selects its camera. The drag must
+        // carry on from there, not stop when the selection changes.
+        {
+            require(snapshot.camera_count >= 2 && snapshot.selected_camera == 0,
+                    "Bank drag fixture needs an unselected second camera");
+            const ImVec2 other(bank.x, bank.y + 35 * scale);
+            io.AddMousePosEvent(other.x, other.y);
+            frame();
+            frame();
+            io.AddMouseButtonEvent(0, true);
+            frame();
+            io.AddMousePosEvent(other.x + 16, other.y);
+            frame();
+            require(observed_actions.size() == 1 &&
+                        observed_actions.back().action == dolly::EditorAction::SetCameraRoll &&
+                        observed_actions.back().value == 1,
+                    "Bank drag on an unselected camera did not start");
+            snapshot.selected_camera = 1;
+            ++camera_revision_stub;
+            frame();
+            io.AddMousePosEvent(other.x + 32, other.y);
+            frame();
+            require(observed_actions.size() == 2 &&
+                        observed_actions.back().action == dolly::EditorAction::SetCameraRoll &&
+                        observed_actions.back().value == 1 &&
+                        observed_actions.back().revision == camera_revision_stub,
+                    "Bank drag stopped when its camera became the selected one");
+            io.AddMouseButtonEvent(0, false);
+            frame();
+            ++camera_revision_stub;
+            frame();
+            frame();
+            camera_revision_stub -= 2;
+            snapshot.selected_camera = 0;
+            observed_actions.clear();
+            io.AddMousePosEvent(-100, -100);
+            frame();
+            frame();
+        }
         // Curves is the live editor, with the redesigned mode tabs and bounded chrome.
         auto* bar = find("##lite-timeline");
         ctx->NavNextActivateId = bar->GetID("Curves");

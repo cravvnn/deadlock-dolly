@@ -9285,7 +9285,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "fe163bbba8b4d3f2d4f8fcf3fd669ab8f3324bb0f9aaa42432aba1426a4502e7",
+      "sha256": "a79cdd2ac7de664a6df88146bda35e9acf1795e85ee39cc1710220244c3a26bb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9309,7 +9309,7 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit."
+      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit. Campaths rows keep their gesture when the selected camera changes."
     },
     {
       "path": "native/src/dolly_rail_fields.cpp",
