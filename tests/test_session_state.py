@@ -53,6 +53,16 @@ class StartupControls(unittest.TestCase):
         app = polled_app(self.session('unlocker_ready'))
         self.assertEqual(button_state(app.probe_button), 'disabled')
 
+    def test_a_lost_console_connection_is_named_in_the_ready_editor(self):
+        # The native editor's normal stage; without the label the window keeps
+        # saying the editor is ready while every action is refused.
+        for stage in ('editing_ready', 'replay_ready'):
+            with self.subTest(stage=stage):
+                app = polled_app({**self.session(stage), 'connected': False})
+                app.session_text.set.assert_called_once_with('Disconnected — reconnect to continue')
+        app = polled_app(self.session('editing_ready'))
+        app.session_text.set.assert_called_once_with('Paused editor ready')
+
 
 class StartupCrash(unittest.TestCase):
     """A game crash during startup is reported as the crash, with its reason."""

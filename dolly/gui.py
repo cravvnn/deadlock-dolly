@@ -3551,7 +3551,8 @@ class DollyApp:
                 "game_closed": "Game closed",
             }
             session_label = stage_labels.get(stage, "Game connected" if connected else "Game not connected")
-            if not connected and stage in ("connected", "unlocker_ready", "loading_replay", "replay_ready"):
+            if not connected and stage in ("connected", "unlocker_ready", "loading_replay", "replay_ready",
+                                           "editing_ready"):
                 session_label = "Disconnected — reconnect to continue"
             _set_var(self.session_text, "Playing camera path" if self.playing else session_label)
             if self.startup_cancel is not None and not self.startup_cancel.is_set():
