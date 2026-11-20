@@ -79,6 +79,7 @@ def finish_capture(candidate, action, key, tick, selected=None):
         # Recapturing the view changes its pose, not the user's saved movement
         # intent. New cameras still start with automatic handles.
         key.tangents = copy.deepcopy(candidate.keyframes[selected].tangents)
+        key.source_blend = candidate.keyframes[selected].source_blend
         candidate.keyframes[selected] = key
     else:
         if key.time < 0:

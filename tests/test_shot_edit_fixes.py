@@ -156,6 +156,16 @@ class RenameTests(unittest.TestCase):
         self.assertIn("256", app.status_text.get())
 
 
+class ReplaceCaptureTests(unittest.TestCase):
+    def test_replacing_a_view_keeps_its_blend_in(self):
+        project = Project(keyframes=[
+            _key(0.0, source="attach", attach=AttachKey(handle=1, model="m")),
+            _key(2.0, 100, source_blend=0.5)])
+        shot_commands.finish_capture(project, "replace", _key(2.0, 250), 128, selected=1)
+        self.assertEqual(project.keyframes[1].x, 250)
+        self.assertEqual(project.keyframes[1].source_blend, 0.5)
+
+
 class AttachedFlyHistoryTests(unittest.TestCase):
     def test_one_attached_fly_is_one_undo_step(self):
         from dolly.native_effects import model_token

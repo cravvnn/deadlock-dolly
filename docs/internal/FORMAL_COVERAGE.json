@@ -6237,7 +6237,7 @@
     },
     {
       "path": "dolly/ui/shot_commands.py",
-      "sha256": "c939a8dcad8f6c268bb9853a5a7dc1812fa6922eb61e1330fc1c44cc37bd303f",
+      "sha256": "fbf5219ece72b7eacb2f9254ed252643d8eb9ed34849d4856d9b033cde4a5679",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6276,7 +6276,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118": "2026-11-18: Deleting the first camera moves the start by whole ticks and keeps every replay tick."
+      "reconciliation_20261118": "2026-11-18: Deleting the first camera moves the start by whole ticks and keeps every replay tick.",
+      "reconciliation_20261120e": "2026-11-20: Replacing a camera's view keeps its source blend, like its tangents."
     },
     {
       "path": "dolly/ui/sidebar.py",
@@ -11890,7 +11891,7 @@
       "instances": [
         "CameraOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "c939a8dcad8f6c268bb9853a5a7dc1812fa6922eb61e1330fc1c44cc37bd303f"
+      "owner_utf8_lf_sha256": "fbf5219ece72b7eacb2f9254ed252643d8eb9ed34849d4856d9b033cde4a5679"
     },
     "dolly/ui/FadeSurface.tla": {
       "path": "dolly/ui/fade.py",
