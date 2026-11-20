@@ -372,6 +372,27 @@ class FailedTakeRelease(unittest.TestCase):
         self.assertIsNone(app.clip_audio)
         self.assertFalse(export.finish_pending)
 
+    def test_movie_audio_is_let_go_without_retries_once_the_game_has_exited(self):
+        # The engine's movie recording ended with the game; nothing can confirm
+        # its stop any more, so the unconfirmed-stop retries must not start.
+        export, controller, bridge, state = recorder()
+        export.start(VideoOptions(self.root / 'first.mp4'))
+        cancel = Mock(side_effect=RuntimeError('Deadlock closed while Dolly was running a console command.'))
+        audio = NS(movie=NS(started=True, finished=False), cancel=cancel)
+        done = []
+        app = video_app(export, controller, clip_audio=audio, _video_operation_done=done.append)
+        closed = {**READY, 'game_running': False, 'connected': False}
+        controller.status.return_value = closed
+        with self.assertLogs('dolly', level='WARNING'):
+            for _ in range(3):
+                DollyApp._refresh_video(app, closed)
+                if done:
+                    app._last_video_state = done[-1]['state']
+        cancel.assert_called_once()
+        self.assertIsNone(app.clip_audio)
+        self.assertEqual([status['state'] for status in done], ['failed'])
+        self.assertFalse(gui.movie_stop_held(app))
+
     def test_audio_capture_is_cancelled_when_a_failed_shot_start_discards_the_take(self):
         # A POV segment that cannot start discards its recording on the worker;
         # nothing else would stop the take's audio capture afterwards.

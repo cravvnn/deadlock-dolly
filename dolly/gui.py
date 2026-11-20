@@ -1584,6 +1584,17 @@ class DollyApp:
                         if folder:
                             status = {**status, "reconstructed_folder": str(folder)}
                 except BaseException as exc:
+                    try:
+                        exited = self.controller.status().get("game_running") is False
+                    except Exception:
+                        exited = False
+                    if exited and isinstance(exc, Exception):
+                        # The game took its audio recording with it; there is
+                        # nothing left to confirm or retry.
+                        if cancel or status.get("state") != "completed":
+                            LOG.warning("Audio capture ended with the game: %s", exc)
+                            return status
+                        raise
                     # Until the game confirms endmovie it keeps writing the
                     # movie WAV. Keep the owner so Finish or Discard retries.
                     movie = getattr(audio, "movie", None)
