@@ -646,5 +646,105 @@ class EarlyFinish(unittest.TestCase):
         self.assertEqual((steps, audited), (['Restoring scene layers'], ['base']))
 
 
+LOST_FRAMES = ('Export lost frames and was discarded to prevent a shortened or incomplete video. '
+               'Use fixed-step export; if already enabled, lower the export FPS or rendering load.')
+
+
+class LostFrames(unittest.TestCase):
+    """A real-time take discarded for lost frames offers a fixed-step retake."""
+
+    def failed_take(self, offer, answer):
+        export = NS(status=lambda: {'state': 'failed', 'error': LOST_FRAMES, 'error_code': 0x8007000D},
+                    finish_pending=False)
+        controller = NS(_pov_active=False, _export_resolution=None, _export_timing=None)
+        app = video_app(export, controller, closed=False, _lost_frames_offer=offer, asked=[],
+                        video_fixed_step=Var(), _start_video_recording=Mock(),
+                        _when_idle=lambda action: action())
+        app.video_fixed_step.set(False)
+
+        def ask(show, title, message, *, retry=True):
+            app.asked.append((show, title, message, retry))
+            return answer
+        app._background_dialog = ask
+        return app
+
+    def report_twice(self, app):
+        # The poll and the finish operation both report the same failed take.
+        DollyApp._refresh_video(app, dict(READY))
+        DollyApp._report_operation_error(app, 'Finishing video recording', RuntimeError(LOST_FRAMES))
+
+    def test_yes_turns_on_fixed_step_and_records_again_after_one_question(self):
+        app = self.failed_take('ready', True)
+        self.report_twice(app)
+        self.assertEqual(app.asked, [(
+            gui.messagebox.askyesno, 'Recording lost frames',
+            'This real-time take lost frames and was discarded. '
+            'Turn on fixed-step export and record again?', False)])
+        self.assertEqual(app.errors, [])
+        self.assertTrue(app.video_fixed_step.get())
+        app._start_video_recording.assert_called_once_with()
+
+    def test_the_finish_operation_can_be_the_first_to_report_it(self):
+        app = self.failed_take('ready', True)
+        DollyApp._report_operation_error(app, 'Finishing video recording', RuntimeError(LOST_FRAMES))
+        DollyApp._refresh_video(app, dict(READY))
+        self.assertEqual((len(app.asked), app.errors), (1, []))
+        app._start_video_recording.assert_called_once_with()
+
+    def test_no_leaves_the_setting_and_the_status_text(self):
+        app = self.failed_take('ready', False)
+        self.report_twice(app)
+        self.assertEqual((len(app.asked), app.errors), (1, []))
+        self.assertFalse(app.video_fixed_step.get())
+        app._start_video_recording.assert_not_called()
+        self.assertEqual(app.status_text.get(), LOST_FRAMES[:240])
+
+    def test_a_fixed_step_take_keeps_the_error(self):
+        app = self.failed_take(None, True)
+        DollyApp._refresh_video(app, dict(READY))
+        self.assertEqual((app.asked, app.errors), ([], [LOST_FRAMES]))
+        app._start_video_recording.assert_not_called()
+
+    def test_another_failure_of_a_real_time_take_keeps_the_error(self):
+        app = self.failed_take('ready', True)
+        DollyApp._report_operation_error(app, 'Finishing video recording', RuntimeError('encoder stopped'))
+        self.assertEqual((app.asked, app.errors), ([], ['encoder stopped']))
+
+    def test_the_retake_is_skipped_if_a_recording_is_already_running(self):
+        app = self.failed_take('ready', True)
+        waiting = []
+        app._when_idle = waiting.append
+        DollyApp._report_operation_error(app, 'Finishing video recording', RuntimeError(LOST_FRAMES))
+        app.video_export.status = lambda: {'state': 'recording'}
+        waiting[0]()
+        app._start_video_recording.assert_not_called()
+
+    def started(self, fixed_step):
+        from dolly.path import Keyframe, Project
+        app = MagicMock()
+        app.busy = False
+        app._bone_picker_context = None
+        app.project = Project(keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0), Keyframe(1, 10, 0, 0, 0, 0, 0)])
+        app.video_source.get.return_value = 'Camera path'
+        app.video_path.get.return_value = 'C:/takes/shot.mp4'
+        app.video_fps.get.return_value = '60'
+        app.video_bitrate.get.return_value = '20 Mbps'
+        app.video_export_speed.get.return_value = '1'
+        app.ffmpeg_path.get.return_value = ''
+        app.players_scratch.get.return_value = ''
+        app.player_processing.get.return_value = 'Background'
+        app.video_game_audio.get.return_value = False
+        app.video_reconstructed_audio.get.return_value = False
+        options = NS(layers=(), fixed_step=fixed_step, speed=1.0, fps=60, path=Path('C:/takes/shot.mp4'))
+        with patch.object(gui, 'VideoOptions', return_value=NS(validated=lambda: options)),                 patch.object(gui, 'resolve_container', return_value='mp4'),                 patch.object(gui, 'focus_window'):
+            DollyApp._start_video_recording(app)
+        app._submit.assert_called_once()
+        return app._lost_frames_offer
+
+    def test_only_a_real_time_take_is_marked_for_the_offer(self):
+        self.assertEqual(self.started(fixed_step=False), 'ready')
+        self.assertIsNone(self.started(fixed_step=True))
+
+
 if __name__ == '__main__':
     unittest.main()

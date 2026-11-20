@@ -26,6 +26,9 @@ from .display import client_size
 
 ACTIVE_STATES = frozenset(("starting", "recording", "finalizing"))
 TERMINAL_STATES = frozenset(("idle", "completed", "cancelled", "failed"))
+# How the native recorder's error starts when it discards a take with missing
+# frames (its error code is 0x8007000D).
+LOST_FRAMES_ERROR = "Export lost frames and was discarded"
 BITRATE_PRESETS = {"10 Mbps": 10_000_000, "20 Mbps": 20_000_000, "40 Mbps": 40_000_000}
 # Output containers offered by the Export tab. The lossless codec and the
 # built-in Media Foundation writer each force their own container.

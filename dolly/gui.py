@@ -66,7 +66,7 @@ from dolly.smoothing import smoothing_window
 from dolly.source2viewer import HELP_SIZE_MB, find_viewer
 from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
                                 CODEC_LABEL_TO_KEY, CONTAINER_CHOICES, CONTAINER_LABEL_TO_KEY,
-                                DEFAULT_CODEC_KEY, DEFAULT_CONTAINER, VideoExport, VideoOptions,
+                                DEFAULT_CODEC_KEY, DEFAULT_CONTAINER, LOST_FRAMES_ERROR, VideoExport, VideoOptions,
                                 bundled_ffmpeg_path, default_video_path, format_video_status,
                                 recording_ready, resolve_container, resolve_ffmpeg, safe_stem,
                                 video_suffix)
@@ -126,6 +126,35 @@ def movie_stop_held(app) -> bool:
     audio = getattr(app, "clip_audio", None)
     return (audio is not None and failures is not None and failures[0] is audio
             and failures[1] >= MOVIE_STOP_ATTEMPTS)
+
+
+def _offer_fixed_step(app, title, exc) -> bool:
+    """Ask once whether to retake a real-time take that lost frames as fixed-step.
+
+    The poll and the finish operation both report the failed take; the first
+    report asks and the second is only logged. True means it was handled here.
+    """
+    text = str(exc)
+    offer = getattr(app, "_lost_frames_offer", None)
+    if offer not in ("ready", "asked") or not text.startswith(LOST_FRAMES_ERROR):
+        return False
+    app._status_error_text = text[:240]
+    app.status_text.set(text[:240])
+    app._log(f"{title}: {text}")
+    if offer == "asked":
+        return True
+    app._lost_frames_offer = "asked"
+    if app._background_dialog(messagebox.askyesno, "Recording lost frames",
+                              "This real-time take lost frames and was discarded. "
+                              "Turn on fixed-step export and record again?", retry=False):
+        app.video_fixed_step.set(True)
+
+        def record_again():
+            if app.video_export.status().get("state") not in ACTIVE_STATES:
+                app._start_video_recording()
+        # The failed take's settings are restored first.
+        app._when_idle(record_again)
+    return True
 
 
 def _settle_recording(app, doing, proceed) -> bool:
@@ -1554,6 +1583,8 @@ class DollyApp:
                 queue.append((name, "white"))
         self._layer_queue = queue
         self._active_layer_take = None
+        # Layered runs are always fixed-step, so the offer never restarts half a run.
+        self._lost_frames_offer = None if options.fixed_step else "ready"
         self._take_playing_seen = False
         self._take_audit_seen = set()
         self._take_audit_reported = False
@@ -2187,7 +2218,9 @@ class DollyApp:
                     self._log(message)
                     # A take can fail after playback started, when no worker is
                     # waiting for it. Surface the reason instead of only the log.
-                    self._error("Recording", RuntimeError(status.get("error") or message))
+                    error = RuntimeError(status.get("error") or message)
+                    if not _offer_fixed_step(self, "Recording", error):
+                        self._error("Recording", error)
             self._last_video_state = state
         active = state in ACTIVE_STATES
         if active or state == previous == "completed":
@@ -3936,6 +3969,8 @@ class DollyApp:
             self._log(f"{title}: {exc}")
         elif isinstance(exc, PreloadUnavailableError) and not self.closed:
             self._error(title, exc, offer_unverified_replay=True)
+        elif _offer_fixed_step(self, title, exc):
+            pass
         else:
             self._error(title, exc)
 
