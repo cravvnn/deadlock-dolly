@@ -3575,7 +3575,7 @@ class DollyApp:
                 (self.connect_button, available and not connected and stage not in ("not_launched", "game_closed")),
                 (self.initialize_button, available and connected and not unlocker_ready),
                 (self.load_replay_button, available and connected and unlocker_ready and stage != "loading_replay"),
-                (self.probe_button, available and connected and unlocker_ready and stage in ("loading_replay", "replay_ready", "failed")),
+                (self.probe_button, available and connected and unlocker_ready and stage in ("loading_replay", "replay_ready", "failed", "cancelled")),
                 (self.disconnect_button, not self.busy and connected),
             )
             for button, enabled in startup_buttons:
