@@ -279,7 +279,8 @@ def video_app(export, controller, **attributes):
             callback(result)
         return True
     app._submit = submit
-    app._stop_video_recording = lambda cancel=False: DollyApp._stop_video_recording(app, cancel=cancel)
+    app._stop_video_recording = lambda cancel=False, **options: DollyApp._stop_video_recording(
+        app, cancel=cancel, **options)
     for name, value in attributes.items():
         setattr(app, name, value)
     return app
@@ -504,6 +505,110 @@ class TakeAutoFinish(unittest.TestCase):
         DollyApp._refresh_video(app, dict(READY))
         self.assertEqual(logged, [])
         self.assertEqual(app.video_path.get(), '')
+
+
+class RecordingInProgress(unittest.TestCase):
+    """Closing Dolly or disconnecting during a take asks what to do with it."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='dolly-session-state-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def take(self, answer, **attributes):
+        export, controller, bridge, state = recorder()
+        bridge.stop_video.side_effect = lambda cancel: state.update(
+            state='cancelled' if cancel else 'completed')
+        export.start(VideoOptions(self.root / 'take.mp4'))
+        app = video_app(export, controller, root=object(), _layer_queue=[('world', 'black')],
+                        _pov_project=None, _bone_take_project=None,
+                        _cancel_renderlock_export=lambda: None, _finish_close=Mock(),
+                        _session_operation=Mock(), _when_idle=lambda action: action(), **attributes)
+        app._on_close = lambda discard_confirmed=False: DollyApp._on_close(app, discard_confirmed)
+        self.ask = Mock(return_value=answer)
+        patcher = patch.object(gui.messagebox, 'askchoice', self.ask)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return app, controller, bridge, state
+
+    def test_cancel_keeps_recording_and_leaves_dolly_open(self):
+        app, controller, bridge, state = self.take(None)
+        DollyApp._on_close(app)
+        self.ask.assert_called_once_with(
+            'Recording in progress', 'A recording is in progress. Finish it before closing?',
+            'Finish', 'Discard', parent=app.root)
+        self.assertEqual((app.submitted, state['state']), ([], 'recording'))
+        self.assertEqual(app._layer_queue, [('world', 'black')])
+        app._finish_close.assert_not_called()
+
+    def test_finish_saves_the_take_without_its_later_passes_then_closes(self):
+        app, controller, bridge, state = self.take(True)
+        DollyApp._on_close(app, True)
+        self.assertEqual(app.submitted, ['Finishing video recording'])
+        bridge.stop_video.assert_called_once_with(cancel=False)
+        self.assertEqual(app._layer_queue, [])
+        app._finish_close.assert_called_once()
+        self.assertTrue(app._discard_asked)
+
+    def test_discard_ends_the_take_and_its_fixed_step_timing_then_closes(self):
+        audio = NS(movie=None, cancel=Mock())
+        app, controller, bridge, state = self.take(False, clip_audio=audio)
+        controller._export_timing = {'fps': 60}
+        controller.clear_export_timing.side_effect = lambda: setattr(controller, '_export_timing', None)
+        DollyApp._on_close(app)
+        self.assertEqual(app.submitted, ['Discarding recording'])
+        bridge.stop_video.assert_called_once_with(cancel=True)
+        controller.clear_export_timing.assert_called_once()
+        audio.cancel.assert_called_once()
+        app._finish_close.assert_called_once()
+
+    def test_a_take_that_cannot_be_finished_leaves_dolly_open(self):
+        app, controller, bridge, state = self.take(True)
+        bridge.stop_video.side_effect = lambda cancel: state.update(state='failed', error='encoder stopped')
+
+        def submit(label, operation, callback=None):
+            # The worker reports a failure as an error and skips the callback.
+            try:
+                result = operation()
+            except RuntimeError as exc:
+                app.errors.append(str(exc))
+                return True
+            callback(result)
+            return True
+        app._submit = submit
+        DollyApp._on_close(app)
+        self.assertEqual(app.errors, ['encoder stopped'])
+        app._finish_close.assert_not_called()
+
+    def test_a_busy_dolly_still_only_asks_to_wait(self):
+        app, controller, bridge, state = self.take(True, busy=True)
+        with patch.object(gui.messagebox, 'showinfo') as wait:
+            DollyApp._on_close(app)
+        wait.assert_called_once()
+        self.ask.assert_not_called()
+        self.assertEqual(state['state'], 'recording')
+
+    def test_closing_with_no_take_does_not_ask(self):
+        app, controller, bridge, state = self.take(True)
+        state.update(state='completed')
+        DollyApp._on_close(app)
+        self.ask.assert_not_called()
+        app._finish_close.assert_called_once()
+
+    def test_disconnect_asks_and_disconnects_after_the_take_is_finished(self):
+        app, controller, bridge, state = self.take(True)
+        DollyApp._disconnect(app)
+        self.ask.assert_called_once_with(
+            'Recording in progress', 'A recording is in progress. Finish it before disconnecting?',
+            'Finish', 'Discard', parent=app.root)
+        self.assertEqual(app.submitted, ['Finishing video recording'])
+        app._session_operation.assert_called_once_with('Disconnecting', controller.disconnect)
+
+    def test_disconnect_cancelled_keeps_the_connection_and_the_take(self):
+        app, controller, bridge, state = self.take(None)
+        DollyApp._disconnect(app)
+        app._session_operation.assert_not_called()
+        self.assertEqual(state['state'], 'recording')
 
 
 if __name__ == '__main__':

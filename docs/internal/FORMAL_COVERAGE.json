@@ -2571,7 +2571,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "597db26ffac48c0d0c45b468f7d1015411cc9af1964313fc83c086f7600549a3",
+      "sha256": "33f60ffb57928615109841a8182be307bebe06bd01f5e091305c9c9c1ea32c51",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2719,7 +2719,8 @@
       "reconciliation_20261120s14": "2026-11-20: Finishing or discarding a take after the game exited drops its audio owner: an unconfirmed movie stop is not retained or retried when no game is left to confirm it.",
       "reconciliation_20261120s15": "2026-11-20: Record asks about the reconstructed-audio helper download before it sets up the take; a declined download used to leave the layer queue and base capture of a run that never started, which kept camera editing and screenshots locked.",
       "reconciliation_20261120e": "2026-11-20: Attached-flight offset updates share one history merge key, so a flight is one undo step.",
-      "reconciliation_20261120": "2026-11-20: _combine_layer no longer removes the alpha master when a MOV take's black pass shares its name."
+      "reconciliation_20261120": "2026-11-20: _combine_layer no longer removes the alpha master when a MOV take's black pass shares its name.",
+      "reconciliation_20261120d1": "2026-11-20: Closing Dolly or pressing Disconnect while a take is recording asks first: Finish (the Finish recording path with the remaining layer passes skipped), Discard, or Cancel. The close or disconnect continues once the take has ended and Dolly is idle; a failed finish leaves Dolly open. A busy Dolly and a closed game keep the earlier behaviour. This question runs before CloseFlow's ClickClose and is outside that model."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -11279,7 +11280,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "597db26ffac48c0d0c45b468f7d1015411cc9af1964313fc83c086f7600549a3"
+      "owner_utf8_lf_sha256": "33f60ffb57928615109841a8182be307bebe06bd01f5e091305c9c9c1ea32c51"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11330,7 +11331,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "597db26ffac48c0d0c45b468f7d1015411cc9af1964313fc83c086f7600549a3"
+      "owner_utf8_lf_sha256": "33f60ffb57928615109841a8182be307bebe06bd01f5e091305c9c9c1ea32c51"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11650,7 +11651,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "597db26ffac48c0d0c45b468f7d1015411cc9af1964313fc83c086f7600549a3"
+      "owner_utf8_lf_sha256": "33f60ffb57928615109841a8182be307bebe06bd01f5e091305c9c9c1ea32c51"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",

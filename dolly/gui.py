@@ -128,6 +128,41 @@ def movie_stop_held(app) -> bool:
             and failures[1] >= MOVIE_STOP_ATTEMPTS)
 
 
+def _settle_recording(app, doing, proceed) -> bool:
+    """Ask what to do with a take in progress before closing or disconnecting.
+
+    False means there is nothing to ask and the caller carries on. Otherwise
+    the take is finished or discarded first and ``proceed`` runs once that is
+    done; it does not run when the user cancels or the take could not be ended.
+    """
+    def recording():
+        exporter, controller = getattr(app, "video_export", None), getattr(app, "controller", None)
+        # A closed game has nothing left to finish; its take fails on its own.
+        return (exporter is not None and exporter.status().get("state") in ACTIVE_STATES
+                and (controller is None or controller.status().get("game_running") is not False))
+    if not recording():
+        return False
+    choice = messagebox.askchoice("Recording in progress",
+                                  f"A recording is in progress. Finish it before {doing}?",
+                                  "Finish", "Discard", parent=app.root)
+    if choice is None:
+        return True
+    # The window keeps polling behind the question, so the take can have ended.
+    if app.busy:
+        app.status_text.set("Please wait for the current operation to finish.")
+        return True
+    if not recording():
+        return False
+    # The remaining layer passes are skipped either way.
+    app._layer_queue = []
+
+    def ended(status):
+        if status.get("state") in ("completed", "cancelled"):
+            app._when_idle(proceed)
+    app._stop_video_recording(cancel=not choice, then=ended)
+    return True
+
+
 def _session_tone(text):
     if text in _QUIET_SESSION:
         return "dim"
@@ -1563,7 +1598,7 @@ class DollyApp:
             return status
         self._submit("Preparing replay and recording", start, self._video_operation_done)
 
-    def _stop_video_recording(self, cancel=False):
+    def _stop_video_recording(self, cancel=False, then=None):
         encoding_cancel = getattr(self, '_player_encode_cancel', None)
         if cancel and encoding_cancel is not None:
             encoding_cancel.set()
@@ -1612,8 +1647,13 @@ class DollyApp:
             # An early Finish ends this take, including its queued passes.
             # Do not silently export longer layer takes than the color video.
             self._layer_queue = []
+        done = self._video_operation_done
+        if then is not None:
+            def done(status):
+                self._video_operation_done(status)
+                then(status)
         return self._submit("Discarding recording" if cancel else "Finishing video recording",
-                            finish, self._video_operation_done)
+                            finish, done)
 
     def _next_take_directory(self):
         """The folder that receives new takes, never the inside of a take."""
@@ -2539,7 +2579,7 @@ class DollyApp:
               ("load_replay_button", "Load replay", self._load_replay, "Card.TButton"))),
             ("03  Start creating", "Once the replay loads, check camera support.",
              (("probe_button", "Check camera support", self._probe, "Card.TButton"),
-              ("disconnect_button", "Disconnect", lambda: self._session_operation("Disconnecting", self.controller.disconnect), "Card.TButton"))),
+              ("disconnect_button", "Disconnect", self._disconnect, "Card.TButton"))),
         )
         for column, (title, subtitle, buttons) in enumerate(steps):
             card = ttk.Frame(flow, style="Rounded.Card.TFrame", padding=self._px(20))
@@ -3209,6 +3249,26 @@ class DollyApp:
             function = lambda: self.controller.stop(preserve_speed=True)
             return self._submit(label, function, self._restore_completed)
         return self._submit(label, function)
+
+    def _disconnect(self):
+        def disconnect():
+            return self._session_operation("Disconnecting", self.controller.disconnect)
+        if self.busy:
+            return disconnect()
+        if not _settle_recording(self, "disconnecting", disconnect):
+            return disconnect()
+
+    def _when_idle(self, action):
+        """Run ``action`` on the window's thread once no operation is running."""
+        def check():
+            if self.closed:
+                return
+            if self.busy:
+                self.root.after(100, check)
+            else:
+                action()
+        # Never right away: the caller may be about to start its own operation.
+        self.root.after(100, check)
 
     def _restore_completed(self, _result=None):
         status = self.controller.status()
@@ -5573,6 +5633,8 @@ class DollyApp:
         self._cancel_renderlock_export()
         if self.busy:
             messagebox.showinfo("Operation in progress", "Wait for the current operation to finish before closing Dolly.", parent=self.root)
+            return
+        if _settle_recording(self, "closing", lambda: self._on_close(discard_confirmed)):
             return
         # Whether the unsaved-changes question was already answered for this close.
         self._discard_asked = bool(discard_confirmed)
