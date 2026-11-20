@@ -1261,6 +1261,10 @@ void tick() noexcept {
             INVALID_FILE_ATTRIBUTES)
             return;
         attempted = true;
+        // Answer a refused marker once, stamped for the take that wrote it;
+        // otherwise the same marker is refused again on every poll.
+        lastMarker = requestText;
+        captureRequest = capture_marker_request(requestText);
         if (!hashesOk || !sceneBase ||
             value<std::uintptr_t>(sceneBase + sceneLayout.object) !=
                 sceneBase + sceneLayout.table) {

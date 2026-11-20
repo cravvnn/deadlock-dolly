@@ -1,6 +1,7 @@
 #include "dolly_player_capture_lifecycle.hpp"
 #include <cstdio>
 #include <limits>
+#include <string>
 
 using namespace dolly;
 using namespace dolly::player_capture;
@@ -272,6 +273,16 @@ int main() {
     require(capture_slot_failure(CaptureSlotStep::seal, false) &&
                 capture_slot_failure(CaptureSlotStep::recycle, false),
             "a slot that cannot start or be reused stalls with a named reason");
+    const std::string id = "0123456789abcdef0123456789abcdef";
+    require(capture_marker_request("color-sequence-v3 0 24 players 8 8 fps 60 request " + id) == id &&
+                capture_marker_request("color-sequence-v4 0 24 players 8 8 fps 60 request " + id +
+                                       " speed 1 scratch 00") == id,
+            "a refused marker is answered with the id of the take that wrote it");
+    require(capture_marker_request("gpu-snapshot-v1 1 7").empty() &&
+                capture_marker_request("x request " + id.substr(1)).empty() &&
+                capture_marker_request("x request " + id + "0").empty() &&
+                capture_marker_request("x request " + id + "Z").empty(),
+            "a marker without one exact request id answers no take");
     std::printf("Player capture lifecycle tests: %u failures\n", failures);
     return failures ? 1 : 0;
 }

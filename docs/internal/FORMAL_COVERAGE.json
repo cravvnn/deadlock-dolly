@@ -3927,7 +3927,7 @@
     },
     {
       "path": "dolly/player_layer.py",
-      "sha256": "b95651004e75c9998b68c11a6ba7b4013f876ae9e80db75f9582fa5f1d3a04d0",
+      "sha256": "7f3e4ccb6f501b00dcca30ff571e7a3b3ba083fc7e836841b29cafbd4acf33c8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -3999,7 +3999,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261120": "2026-11-20: wait_until_armed names an unsupported game build and shows one status line."
     },
     {
       "path": "dolly/player_pixels.py",
@@ -7662,7 +7663,7 @@
     },
     {
       "path": "native/include/dolly_player_capture_lifecycle.hpp",
-      "sha256": "7ec9dbbf009c9b2954d58c16204e563bf74f8c3a9d260a5b4813f370dd39b080",
+      "sha256": "80bc8b3424bf1c3898040ab16d20d0e296894313d7f114665ffef3b954e5dd38",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -7683,7 +7684,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog."
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog.",
+      "reconciliation_20261120": "2026-11-20: capture_marker_request reads the request id from a start marker."
     },
     {
       "path": "native/include/dolly_player_material_matte.hpp",
@@ -9165,7 +9167,7 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
-      "sha256": "d0d57b283679cdfd43e78aaf02cc2e451f136dfcba0c217ca5ebc37b4c427cdf",
+      "sha256": "77dfabbf3279c5481750991700ff420e3be22ea494ead49b7b56ab0ee9ba7ac9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9227,7 +9229,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog. Owner classification cache never writes past its last entry when every entry is a player. A finished take frees the writer's recycled frame buffers and the sequence ring's CPU pixels."
+      "reconciliation_20261119c": "2026-11-19: N1: producer hiding is gated by a live sequence request, not by mode flags that outlive the take. N2: producer calls with no capture request forward once and skip the shared producer table. N3: a sequence take's result depends on its frame metadata only; the deployment-folder event dump is capped and diagnostic. N7: the whole-image coverage audit and its log line run only for the first frames of a take. N4: render-thread frame allocations (prepare, writer handoff, next buffer) stall the sequence with a named reason instead of escaping noexcept callbacks. N5: a ring slot whose readback cannot start or whose image cannot be reused stalls the take with a named reason instead of waiting out the watchdog. Owner classification cache never writes past its last entry when every entry is a player. A finished take frees the writer's recycled frame buffers and the sequence ring's CPU pixels.",
+      "reconciliation_20261120": "2026-11-20: A start marker refused at the module/layout gate is answered once and stamped with its request id."
     },
     {
       "path": "native/src/dolly_prop_runtime.cpp",
@@ -11319,7 +11322,7 @@
       "instances": [
         "EncoderUnwindApi"
       ],
-      "owner_utf8_lf_sha256": "b95651004e75c9998b68c11a6ba7b4013f876ae9e80db75f9582fa5f1d3a04d0"
+      "owner_utf8_lf_sha256": "7f3e4ccb6f501b00dcca30ff571e7a3b3ba083fc7e836841b29cafbd4acf33c8"
     },
     "dolly/ExportCleanup.tla": {
       "path": "dolly/camera_export.py",
@@ -11742,7 +11745,7 @@
       "instances": [
         "ScratchCompletionApi"
       ],
-      "owner_utf8_lf_sha256": "b95651004e75c9998b68c11a6ba7b4013f876ae9e80db75f9582fa5f1d3a04d0"
+      "owner_utf8_lf_sha256": "7f3e4ccb6f501b00dcca30ff571e7a3b3ba083fc7e836841b29cafbd4acf33c8"
     },
     "dolly/ScratchCreate.tla": {
       "path": "dolly/player_scratch.py",
@@ -11975,7 +11978,7 @@
         "native/src/CaptureFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "d0d57b283679cdfd43e78aaf02cc2e451f136dfcba0c217ca5ebc37b4c427cdf"
+      "owner_utf8_lf_sha256": "77dfabbf3279c5481750991700ff420e3be22ea494ead49b7b56ab0ee9ba7ac9"
     },
     "native/src/DrawProof.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -11984,7 +11987,7 @@
         "native/src/DrawProof.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "d0d57b283679cdfd43e78aaf02cc2e451f136dfcba0c217ca5ebc37b4c427cdf"
+      "owner_utf8_lf_sha256": "77dfabbf3279c5481750991700ff420e3be22ea494ead49b7b56ab0ee9ba7ac9"
     },
     "native/src/MediaDetach.tla": {
       "path": "native/src/dolly_media_win.cpp",

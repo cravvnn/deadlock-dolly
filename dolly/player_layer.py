@@ -398,8 +398,12 @@ def wait_until_armed(deployment: Path, timeout: float = 10.0) -> None:
         text = capture_status(deployment)
         if text.startswith("armed"):
             return
+        if text.startswith("rejected exact module/layout gate"):
+            raise RuntimeError(
+                "The Players layer does not support this Deadlock build yet. "
+                "Update Dolly, or record without the Players layer.")
         if text.startswith(("failed", "rejected", "complete")):
-            raise RuntimeError("Player capture could not start: " + text)
+            raise RuntimeError("Player capture could not start: " + text.splitlines()[0])
         time.sleep(.05)
     raise RuntimeError("Player capture did not acknowledge this take. Use a matching updated Dolly build.")
 
