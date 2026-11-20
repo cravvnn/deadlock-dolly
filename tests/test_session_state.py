@@ -175,6 +175,24 @@ class FailedTakeRelease(unittest.TestCase):
             DollyApp._refresh_video(app, dict(READY))
         self.assertEqual(app.submitted, ['Restoring recording settings'])
 
+    def test_audio_capture_is_cancelled_when_the_game_exits_mid_take(self):
+        export, controller, bridge, state = recorder()
+        export.start(VideoOptions(self.root / 'first.mp4'))
+        audio = NS(movie=None, cancel=Mock())
+        app = video_app(export, controller, clip_audio=audio)
+        closed = {**READY, 'game_running': False, 'connected': False}
+        controller.status.return_value = closed
+        # The poll that first sees the exit is busy clearing the dead session;
+        # the audio capture still has to be stopped once the worker is free.
+        app.busy = True
+        DollyApp._refresh_video(app, closed)
+        audio.cancel.assert_not_called()
+        app.busy = False
+        DollyApp._refresh_video(app, closed)
+        audio.cancel.assert_called_once()
+        self.assertIsNone(app.clip_audio)
+        self.assertFalse(export.finish_pending)
+
 
 if __name__ == '__main__':
     unittest.main()

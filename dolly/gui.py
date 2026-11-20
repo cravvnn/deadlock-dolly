@@ -2101,8 +2101,11 @@ class DollyApp:
                 else:
                     self._video_operation_done(status)
             elif state == "failed" and not movie_held:
-                if self.clip_audio is not None and not self.busy:
-                    self._stop_video_recording(cancel=True)
+                if self.clip_audio is not None:
+                    # Its audio capture is stopped on the worker; a busy poll
+                    # (the game just exited) waits instead of dropping it.
+                    if not self.busy:
+                        self._stop_video_recording(cancel=True)
                     return
                 message = format_video_status(status)
                 self._log(message)
