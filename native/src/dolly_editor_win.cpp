@@ -1124,6 +1124,11 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
          (std::abs(value) != 1 && std::abs(value) != 2 && std::abs(value) != 5 &&
           std::abs(value) != 10 && std::abs(value) != 25)))
         return false;
+    // The Shot slider holds a float, which at the end of the shot can read
+    // just past the duration. That is a seek to the shot's last moment.
+    if (action == EditorAction::SeekShot && value > state.duration &&
+        float(value) <= float(state.duration))
+        value = state.duration;
     if (action == EditorAction::SeekShot &&
         (!state.ready || state.playing || state.busy || !state.camera_count ||
          state.owner != EditorOwner::Panel || value < 0 || value > state.duration))

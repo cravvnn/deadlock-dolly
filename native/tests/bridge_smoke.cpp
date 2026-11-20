@@ -3046,6 +3046,27 @@ void run() {
         const auto& seek_event = dolly::gEvents[seek_serial % kEditorEventCount];
         require(seek_event.action == 75 && seek_event.value == .75,
                 "Shot seek action differs from Python");
+        // The Shot slider holds a float. At the end of a 2.7 s shot it reads
+        // just past the duration; that is still a seek to the last moment.
+        {
+            config.sequence += 2;
+            config.duration = 2.7;
+            std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
+            editor_worker_tick(f.mapping.data(), true);
+            const double slider_end = double(float(2.7));
+            require(slider_end > 2.7, "Float rounding fixture no longer rounds up");
+            const auto end_serial = dolly::gLastEvent;
+            require(editor_enqueue(EditorAction::SeekShot, slider_end) &&
+                        dolly::gEvents[end_serial % kEditorEventCount].value == 2.7,
+                    "Seeking from the end of the Shot slider was refused");
+            require(!editor_enqueue(EditorAction::SeekShot, 2.71),
+                    "A time past the shot entered the event queue");
+            dolly::gLastEvent = end_serial;
+            config.sequence += 2;
+            config.duration = 2;
+            std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
+            editor_worker_tick(f.mapping.data(), true);
+        }
         const auto step_serial = dolly::gLastEvent;
         require(editor_enqueue(EditorAction::StepReplayTicks, -25), "Tick step could not queue");
         require(dolly::gEvents[step_serial % kEditorEventCount].action == 76 &&

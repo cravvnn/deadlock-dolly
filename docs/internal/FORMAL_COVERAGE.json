@@ -8687,7 +8687,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "8c06cc247699c4b86ff23240c638cf15c82b4da47cf84681a30394456c3eedb5",
+      "sha256": "d09143877a85d2362405574bc032c71336e1ee2592e4ae1ada2657cad41c5c02",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8725,7 +8725,7 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1).",
-      "reconciliation_20261120e": "2026-11-20: editor_enqueue waits up to 10 ms for the event ring instead of dropping the action when the worker holds it."
+      "reconciliation_20261120e": "2026-11-20: editor_enqueue waits up to 10 ms for the event ring instead of dropping the action when the worker holds it. A shot seek whose float slider value rounds just past the duration is clamped to the duration."
     },
     {
       "path": "native/src/dolly_effects.cpp",
