@@ -145,6 +145,14 @@ private:
 
 inline constexpr double kAttachViewOffsetLimit = 200.0;
 inline constexpr double kAttachOffsetLimit = 10000.0;
+// A typed position offset is free of the slider's fine range, but the attach
+// action refuses anything past the limit. Keep the entry at the limit so the
+// field does not snap back to the old value without a reason.
+inline float attach_offset_entry(float typed, double saved) noexcept {
+    if (std::isnan(typed))
+        return float(saved);
+    return std::clamp(typed, -float(kAttachOffsetLimit), float(kAttachOffsetLimit));
+}
 inline constexpr double kAttachSmoothingLimit = 5.0;
 // No geometry query is available here. Keep the filtered pose close to its
 // resolved bone/eye point so it cannot trail deep into the moving character.

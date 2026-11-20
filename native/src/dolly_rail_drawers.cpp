@@ -382,6 +382,8 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                     opt.unclamped_entry = i < 3;
                     auto e = f::SliderLine(axes[i], &v, -range, range, i < 3 ? "%.2f" : "%.1f",
                                            64 - indent, indent, opt);
+                    if (i < 3)
+                        v = attach_offset_entry(v, s.attach_offsets[i]);
                     n.value = v;
                     n.active = e.active;
                     offsets[i] = v;

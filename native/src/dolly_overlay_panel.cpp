@@ -1525,6 +1525,9 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                                    -position_range, position_range,
                                    position ? "%.2f" : "%.1f", 74.0f,
                                    nullptr, false, position);
+                    if (position)
+                        attach_draft[index] = attach_offset_entry(
+                            attach_draft[index], state.attach_offsets[index]);
                     attach_active = attach_active || row.active;
                     attach_commit = attach_commit || row.committed;
                 }

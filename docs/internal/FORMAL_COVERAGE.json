@@ -7036,7 +7036,7 @@
     },
     {
       "path": "native/include/dolly_attach.hpp",
-      "sha256": "729514c734dfa532f54848bedd19e293bb23ad9970962e235e6fd5c47dd3667f",
+      "sha256": "74f6edfc8941ea6639840962845f8205e4fe7d0bd03cd6ef110fbeb44fca6fd0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7059,7 +7059,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261120e": "2026-11-20: attach_offset_entry keeps a typed position offset within the supported limit."
     },
     {
       "path": "native/include/dolly_bone_picker.hpp",
@@ -9027,7 +9028,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.cpp",
-      "sha256": "def5100c06367aefecd9ed6d797120cbffd353efe42c405eff737dd0b21f1f37",
+      "sha256": "453617d3a6fee1d32b56d251688913549d31c6ef95427153ead0d2537b23f473",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9058,7 +9059,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2). the classic 'Reset camera path?' modal opens and draws after the busy-disabled camera cards, so Cancel stays usable when the replay turns busy; Reset here keeps its own busy/playing/recording guard (O3)."
+      "reconciliation_20261119v": "2026-11-19: key-cap chip text extracted to key_cap_label(); F10-F24 now read F10..F24 instead of 'F:' and other punctuation (O4). Alt+drag on the classic shot timeline starts only when the guide snapshot's project_revision matches the camera-list revision, so a stale guide index is never committed against a newer list (O2). the classic 'Reset camera path?' modal opens and draws after the busy-disabled camera cards, so Cancel stays usable when the replay turns busy; Reset here keeps its own busy/playing/recording guard (O3).",
+      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit."
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
@@ -9282,7 +9284,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "1550b9690119d0f449105dfe4b27270972c51ee8d13904fb8674e4fecd05c450",
+      "sha256": "fe163bbba8b4d3f2d4f8fcf3fd669ab8f3324bb0f9aaa42432aba1426a4502e7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9305,7 +9307,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit."
     },
     {
       "path": "native/src/dolly_rail_fields.cpp",
