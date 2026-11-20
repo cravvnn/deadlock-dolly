@@ -104,6 +104,8 @@ _QUIET_SESSION = {"Game not connected", "Game not launched", "Game closed"}
 # Finish/Discard attempts at an unconfirmed endmovie before Dolly stops retrying
 # on its own. The movie audio owner is still kept: the engine may be recording.
 MOVIE_STOP_ATTEMPTS = 3
+# Automatic tries at restoring a failed or discarded take's game settings.
+TAKE_RESTORE_ATTEMPTS = 3
 MOVIE_STOP_HELD = (
     "Deadlock did not confirm that the movie audio recording stopped after {attempts} tries, "
     "so it may still be writing the WAV. Dolly kept the recording and stopped retrying on its own. "
@@ -1470,6 +1472,15 @@ class DollyApp:
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             self._error("Record video", exc)
             return
+        game_audio = self.video_game_audio.get()
+        reconstructed = self.video_reconstructed_audio.get()
+        # Asked before this take's state is set up: a declined download must
+        # not leave a queued layer run that never starts.
+        if reconstructed and find_viewer() is None:
+            if not ask_reconstructed_helper(self.root, size_mb=HELP_SIZE_MB):
+                self.status_text.set(
+                    "Reconstructed audio helper download cancelled; the video was not started.")
+                return
         self._remember_export_folder()
         # The generated endpoint belongs to this take, not the authored shot.
         # Keep the single attached view editable for another chosen duration.
@@ -1517,13 +1528,6 @@ class DollyApp:
             # Bring the game into view for recording. Capture also works if Windows
             # refuses this request or desktop controls take focus during setup.
             focus_window(game_pid())
-        game_audio = self.video_game_audio.get()
-        reconstructed = self.video_reconstructed_audio.get()
-        if reconstructed and find_viewer() is None:
-            if not ask_reconstructed_helper(self.root, size_mb=HELP_SIZE_MB):
-                self.status_text.set(
-                    "Reconstructed audio helper download cancelled; the video was not started.")
-                return
         game_executable = self.game_path.get() if game_audio or reconstructed else None
         start_engine_seconds = (float(project.start_tick) / float(project.tick_rate)
                                 if project is not None else None)
@@ -1582,6 +1586,17 @@ class DollyApp:
                         if folder:
                             status = {**status, "reconstructed_folder": str(folder)}
                 except BaseException as exc:
+                    try:
+                        exited = self.controller.status().get("game_running") is False
+                    except Exception:
+                        exited = False
+                    if exited and isinstance(exc, Exception):
+                        # The game took its audio recording with it; there is
+                        # nothing left to confirm or retry.
+                        if cancel or status.get("state") != "completed":
+                            LOG.warning("Audio capture ended with the game: %s", exc)
+                            return status
+                        raise
                     # Until the game confirms endmovie it keeps writing the
                     # movie WAV. Keep the owner so Finish or Discard retries.
                     movie = getattr(audio, "movie", None)
@@ -1597,8 +1612,8 @@ class DollyApp:
             # An early Finish ends this take, including its queued passes.
             # Do not silently export longer layer takes than the color video.
             self._layer_queue = []
-        self._submit("Discarding recording" if cancel else "Finishing video recording",
-                     finish, self._video_operation_done)
+        return self._submit("Discarding recording" if cancel else "Finishing video recording",
+                            finish, self._video_operation_done)
 
     def _next_take_directory(self):
         """The folder that receives new takes, never the inside of a take."""
@@ -1621,7 +1636,10 @@ class DollyApp:
             return
         self.video_status_text.set(format_video_status(status))
         self.status_text.set(self.video_status_text.get())
-        self._last_video_state = state
+        if "layer" not in status:
+            # A layer step's result is not the recorder's state; recording it
+            # made the next poll treat the last finished take as a new one.
+            self._last_video_state = state
         if state == "completed" and self.video_export.output_path:
             if status.get("reconstructed_folder"):
                 self._log("Reconstructed audio saved to " + status["reconstructed_folder"])
@@ -1655,6 +1673,10 @@ class DollyApp:
             # encoder may still be initializing. Play needs responsive views.
             if state == "recording":
                 self._pending_auto_play = False
+                # The take's shot is playing once its start returns. Do not
+                # wait for a poll to see it: a short shot can end first.
+                def started(_result=None):
+                    self._take_playing_seen = True
                 if getattr(self, "_pov_project", None) is not None:
                     project = self._pov_project
                     speed = float(self.video_export_speed.get())
@@ -1664,11 +1686,11 @@ class DollyApp:
                         except Exception:
                             self.video_export.stop(cancel=True)
                             raise
-                    self._submit("Starting POV segment", start_pov)
+                    self._submit("Starting POV segment", start_pov, started)
                 elif getattr(self, "_bone_take_project", None) is not None:
-                    self._play(project=self._bone_take_project)
+                    self._play(project=self._bone_take_project, started=started)
                 else:
-                    self._play()
+                    self._play(started=started)
             elif state in ("failed", "cancelled", "completed", "idle"):
                 self._pending_auto_play = False
         self._advance_layer_pipeline()
@@ -2088,6 +2110,13 @@ class DollyApp:
         # After MOVIE_STOP_ATTEMPTS unconfirmed endmovie replies the poll stops
         # retrying; the final message was shown once and Finish stays enabled.
         movie_held = movie_stop_held(self)
+        # Every failed automatic finish or restore ends in an error dialog, so
+        # the tries are bounded. A changed connection (the user reconnected) is
+        # a new chance.
+        situation = (state, bool(controller_status.get("connected")),
+                     bool(controller_status.get("game_running")))
+        tries = getattr(self, "_take_restore_tries", None)
+        tried = tries[1] if tries is not None and tries[0] == situation else 0
         if state != previous:
             if state == "completed":
                 if self.busy:
@@ -2095,30 +2124,48 @@ class DollyApp:
                 if (self.clip_audio is not None
                         or getattr(self.video_export, "finish_pending", False) is True):
                     if not movie_held:
-                        if not self.busy:
-                            self._stop_video_recording()
+                        # Out of tries, Finish recording stays for a manual one.
+                        if (tried < TAKE_RESTORE_ATTEMPTS
+                                and self._stop_video_recording() is not False):
+                            self._take_restore_tries = (situation, tried + 1)
                         return
                 else:
                     self._video_operation_done(status)
-            elif state == "failed" and not movie_held:
-                if self.clip_audio is not None and not self.busy:
-                    self._stop_video_recording(cancel=True)
+            elif state in ("failed", "cancelled") and not movie_held:
+                if self.clip_audio is not None:
+                    # Its audio capture is stopped on the worker; a busy poll
+                    # (the game just exited) waits instead of dropping it. A
+                    # take can also be discarded by a failed shot start.
+                    if not self.busy:
+                        self._stop_video_recording(cancel=True)
                     return
-                message = format_video_status(status)
-                self._log(message)
-                # A take can fail after playback started, when no worker is
-                # waiting for it. Surface the reason instead of only the log.
-                self._error("Recording", RuntimeError(status.get("error") or message))
+                if state == "failed":
+                    message = format_video_status(status)
+                    self._log(message)
+                    # A take can fail after playback started, when no worker is
+                    # waiting for it. Surface the reason instead of only the log.
+                    self._error("Recording", RuntimeError(status.get("error") or message))
             self._last_video_state = state
         active = state in ACTIVE_STATES
+        if active or state == previous == "completed":
+            # A new take, or this one finished: later tries start from zero.
+            self._take_restore_tries = None
+        # A take that failed on its own (the recorder stopped, the game exited,
+        # a rejected start) is still reserved until the worker lets it go;
+        # without that no later recording can start.
+        unreleased = (getattr(self.video_export, "finish_pending", False) is True
+                      and getattr(self.video_export, "_capture_only", False) is not True)
         if (state in ("failed", "cancelled") and not self.busy
+                and tried < TAKE_RESTORE_ATTEMPTS
                 and ((getattr(self, "_pov_project", None) is not None
                       and getattr(self.controller, "_pov_active", False))
                      or getattr(self.controller, "_export_resolution", None) is not None
-                     or getattr(self.controller, "_export_timing", None) is not None)):
+                     or getattr(self.controller, "_export_timing", None) is not None
+                     or unreleased)):
             self._layer_queue = []
             self._auto_finish_layered = False
-            self._submit("Restoring recording settings", self.video_export.stop)
+            if self._submit("Restoring recording settings", self.video_export.stop) is not False:
+                self._take_restore_tries = (situation, tried + 1)
         ready = recording_ready(controller_status)
         controller_message = str(controller_status.get("message") or "")
         if controller_status.get("playing") or "Playing native camera path" in controller_message:
@@ -2922,6 +2969,9 @@ class DollyApp:
         def operation():
             if self.controller.status().get("startup_stage") == "waiting_game_screen":
                 return self._resume_startup()
+            if self.controller.status().get("game_running"):
+                # Before anything below resets the running session's editor setup.
+                raise ValueError("Close the existing Dolly game session before launching again.")
             game, demo = self.game_path.get().strip(), self.demo_path.get().strip()
             if not game or not demo:
                 raise ValueError("Choose your Deadlock executable and a .dem replay first.")
@@ -3472,7 +3522,8 @@ class DollyApp:
                     return
                 if kind == "export_error":
                     self._clear_layer_pipeline()
-                cancelled = self.startup_cancel is not None and self.startup_cancel.is_set()
+                cancelled = (self.startup_cancel is not None and self.startup_cancel.is_set()
+                             and getattr(self, "_startup_crash_cancel", None) is not self.startup_cancel)
                 if self.startup_cancel is not None:
                     self.startup_cancel = None
                     self.startup_bar.stop()
@@ -3527,7 +3578,8 @@ class DollyApp:
                 "game_closed": "Game closed",
             }
             session_label = stage_labels.get(stage, "Game connected" if connected else "Game not connected")
-            if not connected and stage in ("connected", "unlocker_ready", "loading_replay", "replay_ready"):
+            if not connected and stage in ("connected", "unlocker_ready", "loading_replay", "replay_ready",
+                                           "editing_ready"):
                 session_label = "Disconnected — reconnect to continue"
             _set_var(self.session_text, "Playing camera path" if self.playing else session_label)
             if self.startup_cancel is not None and not self.startup_cancel.is_set():
@@ -3575,7 +3627,7 @@ class DollyApp:
                 (self.connect_button, available and not connected and stage not in ("not_launched", "game_closed")),
                 (self.initialize_button, available and connected and not unlocker_ready),
                 (self.load_replay_button, available and connected and unlocker_ready and stage != "loading_replay"),
-                (self.probe_button, available and connected and unlocker_ready and stage in ("loading_replay", "replay_ready", "failed")),
+                (self.probe_button, available and connected and unlocker_ready and stage in ("loading_replay", "replay_ready", "failed", "cancelled")),
                 (self.disconnect_button, not self.busy and connected),
             )
             for button, enabled in startup_buttons:
@@ -3693,6 +3745,9 @@ class DollyApp:
             if self.root.state() == 'iconic':
                 self._restore_from_taskbar()
             if self.startup_cancel is not None:
+                if status.get('startup_stage') == 'failed':
+                    # A crash ends this startup; its error is not a user cancel.
+                    self._startup_crash_cancel = self.startup_cancel
                 self.startup_cancel.set()
             self.root.after_idle(lambda: self._offer_session_graphics(session))
         if not self.busy and getattr(self,'_game_exit_cleanup',None) is not session:
@@ -5003,13 +5058,12 @@ class DollyApp:
             return
         if not self.controller.status().get("connected"):
             return
-        if speed == getattr(self, "_live_playback_speed", None):
-            return
-        if self._submit("Applying playback speed",
-                        lambda: self.controller.set_playback_speed(speed)):
-            self._live_playback_speed = speed
+        # Always sent: a take, Play or a new game session can have returned the
+        # replay to 1x since this speed was last chosen.
+        self._submit("Applying playback speed",
+                     lambda: self.controller.set_playback_speed(speed))
 
-    def _play(self, *, project=None):
+    def _play(self, *, project=None, started=None):
         def operation():
             # One last chance to repair a shot authored at another replay rate
             # before the path runs; the controller only warns from here.
@@ -5030,7 +5084,7 @@ class DollyApp:
             smoothing_window(smoothing)
             submitted = self._submit("Starting shot playback", lambda: self.controller.play(
                 playback_project, time=0.0, speed=speed, rate=rate, frozen=frozen, hide_hud=hide_hud,
-                smoothing=smoothing))
+                smoothing=smoothing), started)
             if submitted:
                 self._set_time(0.0)
         self._guard("Play shot", operation)
