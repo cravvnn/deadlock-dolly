@@ -7068,7 +7068,7 @@
     },
     {
       "path": "native/include/dolly_attach.hpp",
-      "sha256": "74f6edfc8941ea6639840962845f8205e4fe7d0bd03cd6ef110fbeb44fca6fd0",
+      "sha256": "a0a5eb3e436e3e953c1e35332017ecea75944b44b160e971f6ecad38010da3ed",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7092,7 +7092,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261120e": "2026-11-20: attach_offset_entry keeps a typed position offset within the supported limit."
+      "reconciliation_20261120e": "2026-11-20: attach_offset_entry keeps a typed position offset within the supported limit.",
+      "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag"
     },
     {
       "path": "native/include/dolly_bone_picker.hpp",
@@ -8294,7 +8295,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "ee6be68a3ddd21193f40b4c235c5c1402ccd0ab7aec0dc6b797137eabd710e50",
+      "sha256": "e7bec7b76e1d12569875d25e8cd17c93a888e182af2870b0ac1edf46caf277f1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8374,11 +8375,12 @@
       "reconciliation_20261114": "2026-11-14 process hardening: prop_runtime::tick moved after the main-view filter and gMainViewBusy admission, matching its header contract (confetti frame thread). bridge_smoke prop_probe_main_view_only fails on the old placement. NativeSnapshotClose scope unchanged (tick touches none of its state).",
       "reconciliation_20261118": "2026-11-18: Same-command refresh accepts kNoSeekRelief with the particle bits.",
       "reconciliation_20261120": "2026-11-20: The late soundsystem probe also offers the module to movie_audio_install.",
-      "reconciliation_attach_pitch": "2026-11-20: attached flight starts from the pitch limit so idle frames keep the offsets"
+      "reconciliation_attach_pitch": "2026-11-20: attached flight starts from the pitch limit so idle frames keep the offsets",
+      "reconciliation_attach_hitch": "2026-11-20: attach samples pass through the anchor filter in preview and playback"
     },
     {
       "path": "native/src/dolly_attach.cpp",
-      "sha256": "0da73490d5e41eb9ba154009f7e9e9325836da917d49b43837ad9606c962b271",
+      "sha256": "3d475c9f681835b9c3afb2713a5a13484d12f23438c60cc50e5b8b7359393e9a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8402,7 +8404,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_attach_pitch": "2026-11-20: attach base angles are signed; composed and input pitch stop at vertical"
+      "reconciliation_attach_pitch": "2026-11-20: attach base angles are signed; composed and input pitch stop at vertical",
+      "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag"
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
@@ -12050,7 +12053,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "ee6be68a3ddd21193f40b4c235c5c1402ccd0ab7aec0dc6b797137eabd710e50"
+      "owner_utf8_lf_sha256": "e7bec7b76e1d12569875d25e8cd17c93a888e182af2870b0ac1edf46caf277f1"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",

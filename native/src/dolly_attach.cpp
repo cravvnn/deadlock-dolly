@@ -160,6 +160,89 @@ bool AttachRenderHistory::apply(AttachSample& sample, double time,
     return true;
 }
 
+void AttachAnchorFilter::reset() noexcept {
+    primed_ = lagging_ = false;
+    count_ = held_ = 0;
+    shift_.fill(0);
+}
+
+void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double tick_interval,
+                               bool paused) noexcept {
+    if (!sample.valid || !finite3(sample.motion_anchor, 1e8) || !std::isfinite(replay_time) ||
+        !(tick_interval > 0) || tick_interval > 1) {
+        reset();
+        return;
+    }
+    const auto shift_sample = [&] {
+        for (unsigned i = 0; i < 3; ++i) {
+            sample.origin[i] += shift_[i];
+            sample.motion_anchor[i] += shift_[i];
+        }
+    };
+    if (paused) {
+        // The held view keeps the place it had when the replay stopped.
+        if (primed_)
+            shift_sample();
+        return;
+    }
+    const auto anchor = sample.motion_anchor;
+    const double dt = replay_time - time_;
+    if (primed_ && dt >= 0 && dt <= 1e-5) {
+        shift_sample(); // The same replay moment drawn again.
+        return;
+    }
+    if (!primed_ || dt < 0 || dt > .1) {
+        reset();
+        primed_ = true;
+        anchor_ = anchor;
+        time_ = replay_time;
+        return;
+    }
+    std::array<double, 3> velocity{};
+    for (unsigned i = 0; i < 3; ++i)
+        velocity[i] = (anchor[i] - anchor_[i]) / dt;
+    bool usual = true;
+    if (count_ == 3) {
+        std::array<double, 3> tick{}, error{};
+        double size = 0, back = 0, forward = 0, stay = 0;
+        for (unsigned i = 0; i < 3; ++i) {
+            const double a = velocity_[0][i], b = velocity_[1][i], c = velocity_[2][i];
+            const double median = std::max(std::min(a, b), std::min(std::max(a, b), c));
+            tick[i] = median * tick_interval;
+            error[i] = anchor[i] - anchor_[i] - median * dt;
+            size += tick[i] * tick[i];
+            back += (error[i] + tick[i]) * (error[i] + tick[i]);
+            forward += (error[i] - tick[i]) * (error[i] - tick[i]);
+            stay += error[i] * error[i];
+        }
+        size = std::sqrt(size);
+        const double tolerance = .35 * size + .5;
+        if (!lagging_ && size > 1 && std::sqrt(back) < tolerance) {
+            lagging_ = true;
+            held_ = 0;
+            usual = false;
+        } else if (lagging_ && forward < stay) {
+            // Nearer to the step forward than to staying behind. A jump or a
+            // turn in the same frame must not hide the step forward.
+            lagging_ = false;
+            usual = false;
+        } else if (lagging_ && ++held_ > 12) {
+            lagging_ = false; // Not the pattern after all; follow the game.
+        }
+        for (unsigned i = 0; i < 3; ++i)
+            shift_[i] = lagging_ ? tick[i] : 0;
+    }
+    if (usual) {
+        velocity_[0] = velocity_[1];
+        velocity_[1] = velocity_[2];
+        velocity_[2] = velocity;
+        count_ = std::min(3u, count_ + 1);
+    }
+    anchor_ = anchor;
+    time_ = replay_time;
+    shift_sample();
+}
+
 void AttachSmoothing::reset() noexcept {
     primed_ = false;
     pose_.fill(0);

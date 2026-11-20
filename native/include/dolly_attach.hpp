@@ -127,6 +127,27 @@ private:
     unsigned count_ = 0;
 };
 
+// While a replay plays, the game can draw a player one tick behind for a frame
+// or a few when a tick arrives early, then snap it forward. A camera riding
+// that player makes the whole scene jump. Recognise the step back by its size
+// (one tick of the player's own movement) and carry the camera along the
+// uninterrupted path until the matching step forward. Reset on camera command
+// or target changes.
+class AttachAnchorFilter {
+public:
+    void reset() noexcept;
+    void apply(AttachSample& sample, double replay_time, double tick_interval,
+               bool paused) noexcept;
+    bool lagging() const noexcept { return lagging_; }
+
+private:
+    std::array<std::array<double, 3>, 3> velocity_{};
+    std::array<double, 3> anchor_{}, shift_{};
+    double time_ = 0;
+    unsigned count_ = 0, held_ = 0;
+    bool primed_ = false, lagging_ = false;
+};
+
 // Exponential pose smoothing across rendered views. reset() on mode or target
 // changes; apply_anchored follows whole-player movement before filtering.
 class AttachSmoothing {

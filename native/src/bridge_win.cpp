@@ -1144,6 +1144,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         auto preview = std::atomic_load(&gAttachPreview);
         static AttachSmoothing preview_smoothing;
         static PausedAttachSample<AttachSample> preview_paused_sample;
+        static AttachAnchorFilter preview_anchor;
         static CameraPose preview_offsets;
         static std::uint32_t preview_seed = 0;
         static AttachPreviewContinuity preview_continuity;
@@ -1201,6 +1202,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             preview_current && preview->cache.ready && preview_flag && manual_mode;
         if (!preview_active) {
             preview_paused_sample.reset();
+            preview_anchor.reset();
             preview_continuity.reset();
         }
         if (snap_requested && !picker_active && !preview_active && preview_current &&
@@ -1232,6 +1234,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                 if (!continued) {
                     preview_smoothing.reset();
                     preview_paused_sample.reset();
+                    preview_anchor.reset();
                 }
                 preview_dirty = true;
             }
@@ -1257,6 +1260,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             rendered_attach_sample(0, preview, &preview->cache, preview->schema, segment,
                                    preview_sample, now, status.frame_count, demo.tick, demo.paused);
             preview_paused_sample.apply(preview_sample, demo.paused, demo.tick);
+            preview_anchor.apply(preview_sample, demo.time, demo.interval, demo.paused);
             {
                 CameraPose pre_flight = manual_pose;
                 if (!resolve_attach_pose(preview_sample, segment, pre_flight)) {
@@ -1444,6 +1448,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // one filter would jump when two keys use different offsets on one hero.
     static std::array<AttachSmoothing, AttachTrack::max_segments> attach_smoothing;
     static std::array<PausedAttachSample<AttachSample>, AttachTrack::max_segments> paused_samples;
+    static std::array<AttachAnchorFilter, AttachTrack::max_segments> anchor_filters;
     static std::uint32_t smoothing_command = 0;
     static double smoothing_phase = 0;
     if (smoothing_command != c.command || phase < smoothing_phase) {
@@ -1451,6 +1456,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             filter.reset();
         for (auto& sample : paused_samples)
             sample.reset();
+        for (auto& filter : anchor_filters)
+            filter.reset();
         smoothing_command = c.command;
     }
     smoothing_phase = phase;
@@ -1482,6 +1489,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                *attach_segment, attach_sample, now, status.frame_count, demo.tick,
                                demo.paused);
         paused_samples[segment_index].apply(attach_sample, demo.paused, demo.tick);
+        anchor_filters[segment_index].apply(attach_sample, demo.time, demo.interval, demo.paused);
         CameraPose resolved = applied;
         if (!resolve_attach_view(attach_sample, *attach_segment, resolved,
                                  attach_smoothing[segment_index], real_delta)) {
@@ -1515,6 +1523,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
                                    *arriving, sample, now, status.frame_count, demo.tick,
                                    demo.paused);
             paused_samples[index].apply(sample, demo.paused, demo.tick);
+            anchor_filters[index].apply(sample, demo.time, demo.interval, demo.paused);
             if (!resolve_attach_view(sample, *arriving, destination, attach_smoothing[index],
                                      real_delta)) {
                 fault = 42;

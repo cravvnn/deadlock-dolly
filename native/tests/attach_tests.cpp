@@ -363,6 +363,73 @@ void wrapped_aim() {
             "Looking up from a carried view answers at once");
 }
 
+void early_tick_lag() {
+    // A player running at 480 units/s, drawn at about 128 frames a second. A
+    // tick is 1/64 s, so one tick of movement is 7.5 units.
+    const double interval = 1.0 / 64, frame = 1.0 / 128, speed = 480;
+    dolly::AttachAnchorFilter filter;
+    auto sample_at = [&](double time, double behind) {
+        dolly::AttachSample sample;
+        sample.valid = true;
+        sample.point = dolly::AttachPoint::bone;
+        sample.motion_anchor = {speed * (time - behind), 50, 10};
+        sample.origin = {sample.motion_anchor[0] + 3, 52, 70};
+        return sample;
+    };
+    double time = 10;
+    for (int index = 0; index < 8; ++index, time += frame) {
+        auto sample = sample_at(time, 0);
+        filter.apply(sample, time, interval, false);
+        require(near(sample.motion_anchor[0], speed * time) && !filter.lagging(),
+                "Steady movement passes through");
+    }
+    // The game draws the player one tick behind for three frames.
+    for (int index = 0; index < 3; ++index, time += frame) {
+        auto sample = sample_at(time, interval);
+        filter.apply(sample, time, interval, false);
+        require(filter.lagging() && near(sample.motion_anchor[0], speed * time, 1e-6) &&
+                    near(sample.origin[0], speed * time + 3, 1e-6) && near(sample.origin[2], 70),
+                "A one-tick step back keeps the camera on the path");
+    }
+    // Pausing during the lag keeps the same place.
+    auto held = sample_at(time - frame, interval);
+    filter.apply(held, time - frame, interval, true);
+    require(near(held.motion_anchor[0], speed * (time - frame), 1e-6), "A pause keeps the place");
+    for (int index = 0; index < 4; ++index, time += frame) {
+        auto sample = sample_at(time, 0);
+        filter.apply(sample, time, interval, false);
+        require(!filter.lagging() && near(sample.motion_anchor[0], speed * time, 1e-6),
+                "The step forward ends the correction");
+    }
+    // A real stop is not the pattern and is followed as the game reports it.
+    const double stopped = speed * (time - frame);
+    for (int index = 0; index < 4; ++index, time += frame) {
+        dolly::AttachSample sample;
+        sample.valid = true;
+        sample.point = dolly::AttachPoint::bone;
+        sample.motion_anchor = sample.origin = {stopped, 50, 10};
+        filter.apply(sample, time, interval, false);
+        require(!filter.lagging() && near(sample.motion_anchor[0], stopped),
+                "A real stop is followed at once");
+    }
+    // A step back that never comes forward again is given up on.
+    dolly::AttachAnchorFilter stuck;
+    time = 20;
+    for (int index = 0; index < 8; ++index, time += frame) {
+        auto sample = sample_at(time, 0);
+        stuck.apply(sample, time, interval, false);
+    }
+    for (int index = 0; index < 20; ++index, time += frame) {
+        auto sample = sample_at(time, interval);
+        stuck.apply(sample, time, interval, false);
+    }
+    require(!stuck.lagging(), "An unmatched step back is given up on");
+    // A seek starts over.
+    auto after_seek = sample_at(5, 0);
+    stuck.apply(after_seek, 5, interval, false);
+    require(near(after_seek.motion_anchor[0], speed * 5) && !stuck.lagging(), "A seek starts over");
+}
+
 void offset_application() {
     dolly::AttachSample sample;
     sample.valid = true;
@@ -1130,6 +1197,7 @@ int main() {
         eye_resolution();
         offset_application();
         wrapped_aim();
+        early_tick_lag();
         clearance_behavior();
         identity_gates();
         smoothing_behavior();
