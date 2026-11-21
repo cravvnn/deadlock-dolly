@@ -430,6 +430,40 @@ class AttachedViewChangeTests(unittest.TestCase):
         self.assertEqual(app.project.keyframes[0].x, 0.0)
 
 
+class InGameCurveGateTests(unittest.TestCase):
+    def _run(self, kind, *, input_mode="panel", selected="1"):
+        project = Project(interpolation="smooth", keyframes=[_key(0.0), _key(2.0, 100), _key(4.0, 200)])
+        app = SimpleNamespace(
+            project=project, status_text=_Var(), _shot_edit_ready=lambda: True,
+            shot_history=SimpleNamespace(revision=3, session_id=5),
+            camera_tree=SimpleNamespace(selection=lambda: (selected,) if selected else ()))
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._commit_camera = lambda keys, _time=None: setattr(
+            app, "project", shot_commands.commit_camera(app.project, keys))
+        app._commit_project = lambda candidate, _time=None: setattr(app, "project", candidate)
+        bridge = SimpleNamespace(editor_status=lambda: dict(
+            enabled=True, ready=True, focused=True, paused=True, input_mode=input_mode))
+        if kind == "curve":
+            event = {"value": 1, "pose": [3, 0, 150.0, 2.0, 5, 0, 0]}
+            result = editor_dispatch._edit_camera_curve(app, event, bridge)
+            changed = app.project.keyframes[1].x == 150.0
+        else:
+            event = {"value": 1 * 12 + 0 * 4 + 2, "pose": [3, 7.0, 7.0, 2.0, 5, 0, 0]}
+            result = editor_dispatch._edit_camera_position_tangents(app, event, bridge)
+            changed = "x" in app.project.keyframes[1].tangents
+        return result, changed, app.status_text.get()
+
+    def test_curve_and_slope_edits_share_the_panel_and_selection_gates(self):
+        for kind, noun in (("curve", "Curve"), ("tangent", "Arrival/departure")):
+            self.assertEqual(self._run(kind, input_mode="game_ui"), (False, False,
+                             f"{noun} edit cancelled. Pause the replay and return to Dolly's controls."))
+            self.assertEqual(self._run(kind, selected="2"), (False, False,
+                             f"{noun} edit cancelled because the selected camera changed."))
+            self.assertEqual(self._run(kind, selected=None)[:2], (False, False))
+            result, changed, _status = self._run(kind)
+            self.assertEqual((result, changed), (True, True), kind)
+
+
 class CurveGraphPressTests(unittest.TestCase):
     def test_clicking_the_graph_applies_a_typed_value(self):
         import tkinter as tk

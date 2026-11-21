@@ -912,6 +912,28 @@ def _dispatch(app, event, bridge, *, publish):
     return True
 
 
+def _panel_gate(app, bridge, noun):
+    if not app._shot_edit_ready():
+        return False
+    state = bridge.editor_status()
+    if (not state.get("enabled") or not state.get("ready") or not state.get("focused")
+            or not state.get("paused") or state.get("input_mode") != "panel"):
+        app.status_text.set(f"{noun} edit cancelled. Pause the replay and return to Dolly's controls.")
+        return False
+    return True
+
+
+def _selected_matches(app, index, noun):
+    selected = app._selection_index(app.camera_tree)
+    # Publication presents camera zero when a newly opened tree has no row
+    # selected. Match that contract while still refusing a different valid row.
+    selected = selected if selected is not None and 0 <= selected < len(app.project.keyframes) else 0
+    if selected != index:
+        app.status_text.set(f"{noun} edit cancelled because the selected camera changed.")
+        return False
+    return True
+
+
 def _edit_camera_position_tangents(app, event, bridge):
     """Apply one identity-bound XYZ slope gesture through normal shot history."""
     from .native_path import MAX_CAMERA_KEYS
@@ -948,17 +970,7 @@ def _edit_camera_position_tangents(app, event, bridge):
         raise ValueError("Curves edit free-camera keys. Use attachment offsets for a tracked camera.")
     if app.project.interpolation != "smooth":
         raise ValueError("Arrival/departure controls apply in Smooth mode; saved handles are preserved in other modes.")
-    if not app._shot_edit_ready():
-        return False
-    state = bridge.editor_status()
-    if (not state.get("enabled") or not state.get("ready") or not state.get("focused")
-            or not state.get("paused") or state.get("input_mode") != "panel"):
-        app.status_text.set("Arrival/departure edit cancelled. Pause the replay and return to Dolly's controls.")
-        return False
-    selected = app._selection_index(app.camera_tree)
-    selected = selected if selected is not None and 0 <= selected < len(app.project.keyframes) else 0
-    if selected != index:
-        app.status_text.set("Arrival/departure edit cancelled because the selected camera changed.")
+    if not _panel_gate(app, bridge, "Arrival/departure") or not _selected_matches(app, index, "Arrival/departure"):
         return False
     candidate = copy.deepcopy(app.project)
     slopes = {} if mode in ("auto", "flat") else dict(incoming=float(incoming), outgoing=float(outgoing))
@@ -996,22 +1008,14 @@ def _edit_camera_curve(app, event, bridge, *, select=False):
         raise ValueError("The camera timing changed. Select the camera again.")
     if not select and key.source != "free":
         raise ValueError("Curves edit free-camera keys. Use attachment offsets for a tracked camera.")
-    if not app._shot_edit_ready():
-        return False
-    state = bridge.editor_status()
-    if (not state.get("enabled") or not state.get("ready") or not state.get("focused")
-            or not state.get("paused") or state.get("input_mode") != "panel"):
-        app.status_text.set("Curve edit cancelled. Pause the replay and return to Dolly's controls.")
+    if not _panel_gate(app, bridge, "Curve"):
         return False
     if select:
         from .editor_wire import CAMERA_LIST_COUNT
         app._native_camera_page = index // CAMERA_LIST_COUNT * CAMERA_LIST_COUNT
         _select(app, index, view=False)
         return True
-    selected = app._selection_index(app.camera_tree)
-    selected = selected if selected is not None and 0 <= selected < len(app.project.keyframes) else 0
-    if selected != index:
-        app.status_text.set("Curve edit cancelled because the selected camera changed.")
+    if not _selected_matches(app, index, "Curve"):
         return False
     from .path import channel_value
     from .native_path import CHANNELS
