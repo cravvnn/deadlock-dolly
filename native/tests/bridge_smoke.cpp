@@ -230,6 +230,19 @@ void bone_string_bounds() {
     require(attach_runtime::read_c_string(guarded.address() + 0x1000 - 5, name, sizeof(name)) &&
                 std::strcmp(name, "head") == 0,
             "Valid bone name at a readable page boundary was rejected");
+    char path[256];
+    std::memset(text.pointer, 'a', 100);
+    reinterpret_cast<char*>(text.pointer)[100] = 0;
+    require(attach_runtime::read_c_string(text.address(), path, sizeof(path)) &&
+                std::strlen(path) == 100,
+            "Long model path was rejected");
+    require(!attach_runtime::read_c_string(text.address(), name, sizeof(name)),
+            "Long string passed a bone name capacity");
+    std::memset(reinterpret_cast<void*>(guarded.address() + 0x1000 - 101), 'b', 100);
+    reinterpret_cast<char*>(guarded.address())[0x1000 - 1] = 0;
+    require(attach_runtime::read_c_string(guarded.address() + 0x1000 - 101, path, sizeof(path)) &&
+                std::strlen(path) == 100,
+            "Long model path at a readable page boundary was rejected");
 }
 
 void owned_model_bones() {
@@ -269,6 +282,23 @@ void owned_model_bones() {
     require(attach_runtime::resolve_bone(offsets, node.address(), segment, cache, error) &&
                 cache.bone_index == 1 && cache.model_object == model.address(),
             "Owned complete skeleton with cloth joints was rejected");
+    {
+        // A skin resource beside a reported path longer than 63 characters.
+        Allocation reported(0x1000);
+        const char* long_reported =
+            "models/heroes_staging/gigawatt_prisoner_long/gigawatt_prisoner_long.vmdl";
+        std::strcpy(static_cast<char*>(reported.pointer), long_reported);
+        std::strcpy(static_cast<char*>(path.pointer),
+                    "models/heroes_staging/gigawatt_prisoner_long/gigawatt_prisoner_long_skin.vmdl");
+        attach_runtime::Cache variant{};
+        variant.name_offset = cache.name_offset;
+        variant.model = attach_runtime::model_token(long_reported);
+        variant.name_pointer = reported.address();
+        require(attach_runtime::resolve_bone(offsets, node.address(), segment, variant, error) &&
+                    variant.bone_index == 1,
+                "Skin variant with a long model path was rejected");
+        std::strcpy(static_cast<char*>(path.pointer), model_name);
+    }
     offsets.scene_node = 816;
     offsets.owner = 48;
     put(pawn.address() + offsets.scene_node, node.address());

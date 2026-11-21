@@ -397,11 +397,11 @@ inline bool read_c_string(std::uintptr_t address, char* out, std::size_t capacit
     if (!out || capacity < 2)
         return false;
     out[0] = 0;
-    // Bone wire names hold at most 63 characters plus NUL. Never copy a
-    // caller-sized range from a smaller stack buffer, or accept a truncated
-    // valid-looking prefix of an invalid string.
-    unsigned char raw[64]{};
-    const auto size = (std::min)(capacity, sizeof(raw));
+    // Bone wire names hold at most 63 characters plus NUL; model paths pass a
+    // larger buffer. Never copy a caller-sized range from a smaller stack
+    // buffer, or accept a truncated valid-looking prefix of an invalid string.
+    unsigned char raw[256]{};
+    const auto size = (std::min)(capacity, capacity > 65 ? sizeof(raw) : std::size_t(64));
     if (!address)
         return false;
     const bool block_read = read_memory(address, raw, size);
