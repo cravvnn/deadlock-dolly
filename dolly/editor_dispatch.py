@@ -175,7 +175,7 @@ def dispatch(app, event, bridge, *, publish):
         app._history_edit_group = ((action, app._selection_index(app.camera_tree),
                                     float(_value(app, "shot_time", 0) or 0))
                                    if action.startswith("set_") and action not in (
-                                       "set_camera_position", "set_camera_curve_value", "set_camera_position_tangents") else None)
+                                       "set_camera_curve_value", "set_camera_position_tangents") else None)
     try:
         return _dispatch(app, event, bridge, publish=publish)
     finally:
@@ -248,9 +248,6 @@ def _dispatch(app, event, bridge, *, publish):
         from .curve_preview import finish_native
         finish_native(app)
         if _edit_camera_position_tangents(app, event, bridge):
-            publish()
-    elif action == "set_camera_position":
-        if _edit_camera_position(app, event, bridge):
             publish()
     elif action in ("select_camera", "view_camera", "seek_camera", "delete_camera", "undo_shot", "redo_shot",
                     "camera_page", "set_camera_time", "set_camera_roll"):
@@ -1030,52 +1027,6 @@ def _edit_camera_curve(app, event, bridge, *, select=False):
     app._commit_camera(keys, key.time)
     unit = " units" if channel < 3 else (" degrees" if channel < 6 else "")
     app.status_text.set(f"Camera {index + 1:02d} {name.replace('_', ' ')} set to {value:g}{unit}. Preview to check the move.")
-    return True
-
-
-def _edit_camera_position(app, event, bridge):
-    """Commit one revision-bound XYZ gesture; never move or seek the live camera."""
-    pose = event.get("pose")
-    index = event.get("value")
-    if (not isinstance(pose, (tuple, list)) or len(pose) != 7
-            or any(isinstance(item, bool) or not isinstance(item, (int, float))
-                   or not math.isfinite(item) for item in pose)
-            or isinstance(index, bool) or not isinstance(index, (int, float))
-            or not math.isfinite(index) or index != int(index) or any(pose[4:])):
-        raise ValueError("Invalid in-game position edit")
-    revision, axis, value, anchor = pose[:4]
-    history = getattr(app, "shot_history", None)
-    if history is None or revision != history.revision:
-        raise ValueError("The camera list changed. Select the camera again.")
-    if axis not in (0, 1, 2) or abs(value) > 1e8 or not 0 <= index < len(app.project.keyframes):
-        raise ValueError("Choose a camera and a finite X, Y or Z position within 100 million units.")
-    index = int(index)
-    key = app.project.keyframes[index]
-    if key.time != anchor:
-        raise ValueError("The camera timing changed. Select the camera again.")
-    if key.source != "free":
-        raise ValueError("Position curves edit free-camera keys. Use attachment offsets for a tracked camera.")
-    if not app._shot_edit_ready():
-        return False
-    state = bridge.editor_status()
-    if (not state.get("enabled") or not state.get("ready") or not state.get("focused")
-            or not state.get("paused") or state.get("input_mode") != "panel"):
-        app.status_text.set("Position edit cancelled. Pause the replay and return to Dolly's controls.")
-        return False
-    selected = app._selection_index(app.camera_tree)
-    # Publication presents camera zero when a newly opened tree has no row
-    # selected. Match that contract while still refusing a different valid row.
-    selected = selected if selected is not None and 0 <= selected < len(app.project.keyframes) else 0
-    if selected != index:
-        app.status_text.set("Position edit cancelled because the selected camera changed.")
-        return False
-    channel = ("x", "y", "z")[int(axis)]
-    if value == getattr(key, channel):
-        return False
-    keys = copy.deepcopy(app.project.keyframes)
-    setattr(keys[index], channel, float(value))
-    app._commit_camera(keys, key.time)
-    app.status_text.set(f"Camera {index + 1:02d} {channel.upper()} set to {value:.2f} units. Preview to check the move.")
     return True
 
 

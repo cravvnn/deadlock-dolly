@@ -345,6 +345,14 @@ class AttachedViewChangeTests(unittest.TestCase):
         self.assertEqual(published, [False])
         app._submit.assert_called_once()
 
+    def test_position_edits_only_arrive_as_curve_values(self):
+        app = self._app()
+        app.preview_attach = False
+        event = {"action": "set_camera_position", "value": 0, "pose": [1, 0, 5.0, 0.0, 0, 0, 0]}
+        with self.assertRaisesRegex(ValueError, "unsupported UI action"):
+            editor_dispatch.dispatch(app, event, None, publish=lambda: None)
+        self.assertEqual(app.project.keyframes[0].x, 0.0)
+
 
 class CurveGraphPressTests(unittest.TestCase):
     def test_clicking_the_graph_applies_a_typed_value(self):
