@@ -2960,6 +2960,18 @@ void run() {
                 input.consumed_motion_frames == dolly::gConsumedMotionFrames.load() &&
                 input.cursor_syncs == dolly::gCursorSyncs.load(),
             "Input diagnostic counters differ from the native input path");
+    {
+        editor_worker_tick(f.mapping.data(), true);
+        EditorStatus next_status{};
+        EditorInputDiagnostics next_input{};
+        std::memcpy(&next_status, f.mapping.data() + kEditorStatusOffset, sizeof(next_status));
+        std::memcpy(&next_input, f.mapping.data() + kEditorInputDiagnosticsOffset,
+                    sizeof(next_input));
+        require(!(next_status.sequence & 1) && next_status.sequence >= events.sequence &&
+                    !(next_input.sequence & 1) && next_input.sequence > input.sequence &&
+                    std::memcmp(next_status.magic, events.magic, 8) == 0,
+                "Republished editor blocks were not committed seqlocked snapshots");
+    }
     require(events.last_event == kEditorEventCount && events.dropped_events == 1,
             "Overflow changed editor event numbering");
     for (const auto& event : events.events) {

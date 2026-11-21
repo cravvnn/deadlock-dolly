@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <cstdio>
 #include <memory>
@@ -197,6 +198,20 @@ bool speed_key(EditorOwner owner, unsigned vk) noexcept {
     return (owner == EditorOwner::Flight || owner == EditorOwner::Panel) && !gTextInput.load() &&
            !(modifiers() & 3u) && !key_down(VK_LWIN) && !key_down(VK_RWIN) &&
            (vk == VK_OEM_PLUS || vk == VK_ADD || vk == VK_OEM_MINUS || vk == VK_SUBTRACT);
+}
+// Shared-memory blocks keep magic at 0-7, a seqlock sequence at 8-11 written only
+// through Interlocked calls, and the payload from 12.
+template <class T>
+void publish_seqlocked(unsigned char* out, const T& value) noexcept {
+    static_assert(offsetof(T, sequence) == 8, "Seqlocked block layout");
+    auto* sequence = reinterpret_cast<volatile LONG*>(out + 8);
+    const LONG old = InterlockedCompareExchange(sequence, 0, 0);
+    const LONG even = (old & 1) ? old + 1 : old;
+    InterlockedExchange(sequence, even + 1);
+    std::memcpy(out, &value, 8);
+    std::memcpy(out + 12, reinterpret_cast<const unsigned char*>(&value) + 12, sizeof(T) - 12);
+    MemoryBarrier();
+    InterlockedExchange(sequence, even + 2);
 }
 bool reserved_input(unsigned vk) noexcept {
     if (!configured() || !focused())
@@ -1738,16 +1753,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                 status.active_count = objects.count;
                 status.selected = std::uint32_t(objects.selected);
                 status.error = 0;
-                auto* status_out = memory + kEditorObjectStatusOffset;
-                auto* status_sequence = reinterpret_cast<volatile LONG*>(status_out + 8);
-                const LONG before = InterlockedCompareExchange(status_sequence, 0, 0);
-                const LONG even = (before & 1) ? before + 1 : before;
-                InterlockedExchange(status_sequence, even + 1);
-                std::memcpy(status_out, &status, 8);
-                std::memcpy(status_out + 12, reinterpret_cast<unsigned char*>(&status) + 12,
-                            sizeof(status) - 12);
-                MemoryBarrier();
-                InterlockedExchange(status_sequence, even + 2);
+                publish_seqlocked(memory + kEditorObjectStatusOffset, status);
             }
         }
         // Experimental prop-persistence probe request. The editor advances the
@@ -1788,16 +1794,8 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             status.identity_ptr = counts.identity_ptr;
             status.entity_index = counts.entity_index;
             std::memcpy(status.entity_class, counts.entity_class, sizeof(status.entity_class));
-            auto* status_out = memory + kEditorPropProbeOffset + sizeof(EditorPropProbeConfig);
-            auto* status_sequence = reinterpret_cast<volatile LONG*>(status_out + 8);
-            const LONG before = InterlockedCompareExchange(status_sequence, 0, 0);
-            const LONG even = (before & 1) ? before + 1 : before;
-            InterlockedExchange(status_sequence, even + 1);
-            std::memcpy(status_out, &status, 8);
-            std::memcpy(status_out + 12, reinterpret_cast<unsigned char*>(&status) + 12,
-                        sizeof(status) - 12);
-            MemoryBarrier();
-            InterlockedExchange(status_sequence, even + 2);
+            publish_seqlocked(memory + kEditorPropProbeOffset + sizeof(EditorPropProbeConfig),
+                              status);
         }
         auto attach_source = memory + kEditorAttachOffset;
         auto attach_sequence = reinterpret_cast<volatile LONG*>(attach_source + 8);
@@ -2083,15 +2081,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     input.cursor_failures = gCursorFailures.load();
     input.registration_target = reinterpret_cast<std::uintptr_t>(gRawRegistrationTarget);
     input.last_cursor_error = gLastCursorError.load();
-    auto input_out = memory + kEditorInputDiagnosticsOffset;
-    auto input_sequence = reinterpret_cast<volatile LONG*>(input_out + 8);
-    const auto input_old = InterlockedCompareExchange(input_sequence, 0, 0);
-    const auto input_even = (input_old & 1) ? input_old + 1 : input_old;
-    InterlockedExchange(input_sequence, input_even + 1);
-    std::memcpy(input_out, &input, 8);
-    std::memcpy(input_out + 12, reinterpret_cast<unsigned char*>(&input) + 12, sizeof(input) - 12);
-    MemoryBarrier();
-    InterlockedExchange(input_sequence, input_even + 2);
+    publish_seqlocked(memory + kEditorInputDiagnosticsOffset, input);
     status.flags = (state.enabled ? 1u : 0u) | (state.focused ? 2u : 0u) |
                    (state.paused ? 4u : 0u) | (state.manual_active ? 8u : 0u) |
                    (state.ready ? 16u : 0u) | (state.overlay_available ? 32u : 0u) |
@@ -2123,14 +2113,6 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     status.last_event = gLastEvent;
     std::memcpy(status.events, gEvents, sizeof(gEvents));
     gEventLock.clear(std::memory_order_release);
-    auto out = memory + kEditorStatusOffset;
-    auto sequence = reinterpret_cast<volatile LONG*>(out + 8);
-    LONG old = InterlockedCompareExchange(sequence, 0, 0);
-    LONG even = (old & 1) ? old + 1 : old;
-    InterlockedExchange(sequence, even + 1);
-    std::memcpy(out, &status, 8);
-    std::memcpy(out + 12, reinterpret_cast<unsigned char*>(&status) + 12, sizeof(status) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, even + 2);
+    publish_seqlocked(memory + kEditorStatusOffset, status);
 }
 } // namespace dolly
