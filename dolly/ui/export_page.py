@@ -247,6 +247,4 @@ class ExportPage:
         card.text(textvariable=state.video_status_text, top=15)
         self.export_camera_note = card.text("Camera: Free path", top=4)
 
-        # gui_layout still hands screenshot_ui.build "export_page.body" until it passes card= (PLAN-5 3.3).
-        page.body = self.screenshot_card
         page.watch_focus()

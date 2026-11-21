@@ -277,6 +277,10 @@ def p11():
             raises(RuntimeError,lambda:screenshot_ui.finish_player_capture(app,'players'))
             assert not write.called and not cleanup.called
         assert (deployment/player_layer.BUNDLE_NAME).is_file()
+    # The Export page's kit card is the only place the still's controls are built.
+    with patch.object(screenshot_ui,'_fill_card') as fill:
+        screenshot_ui.build(app,card='card');fill.assert_called_once_with(app,'card')
+    raises(TypeError,lambda:screenshot_ui.build(app,object()))
 
 
 class NextTenRegressions(unittest.TestCase):

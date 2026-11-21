@@ -32,41 +32,13 @@ def init(app) -> None:
     app.screenshot_size_text = tk.StringVar(value="Game render size: launch a replay to see it.")
 
 
-def build(app, parent=None, *, before=None, card=None) -> None:
-    """Fill the Export page's Screenshot card, or add the legacy card to ``parent``.
+def build(app, *, card) -> None:
+    """Fill the Export page's Screenshot card.
 
     ``card`` is the page's kit card (``export_page.screenshot_card``): the page draws
-    its title and info bubble (``SCREENSHOT_INFO``), this adds the rows. A kit card
-    passed as ``parent`` is filled the same way (``before`` means nothing there).
+    its title and info bubble (``SCREENSHOT_INFO``), this adds the rows.
     """
-    from .ui.kit_card import KitCard
-    if card is None and isinstance(parent, KitCard):
-        card = parent
-    if card is not None:
-        _fill_card(app, card)
-        return
-    from .ui.export_page import SCREENSHOT_INFO
-    from .ui.scale import scaler
-    from .ui.widgets import GAP, card as frame_card, field
-    dp = scaler(parent)
-    still = frame_card(parent, "Screenshot (high-res still)")
-    if before is not None:
-        still.pack_configure(before=before)
-    ttk.Label(still, text=SCREENSHOT_INFO, style="CardMuted.TLabel",
-              wraplength=dp(760)).pack(anchor="w", pady=dp((0, GAP)))
-    app.screenshot_size_combo = field(still, "Render size (next launch)", app.screenshot_render_size,
-                                      values=screenshot.RENDER_SIZE_LABELS)
-    app.screenshot_size_combo.bind("<<ComboboxSelected>>", lambda _e: render_size_changed(app))
-    ttk.Label(still, textvariable=app.screenshot_size_text, style="CardMuted.TLabel",
-              wraplength=dp(760)).pack(anchor="w", pady=dp((0, GAP)))
-    row = ttk.Frame(still, style="Card.TFrame")
-    row.pack(fill="x")
-    app.screenshot_depth_check = ttk.Checkbutton(row, style="Card.TCheckbutton",
-                                                 text="Include depth (EXR)", variable=app.screenshot_depth)
-    app.screenshot_depth_check.pack(side="left", padx=dp((0, 18)))
-    app.screenshot_button = ttk.Button(row, text="Take screenshot", style="Primary.TButton",
-                                       command=lambda: start(app))
-    app.screenshot_button.pack(side="right")
+    _fill_card(app, card)
 
 
 def _fill_card(app, card) -> None:
