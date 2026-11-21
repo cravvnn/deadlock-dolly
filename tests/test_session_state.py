@@ -3,6 +3,7 @@
 No game, native DLL or Tk window is used; the real poll and recorder logic run
 against simulated widgets, controller and bridge.
 """
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import threading
@@ -221,6 +222,40 @@ class PlaybackSpeed(unittest.TestCase):
         DollyApp._apply_playback_speed(app)
         DollyApp._apply_playback_speed(app)
         self.assertEqual(sent, [0.5, 0.5])
+
+
+class LaunchHideout(unittest.TestCase):
+    def app(self, options):
+        from dolly.settings import AppSettings
+        launched, errors = [], []
+        app = NS(app_settings=replace(AppSettings(), nvidia_dlss=True), errors=errors, launched=launched)
+        for name, value in (('game_path', 'deadlock.exe'), ('demo_path', 'replay.dem'), ('launch_options', options),
+                            ('protocol', 'VConsole'), ('camera_driver', 'Native (experimental)')):
+            setattr(app, name, Var())
+            getattr(app, name).set(value)
+        app.allow_mod_overrides = NS(get=lambda: True)
+        app.controller = NS(launch=lambda *args, **kwargs: launched.append((args, kwargs)))
+        app._error = lambda title, exc: errors.append(title)
+        app._submit = lambda label, operation, callback: operation()
+        app._session_result = lambda result: None
+        app._mod_launch_options = lambda: DollyApp._mod_launch_options(app)
+        return app
+
+    def test_launch_hideout_uses_the_saved_launch_options(self):
+        app = self.app(' -windowed -w 1920 -h 1080 ')
+        with patch('dolly.graphics_profiles_ui.launch_options', return_value={}):
+            DollyApp._launch(app)
+        self.assertEqual(app.errors, [])
+        (args, kwargs), = app.launched
+        self.assertEqual(args, ('deadlock.exe', 'replay.dem'))
+        self.assertEqual(kwargs, {'protocol': 'vconsole', 'native': True,
+                                  'launch_options': '-windowed -w 1920 -h 1080',
+                                  'allow_mod_overrides': True, 'nvidia_dlss': True})
+        # Options START would refuse are refused here too, before anything launches.
+        app = self.app('+exec autoexec')
+        with patch('dolly.graphics_profiles_ui.launch_options', return_value={}):
+            DollyApp._launch(app)
+        self.assertEqual((app.errors, app.launched), (['Launch options'], []))
 
 
 class ReplayTickRate(unittest.TestCase):

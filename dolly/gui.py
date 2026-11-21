@@ -3066,12 +3066,7 @@ class DollyApp:
             cancel = threading.Event()
             protocol = "vconsole" if self.protocol.get() == "VConsole" else "netcon"
             native = self.camera_driver.get() == "Native (experimental)"
-            allow_mods = (self.allow_mod_overrides.get()
-                          if hasattr(self, "allow_mod_overrides")
-                          else bool(getattr(self.app_settings, "allow_mod_overrides", False)))
-            mod_options = {"allow_mod_overrides": True} if allow_mods else {}
-            if getattr(self.app_settings, "nvidia_dlss", False):
-                mod_options["nvidia_dlss"] = True
+            mod_options = self._mod_launch_options()
             self._disable_external_input()
             self.attach_fields = None
             def start():
@@ -4142,6 +4137,13 @@ class DollyApp:
         if not game or not demo:
             self._error("Choose game and replay", ValueError("Select the Deadlock executable and a local .dem replay first."))
             return
+        from .lite_mode import launch_options_for_mode
+        try:
+            options = launch_options_for_mode(self.launch_options.get().strip(), False)
+            parse_launch_options(options)
+        except ValueError as exc:
+            self._error("Launch options", exc)
+            return
         protocol = "vconsole" if self.protocol.get() == "VConsole" else "netcon"
         native = self.camera_driver.get() == "Native (experimental)"
         from .graphics_profiles_ui import launch_options as graphics_launch_options
@@ -4150,14 +4152,15 @@ class DollyApp:
         except (OSError, ValueError, RuntimeError) as exc:
             self._error("Graphics profiles", exc)
             return
-        allow_mods = (self.allow_mod_overrides.get()
-                      if hasattr(self, "allow_mod_overrides")
-                      else bool(getattr(self.app_settings, "allow_mod_overrides", False)))
-        mod_options = {"allow_mod_overrides": True} if allow_mods else {}
+        mod_options = self._mod_launch_options()
+        self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol, native=native,
+                     launch_options=options, **mod_options, **graphics_options), self._session_result)
+
+    def _mod_launch_options(self):
+        mod_options = {"allow_mod_overrides": True} if self.allow_mod_overrides.get() else {}
         if getattr(self.app_settings, "nvidia_dlss", False):
             mod_options["nvidia_dlss"] = True
-        self._submit("Launching hideout", lambda: self.controller.launch(game, demo, protocol=protocol, native=native,
-                     **mod_options, **graphics_options), self._session_result)
+        return mod_options
 
     def _session_result(self, result):
         if result is not None:
