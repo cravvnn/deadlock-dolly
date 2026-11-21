@@ -564,3 +564,13 @@ class NativeWorkflows(unittest.TestCase):
                 self.assertFalse(case.controller._native_active)
                 self.assertFalse(case.controller._native_manual)
                 restore.assert_called_once_with(enabled=True)
+
+    def test_failed_return_to_free_camera_keeps_its_error_when_the_panel_cannot_reopen(self):
+        self.controller._native_active = True
+        self.bridge.state = 'completed'
+        self.bridge.start_flight = Mock(side_effect=RuntimeError('boom'))
+        self.bridge.configure_editor.side_effect = RuntimeError('Native camera session is closed')
+        with self.assertLogs('dolly', level='WARNING'):
+            error = self.controller._finish_native_playback(return_to_flight=True)
+        self.assertIn('boom', error)
+        self.assertIn('Native camera session is closed', error)

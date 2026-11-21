@@ -5446,7 +5446,11 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         except Exception as exc:
             errors.append(str(exc))
             if return_to_flight and bridge is not None:
-                bridge.configure_editor(owner="panel")
+                try:
+                    bridge.configure_editor(owner="panel")
+                except Exception as editor_exc:
+                    LOG.warning("Could not reopen the editor panel after playback", exc_info=True)
+                    errors.append("Could not reopen the editor panel: " + str(editor_exc))
         return " ".join(errors) or None
 
     def _run_native(self, project, start, speed, rate, frozen):
