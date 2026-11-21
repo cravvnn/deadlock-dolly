@@ -187,6 +187,9 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetAttachVerticalAimLock)
 static_assert(static_cast<std::uint32_t>(EditorAction::ExportRenderLock) == 123 &&
                   static_cast<std::uint32_t>(EditorAction::CancelRenderLock) == 124,
               "Stable RenderLock camera export action IDs");
+// The newest appended action; editor_enqueue rejects any ID above it.
+constexpr EditorAction kEditorActionLast = EditorAction::CancelRenderLock;
+static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 124, "Last editor action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&

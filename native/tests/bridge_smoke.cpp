@@ -2135,6 +2135,20 @@ void editor_framing_checks() {
         list->first = 0;
         config->selected_camera = selected;
     }
+    // The in-game RenderLock export buttons are the newest appended actions.
+    dolly::gAcknowledged = dolly::gLastEvent;
+    for (auto action : {EditorAction::ExportRenderLock, EditorAction::CancelRenderLock}) {
+        const auto serial = dolly::gLastEvent;
+        require(editor_enqueue(action) &&
+                    dolly::gEvents[serial % kEditorEventCount].action == std::uint32_t(action),
+                "RenderLock export action cannot enter the real event ring");
+        require(!editor_enqueue(action, 1) && !editor_enqueue(action, 0, &request) &&
+                    dolly::gLastEvent == serial + 1,
+                "RenderLock export action accepted a value or pose");
+        dolly::gAcknowledged = dolly::gLastEvent;
+    }
+    require(!editor_enqueue(EditorAction(std::uint32_t(kEditorActionLast) + 1)),
+            "Unknown editor action entered the event ring");
     dolly::gAcknowledged = dolly::gLastEvent;
     const auto preparation_serial = dolly::gLastEvent;
     require(editor_enqueue(EditorAction::PrepareCinematic,42,&request),

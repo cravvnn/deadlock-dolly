@@ -863,7 +863,10 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
                reshade_request_overlay(!reshade_overlay_open());
     // Appended UI actions retain the original action IDs.
     if (!std::isfinite(value) ||
-        std::uint32_t(action) > std::uint32_t(EditorAction::SetAttachVerticalAimLock))
+        std::uint32_t(action) > std::uint32_t(kEditorActionLast))
+        return false;
+    if ((action == EditorAction::ExportRenderLock || action == EditorAction::CancelRenderLock) &&
+        (value != 0 || pose_override))
         return false;
     const bool preview_action=action==EditorAction::PreviewCameraCurveValue || action==EditorAction::PreviewCameraPositionTangents;
     const bool clear_preview=action==EditorAction::ClearCameraCurvePreview;
