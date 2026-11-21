@@ -394,6 +394,26 @@ class AttachHereKeepsViewTests(unittest.TestCase):
         self.assertFalse(app._attach_snap_pending)
         self.assertEqual(published[-1], True)
 
+    def test_attach_here_says_why_native_could_not_keep_the_view(self):
+        from unittest.mock import patch
+        from dolly import editor_session, editor_wire
+        raw = editor_wire.ATTACH_RESULT.pack(b"DLYATR01", 6, editor_wire.ATTACH_RESULT_ABI, 2, 20,
+                                             7, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+        result = editor_wire.unpack_attach_result(raw)
+        self.assertEqual((result["valid"], result["snap_failure"], result["config_sequence"]), (False, 1, 20))
+        bridge = SimpleNamespace(_editor_attach_sequence=20, editor_attach_result=lambda: result,
+                                 editor_status=lambda: {"enabled": True, "events": []})
+        app = SimpleNamespace(
+            closed=False, busy=False, native_editor_active=True, _attach_roster_at=float("inf"),
+            _bone_picker_context=None, status_text=_Var(), _attach_snap_pending=True,
+            _attach_snap_started=10**9, _attach_snap_context={"index": 0},
+            controller=SimpleNamespace(status=lambda: {"connected": True}, _native_bridge=lambda: bridge))
+        with patch.object(editor_session, "configure"), patch.object(editor_session, "snap_is_current",
+                                                                     return_value=True):
+            editor_session.poll(app)
+        self.assertFalse(app._attach_snap_pending)
+        self.assertIn("too far from the player", app.status_text.get())
+
     def test_detach_cancels_a_pending_attach_here(self):
         from unittest.mock import Mock
         app = SimpleNamespace(

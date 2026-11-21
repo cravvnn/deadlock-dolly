@@ -278,11 +278,12 @@ def unpack_attach_result(data):
         raise ValueError("Native attach result returned the wrong size")
     (magic, sequence, abi, flags, _reserved, handle, entity_index, point, _reserved2, model,
      *numbers) = ATTACH_RESULT.unpack(data)
-    if magic != b"DLYATR01" or abi != ATTACH_RESULT_ABI or flags & ~1:
+    if magic != b"DLYATR01" or abi != ATTACH_RESULT_ABI or flags & ~3 or flags == 3:
         raise ValueError("Native attach result protocol does not match this build")
     if point > 2 or any(not math.isfinite(value) for value in numbers) or any(abs(value) > ATTACH_OFFSET_LIMIT for value in numbers[:6]) or not 0 <= numbers[6] <= 5:
         raise ValueError("Native attach result contains an invalid pose")
     return {"sequence": sequence, "valid": bool(flags & 1), "handle": handle,
+            "snap_failure": _reserved2 if flags & 2 else 0,
             "config_sequence": _reserved,
             "entity_index": entity_index, "point": point, "model": model,
             "offset": tuple(numbers[:6]), "smoothing": numbers[6]}

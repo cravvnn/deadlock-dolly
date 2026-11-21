@@ -1827,7 +1827,7 @@
     },
     {
       "path": "dolly/editor_session.py",
-      "sha256": "a94b19b38e483ca9d253d04b65965a15ed467b01bb955e2cd74ab576af27d883",
+      "sha256": "9dc2920b7e565766dc13e23bb541962f87ff3d0600ada0b5ed21e0255642e523",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1868,7 +1868,8 @@
       "full_formal_signoff": false,
       "reconciliation_20261118": "2026-11-18: Attach picker keeps its list while the roster is busy.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap"
+      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
     },
     {
       "path": "dolly/editor_view.py",
@@ -1908,7 +1909,7 @@
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "1d77e2ab58fdde675d70cb0bbd95318e989d4a097d71bfc10db74dae232f77ae",
+      "sha256": "821fb6b48b1b6742e7e69bfa5456c34f0db4f138cc82518e8d3624a80127daa6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -1954,7 +1955,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261118": "2026-11-18: Camera list publishes the effective roll."
+      "reconciliation_20261118": "2026-11-18: Camera list publishes the effective roll.",
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
     },
     {
       "path": "dolly/encoder_select.py",
@@ -7317,7 +7319,7 @@
     },
     {
       "path": "native/include/dolly_editor.hpp",
-      "sha256": "a8a5a0532222a633260ea2545ca9187ba41ea306dac21a3d3f220b641bdb54a9",
+      "sha256": "ff3107ff6afa2dbeb5a2dc1112d270d0ea5737dd0caf951a376b560489ee9fde",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -7346,7 +7348,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
     },
     {
       "path": "native/include/dolly_effects.hpp",
@@ -8321,7 +8324,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "1518bf7d33bb0e4cc8d745d421d7d6cb5d6f3e7ee1dba063ac671e005a378dae",
+      "sha256": "fac9387971150fa8e0a935d0542441e1bb47181f228d9890d95d2fe4a1edd14f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8404,7 +8407,8 @@
       "reconciliation_attach_pitch": "2026-11-20: attached flight starts from the pitch limit so idle frames keep the offsets",
       "reconciliation_attach_hitch": "2026-11-20: attach samples pass through the anchor filter in preview and playback",
       "reconciliation_attach_aim": "2026-11-20: attach samples pass through the aim easing in preview and playback",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
     },
     {
       "path": "native/src/dolly_attach.cpp",
@@ -11221,7 +11225,7 @@
       "instances": [
         "AttachObservationApi"
       ],
-      "owner_utf8_lf_sha256": "a94b19b38e483ca9d253d04b65965a15ed467b01bb955e2cd74ab576af27d883"
+      "owner_utf8_lf_sha256": "9dc2920b7e565766dc13e23bb541962f87ff3d0600ada0b5ed21e0255642e523"
     },
     "dolly/AudioWorkRetirement.tla": {
       "path": "dolly/clip_audio.py",
@@ -12089,7 +12093,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "1518bf7d33bb0e4cc8d745d421d7d6cb5d6f3e7ee1dba063ac671e005a378dae"
+      "owner_utf8_lf_sha256": "fac9387971150fa8e0a935d0542441e1bb47181f228d9890d95d2fe4a1edd14f"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",

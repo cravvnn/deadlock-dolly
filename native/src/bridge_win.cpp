@@ -717,13 +717,15 @@ static void publish_picker_result() noexcept {
 }
 
 static void publish_attach_result(const AttachPreview& preview,
-                                  const std::array<double, 6>& offsets) noexcept {
+                                  const std::array<double, 6>& offsets,
+                                  std::uint32_t failure = 0) noexcept {
     if (!gMemory)
         return;
     EditorAttachResult result{};
     std::memcpy(result.magic, "DLYATR01", 8);
     result.abi = kEditorAttachResultAbi;
-    result.flags = 1;
+    result.flags = failure ? 2 : 1;
+    result.reserved2 = failure;
     result.reserved = preview.sequence;
     result.handle = preview.handle;
     result.entity_index = preview.entity_index;
@@ -1201,13 +1203,15 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             AttachSegment snap_segment{};
             snap_segment.point = preview->point;
             snap_segment.bone_hash = preview->bone_hash;
-            if (attach_runtime::sample(preview->schema, preview->cache, snap_segment, snap_sample,
-                                       snap_error)) {
-                std::array<double, 6> snapped{};
-                if (attach_snap_offsets(snap_sample, manual_pose, snapped, true,
-                                        (preview_config.hide & 8) != 0))
-                    publish_attach_result(*preview, snapped);
-            }
+            std::array<double, 6> snapped{};
+            if (!attach_runtime::sample(preview->schema, preview->cache, snap_segment, snap_sample,
+                                        snap_error))
+                publish_attach_result(*preview, {}, kAttachSnapUnreadable);
+            else if (!attach_snap_offsets(snap_sample, manual_pose, snapped, true,
+                                          (preview_config.hide & 8) != 0))
+                publish_attach_result(*preview, {}, kAttachSnapTooFar);
+            else
+                publish_attach_result(*preview, snapped);
         }
         if (preview_active) {
             bool preview_dirty = false;

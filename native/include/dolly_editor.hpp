@@ -339,12 +339,14 @@ constexpr std::size_t kEditorAttachResultOffset = kEditorRosterOffset + sizeof(E
 constexpr std::uint32_t kEditorAttachResultAbi = 1;
 struct EditorAttachResult {
     char magic[8];
-    std::uint32_t sequence, abi, flags, reserved; // flags bit 0: valid offsets
-    std::uint32_t handle, entity_index, point, reserved2;
+    std::uint32_t sequence, abi, flags, reserved; // flags bit 0: valid offsets, 1: snap failed
+    std::uint32_t handle, entity_index, point, reserved2; // reserved2: snap failure reason
     std::uint64_t model;
     double offset[6];
     double smoothing;
 };
+// Why Attach here could not store the free camera's view.
+inline constexpr std::uint32_t kAttachSnapTooFar = 1, kAttachSnapUnreadable = 2;
 constexpr std::size_t kEditorBonesOffset = kEditorAttachResultOffset + sizeof(EditorAttachResult);
 constexpr std::size_t kEditorBoneCount = 256;
 struct EditorBones {

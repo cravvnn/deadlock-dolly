@@ -26,6 +26,12 @@ def snap_is_current(app, bridge):
             app.project.keyframes[index] == context["key"])
 
 
+SNAP_FAILURES = {
+    1: "Attach here could not keep this view: the camera is too far from the player. Fly closer and try again.",
+    2: "Attach here could not read the player at this moment. Try again.",
+}
+
+
 def cancel_snap(app, message):
     app._attach_snap_pending = False
     app._attach_snap_started = None
@@ -109,6 +115,13 @@ def poll(app):
                     handler = getattr(app, "_attach_result_changed", None)
                     if callable(handler):
                         handler(attach_result)
+            elif attach_result and attach_result.get("snap_failure"):
+                identity = (bridge, attach_result.get("sequence"))
+                if identity != getattr(app, "_attach_result_sequence", None):
+                    app._attach_result_sequence = identity
+                    if (getattr(app, "_attach_snap_pending", False) and
+                            attach_result.get("config_sequence") == getattr(bridge, "_editor_attach_sequence", None)):
+                        cancel_snap(app, SNAP_FAILURES.get(attach_result["snap_failure"], SNAP_FAILURES[2]))
         snap_started = getattr(app, "_attach_snap_started", None)
         if (getattr(app, "_attach_snap_pending", False) and snap_started is not None
                 and time.monotonic() - snap_started > 5):
