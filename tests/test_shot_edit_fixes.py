@@ -161,6 +161,20 @@ class CurveHelperTests(unittest.TestCase):
         self.assertEqual(display_values(Project(rotation_mode="shortest", keyframes=[
             _key(0.0, yaw=170), _key(1.0, yaw=-170), _key(2.0, yaw=190)]), "yaw"), [170.0, 190.0, 190.0])
 
+    def test_project_versions_are_the_range_up_to_the_latest(self):
+        from dolly import path
+        versions = sorted(value for name, value in vars(path).items()
+                          if name.endswith("FORMAT_VERSION") and name != "LATEST_FORMAT_VERSION")
+        self.assertEqual(versions, list(range(2, path.LATEST_FORMAT_VERSION + 1)))
+        for version in range(1, path.LATEST_FORMAT_VERSION + 1):
+            try:
+                Project.from_dict({"format": path.FORMAT_NAME, "version": version})
+            except ValueError as error:
+                self.assertNotIn("Unsupported project version", str(error))
+        for version in (0, path.LATEST_FORMAT_VERSION + 1, True, 1.0):
+            with self.assertRaisesRegex(ValueError, "Unsupported project version"):
+                Project.from_dict({"format": path.FORMAT_NAME, "version": version})
+
     def test_close_keys_fall_back_to_linear_in_both_samplers(self):
         from dolly import path
         times, values = [0.0, 1e-300, 2e-300, 1.0], [0.0, 1e10, 0.0, 1e10]

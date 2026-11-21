@@ -33,6 +33,7 @@ SPLINE_FORMAT_VERSION = 10
 OBJECTS_FORMAT_VERSION = 11
 TANGENTS_FORMAT_VERSION = 12
 RIGID_ATTACH_FORMAT_VERSION = 13
+LATEST_FORMAT_VERSION = RIGID_ATTACH_FORMAT_VERSION
 MAX_OBJECTS = 64
 CONFETTI_SPAWN_HEIGHT_DEFAULT = 250.0
 CONFETTI_SPAWN_HEIGHT_MIN = 100.0
@@ -991,14 +992,9 @@ class Project:
             raise ValueError("This is not a Deadlock Dolly project")
         version = obj.get("version")
         if isinstance(version, bool) or not isinstance(version, int) \
-                or version not in (1, FORMAT_VERSION, VECTOR_FORMAT_VERSION, ATTACH_FORMAT_VERSION,
-                                   ROTATION_FORMAT_VERSION, BLEND_FORMAT_VERSION,
-                                   CONFETTI_FORMAT_VERSION, PARTICLE_FORMAT_VERSION,
-                                   LENS_FORMAT_VERSION, SPLINE_FORMAT_VERSION,
-                                   OBJECTS_FORMAT_VERSION, TANGENTS_FORMAT_VERSION,
-                                   RIGID_ATTACH_FORMAT_VERSION):
+                or not 1 <= version <= LATEST_FORMAT_VERSION:
             raise ValueError(f"Unsupported project version: {version!r}; expected 1 through "
-                             f"{RIGID_ATTACH_FORMAT_VERSION}")
+                             f"{LATEST_FORMAT_VERSION}")
         allowed = ("format", "version", "name", "interpolation", "rotation_mode",
                    "start_tick", "tick_rate", "setup_values", "keyframes", "tracks")
         if version >= FORMAT_VERSION:
