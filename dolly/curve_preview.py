@@ -10,7 +10,8 @@ import time
 
 from . import visualization_preview_wire as wire
 from .native_path import CHANNELS, MAX_CAMERA_KEYS
-from .path import CURVE_CHANNELS, POSITION_CHANNELS, TANGENT_MODES, Project
+from .path import (ASPECT_MAX, ASPECT_MIN, AUTHORED_POSITION_LIMIT, CURVE_CHANNELS, POSITION_CHANNELS,
+                   TANGENT_MODES, Project, channel_value)
 from .video_export import ACTIVE_STATES
 from .visualization_wire import build_visualization
 
@@ -264,10 +265,9 @@ def offer_native(app, event, bridge, *, tangent=False):
                 raise ValueError("Invalid preview arrival/departure pair")
             candidate.set_camera_tangent(index, POSITION_CHANNELS[channel], TANGENT_MODES[mode], **kwargs)
         else:
-            from .path import channel_value
             value = pose[2]
-            if (abs(value) > 1e8 or channel == 6 and not .5 <= value <= 4
-                    or abs(channel_value(app.project.keyframes[index], CHANNELS[channel])) > 1e8):
+            if (abs(value) > AUTHORED_POSITION_LIMIT or channel == 6 and not ASPECT_MIN <= value <= ASPECT_MAX
+                    or abs(channel_value(app.project.keyframes[index], CHANNELS[channel])) > AUTHORED_POSITION_LIMIT):
                 raise ValueError("Invalid curve preview value")
             name = CHANNELS[channel]
             setattr(candidate.keyframes[index], "curve_"+name if name in CURVE_CHANNELS else name, float(value))

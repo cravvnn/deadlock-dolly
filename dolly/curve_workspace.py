@@ -23,7 +23,7 @@ from tkinter import ttk
 
 from . import ui_theme
 from .curve import POSITION_LIMIT, PositionBounds, TimelineView, hit_key, sample_channel
-from .path import CURVE_CHANNELS, Project, _unwrap, channel_value
+from .path import ASPECT_MAX, ASPECT_MIN, CURVE_CHANNELS, TANGENT_MODES, Project, _unwrap, channel_value
 from .ui import art, fonts, kit_styles
 from .ui.kit_controls import KitButton
 from .ui.scale import chars, even_px, px, scaler, ui_scale
@@ -32,7 +32,6 @@ GROUPS = ("Position", "Rotation", "Framing")
 CHANNELS = (("x", "y", "z"), ("pitch", "yaw", "roll"), ("aspect_ratio",))
 LABELS = {"x": "X", "y": "Y", "z": "Z", "pitch": "Pitch", "yaw": "Yaw",
           "roll": "Roll", "aspect_ratio": "Aspect ratio"}
-TANGENT_MODES = ("auto", "flat", "linked", "broken")
 TAB_STYLES = ("Kit.Tab.TButton", "Kit.Tab.Selected.TButton")
 FIELD_WIDTH = 90      # design px: the lane value, the tangent mode and slopes
 MODE_WIDTH = 100      # design px: the Interpolation and Framing dropdowns
@@ -106,7 +105,7 @@ def display_values(project, channel):
 
 def valid_value(channel, value):
     return (not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
-            and (.5 <= value <= 4 if channel == "aspect_ratio" else abs(value) <= POSITION_LIMIT))
+            and (ASPECT_MIN <= value <= ASPECT_MAX if channel == "aspect_ratio" else abs(value) <= POSITION_LIMIT))
 
 
 def _set_text(variable, value):
@@ -411,7 +410,7 @@ class CurveWorkspaceState:
                 captured = self.captured_project()
                 offset = branch_offset(self.project,captured,channel)
                 values += [value+offset for _, value in self.samples(captured,channel,start,end)]
-            low, high = (min(values), max(values)) if values else ((.5, 4) if channel == "aspect_ratio" else (0, 0))
+            low, high = (min(values), max(values)) if values else ((ASPECT_MIN, ASPECT_MAX) if channel == "aspect_ratio" else (0, 0))
             previous = self.scales.get(channel)
             self._scale_signatures[channel] = signature
             if previous is not None and previous[0] <= low <= high <= previous[1]:
@@ -840,7 +839,7 @@ class CameraCurveLane(tk.Frame):
         except (ValueError, OverflowError):
             value = math.nan
         if not valid_value(self.channel, value):
-            self._value_error = ("Enter a finite value from 0.5 to 4" if self.group==2 else
+            self._value_error = (f"Enter a finite value from {ASPECT_MIN:g} to {ASPECT_MAX:g}" if self.group==2 else
                                  "Enter a finite value within 100 million")
             self._sync_value()
             return "break"
@@ -1050,7 +1049,7 @@ class CameraCurveLane(tk.Frame):
         if not math.isfinite(value):
             self._cancel()
             return
-        value = max(.5,min(4,value)) if self.group == 2 else value
+        value = max(ASPECT_MIN,min(ASPECT_MAX,value)) if self.group == 2 else value
         if not valid_value(self.channel, value):
             self._cancel()
             return
@@ -1136,7 +1135,7 @@ class CameraCurveLane(tk.Frame):
             increment = -increment
         value = self.state.gesture.original+increment
         if self.group == 2:
-            value = round(max(.5,min(4,value)),4)
+            value = round(max(ASPECT_MIN,min(ASPECT_MAX,value)),4)
         self.state.commit(value)
         self.workspace.redraw()
         return "break"

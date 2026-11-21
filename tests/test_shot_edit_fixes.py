@@ -141,6 +141,14 @@ class CurveHelperTests(unittest.TestCase):
         self.assertEqual(samples[0], (0.0, 0.0))
         self.assertAlmostEqual(samples[-1][1], 10.0)
 
+    def test_curve_editor_uses_the_project_limits(self):
+        from dolly import curve_workspace, path
+        self.assertIs(curve_workspace.TANGENT_MODES, path.TANGENT_MODES)
+        self.assertTrue(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MAX))
+        self.assertTrue(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MIN))
+        self.assertFalse(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MAX + 1e-9))
+        self.assertFalse(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MIN - 1e-9))
+
     def test_close_keys_fall_back_to_linear_in_both_samplers(self):
         from dolly import path
         times, values = [0.0, 1e-300, 2e-300, 1.0], [0.0, 1e10, 0.0, 1e10]
