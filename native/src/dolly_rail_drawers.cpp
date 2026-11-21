@@ -336,11 +336,9 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                                       (s.manual_active || s.follow_active) && s.paused &&
                                       !s.playing;
             k::BeginRow(30, 8);
-            button(s.attach_preview ? "Detach" : "Attach here", EditorAction::AttachPreview, 197.5,
+            button(s.attach_preview ? "Detach" : "Attach here", EditorAction::AttachPreview, 0,
                    s.attach_preview ? 0 : 1, !attach_ready,
                    s.attach_preview ? k::Btn::Secondary : k::Btn::Primary);
-            button("Snap", EditorAction::AttachSnap, 0, 0,
-                   !attach_ready || !s.manual_active || s.attach_preview);
             k::EndRow();
             k::VGap(10);
             k::BeginRow(30, 8);
@@ -366,7 +364,7 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                     d.send(EditorAction::SetAttachVerticalAimLock, aim ? 1 : 0, &p);
                 }
                 k::ItemTooltip(
-                    "Follow the player without tilting with aim. Detach, change this setting, then Snap again to keep your view.");
+                    "Follow the player without tilting with aim. Detach, change this setting, then Attach here again to keep your view.");
                 k::VGap(10);
                 CameraPose offsets{};
                 bool commit = false, active = false;

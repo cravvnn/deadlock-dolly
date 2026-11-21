@@ -1283,22 +1283,27 @@ static void panel_option_regressions() {
     require(attach_target->Active && attach_framing->Active,
             "Bone target and framing surfaces are not both available");
     observed_actions.clear();
-    test_context->NavNextActivateId = attach_target->GetID("Snap");
+    test_context->NavNextActivateId = attach_target->GetID("Attach here");
     frame(); frame();
-    require(observed_actions.size() == 1 && observed_actions[0].action == dolly::EditorAction::AttachSnap,
-            "Bone layout changes its existing Snap action");
-    const auto snap_rect = attach_target->NavRectRel[ImGuiNavLayer_Main];
-    require(snap_rect.GetWidth() > 0 && snap_rect.GetHeight() > 0,
-            "Snap button has no pointer rectangle");
+    require(observed_actions.size() == 1 &&
+                observed_actions[0].action == dolly::EditorAction::AttachPreview &&
+                observed_actions[0].value == 1,
+            "Bone layout changes its existing Attach here action");
+    const auto attach_rect = attach_target->NavRectRel[ImGuiNavLayer_Main];
+    require(attach_rect.GetWidth() > 0 && attach_rect.GetHeight() > 0,
+            "Attach here button has no pointer rectangle");
     snapshot.attach_preview = true;
     frame(); frame();
     observed_actions.clear();
-    const auto snap_point = snap_rect.GetCenter();
-    io.AddMousePosEvent(attach_target->Pos.x + snap_point.x, attach_target->Pos.y + snap_point.y);
+    const auto attach_point = attach_rect.GetCenter();
+    io.AddMousePosEvent(attach_target->Pos.x + attach_point.x, attach_target->Pos.y + attach_point.y);
     frame(); frame();
     io.AddMouseButtonEvent(0, true); frame();
     io.AddMouseButtonEvent(0, false); frame(); frame();
-    require(observed_actions.empty(), "Attached preview queued a free-camera snap");
+    require(observed_actions.size() == 1 &&
+                observed_actions[0].action == dolly::EditorAction::AttachPreview &&
+                observed_actions[0].value == 0,
+            "The same button does not detach an attached camera");
     snapshot.attach_preview = false;
     snapshot.attach_point = 2;
     snapshot.camera_count = 2;

@@ -833,7 +833,7 @@ def _dispatch(app, event, bridge, *, publish):
                 index is None or pose[1] != index):
             raise ValueError("The camera changed. Select it and try again.")
         if getattr(app, "_attach_snap_pending", False):
-            raise ValueError("Wait for Snap to finish before changing vertical aim lock.")
+            raise ValueError("Wait for Attach here to finish before changing vertical aim lock.")
         if not app._shot_edit_ready():
             return True
 
@@ -865,20 +865,26 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "attach_preview":
         if event["value"] not in (0, 1):
             raise ValueError("Attach preview must be on or off.")
-        if event["value"] == 1 and getattr(app, "_attach_snap_pending", False):
-            raise ValueError("Wait for Snap to finish before attaching the camera.")
+        if getattr(app, "_attach_snap_pending", False):
+            if event["value"] == 1:
+                return True  # Attach here is already on its way.
+            from .editor_session import cancel_snap
+            cancel_snap(app, None)
         if event["value"] == 1 and getattr(app.controller, "_follow_active", False) is True:
             project = app.project
 
             def attached_after_follow(_):
                 if app.project is not project:
                     raise ValueError("The shot changed while switching from Follow. Select the camera again.")
-                app.preview_attach = True
-                app.status_text.set("Attach preview on. Fly with WASD/mouse to edit the offsets.")
-                publish()
+                _request_snap(app, bridge, publish)
 
             app._submit("Switching Follow to attached camera",
                         lambda: app.controller.enter_native_flight(owner="panel"), attached_after_follow)
+            return True
+        if event["value"] == 1 and not getattr(app, "preview_attach", False):
+            # Attach here keeps the view: store offsets for the current free
+            # camera first, then attach once they arrive.
+            _request_snap(app, bridge, publish)
             return True
         app.preview_attach = bool(event["value"])
         app.status_text.set("Attach preview on. Fly with WASD/mouse to edit the offsets."
@@ -889,26 +895,27 @@ def _dispatch(app, event, bridge, *, publish):
             # fault. Re-arm a free view, keeping the editor panel available.
             _native_operation(app, "Detaching camera",
                               lambda: app.controller.enter_native_flight(owner="panel"), bridge)
-    elif action == "attach_snap":
-        if getattr(app, "preview_attach", False):
-            raise ValueError("Detach the camera before snapping a free-camera view.")
-        index = app._selection_index(app.camera_tree)
-        if index is None or not 0 <= index < len(app.project.keyframes):
-            raise ValueError("Select an attached camera before snapping.")
-        selected = app.project.keyframes[index]
-        if selected.source != "attach" or not isinstance(selected.attach, AttachKey):
-            raise ValueError("Select an attached camera before snapping.")
-        app._attach_snap_context = {
-            "project": app.project, "index": index, "key": copy.deepcopy(selected), "bridge": bridge,
-        }
-        app._attach_snap_request = int(getattr(app, "_attach_snap_request", 0)) + 1
-        app._attach_snap_pending = True
-        app._attach_snap_started = time.monotonic()
-        app.status_text.set("Snap requested; the next free-camera frame stores its offsets.")
-        publish()
     else:
         raise ValueError("The native editor requested an unsupported UI action")
     return True
+
+
+def _request_snap(app, bridge, publish):
+    """Ask native for offsets that reproduce the free camera, then attach with them."""
+    index = app._selection_index(app.camera_tree)
+    if index is None or not 0 <= index < len(app.project.keyframes):
+        raise ValueError("Select an attached camera before attaching.")
+    selected = app.project.keyframes[index]
+    if selected.source != "attach" or not isinstance(selected.attach, AttachKey):
+        raise ValueError("Select an attached camera before attaching.")
+    app._attach_snap_context = {
+        "project": app.project, "index": index, "key": copy.deepcopy(selected), "bridge": bridge,
+    }
+    app._attach_snap_request = int(getattr(app, "_attach_snap_request", 0)) + 1
+    app._attach_snap_pending = True
+    app._attach_snap_started = time.monotonic()
+    app.status_text.set("Attaching here...")
+    publish()
 
 
 def _panel_gate(app, bridge, noun):

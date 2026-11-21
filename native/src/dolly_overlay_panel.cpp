@@ -1457,28 +1457,21 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                                       state.paused && !state.playing;
             ImGui::BeginDisabled(!attach_ready);
             action_button(state.attach_preview ? "Detach" : "Attach here",
-                          EditorAction::AttachPreview, attach_half,
+                          EditorAction::AttachPreview, -1,
                           state.attach_preview ? 0 : 1, !state.attach_preview);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
-                    "Live preview: the camera follows this player. Transfers from Follow automatically; WASD and the mouse edit the offsets.");
-            ImGui::SameLine();
-            ImGui::BeginDisabled(!state.manual_active || state.attach_preview);
-            action_button("Snap", EditorAction::AttachSnap, attach_half);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(
-                    "Store offsets that reproduce the current free camera pose. Fly to frame, then Snap.");
-            ImGui::EndDisabled();
+                    "Attach the camera to this player exactly where it is now. WASD and the mouse then move it relative to the player.");
             ImGui::EndDisabled();
             if (!compact_controls_) {
             if (!state.attach_selected)
-                ImGui::TextDisabled("Choose a player to preview or snap.");
+                ImGui::TextDisabled("Choose a player to attach to.");
             else if (!state.manual_active && !state.follow_active)
-                ImGui::TextDisabled("Start Fly camera to preview or snap.");
+                ImGui::TextDisabled("Start Fly camera to attach.");
             else if (state.attach_preview)
-                ImGui::TextDisabled("Preview active; detach to snap a free-camera view.");
+                ImGui::TextDisabled("Attached. Detach to fly to a new view.");
             else
-                ImGui::TextDisabled("Fly to frame, then Snap, then Attach here.");
+                ImGui::TextDisabled("Fly to frame, then Attach here.");
             }
             ImGui::Spacing();
             action_button("Cycle target", EditorAction::AttachCycleTarget, attach_half, 1);
@@ -1510,7 +1503,7 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("Bone/weapon follows the player without tilting with aim. "
-                                  "Detach, change this setting, then Snap again to keep your view.");
+                                  "Detach, change this setting, then Attach here again to keep your view.");
             {
                 // Slider rows commit at the end of an edit, not per frame.
                 static float attach_draft[6]{};
@@ -1526,7 +1519,7 @@ void OverlayPanel::draw_controls(const EditorSnapshot& state) {
                     char id[32]{};
                     std::snprintf(id, sizeof(id), "##attach-offset-%d", index);
                     const bool position = index < 3;
-                    // Snap may author distances much larger than the
+                    // Attach here may author distances much larger than the
                     // normal fine-adjustment range. Keep those values
                     // visible on the slider; exact input can use the
                     // full range accepted by the attach action.

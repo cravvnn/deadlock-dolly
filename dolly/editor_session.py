@@ -47,7 +47,7 @@ def poll(app):
         return
     try:
         if getattr(app, "_attach_snap_pending", False) and not snap_is_current(app, bridge):
-            cancel_snap(app, "Snap cancelled because the selected camera changed.")
+            cancel_snap(app, "Attach cancelled because the selected camera changed.")
         # Flight can fail before the controller marks the editor active even
         # though DX11/input finish initializing afterwards. Keep that live
         # panel's console/stop/retry actions connected to the launcher. Do not
@@ -112,7 +112,7 @@ def poll(app):
         snap_started = getattr(app, "_attach_snap_started", None)
         if (getattr(app, "_attach_snap_pending", False) and snap_started is not None
                 and time.monotonic() - snap_started > 5):
-            cancel_snap(app, "Snap did not finish. Pause, check the player, and try again.")
+            cancel_snap(app, "Attach here did not finish. Pause, check the player, and try again.")
         status = bridge.editor_status()
         app._native_editor_status = status
         if status.get("dropped_events", 0) > getattr(app, "_native_editor_dropped", 0):

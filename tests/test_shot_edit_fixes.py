@@ -358,6 +358,55 @@ class AttachedFlyHistoryTests(unittest.TestCase):
         self.assertEqual(history.move().project, project)
 
 
+class AttachHereKeepsViewTests(unittest.TestCase):
+    def test_attach_here_stores_the_free_view_then_attaches(self):
+        from dolly.native_effects import model_token
+        from dolly.shot_history import ShotHistory
+        attach = AttachKey(handle=7, model="models/hero.vmdl", offset=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
+        project = Project(keyframes=[_key(0.0, source="attach", attach=attach), _key(2.0, 100)])
+        bridge = SimpleNamespace(_editor_attach_sequence=3, status=lambda: {"state": "manual"})
+        published = []
+        app = SimpleNamespace(
+            project=project, shot_history=ShotHistory(project), preview_attach=False, dirty=False,
+            busy=False, playing=False, _bone_picker_context=None, status_text=_Var(),
+            camera_tree=SimpleNamespace(selection=lambda: ("0",)),
+            controller=SimpleNamespace(_native_bridge=lambda: bridge, _follow_active=False),
+            _title=lambda: None, _refresh_attach_card=lambda _key: None,
+            _publish_editor=lambda: published.append(app.preview_attach))
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
+        editor_dispatch.dispatch(app, {"action": "attach_preview", "value": 1}, bridge,
+                                 publish=lambda: published.append(app.preview_attach))
+        self.assertTrue(app._attach_snap_pending)
+        self.assertEqual(app._attach_snap_request, 1)
+        self.assertFalse(app.preview_attach, "The view is stored before attaching")
+        # A second click while the view is on its way changes nothing.
+        editor_dispatch.dispatch(app, {"action": "attach_preview", "value": 1}, bridge, publish=lambda: None)
+        self.assertEqual(app._attach_snap_request, 1)
+        gui.DollyApp._attach_result_changed(app, {
+            "config_sequence": 3, "handle": 7, "entity_index": 0,
+            "model": model_token(attach.model), "point": 0,
+            "offset": (10.0, 20.0, 30.0, 40.0, 50.0, 60.0)})
+        key = app.project.keyframes[0].attach
+        self.assertEqual(key.offset, (10.0, 20.0, 30.0, 40.0, 50.0, 60.0))
+        self.assertEqual(key.orientation_mode, "rigid")
+        self.assertTrue(app.preview_attach)
+        self.assertFalse(app._attach_snap_pending)
+        self.assertEqual(published[-1], True)
+
+    def test_detach_cancels_a_pending_attach_here(self):
+        from unittest.mock import Mock
+        app = SimpleNamespace(
+            project=Project(keyframes=[_key(0.0)]), preview_attach=False, busy=False, playing=False,
+            _bone_picker_context=None, status_text=_Var(), _submit=Mock(),
+            controller=SimpleNamespace(_follow_active=False, enter_native_flight=Mock()),
+            _attach_snap_pending=True, _attach_snap_started=1.0, _attach_snap_context={"index": 0})
+        editor_dispatch.dispatch(app, {"action": "attach_preview", "value": 0},
+                                 SimpleNamespace(status=lambda: {"state": "manual"}), publish=lambda: None)
+        self.assertEqual((app._attach_snap_pending, app._attach_snap_context, app.preview_attach),
+                         (False, None, False))
+
+
 class AttachedViewChangeTests(unittest.TestCase):
     def _app(self):
         from unittest.mock import Mock

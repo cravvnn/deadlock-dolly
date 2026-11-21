@@ -4636,7 +4636,7 @@ class DollyApp:
         from .native_effects import model_token
         bridge = self.controller._native_bridge()
         if snap_pending and not editor_session.snap_is_current(self, bridge):
-            editor_session.cancel_snap(self, "Snap cancelled because the selected camera changed.")
+            editor_session.cancel_snap(self, "Attach cancelled because the selected camera changed.")
             return
         if (not bridge or result.get("config_sequence") != bridge._editor_attach_sequence or
                 result.get("handle") != key.attach.handle or
@@ -4648,21 +4648,24 @@ class DollyApp:
         offsets = tuple(float(value) for value in result.get("offset") or ())
         if len(offsets) != 6:
             return
+        if not (offsets == tuple(key.attach.offset) and
+                (not snap_pending or key.attach.orientation_mode == "rigid")):
+            candidate = copy.deepcopy(self.project)
+            candidate.keyframes[index].attach.offset = offsets
+            if snap_pending:
+                candidate.keyframes[index].attach.orientation_mode = "rigid"
+            candidate.validate()
+            self.project = candidate
+            # Attached flight reports new offsets on every poll; keep the whole
+            # flight as one undo step so it cannot push older edits out of history.
+            with _history_group(self, None if snap_pending else ("attach_fly", index)):
+                self._mark_dirty()
+            self._refresh_attach_card(candidate.keyframes[index])
         if snap_pending:
-            self.status_text.set("Snap complete. Choose Attach here to preview.")
-        if offsets == tuple(key.attach.offset) and (not snap_pending or key.attach.orientation_mode == "rigid"):
-            return
-        candidate = copy.deepcopy(self.project)
-        candidate.keyframes[index].attach.offset = offsets
-        if snap_pending:
-            candidate.keyframes[index].attach.orientation_mode = "rigid"
-        candidate.validate()
-        self.project = candidate
-        # Attached flight reports new offsets on every poll; keep the whole
-        # flight as one undo step so it cannot push older edits out of history.
-        with _history_group(self, None if snap_pending else ("attach_fly", index)):
-            self._mark_dirty()
-        self._refresh_attach_card(candidate.keyframes[index])
+            # Attach here stored the free camera's view; attach with it now.
+            self.preview_attach = True
+            self.status_text.set("Attached here. Fly with WASD/mouse to edit the offsets.")
+            self._publish_editor()
 
     def _apply_attach(self, apply_all):
         def operation():
@@ -4689,7 +4692,7 @@ class DollyApp:
                     for target in targets)
                 if changing_lock and (getattr(self, "_attach_snap_pending", False) or
                                       not self._shot_edit_ready()):
-                    raise ValueError("Detach and finish Snap or recording before changing vertical aim lock.")
+                    raise ValueError("Detach and finish Attach here or recording before changing vertical aim lock.")
                 attach = AttachKey(handle=int(player.get("handle", 0)),
                                    entity_id=int(player.get("entity_index", 0) or 0),
                                    model=model_path,
