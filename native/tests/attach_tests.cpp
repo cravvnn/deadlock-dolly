@@ -361,6 +361,21 @@ void wrapped_aim() {
     require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
                 near(offsets[3], 57.9),
             "Looking up from a carried view answers at once");
+    // Turning sideways at the limit keeps the authored pitch.
+    segment.offset[3] = offsets[3] = 75.84;
+    require(dolly::resolve_attach_pose(sample, segment, pose), "A carried view resolves");
+    before = after = pose;
+    after[4] += 5;
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
+                near(offsets[3], 75.84) && near(offsets[4], 53.88 + 5),
+            "Turning at the limit keeps the authored pitch");
+    segment.offset[4] = offsets[4];
+    after = before;
+    after[3] = 95;
+    after[5] += 5;
+    require(dolly::attach_apply_camera_motion(sample, segment, before, after, offsets) &&
+                near(offsets[3], 75.84) && near(offsets[5], 5),
+            "Rolling while pushing past the limit keeps the authored pitch");
 }
 
 void early_tick_lag() {

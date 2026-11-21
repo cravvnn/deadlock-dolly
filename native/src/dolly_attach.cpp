@@ -581,6 +581,10 @@ bool attach_apply_camera_motion(const AttachSample& sample, const AttachSegment&
         } else {
             for (int axis = 0; axis < 3; ++axis)
                 local_angles[axis] = std::remainder(desired_angles[axis] - base_angles[axis], 360.0);
+            // The composed pitch may sit at the limit. Only pitch input may
+            // replace the authored pitch.
+            if (std::abs(angle_delta[0]) <= 1e-10)
+                local_angles[0] = offsets[3];
         }
         for (int axis = 0; axis < 3; ++axis)
             next[axis + 3] = local_angles[axis];
