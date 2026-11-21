@@ -310,5 +310,41 @@ class AttachedFlyHistoryTests(unittest.TestCase):
         self.assertEqual(history.move().project, project)
 
 
+class AttachedViewChangeTests(unittest.TestCase):
+    def _app(self):
+        from unittest.mock import Mock
+        selection = ["0"]
+        app = SimpleNamespace(
+            project=Project(keyframes=[_key(0.0), _key(2.0, 100)]), busy=False, playing=False,
+            preview_attach=True, _native_attach_cache=object(), _bone_picker_context=None,
+            _native_cinematic_request=None, status_text=_Var(), _submit=Mock(),
+            controller=SimpleNamespace(stop=Mock()), _select_key=lambda: None, _snapshot=lambda: None,
+            camera_tree=SimpleNamespace(selection=lambda: tuple(selection),
+                                        selection_set=lambda item: selection.__setitem__(0, item),
+                                        see=lambda _item: None))
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        return app
+
+    def test_changing_view_while_attached_is_refused(self):
+        app = self._app()
+        bridge = SimpleNamespace(status=lambda: {"state": "manual"})
+        for action in ("next_view", "previous_view"):
+            with self.assertRaisesRegex(ValueError, "Detach the camera"):
+                editor_dispatch.dispatch(app, {"action": action, "value": 0}, bridge, publish=lambda: None)
+        app._submit.assert_not_called()
+        self.assertEqual(app.camera_tree.selection(), ("0",))
+        self.assertTrue(app.preview_attach)
+
+    def test_stop_clears_attach_preview(self):
+        app = self._app()
+        published = []
+        editor_dispatch.dispatch(app, {"action": "stop", "value": 0}, None,
+                                 publish=lambda: published.append(app.preview_attach))
+        self.assertFalse(app.preview_attach)
+        self.assertIsNone(app._native_attach_cache)
+        self.assertEqual(published, [False])
+        app._submit.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

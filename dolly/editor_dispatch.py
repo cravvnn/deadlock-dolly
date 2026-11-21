@@ -24,6 +24,8 @@ def _select(app, index, *, view=True):
     if not app.project.keyframes:
         app.status_text.set("Capture a camera first.")
         return
+    if view and getattr(app, "preview_attach", False):
+        raise ValueError("Detach the camera before changing views.")
     index = max(0, min(len(app.project.keyframes) - 1, index))
     app.camera_tree.selection_set(str(index))
     app.camera_tree.see(str(index))
@@ -526,6 +528,10 @@ def _dispatch(app, event, bridge, *, publish):
         app._native_cinematic_request = None
         if preparation:
             bridge.configure_editor_cinematic(*preparation, 3)
+        if getattr(app, "preview_attach", False):
+            app.preview_attach = False
+            app._native_attach_cache = None
+            publish()
         _native_operation(app, "Stopping and restoring",
                           lambda: app.controller.stop(preserve_speed=True), bridge)
     elif action in ("previous_view", "next_view", "select_view"):
