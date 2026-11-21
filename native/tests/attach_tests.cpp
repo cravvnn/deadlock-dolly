@@ -556,6 +556,39 @@ void stop_near_tick_rate() {
     }
 }
 
+void landing_after_fall() {
+    // A falling player lands and runs off sideways. The landing frame looks
+    // like a late tick, but the next frame neither keeps falling nor catches
+    // up, so the camera follows the game from there.
+    const double interval = 1.0 / 64, frame = 1.0 / 60;
+    dolly::AttachAnchorFilter filter;
+    auto sample_at = [&](double x, double z) {
+        dolly::AttachSample sample;
+        sample.valid = true;
+        sample.point = dolly::AttachPoint::bone;
+        sample.motion_anchor = {x, 50, z};
+        sample.origin = {x + 3, 52, z + 60};
+        return sample;
+    };
+    double time = 30, z = 2000;
+    for (int index = 0; index < 8; ++index, time += frame, z -= 800 * frame) {
+        auto sample = sample_at(0, z);
+        filter.apply(sample, time, interval, false);
+    }
+    const double ground = z + 800 * frame;
+    auto landed = sample_at(0, ground);
+    filter.apply(landed, time, interval, false);
+    time += frame;
+    for (int index = 1; index < 6; ++index, time += frame) {
+        const double x = 400 * frame * index;
+        auto sample = sample_at(x, ground);
+        filter.apply(sample, time, interval, false);
+        require(!filter.lagging() && near(sample.motion_anchor[0], x) &&
+                    near(sample.motion_anchor[2], ground),
+                "A landing is followed from the frame after it");
+    }
+}
+
 void stepped_aim() {
     // The stored aim turns at 180 degrees/s but only changes every third
     // frame, in one jump, and crosses from 359 to 0 on the way.
@@ -1396,6 +1429,7 @@ int main() {
         wrapped_aim();
         early_tick_lag();
         stop_near_tick_rate();
+        landing_after_fall();
         sample_filter_bundle();
         stepped_aim();
         clearance_behavior();

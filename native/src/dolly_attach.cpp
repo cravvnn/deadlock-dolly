@@ -204,7 +204,7 @@ void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double 
     bool usual = true, stopped = false;
     if (count_ == 3) {
         std::array<double, 3> tick{}, error{};
-        double size = 0, back = 0, forward = 0, stay = 0, moved = 0;
+        double size = 0, back = 0, forward = 0, stay = 0;
         for (unsigned i = 0; i < 3; ++i) {
             const double a = velocity_[0][i], b = velocity_[1][i], c = velocity_[2][i];
             const double median = std::max(std::min(a, b), std::min(std::max(a, b), c));
@@ -214,7 +214,6 @@ void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double 
             back += (error[i] + tick[i]) * (error[i] + tick[i]);
             forward += (error[i] - tick[i]) * (error[i] - tick[i]);
             stay += error[i] * error[i];
-            moved += (anchor[i] - anchor_[i]) * (anchor[i] - anchor_[i]);
         }
         size = std::sqrt(size);
         const double tolerance = .35 * size + .5;
@@ -228,10 +227,10 @@ void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double 
             // turn in the same frame must not hide the step forward.
             lagging_ = false;
             usual = false;
-        } else if (lagging_ && 4 * moved < stay) {
-            // A player drawn a tick late keeps moving on the next frame. One
-            // standing still has stopped, which looks the same for one frame
-            // when frames are about a tick long. Follow the stop from here.
+        } else if (lagging_ && std::min(stay, forward) > tolerance * tolerance) {
+            // A player drawn a tick late keeps moving or steps forward on the
+            // next frame. Anything else, such as stopping, landing or turning
+            // hard, only looked like a late tick. Follow the game from here.
             lagging_ = false;
             stopped = true;
         } else if (lagging_ && ++held_ > 12) {

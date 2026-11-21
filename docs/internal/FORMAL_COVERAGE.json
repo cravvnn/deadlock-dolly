@@ -8408,7 +8408,7 @@
     },
     {
       "path": "native/src/dolly_attach.cpp",
-      "sha256": "e801e45dc723161cfa5064a17bcfaef396ea5f4211a8dc01615a9e064171454f",
+      "sha256": "9e57018cf0321782d52620891ee65fc82bd8ca8ac54b26ae26ba245c42e81c20",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8435,7 +8435,8 @@
       "reconciliation_attach_pitch": "2026-11-20: attach base angles are signed; composed and input pitch stop at vertical",
       "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag",
       "reconciliation_attach_aim": "2026-11-20: aim easing filter",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261121release": "2026-11-21: 2026-11-21 late-tick correction releases when the next frame fits neither pattern"
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
