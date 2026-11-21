@@ -1,0 +1,11 @@
+### Deadlock Dolly v0.7.49-beta
+
+**0.7.49-beta**
+
+- **Attach here keeps your view.** *Before:* Attach here moved the camera back to the offsets stored on the camera, so attaching from a new spot needed a separate Snap first, a camera too far from the player failed with only a timeout, and changing view or pressing Stop while attached could leave the camera half attached with the desktop editor locked. *After:* Attach here attaches the camera exactly where it is, so you can detach, fly somewhere else and attach to the same bone again in one click. The Snap button is gone, Dolly says at once when the camera is too far away, Previous and Next view ask you to detach first, and Stop detaches.
+
+- **Steadier bone cameras.** *Before:* at frame rates around 45 to 110 fps, including 60 fps fixed-step takes, an attached camera could overshoot and hang off the player for up to 12 frames when the player stopped, landed or turned hard, turning sideways at the straight up or down limit rewrote the camera's pitch offset, and heroes with long model paths failed their skin check. *After:* the camera follows those moves from the next frame while late-tick correction keeps working, which halves the frames drawn noticeably off the player in a 60 fps take, the pitch offset changes only when you move the camera up or down, and long model paths are read in full.
+
+- **In-game editor buttons and keys.** *Before:* the in-game Export .crav and Cancel camera export buttons never reached Dolly, the framing guide hotkey fired while typing in a Dolly text field, and clicking the curve graph threw away a value you had typed but not applied. *After:* both export buttons work, typing no longer toggles the guide, and the typed value is applied when you click the graph.
+
+- **Takes and recovery.** *Before:* a Player POV take could play at whatever export speed was set after it started, the replay tick-rate question could open over another dialog during an in-game capture, one replay dated before 1970 broke the whole replay list, Launch hideout from the startup controls ignored your launch options, and a free camera that failed its checks after arming left the replay controls hidden. *After:* takes keep the speed they started with, the question waits its turn, the list loads, your launch options are used, and the replay controls come back.
