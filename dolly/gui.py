@@ -209,6 +209,14 @@ def _number(value: object) -> str:
         return str(value)
 
 
+def _replay_modified(modified_ns) -> str:
+    """The replay list's Modified text; blank for a time Windows cannot show."""
+    try:
+        return datetime.fromtimestamp(modified_ns / 1e9).strftime("%Y-%m-%d, %H:%M")
+    except (OSError, OverflowError, ValueError):
+        return ""
+
+
 def _finite(value: str, label: str) -> float:
     try:
         number = float(value)
@@ -2675,7 +2683,7 @@ class DollyApp:
             if search and search not in entry.name.casefold():
                 continue
             size = f"{entry.size_bytes / (1024 * 1024):.1f} MB"
-            modified = datetime.fromtimestamp(entry.modified_ns / 1e9).strftime("%Y-%m-%d, %H:%M")
+            modified = _replay_modified(entry.modified_ns)
             self.replay_tree.insert("", "end", iid=str(index), values=(entry.name, size, modified))
             if str(entry.path) == selected_path:
                 self.replay_tree.selection_set(str(index))

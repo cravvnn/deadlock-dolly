@@ -697,6 +697,25 @@ class LeftoverBoundaries(unittest.TestCase):
         app.submitted.pop()(['from C'])
         self.assertEqual(app.replay_entries, ['from C'])
 
+    def test_a_replay_dated_before_1970_still_lists_with_the_others(self):
+        from dolly import gui
+        from dolly.replays import ReplayEntry
+        entries = [ReplayEntry(Path('new.dem'), 'new.dem', 1024, 1_700_000_000 * 10**9),
+                   ReplayEntry(Path('old.dem'), 'old.dem', 1024, -10**9)]
+        app = SimpleNamespace(replay_entries=entries, replay_search=MagicMock(), replay_sort=MagicMock(),
+                              demo_path=MagicMock(), replay_tree=MagicMock(), replay_summary=MagicMock())
+        app.replay_search.get.return_value = ''
+        app.replay_sort.get.return_value = 'Name A-Z'
+        app.demo_path.get.return_value = ''
+        app.replay_tree.get_children.return_value = ()
+        gui.DollyApp._filter_replays(app)
+        self.assertEqual(app.replay_tree.insert.call_count, 2)
+        rows = {call.kwargs['values'][0]: call.kwargs['values'][2]
+                for call in app.replay_tree.insert.call_args_list}
+        self.assertEqual(rows['old.dem'], '')
+        self.assertTrue(rows['new.dem'].startswith('2023-11-'))
+        app.replay_summary.set.assert_called_once_with('2 replays')
+
 
 if __name__ == '__main__':
     unittest.main()
