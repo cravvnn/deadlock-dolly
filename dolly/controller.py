@@ -4110,14 +4110,20 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._message("Citadel glow disabled." if self._glow_disabled
                           else "Citadel glow enabled.")
 
-    def _restore_healthbar_values(self):
-        values = dict(self._healthbar_restore)
+    def _restore_cvar_journal(self, journal, error):
+        """Retain original values until every restore readback succeeds."""
+        values = dict(journal)
         for name, value in values.items():
             self._request(f"{name} {numeric(value)}", allow_error=True)
         for name, expected in values.items():
             if self._console_cvar(name) != expected:
-                raise RuntimeError(f"The game did not restore {name}. Saved health-bar settings remain pending; retry.")
-        self._healthbar_restore.clear()
+                raise RuntimeError(error.format(name=name))
+        journal.clear()
+
+    def _restore_healthbar_values(self):
+        self._restore_cvar_journal(
+            self._healthbar_restore,
+            "The game did not restore {name}. Saved health-bar settings remain pending; retry.")
         self._healthbars_hidden = False
 
     def toggle_healthbars(self):
@@ -4180,13 +4186,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._message("Near-player opacity fix enabled.")
 
     def _restore_near_player_opacity(self):
-        """Retain original values until every restore readback succeeds."""
-        for name, value in self._near_opacity_restore.items():
-            self._request(f"{name} {numeric(value)}", allow_error=True)
-        if any(self._console_cvar(name) != value
-               for name, value in self._near_opacity_restore.items()):
-            raise RuntimeError("Near-player opacity restoration remains pending; retry the toggle.")
-        self._near_opacity_restore.clear()
+        self._restore_cvar_journal(
+            self._near_opacity_restore, "Near-player opacity restoration remains pending; retry the toggle.")
 
     def set_playback_speed(self, speed):
         """Apply a replay speed immediately through the demo timescale.

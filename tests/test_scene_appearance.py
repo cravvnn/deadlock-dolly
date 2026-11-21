@@ -65,6 +65,21 @@ class SceneAppearance(unittest.TestCase):
             for n in backend:
                 self.console.values.pop(n)
 
+    def test_failed_healthbar_restore_keeps_the_journal_for_retry(self):
+        self.console.values.update(dict.fromkeys(HEALTHBAR_SCALE_CVARS, 1.0))
+        self.c.toggle_healthbars()
+        journal = dict(self.c._healthbar_restore)
+        self.assertTrue(journal)
+        with patch.object(self.c, "_console_cvar", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "did not restore " + next(iter(journal))):
+                self.c.toggle_healthbars()
+        self.assertEqual(self.c._healthbar_restore, journal)
+        self.assertEqual(self.c.status()["scene_appearance_flags"], 2)
+        self.c.toggle_healthbars()
+        self.assertEqual(self.c._healthbar_restore, {})
+        self.assertEqual(self.c.status()["scene_appearance_flags"], 0)
+        self.assertTrue(all(self.console.values[n] == 1 for n in HEALTHBAR_SCALE_CVARS))
+
     def test_rejected_healthbar_scale_hide_keeps_no_restore_journal(self):
         self.console.values.update(dict.fromkeys(HEALTHBAR_SCALE_CVARS, 1.0))
         request = self.c._request
