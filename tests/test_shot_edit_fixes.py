@@ -141,6 +141,20 @@ class CurveHelperTests(unittest.TestCase):
         self.assertEqual(samples[0], (0.0, 0.0))
         self.assertAlmostEqual(samples[-1][1], 10.0)
 
+    def test_close_keys_fall_back_to_linear_in_both_samplers(self):
+        from dolly import path
+        times, values = [0.0, 1e-300, 2e-300, 1.0], [0.0, 1e10, 0.0, 1e10]
+        for interpolation in ("smooth", "spline"):
+            for monotone in (True, False):
+                self.assertIsNone(path._auto_tangents(times, values, interpolation, monotone))
+                self.assertEqual(path._sample(times, values, 0.5, interpolation, monotone), 5e9)
+        project = Project(keyframes=[_key(time, value) for time, value in zip(times, values)])
+        self.assertEqual(project.camera_channel_samples("x").interpolation, "linear")
+        normal = [0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0]
+        self.assertEqual(path._auto_tangents(*normal, "smooth", True), path._monotone_tangents(*normal))
+        self.assertEqual(path._auto_tangents(*normal, "smooth", False), path._position_tangents(*normal))
+        self.assertEqual(path._auto_tangents(*normal, "spline", True), path._spline_tangents(*normal))
+
 
 class RenameTests(unittest.TestCase):
     def test_rename_refuses_name_longer_than_the_project_limit(self):

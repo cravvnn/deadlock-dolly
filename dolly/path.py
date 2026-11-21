@@ -501,6 +501,20 @@ def _validate_authored_segment(left: float, right: float, span: float,
                              f"(±{AUTHORED_POSITION_LIMIT:g} units); reduce the slopes")
 
 
+def _auto_tangents(times, values, interpolation: str, monotone: bool) -> list[float] | None:
+    """Derived key slopes, or None when they cannot be computed finitely."""
+    try:
+        if interpolation == "spline":
+            tangents = _spline_tangents(times, values)
+        else:
+            tangents = (_monotone_tangents if monotone else _position_tangents)(times, values)
+    except ArithmeticError:
+        # Extremely close timestamps can exceed floating-point derivative
+        # precision. Callers fall back to finite linear segments.
+        return None
+    return tangents if all(math.isfinite(value) for value in tangents) else None
+
+
 def _sample(times: list[float], values: list[float], time: float,
             interpolation: str, monotone: bool = True,
             tangents: tuple[float, ...] | None = None,
@@ -518,16 +532,8 @@ def _sample(times: list[float], values: list[float], time: float,
     if interpolation == "linear" or (len(times) == 2 and incoming_tangents is None):
         return (1 - fraction) * values[left] + fraction * values[left + 1]
     if tangents is None:
-        try:
-            if interpolation == "spline":
-                tangents = _spline_tangents(times, values)
-            else:
-                tangents = (_monotone_tangents if monotone else _position_tangents)(times, values)
-        except ArithmeticError:
-            # Extremely close timestamps can exceed floating-point derivative
-            # precision. A linear segment remains finite and honors both keys.
-            return (1 - fraction) * values[left] + fraction * values[left + 1]
-        if not all(math.isfinite(value) for value in tangents):
+        tangents = _auto_tangents(times, values, interpolation, monotone)
+        if tangents is None:
             return (1 - fraction) * values[left] + fraction * values[left + 1]
     u2, u3 = fraction * fraction, fraction * fraction * fraction
     incoming = tangents if incoming_tangents is None else incoming_tangents
@@ -794,13 +800,8 @@ class Project:
         authored = (interpolation == "smooth" and name in POSITION_CHANNELS
                     and any(name in _authored_tangents(key) for key in self.keyframes))
         if interpolation not in ("step", "linear") and (len(times) > 2 or (authored and len(times) > 1)):
-            try:
-                derivatives = (_spline_tangents(times, values) if interpolation == "spline" else
-                               (_monotone_tangents if monotone else _position_tangents)(times, values))
-            except ArithmeticError:
-                derivatives = None
-            if derivatives is None or not all(math.isfinite(value) for value in derivatives):
-                # Match _sample's finite linear fallback for close timestamps.
+            derivatives = _auto_tangents(times, values, interpolation, monotone)
+            if derivatives is None:
                 interpolation = "linear"
             else:
                 tangents = tuple(derivatives)
