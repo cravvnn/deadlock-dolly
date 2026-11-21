@@ -506,6 +506,56 @@ void early_tick_lag() {
     require(near(after_seek.motion_anchor[0], speed * 5) && !stuck.lagging(), "A seek starts over");
 }
 
+void stop_near_tick_rate() {
+    // At frame rates near the tick rate a stop looks like a late tick for one
+    // frame. The next frame tells them apart.
+    const double interval = 1.0 / 64, speed = 480;
+    for (const double frame : {1.0 / 60, 1.0 / 100}) {
+        auto sample_at = [&](double x) {
+            dolly::AttachSample sample;
+            sample.valid = true;
+            sample.point = dolly::AttachPoint::bone;
+            sample.motion_anchor = {x, 50, 10};
+            sample.origin = {x + 3, 52, 70};
+            return sample;
+        };
+        dolly::AttachAnchorFilter stop;
+        double time = 10;
+        for (int index = 0; index < 8; ++index, time += frame) {
+            auto sample = sample_at(speed * time);
+            stop.apply(sample, time, interval, false);
+        }
+        const double stopped = speed * (time - frame);
+        for (int index = 0; index < 6; ++index, time += frame) {
+            auto sample = sample_at(stopped);
+            stop.apply(sample, time, interval, false);
+            if (index > 0)
+                require(!stop.lagging() && near(sample.motion_anchor[0], stopped) &&
+                            near(sample.origin[0], stopped + 3),
+                        "A stop is followed from its second frame");
+        }
+        // The same frame rate still holds a late tick on the path.
+        dolly::AttachAnchorFilter late;
+        time = 20;
+        for (int index = 0; index < 8; ++index, time += frame) {
+            auto sample = sample_at(speed * time);
+            late.apply(sample, time, interval, false);
+        }
+        for (int index = 0; index < 3; ++index, time += frame) {
+            auto sample = sample_at(speed * (time - interval));
+            late.apply(sample, time, interval, false);
+            require(late.lagging() && near(sample.motion_anchor[0], speed * time, 1e-6),
+                    "A late tick near the tick rate keeps the camera on the path");
+        }
+        for (int index = 0; index < 3; ++index, time += frame) {
+            auto sample = sample_at(speed * time);
+            late.apply(sample, time, interval, false);
+            require(!late.lagging() && near(sample.motion_anchor[0], speed * time, 1e-6),
+                    "The step forward ends the correction near the tick rate");
+        }
+    }
+}
+
 void stepped_aim() {
     // The stored aim turns at 180 degrees/s but only changes every third
     // frame, in one jump, and crosses from 359 to 0 on the way.
@@ -1345,6 +1395,7 @@ int main() {
         offset_application();
         wrapped_aim();
         early_tick_lag();
+        stop_near_tick_rate();
         sample_filter_bundle();
         stepped_aim();
         clearance_behavior();

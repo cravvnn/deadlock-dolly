@@ -201,10 +201,10 @@ void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double 
     std::array<double, 3> velocity{};
     for (unsigned i = 0; i < 3; ++i)
         velocity[i] = (anchor[i] - anchor_[i]) / dt;
-    bool usual = true;
+    bool usual = true, stopped = false;
     if (count_ == 3) {
         std::array<double, 3> tick{}, error{};
-        double size = 0, back = 0, forward = 0, stay = 0;
+        double size = 0, back = 0, forward = 0, stay = 0, moved = 0;
         for (unsigned i = 0; i < 3; ++i) {
             const double a = velocity_[0][i], b = velocity_[1][i], c = velocity_[2][i];
             const double median = std::max(std::min(a, b), std::min(std::max(a, b), c));
@@ -214,23 +214,36 @@ void AttachAnchorFilter::apply(AttachSample& sample, double replay_time, double 
             back += (error[i] + tick[i]) * (error[i] + tick[i]);
             forward += (error[i] - tick[i]) * (error[i] - tick[i]);
             stay += error[i] * error[i];
+            moved += (anchor[i] - anchor_[i]) * (anchor[i] - anchor_[i]);
         }
         size = std::sqrt(size);
         const double tolerance = .35 * size + .5;
         if (!lagging_ && size > 1 && std::sqrt(back) < tolerance) {
             lagging_ = true;
             held_ = 0;
+            held_velocity_ = velocity;
             usual = false;
         } else if (lagging_ && forward < stay) {
             // Nearer to the step forward than to staying behind. A jump or a
             // turn in the same frame must not hide the step forward.
             lagging_ = false;
             usual = false;
+        } else if (lagging_ && 4 * moved < stay) {
+            // A player drawn a tick late keeps moving on the next frame. One
+            // standing still has stopped, which looks the same for one frame
+            // when frames are about a tick long. Follow the stop from here.
+            lagging_ = false;
+            stopped = true;
         } else if (lagging_ && ++held_ > 12) {
             lagging_ = false; // Not the pattern after all; follow the game.
         }
         for (unsigned i = 0; i < 3; ++i)
             shift_[i] = lagging_ ? tick[i] : 0;
+    }
+    if (stopped) {
+        velocity_[0] = velocity_[1];
+        velocity_[1] = velocity_[2];
+        velocity_[2] = held_velocity_;
     }
     if (usual) {
         velocity_[0] = velocity_[1];

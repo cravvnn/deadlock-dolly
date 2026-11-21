@@ -142,7 +142,7 @@ public:
 
 private:
     std::array<std::array<double, 3>, 3> velocity_{};
-    std::array<double, 3> anchor_{}, shift_{};
+    std::array<double, 3> anchor_{}, shift_{}, held_velocity_{};
     double time_ = 0;
     unsigned count_ = 0, held_ = 0;
     bool primed_ = false, lagging_ = false;
