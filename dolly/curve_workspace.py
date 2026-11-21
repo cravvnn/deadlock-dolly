@@ -23,7 +23,7 @@ from tkinter import ttk
 
 from . import ui_theme
 from .curve import POSITION_LIMIT, PositionBounds, TimelineView, hit_key, sample_channel
-from .path import ASPECT_MAX, ASPECT_MIN, CURVE_CHANNELS, TANGENT_MODES, Project, _unwrap, channel_value
+from .path import ASPECT_MAX, ASPECT_MIN, CURVE_CHANNELS, TANGENT_MODES, Project, branch_values, channel_value
 from .ui import art, fonts, kit_styles
 from .ui.kit_controls import KitButton
 from .ui.scale import chars, even_px, px, scaler, ui_scale
@@ -99,8 +99,7 @@ def tangent_handle(bounds, timestamp, value, delta, slope, scale=1.0):
 
 def display_values(project, channel):
     """Evaluator branch coordinates, separate from editable authored angles."""
-    values = [channel_value(key, channel) for key in project.keyframes]
-    return _unwrap(values) if channel in ("yaw", "roll") and project.rotation_mode == "shortest" else values
+    return branch_values(project, channel)
 
 
 def valid_value(channel, value):

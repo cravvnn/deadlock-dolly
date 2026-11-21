@@ -385,6 +385,12 @@ def _unwrap(values: list[float]) -> list[float]:
     return result
 
 
+def branch_values(project: Project, name: str) -> list[float]:
+    """Key values on the evaluator's branch: shortest-mode yaw/roll are unwrapped."""
+    values = [float(channel_value(key, name)) for key in project.keyframes]
+    return _unwrap(values) if project.rotation_mode == "shortest" and name in ("yaw", "roll") else values
+
+
 def _wrap(value: float) -> float:
     return (value + 180.0) % 360.0 - 180.0
 
@@ -791,9 +797,7 @@ class Project:
         if name not in fields:
             raise KeyError(name)
         times = tuple(float(key.time) for key in self.keyframes)
-        values = tuple(float(channel_value(key, name)) for key in self.keyframes)
-        if self.rotation_mode == "shortest" and name in ("yaw", "roll"):
-            values = tuple(_unwrap(values))
+        values = tuple(branch_values(self, name))
         interpolation = self.lens_interpolation if name in ("aspect_ratio", "lens_scale") else self.interpolation
         monotone = name not in ("x", "y", "z")
         tangents = None

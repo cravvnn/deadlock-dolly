@@ -149,6 +149,18 @@ class CurveHelperTests(unittest.TestCase):
         self.assertFalse(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MAX + 1e-9))
         self.assertFalse(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MIN - 1e-9))
 
+    def test_drawn_keys_sit_on_the_sampled_curve(self):
+        from dolly.curve_workspace import display_values
+        for mode in ("shortest", "unwrapped"):
+            project = Project(rotation_mode=mode, keyframes=[
+                _key(0.0, yaw=170, roll=-180), _key(1.0, 10, yaw=-170, roll=180, curve_yaw=-175.0),
+                _key(2.0, 20, yaw=190, pitch=5)])
+            for channel in ("yaw", "pitch", "roll"):
+                self.assertEqual(display_values(project, channel),
+                                 list(project.camera_channel_samples(channel).values), (mode, channel))
+        self.assertEqual(display_values(Project(rotation_mode="shortest", keyframes=[
+            _key(0.0, yaw=170), _key(1.0, yaw=-170), _key(2.0, yaw=190)]), "yaw"), [170.0, 190.0, 190.0])
+
     def test_close_keys_fall_back_to_linear_in_both_samplers(self):
         from dolly import path
         times, values = [0.0, 1e-300, 2e-300, 1.0], [0.0, 1e10, 0.0, 1e10]
