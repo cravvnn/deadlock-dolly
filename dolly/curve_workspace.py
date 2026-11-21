@@ -27,7 +27,6 @@ from .path import CURVE_CHANNELS, Project, _unwrap, channel_value
 from .ui import art, fonts, kit_styles
 from .ui.kit_controls import KitButton
 from .ui.scale import chars, even_px, px, scaler, ui_scale
-from .ui.widgets import ScrollPage
 
 GROUPS = ("Position", "Rotation", "Framing")
 CHANNELS = (("x", "y", "z"), ("pitch", "yaw", "roll"), ("aspect_ratio",))
@@ -445,7 +444,7 @@ class CameraCurveLane(tk.Frame):
         self._drag_value = None
         self._editing_value, self._value_origin = False, None
         self._value_error = ""
-        self._pan_x, self._enabled, self._redraw_pending = None, True, False
+        self._pan_x = None
         self._responsive_width = None
         self._responsive_mode = None
         self._tangent_side = self._tangent_origin = None
@@ -863,11 +862,6 @@ class CameraCurveLane(tk.Frame):
     def _schedule_redraw(self, _event=None):
         self.workspace.schedule_redraw()
 
-    def _scheduled_redraw(self):
-        self._redraw_pending = False
-        if self.winfo_exists():
-            self._redraw()
-
     def _redraw(self, _event=None):
         if not hasattr(self, "canvas"):
             return
@@ -1176,43 +1170,6 @@ class CameraCurveLane(tk.Frame):
             self.workspace.schedule_redraw()
 
 
-class CameraCurveColumn(ScrollPage):
-    """Keep the list and a readable curve reachable on short/high-DPI screens."""
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.body.configure(padding=0)
-        self._panels = None
-        self._sizing = False
-        self._content_size = None
-        self.canvas.bind("<Configure>", self.resize_content)
-        self.body.bind("<Configure>", self.resize_content)
-
-    def set_panels(self, table, graph, header, curves):
-        self._panels = table, graph, header, curves
-        curves.set_scroll_owner(self)
-        curves.on_geometry = self.resize_content
-        self.resize_content()
-
-    def resize_content(self, _event=None):
-        if self._panels is None or self._sizing:
-            return
-        self._sizing = True
-        try:
-            table, graph, header, curves = self._panels
-            padding = [self.tk.getint(value) for value in self.tk.splitlist(graph.cget("padding"))]
-            graph_padding = padding[1]+padding[3] if len(padding)==4 else padding[-1]*2 if padding else 0
-            gaps = even_px(self.ui_scale, 10) + even_px(self.ui_scale, 4)
-            minimum = table.winfo_reqheight()+header.winfo_reqheight()+gaps+graph_padding+curves.minimum_height()
-            width, available = max(1,self.canvas.winfo_width()), max(1,self.canvas.winfo_height())
-            height = max(available,minimum)
-            if self._content_size != (width,height):
-                self._content_size=width,height
-                self.canvas.itemconfigure(self.window,width=width,height=height)
-                self.canvas.configure(scrollregion=(0,0,width,height))
-        finally:
-            self._sizing = False
-
-
 class CameraCurveWorkspace(tk.Frame):
     """The Position/Rotation/Framing lanes with their shared clock, selection and view tools.
 
@@ -1246,7 +1203,6 @@ class CameraCurveWorkspace(tk.Frame):
         self._measure_pending = False
         self._measure_after = None
         self._redraw_after = None
-        self._scroll_owner = None
         self._body_size = None
         self._responsive_mode = None
         self.group = 0
@@ -1359,7 +1315,7 @@ class CameraCurveWorkspace(tk.Frame):
         dp = self._px
         minimum_graph = 5*self.graph_font.metrics("linespace")+dp(40)
         heights=self._lane_minimums(minimum_graph)
-        body_height=sum(heights[group] for group in self.visible_groups()) if self._scroll_owner is not None else max(heights)
+        body_height=max(heights)
         tools = self.tools.winfo_reqheight()+dp(10) if self.tools is not None else 0
         footer = self.footer.winfo_reqheight()+dp(10) if self.on_legend is None else 0
         modes = self.modes_row.winfo_reqheight()+dp(15) if self.modes_row is not None else 0
@@ -1371,13 +1327,6 @@ class CameraCurveWorkspace(tk.Frame):
                 (lane.hint.winfo_reqheight()+dp(15) if lane.hint.winfo_manager() else 0)+
                 (lane.tangent_panel.winfo_reqheight()+dp(10) if lane.tangent_panel is not None else 0)+minimum_graph+dp(15)
                 for lane in self.lanes]
-
-    def set_scroll_owner(self,owner):
-        self._scroll_owner=owner
-        if self.scrollbar is not None:
-            self.scrollbar.grid_remove()
-        self._body_size=None
-        self._schedule_measure()
 
     def _responsive(self,_event=None):
         stacked = self.stack_var.get()
@@ -1414,15 +1363,13 @@ class CameraCurveWorkspace(tk.Frame):
         minimum_graph=5*self.graph_font.metrics("linespace")+self._px(40)
         minimums=self._lane_minimums(minimum_graph)
         minimum=sum(minimums[group] for group in self.visible_groups())
-        if self._scroll_owner is not None and self.grid_rowconfigure(2)['minsize'] != minimum:
-            self.rowconfigure(2,minsize=minimum)
         height=max(available,minimum)
         width=max(1,self.scroll_canvas.winfo_width())
         if self._body_size != (width,height):
             self._body_size=width,height
             self.scroll_canvas.itemconfigure(self.body_window,width=width,height=height)
             self.scroll_canvas.configure(scrollregion=(0,0,width,height))
-        if self._scroll_owner is not None or height<=available:
+        if height<=available:
             if self.scrollbar.winfo_manager():self.scrollbar.grid_remove()
         elif not self.scrollbar.winfo_manager():
             self.scrollbar.grid()
@@ -1512,7 +1459,6 @@ class CameraCurveWorkspace(tk.Frame):
         if not self.state.enabled:
             self.cancel_edits()
         for lane in self.lanes:
-            lane._enabled=self.state.enabled
             lane._sync_value()
         if changed:
             self._schedule_measure()
