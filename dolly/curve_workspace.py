@@ -1014,8 +1014,8 @@ class CameraCurveLane(tk.Frame):
                                     fill=ui_theme.TOKENS["accent"], dash=self._px((3,3)), tags="playhead")
 
     def _press(self, event):
-        if not self.state.enabled:
-            return
+        if not self.state.enabled or not self.workspace.settle_numeric():
+            return "break"
         self.canvas.focus_set()
         self.workspace.cancel_edits()
         for side, (x, y, delta) in self._handle_points.items():

@@ -346,5 +346,36 @@ class AttachedViewChangeTests(unittest.TestCase):
         app._submit.assert_called_once()
 
 
+class CurveGraphPressTests(unittest.TestCase):
+    def test_clicking_the_graph_applies_a_typed_value(self):
+        import tkinter as tk
+        from dolly.curve_workspace import CameraCurveWorkspace
+        root = tk.Tk()
+        root.withdraw()
+        calls = []
+        try:
+            workspace = CameraCurveWorkspace(root, on_change=lambda *edit: calls.append(edit),
+                                             on_select=lambda _index: None, on_reset=lambda _channel: None,
+                                             context=lambda: ("shot", 1))
+            workspace.pack()
+            workspace.set_project(Project(keyframes=[_key(0.0), _key(2.0, 100)]), 0)
+            lane = workspace.lanes[0]
+            for text in ("abc", "1234"):
+                lane.value_entry.focus_force()
+                root.update()
+                lane._begin_value()
+                lane.value_text.set(text)
+                result = lane._press(SimpleNamespace(x=0, y=0))
+                root.update()
+                if text == "abc":
+                    self.assertEqual(result, "break")
+                    self.assertTrue(lane._value_error)
+                    self.assertEqual(calls, [])
+                    lane._cancel_value()
+            self.assertEqual(calls, [(0, "x", 1234.0)])
+        finally:
+            root.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()
