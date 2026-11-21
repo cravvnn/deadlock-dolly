@@ -3924,6 +3924,15 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 if _participant is not None:
                     self._check_participant_follow(_participant)
                 self._detach_spectator_view()
+                playback = not bool(armed.get("paused"))
+                current = bridge.status()
+                self._require_native_demo(current)
+                if not playback:
+                    # The acknowledgement is sampled by the renderer after it pauses.
+                    # Console telemetry may still describe the frame before that pause.
+                    if not armed.get("paused") or not current.get("paused") or int(current["tick"]) != int(armed["tick"]):
+                        raise RuntimeError("The replay moved while opening the paused camera. Pause it and try again.")
+                frame = self._native_pose(current)
             except Exception:
                 if armed is not None:
                     # A failed spectator switch must not leave the successfully
@@ -3943,18 +3952,6 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 except (RuntimeError, ValueError, OSError):
                     LOG.exception("Could not restore replay UI after camera setup failed")
                 raise
-            self._native_active = True
-            self._native_manual = True
-            playback = not bool(armed.get("paused"))
-            current = bridge.status()
-            self._require_native_demo(current)
-            if not playback:
-                # The acknowledgement is sampled by the renderer after it pauses.
-                # Console telemetry may still describe the frame before that pause.
-                if not armed.get("paused") or not current.get("paused") or int(current["tick"]) != int(armed["tick"]):
-                    self._release_native_camera()
-                    raise RuntimeError("The replay moved while opening the paused camera. Pause it and try again.")
-            frame = self._native_pose(current)
             frame.update(time=float(current.get("phase", 0)), cvars={})
             self._set_paused_pose(frame, int(current["tick"]))
             self._paused_details.update(source="native_render_input", runtime_verified_in_Deadlock=False)

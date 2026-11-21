@@ -529,3 +529,38 @@ class NativeWorkflows(unittest.TestCase):
         case.console.tick = 99
         with self.assertRaisesRegex(ValueError, 'before this shot'):
             case.controller.capture_at_replay(100, 64)
+
+    def test_failed_paused_camera_check_after_arm_restores_replay(self):
+        def moved(status):
+            status['tick'] += 1
+        def faulted(status):
+            status['state'] = 'fault'
+        def no_pose(status):
+            status['applied_pose'] = None
+        for name, change in (('moved', moved), ('fault', faulted), ('pose', no_pose)):
+            with self.subTest(name):
+                case = self.fresh()
+                case.console.paused = True
+                case.controller._set_paused_pose(dict(x=0, y=0, z=0, pitch=0, yaw=0, roll=0, aspect_ratio=1.5), 90)
+                status = case.bridge.status
+                def arm(*args, **kwargs):
+                    case.bridge.events.append('native.start_flight')
+                    case.bridge.state = 'armed'
+                    return status()
+                def changed():
+                    current = status()
+                    change(current)
+                    return current
+                case.bridge.start_flight = arm
+                restore = Mock()
+                with patch.object(case.bridge, 'status', side_effect=changed), \
+                     patch.object(Controller, 'toggle_game_ui', restore), \
+                     self.assertRaises(RuntimeError):
+                    case.controller.enter_native_flight()
+                events = case.bridge.events
+                self.assertIn('native.release', events[events.index('native.start_flight'):])
+                self.assertFalse(case.controller.status()['paused_camera'])
+                self.assertIsNone(case.controller._paused_pose)
+                self.assertFalse(case.controller._native_active)
+                self.assertFalse(case.controller._native_manual)
+                restore.assert_called_once_with(enabled=True)
