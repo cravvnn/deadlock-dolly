@@ -851,10 +851,9 @@ def _dispatch(app, event, bridge, *, publish):
         _attach_edit(app, lambda key: setattr(key, "source_blend", value))
         publish()
     elif action == "attach_reset":
+        from .editor_session import cancel_snap
         app.preview_attach = False
-        app._attach_snap_pending = False
-        app._attach_snap_started = None
-        app._attach_snap_context = None
+        cancel_snap(app, None)
 
         def mutate_reset(key):
             key.source = "free"

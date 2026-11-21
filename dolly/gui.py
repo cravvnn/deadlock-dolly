@@ -3832,9 +3832,7 @@ class DollyApp:
             self.playing = False
             self.preview_attach = False
             self._bone_picker_context = None
-            self._attach_snap_pending = False
-            self._attach_snap_started = None
-            self._attach_snap_context = None
+            editor_session.cancel_snap(self, None)
             self.native_editor_active = False
             self._native_editor_bridge = self._native_visualization_bridge = None
             self._native_visualization_cache = None
@@ -4646,9 +4644,7 @@ class DollyApp:
                 result.get("model") != model_token(key.attach.model) or
                 result.get("point") != ("eyes", "weapon", "bone").index(key.attach.point)):
             return
-        self._attach_snap_pending = False
-        self._attach_snap_started = None
-        self._attach_snap_context = None
+        editor_session.cancel_snap(self, None)
         offsets = tuple(float(value) for value in result.get("offset") or ())
         if len(offsets) != 6:
             return

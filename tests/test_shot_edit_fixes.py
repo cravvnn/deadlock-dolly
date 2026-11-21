@@ -345,6 +345,19 @@ class AttachedViewChangeTests(unittest.TestCase):
         self.assertEqual(published, [False])
         app._submit.assert_called_once()
 
+    def test_attach_reset_clears_a_pending_snap(self):
+        app = self._app()
+        app.project = Project(keyframes=[_key(0.0, source="attach", attach=AttachKey(handle=1, model="m")),
+                                         _key(2.0, 100)])
+        app._commit_camera = lambda keys, _time=None: setattr(
+            app, "project", shot_commands.commit_camera(app.project, keys))
+        app._attach_snap_pending, app._attach_snap_started = True, 1.0
+        app._attach_snap_context = {"index": 0}
+        editor_dispatch.dispatch(app, {"action": "attach_reset", "value": 0}, None, publish=lambda: None)
+        self.assertEqual((app.preview_attach, app._attach_snap_pending, app._attach_snap_started,
+                          app._attach_snap_context, app.status_text.get()), (False, False, None, None, ""))
+        self.assertEqual(app.project.keyframes[0].source, "free")
+
     def test_position_edits_only_arrive_as_curve_values(self):
         app = self._app()
         app.preview_attach = False
