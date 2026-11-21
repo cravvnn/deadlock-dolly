@@ -3323,13 +3323,6 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._message("Camera position check failed: " + str(exc), playing=False)
             raise
 
-    def _apply_frame(self, project, shot_time):
-        frame = project.evaluate(shot_time)
-        self._request(self._position_commands(frame))
-        self._applied_pose = frame
-        with self._state_lock:
-            self._state["time"] = max(0.0, min(project.duration, shot_time))
-
     def _position_direct_frame(self, frame, tick=None, *, refresh=False):
         """Verify a usable camera origin, rather than a local paused fit.
 
