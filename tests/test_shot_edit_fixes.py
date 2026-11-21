@@ -222,6 +222,33 @@ class BankDragHistoryTests(unittest.TestCase):
         self.assertEqual(history.move().project.keyframes[2].roll, 0.0)
 
 
+class CurveEditHistoryGroupTests(unittest.TestCase):
+    def test_a_graph_edit_is_its_own_undo_step_inside_a_running_drag(self):
+        for channel, value in (("x", 50.0), ("pitch", 10.0)):
+            for fails in (False, True):
+                with self.subTest(channel=channel, fails=fails):
+                    project = Project(keyframes=[_key(0.0), _key(2.0, 100)])
+                    seen = []
+
+                    def commit(*_args, **_kwargs):
+                        seen.append(app._history_edit_group)
+                        if fails:
+                            raise RuntimeError("commit refused")
+
+                    app = SimpleNamespace(project=project, busy=False, playing=False, status_text=_Var(),
+                                          errors=[], _history_edit_group=("drag", 1),
+                                          _shot_edit_ready=lambda: True, _refresh_curve=lambda: None,
+                                          _commit_camera=commit, _commit_project=commit)
+                    app._error = lambda title, exc: app.errors.append(str(exc))
+                    app._guard = lambda title, function: gui.DollyApp._guard(app, title, function)
+                    for name in ("_change_position_curve", "_change_rotation_curve", "_change_curve_key"):
+                        setattr(app, name, getattr(gui.DollyApp, name).__get__(app))
+                    gui.DollyApp._change_unified_curve(app, 1, channel, value)
+                    self.assertEqual(seen, [None])
+                    self.assertEqual(app._history_edit_group, ("drag", 1))
+                    self.assertEqual(app.errors, ["commit refused"] if fails else [])
+
+
 class ReplaceCaptureTests(unittest.TestCase):
     def test_replacing_a_view_keeps_its_blend_in(self):
         project = Project(keyframes=[

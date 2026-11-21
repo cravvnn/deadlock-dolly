@@ -5,6 +5,7 @@ worker results/log messages travel through an event queue polled by Tk.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import copy
 from dataclasses import replace
 from datetime import datetime
@@ -213,6 +214,17 @@ def _replay_modified(modified_ns) -> str:
         return datetime.fromtimestamp(modified_ns / 1e9).strftime("%Y-%m-%d, %H:%M")
     except (OSError, OverflowError, ValueError):
         return ""
+
+
+@contextmanager
+def _history_group(app, key=None):
+    """Merge the history steps made inside into ``key``'s undo step (None: their own)."""
+    previous_group = getattr(app, "_history_edit_group", None)
+    app._history_edit_group = key
+    try:
+        yield
+    finally:
+        app._history_edit_group = previous_group
 
 
 def _finite(value: str, label: str) -> float:
@@ -4262,17 +4274,13 @@ class DollyApp:
             raise ValueError("Attached cameras follow their target. Edit attachment offsets instead.")
         if value == channel_value(key, channel):
             return
-        previous_group = getattr(self, "_history_edit_group", None)
-        self._history_edit_group = None
-        try:
+        with _history_group(self):
             if channel in POSITION_CHANNELS:
                 self._change_position_curve(index, channel, value)
             elif channel in CURVE_CHANNELS:
                 self._change_rotation_curve(index, channel, value)
             else:
                 self._change_curve_key(index, key.time, value)
-        finally:
-            self._history_edit_group = previous_group
 
     def _change_camera_tangent(self, index, channel, mode, incoming=None, outgoing=None):
         """Commit one XYZ handle gesture through the normal shot/history path."""
@@ -4297,12 +4305,8 @@ class DollyApp:
                                                  incoming=incoming, outgoing=outgoing):
                 return False
             candidate.validate()
-            previous_group = getattr(self, "_history_edit_group", None)
-            self._history_edit_group = None
-            try:
+            with _history_group(self):
                 self._commit_project(candidate, key.time)
-            finally:
-                self._history_edit_group = previous_group
             self.status_text.set(
                 f"Camera {index + 1:02d} {channel.upper()} arrival/departure: {mode.title()}. "
                 "Preview to check the move.")
@@ -4335,12 +4339,7 @@ class DollyApp:
                 return
             keys = copy.deepcopy(self.project.keyframes)
             setattr(keys[index], channel, position)
-            previous_group = getattr(self, "_history_edit_group", None)
-            self._history_edit_group = None
-            try:
-                self._commit_camera(keys, key.time)
-            finally:
-                self._history_edit_group = previous_group
+            self._commit_camera(keys, key.time)
             self.status_text.set(f"Camera {index + 1} {channel.upper()} set to {position:g} world units.")
 
         self._guard("Edit position curve", operation)
@@ -4665,12 +4664,8 @@ class DollyApp:
         self.project = candidate
         # Attached flight reports new offsets on every poll; keep the whole
         # flight as one undo step so it cannot push older edits out of history.
-        previous_group = getattr(self, "_history_edit_group", None)
-        self._history_edit_group = None if snap_pending else ("attach_fly", index)
-        try:
+        with _history_group(self, None if snap_pending else ("attach_fly", index)):
             self._mark_dirty()
-        finally:
-            self._history_edit_group = previous_group
         self._refresh_attach_card(candidate.keyframes[index])
 
     def _apply_attach(self, apply_all):
