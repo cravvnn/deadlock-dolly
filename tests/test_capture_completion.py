@@ -238,3 +238,37 @@ class CaptureCompletionTests(unittest.TestCase):
                         jobs.shutdown()
                         worker.join(timeout=2)
                         self.assertFalse(worker.is_alive())
+
+    def test_layer_passes_inherit_the_color_take_settings(self):
+        base = video_export.VideoOptions(self.root / 'shot.mp4', 30, 40_000_000, video_export.DEFAULT_CODEC_KEY,
+                                         2, 1, None, True, 0.5, True, True, ('world',),
+                                         full_resolution=True, container='mp4', bundle_audio=True)
+        started = []
+        app = SimpleNamespace(_base_capture=base, _pov_project=None, _bone_take_project=None,
+                              _snapshot=lambda: 'shot',
+                              video_export=SimpleNamespace(start=lambda options, **kwargs: started.append(
+                                  (options, kwargs)) or 'started'))
+        app._pass_options = DollyApp._pass_options
+        app._start_pass = lambda *args, **kwargs: DollyApp._start_pass(app, *args, **kwargs)
+        for layer, pass_name in (('world', 'black'), ('world', 'white')):
+            app._layer_queue = [(layer, pass_name)]
+            # Validation needs FFmpeg and a real take folder; the fields are what matter here.
+            with patch.object(video_export.VideoOptions, 'validated', lambda options: options):
+                self.assertEqual(DollyApp._start_next_layer_take(app), 'started')
+            self.assertEqual(app._active_layer_take, (layer, pass_name))
+        (black, black_start), (white, white_start) = started
+        for options in (black, white):
+            self.assertEqual((options.fps, options.bitrate, options.quality, options.preset, options.speed,
+                              options.full_resolution, options.container),
+                             (30, 40_000_000, 2, 1, 0.5, True, base.container))
+            self.assertTrue(options.fixed_step)
+            self.assertFalse(options.depth or options.depth_exr or options.bundle_audio)
+        self.assertEqual(black.path, self.root / 'shot' / 'world.mp4')
+        self.assertEqual((black.layers, black.white_clear), (('world',), False))
+        self.assertEqual(white.path, self.root / 'shot' / 'world' / 'world_white.mp4')
+        self.assertEqual((white.layers, white.white_clear, white.shot_only), ((), True, True))
+        self.assertEqual(set(black_start), {'project', 'before_record', 'pov'})
+        self.assertEqual(white_start['project'], 'shot')
+        self.assertFalse(white_start['pov'])
+        self.assertTrue(app._pending_auto_play and app._auto_finish_layered)
+        self.assertFalse(app._take_playing_seen)

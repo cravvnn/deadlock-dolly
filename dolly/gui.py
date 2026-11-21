@@ -1919,18 +1919,24 @@ class DollyApp:
             # The black pass created the layer folder; this pass writes the
             # white matte beside it and skips frames like every layer take.
             target = folder / layer / (layer + "_white" + suffix)
-            options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
-                                   base.preset, base.ffmpeg_path, True, base.speed,
-                                   False, False, (), True, True, full_resolution=base.full_resolution,
-                                   container=base.container).validated()
+            options = self._pass_options(base, target, white_clear=True, shot_only=True)
         else:
             # The layer selection gives the take its own subfolder; the native
             # recorder captures the filtered color into it.
             target = folder / (layer + suffix)
-            options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
-                                   base.preset, base.ffmpeg_path, True, base.speed,
-                                   False, False, (layer,), full_resolution=base.full_resolution,
-                                   container=base.container).validated()
+            options = self._pass_options(base, target, layers=(layer,))
+        return self._start_pass(layer, pass_name, options, configure_layer)
+
+    @staticmethod
+    def _pass_options(base, target, *, layers=(), white_clear=False, shot_only=False):
+        """A layer run's extra pass, recorded like the color take ``base``."""
+        return VideoOptions(target, fps=base.fps, bitrate=base.bitrate, codec=base.codec,
+                            quality=base.quality, preset=base.preset, ffmpeg_path=base.ffmpeg_path,
+                            fixed_step=True, speed=base.speed, layers=layers,
+                            white_clear=white_clear, shot_only=shot_only,
+                            full_resolution=base.full_resolution, container=base.container).validated()
+
+    def _start_pass(self, layer, pass_name, options, before_record, **start_options):
         self._active_layer_take = (layer, pass_name)
         self._pending_auto_play = True
         self._auto_finish_layered = True
@@ -1938,7 +1944,8 @@ class DollyApp:
         pov_project = getattr(self, "_pov_project", None)
         bone_project = copy.deepcopy(getattr(self, "_bone_take_project", None))
         return self.video_export.start(options, project=pov_project or bone_project or self._snapshot(),
-                                       before_record=configure_layer, pov=pov_project is not None)
+                                       before_record=before_record, pov=pov_project is not None,
+                                       **start_options)
 
     def _player_layer_frames(self, base, *, project=None):
         """Preflight estimate; actual capture uses the completed color take's count."""
@@ -1994,18 +2001,8 @@ class DollyApp:
         # Match the color take's container: lossless FFV1 takes (stills) need .mkv.
         target = folder / layer / (layer + base.path.suffix)
         target.parent.mkdir(parents=True, exist_ok=True)
-        options = VideoOptions(target, base.fps, base.bitrate, base.codec, base.quality,
-                               base.preset, base.ffmpeg_path, True, base.speed,
-                               False, False, (), False, True, full_resolution=base.full_resolution,
-                               container=base.container).validated()
-        self._active_layer_take = (layer, "capture")
-        self._pending_auto_play = True
-        self._auto_finish_layered = True
-        self._take_playing_seen = False
-        pov_project = getattr(self, "_pov_project", None)
-        bone_project = copy.deepcopy(getattr(self, "_bone_take_project", None))
-        return self.video_export.start(options, project=pov_project or bone_project or self._snapshot(),
-                                       before_record=arm_capture, capture_only=True, pov=pov_project is not None)
+        options = self._pass_options(base, target, shot_only=True)
+        return self._start_pass(layer, "capture", options, arm_capture, capture_only=True)
 
     def _finish_player_capture(self, layer):
         """Worker step: wait for the capture, then write the alpha layer master."""
