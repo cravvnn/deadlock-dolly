@@ -223,6 +223,35 @@ class PlaybackSpeed(unittest.TestCase):
         self.assertEqual(sent, [0.5, 0.5])
 
 
+class ReplayTickRate(unittest.TestCase):
+    def app(self, dialog_open):
+        app = NS(closed=False, root=None, _error_dialog_open=dialog_open, _tick_rate_prompted=set(),
+                 controller=NS(replay_tick_rate=lambda: 64), status_text=Var())
+        app._valid_tick_rate = DollyApp._valid_tick_rate
+        app._background_dialog = lambda *args, **options: DollyApp._background_dialog(app, *args, **options)
+        return app
+
+    def candidate(self):
+        candidate = NS(tick_rate=32.0, keyframes=['key'])
+        candidate.retime = lambda rate: setattr(candidate, 'tick_rate', rate)
+        return candidate
+
+    def test_an_in_game_capture_does_not_stack_the_retime_question_on_an_open_dialog(self):
+        app, candidate = self.app(True), self.candidate()
+        with patch.object(gui.messagebox, 'askyesno', side_effect=AssertionError('stacked dialog')):
+            with self.assertRaisesRegex(ValueError, 'Close the open dialog'):
+                DollyApp._resolve_replay_tick_rate(app, candidate)
+        self.assertEqual(app._tick_rate_prompted, set())
+        self.assertEqual(candidate.tick_rate, 32.0)
+        # Once the other dialog closes, the next capture asks the question.
+        app._error_dialog_open = False
+        with patch.object(gui.messagebox, 'askyesno', return_value=True) as ask:
+            self.assertEqual(DollyApp._resolve_replay_tick_rate(app, candidate), 64.0)
+        ask.assert_called_once()
+        self.assertEqual(app._tick_rate_prompted, {(64.0, 32.0)})
+        self.assertFalse(app._error_dialog_open)
+
+
 class Widget:
     def __init__(self):
         self.options = {'state': 'disabled', 'text': ''}

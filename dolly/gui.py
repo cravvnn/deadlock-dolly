@@ -4970,11 +4970,13 @@ class DollyApp:
         if not adopt and candidate.keyframes:
             key = (round(float(detected), 3), round(float(candidate.tick_rate), 3))
             if key not in self._tick_rate_prompted:
+                answer = self._background_dialog(
+                    messagebox.askyesno, "Replay tick rate",
+                    advice + "\n\nRetime this shot to the replay and continue?", retry=False)
+                if answer is None:
+                    raise ValueError(advice + " Close the open dialog, then capture again.")
                 self._tick_rate_prompted.add(key)
-                if messagebox.askyesno("Replay tick rate",
-                                       advice + "\n\nRetime this shot to the replay and continue?",
-                                       parent=self.root):
-                    adopt = True
+                adopt = bool(answer)
             if not adopt:
                 raise ValueError(advice)
         candidate.retime(float(detected))
