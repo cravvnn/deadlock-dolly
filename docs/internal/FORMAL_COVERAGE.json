@@ -1237,7 +1237,7 @@
     },
     {
       "path": "dolly/demo_packets.py",
-      "sha256": "74a359add5da9f87a7d04e8fef175ebe3cd73b141f733da5b2335709e1e940f5",
+      "sha256": "1884c792525a1f35975b3b5fb5270a7f2bb5cb4be18213644150db7d4762259e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -1260,6 +1260,7 @@
           "_fields",
           "_scan",
           "replay_header",
+          "recorded_by_player",
           "packet_index"
         ],
         "imports": [
@@ -1278,7 +1279,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_record_demo": "2026-11-20: replay_header also reads the header of a demo written by the record command (first record at tick 0); recorded_by_player names its recording player. Read-only, no new state."
     },
     {
       "path": "dolly/depth_exr.py",
@@ -2928,7 +2930,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "ab44617ddf6a5bd773f08fa5800936659585fbf2a7c496a3401e63616e7cc1e4",
+      "sha256": "00934f8b1911725d66174c38ef64ed561232c23c3a4ad26ee534a5179ba8bd52",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -3031,6 +3033,7 @@
         ]
       },
       "full_formal_signoff": false,
+      "reconciliation_record_demo": "2026-11-20: _validate_demo refuses a demo written by the record command before any game file changes; the game cannot apply its snapshots or seek in it (checked on build 6864 without Dolly loaded).",
       "reconciliation_20261114": "2026-11-14 process hardening: the game-exit watcher's bind_game call now passes process.poll() as the bridge's exit signal. GameExitClose checks the watcher's close against start_flight's _operations hold. Session.close configuration restore, double-close idempotence of overlay/config restore and GUI recovery remain open.",
       "reconciliation_20261114b": "2026-11-14 session close: Session.close now holds _restore_lock across config restoration, the journal read and overlay removal, so the exit watcher and dead-session recovery closing together serialize with each other and with record_exit (previously the unlocked journal read could meet the exit write and overlay removal could race itself). Sequential double close was already a no-op per step (journal early return, per-session overlay marker, hash-checked restore).",
       "reconciliation_20261114c": "2026-11-14 storage: recover_at_startup (skipped while any Deadlock runs) finishes an interrupted session when Dolly opens; resolve_gameinfo_conflict applies the user's choice then finishes recovery. GameinfoTransaction covers launch/restore/helper/recovery.",
@@ -11445,7 +11448,7 @@
       "instances": [
         "dolly/GameinfoInstallApi.tla"
       ],
-      "owner_utf8_lf_sha256": "ab44617ddf6a5bd773f08fa5800936659585fbf2a7c496a3401e63616e7cc1e4"
+      "owner_utf8_lf_sha256": "00934f8b1911725d66174c38ef64ed561232c23c3a4ad26ee534a5179ba8bd52"
     },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",

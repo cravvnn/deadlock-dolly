@@ -333,5 +333,50 @@ class ReplayPublicationTests(unittest.TestCase):
         self.assertEqual(set(self.root.iterdir()), {self.source, self.output})
 
 
+def header_only_demo(first_tick, client):
+    # File stamp (1), patch version (2), server name (3), optional client name (4).
+    fields = b"\x0a\x08PBDEMS2\0\x10\x30\x1a\x06server"
+    if client is not None:
+        fields += b"\x22" + varint(len(client)) + client
+    body = record(1, first_tick, fields) + record(0, 12)
+    return b"PBDEMS2\0" + struct.pack("<II", 16, 16) + body
+
+
+class PlayerRecordedDemoTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def demo(self, name, data):
+        path = self.root / name
+        path.write_bytes(data)
+        return path
+
+    def test_record_command_demo_is_refused_before_launch(self):
+        from dolly import launcher
+        path = self.demo("pov.dem", header_only_demo(0, b"Some Player"))
+        self.assertEqual(demo_packets.recorded_by_player(path), "Some Player")
+        self.assertEqual(demo_packets.replay_header(path)["client_name"], "Some Player")
+        with self.assertRaises(launcher.LaunchError) as refused:
+            launcher._validate_demo(path)
+        self.assertIn("tv_record", str(refused.exception))
+
+    def test_sourcetv_and_unreadable_demos_are_left_to_the_game(self):
+        from dolly import launcher
+        cases = {
+            "tv.dem": header_only_demo(0xffffffff, b"SourceTV Demo"),
+            "unnamed.dem": header_only_demo(0xffffffff, None),
+            "empty_name.dem": header_only_demo(0, b""),
+            "other.dem": b"not a replay at all",
+            "complete.dem": make_demo(),
+        }
+        for name, data in cases.items():
+            with self.subTest(name):
+                path = self.demo(name, data)
+                self.assertIsNone(demo_packets.recorded_by_player(path))
+                self.assertEqual(launcher._validate_demo(path), path.resolve())
+
+
 if __name__ == "__main__":
     unittest.main()

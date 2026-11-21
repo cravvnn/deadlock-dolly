@@ -18,6 +18,7 @@ import threading
 from typing import Callable
 
 _MAGIC = b"PBDEMS2\0"
+SOURCETV_CLIENT_NAME = "SourceTV Demo"
 _HEADER_FIELDS = {
     2: "patch_version", 3: "server_name", 4: "client_name", 5: "map_name",
     6: "game_directory", 7: "fullpackets_version", 11: "demo_version_name",
@@ -233,7 +234,9 @@ def replay_header(path) -> dict | None:
             if not 16 <= info_offset < size or not 16 <= spawn_offset < size:
                 return None
             command, tick, payload_size = _varint(stream), _varint(stream), _varint(stream)
-            if command != 1 or tick != 0xffffffff or not 0 < payload_size <= _MAX_HEADER:
+            # SourceTV stamps this record with the signon tick; a player's own
+            # ``record`` demo stamps it with tick 0. Both carry the same header.
+            if command != 1 or tick not in (0, 0xffffffff) or not 0 < payload_size <= _MAX_HEADER:
                 return None
             fields = _fields(stream.read(payload_size))
     except (OSError, TypeError, ValueError):
@@ -253,6 +256,25 @@ def replay_header(path) -> dict | None:
         elif wire == 0:
             result[label] = value
     return result
+
+
+def recorded_by_player(path) -> str | None:
+    """Name of the player whose ``record`` command wrote this demo, or None.
+
+    SourceTV demos (match replays and ``tv_record``) name "SourceTV Demo" as
+    their client and carry full packets. A demo written by the ``record``
+    command names the recording player instead and has none, so the game can
+    neither seek in it nor, on current builds, apply its snapshots: every one
+    is refused as a delta from a tick the client does not have, and the scene
+    stays frozen. Anything unreadable or unnamed is left to the game.
+    """
+    header = replay_header(path)
+    if not header:
+        return None
+    client = header.get("client_name")
+    if not isinstance(client, str) or not client or client == SOURCETV_CLIENT_NAME:
+        return None
+    return client
 
 
 def packet_index(path, *, check_cancelled: Callable[[], None] | None = None) -> PacketIndex | None:

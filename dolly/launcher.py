@@ -495,6 +495,18 @@ def _tcp_listeners() -> list[tuple[int, int]]:
     return listeners
 
 
+# Verified on game build 6864 without Dolly loaded: a demo written by the
+# ``record`` command plays with every snapshot refused, so nothing in the scene
+# moves, and a backward seek ends playback because the file has no full packets.
+# A SourceTV recording of the same local game plays and seeks normally.
+PLAYER_RECORDED_DEMO_MESSAGE = (
+    "This demo was recorded with the in-game \"record\" command. Deadlock cannot play "
+    "that kind of demo back correctly: heroes and models stay frozen and seeking stops "
+    "the replay. Record it again with SourceTV instead. In the Deadlock console enter "
+    "tv_enable 1, load your map again (for example: map dl_midtown), then tv_record "
+    "<name> to start and tv_stoprecord to finish. The new .dem opens in Dolly normally.")
+
+
 def _validate_demo(path: str | os.PathLike[str] | None) -> Path | None:
     if path is None or not str(path).strip():
         return None
@@ -503,6 +515,9 @@ def _validate_demo(path: str | os.PathLike[str] | None) -> Path | None:
         raise LaunchError("Select an existing, extracted .dem replay file.")
     if any(c in str(value) for c in '\r\n\x00";+'):
         raise LaunchError("The replay path contains console separators. Move it to a folder without quotes, semicolons, or plus signs.")
+    from .demo_packets import recorded_by_player
+    if recorded_by_player(value):
+        raise LaunchError(PLAYER_RECORDED_DEMO_MESSAGE)
     return value
 
 
