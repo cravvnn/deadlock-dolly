@@ -122,5 +122,64 @@ class EditorInputBusyTests(unittest.TestCase):
         self.assertLess(clock.now, 1)
 
 
+class BlockPublishTests(unittest.TestCase):
+    def cases(self):
+        from dolly import lite_mode, object_wire, replay_event_wire
+        from dolly.follow_camera import FollowSettings
+        from dolly.path import Project
+        project = Project()
+        events = SimpleNamespace(kills=[], players=[(3, "Ana")], status=1, total_ticks=900, message="ready")
+        offsets = {name: 8 for name in editor_wire.ATTACH_FIELDS}
+
+        def loading(odd):
+            values = list(lite_mode.REPLAY_INFO.unpack(lite_mode.pack_replay_info(odd, project, 1)))
+            values[6] |= 4
+            return lite_mode.REPLAY_INFO.pack(*values)
+        return [
+            ("editor", lambda b: b.configure_editor(owner="panel"), editor_wire.CONFIG_OFFSET,
+             lambda odd: editor_wire.pack_config(odd, 2, 0, {"owner": "panel"})),
+            ("dof", lambda b: b.configure_editor_dof([0.0] * 11, enabled=True), editor_wire.DOF_OFFSET,
+             lambda odd: editor_wire.pack_dof(odd, True, [0.0] * 11)),
+            ("citadel_dof", lambda b: b.configure_editor_citadel_dof(1.0, 50, available=True, enabled=False),
+             editor_wire.CITADEL_DOF_OFFSET, lambda odd: editor_wire.pack_citadel_dof(odd, True, False, 1.0, 50)),
+            ("follow", lambda b: b.configure_editor_follow(FollowSettings(), active=True), editor_wire.FOLLOW_OFFSET,
+             lambda odd: editor_wire.pack_follow(odd, FollowSettings(), active=True)),
+            ("cameras", lambda b: b.configure_editor_cameras(project, 4, can_undo=True),
+             editor_wire.CAMERA_LIST_OFFSET, lambda odd: editor_wire.pack_camera_list(odd, project, 4, can_undo=True)),
+            ("shader_loading", lambda b: b.configure_shader_loading(True), lite_mode.REPLAY_INFO_OFFSET, loading),
+            ("lite_replay", lambda b: b.configure_lite_replay(project, 7, 0, 900), lite_mode.REPLAY_INFO_OFFSET,
+             lambda odd: lite_mode.pack_replay_info(odd, project, 7, 0, 900)),
+            ("cinematic", lambda b: b.configure_editor_cinematic(5, 6, 2), editor_wire.CINEMATIC_OFFSET,
+             lambda odd: editor_wire.CINEMATIC_STATUS.pack(b"DLYCIN01", odd, 1, 5, 6, 2)),
+            ("replay_events", lambda b: b.configure_replay_events(events), replay_event_wire.OFFSET,
+             lambda odd: replay_event_wire.pack(odd, events)),
+            ("framing_grid", lambda b: b.configure_framing_grid(enabled=True), editor_wire.FRAMING_GRID_OFFSET,
+             lambda odd: editor_wire.pack_framing_grid(odd, True)),
+            ("level_view", lambda b: b.configure_level_view(), editor_wire.LEVEL_VIEW_OFFSET,
+             lambda odd: editor_wire.pack_level_view(odd)),
+            ("object_picker", lambda b: b.configure_object_picker([], active=True), object_wire.OBJECT_CONFIG_OFFSET,
+             lambda odd: object_wire.pack_config(odd, [], active=True, distance=object_wire.DISTANCE_DEFAULT)),
+            ("attach", lambda b: b.configure_editor_attach(offsets), editor_wire.ATTACH_OFFSET,
+             lambda odd: editor_wire.pack_attach(odd, offsets)),
+            ("prop_probe", lambda b: b.set_prop_probe("create"), editor_wire.PROP_PROBE_OFFSET,
+             lambda odd: editor_wire.pack_prop_probe(odd, editor_wire.PROP_PROBE_CREATE)),
+        ]
+
+    def test_each_block_is_published_with_an_even_sequence_and_nothing_else_changes(self):
+        for name, publish, offset, build in self.cases():
+            with self.subTest(block=name):
+                bridge, _, _ = make_bridge()
+                before = bytes(bridge._mapping)
+                expected = build(3)
+                end = offset + len(expected)
+                publish(bridge)
+                self.assertEqual(struct.unpack_from("<I", bridge._mapping, offset + 8)[0], 2)
+                publish(bridge)
+                after = bytes(bridge._mapping)
+                self.assertEqual(after[offset:end], expected[:8] + struct.pack("<I", 4) + expected[12:])
+                self.assertEqual(after[:offset], before[:offset])
+                self.assertEqual(after[end:], before[end:])
+
+
 if __name__ == "__main__":
     unittest.main()

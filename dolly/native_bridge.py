@@ -239,6 +239,21 @@ class NativeBridge(MediaTransport):
         self._editor_sequence = 0
         self._editor_owner_sequence = 0
         self._editor_ack = 0
+        self._editor_dof_sequence = 0
+        self._editor_citadel_dof_sequence = 0
+        self._editor_follow_sequence = 0
+        self._editor_cameras_sequence = 0
+        self._lite_replay_sequence = 0
+        self._cinematic_sequence = 0
+        self._replay_events_sequence = 0
+        self._editor_framing_grid_sequence = 0
+        self._editor_level_view_sequence = 0
+        self._editor_object_sequence = 0
+        self._editor_attach_sequence = 0
+        self._editor_prop_probe_sequence = 0
+        self._shader_loading = False
+        self._pov = False
+        self._capabilities_seen = False
         self._graphics_samples = deque(maxlen=120)
         self._graphics_sample_at = -math.inf
         self._graphics_error = ""
@@ -282,6 +297,17 @@ class NativeBridge(MediaTransport):
             typ = ctypes.c_int32 if bits == 32 else ctypes.c_int64
             slot = typ.from_buffer(self._mapping, offset)
             atomic(ctypes.byref(slot), typ(value))
+
+    def _publish_block(self, offset, attr, build):
+        previous = getattr(self, attr)
+        odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
+        data = build(odd)
+        self._store(offset + 8, odd)
+        self._mapping[offset:offset + 8] = data[:8]
+        self._mapping[offset + 12:offset + len(data)] = data[12:]
+        self._store(offset + 8, even)
+        setattr(self, attr, even)
+        return even
 
     def _check_open(self):
         if self._closed:
@@ -435,7 +461,7 @@ class NativeBridge(MediaTransport):
                 if any(data):
                     self._capabilities_seen = True
                 result = wire.unpack(data, self.game_pid)
-                if result is None and getattr(self, '_capabilities_seen', False):
+                if result is None and self._capabilities_seen:
                     raise NativeBridgeError('Native capability report disappeared')
                 return result
             raise NativeBridgeError('Native capability report is busy; retry the feature')
@@ -603,7 +629,7 @@ class NativeBridge(MediaTransport):
                         (self._confetti_spawn_height << CONFETTI_HEIGHT_SHIFT) |
                         (PARTICLE_IDS.index(self._particles_preset) << PARTICLE_PRESET_SHIFT) |
                         (_intensity_bits(self._particles_intensity) << PARTICLE_INTENSITY_SHIFT))
-        return (1 if self._frozen else 0) | (16 if getattr(self, "_pov", False) else 2) | (0 if self._relief else 4) | confetti
+        return (1 if self._frozen else 0) | (16 if self._pov else 2) | (0 if self._relief else 4) | confetti
 
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking.
@@ -799,15 +825,9 @@ class NativeBridge(MediaTransport):
             owner_sequence = self._editor_owner_sequence + int("owner" in values)
             if owner_sequence > 0xffffffff:
                 raise NativeBridgeError("Editor owner counter exhausted; relaunch Dolly")
-            odd = (self._editor_sequence + 1) & 0xffffffff
-            even = (odd + 1) & 0xffffffff
-            data = wire.pack_config(odd, owner_sequence, self._editor_ack, changed)
-            offset = wire.CONFIG_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_sequence, self._editor_owner_sequence = even, owner_sequence
+            self._publish_block(wire.CONFIG_OFFSET, "_editor_sequence",
+                                lambda odd: wire.pack_config(odd, owner_sequence, self._editor_ack, changed))
+            self._editor_owner_sequence = owner_sequence
             self._editor_values = changed
 
     def configure_editor_dof(self, values, *, enabled):
@@ -815,30 +835,16 @@ class NativeBridge(MediaTransport):
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_dof_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_dof(odd, enabled, values)
-            offset = wire.DOF_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_dof_sequence = even
+            self._publish_block(wire.DOF_OFFSET, "_editor_dof_sequence",
+                                lambda odd: wire.pack_dof(odd, enabled, values))
 
     def configure_editor_citadel_dof(self, sensor_size, focus_distance, *, available, enabled):
         """Optional Citadel DOF block; does not mutate camera/effect runtime."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_citadel_dof_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_citadel_dof(odd, available, enabled, sensor_size, focus_distance)
-            offset = wire.CITADEL_DOF_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_citadel_dof_sequence = even
+            self._publish_block(wire.CITADEL_DOF_OFFSET, "_editor_citadel_dof_sequence",
+                                lambda odd: wire.pack_citadel_dof(odd, available, enabled, sensor_size, focus_distance))
 
     def configure_editor_follow(self, settings, *, available=False, active=False, pending=False, show_hud=False):
         """Publish Follow controls only; camera settings are applied by Controller."""
@@ -846,31 +852,17 @@ class NativeBridge(MediaTransport):
         with self._lock:
             self._check_open()
             available = bool(available and self.capability_available('follow'))
-            previous = getattr(self, '_editor_follow_sequence', 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_follow(odd, settings, available=available, active=active, pending=pending, show_hud=show_hud)
-            offset = wire.FOLLOW_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_follow_sequence = even
+            self._publish_block(wire.FOLLOW_OFFSET, "_editor_follow_sequence",
+                                lambda odd: wire.pack_follow(odd, settings, available=available, active=active, pending=pending, show_hud=show_hud))
 
     def configure_editor_cameras(self, project, revision, first=0, *, can_undo=False, can_redo=False):
         """Bounded camera-list page. Existing editor ABI and offsets stay unchanged."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, '_editor_cameras_sequence', 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_camera_list(odd, project, revision, first,
-                                         can_undo=can_undo, can_redo=can_redo)
-            offset = wire.CAMERA_LIST_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_cameras_sequence = even
+            self._publish_block(wire.CAMERA_LIST_OFFSET, "_editor_cameras_sequence",
+                                lambda odd: wire.pack_camera_list(odd, project, revision, first,
+                                                                  can_undo=can_undo, can_redo=can_redo))
 
     def configure_shader_loading(self, loading):
         """Publish a noninteractive startup notice independently of editor ownership."""
@@ -879,39 +871,31 @@ class NativeBridge(MediaTransport):
         with self._lock:
             self._check_open()
             self._shader_loading = bool(loading)
-            previous = getattr(self, "_lite_replay_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = bytes(self._mapping[REPLAY_INFO_OFFSET:REPLAY_INFO_OFFSET + REPLAY_INFO.size])
-            if data[:8] != b'DLYLITE1':
-                data = pack_replay_info(odd, Project(), 1)
-            values = list(REPLAY_INFO.unpack(data))
-            values[1] = odd
-            values[6] = (values[6] & ~4) | (4 if loading else 0)
-            data = REPLAY_INFO.pack(*values)
-            self._store(REPLAY_INFO_OFFSET + 8, odd)
-            self._mapping[REPLAY_INFO_OFFSET:REPLAY_INFO_OFFSET + 8] = data[:8]
-            self._mapping[REPLAY_INFO_OFFSET + 12:REPLAY_INFO_OFFSET + len(data)] = data[12:]
-            self._store(REPLAY_INFO_OFFSET + 8, even)
-            self._lite_replay_sequence = even
+
+            def build(odd):
+                data = bytes(self._mapping[REPLAY_INFO_OFFSET:REPLAY_INFO_OFFSET + REPLAY_INFO.size])
+                if data[:8] != b'DLYLITE1':
+                    data = pack_replay_info(odd, Project(), 1)
+                values = list(REPLAY_INFO.unpack(data))
+                values[1] = odd
+                values[6] = (values[6] & ~4) | (4 if loading else 0)
+                return REPLAY_INFO.pack(*values)
+            self._publish_block(REPLAY_INFO_OFFSET, "_lite_replay_sequence", build)
 
     def configure_lite_replay(self, project, revision, first=0, total_ticks=None):
         from .lite_mode import pack_replay_info, REPLAY_INFO_OFFSET
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_lite_replay_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = pack_replay_info(odd, project, revision, first, total_ticks)
-            if getattr(self, "_shader_loading", False):
-                from .lite_mode import REPLAY_INFO
-                values = list(REPLAY_INFO.unpack(data))
-                values[6] |= 4
-                data = REPLAY_INFO.pack(*values)
-            offset = REPLAY_INFO_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset+8] = data[:8]
-            self._mapping[offset+12:offset+len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._lite_replay_sequence = even
+
+            def build(odd):
+                data = pack_replay_info(odd, project, revision, first, total_ticks)
+                if self._shader_loading:
+                    from .lite_mode import REPLAY_INFO
+                    values = list(REPLAY_INFO.unpack(data))
+                    values[6] |= 4
+                    data = REPLAY_INFO.pack(*values)
+                return data
+            self._publish_block(REPLAY_INFO_OFFSET, "_lite_replay_sequence", build)
 
     def configure_editor_cinematic(self, token, revision, state):
         from . import editor_wire as wire
@@ -919,44 +903,23 @@ class NativeBridge(MediaTransport):
             raise ValueError("Invalid cinematic preparation result")
         with self._lock:
             self._check_open()
-            previous = getattr(self, '_cinematic_sequence', 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.CINEMATIC_STATUS.pack(b'DLYCIN01', odd, 1, token, revision, state)
-            offset = wire.CINEMATIC_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._cinematic_sequence = even
+            self._publish_block(wire.CINEMATIC_OFFSET, "_cinematic_sequence",
+                                lambda odd: wire.CINEMATIC_STATUS.pack(b'DLYCIN01', odd, 1, token, revision, state))
 
     def configure_replay_events(self, index):
         from . import replay_event_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, '_replay_events_sequence', 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack(odd, index)
-            offset = wire.OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset+8] = data[:8]
-            self._mapping[offset+12:offset+len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._replay_events_sequence = even
+            self._publish_block(wire.OFFSET, "_replay_events_sequence",
+                                lambda odd: wire.pack(odd, index))
 
     def configure_framing_grid(self, *, enabled=False, binding=None):
         """Optional framing-guide block; enabled state and its bindable action."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_framing_grid_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_framing_grid(odd, enabled, binding)
-            offset = wire.FRAMING_GRID_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_framing_grid_sequence = even
+            self._publish_block(wire.FRAMING_GRID_OFFSET, "_editor_framing_grid_sequence",
+                                lambda odd: wire.pack_framing_grid(odd, enabled, binding))
 
     def configure_level_view(self, *, binding=None, standard_aspect=None):
         """Optional level-view block: the key binding and the normal framing.
@@ -968,15 +931,8 @@ class NativeBridge(MediaTransport):
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_level_view_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_level_view(odd, binding, standard_aspect)
-            offset = wire.LEVEL_VIEW_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_level_view_sequence = even
+            self._publish_block(wire.LEVEL_VIEW_OFFSET, "_editor_level_view_sequence",
+                                lambda odd: wire.pack_level_view(odd, binding, standard_aspect))
 
     def configure_object_picker(self, objects, *, active=False, preview=False, selected=-1,
                                 distance=None, binding=None):
@@ -988,40 +944,29 @@ class NativeBridge(MediaTransport):
         from . import object_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_object_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
             distance = wire.DISTANCE_DEFAULT if distance is None else distance
             reserved = 0
             if binding is not None:
                 reserved = binding.vk | binding.modifiers << 16
-            data = bytearray(wire.pack_config(odd, objects, active=active, preview=preview,
-                                              selected=selected, distance=distance))
-            # Patch the bindable action into the reserved header field (the wire
-            # packer leaves it zero so the layout stays a pure function of state).
-            reserved_offset = wire.OBJECT_CONFIG_HEADER.size - 4
-            struct.pack_into("<I", data, reserved_offset, reserved)
-            offset = wire.OBJECT_CONFIG_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_object_sequence = even
+
+            def build(odd):
+                data = bytearray(wire.pack_config(odd, objects, active=active, preview=preview,
+                                                  selected=selected, distance=distance))
+                # Patch the bindable action into the reserved header field (the wire
+                # packer leaves it zero so the layout stays a pure function of state).
+                reserved_offset = wire.OBJECT_CONFIG_HEADER.size - 4
+                struct.pack_into("<I", data, reserved_offset, reserved)
+                return data
+            self._publish_block(wire.OBJECT_CONFIG_OFFSET, "_editor_object_sequence", build)
 
     def configure_editor_attach(self, offsets, attach=None, preview=False, snap_request=0, picker=False):
         """Optional attach block: schema offsets plus the selected key's state."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_attach_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_attach(odd, offsets, attach, preview=bool(preview),
-                                    snap_request=snap_request, picker=bool(picker))
-            offset = wire.ATTACH_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_attach_sequence = even
+            even = self._publish_block(wire.ATTACH_OFFSET, "_editor_attach_sequence",
+                                       lambda odd: wire.pack_attach(odd, offsets, attach, preview=bool(preview),
+                                                                    snap_request=snap_request, picker=bool(picker)))
             self._editor_attach_diagnostics = {"sequence": even, "offsets": dict(offsets),
                 "selection": deepcopy(attach), "preview": bool(preview), "snap_request": snap_request,
                 "picker": bool(picker)}
@@ -1082,15 +1027,8 @@ class NativeBridge(MediaTransport):
             raise ValueError("Prop probe request must be 'create' or 'recount'")
         with self._lock:
             self._check_open()
-            previous = getattr(self, "_editor_prop_probe_sequence", 0)
-            odd, even = (previous + 1) & 0xffffffff, (previous + 2) & 0xffffffff
-            data = wire.pack_prop_probe(odd, code)
-            offset = wire.PROP_PROBE_OFFSET
-            self._store(offset + 8, odd)
-            self._mapping[offset:offset + 8] = data[:8]
-            self._mapping[offset + 12:offset + len(data)] = data[12:]
-            self._store(offset + 8, even)
-            self._editor_prop_probe_sequence = even
+            self._publish_block(wire.PROP_PROBE_OFFSET, "_editor_prop_probe_sequence",
+                                lambda odd: wire.pack_prop_probe(odd, code))
 
     def editor_prop_probe_status(self):
         """Read the native prop-probe result (counts, handle, error)."""
