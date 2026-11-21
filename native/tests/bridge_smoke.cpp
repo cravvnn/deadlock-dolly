@@ -1525,6 +1525,32 @@ void editor_input_checks() {
     require(dolly::gSpeed == 320, "Control-plus changed camera movement speed");
     dolly::key_event(VK_OEM_PLUS, false);
     dolly::key_event(VK_CONTROL, false);
+    {
+        // A framing guide rebound to a plain letter must not toggle while typing.
+        auto saved_grid = std::atomic_load(&dolly::gFramingGridConfig);
+        auto grid = std::make_shared<EditorFramingGridConfig>();
+        std::memcpy(grid->magic, "DLYGRID1", 8);
+        grid->abi = 1;
+        grid->reserved = 'G';
+        std::atomic_store(&dolly::gFramingGridConfig,
+                          std::shared_ptr<const EditorFramingGridConfig>(grid));
+        editor_set_owner(EditorOwner::Panel);
+        dolly::gAcknowledged = dolly::gLastEvent;
+        const auto before_grid = event_count();
+        dolly::gTextInput = true;
+        dolly::key_event('G', true);
+        dolly::key_event('G', false);
+        require(event_count() == before_grid, "Typing G toggled the framing guide");
+        dolly::gTextInput = false;
+        dolly::key_event('G', true);
+        dolly::key_event('G', false);
+        require(event_count() == before_grid + 1 &&
+                    dolly::gEvents[before_grid % kEditorEventCount].action ==
+                        std::uint32_t(EditorAction::FramingGrid),
+                "Framing guide key did not toggle the guide");
+        std::atomic_store(&dolly::gFramingGridConfig, saved_grid);
+        editor_set_owner(EditorOwner::Flight);
+    }
     dolly::gAcknowledged = dolly::gLastEvent;
     const auto pause_key = configured->bindings[2].vk;
     const auto capture_key = configured->bindings[0].vk;

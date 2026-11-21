@@ -372,7 +372,7 @@ void dispatch_key_press(unsigned vk) noexcept {
         EditorBinding grid_binding{};
         grid_binding.vk = static_cast<std::uint16_t>(grid->reserved & 0xffffu);
         grid_binding.modifiers = static_cast<std::uint16_t>(grid->reserved >> 16);
-        if (grid_binding.vk && binding_down(grid_binding) &&
+        if (grid_binding.vk && binding_down(grid_binding) && !gTextInput.load() &&
             (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
             editor_enqueue(EditorAction::FramingGrid);
             return;
@@ -386,7 +386,7 @@ void dispatch_key_press(unsigned vk) noexcept {
         EditorBinding object_binding{};
         object_binding.vk = static_cast<std::uint16_t>(objects->reserved & 0xffffu);
         object_binding.modifiers = static_cast<std::uint16_t>(objects->reserved >> 16);
-        if (object_binding.vk && binding_down(object_binding) &&
+        if (object_binding.vk && binding_down(object_binding) && !gTextInput.load() &&
             (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
             const bool open = (objects->flags & 1u) != 0;
             editor_enqueue(open ? EditorAction::ObjectPickerCancel : EditorAction::ObjectPickerOpen);
