@@ -258,6 +258,52 @@ class LaunchHideout(unittest.TestCase):
         self.assertEqual((app.errors, app.launched), (['Launch options'], []))
 
 
+class CaptureShortcutToggle(unittest.TestCase):
+    def test_enabling_then_disabling_starts_and_stops_the_listener_without_saving(self):
+        from dolly.settings import AppSettings
+        settings = AppSettings()
+        self.assertIsNotNone(settings.action_bindings.get('capture'))
+        helpers = []
+
+        class Helper:
+            running = False
+
+            def __init__(self, callback, game_pid, binding):
+                self.binding = binding
+                helpers.append(self)
+
+            def start(self):
+                self.running = True
+
+            def stop(self):
+                self.running = False
+
+        app = NS(app_settings=settings, capture_binding=settings.capture_binding, capture_hotkey=None,
+                 capture_generation=0, closed=False, busy=False, hotkey_enabled=Var(), hotkey_label=Var(),
+                 status_text=Var(), errors=[], events=NS(put=lambda event: None),
+                 controller=NS(game_pid=lambda: None), _capture_binding_label=lambda: 'label',
+                 _refresh_bindings=lambda: None)
+        app._error = lambda title, exc: app.errors.append(str(exc))
+        app._submit = lambda label, operation, callback: callback(operation()) or True
+        app._change_capture_listener = lambda *args: DollyApp._change_capture_listener(app, *args)
+        with patch.object(gui, 'CaptureHotkey', Helper), patch.object(gui, 'save_settings') as save:
+            app.hotkey_enabled.set(True)
+            DollyApp._toggle_capture_hotkey(app)
+            self.assertTrue(app.hotkey_enabled.get())
+            self.assertIs(app.capture_hotkey, helpers[0])
+            self.assertTrue(helpers[0].running)
+            self.assertIn('captures a view', app.status_text.get())
+            app.hotkey_enabled.set(False)
+            DollyApp._toggle_capture_hotkey(app)
+            self.assertFalse(app.hotkey_enabled.get())
+            self.assertIsNone(app.capture_hotkey)
+            self.assertFalse(helpers[0].running)
+            self.assertEqual(app.status_text.get(), 'In-game capture shortcut disabled.')
+        save.assert_not_called()
+        self.assertIs(app.app_settings, settings)
+        self.assertEqual((len(helpers), app.errors, app.capture_generation), (1, [], 2))
+
+
 class ReplayTickRate(unittest.TestCase):
     def app(self, dialog_open):
         app = NS(closed=False, root=None, _error_dialog_open=dialog_open, _tick_rate_prompted=set(),

@@ -4847,18 +4847,8 @@ class DollyApp:
         else:
             self.status_text.set("Capture shortcut ignored while Dolly is busy. Finish the current operation, then try again.")
 
-    def _change_capture_listener(self, binding, enabled, *, persist=False, on_applied=None):
+    def _change_capture_listener(self, binding, enabled):
         if getattr(self, "native_editor_active", False):
-            if persist:
-                try:
-                    settings = self.app_settings.with_capture_binding(binding)
-                except ValueError as exc:
-                    self._error("Capture binding", exc)
-                    return False
-                submitted = self._persist_preferences(settings, "Native capture binding saved.")
-                if submitted and on_applied:
-                    on_applied()
-                return submitted
             self.hotkey_enabled.set(bool(self.app_settings.action_bindings.get("capture")))
             self.status_text.set("Native capture uses your Controls settings while the in-game editor has control.")
             return False
@@ -4874,21 +4864,13 @@ class DollyApp:
         self.hotkey_enabled.set(False)
         def change():
             settings = previous_settings
-            saved = False
             if old_helper is not None:
                 try:
                     old_helper.stop()
                 except Exception as exc:
-                    return settings, old_helper, False, exc, saved
-            if persist:
-                try:
-                    settings = previous_settings.with_capture_binding(binding)
-                    save_settings(settings)
-                    saved = True
-                except Exception as exc:
-                    return previous_settings, None, False, exc, saved
+                    return settings, old_helper, False, exc
             if not enabled:
-                return settings, None, True, None, saved
+                return settings, None, True, None
             helper = None
             try:
                 helper = CaptureHotkey(
@@ -4901,33 +4883,24 @@ class DollyApp:
                         helper.stop()
                     except Exception:
                         LOG.exception("Capture shortcut cleanup failed after enable error")
-                        return settings, helper, False, exc, saved
-                return settings, None, False, exc, saved
-            return settings, helper, True, None, saved
+                        return settings, helper, False, exc
+                return settings, None, False, exc
+            return settings, helper, True, None
         def changed(result):
-            settings, helper, succeeded, error, saved = result
+            settings, helper, succeeded, error = result
             self.app_settings = settings
             self.capture_binding = settings.capture_binding
             self.hotkey_label.set(self._capture_binding_label())
             self._refresh_bindings()
             self.capture_hotkey = helper
             self.hotkey_enabled.set(bool(succeeded and enabled))
-            if on_applied:
-                on_applied()
             if error is not None:
-                prefix = "Binding saved, but in-game capture is disabled. " if saved else "In-game capture is disabled. "
-                self._error("Capture binding", RuntimeError(prefix + str(error)))
+                self._error("Capture binding", RuntimeError("In-game capture is disabled. " + str(error)))
             elif enabled:
                 self.status_text.set(binding.label + " captures a view while your Dolly-launched Deadlock window is focused.")
             else:
-                self.status_text.set("Capture binding saved. Enable in-game capture to use it." if persist else "In-game capture shortcut disabled.")
-        return self._submit("Saving capture binding" if persist else ("Enabling capture shortcut" if enabled else "Disabling capture shortcut"), change, changed)
-
-    def _apply_capture_binding(self, binding, on_applied=None):
-        if self.playing:
-            self.status_text.set("Stop path playback before changing the capture binding.")
-            return False
-        return self._change_capture_listener(binding, self.hotkey_enabled.get(), persist=True, on_applied=on_applied)
+                self.status_text.set("In-game capture shortcut disabled.")
+        return self._submit("Enabling capture shortcut" if enabled else "Disabling capture shortcut", change, changed)
 
     def _toggle_capture_hotkey(self):
         if self.app_settings.action_bindings.get("capture") is None:
