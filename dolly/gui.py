@@ -46,8 +46,6 @@ from dolly.display import focus_window
 from dolly.ffmpeg_color import REC709_FRAME_TAGS, REC709_OUTPUT_ARGS, REC709_SCALE
 from dolly.ffmpeg_run import last_line, remove_partial, run_ffmpeg, scaled_timeout
 from dolly.hotkey import CaptureHotkey
-# Compatibility import for existing callback users.
-from .gui_theme import _clear_committed_combobox_selection
 from dolly.launcher import discover_game, recover_pending, validate_game
 from dolly.launcher import recover_at_startup, resolve_gameinfo_conflict
 from dolly.gameinfo_transaction import GameinfoConflict
