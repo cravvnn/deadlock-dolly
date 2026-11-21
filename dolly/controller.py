@@ -2257,7 +2257,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def start_selected_game_follow(self, settings, player, *, _participant=None):
         """Select a fresh roster pawn through the stock command, then verify it."""
         from .preload import PreloadError
-        from .follow_target import FollowTargetMonitor
+        from .follow_target import FollowTargetMonitor, valid_pawn_identity
         from .replay_camera import ReplayCameraMonitor
         from .follow_camera import FollowSettings
         from .replay_player_focus import resolve_participant
@@ -2280,11 +2280,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                            if all(row.get(key) == player.get(key)
                                   for key in ('handle', 'entity_index', 'model', 'model_path'))]
                 if (len(matches) != 1
-                        or type(player.get('handle')) is not int
-                        or type(player.get('entity_index')) is not int
-                        or player['handle'] in (0xffffffff, 0xfffffffe)
-                        or not 0 < player['entity_index'] < 0x7fff
-                        or player['handle'] & 0x7fff != player['entity_index']):
+                        or not valid_pawn_identity(player.get('handle'), player.get('entity_index'))):
                     raise RuntimeError('The selected Follow hero is no longer in the current roster.')
             def current_player():
                 if _participant is not None:
@@ -2299,11 +2295,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     return
                 again = resolve_participant(monitor, _participant['identifier'],
                                             bridge.editor_roster(), evidence={})
-                if (type(again.get('handle')) is not int
-                        or type(again.get('entity_index')) is not int
-                        or again['handle'] in (0xffffffff, 0xfffffffe)
-                        or not 0 < again['entity_index'] < 0x7fff
-                        or again['handle'] & 0x7fff != again['entity_index']
+                if (not valid_pawn_identity(again.get('handle'), again.get('entity_index'))
                         or again['handle'] != player.get('handle')
                         or again['entity_index'] != player.get('entity_index')):
                     raise RuntimeError('The selected Follow hero changed while applying Game Follow.')

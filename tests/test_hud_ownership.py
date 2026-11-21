@@ -229,6 +229,14 @@ class FollowHud(unittest.TestCase):
         self.assertEqual(console.values["citadel_hud_visible"], 0)
         self.assertFalse(c._game_ui_visible)
 
+    def test_pawn_identity_rule(self):
+        valid = dolly.follow_target.valid_pawn_identity
+        self.assertTrue(valid((1 << 15) | 5, 5))
+        for handle, index in ((0xffffffff, 0x7fff), (0xfffffffe, 0x7ffe), (1 << 15, 0), (0xffff, 0x7fff),
+                              ((1 << 15) | 6, 5), (True, 1), ((1 << 15) | 5, 5.0), (None, 5)):
+            with self.subTest(handle=handle, index=index):
+                self.assertFalse(valid(handle, index))
+
 
 class SmallHudOwners(unittest.TestCase):
     def test_dof_shader_original_is_journaled_before_the_write(self):

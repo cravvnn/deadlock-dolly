@@ -36,6 +36,13 @@ CONTROLLER_FINAL_VTABLE = _profile.CONTROLLER_FINAL_VTABLE
 OBSERVER_SERVICES_OFFSET = _profile.OBSERVER_SERVICES_OFFSET
 
 
+def valid_pawn_identity(handle, index):
+    """A live pawn handle whose low bits name its entity index."""
+    return (type(handle) is int and type(index) is int
+            and handle not in (0xffffffff, 0xfffffffe) and 0 < index < 0x7fff
+            and handle & 0x7fff == index)
+
+
 class FollowTargetMonitor(FollowCapabilityMonitor):
     """Uses the same exact-build/session gates as the rig capability sampler."""
 

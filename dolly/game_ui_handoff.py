@@ -150,7 +150,7 @@ class GameUiHandoffMixin:
         if self._native_active or self._native_manual:
             raise RuntimeError('Release Dolly camera before restoring the game hero.')
         self._require_demo(require_tick=False)
-        from .follow_target import FollowTargetMonitor
+        from .follow_target import FollowTargetMonitor, valid_pawn_identity
         bridge = self._native_bridge()
         def fresh_player():
             roster = bridge.editor_roster()
@@ -158,10 +158,7 @@ class GameUiHandoffMixin:
             if not (roster or {}).get('available') or len(matches) != 1:
                 raise RuntimeError('Saved spectator hero is absent or ambiguous in the current replay.')
             row = matches[0]
-            handle, index = row.get('handle'), row.get('entity_index')
-            if (type(handle) is not int or type(index) is not int
-                    or handle in (0xffffffff, 0xfffffffe) or not 0 < index < 0x7fff
-                    or handle & 0x7fff != index or not row.get('model')):
+            if not valid_pawn_identity(row.get('handle'), row.get('entity_index')) or not row.get('model'):
                 raise RuntimeError('Saved spectator hero has no verified current identity.')
             return row
         monitor = FollowTargetMonitor(session)
