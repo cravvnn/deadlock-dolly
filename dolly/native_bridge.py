@@ -79,6 +79,11 @@ class NativeEditorStatusBusy(NativeStatusBusy):
     """The editor status block was mid-publication on every reread."""
 
 
+def _next_even_sequence(current):
+    sequence = current + 2
+    return 2 if sequence > 0xFFFFFFFE else sequence
+
+
 def _winerror_from(exc):
     """Find a Windows error code anywhere in a wrapped exception chain."""
     seen = set()
@@ -1176,22 +1181,37 @@ class NativeBridge(MediaTransport):
                             "sampled_at is the first observation in monotonic bridge-clock seconds, not the native input event time. "
                             "No mouse registration, cursor state or camera timing is changed."}
 
-    def _viewer_store_sequence(self, value):
+    def _store_side_sequence(self, mapping, value):
         from . import visualization_wire as wire
         if self._atomic32 is None:
-            struct.pack_into("<I", self._viewer_mapping, wire.SEQUENCE_OFFSET, value)
+            struct.pack_into("<I", mapping, wire.SEQUENCE_OFFSET, value)
         else:
-            slot = ctypes.c_int32.from_buffer(self._viewer_mapping, wire.SEQUENCE_OFFSET)
+            slot = ctypes.c_int32.from_buffer(mapping, wire.SEQUENCE_OFFSET)
             self._atomic32(ctypes.byref(slot), ctypes.c_int32(value))
+
+    def _open_side_mapping(self, name, label):
+        from . import visualization_wire as wire
+        if self._mapping_factory is None:
+            if os.name != "nt":
+                raise NativeBridgeError(label + " transport requires Windows")
+            mapping = mmap.mmap(-1, wire.MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
+        else:
+            mapping = self._mapping_factory(name, wire.MAPPING_BYTES)
+        if len(mapping) != wire.MAPPING_BYTES:
+            close = getattr(mapping, "close", None)
+            if close is not None:
+                close()
+            raise NativeBridgeError(label + " mapping has an unexpected size")
+        return mapping
 
     def _viewer_write(self, packet):
         """Commit through the helper's release barrier, leaving no torn packet."""
         from . import visualization_wire as wire
         sequence = struct.unpack_from("<I", packet, wire.SEQUENCE_OFFSET)[0]
-        self._viewer_store_sequence(sequence - 1)
+        self._store_side_sequence(self._viewer_mapping, sequence - 1)
         self._viewer_mapping[:wire.SEQUENCE_OFFSET] = packet[:wire.SEQUENCE_OFFSET]
         self._viewer_mapping[wire.SEQUENCE_OFFSET + 4:len(packet)] = packet[wire.SEQUENCE_OFFSET + 4:]
-        self._viewer_store_sequence(sequence)
+        self._store_side_sequence(self._viewer_mapping, sequence)
         self._viewer_sequence = sequence
         self._viewer_enabled = bool(struct.unpack_from("<I", packet, 16)[0])
 
@@ -1206,9 +1226,7 @@ class NativeBridge(MediaTransport):
         with self._lock:
             try:
                 self._check_open()
-                sequence = self._viewer_sequence + 2
-                if sequence > 0xFFFFFFFE:
-                    sequence = 2
+                sequence = _next_even_sequence(self._viewer_sequence)
                 packet = wire.build_visualization(project, sequence=sequence,
                                                    enabled=enabled, selected_camera=selected_camera,
                                                    revision=revision, session_id=session_id)
@@ -1219,17 +1237,7 @@ class NativeBridge(MediaTransport):
                         self._viewer_error = ""
                         return True
                     name = "Local\\DeadlockDollyNative_" + self.token + ".viewer"
-                    if self._mapping_factory is None:
-                        if os.name != "nt":
-                            raise NativeBridgeError("Path viewer transport requires Windows")
-                        mapping = mmap.mmap(-1, wire.MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
-                    else:
-                        mapping = self._mapping_factory(name, wire.MAPPING_BYTES)
-                    if len(mapping) != wire.MAPPING_BYTES:
-                        close = getattr(mapping, "close", None)
-                        if close is not None:
-                            close()
-                        raise NativeBridgeError("Path viewer mapping has an unexpected size")
+                    mapping = self._open_side_mapping(name, "Path viewer")
                     self._viewer_mapping = mapping
                     mapping[:] = b"\0" * wire.MAPPING_BYTES
                 self._viewer_write(packet)
@@ -1241,9 +1249,7 @@ class NativeBridge(MediaTransport):
                 # visible. A clearing packet is independent of shot parsing.
                 if self._viewer_mapping is not None:
                     try:
-                        sequence = self._viewer_sequence + 2
-                        if sequence > 0xFFFFFFFE:
-                            sequence = 2
+                        sequence = _next_even_sequence(self._viewer_sequence)
                         self._viewer_write(wire.build_visualization(None, sequence=sequence, enabled=False))
                     except Exception:
                         self._viewer_enabled = False
@@ -1256,13 +1262,11 @@ class NativeBridge(MediaTransport):
         from . import visualization_wire as wire
         mapping = self._viewer_mapping
         try:
-            sequence = self._viewer_sequence + 2
-            if sequence > 0xFFFFFFFE:
-                sequence = 2
-            self._viewer_store_sequence(sequence - 1)
+            sequence = _next_even_sequence(self._viewer_sequence)
+            self._store_side_sequence(mapping, sequence - 1)
             mapping[:8] = b"\0" * 8
             mapping[12:] = b"\0" * (wire.MAPPING_BYTES - 12)
-            self._viewer_store_sequence(sequence)
+            self._store_side_sequence(mapping, sequence)
             self._viewer_enabled = False
         except Exception as exc:
             self._viewer_error = "Path viewer close: " + str(exc)
@@ -1275,21 +1279,13 @@ class NativeBridge(MediaTransport):
                 except Exception as exc:
                     self._viewer_error = "Path viewer close: " + str(exc)
 
-    def _preview_store_sequence(self, value):
-        from . import visualization_preview_wire as wire
-        if self._atomic32 is None:
-            struct.pack_into("<I", self._preview_mapping, wire.SEQUENCE_OFFSET, value)
-        else:
-            slot = ctypes.c_int32.from_buffer(self._preview_mapping, wire.SEQUENCE_OFFSET)
-            self._atomic32(ctypes.byref(slot), ctypes.c_int32(value))
-
     def _preview_write(self, packet):
         from . import visualization_preview_wire as wire
         sequence = struct.unpack_from("<I", packet, wire.SEQUENCE_OFFSET)[0]
-        self._preview_store_sequence(sequence-1)
+        self._store_side_sequence(self._preview_mapping, sequence-1)
         self._preview_mapping[:wire.SEQUENCE_OFFSET] = packet[:wire.SEQUENCE_OFFSET]
         self._preview_mapping[wire.SEQUENCE_OFFSET+4:len(packet)] = packet[wire.SEQUENCE_OFFSET+4:]
-        self._preview_store_sequence(sequence)
+        self._store_side_sequence(self._preview_mapping, sequence)
         self._preview_sequence = sequence
         self._preview_enabled = bool(struct.unpack_from("<I", packet, 16)[0])
 
@@ -1303,26 +1299,14 @@ class NativeBridge(MediaTransport):
         with self._lock:
             try:
                 self._check_open()
-                sequence = self._preview_sequence+2
-                if sequence > 0xFFFFFFFE:
-                    sequence = 2
+                sequence = _next_even_sequence(self._preview_sequence)
                 wrapped = wire.build_preview(packet, sequence=sequence, **identity)
                 if self._preview_mapping is None:
                     if packet is None:
                         self._preview_error = ""
                         return True
                     name = "Local\\DeadlockDollyNative_"+self.token+".viewer.preview"
-                    if self._mapping_factory is None:
-                        if os.name != "nt":
-                            raise NativeBridgeError("Path preview transport requires Windows")
-                        mapping = mmap.mmap(-1, wire.MAPPING_BYTES, tagname=name, access=mmap.ACCESS_WRITE)
-                    else:
-                        mapping = self._mapping_factory(name, wire.MAPPING_BYTES)
-                    if len(mapping) != wire.MAPPING_BYTES:
-                        close = getattr(mapping, "close", None)
-                        if close is not None:
-                            close()
-                        raise NativeBridgeError("Path preview mapping has an unexpected size")
+                    mapping = self._open_side_mapping(name, "Path preview")
                     self._preview_mapping = mapping
                     mapping[:] = b"\0"*wire.MAPPING_BYTES
                 self._preview_write(wrapped)
@@ -1333,9 +1317,7 @@ class NativeBridge(MediaTransport):
                 # Draft failure clears only the separate optional mapping.
                 if self._preview_mapping is not None:
                     try:
-                        sequence = self._preview_sequence+2
-                        if sequence > 0xFFFFFFFE:
-                            sequence = 2
+                        sequence = _next_even_sequence(self._preview_sequence)
                         self._preview_write(wire.build_preview(sequence=sequence))
                     except Exception:
                         self._preview_enabled = False
@@ -1347,14 +1329,12 @@ class NativeBridge(MediaTransport):
         from . import visualization_preview_wire as wire
         mapping = self._preview_mapping
         try:
-            sequence = self._preview_sequence+2
-            if sequence > 0xFFFFFFFE:
-                sequence = 2
-            self._preview_store_sequence(sequence-1)
+            sequence = _next_even_sequence(self._preview_sequence)
+            self._store_side_sequence(mapping, sequence-1)
             packet = wire.build_preview(sequence=sequence)
             mapping[:8] = packet[:8]
             mapping[12:] = packet[12:]+b"\0"*(wire.MAPPING_BYTES-len(packet))
-            self._preview_store_sequence(sequence)
+            self._store_side_sequence(mapping, sequence)
             self._preview_enabled = False
         except Exception as exc:
             self._preview_error = "Path preview close: "+str(exc)

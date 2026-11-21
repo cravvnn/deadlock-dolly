@@ -286,5 +286,90 @@ class EditorBlockReadTests(unittest.TestCase):
                 self.assertEqual(torn, [])
 
 
+class VisualizationTransportTests(unittest.TestCase):
+    def channels(self):
+        from dolly import visualization_preview_wire as preview_wire
+        from dolly import visualization_wire as viewer_wire
+        from dolly.path import Keyframe, Project
+        project = Project(keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0), Keyframe(1, 100, 0, 0, 0, 10, 0)])
+        identity = dict(source=preview_wire.DESKTOP, token=1, revision=1, session_id=5, key_time=0.0)
+        compiled = viewer_wire.build_visualization(project, revision=1, session_id=5)
+        return [
+            dict(name="viewer", suffix=".viewer", prefix="_viewer", size=viewer_wire.MAPPING_BYTES,
+                 publish=lambda b: b.publish_visualization(project, revision=1, session_id=5),
+                 invalid=lambda b: b.publish_visualization(project, selected_camera=9),
+                 packet=lambda seq: viewer_wire.build_visualization(project, sequence=seq, revision=1,
+                                                                    session_id=5),
+                 cleared=lambda seq: viewer_wire.build_visualization(None, sequence=seq, enabled=False),
+                 closed=lambda seq: bytes(8) + struct.pack("<I", seq)),
+            dict(name="preview", suffix=".viewer.preview", prefix="_preview", size=preview_wire.MAPPING_BYTES,
+                 publish=lambda b: b.publish_visualization_preview(compiled, **identity),
+                 invalid=lambda b: b.publish_visualization_preview(b"broken", **identity),
+                 packet=lambda seq: preview_wire.build_preview(compiled, sequence=seq, **identity),
+                 cleared=lambda seq: preview_wire.build_preview(sequence=seq),
+                 closed=lambda seq: preview_wire.build_preview(sequence=seq)),
+        ]
+
+    def make(self, sizes=None):
+        clock = FakeClock()
+        made = []
+
+        def factory(name, size):
+            size = next((wrong for end, wrong in (sizes or {}).items() if name.endswith(end)), size)
+            made.append((name, Mapping(size)))
+            return made[-1][1]
+        bridge = nb.NativeBridge.create(mapping_factory=factory, clock=clock, sleep=clock.sleep,
+                                        start_heartbeat=False, editor_pid=100, token="0" * 32)
+        return bridge, made
+
+    @staticmethod
+    def side(made, suffix):
+        return [mapping for name, mapping in made if name.endswith(suffix)]
+
+    def test_publish_clear_wrap_and_close_keep_each_side_mapping_consistent(self):
+        for channel in self.channels():
+            with self.subTest(channel=channel["name"]):
+                bridge, made = self.make()
+                prefix = channel["prefix"]
+                self.assertTrue(channel["publish"](bridge))
+                mappings = self.side(made, channel["suffix"])
+                self.assertEqual(len(mappings), 1)
+                mapping = mappings[0]
+                packet = channel["packet"](2)
+                self.assertEqual(bytes(mapping[:len(packet)]), packet)
+                self.assertFalse(any(mapping[len(packet):]))
+                self.assertTrue(getattr(bridge, prefix + "_enabled"))
+
+                self.assertFalse(channel["invalid"](bridge))
+                cleared = channel["cleared"](4)
+                self.assertEqual(bytes(mapping[:len(cleared)]), cleared)
+                self.assertEqual(getattr(bridge, prefix + "_sequence"), 4)
+                self.assertFalse(getattr(bridge, prefix + "_enabled"))
+                self.assertTrue(getattr(bridge, prefix + "_error"))
+
+                setattr(bridge, prefix + "_sequence", 0xFFFFFFFE)
+                self.assertTrue(channel["publish"](bridge))
+                self.assertEqual(getattr(bridge, prefix + "_sequence"), 2)
+                self.assertEqual(struct.unpack_from("<I", mapping, 8)[0], 2)
+                self.assertEqual(len(self.side(made, channel["suffix"])), 1)
+
+                getattr(bridge, "_close_visualization" + ("" if prefix == "_viewer" else "_preview"))()
+                closed = channel["closed"](4)
+                self.assertTrue(mapping.closed)
+                self.assertIsNone(getattr(bridge, prefix + "_mapping"))
+                self.assertEqual(bytes(mapping[:len(closed)]), closed)
+                self.assertFalse(any(mapping[len(closed):]))
+
+    def test_a_side_mapping_of_the_wrong_size_is_closed_and_reported(self):
+        for channel in self.channels():
+            with self.subTest(channel=channel["name"]):
+                bridge, made = self.make({channel["suffix"]: channel["size"] - 1})
+                self.assertFalse(channel["publish"](bridge))
+                mapping, = self.side(made, channel["suffix"])
+                self.assertTrue(mapping.closed)
+                self.assertIsNone(getattr(bridge, channel["prefix"] + "_mapping"))
+                self.assertIn("unexpected size", getattr(bridge, channel["prefix"] + "_error"))
+
+
 if __name__ == "__main__":
     unittest.main()
