@@ -42,8 +42,9 @@ def resolve_participant(monitor, identifier, roster, *, evidence=None):
     evidence = evidence if evidence is not None else {}
     try:
         return resolve_player(monitor, identifier, evidence=evidence)
-    except ReplayPlayerUnavailable as absent:
-        evidence['primary_unavailable'] = str(absent)
+    except ReplayPlayerUnavailable as exc:
+        absent = exc
+        evidence['primary_unavailable'] = str(exc)
     monitor._owned()
     reads = []
     def read(address, size):
@@ -59,7 +60,12 @@ def resolve_participant(monitor, identifier, roster, *, evidence=None):
     identity = chunk + profile.IDENTITY_STRIDE*(identifier & 0x1ff) if chunk else 0
     controller = pointer(identity) if identity else 0
     controller_handle = uint(identity + profile.IDENTITY_HANDLE) if identity else 0
-    if (not controller or controller_handle & 0x7fff != identifier
+    if not controller:
+        if any(monitor.memory.read(address, len(value)) != value for address, value in reads):
+            raise RuntimeError('The selected player changed during camera sampling. Select them again.')
+        monitor._owned()
+        raise absent
+    if (controller_handle & 0x7fff != identifier
             or pointer(controller + profile.ENTITY_IDENTITY) != identity
             or pointer(controller) != monitor.base + profile.CONTROLLER_VTABLE):
         raise RuntimeError('The selected player controller changed. Select the player again.')
