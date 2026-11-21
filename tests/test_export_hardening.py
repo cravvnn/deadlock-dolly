@@ -235,6 +235,22 @@ class ExportHardeningTests(unittest.TestCase):
         DollyApp._refresh_video(app, {**finished, 'shot_finished': False})
         self.assertEqual(app.stops, [])
 
+    def test_pov_segment_plays_at_the_take_speed_not_the_live_export_speed(self):
+        plays = []
+        app = NS(busy=False, video_export=NS(output_path=None), _last_video_state='idle',
+                 _pending_auto_play=True, _pov_project='pov project', _take_play_speed=0.5,
+                 video_export_speed=NS(get=lambda: '2'), _base_capture=None,
+                 controller=NS(play_pov=lambda project, speed: plays.append((project, speed))),
+                 _advance_layer_pipeline=lambda: None)
+        app.video_status_text = NS(value='', set=lambda text: setattr(app.video_status_text, 'value', text),
+                                   get=lambda: app.video_status_text.value)
+        app.status_text = NS(set=lambda text: None)
+        app._submit = lambda label, function, callback: callback(function())
+        DollyApp._video_operation_done(app, {'state': 'recording'})
+        self.assertEqual(plays, [('pov project', 0.5)])
+        self.assertTrue(app._take_playing_seen)
+        self.assertFalse(app._pending_auto_play)
+
     def test_movie_conversion_failure_reports_utf8_ffmpeg_text(self):
         calls = []
         controller, wave = self.finished_wave()

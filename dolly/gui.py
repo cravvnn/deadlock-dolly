@@ -519,6 +519,7 @@ class DollyApp:
         self.video_usd_camera = tk.BooleanVar(value=False)
         self.clip_audio = None
         self._pending_auto_play = False
+        self._take_play_speed = 1.0
         # Layered takes capture exactly the authored path, so they finish
         # themselves when the shot completes instead of waiting for a manual
         # Finish press (post-shot frames carry no replay time anyway).
@@ -1553,6 +1554,7 @@ class DollyApp:
         frozen = False if pov else self.frozen.get()
         # Export speed only applies to fixed-step takes.
         speed = options.speed if options.fixed_step else 1.0
+        self._take_play_speed = speed
         camera_project = project or Project.from_dict(self.project.to_dict())
         camera_take = (camera_project, options.fps, speed, pov)
         for attribute, variable in (("_ae_camera_take", "video_ae_camera"),
@@ -1751,7 +1753,7 @@ class DollyApp:
                     self._take_playing_seen = True
                 if getattr(self, "_pov_project", None) is not None:
                     project = self._pov_project
-                    speed = float(self.video_export_speed.get())
+                    speed = getattr(self, "_take_play_speed", 1.0)
                     def start_pov():
                         try:
                             self.controller.play_pov(project, speed)
