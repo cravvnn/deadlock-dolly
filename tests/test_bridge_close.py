@@ -230,5 +230,61 @@ class BlockPublishTests(unittest.TestCase):
                 self.assertEqual(after[end:], before[end:])
 
 
+class EditorBlockReadTests(unittest.TestCase):
+    def readers(self):
+        from dolly import object_wire
+        return [
+            ("editor_bone_picker", editor_wire.PICKER_OFFSET, nb.NativeBridgeError,
+             "The Bone Picker is updating; retry in a moment."),
+            ("editor_object_status", object_wire.OBJECT_STATUS_OFFSET, nb.NativeBridgeError,
+             "The Object Picker is updating; retry in a moment."),
+            ("editor_roster", editor_wire.ROSTER_OFFSET, nb.NativeStatusBusy,
+             "The native attach roster is busy; retry in a moment."),
+            ("editor_prop_probe_status", editor_wire.PROP_PROBE_OFFSET + editor_wire.PROP_PROBE_CONFIG.size,
+             nb.NativeBridgeError, "The prop probe is updating; retry in a moment."),
+            ("editor_bones", editor_wire.BONES_OFFSET, nb.NativeBridgeError,
+             "The native bone picker is busy; retry in a moment."),
+            ("editor_attach_result", editor_wire.ATTACH_RESULT_OFFSET, nb.NativeBridgeError,
+             "The native attach result is busy; retry in a moment."),
+        ]
+
+    @staticmethod
+    def outcome(read):
+        try:
+            return ("value", read())
+        except Exception as exc:  # The comparison covers unpack errors too.
+            return (type(exc), str(exc))
+
+    def test_a_block_held_mid_publication_raises_the_readers_busy_error(self):
+        for name, offset, busy, message in self.readers():
+            with self.subTest(reader=name):
+                bridge, _, _ = make_bridge()
+                load = bridge._load_sequence
+
+                def odd(position=nb.CONTROL_BYTES + 8):
+                    return 1 if position == offset + 8 else load(position)
+                with patch.object(bridge, "_load_sequence", odd):
+                    with self.assertRaises(nb.NativeBridgeError) as caught:
+                        getattr(bridge, name)()
+                self.assertIs(type(caught.exception), busy)
+                self.assertEqual(str(caught.exception), message)
+
+    def test_a_torn_read_is_retried_until_the_block_settles(self):
+        for name, offset, _, _ in self.readers():
+            with self.subTest(reader=name):
+                bridge, _, _ = make_bridge()
+                settled = self.outcome(getattr(bridge, name))
+                load = bridge._load_sequence
+                torn = [2, 4]
+
+                def moving(position=nb.CONTROL_BYTES + 8):
+                    if position == offset + 8 and torn:
+                        return torn.pop(0)
+                    return load(position)
+                with patch.object(bridge, "_load_sequence", moving):
+                    self.assertEqual(self.outcome(getattr(bridge, name)), settled)
+                self.assertEqual(torn, [])
+
+
 if __name__ == "__main__":
     unittest.main()

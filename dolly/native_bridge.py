@@ -313,6 +313,16 @@ class NativeBridge(MediaTransport):
         setattr(self, attr, even)
         return even
 
+    def _read_block(self, offset, size, busy_message, busy=NativeBridgeError):
+        for _ in range(4):
+            first = self._load_sequence(offset + 8)
+            if first & 1:
+                continue
+            data = bytes(self._mapping[offset:offset + size])
+            if first == self._load_sequence(offset + 8):
+                return data
+        raise busy(busy_message)
+
     def _check_open(self):
         if self._closed:
             raise NativeBridgeError("Native camera session is closed")
@@ -979,44 +989,25 @@ class NativeBridge(MediaTransport):
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            for _ in range(4):
-                first = self._load_sequence(wire.PICKER_OFFSET + 8)
-                if first & 1:
-                    continue
-                data = bytes(self._mapping[wire.PICKER_OFFSET:wire.PICKER_OFFSET + wire.PICKER_RESULT.size])
-                if first == self._load_sequence(wire.PICKER_OFFSET + 8):
-                    return wire.unpack_picker(data)
-            raise NativeBridgeError("The Bone Picker is updating; retry in a moment.")
+            return wire.unpack_picker(self._read_block(wire.PICKER_OFFSET, wire.PICKER_RESULT.size,
+                                                       "The Bone Picker is updating; retry in a moment."))
 
     def editor_object_status(self):
         """Optional native Object Picker status; old DLLs leave it unwritten."""
         from . import object_wire as wire
         with self._lock:
             self._check_open()
-            for _ in range(4):
-                first = self._load_sequence(wire.OBJECT_STATUS_OFFSET + 8)
-                if first & 1:
-                    continue
-                data = bytes(self._mapping[wire.OBJECT_STATUS_OFFSET:
-                                           wire.OBJECT_STATUS_OFFSET + wire.OBJECT_STATUS.size])
-                if first == self._load_sequence(wire.OBJECT_STATUS_OFFSET + 8):
-                    return wire.unpack_status(data)
-            raise NativeBridgeError("The Object Picker is updating; retry in a moment.")
+            return wire.unpack_status(self._read_block(wire.OBJECT_STATUS_OFFSET, wire.OBJECT_STATUS.size,
+                                                       "The Object Picker is updating; retry in a moment."))
 
     def editor_roster(self):
         """Optional native player roster for the attach target picker."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            for _ in range(4):
-                first = self._load_sequence(wire.ROSTER_OFFSET + 8)
-                if first & 1:
-                    continue
-                data = bytes(self._mapping[wire.ROSTER_OFFSET:wire.ROSTER_OFFSET + wire.ROSTER_BYTES])
-                if first != self._load_sequence(wire.ROSTER_OFFSET + 8):
-                    continue
-                return wire.unpack_roster(data)
-            raise NativeStatusBusy("The native attach roster is busy; retry in a moment.")
+            return wire.unpack_roster(self._read_block(wire.ROSTER_OFFSET, wire.ROSTER_BYTES,
+                                                       "The native attach roster is busy; retry in a moment.",
+                                                       NativeStatusBusy))
 
     def set_prop_probe(self, request):
         """Experimental: queue one native prop-persistence probe request.
@@ -1039,46 +1030,28 @@ class NativeBridge(MediaTransport):
         with self._lock:
             self._check_open()
             offset = wire.PROP_PROBE_OFFSET + wire.PROP_PROBE_CONFIG.size
-            for _ in range(4):
-                first = self._load_sequence(offset + 8)
-                if first & 1:
-                    continue
-                data = bytes(self._mapping[offset:offset + wire.PROP_PROBE_STATUS.size])
-                if first == self._load_sequence(offset + 8):
-                    return wire.unpack_prop_probe_status(data)
-            raise NativeBridgeError("The prop probe is updating; retry in a moment.")
+            return wire.unpack_prop_probe_status(self._read_block(offset, wire.PROP_PROBE_STATUS.size,
+                                                                  "The prop probe is updating; retry in a moment."))
 
     def editor_bones(self):
         """Bounded bone names for the natively resolved selected player."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            for _ in range(4):
-                first = self._load_sequence(wire.BONES_OFFSET + 8)
-                if first & 1:
-                    continue
-                data = bytes(self._mapping[wire.BONES_OFFSET:wire.BONES_OFFSET + wire.BONES_BYTES])
-                if first == self._load_sequence(wire.BONES_OFFSET + 8):
-                    return wire.unpack_bones(data) if any(data) else None
-            raise NativeBridgeError("The native bone picker is busy; retry in a moment.")
+            data = self._read_block(wire.BONES_OFFSET, wire.BONES_BYTES,
+                                    "The native bone picker is busy; retry in a moment.")
+            return wire.unpack_bones(data) if any(data) else None
 
     def editor_attach_result(self):
         """Latest native snap / attached-fly offsets, or None while unwritten."""
         from . import editor_wire as wire
         with self._lock:
             self._check_open()
-            for _ in range(4):
-                first = self._load_sequence(wire.ATTACH_RESULT_OFFSET + 8)
-                if first & 1:
-                    continue
-                data = bytes(self._mapping[wire.ATTACH_RESULT_OFFSET:
-                                           wire.ATTACH_RESULT_OFFSET + wire.ATTACH_RESULT.size])
-                if first != self._load_sequence(wire.ATTACH_RESULT_OFFSET + 8):
-                    continue
-                if not any(data):
-                    return None
-                return wire.unpack_attach_result(data)
-            raise NativeBridgeError("The native attach result is busy; retry in a moment.")
+            data = self._read_block(wire.ATTACH_RESULT_OFFSET, wire.ATTACH_RESULT.size,
+                                    "The native attach result is busy; retry in a moment.")
+            if not any(data):
+                return None
+            return wire.unpack_attach_result(data)
 
     def editor_status(self):
         from . import editor_wire as wire
