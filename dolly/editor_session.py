@@ -3,9 +3,7 @@ import logging
 import time
 from .native_bridge import NativeBridgeError, NativeEditorStatusBusy, NativeStatusBusy
 from . import editor_publication, editor_dispatch
-from .editor_publication import (_bridge, _value, _playback_values, _video_values,
-                                 _pov_duration, _attach_state, _configure_visualization)
-from .editor_view import VIDEO_FPS, VIDEO_BITRATE_MBPS, CODEC_MAX, codec_label as _codec_label
+from .editor_publication import _bridge
 
 LOG = logging.getLogger(__name__)
 
@@ -16,10 +14,6 @@ def configure(app):
 
 def dispatch(app, event, bridge):
     return editor_dispatch.dispatch(app, event, bridge, publish=lambda: configure(app))
-
-
-def _dispatch(app, event, bridge):
-    return editor_dispatch._dispatch(app, event, bridge, publish=lambda: configure(app))
 
 
 def snap_is_current(app, bridge):

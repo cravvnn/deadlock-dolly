@@ -41,7 +41,6 @@ def _select(app, index, *, view=True):
 
 def _object_picker_open(app, bridge, publish):
     """Enter the Object Picker mode; the native window draws the placed list."""
-    from . import object_picker as picks
     from .editor_actions import OBJECT_PICKER_ENABLED
     if not OBJECT_PICKER_ENABLED:
         # WIP integration: refuse to open even if an event somehow arrives.
