@@ -1,11 +1,6 @@
 """Compatibility adapters wiring DollyApp to independent desktop page views."""
 from __future__ import annotations
 
-# Preserve the original shared-widget import paths.
-from .ui.widgets import (
-    GAP, Disclosure, ScrollPage, actions, card, disclosure, field, surface_style,
-)
-
 
 def build_library(app):
     from .ui.library_page import LibraryActions, LibraryPage, LibraryState

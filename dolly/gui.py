@@ -901,10 +901,6 @@ class DollyApp:
             self.notebook.tab(tab, state="normal")
         self._tab_changed()
 
-    def _toggle_full_editor(self):
-        """Compatibility route for older internal callers; no saved mode toggle."""
-        self._apply_editor_mode()
-
     def _save_layout_paths(self):
         def save():
             settings = replace(self.app_settings, game_path=self.game_path.get(),
