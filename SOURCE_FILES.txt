@@ -1350,3 +1350,4 @@ docs/RELEASE_NOTES_0.7.45-beta.md
 docs/RELEASE_NOTES_0.7.46-beta.md
 docs/RELEASE_NOTES_0.7.47-beta.md
 tests/test_session_state.py
+docs/RELEASE_NOTES_0.7.48-beta.md
