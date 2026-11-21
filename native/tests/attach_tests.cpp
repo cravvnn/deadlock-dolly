@@ -1029,6 +1029,25 @@ void snap_round_trip() {
     dolly::CameraPose broken = camera;
     broken[0] = std::numeric_limits<double>::quiet_NaN();
     require(!dolly::attach_snap_offsets(sample, broken, offsets), "A nonfinite camera is refused");
+    // Snapping and resolving share one target frame for every point and lock.
+    for (const auto point : {dolly::AttachPoint::eyes, dolly::AttachPoint::bone}) {
+        for (const bool locked : {false, true}) {
+            dolly::AttachSample tilted = sample;
+            tilted.point = point;
+            tilted.angles = {20, 95, 10};
+            tilted.aim = {-15, 100, 0};
+            dolly::AttachSegment rigid = enabled_segment();
+            rigid.point = point;
+            rigid.flags = 1 | 8 | (locked ? 16 : 0);
+            require(dolly::attach_snap_offsets(tilted, camera, rigid.offset, true, locked) &&
+                        dolly::resolve_attach_pose(tilted, rigid, resolved),
+                    "A rigid snap resolves");
+            for (int i = 0; i < 3; ++i)
+                require(near(resolved[i], camera[i], 1e-9) &&
+                            near(std::remainder(resolved[3 + i] - camera[3 + i], 360.0), 0.0, 1e-9),
+                        "A rigid snap reproduces the camera");
+        }
+    }
 
     // A face-facing camera starts 100 units in front of the selected bone.
     // When the player pitches while moving, a rigid snap should still point

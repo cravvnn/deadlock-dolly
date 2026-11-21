@@ -424,27 +424,42 @@ static std::array<double, 3> effective_attach_angles(const AttachSample& sample,
     return angles;
 }
 
-bool attach_snap_offsets(const AttachSample& sample, const CameraPose& camera,
-                         std::array<double, 6>& out, bool rigid_orientation,
-                         bool lock_vertical_aim) noexcept {
-    if (!sample.valid || !finite3(sample.origin, 1e8) || !finite3(sample.angles, 1e6) ||
-        !finite3(sample.aim, 1e6) || !finite3(sample.eye_local, kAttachViewOffsetLimit))
-        return false;
-    for (int i = 0; i < 6; ++i)
-        if (!std::isfinite(camera[i]))
-            return false;
-    const auto base_angles = effective_attach_angles(sample, sample.point, lock_vertical_aim);
-    std::array<double, 3> base_position = sample.origin;
-    if (sample.point == AttachPoint::eyes) {
+static bool attach_sample_finite(const AttachSample& sample) noexcept {
+    return finite3(sample.origin, 1e8) && finite3(sample.angles, 1e6) &&
+           finite3(sample.aim, 1e6) && finite3(sample.eye_local, kAttachViewOffsetLimit);
+}
+
+// The target frame that snapping, resolving and clearance share: the eye or
+// bone position and the basis of the effective angles.
+static std::array<double, 3> attach_base_frame(const AttachSample& sample, AttachPoint point,
+                                               bool locked, std::array<double, 3>& position,
+                                               double basis[3][3]) noexcept {
+    const auto base_angles = effective_attach_angles(sample, point, locked);
+    position = sample.origin;
+    if (point == AttachPoint::eyes) {
         double body[3][3];
         source_basis(sample.angles, body);
         std::array<double, 3> local{};
         rotate(body, sample.eye_local, local);
         for (int i = 0; i < 3; ++i)
-            base_position[i] += local[i];
+            position[i] += local[i];
     }
-    double basis[3][3];
     source_basis(base_angles, basis);
+    return base_angles;
+}
+
+bool attach_snap_offsets(const AttachSample& sample, const CameraPose& camera,
+                         std::array<double, 6>& out, bool rigid_orientation,
+                         bool lock_vertical_aim) noexcept {
+    if (!sample.valid || !attach_sample_finite(sample))
+        return false;
+    for (int i = 0; i < 6; ++i)
+        if (!std::isfinite(camera[i]))
+            return false;
+    std::array<double, 3> base_position{};
+    double basis[3][3];
+    const auto base_angles =
+        attach_base_frame(sample, sample.point, lock_vertical_aim, base_position, basis);
     const std::array<double, 3> delta = {camera[0] - base_position[0], camera[1] - base_position[1],
                                          camera[2] - base_position[2]};
     for (int axis = 0; axis < 3; ++axis) {
@@ -484,21 +499,12 @@ bool resolve_attach_pose(const AttachSample& sample, const AttachSegment& segmen
         return false;
     if (segment.target.model && sample.target.model != segment.target.model)
         return false;
-    if (!finite3(sample.origin, 1e8) || !finite3(sample.angles, 1e6) || !finite3(sample.aim, 1e6) ||
-        !finite3(sample.eye_local, kAttachViewOffsetLimit))
+    if (!attach_sample_finite(sample))
         return false;
-    const auto base_angles = effective_attach_angles(sample, segment.point, (segment.flags & 16) != 0);
-    std::array<double, 3> base_position = sample.origin;
-    if (segment.point == AttachPoint::eyes) {
-        double body[3][3];
-        source_basis(sample.angles, body);
-        std::array<double, 3> local{};
-        rotate(body, sample.eye_local, local);
-        for (int i = 0; i < 3; ++i)
-            base_position[i] += local[i];
-    }
+    std::array<double, 3> base_position{};
     double basis[3][3];
-    source_basis(base_angles, basis);
+    const auto base_angles = attach_base_frame(sample, segment.point, (segment.flags & 16) != 0,
+                                               base_position, basis);
     std::array<double, 3> position_offset{};
     rotate(basis, {segment.offset[0], segment.offset[1], segment.offset[2]}, position_offset);
     for (int i = 0; i < 3; ++i)
@@ -598,18 +604,9 @@ void enforce_attach_clearance(const AttachSample& sample, const AttachSegment& s
                               CameraPose& pose) noexcept {
     if (!(segment.flags & 4) || !sample.valid)
         return;
-    const auto base_angles = effective_attach_angles(sample, segment.point, (segment.flags & 16) != 0);
+    std::array<double, 3> center{};
     double basis[3][3];
-    source_basis(base_angles, basis);
-    std::array<double, 3> center = sample.origin;
-    if (segment.point == AttachPoint::eyes) {
-        double body[3][3];
-        source_basis(sample.angles, body);
-        std::array<double, 3> local{};
-        rotate(body, sample.eye_local, local);
-        for (int i = 0; i < 3; ++i)
-            center[i] += local[i];
-    }
+    attach_base_frame(sample, segment.point, (segment.flags & 16) != 0, center, basis);
     double local[3]{};
     for (int axis = 0; axis < 3; ++axis)
         for (int i = 0; i < 3; ++i)
