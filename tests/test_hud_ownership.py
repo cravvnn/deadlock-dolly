@@ -116,6 +116,16 @@ class StopHud(unittest.TestCase):
         self.assertIsNone(c._halt(native_action="release"))
         self.assertEqual(console.values["citadel_hud_visible"], 1)
 
+    def test_halt_passes_the_participant_flag_to_follow_stop(self):
+        c, console = controller()
+        c._require_demo = lambda **kwargs: {"tick": 100}
+        c.stop_game_follow = Mock()
+        c._halt(native_action="release")
+        c._halt(native_action="release", _preserve_participant=True)
+        c._halt(native_action="release", preserve_follow=True)
+        self.assertEqual([call.kwargs for call in c.stop_game_follow.call_args_list],
+                         [{"_preserve_participant": False}, {"_preserve_participant": True}])
+
     def test_stop_continues_after_a_failed_cvar_restore(self):
         c, console = controller()
         c._require_demo = lambda **kwargs: {"tick": 100}

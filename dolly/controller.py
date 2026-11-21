@@ -5856,10 +5856,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
 
     def _halt(self, *, native_action="handoff", preserve_follow=False, _preserve_participant=False):
         if not preserve_follow:
-            if _preserve_participant:
-                self.stop_game_follow(_preserve_participant=True)
-            else:
-                self.stop_game_follow()
+            self.stop_game_follow(_preserve_participant=_preserve_participant)
         self._stop_event.set()
         with self._state_lock:
             self._native_pause_intent = None
