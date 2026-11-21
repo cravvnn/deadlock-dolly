@@ -378,6 +378,67 @@ void wrapped_aim() {
             "Rolling while pushing past the limit keeps the authored pitch");
 }
 
+void sample_filter_bundle() {
+    // The bundle applies the paused hold, anchor and aim filters in order.
+    const double interval = 1.0 / 64, frame = 1.0 / 128, speed = 480;
+    auto sample_at = [&](double time, double behind) {
+        dolly::AttachSample sample;
+        sample.valid = true;
+        sample.point = dolly::AttachPoint::bone;
+        sample.motion_anchor = {speed * (time - behind), 50, 10};
+        sample.origin = {sample.motion_anchor[0] + 3, 52, 70};
+        sample.angles = {0, 90, 0};
+        sample.aim = {std::floor(time * 40) * 0.7, 90 + std::floor(time * 30), 0};
+        return sample;
+    };
+    struct Step {
+        double time, behind;
+        bool paused;
+        int tick;
+    };
+    std::vector<Step> steps;
+    double time = 10;
+    for (int index = 0; index < 6; ++index, time += frame)
+        steps.push_back({time, 0, false, int(time / interval)});
+    for (int index = 0; index < 2; ++index, time += frame)
+        steps.push_back({time, interval, false, int(time / interval)});
+    const int paused_tick = int(time / interval);
+    for (int index = 0; index < 3; ++index)
+        steps.push_back({time, interval, true, paused_tick});
+    steps.push_back({time + interval, 0, true, paused_tick + 1});
+    time += interval;
+    for (int index = 0; index < 4; ++index, time += frame)
+        steps.push_back({time, 0, false, int(time / interval)});
+    dolly::AttachSampleFilters bundle;
+    dolly::PausedAttachSample<dolly::AttachSample> paused;
+    dolly::AttachAnchorFilter anchor;
+    dolly::AttachAimFilter aim;
+    for (const auto& step : steps) {
+        auto bundled = sample_at(step.time, step.behind), separate = bundled;
+        bundle.apply(bundled, step.paused, step.tick, step.time, interval);
+        paused.apply(separate, step.paused, step.tick);
+        anchor.apply(separate, step.time, interval, step.paused);
+        aim.apply(separate, step.time, step.paused);
+        require(bundled.origin == separate.origin &&
+                    bundled.motion_anchor == separate.motion_anchor &&
+                    bundled.angles == separate.angles && bundled.aim == separate.aim &&
+                    bundle.anchor.lagging() == anchor.lagging(),
+                "Bundled sample filters match the filters in sequence");
+    }
+    // Reset returns all three to unprimed.
+    bundle.reset();
+    auto raw = sample_at(time, 0), held = raw;
+    bundle.apply(held, true, 1, time, interval);
+    require(held.origin == raw.origin && held.aim == raw.aim && !bundle.anchor.lagging(),
+            "A reset bundle leaves a paused sample unchanged");
+    bundle.reset();
+    raw = sample_at(time + 1, 0);
+    auto played = raw;
+    bundle.apply(played, false, 2, time + 1, interval);
+    require(played.aim == raw.aim && played.origin == raw.origin,
+            "A reset bundle primes from the raw sample");
+}
+
 void early_tick_lag() {
     // A player running at 480 units/s, drawn at about 128 frames a second. A
     // tick is 1/64 s, so one tick of movement is 7.5 units.
@@ -1284,6 +1345,7 @@ int main() {
         offset_application();
         wrapped_aim();
         early_tick_lag();
+        sample_filter_bundle();
         stepped_aim();
         clearance_behavior();
         identity_gates();

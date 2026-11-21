@@ -165,6 +165,25 @@ private:
     bool primed_ = false;
 };
 
+// The per-source sample filters, applied in order: paused hold, early-tick
+// anchor, then aim. Reset together on camera command or target changes.
+struct AttachSampleFilters {
+    PausedAttachSample<AttachSample> paused;
+    AttachAnchorFilter anchor;
+    AttachAimFilter aim;
+    void reset() noexcept {
+        paused.reset();
+        anchor.reset();
+        aim.reset();
+    }
+    void apply(AttachSample& sample, bool replay_paused, int tick, double replay_time,
+               double tick_interval) noexcept {
+        paused.apply(sample, replay_paused, tick);
+        anchor.apply(sample, replay_time, tick_interval, replay_paused);
+        aim.apply(sample, replay_time, replay_paused);
+    }
+};
+
 // Exponential pose smoothing across rendered views. reset() on mode or target
 // changes; apply_anchored follows whole-player movement before filtering.
 class AttachSmoothing {
