@@ -189,6 +189,15 @@ bool binding_down(const EditorBinding& b, bool movement = false) noexcept {
 bool function_key(unsigned vk) noexcept {
     return vk >= VK_F1 && vk <= VK_F24;
 }
+// Optional blocks pack a binding as vk in the low 16 bits, modifiers in the high 16.
+EditorBinding packed_binding(std::uint32_t reserved) noexcept {
+    return EditorBinding{std::uint16_t(reserved & 0xffffu), std::uint16_t(reserved >> 16)};
+}
+bool speed_key(EditorOwner owner, unsigned vk) noexcept {
+    return (owner == EditorOwner::Flight || owner == EditorOwner::Panel) && !gTextInput.load() &&
+           !(modifiers() & 3u) && !key_down(VK_LWIN) && !key_down(VK_RWIN) &&
+           (vk == VK_OEM_PLUS || vk == VK_ADD || vk == VK_OEM_MINUS || vk == VK_SUBTRACT);
+}
 bool reserved_input(unsigned vk) noexcept {
     if (!configured() || !focused())
         return false;
@@ -202,18 +211,15 @@ bool reserved_input(unsigned vk) noexcept {
     auto c = std::atomic_load(&gConfig);
     if (!c)
         return false;
-    if ((owner == EditorOwner::Flight || owner == EditorOwner::Panel) && !gTextInput.load() &&
-        !(modifiers() & 3u) && !key_down(VK_LWIN) && !key_down(VK_RWIN) &&
-        (vk == VK_OEM_PLUS || vk == VK_ADD || vk == VK_OEM_MINUS || vk == VK_SUBTRACT))
+    if (speed_key(owner, vk))
         return true;
     if (owner != EditorOwner::Console && c->reshade_binding.vk == vk &&
         c->reshade_binding.modifiers == modifiers())
         return true;
     if (owner != EditorOwner::Console) {
         auto grid = std::atomic_load(&gFramingGridConfig);
-        const auto grid_vk = grid ? std::uint16_t(grid->reserved & 0xffffu) : 0;
-        const auto grid_mods = grid ? std::uint16_t(grid->reserved >> 16) : 0;
-        if (grid_vk && grid_vk == vk && grid_mods == modifiers())
+        const auto b = grid ? packed_binding(grid->reserved) : EditorBinding{};
+        if (b.vk && b.vk == vk && b.modifiers == modifiers())
             return true;
     }
     // Level view is a plain single key, so it is swallowed only in the two owner
@@ -222,9 +228,8 @@ bool reserved_input(unsigned vk) noexcept {
     // the panel is disabled, in the game UI, unfocused or behind ReShade.
     if (owner == EditorOwner::Panel || owner == EditorOwner::Flight) {
         auto level = std::atomic_load(&gLevelViewConfig);
-        const auto level_vk = level ? std::uint16_t(level->reserved & 0xffffu) : 0;
-        const auto level_mods = level ? std::uint16_t(level->reserved >> 16) : 0;
-        if (level_vk && level_vk == vk && level_mods == modifiers())
+        const auto b = level ? packed_binding(level->reserved) : EditorBinding{};
+        if (b.vk && b.vk == vk && b.modifiers == modifiers())
             return true;
     }
     for (unsigned i : {9u, 10u})
@@ -354,9 +359,7 @@ void dispatch_key_press(unsigned vk) noexcept {
     auto c = std::atomic_load(&gConfig);
     if (!c)
         return;
-    if ((owner == EditorOwner::Flight || owner == EditorOwner::Panel) && !gTextInput.load() &&
-        !(modifiers() & 3u) && !key_down(VK_LWIN) && !key_down(VK_RWIN) &&
-        (vk == VK_OEM_PLUS || vk == VK_ADD || vk == VK_OEM_MINUS || vk == VK_SUBTRACT)) {
+    if (speed_key(owner, vk)) {
         editor_enqueue(EditorAction::SetSpeed,
                        stepped_camera_speed(gSpeed.load(), vk == VK_OEM_PLUS || vk == VK_ADD));
         return;
@@ -369,9 +372,7 @@ void dispatch_key_press(unsigned vk) noexcept {
     // The framing guide is a panel/flight toggle; its binding lives in the
     // optional block so the stable action table is untouched.
     if (auto grid = std::atomic_load(&gFramingGridConfig)) {
-        EditorBinding grid_binding{};
-        grid_binding.vk = static_cast<std::uint16_t>(grid->reserved & 0xffffu);
-        grid_binding.modifiers = static_cast<std::uint16_t>(grid->reserved >> 16);
+        const auto grid_binding = packed_binding(grid->reserved);
         if (grid_binding.vk && binding_down(grid_binding) && !gTextInput.load() &&
             (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
             editor_enqueue(EditorAction::FramingGrid);
@@ -383,9 +384,7 @@ void dispatch_key_press(unsigned vk) noexcept {
     // closes when already open. While open it owns the panel and accepts the
     // same key to close, like a mode switch.
     if (auto objects = std::atomic_load(&gObjectConfig)) {
-        EditorBinding object_binding{};
-        object_binding.vk = static_cast<std::uint16_t>(objects->reserved & 0xffffu);
-        object_binding.modifiers = static_cast<std::uint16_t>(objects->reserved >> 16);
+        const auto object_binding = packed_binding(objects->reserved);
         if (object_binding.vk && binding_down(object_binding) && !gTextInput.load() &&
             (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
             const bool open = (objects->flags & 1u) != 0;
@@ -397,9 +396,7 @@ void dispatch_key_press(unsigned vk) noexcept {
     // project action, so the key simply arms the next manual frame. A plain
     // letter must not fire while a Dolly text field is collecting typing.
     if (auto level = std::atomic_load(&gLevelViewConfig)) {
-        EditorBinding level_binding{};
-        level_binding.vk = static_cast<std::uint16_t>(level->reserved & 0xffffu);
-        level_binding.modifiers = static_cast<std::uint16_t>(level->reserved >> 16);
+        const auto level_binding = packed_binding(level->reserved);
         if (level_binding.vk && binding_down(level_binding) && !gTextInput.load() &&
             (owner == EditorOwner::Panel || owner == EditorOwner::Flight)) {
             editor_request_level_view();
@@ -734,18 +731,15 @@ EditorBinding editor_binding_snapshot(EditorAction action) noexcept {
         result = c->bindings[index];
     } else if (action == EditorAction::FramingGrid) {
         if (auto grid = std::atomic_load(&gFramingGridConfig)) {
-            result.vk = static_cast<std::uint16_t>(grid->reserved & 0xffffu);
-            result.modifiers = static_cast<std::uint16_t>(grid->reserved >> 16);
+            result = packed_binding(grid->reserved);
         }
     } else if (action == EditorAction::ObjectPickerOpen) {
         if (auto objects = std::atomic_load(&gObjectConfig)) {
-            result.vk = static_cast<std::uint16_t>(objects->reserved & 0xffffu);
-            result.modifiers = static_cast<std::uint16_t>(objects->reserved >> 16);
+            result = packed_binding(objects->reserved);
         }
     } else if (action == EditorAction::LevelView) {
         if (auto level = std::atomic_load(&gLevelViewConfig)) {
-            result.vk = static_cast<std::uint16_t>(level->reserved & 0xffffu);
-            result.modifiers = static_cast<std::uint16_t>(level->reserved >> 16);
+            result = packed_binding(level->reserved);
         }
     }
     return result;
@@ -1677,11 +1671,10 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             EditorFramingGridConfig grid{};
             std::memcpy(&grid, grid_source, sizeof(grid));
             MemoryBarrier();
-            const auto grid_vk = std::uint32_t(grid.reserved & 0xffffu);
-            const auto grid_mods = std::uint32_t(grid.reserved >> 16);
+            const auto grid_binding = packed_binding(grid.reserved);
             if (grid_first == InterlockedCompareExchange(grid_sequence, 0, 0) &&
                 std::memcmp(grid.magic, "DLYGRID1", 8) == 0 && grid.abi == 1 &&
-                !(grid.flags & ~1u) && grid_vk <= 0xff && grid_mods <= 7) {
+                !(grid.flags & ~1u) && grid_binding.vk <= 0xff && grid_binding.modifiers <= 7) {
                 try {
                     std::atomic_store(&gFramingGridConfig,
                                       std::make_shared<const EditorFramingGridConfig>(grid));
@@ -1698,11 +1691,11 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             EditorLevelViewConfig level{};
             std::memcpy(&level, level_source, sizeof(level));
             MemoryBarrier();
-            const auto level_vk = std::uint32_t(level.reserved & 0xffffu);
-            const auto level_mods = std::uint32_t(level.reserved >> 16);
+            const auto level_binding = packed_binding(level.reserved);
             if (level_first == InterlockedCompareExchange(level_sequence, 0, 0) &&
                 std::memcmp(level.magic, "DLYLEVL1", 8) == 0 && level.abi == 1 &&
-                !(level.flags & ~1u) && level_vk <= 0xff && level_mods <= 7 &&
+                !(level.flags & ~1u) && level_binding.vk <= 0xff &&
+                level_binding.modifiers <= 7 &&
                 (!std::isfinite(level.standard_aspect) ||
                  (level.standard_aspect >= .5 && level.standard_aspect <= 4.0))) {
                 try {

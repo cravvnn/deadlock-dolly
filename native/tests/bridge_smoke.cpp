@@ -1548,6 +1548,10 @@ void editor_input_checks() {
                     dolly::gEvents[before_grid % kEditorEventCount].action ==
                         std::uint32_t(EditorAction::FramingGrid),
                 "Framing guide key did not toggle the guide");
+        grid->reserved = 'G' | 6u << 16;
+        const auto grid_snapshot = editor_binding_snapshot(EditorAction::FramingGrid);
+        require(grid_snapshot.vk == 'G' && grid_snapshot.modifiers == 6,
+                "Framing guide binding did not unpack its key and modifiers");
         std::atomic_store(&dolly::gFramingGridConfig, saved_grid);
         editor_set_owner(EditorOwner::Flight);
     }
