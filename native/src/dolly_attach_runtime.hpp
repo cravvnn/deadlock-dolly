@@ -1051,6 +1051,23 @@ inline bool sample(const Offsets& offsets, const Cache& cache, const dolly::Atta
     return true;
 }
 
+// Copy a shared-memory record under its seqlock: the sequence at +8 is odd
+// while writing and even when done, and the copy skips it.
+template <typename T>
+inline void publish_seqlocked(unsigned char* destination, const T& value) noexcept {
+    static_assert(sizeof(T) > 12, "A seqlocked record starts with magic and sequence");
+    auto sequence = reinterpret_cast<volatile LONG*>(destination + 8);
+    const LONG current = InterlockedCompareExchange(sequence, 0, 0);
+    const LONG odd = (current & 1) ? current + 2 : current + 1;
+    InterlockedExchange(sequence, odd);
+    MemoryBarrier();
+    std::memcpy(destination, &value, 8);
+    std::memcpy(destination + 12, reinterpret_cast<const unsigned char*>(&value) + 12,
+                sizeof(value) - 12);
+    MemoryBarrier();
+    InterlockedExchange(sequence, odd + 1);
+}
+
 // Worker thread: publish the live player roster for the editor target picker.
 inline void publish_bones(unsigned char* mapping, const Cache* cache) noexcept {
     if (!mapping)
@@ -1058,17 +1075,7 @@ inline void publish_bones(unsigned char* mapping, const Cache* cache) noexcept {
     EditorBones bones = cache ? cache->bones : EditorBones{};
     std::memcpy(bones.magic, "DLYBONE1", 8);
     bones.abi = 1;
-    auto destination = mapping + kEditorBonesOffset;
-    auto sequence = reinterpret_cast<volatile LONG*>(destination + 8);
-    const LONG current = InterlockedCompareExchange(sequence, 0, 0);
-    const LONG odd = (current & 1) ? current + 2 : current + 1;
-    InterlockedExchange(sequence, odd);
-    MemoryBarrier();
-    std::memcpy(destination, &bones, 8);
-    std::memcpy(destination + 12, reinterpret_cast<const unsigned char*>(&bones) + 12,
-                sizeof(bones) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, odd + 1);
+    publish_seqlocked(mapping + kEditorBonesOffset, bones);
 }
 
 // Worker thread: publish the live player roster for the editor target picker.
@@ -1108,17 +1115,7 @@ inline void publish_roster(unsigned char* mapping, HMODULE client) noexcept {
             }
         }
     }
-    auto sequence = reinterpret_cast<volatile LONG*>(mapping + kEditorRosterOffset + 8);
-    const LONG current = InterlockedCompareExchange(sequence, 0, 0);
-    const LONG odd = (current & 1) ? current + 2 : current + 1;
-    InterlockedExchange(sequence, odd);
-    MemoryBarrier();
-    unsigned char* destination = mapping + kEditorRosterOffset;
-    std::memcpy(destination, &roster, 8);
-    std::memcpy(destination + 12, reinterpret_cast<unsigned char*>(&roster) + 12,
-                sizeof(roster) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, odd + 1);
+    publish_seqlocked(mapping + kEditorRosterOffset, roster);
 }
 
 } // namespace attach_runtime

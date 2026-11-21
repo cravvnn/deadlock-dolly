@@ -732,17 +732,7 @@ static void publish_attach_result(const AttachPreview& preview,
     for (int index = 0; index < 6; ++index)
         result.offset[index] = offsets[index];
     result.smoothing = preview.smoothing;
-    auto destination = gMemory + kEditorAttachResultOffset;
-    auto sequence = reinterpret_cast<volatile LONG*>(destination + 8);
-    const LONG current = InterlockedCompareExchange(sequence, 0, 0);
-    const LONG odd = (current & 1) ? current + 2 : current + 1;
-    InterlockedExchange(sequence, odd);
-    MemoryBarrier();
-    std::memcpy(destination, &result, 8);
-    std::memcpy(destination + 12, reinterpret_cast<unsigned char*>(&result) + 12,
-                sizeof(result) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, odd + 1);
+    attach_runtime::publish_seqlocked(gMemory + kEditorAttachResultOffset, result);
 }
 CompatResolution gCompat;
 

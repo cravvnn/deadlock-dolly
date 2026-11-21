@@ -245,6 +245,29 @@ void bone_string_bounds() {
             "Long model path at a readable page boundary was rejected");
 }
 
+void seqlocked_publication() {
+    std::vector<unsigned char> buffer(sizeof(EditorBones));
+    EditorBones bones{};
+    std::memcpy(bones.magic, "DLYBONE1", 8);
+    bones.sequence = 0x7f7f7f7f;
+    bones.count = 3;
+    LONG sequence = 0;
+    for (const LONG expected : {2L, 4L}) {
+        attach_runtime::publish_seqlocked(buffer.data(), bones);
+        std::memcpy(&sequence, buffer.data() + 8, sizeof(sequence));
+        require(sequence == expected, "Seqlocked publication did not end on the next even value");
+    }
+    EditorBones copy{};
+    std::memcpy(&copy, buffer.data(), sizeof(copy));
+    require(std::memcmp(copy.magic, "DLYBONE1", 8) == 0 && copy.count == 3,
+            "Seqlocked publication lost its payload");
+    sequence = 3;
+    std::memcpy(buffer.data() + 8, &sequence, sizeof(sequence));
+    attach_runtime::publish_seqlocked(buffer.data(), bones);
+    std::memcpy(&sequence, buffer.data() + 8, sizeof(sequence));
+    require(sequence == 6, "Seqlocked publication from an odd sequence did not advance");
+}
+
 void owned_model_bones() {
     Allocation node(0x1000), pawn(0x1000), identity(0x1000), binding(0x1000), model(0x1000),
         path(0x1000), names(0x2000), vector(0x1000), poses(0x1000);
@@ -2722,6 +2745,7 @@ void run() {
     confetti_diagnostics_publish();
     attach_preview_continuity_checks();
     bone_string_bounds();
+    seqlocked_publication();
     owned_model_bones();
     camera_cache_decoder();
     updated_camera_cache_decoder();
