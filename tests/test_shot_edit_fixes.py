@@ -406,6 +406,21 @@ class AttachedViewChangeTests(unittest.TestCase):
                           app._attach_snap_context, app.status_text.get()), (False, False, None, None, ""))
         self.assertEqual(app.project.keyframes[0].source, "free")
 
+    def test_parked_framing_waits_for_an_editable_shot(self):
+        for ready in (False, True):
+            app = self._app()
+            app.preview_attach = False
+            app._shot_edit_ready = lambda: ready
+            app._commit_camera = lambda keys, _time=None: setattr(
+                app, "project", shot_commands.commit_camera(app.project, keys))
+            original = app.project.keyframes[0].aspect_ratio
+            published = []
+            event = {"action": "set_framing", "value": 0, "pose": [0, 0, 0, 0, 0, 0, 1.1]}
+            self.assertTrue(editor_dispatch.dispatch(app, event, None, publish=lambda: published.append(1)))
+            self.assertEqual(app.project.keyframes[0].aspect_ratio,
+                             round(original * 1.1, 4) if ready else original)
+            self.assertEqual(published, [] if ready else [1])
+
     def test_position_edits_only_arrive_as_curve_values(self):
         app = self._app()
         app.preview_attach = False

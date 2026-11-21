@@ -321,6 +321,8 @@ def _dispatch(app, event, bridge, *, publish):
                   and _pose_matches_key(app, index, event["pose"]))
         if not parked:
             app.status_text.set("Live framing updated. Capture a camera to save it.")
+        elif not app._shot_edit_ready():
+            publish()
         else:
             keys = copy.deepcopy(app.project.keyframes)
             key = keys[index]
