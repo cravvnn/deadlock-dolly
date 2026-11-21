@@ -1,7 +1,7 @@
 """Coordinate native-editor publication, dispatch and ordered acknowledgements."""
 import logging
 import time
-from .native_bridge import NativeBridgeError, NativeStatusBusy
+from .native_bridge import NativeBridgeError, NativeEditorStatusBusy, NativeStatusBusy
 from . import editor_publication, editor_dispatch
 from .editor_publication import (_bridge, _value, _playback_values, _video_values,
                                  _pov_duration, _attach_state, _configure_visualization)
@@ -136,9 +136,9 @@ def poll(app):
             if not accepted:
                 break
             bridge.acknowledge_editor_event(event["sequence"])
+    except NativeEditorStatusBusy:
+        return
     except NativeBridgeError as exc:
-        if "being updated" in str(exc):
-            return
         if str(exc) != getattr(app, "_native_editor_error", None):
             app._native_editor_error = str(exc)
             LOG.error("Native editor: %s", exc)

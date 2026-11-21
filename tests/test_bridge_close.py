@@ -121,6 +121,55 @@ class EditorInputBusyTests(unittest.TestCase):
             self.assertEqual(bridge._wait_editor_input(8), ready)
         self.assertLess(clock.now, 1)
 
+    def test_editor_status_mid_publication_is_reported_as_busy(self):
+        bridge, _, _ = make_bridge()
+        load = bridge._load_sequence
+
+        def odd_editor_status(offset=nb.CONTROL_BYTES + 8):
+            return 1 if offset == editor_wire.STATUS_OFFSET + 8 else load(offset)
+        with patch.object(bridge, "_load_sequence", odd_editor_status):
+            with self.assertRaises(nb.NativeEditorStatusBusy):
+                bridge.editor_status()
+
+    def test_editor_input_wait_keeps_polling_through_a_busy_editor_status(self):
+        bridge, clock, _ = make_bridge()
+        bridge.bind_game(1234, exited=lambda: False)
+        ready = {"enabled": True, "ready": True, "overlay_available": True,
+                 "input_available": True, "paused": True}
+
+        def editor_status():
+            if clock.now < 0.010:
+                raise nb.NativeEditorStatusBusy("Native editor status is being updated")
+            return ready
+        with patch.object(bridge, "status", return_value={"state": "idle"}),                 patch.object(bridge, "editor_status", editor_status):
+            self.assertEqual(bridge._wait_editor_input(8), ready)
+
+    def test_editor_input_wait_does_not_hide_other_errors_that_mention_updates(self):
+        bridge, _, _ = make_bridge()
+        bridge.bind_game(1234, exited=lambda: False)
+        failure = nb.NativeBridgeError("Editor ABI being updated by another build")
+        with patch.object(bridge, "status", return_value={"state": "idle"}),                 patch.object(bridge, "editor_status", side_effect=failure):
+            with self.assertRaises(nb.NativeBridgeError) as caught:
+                bridge._wait_editor_input(8)
+        self.assertIs(caught.exception, failure)
+
+    def test_editor_session_waits_quietly_only_for_a_busy_editor_status(self):
+        for error, shown in ((nb.NativeEditorStatusBusy("Native editor status is being updated"), []),
+                             (nb.NativeBridgeError("Editor ABI being updated by another build"),
+                              ["Editor ABI being updated by another build"])):
+            with self.subTest(error=type(error).__name__):
+                texts = []
+                bridge = SimpleNamespace(editor_status=lambda: (_ for _ in ()).throw(error))
+                app = SimpleNamespace(native_editor_active=True, busy=False, _attach_roster_at=float("inf"),
+                                      status_text=SimpleNamespace(set=texts.append))
+                logging.disable(logging.CRITICAL)
+                try:
+                    with patch.object(editor_session, "_bridge", return_value=bridge),                             patch.object(editor_session, "configure"):
+                        editor_session.poll(app)
+                finally:
+                    logging.disable(logging.NOTSET)
+                self.assertEqual(texts, shown)
+
 
 class BlockPublishTests(unittest.TestCase):
     def cases(self):

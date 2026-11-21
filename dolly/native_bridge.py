@@ -75,6 +75,10 @@ class NativeStatusBusy(NativeBridgeError):
     """Every bounded status reread saw an odd or torn sequence; poll again."""
 
 
+class NativeEditorStatusBusy(NativeStatusBusy):
+    """The editor status block was mid-publication on every reread."""
+
+
 def _winerror_from(exc):
     """Find a Windows error code anywhere in a wrapped exception chain."""
     seen = set()
@@ -741,9 +745,8 @@ class NativeBridge(MediaTransport):
                     raise NativeBridgeError(native.get("message") or "Native camera does not support this game build")
                 try:
                     editor = self.editor_status()
-                except NativeBridgeError as exc:
-                    if "being updated" not in str(exc):
-                        raise
+                except NativeEditorStatusBusy:
+                    pass
                 else:
                     if all(editor.get(key) for key in required):
                         return editor
@@ -1103,7 +1106,7 @@ class NativeBridge(MediaTransport):
                         return wire.unpack_status(data, self._editor_ack)
                     except ValueError as exc:
                         raise NativeBridgeError(str(exc)) from exc
-            raise NativeBridgeError("Native editor status is being updated")
+            raise NativeEditorStatusBusy("Native editor status is being updated")
 
     def acknowledge_editor_event(self, sequence):
         with self._lock:
