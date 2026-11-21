@@ -3400,7 +3400,6 @@ class DollyApp:
         camera_card.columnconfigure((0, 1), weight=1, uniform="coordinate")
         ttk.Label(camera_card, text="Camera Coordinates", style="CardTitle.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=self._px((0, 15)))
-        self.key_entries = {}
         for index, (field, label) in enumerate(zip(FIELDS, FIELD_LABELS)):
             cell = ttk.Frame(camera_card, style="Card.TFrame")
             cell.grid(row=1 + index // 2, column=index % 2, sticky="ew", padx=self._px((0, 20 if index % 2 == 0 else 0)), pady=self._px((0, 10)))
@@ -3409,7 +3408,6 @@ class DollyApp:
             ttk.Label(cell, text=label, style="CardMuted.TLabel").grid(row=0, column=0, sticky="w", padx=self._px((0, 10)))
             entry = ttk.Entry(cell, textvariable=self.key_vars[field], width=1, style="Card.TEntry")
             entry.grid(row=0, column=1, sticky="ew")
-            self.key_entries[field] = entry
         actions = ttk.Frame(camera_card, style="Card.TFrame")
         actions.grid(row=5, column=0, columnspan=2, sticky="w", pady=self._px((4, 14)))
         ttk.Button(actions, text="Update selected", style="Card.TButton", command=self._update_key).pack(side="left", padx=self._px((0, 10)))
@@ -3438,9 +3436,6 @@ class DollyApp:
         ttk.Label(body, text="Captured positions stay in view coordinates. Height is Z.\nBank uses Dolly’s last applied value; capture starts with bank 0.",
                   style="Muted.TLabel", wraplength=self._px(570)).grid(row=3, column=0, sticky="w", pady=self._px((15, 20)))
         ttk.Button(body, text="Done", style="Primary.TButton", command=dialog.destroy).grid(row=4, column=0, sticky="e")
-
-    def _toggle_coordinates(self):
-        self._open_coordinates()
 
     def _capture_mode_changed(self, _event=None):
         replay_timing = self.capture_mode.get() == "Replay timing"
@@ -3515,9 +3510,6 @@ class DollyApp:
     def _show_fixed_values(self):
         self.fixed_dialog.deiconify()
         self.fixed_dialog.lift()
-
-    def _worker_loop(self):
-        self.operations.run(self._operation_failure_kind)
 
     def _operation_failure_kind(self):
         layered = getattr(self, "_base_capture", None) is not None
@@ -4390,27 +4382,6 @@ class DollyApp:
         self._guard("Reset rotation curve", operation)
         self._refresh_curve()
 
-    def _redraw_curves(self):
-        """Coalesce graph redraw bursts (wheel/pan/edits) into one idle pass."""
-        if getattr(self, "_curves_redraw_pending", False):
-            return
-        schedule = getattr(self.root, "after_idle", None)
-        if not callable(schedule):
-            self._redraw_curves_now()
-            return
-        self._curves_redraw_pending = True
-        schedule(self._redraw_curves_now)
-
-    def _redraw_curves_now(self):
-        self._curves_redraw_pending = False
-        if hasattr(self, "camera_curve_workspace"):
-            self.camera_curve_workspace.redraw()
-            return
-        for widget in (getattr(self, "position_curve", None), getattr(self, "rotation_curve", None),
-                       getattr(self, "aspect_curve", None)):
-            if widget is not None:
-                widget._redraw()
-
     def _reset_aspect(self):
         def operation():
             index = self._selection_index(self.camera_tree)
@@ -4816,9 +4787,6 @@ class DollyApp:
         self._select_page(self.controls_tab)
         self.controls_view.reveal_action(action)
 
-    def _open_capture_binding(self):
-        self._show_keybinds("capture")
-
     def _check_capture_listener(self):
         """Reflect an unexpected input-worker exit once, without a modal loop."""
         helper = self.capture_hotkey
@@ -4912,9 +4880,6 @@ class DollyApp:
     def capture_here(self):
         """UI-thread entry point shared by the capture button and global hotkey."""
         self._capture_view("append" if self.project.keyframes else "start")
-
-    def _capture(self):
-        self.capture_here()
 
     def _start_path_here(self):
         self._capture_view("start")
