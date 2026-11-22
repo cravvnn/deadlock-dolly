@@ -1,0 +1,36 @@
+[
+  {
+    "name": "swallow stop failure while the worker is alive",
+    "replace": [
+      [
+        "/\\ pc = \"stopFailed\" /\\ (OldConnected \\/ worker # \"done\")",
+        "/\\ pc = \"stopFailed\" /\\ OldConnected"
+      ],
+      [
+        "/\\ pc = \"stopFailed\" /\\ ~OldConnected /\\ worker = \"done\"",
+        "/\\ pc = \"stopFailed\" /\\ ~OldConnected"
+      ]
+    ],
+    "expect": "WorkerQuiet"
+  },
+  {
+    "name": "failed socket is not retired",
+    "replace": [
+      [
+        "/\\ oldOpen' = FALSE /\\ oldWhy' = \"failed\"",
+        "/\\ oldWhy' = \"failed\" /\\ UNCHANGED oldOpen"
+      ]
+    ],
+    "expect": "Retired"
+  },
+  {
+    "name": "send failure overwrites a close",
+    "replace": [
+      [
+        "NewFail == /\\ newOpen /\\ newWhy = \"none\"",
+        "NewFail == /\\ newWhy \\in {\"none\", \"closed\"}"
+      ]
+    ],
+    "expect": "CloseReason"
+  }
+]
