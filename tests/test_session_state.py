@@ -132,6 +132,56 @@ class StartupCrash(unittest.TestCase):
         polled.status_text.set.assert_any_call('Startup cancelled. You can choose a replay and try again.')
 
 
+class GameExitCleanup(unittest.TestCase):
+    def test_a_failed_cleanup_is_resubmitted_by_the_next_poll(self):
+        session = object()
+        outcomes = [RuntimeError('The previous camera worker is still stopping. Wait a moment and retry.'), True]
+
+        def recover():
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        app = NS(controller=NS(_session=session, recover_dead_session=recover), _last_game_session=session,
+                 _game_exit_shown=session, busy=False, submitted=[])
+
+        def submit(label, operation, callback=None):
+            app.submitted.append(label)
+            try:
+                result = operation()
+            except RuntimeError:
+                return True  # The worker reports the error; no callback runs.
+            callback(result)
+            return True
+        app._submit = submit
+        exited = {'game_running': False}
+        DollyApp._handle_game_exit(app, exited)
+        DollyApp._handle_game_exit(app, exited)
+        DollyApp._handle_game_exit(app, exited)
+        self.assertEqual(len(app.submitted), 2)
+        self.assertIs(app._game_exit_cleanup, session)
+
+    def test_cleanup_retries_are_bounded(self):
+        session = object()
+
+        def recover():
+            raise RuntimeError('still stopping')
+        app = NS(controller=NS(_session=session, recover_dead_session=recover), _last_game_session=session,
+                 _game_exit_shown=session, busy=False, submitted=[])
+
+        def submit(label, operation, callback=None):
+            app.submitted.append(label)
+            try:
+                operation()
+            except RuntimeError:
+                pass
+            return True
+        app._submit = submit
+        for _ in range(gui.GAME_EXIT_CLEANUP_ATTEMPTS + 3):
+            DollyApp._handle_game_exit(app, {'game_running': False})
+        self.assertEqual(len(app.submitted), gui.GAME_EXIT_CLEANUP_ATTEMPTS)
+
+
 class SecondLaunch(unittest.TestCase):
     """Play replay pressed while a session is running must leave that session usable."""
 

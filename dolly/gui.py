@@ -107,6 +107,8 @@ _SETTINGS_COMMIT = threading.Lock()
 MOVIE_STOP_ATTEMPTS = 3
 # Automatic tries at restoring a failed or discarded take's game settings.
 TAKE_RESTORE_ATTEMPTS = 3
+# Automatic tries at clearing a closed game's session state.
+GAME_EXIT_CLEANUP_ATTEMPTS = 3
 MOVIE_STOP_HELD = (
     "Deadlock did not confirm that the movie audio recording stopped after {attempts} tries, "
     "so it may still be writing the WAV. Dolly kept the recording and stopped retrying on its own. "
@@ -3855,11 +3857,18 @@ class DollyApp:
                     self._startup_crash_cancel = self.startup_cancel
                 self.startup_cancel.set()
             self.root.after_idle(lambda: self._offer_session_graphics(session))
-        if not self.busy and getattr(self,'_game_exit_cleanup',None) is not session:
+        # Marked done only on success: a failed cleanup (the camera worker was
+        # still stopping) is resubmitted by a later poll, a bounded number of times.
+        tries = getattr(self,'_game_exit_cleanup_tries',None)
+        tried = tries[1] if tries is not None and tries[0] is session else 0
+        if (not self.busy and getattr(self,'_game_exit_cleanup',None) is not session
+                and tried < GAME_EXIT_CLEANUP_ATTEMPTS):
             if getattr(self,'_base_capture',None) is not None:
                 self._clear_layer_pipeline()
-            if self._submit('Clearing closed game session',self.controller.recover_dead_session):
+            def cleaned(_result):
                 self._game_exit_cleanup = session
+            if self._submit('Clearing closed game session',self.controller.recover_dead_session,cleaned):
+                self._game_exit_cleanup_tries = (session, tried + 1)
 
     def _offer_session_graphics(self, session):
         """Offer to keep graphics the user changed in-game during this session.
