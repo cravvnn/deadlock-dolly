@@ -24,7 +24,6 @@ import struct
 import shutil
 import subprocess
 import time
-import zlib
 import uuid
 import tempfile
 import threading
@@ -330,66 +329,6 @@ def _preview_channel(value: float) -> int:
     value = value / (1 + value)
     value = 12.92 * value if value <= 0.0031308 else 1.055 * value ** (1 / 2.4) - 0.055
     return round(max(0.0, min(1.0, value)) * 255)
-
-
-def write_previews(bundle: Path, output: Path) -> list[Path]:
-    """Diagnostic sRGB previews with coverage alpha, matching the proofs.
-
-    The native pixels are premultiplied half-float HDR; the preview path
-    unpremultiplies, tone maps (Reinhard) and writes straight-alpha PNGs for
-    the encoder. A product tonemapping decision is tracked separately.
-    """
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    for index, (width, height, pixels) in enumerate(iter_frames(bundle)):
-        preview = bytearray(width * height * 4)
-        for i, rgba in enumerate(struct.iter_unpack("<4e", pixels)):
-            alpha = rgba[3]
-            if alpha:
-                preview[i * 4:i * 4 + 4] = bytes(
-                    [_preview_channel(rgba[0] / alpha), _preview_channel(rgba[1] / alpha),
-                     _preview_channel(rgba[2] / alpha), round(alpha * 255)])
-        name = output / ("native-player-layer-%03d.png" % index)
-
-        def chunk(kind: bytes, data: bytes) -> bytes:
-            return (struct.pack(">I", len(data)) + kind + data +
-                    struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
-
-        png = (b"\x89PNG\r\n\x1a\n" +
-               chunk(b"IHDR", struct.pack(">2I5B", width, height, 8, 6, 0, 0, 0)) +
-               chunk(b"IDAT", zlib.compress(b"".join(
-                   b"\0" + bytes(preview[y * width * 4:(y + 1) * width * 4]) for y in range(height)))) +
-               chunk(b"IEND", b""))
-        name.write_bytes(png)
-        paths.append(name)
-    return paths
-
-
-def encode_layer(ffmpeg: Path, previews: list[Path], output: Path, *, fps: int = 60) -> Path:
-    """Encode preview frames to the alpha-capable mezzanine layer video."""
-    if not previews:
-        raise RuntimeError("The player layer captured no frames.")
-    if not Path(ffmpeg).is_file():
-        raise RuntimeError("The player layer needs an FFmpeg executable for its alpha video.")
-    output = Path(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    # Overwrite on purpose: a re-recorded take must replace its layer master
-    # instead of silently keeping an older file under the same name.
-    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-threads", "2",
-               "-framerate", str(fps), "-start_number", "0",
-               "-i", str(previews[0].with_name(previews[0].name.replace("000", "%03d"))),
-               "-frames:v", str(len(previews)), "-an", "-c:v", "prores_ks", "-profile:v", "4444",
-               "-vf", REC709_FILTER, "-pix_fmt", "yuva444p10le", *REC709_OUTPUT_ARGS,
-               "-vendor", "apl0", "-threads", "2", str(output)]
-    with external_program_environment() as environment:
-        result = subprocess.run(command, capture_output=True, timeout=max(120, 30 * len(previews)),
-                                env=environment,
-                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if result.returncode != 0 or not output.is_file():
-        raise RuntimeError("Could not encode the player layer video: " +
-                           result.stderr.decode(errors="replace")[:400])
-    return output
 
 
 def wait_until_armed(deployment: Path, timeout: float = 10.0) -> None:
