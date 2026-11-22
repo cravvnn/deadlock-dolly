@@ -183,6 +183,20 @@ class ReviewHardeningTests(unittest.TestCase):
             with patch.object(Path, 'unlink', side_effect=ValueError('programming error')):
                 with self.assertRaises(ValueError): reshade_setup._write_config(path, b'last config')
 
+    def test_reshade_config_is_durable_before_it_replaces_the_user_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'ReShade.ini'; path.write_bytes(b'user config')
+            events = []
+            real_fsync, real_replace = os.fsync, os.replace
+            def fsync(fd):
+                events.append('fsync'); return real_fsync(fd)
+            def replace(source, destination):
+                events.append('replace'); return real_replace(source, destination)
+            with patch.object(os, 'fsync', fsync), patch.object(os, 'replace', replace):
+                reshade_setup._write_config(path, b'new config')
+            self.assertEqual(events, ['fsync', 'replace'])
+            self.assertEqual(path.read_bytes(), b'new config')
+
     def test_history_reset_uses_one_private_copy_and_preserves_saved_content_after_eviction(self):
         project = {'items': [1, 2, 3]}
         # This counts a real allocation target; no source-text assertion or

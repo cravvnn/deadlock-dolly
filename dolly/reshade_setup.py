@@ -14,6 +14,8 @@ import os
 import secrets
 import tempfile
 
+from .file_ops import replace_retrying
+
 PRESET_NAME = "Deadlock-Dolly.ini"
 _SHADER_RELATIVE = Path("third_party") / "reshade_shaders"
 _PRESET_RELATIVE = Path("assets") / "reshade" / PRESET_NAME
@@ -224,7 +226,9 @@ def _write_config(path: Path, data: bytes) -> None:
     try:
         with os.fdopen(descriptor, "wb") as output:
             output.write(data)
-        os.replace(name, path)
+            output.flush()
+            os.fsync(output.fileno())  # Durable before it replaces the user's config.
+        replace_retrying(name, path)
     finally:
         try:
             Path(name).unlink(missing_ok=True)
