@@ -9,6 +9,7 @@ constexpr std::size_t kUiLayoutMaxFileBytes = 1024 * 1024;
 
 // Return raw ImGui INI text. A damaged/missing primary falls back to .bak.
 // Legacy bounded plain INI is accepted; new saves carry a length/checksum.
+// Save temporaries left by a crashed process (or over a day old) are removed.
 bool load_ui_layout(const std::wstring& path, std::string& payload,
                     bool* recovered = nullptr);
 

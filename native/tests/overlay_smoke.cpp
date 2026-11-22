@@ -137,6 +137,40 @@ void ui_storage_regressions() {
     require(DeleteFileW(path.c_str()) && DeleteFileW(backup.c_str()),"Cannot prepare orphan-temporary layout check");
     write_layout_fixture(orphan,a);
     require(!dolly::load_ui_layout(path,payload,&recovered),"An uncommitted temporary file was treated as saved layout data");
+    // Crash-orphaned save temporaries: an exited owner's and a day-old one are
+    // removed on load; a live owner's in-flight file and other names are kept.
+    STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION exited{};
+    wchar_t exit_command[]=L"cmd.exe /c exit 0";
+    require(CreateProcessW(nullptr,exit_command,nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,
+                           &startup,&exited),"Cannot start a short-lived temporary owner");
+    CloseHandle(exited.hThread);
+    require(WaitForSingleObject(exited.hProcess,10000)==WAIT_OBJECT_0,"Temporary owner did not exit");
+    // The open handle keeps the exited process id from being reused meanwhile.
+    const auto dead_id=std::to_wstring(exited.dwProcessId),own_id=std::to_wstring(GetCurrentProcessId());
+    const auto dead=path+L".tmp."+dead_id+L".1.1",dead_backup=backup+L".tmp."+dead_id+L".1.2",
+               live=path+L".tmp."+own_id+L".1.3",aged=path+L".tmp."+own_id+L".1.4",
+               foreign=path+L".tmp."+dead_id+L".x.5";
+    for(const auto* name:{&dead,&dead_backup,&live,&aged,&foreign}) write_layout_fixture(*name,a);
+    HANDLE aging=CreateFileW(aged.c_str(),FILE_WRITE_ATTRIBUTES,FILE_SHARE_READ,nullptr,OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL,nullptr);
+    require(aging!=INVALID_HANDLE_VALUE,"Cannot open the aged temporary fixture");
+    FILETIME now{};GetSystemTimeAsFileTime(&now);
+    ULARGE_INTEGER stamp{};stamp.LowPart=now.dwLowDateTime;stamp.HighPart=now.dwHighDateTime;
+    stamp.QuadPart-=2ull*24*60*60*10000000;
+    FILETIME old{stamp.LowPart,stamp.HighPart};
+    const bool aged_set=SetFileTime(aging,nullptr,nullptr,&old)!=0;CloseHandle(aging);
+    require(aged_set,"Cannot age the temporary fixture");
+    write_layout_fixture(path,a);
+    require(dolly::load_ui_layout(path,payload,&recovered) && payload==a && !recovered,
+            "Stale temporary cleanup changed the loaded layout");
+    CloseHandle(exited.hProcess);
+    const auto present=[](const std::wstring& name){return GetFileAttributesW(name.c_str())!=INVALID_FILE_ATTRIBUTES;};
+    require(!present(dead) && !present(dead_backup),"An exited process's save temporaries were kept");
+    require(!present(aged),"A save temporary older than a day was kept");
+    require(present(live),"A live process's in-flight save temporary was removed");
+    require(present(foreign),"A file outside the temporary name shape was removed");
+    require(DeleteFileW(live.c_str()) && DeleteFileW(foreign.c_str()) && DeleteFileW(path.c_str()),
+            "Cannot clean stale temporary fixtures");
     require(DeleteFileW(orphan.c_str()) && RemoveDirectoryW(directory.c_str()),"Cannot clean isolated layout storage fixtures");
     std::puts("Managed layout storage: Unicode, atomic replacement failure, checksum/backup recovery, legacy data and orphan exclusion passed.");
 }

@@ -163,6 +163,65 @@ bool prepare_temporary(const std::wstring& destination, const std::string& conte
     return false;
 }
 
+// Parses the "<pid>.<tick>.<n>" tail prepare_temporary appends after ".tmp.".
+bool temporary_owner(std::wstring_view tail, DWORD& pid) {
+    std::uint64_t parts[3]{};
+    for (int part = 0; part < 3; ++part) {
+        const auto end = part < 2 ? tail.find(L'.') : tail.size();
+        if (end == 0 || end == std::wstring_view::npos || end > 20) return false;
+        for (std::size_t i = 0; i < end; ++i) {
+            if (tail[i] < L'0' || tail[i] > L'9') return false;
+            parts[part] = parts[part] * 10 + unsigned(tail[i] - L'0');
+        }
+        tail.remove_prefix(part < 2 ? end + 1 : end);
+    }
+    if (parts[0] > 0xffffffffull) return false;
+    pid = DWORD(parts[0]);
+    return true;
+}
+
+bool owner_gone(DWORD pid) {
+    if (pid == GetCurrentProcessId()) return false;
+    HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    if (!process) return GetLastError() == ERROR_INVALID_PARAMETER;
+    const bool exited = WaitForSingleObject(process, 0) == WAIT_OBJECT_0;
+    CloseHandle(process);
+    return exited;
+}
+
+std::uint64_t file_time(const FILETIME& time) {
+    return std::uint64_t(time.dwHighDateTime) << 32 | time.dwLowDateTime;
+}
+
+// A crash between prepare_temporary and the rename leaves its temporary. Only
+// that exact name shape is removed, and only once its process is gone or the
+// file is more than a day old, so a save in flight elsewhere is never touched.
+void remove_stale_temporaries(const std::wstring& destination) {
+    const auto slash = destination.find_last_of(L"\\/");
+    const std::wstring directory = slash == std::wstring::npos ? L"" : destination.substr(0, slash + 1);
+    const std::wstring prefix = destination.substr(directory.size()) + L".tmp.";
+    WIN32_FIND_DATAW found{};
+    HANDLE search = FindFirstFileW((destination + L".tmp.*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return;
+    FILETIME now_time{};
+    GetSystemTimeAsFileTime(&now_time);
+    const auto now = file_time(now_time);
+    constexpr std::uint64_t day = 24ull * 60 * 60 * 10000000;
+    do {
+        const std::wstring_view name(found.cFileName);
+        DWORD pid = 0;
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || name.size() <= prefix.size() ||
+            CompareStringOrdinal(name.data(), int(prefix.size()), prefix.data(), int(prefix.size()),
+                                 TRUE) != CSTR_EQUAL ||
+            !temporary_owner(name.substr(prefix.size()), pid))
+            continue;
+        const auto written = file_time(found.ftLastWriteTime);
+        if ((now > written && now - written > day) || owner_gone(pid))
+            DeleteFileW((directory + std::wstring(name)).c_str());
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+}
+
 bool commit_temporary(Temporary& temporary, const std::wstring& destination) {
     if (!MoveFileExW(temporary.path.c_str(), destination.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return false;
@@ -176,6 +235,8 @@ bool load_ui_layout(const std::wstring& path, std::string& payload, bool* recove
     if (recovered) *recovered = false;
     if (path.empty()) return false;
     try {
+        remove_stale_temporaries(path);
+        remove_stale_temporaries(path + L".bak");
         std::string stored;
         if (valid_file(path, stored, payload)) return true;
         if (!valid_file(path + L".bak", stored, payload)) return false;
