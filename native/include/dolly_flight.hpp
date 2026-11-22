@@ -37,4 +37,16 @@ inline void integrate_flight(CameraPose& p, const FlightInput& in, double dt, do
     p[1] += y * speed * dt;
     p[2] += z * speed * dt;
 }
+// The game's own view field of view, as the camera code may use it. A game
+// cinematic can animate the rendered value to a fraction of a degree; Dolly
+// supplies its own lens, so that frame keeps the last usable game value.
+// A non-finite value is never accepted and leaves the kept value alone.
+inline bool game_fov_usable(float fov) noexcept {
+    return std::isfinite(fov) && fov > 1 && fov < 179;
+}
+inline float steady_game_fov(float rendered, float& last_usable) noexcept {
+    if (game_fov_usable(rendered))
+        last_usable = rendered;
+    return std::isfinite(rendered) ? last_usable : rendered;
+}
 }

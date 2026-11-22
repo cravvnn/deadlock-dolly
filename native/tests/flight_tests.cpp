@@ -119,6 +119,19 @@ int main() {
     require(near_value(wrapped[3], 67.1));
     require(near_value(flight_pitch(359.3), -.7) && near_value(flight_pitch(95), 89.9) &&
             near_value(flight_pitch(-95), -89.9));
+    // A game cinematic zooms the rendered view to a fraction of a degree. The
+    // camera keeps the last usable game value; only a non-finite one is refused.
+    float kept = 90.0f;
+    require(steady_game_fov(65.05f, kept) == 65.05f && kept == 65.05f);
+    require(steady_game_fov(2.02f, kept) == 2.02f && kept == 2.02f);
+    require(steady_game_fov(0.18f, kept) == 2.02f && kept == 2.02f);
+    require(steady_game_fov(0.0f, kept) == 2.02f && steady_game_fov(-4.0f, kept) == 2.02f);
+    require(steady_game_fov(179.0f, kept) == 2.02f && steady_game_fov(1.0f, kept) == 2.02f);
+    require(std::isnan(steady_game_fov(std::numeric_limits<float>::quiet_NaN(), kept)));
+    require(std::isinf(steady_game_fov(std::numeric_limits<float>::infinity(), kept)));
+    require(kept == 2.02f && steady_game_fov(70.0f, kept) == 70.0f);
+    float fresh = 90.0f;
+    require(steady_game_fov(0.18f, fresh) == 90.0f);
     // Projection and authored bank are not silently changed by translation.
     require(near_value(at60[5], start[5]) && near_value(at60[6], start[6]));
     std::cout << "Native flight integration tests passed.\n";

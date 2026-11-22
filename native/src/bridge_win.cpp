@@ -923,6 +923,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         status.applied_pose[i] = original[i];
     }
     status.original_fov = status.applied_fov = original_fov;
+    // Diagnostics keep the rendered value; the camera code below uses a
+    // usable one, so a game cinematic's extreme zoom does not end the session.
+    static float usable_game_fov = 90.0f;
+    original_fov = steady_game_fov(original_fov, usable_game_fov);
     DemoState demo{};
     bool demo_ok = read_demo(demo);
     // Published for the worker's seek relief: the setup hook is the only place
@@ -1084,8 +1088,6 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         unsupported_reason = "the rendered camera pose is not finite";
     else if (!std::isfinite(original_fov))
         unsupported_reason = "the rendered field of view is not finite";
-    else if (original_fov <= 1 || original_fov >= 179)
-        unsupported_reason = "the rendered field of view is out of range";
     else if (width <= 0 || height <= 0)
         unsupported_reason = "the rendered viewport size is invalid";
     else if (flags & 2)
@@ -2098,15 +2100,46 @@ static BOOL CALLBACK start_worker(PINIT_ONCE, PVOID, PVOID*) {
     CloseHandle(thread);
     return TRUE;
 }
+// The game only says that the server interface is missing. Leave the stage and
+// Windows error beside the module so the editor can name the real reason, for
+// example a security policy that refuses the unsigned unlocker DLL.
+static void report_unlocker(const char* stage, DWORD error) noexcept {
+    try {
+        FILE* file = nullptr;
+        const auto path = beside_module(L"dolly_unlocker_load.txt");
+        if (!path.empty() && !_wfopen_s(&file, path.c_str(), L"wb") && file) {
+            std::fprintf(file, "DOLLY_UNLOCKER_LOAD_1\nstage %s\nerror %lu\n", stage,
+                         static_cast<unsigned long>(error));
+            std::fclose(file);
+        }
+    } catch (...) {
+    }
+}
 static BOOL CALLBACK load_unlocker(PINIT_ONCE, PVOID, PVOID*) {
-    if (!development_flags())
+    if (!development_flags()) {
+        report_unlocker("flags", 0);
         return TRUE;
+    }
     auto path = beside_module(L"dolly_cvar_unlocker.dll");
-    if (path.empty() || hash_file(path) != reviewed::Unlocker::SHA256)
+    if (path.empty()) {
+        report_unlocker("path", GetLastError());
         return TRUE;
+    }
+    SetLastError(0);
+    const auto hash = hash_file(path);
+    if (hash != reviewed::Unlocker::SHA256) {
+        // An unreadable file keeps the error from opening it; a changed one has none.
+        report_unlocker(hash.empty() ? "read" : "hash", hash.empty() ? GetLastError() : 0);
+        return TRUE;
+    }
     HMODULE module = LoadLibraryExW(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (module)
-        gOriginalFactory = reinterpret_cast<Factory>(GetProcAddress(module, "CreateInterface"));
+    if (!module) {
+        report_unlocker("load", GetLastError());
+        return TRUE;
+    }
+    gOriginalFactory = reinterpret_cast<Factory>(GetProcAddress(module, "CreateInterface"));
+    if (!gOriginalFactory)
+        report_unlocker("export", GetLastError());
     return TRUE;
 }
 }
