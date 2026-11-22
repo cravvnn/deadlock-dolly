@@ -31,6 +31,8 @@ def focus_window(pid):
         user32.GetWindowThreadProcessId.restype = wintypes.DWORD
         user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
         user32.GetWindowRect.restype = wintypes.BOOL
+        user32.IsIconic.argtypes = [wintypes.HWND]
+        user32.IsIconic.restype = wintypes.BOOL
         user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         user32.SetForegroundWindow.argtypes = [wintypes.HWND]
         user32.SetForegroundWindow.restype = wintypes.BOOL
@@ -53,7 +55,9 @@ def focus_window(pid):
         if not user32.EnumWindows(visit, 0) or best is None:
             return False
         user32.AllowSetForegroundWindow(0xFFFFFFFF)
-        user32.ShowWindow(best, 9)  # SW_RESTORE
+        # Restoring a maximized window would un-maximize it and resize the capture.
+        if user32.IsIconic(best):
+            user32.ShowWindow(best, 9)  # SW_RESTORE
         return bool(user32.SetForegroundWindow(best))
     except (OSError, AttributeError, TypeError, ValueError):
         return False
