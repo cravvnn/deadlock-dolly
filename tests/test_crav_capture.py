@@ -159,6 +159,70 @@ class CravCaptureTests(unittest.TestCase):
                         self.assertEqual(events, ["start", "play"])
                 self.assertFalse(any(p.suffix in (".mp4", ".mkv", ".mov", ".wav") for p in root.rglob("*")))
 
+    def test_slow_fixed_step_capture_times_out_only_when_frames_stall(self):
+        for stall in (False, True):
+            with self.subTest(stall=stall), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                replay = root / "test.dem"
+                replay.write_bytes(replay_bytes())
+                output = root / "shot.crav"
+                clock = [0.0]
+
+                class Controller:
+                    _session, _demo = object(), replay
+                    _op_lock = threading.RLock()
+
+                    def play(self, *args, **kwargs):
+                        recorder.playing = True
+
+                    def stop(self):
+                        pass
+
+                class Recorder:
+                    state, playing, polls = "idle", False, 0
+
+                    def start(self, options, **kwargs):
+                        self.options = options.validated()
+                        self.state = "recording"
+
+                    def status(self):
+                        if self.playing:
+                            self.polls += 1
+                            if not stall and self.polls == 20:
+                                self.state = "completed"
+                                self.options.path.write_text(json.dumps(dict(
+                                    format="deadlock-dolly-camera-track", version=2, fps=30,
+                                    fixed_step=True, complete=True, partial_reason="",
+                                    source="native-view-hook", frames_written=3, first_qpc=123,
+                                    qpc_frequency=10000000, width=1280, height=720, depth=False,
+                                    fields=CAMERA_FIELDS_V2,
+                                    frames=[[i, i/30, i/30, 10+i, 20, 30, 0, 90, 0, 90, i/30]
+                                            for i in range(3)])))
+                        written = 3 if self.state == "completed" else (
+                            min(self.polls, 2) if stall else self.polls)
+                        return dict(state=self.state, frames_written=written, video_first_qpc=123,
+                                    qpc_frequency=10000000, width=1280, height=720, fps=30)
+
+                    def stop(self, **kwargs):
+                        pass
+
+                def sleep(seconds):
+                    clock[0] += 50  # each poll is far slower than real time
+
+                controller, recorder = Controller(), Recorder()
+                project = Project(name="Slow", start_tick=64,
+                    keyframes=[Keyframe(0, 10, 20, 30, 0, 90, 0), Keyframe(2/30, 12, 20, 30, 0, 90, 0)])
+                with patch.object(crav_capture.time, "monotonic", lambda: clock[0]), \
+                        patch.object(crav_capture.time, "sleep", sleep):
+                    if stall:
+                        with self.assertRaisesRegex(RuntimeError, "stopped advancing"):
+                            crav_capture.capture_to_crav(controller, recorder, project, output, fps=30)
+                        self.assertFalse(output.exists())
+                    else:
+                        result = crav_capture.capture_to_crav(controller, recorder, project, output, fps=30)
+                        self.assertEqual(result["frames"], 3)
+                        self.assertGreater(clock[0], 120)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,13 +69,17 @@ def capture_to_crav(controller, recorder, project, destination, *, fps=60,
         with controller._op_lock:
             check()
             controller.play(project, speed=1, rate=60, frozen=False)
+        # Fixed-step frames may render slower than real time; only a stall times out.
+        deadline, progress = time.monotonic() + timeout, None
         while True:
             check()
             status = recorder.status()
             if status.get("state") not in ACTIVE_STATES:
                 break
-            if time.monotonic() >= deadline:
-                raise RuntimeError("Camera-only capture exceeded its bounded time budget")
+            if status.get("frames_written") != progress:
+                deadline, progress = time.monotonic() + timeout, status.get("frames_written")
+            elif time.monotonic() >= deadline:
+                raise RuntimeError("Camera-only capture stopped advancing within its time budget")
             time.sleep(.02)
         if status.get("state") != "completed":
             detail = status.get("error") or "Native camera-only capture was incomplete"
