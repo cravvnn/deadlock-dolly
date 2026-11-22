@@ -31,6 +31,37 @@ struct FinalizeWatch {
         return now - progressed < kFinalizeIdleLimitMs && now - started < kFinalizeHardCapMs;
     }
 };
+// Encoder children another thread may terminate, so a write blocked on an
+// FFmpeg that stopped reading returns. The owner holds one lock around every
+// call. A handle leaves the registry before its owner closes it, so stop()
+// never terminates a closed or reused handle; after stop(), a late add() is
+// terminated at once instead of escaping the stop.
+template <class Handle, std::size_t Count> struct ChildRegistry {
+    std::array<Handle, Count> slots{};
+    bool stopped = false;
+    template <class Kill> bool add(Handle child, Kill&& kill) {
+        for (auto& slot : slots) {
+            if (slot)
+                continue;
+            slot = child;
+            if (stopped)
+                kill(child);
+            return true;
+        }
+        return false;
+    }
+    void remove(Handle child) noexcept {
+        for (auto& slot : slots)
+            if (slot == child)
+                slot = Handle{};
+    }
+    template <class Kill> void stop(Kill&& kill) {
+        stopped = true;
+        for (const auto& slot : slots)
+            if (slot)
+                kill(slot);
+    }
+};
 inline bool frame_admission_open(std::uint64_t submitted, std::uint32_t limit) noexcept {
     return !limit || submitted < limit;
 }

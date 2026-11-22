@@ -175,6 +175,12 @@ struct Session {
     std::uint64_t frequency = 1;
     std::mutex wait_mutex;
     std::condition_variable wake;
+    // FFmpeg children that stop(true), a failure or shutdown may terminate
+    // from another thread; see ChildRegistry. inputs_closed marks the end of
+    // pipe writes: after it the encoder bounds its own wait for FFmpeg.
+    std::mutex child_mutex;
+    ChildRegistry<HANDLE, 2> children;
+    std::atomic<bool> inputs_closed{false};
 };
 struct GpuSlot {
     FrameStamp stamp;
@@ -252,9 +258,17 @@ std::uint64_t now_qpc() noexcept {
     QueryPerformanceCounter(&result);
     return std::uint64_t(result.QuadPart);
 }
+// A blocked WriteFile to an FFmpeg pipe returns only when its reader exits, so
+// cancellation and failure end the children instead of waiting on them.
+void terminate_children(Session& s) noexcept {
+    std::lock_guard<std::mutex> lock(s.child_mutex);
+    s.children.stop([](HANDLE process) { TerminateProcess(process, 1); });
+}
 void request_stop(Session& s, bool cancel) noexcept {
-    if (cancel)
+    if (cancel) {
         s.cancel.store(true, std::memory_order_release);
+        terminate_children(s);
+    }
     std::uint64_t unset = 0;
     s.stop_qpc.compare_exchange_strong(unset, now_qpc());
     s.stopping.store(true, std::memory_order_release);
@@ -303,6 +317,7 @@ void publish_error(Session& s, HRESULT hr, const wchar_t* message, std::size_t l
         s.error_buffer[count] = 0;
         s.error_text.store(s.error_buffer, std::memory_order_release);
     }
+    terminate_children(s);
     request_stop(s, false);
 }
 void fail(Session& s, HRESULT hr, const wchar_t* message) noexcept {
@@ -874,8 +889,12 @@ struct Child {
             input = nullptr;
         }
     }
-    void close_process() noexcept {
+    void close_process(Session& s) noexcept {
         if (process) {
+            {
+                std::lock_guard<std::mutex> lock(s.child_mutex);
+                s.children.remove(process);
+            }
             CloseHandle(process);
             process = nullptr;
         }
@@ -993,6 +1012,9 @@ bool spawn_encoder(Session& s, Child& child, const std::wstring& command,
     CloseHandle(pi.hThread);
     child.process = pi.hProcess;
     child.input = write_end;
+    std::lock_guard<std::mutex> lock(s.child_mutex);
+    if (!s.children.add(pi.hProcess, [](HANDLE process) { TerminateProcess(process, 1); }))
+        TerminateProcess(pi.hProcess, 1);
     return true;
 }
 bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
@@ -1112,6 +1134,10 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             s->consumed.store(read + 1, std::memory_order_release);
             s->wake.notify_all();
             if (FAILED(hr)) {
+                // Cancellation ends FFmpeg to release a blocked write; the
+                // broken pipe that follows is not an encoder failure.
+                if (s->cancel.load(std::memory_order_acquire))
+                    return false;
                 std::wstring message = s->depth_enabled ? paired_failed : color_failed;
                 message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
                 fail_text(*s, hr, message);
@@ -1158,6 +1184,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         }
         child.close_input();
         depth_child.close_input();
+        s->inputs_closed.store(true, std::memory_order_release);
         FinalizeWatch watch;
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
@@ -1222,9 +1249,9 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         WaitForSingleObject(depth_child.process, 5000);
     }
     child.close_input();
-    child.close_process();
+    child.close_process(*s);
     depth_child.close_input();
-    depth_child.close_process();
+    depth_child.close_process(*s);
     if (cancelled || FAILED(s->error.load()))
         s->dropped.fetch_add(s->produced.load() - s->consumed.load(), std::memory_order_relaxed);
     if (!child.log.empty())
@@ -2239,12 +2266,28 @@ void reset_resources() noexcept {
 }
 void shutdown() noexcept {
     std::thread worker;
+    std::shared_ptr<Session> session;
     {
         std::lock_guard<std::mutex> lock(control_mutex);
         if (current && !current->done.load())
             request_stop(*current, false);
+        session = current;
         if (encoder_thread)
             worker = std::move(*encoder_thread);
+    }
+    // Finishing bounds its own wait for FFmpeg; only a pipe write to an FFmpeg
+    // that stopped reading cannot return by itself, so end it after a while.
+    if (worker.joinable() && session && session->encoder == Encoder::ffmpeg) {
+        const auto deadline = GetTickCount64() + 30000;
+        while (!session->done.load(std::memory_order_acquire) &&
+               !session->inputs_closed.load(std::memory_order_acquire)) {
+            if (GetTickCount64() >= deadline) {
+                fail(*session, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                     L"FFmpeg stopped reading frames and was ended when the editor closed.");
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
     }
     if (worker.joinable())
         worker.join();

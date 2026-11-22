@@ -291,6 +291,12 @@ if(WIN32)
             set_tests_properties(native_video_status_cache_smoke PROPERTIES TIMEOUT 60)
             set_tests_properties(native_camera_only_smoke PROPERTIES TIMEOUT 45)
             set_tests_properties(native_video_cap_smoke PROPERTIES TIMEOUT 40)
+            # Its own stand-in FFmpeg never reads stdin; cancel must still finish.
+            add_executable(video_stalled_encoder_smoke tests/video_stalled_encoder_smoke.cpp)
+            target_include_directories(video_stalled_encoder_smoke PRIVATE include)
+            target_link_libraries(video_stalled_encoder_smoke PRIVATE dolly_overlay)
+            add_test(NAME native_video_stalled_encoder_smoke COMMAND video_stalled_encoder_smoke)
+            set_tests_properties(native_video_stalled_encoder_smoke PROPERTIES TIMEOUT 40)
             # A late capture fault after the encoder's stop decision: a generated
             # test copy calls a hook after each decide_cancel. Never add the hook
             # to the production recorder.

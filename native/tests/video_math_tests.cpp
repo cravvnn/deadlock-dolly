@@ -191,6 +191,23 @@ int main() {
     require(!watch.keep_waiting(2 * kFinalizeIdleLimitMs - 1, 5));
     watch.next_child(kFinalizeHardCapMs - 1, 9);
     require(!watch.keep_waiting(kFinalizeHardCapMs, 10));
+    // FFmpeg child ownership: a stop terminates only registered handles, a
+    // closed handle is never touched, and a child added after the stop is
+    // terminated immediately instead of escaping cancellation.
+    ChildRegistry<int, 2> children;
+    std::array<int, 4> killed{};
+    std::size_t kills = 0;
+    const auto kill = [&](int child) { killed[kills++] = child; };
+    require(children.add(3, kill) && children.add(4, kill) && !children.add(5, kill));
+    require(kills == 0);
+    children.remove(3);
+    children.stop(kill);
+    require(kills == 1 && killed[0] == 4);
+    require(children.add(6, kill) && kills == 2 && killed[1] == 6);
+    children.remove(4);
+    children.remove(6);
+    children.stop(kill);
+    require(kills == 2);
     std::puts(
         "Video cadence, timestamps, color conversion, depth mapping and row orientation passed.");
 }
