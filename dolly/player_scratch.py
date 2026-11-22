@@ -36,14 +36,21 @@ def create(root, *, fps, frames, output=None):
             request=request, fps=fps, frames=frames, output=str(output) if output else None,
             state='pending', directory=str(folder)), indent=2), encoding='utf-8')
     except Exception:
-        # No raw capture has been admitted yet. Remove only our new known files.
-        for cleanup in ((folder/OWNER).unlink, (folder/MANIFEST).unlink, folder.rmdir):
-            try:
-                cleanup()
-            except OSError:
-                pass
+        discard_new(folder)
         raise
     return folder, request
+
+
+def discard_new(folder):
+    """Remove a just-created folder before any raw capture was admitted.
+
+    Only our own known files are removed; a foreign file keeps the folder.
+    """
+    for cleanup in ((folder/OWNER).unlink, (folder/MANIFEST).unlink, folder.rmdir):
+        try:
+            cleanup()
+        except OSError:
+            pass
 
 
 def validate(folder, request):

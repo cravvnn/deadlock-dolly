@@ -203,19 +203,30 @@ def begin_capture(deployment: Path, owner_offset: int, frames: int,
     temporary = marker.with_name(marker.name + ".tmp")
     request_id = uuid.uuid4().hex
     text = marker_text(owner_offset, frames, back_offset, fps=fps, request_id=request_id, speed=speed)
+    folder = None
     if scratch_root is not None:
         from . import player_scratch
         folder, request_id = player_scratch.create(scratch_root, fps=fps, frames=frames, output=output)
         text = marker_text(owner_offset, frames, back_offset, fps=fps, request_id=request_id, speed=1.0)
         text = text.replace('color-sequence-v3', 'color-sequence-v4').strip()
         text += ' speed %.9g scratch %s\n' % (speed, str(folder).encode('utf-8').hex())
-    temporary.write_text(text, encoding="ascii")
-    stop = Path(deployment) / STOP_NAME
     try:
-        stop.unlink()
-    except FileNotFoundError:
-        pass
-    os.replace(temporary, marker)
+        temporary.write_text(text, encoding="ascii")
+        stop = Path(deployment) / STOP_NAME
+        try:
+            stop.unlink()
+        except FileNotFoundError:
+            pass
+        os.replace(temporary, marker)
+    except Exception:
+        # The marker was never published, so native never saw this folder.
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if folder is not None:
+            player_scratch.discard_new(folder)
+        raise
     return marker
 
 

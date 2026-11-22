@@ -59,6 +59,17 @@ class ScratchTests(unittest.TestCase):
                 player_layer.check_capture_space(self.scratch,1920,1080,30)
             usage.assert_called_once_with(self.scratch)
 
+    def test_failed_marker_write_leaves_no_scratch_folder_or_temporary(self):
+        actual=Path.write_text
+        def write_text(path,*args,**kwargs):
+            if path.name==player_layer.MARKER_NAME+'.tmp':
+                actual(path,'partial');raise OSError('disk full')
+            return actual(path,*args,**kwargs)
+        with patch.object(Path,'write_text',write_text), self.assertRaisesRegex(OSError,'disk full'):
+            self.begin()
+        self.assertEqual(list(self.scratch.iterdir()),[])
+        self.assertEqual(list(self.deploy.iterdir()),[])
+
     def test_job_state_and_legacy_protocol(self):
         folder=self.begin();player_scratch.update(folder,'cancelled')
         self.assertEqual(json.loads((folder/player_scratch.MANIFEST).read_text())['state'],'cancelled')
