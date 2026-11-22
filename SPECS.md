@@ -1228,3 +1228,51 @@ journal's restored state returns early, overlays are per session and
 marker-checked, restore is hash-checked). Concurrent closes from the exit
 watcher and dead-session recovery now hold `_restore_lock` across restoration,
 the journal read and overlay removal, serializing them with record_exit.
+
+## Console reconnect (ConsoleReconnect)
+
+`dolly/ConsoleReconnect.tla` with [API](dolly/ConsoleReconnectApi.tla) is the
+second L05 process model. Controller.connect runs under `_op_lock` while a
+playback worker (`Controller._thread`) may still be unwinding. connect calls
+stop(): `_halt` joins the worker for 10 s, then runs the restores. Before
+2026-11-22 connect swallowed every stop failure while the console was down,
+including the join timeout, and installed a new ConsoleClient; the worker's
+`_finish_playback` then sent demo_pause and the HUD/playback restores through the
+new connection without `_op_lock`. connect now re-raises while the worker is
+alive and swallows only restore failures. ConsoleClient retires a socket on a
+send or read failure only while that socket is still current: `_socket` is
+cleared, the socket is shut down and the reader exits; a failure after close()
+keeps "connection closed". Bounds: one connect call, one worker (running,
+finishing, done), one old and one new client, at most one failure per socket;
+the join timeout, a restore failure, the port check, the open and the ready
+echo are each nondeterministic. TypeOK, OneOpen, FailedClean, RefusedUntouched,
+WorkerQuiet (console = new implies worker done), Retired and CloseReason hold,
+with Returns, WorkerEnds and completion-shape refinement (64 states, depth 9).
+Three mutants fail: swallowing the failure while the worker is alive, not
+retiring a failed socket, and a send failure overwriting a close. Not modeled:
+stop_game_follow, native editor setup, `_capture_game_build`, the request/echo
+protocol, reconnect from start_editing's polling loop, multiple workers and
+concurrent connect callers (serialized by `_op_lock`). Socket and reader
+behaviour stays with owner tests (`ConsoleSocketRetirement`, `Reconnect`).
+
+## Launch versus another window's recovery (LaunchRecovery)
+
+`dolly/LaunchRecovery.tla` runs one Dolly window launching session N (lock,
+marked overlay, journal prepared, patched gameinfo, journal mounted, spawn,
+release) against another window's recover_pending/recover_orphans (one game
+check, then lock, re-check, restore_record and remove_overlay). Before
+2026-11-22 launch prepared, deployed and patched without `game_config_lock`,
+so a second window could mark the launching session restored and delete its
+overlay. launch now holds the lock from recover_pending until Popen returns
+(the named mutex is re-entrant on its thread, and it is released before the
+pid write so the exit watcher's `_restore_lock` order is kept); recovery
+re-checks the running game inside the lock, and recover_orphans removes overlays
+only inside it. Bounds: one launcher, one recoverer, one session, no outside
+edits, and N's game never exits. OverlayPresentAtSpawn, RestoredNotPatched
+(journal restored implies gameinfo is not N's patched file) and
+RunningGameUntouched hold, with Terminates (30 states). Two mutants fail: an
+unlocked launch (RestoredNotPatched) and no in-lock game re-check
+(RunningGameUntouched). The session marker is now written atomically and crashed
+`.dolly-write-*.tmp` files in the overlay root and `cvar_unlocker/cfg` are
+removable; a crash during the marker write itself still leaves an unmarked
+overlay, the same as the existing crash-before-marker case.

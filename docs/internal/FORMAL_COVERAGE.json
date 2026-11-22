@@ -33,11 +33,11 @@
       "title": "Capture/media/native completion",
       "status": "capture ack/context restoration join plus local models; DollyRoot composes RecorderApi (CameraOnlyCapture, VideoCompleteness), CaptureRestoreApi and MediaCloseApi; whole GPU/media lifecycle open",
       "priority": 1,
-      "remaining": "GPU producer/drain/encoder lifetime composition and C++ memory-order obligations, device removal and process exit"
+      "remaining": "GPU producer/drain/encoder lifetime composition and C++ memory-order obligations, device removal and process exit; native recorder cancel of a blocked FFmpeg pipe write and finalize waiting are owner-tested (ChildRegistry, FinalizeWatch), not modeled"
     },
     "L03": {
       "title": "Storage/recovery/update publication",
-      "status": "bounded per-operation models plus GameinfoTransaction across Dolly, game, helper and reopen recovery; complete filesystem/crash composition open; GameinfoCleaners bounds two cleaners across processes",
+      "status": "bounded per-operation models plus GameinfoTransaction across Dolly, game, helper and reopen recovery; complete filesystem/crash composition open; GameinfoCleaners bounds two cleaners across processes; LaunchRecovery bounds an in-progress launch against another window's recovery (2026-11-22)",
       "priority": 1,
       "remaining": "editing-session/bootstrap/desktop startup files, replay/crav identity, native UI storage, file-system failure modes; graphics profiles are tested, not modeled (session-owned files only)"
     },
@@ -49,9 +49,9 @@
     },
     "L05": {
       "title": "Optional process/platform integrations",
-      "status": "source/platform/test evidence; GameExitClose bounds game exit versus native flight waits and close; complete temporal specs open",
+      "status": "source/platform/test evidence; GameExitClose bounds game exit versus native flight waits and close; ConsoleReconnect bounds connect versus an unwinding playback worker and failed-socket retirement; complete temporal specs open",
       "priority": 2,
-      "remaining": "console/IPC reconnect beyond the serialized connect path, watchdog/assert/hotkey/Discord resources and bounded retry/cancel behavior; Session.close double-run is serialized and per-step idempotent"
+      "remaining": "IPC reconnect beyond one connect, start_editing's connect polling and GUI recovery composition, watchdog/assert/hotkey/Discord resources and bounded retry/cancel behavior; Session.close double-run is serialized and per-step idempotent"
     },
     "L06": {
       "title": "Build/generation/tooling scope",
@@ -215,7 +215,7 @@
     },
     {
       "path": "dolly/assert_watcher.py",
-      "sha256": "66cd8409e80434935d13c8054be07334422e40ff88905f864b40badc2a04472b",
+      "sha256": "5dd67a1e80cd65ba4ffd3f3e64f93b1d82b0681e6159c631fa9af04ed7b447fa",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L05",
       "disposition": "stateful partial/open",
@@ -228,7 +228,8 @@
         "classes": [],
         "functions": [
           "choose_assert_action",
-          "dismiss_assert_dialogs"
+          "dismiss_assert_dialogs",
+          "_label"
         ],
         "imports": [
           "__future__",
@@ -237,7 +238,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: assert dialog buttons are compared with mnemonics (&) stripped via _label, so the fallback Continue/Try Again box matches. No lifecycle change."
     },
     {
       "path": "dolly/attach_camera.py",
@@ -479,7 +481,7 @@
     },
     {
       "path": "dolly/camera_export.py",
-      "sha256": "7906af20121d474b416865b4befa5d1241ebd6598e03a2c14f08bb40e33c3893",
+      "sha256": "b715238cf9fe3af02b886438493a141b48c0e6a73fe3af1d516811801b4952d6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -543,6 +545,7 @@
         "imports": [
           "__future__",
           "camera_bundle",
+          "file_ops",
           "itertools",
           "path",
           "pathlib",
@@ -552,7 +555,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: no-overwrite publish now calls file_ops.publish_new (same rename/link semantics, cleanup kept in the caller). ExportCleanup scope unchanged."
     },
     {
       "path": "dolly/clip_audio.py",
@@ -657,7 +661,7 @@
     },
     {
       "path": "dolly/console.py",
-      "sha256": "25f50fd458c83051b8bb85827e0870852695e26b4718fbb6eeb2f5dcff95ffbb",
+      "sha256": "4f6c0cb9c047586360c477673710619bcf43ba1562fa7814006075504c7e167c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L05",
       "disposition": "stateful partial/open",
@@ -675,6 +679,13 @@
           "scope": "connect provisional socket",
           "configs": [
             "dolly/SocketSetup.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/ConsoleReconnect.tla",
+          "scope": "failed socket retirement",
+          "configs": [
+            "dolly/ConsoleReconnect.cfg"
           ]
         }
       ],
@@ -728,11 +739,12 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: a send or read failure retires the socket only while it is still current (_fail clears _socket, shuts down outside _condition, reader exits); a failure after close keeps \"connection closed\". _send_locked inlined. ConsoleReconnect bounds this."
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac",
+      "sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -809,6 +821,13 @@
           "scope": "game HUD cvar ownership across the playback restore, replay-HUD and game-UI journals: Play with and without Hide HUD, pause/resume during a shot, shot finish, POV start/finish/retry, Follow success and failure, Stop (halt, replay HUD, playback, UI), one console failure per run. No journal holds Dolly's own values as an original, the user's HUD is on screen or journaled, a clean Stop settles to the user's HUD",
           "configs": [
             "dolly/HudOwnership.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/ConsoleReconnect.tla",
+          "scope": "reconnect with unwinding worker",
+          "configs": [
+            "dolly/ConsoleReconnect.cfg"
           ]
         }
       ],
@@ -901,7 +920,8 @@
       "reconciliation_20261120s8": "2026-11-20: launch and start_editing refuse a second launch before recording a launch attempt or a failed startup stage, so the running session stays ready.",
       "reconciliation_20261120s13": "2026-11-20: connect continues when its Stop / restore fails only because the console is lost (a Game Follow rig restore needs it); the restore stays pending for the next Stop instead of making reconnection impossible.",
       "reconciliation_20261120": "2026-11-20: Diagnostics export picks previous sessions with game_logging.newest_sessions.",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261122": "2026-11-22: connect re-raises a stop failure while the playback worker is still alive (only restore failures are swallowed while the console is down); console connection checks read self._console once via export_timing.console_connected. ConsoleReconnect bounds connect versus an unwinding worker."
     },
     {
       "path": "dolly/convar_response.py",
@@ -959,7 +979,7 @@
     },
     {
       "path": "dolly/crav_capture.py",
-      "sha256": "5d4e50f497b83640ab2af8402e4e9b3c2ec3dfeaa393296b0d9783257776698b",
+      "sha256": "94db14ea7ae9c437ab007518795f62e472a0e1c7edf82df8bca33cf63239ca41",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -980,7 +1000,8 @@
       "test_reference_limits": "Owner simulations and local files; no whole-program/game proof.",
       "source_structure": {},
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261122": "2026-11-22: the recording phase times out only when frames_written stops advancing for timeout seconds; the start phase keeps its own deadline. CravCapture protocol unchanged."
     },
     {
       "path": "dolly/crav_contract.py",
@@ -1167,7 +1188,7 @@
     },
     {
       "path": "dolly/definitions.py",
-      "sha256": "1e78a7b7074b4ee64679f32abbbcb81ec4ffa904f6e43505e8b4ed71c8b20123",
+      "sha256": "5f68e6c5a84c38e5a4979f7ea487434917267c1b922bb1d868fcc8ca390341b4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -1227,6 +1248,7 @@
           "write_native"
         ],
         "imports": [
+          "",
           "__future__",
           "dataclasses",
           "pathlib",
@@ -1238,7 +1260,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: atomic writes go through file_ops._atomic_write (bounded lock retry, guarded temp cleanup). DefinitionsFirstRead scope unchanged."
     },
     {
       "path": "dolly/demo_packets.py",
@@ -1504,7 +1527,7 @@
     },
     {
       "path": "dolly/display.py",
-      "sha256": "748e826014c7710ee2fa650053f0e2b2721759c2b06c317ed08f6f059b168e27",
+      "sha256": "3a3f7e499a913b35a58b5026b10b377198e69bf04741d3beae1384ade4658ca2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L05",
       "disposition": "stateful partial/open",
@@ -1528,7 +1551,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: focus_window restores the window only when IsIconic, so a maximized game stays maximized at record start. No lifecycle change."
     },
     {
       "path": "dolly/dof_preflight.py",
@@ -1691,7 +1715,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "f87a2cd707ca3f1801b829b77c9e7e949371db0202a6dfa80a209a3d2022b4f0",
+      "sha256": "11b2134eed3557ffdaeb7b18bec06067a8608ee301526d9b38250cadb3035973",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1737,7 +1761,6 @@
           "object_library",
           "path",
           "replay_player_focus",
-          "settings",
           "video_export"
         ],
         "persistent_state_signals": []
@@ -1747,7 +1770,8 @@
       "reconciliation_20261118": "2026-11-18: Bank edits write the effective roll (curve_roll when set); parked check compares channel values with wrapped angles.",
       "reconciliation_20261120e": "2026-11-20: In-game bank edits merge in history by the edited camera, so a bank drag on an unselected camera is one undo step.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap"
+      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
+      "reconciliation_20261122": "2026-11-22: framing grid, pause-after-capture and movement speed save through DollyApp._commit_settings (owned fields over the latest settings) instead of a stale snapshot."
     },
     {
       "path": "dolly/editor_dof.py",
@@ -1961,7 +1985,7 @@
     },
     {
       "path": "dolly/encoder_select.py",
-      "sha256": "ef28a8df78295552f23f95dbd0e5cae1a2cecebf8f927c476192b3dd10359330",
+      "sha256": "44bee5565086684ab6a04f38b580f513c9309a352039afd683d8d79bee2b2768",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -1979,14 +2003,22 @@
           "gpu_adapters",
           "detect_vendor",
           "describe_adapters",
-          "auto_encoder"
+          "auto_encoder",
+          "_probe",
+          "_probe_once",
+          "_probe_key",
+          "encoder_works",
+          "prewarm"
         ],
         "imports": [
-          "__future__"
+          "__future__",
+          "pathlib",
+          "runtime"
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: Auto probes the vendor encoder once per ffmpeg build/codec with a test encode; only success or a clean nonzero exit is cached; prewarm runs it on a daemon thread and Record never waits for it (keeps the hardware encoder until an answer exists)."
     },
     {
       "path": "dolly/export_audit.py",
@@ -2030,7 +2062,7 @@
     },
     {
       "path": "dolly/export_timing.py",
-      "sha256": "1f7b858981cd4ec2aa52893ce241210b5705455be89584bfb39e1a9a6c0a7716",
+      "sha256": "3f9b79265acf179fadc1839cb42b745232d66fac8ceab1103fecf04ea7edff54",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2053,7 +2085,9 @@
         "classes": [
           "ExportTimingMixin"
         ],
-        "functions": [],
+        "functions": [
+          "console_connected"
+        ],
         "imports": [
           "__future__",
           "camera_commands",
@@ -2063,7 +2097,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: console_connected(console) reads the client once; used at every connection check."
     },
     {
       "path": "dolly/ffmpeg_color.py",
@@ -2120,7 +2155,7 @@
     },
     {
       "path": "dolly/file_ops.py",
-      "sha256": "b7d2662d23338b4e3578b448775297f6e3a758f1600436cf735e05dff700cedf",
+      "sha256": "0f0711dcfb37c168f7afde9cf819abd76a90359bc9305407117dcae52137180c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2159,15 +2194,22 @@
         "functions": [
           "_atomic_write",
           "_plain_path",
-          "_plain_ancestors"
+          "_plain_ancestors",
+          "_transient_lock",
+          "retry_locked",
+          "replace_retrying",
+          "publish_new",
+          "_read_only_mode"
         ],
         "imports": [
           "__future__",
-          "pathlib"
+          "pathlib",
+          "typing"
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: retry_locked/replace_retrying add a bounded (~1 s) retry for PermissionError/WinError 5/32; _atomic_write clears read-only before retrying; publish_new is the shared no-overwrite publish. AtomicMode/BackupPublish scopes unchanged (transient locks are owner-tested, not modeled)."
     },
     {
       "path": "dolly/follow_camera.py",
@@ -2587,7 +2629,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "34a4d2a13518dddd6cfe5678392bfbce9cce4d019da70ba0286abdf387bfbf2e",
+      "sha256": "e53b734b040a8c0084e3de42b579fa83f465c124a85d1bebc98f38ef85dad4e5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2638,7 +2680,8 @@
           "_set_var",
           "_set_widget_state",
           "_binding_event_key",
-          "main"
+          "main",
+          "_changed_settings"
         ],
         "imports": [
           "",
@@ -2740,7 +2783,8 @@
       "reconciliation_20261120d2": "2026-11-20: Finish pressed while the shot is still playing clears the queued layer passes for every kind of take, not only POV and bone takes. The base capture is kept, so the pipeline still audits the take and restores the scene layers as at a normal end. The automatic finish at the end of the shot is unchanged.",
       "reconciliation_20261120d4": "2026-11-20: A real-time take that fails with the recorder's lost-frames error asks once whether to turn on fixed-step export and record again, in place of the error dialog; the second report of the same failure is only logged. Yes records again once Dolly is idle. Fixed-step takes, and so every layered run, keep the error dialog.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap"
+      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
+      "reconciliation_20261122": "2026-11-22: every settings writer commits only its owned fields over the latest settings under _SETTINGS_COMMIT (_commit_settings); game-exit cleanup is marked done only on success and retried up to GAME_EXIT_CLEANUP_ATTEMPTS; Auto encoder prewarm on startup/codec/ffmpeg change; layer passes reuse auto_codec."
     },
     {
       "path": "dolly/gui_layout.py",
@@ -2826,7 +2870,7 @@
     },
     {
       "path": "dolly/hotkey.py",
-      "sha256": "a4b7ce5f23d9c5b1fe818669c8d1988119976ce3f3b5bd71015f505b4193baa2",
+      "sha256": "54b31723003d3938d81665e6804bdea17e77e035666555147decedc2200cd0a8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L05",
       "disposition": "stateful partial/open",
@@ -2863,7 +2907,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: unused HOTKEY_LABEL removed. HotkeyLifetime scope unchanged."
     },
     {
       "path": "dolly/input_diagnostics.py",
@@ -2947,7 +2992,7 @@
     },
     {
       "path": "dolly/launcher.py",
-      "sha256": "00934f8b1911725d66174c38ef64ed561232c23c3a4ad26ee534a5179ba8bd52",
+      "sha256": "4a87e370ec2eb33d515a672d4fde50cf67f81c23b596417408033bd867731596",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2966,6 +3011,13 @@
           "configs": [
             "dolly/GameinfoTransaction.cfg",
             "dolly/GameinfoTransaction-api.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/LaunchRecovery.tla",
+          "scope": "launch holds game_config_lock until Popen",
+          "configs": [
+            "dolly/LaunchRecovery.cfg"
           ]
         }
       ],
@@ -3016,7 +3068,8 @@
           "_restore_session_configs",
           "recover_pending",
           "launch",
-          "_main"
+          "_main",
+          "_launch_locked"
         ],
         "imports": [
           "",
@@ -3058,7 +3111,8 @@
       "reconciliation_20261114f": "2026-11-14 custom mod folders: any extra Game mount below citadel/ (Hyperline, modlock, hand-made folders) is a candidate; mod_policy still refuses render-only packs and paths resolving outside the game folder.",
       "reconciliation_20261114i": "2026-11-14 launch-time helper: Session.start_cleanup_helper runs right after the game starts (failure is logged and retried at close); handoff_cleanup reuses it. GameinfoTransaction models the helper from Spawn.",
       "reconciliation_20261114k": "2026-11-14 boundaries: the exit watcher starts before the cleanup helper and helper/handoff log failures are contained, so a full or locked launch.log cannot skip the watcher.",
-      "reconciliation_20261114n": "2026-11-14 two cleaners: recover_pending and Session.close hold game_config_lock across restore and overlay removal."
+      "reconciliation_20261114n": "2026-11-14 two cleaners: recover_pending and Session.close hold game_config_lock across restore and overlay removal.",
+      "reconciliation_20261122": "2026-11-22: launch holds game_config_lock from recover_pending until Popen returns (_launch_locked), released before the pid write; recover_pending re-checks the running game inside the lock; the session marker is written atomically. LaunchRecovery bounds launch versus another window's recovery."
     },
     {
       "path": "dolly/layer_modes.py",
@@ -3770,7 +3824,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "4b1b7f95f994583a91532172ed683a0d0b0b0331ed4ac14e396109c6ef30d18f",
+      "sha256": "dc93f5d7b76e0f3bb13001f8bb3aa1b81c724367172be50de41ada3b4f3a4a1f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3851,6 +3905,7 @@
           "__future__",
           "bisect",
           "dataclasses",
+          "file_ops",
           "object_model",
           "particles",
           "pathlib",
@@ -3865,7 +3920,8 @@
       "reconciliation_20261118": "2026-11-18: retime names the source blend that would pass the 10 s limit, before changing anything.",
       "reconciliation_20261118_save_retry": "2026-11-18: Project.save retries the final replace for about a second when Windows reports the shot briefly locked (PermissionError); other errors fail at once. SaveCleanup still abstracts the body.",
       "reconciliation_20261119n": "2026-11-19: PROJECT_NAME_LIMIT names the 256-character shot name limit for callers. Project.validate rejects a name with an unpaired surrogate (for example from hand-edited JSON), which loaded but could not be saved and exported to USD as ?.",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261122": "2026-11-22: Project.save uses file_ops.replace_retrying; the local _replace_retrying_lock helper is removed."
     },
     {
       "path": "dolly/paused_flight.py",
@@ -3977,7 +4033,7 @@
     },
     {
       "path": "dolly/player_layer.py",
-      "sha256": "7f3e4ccb6f501b00dcca30ff571e7a3b3ba083fc7e836841b29cafbd4acf33c8",
+      "sha256": "2ecfec533d551bbdcbe60cb808b09b980c5749cfa7c48e7737acdd921fade651",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -4027,8 +4083,6 @@
           "wait_for_capture",
           "iter_frames",
           "_preview_channel",
-          "write_previews",
-          "encode_layer",
           "wait_until_armed",
           "encode_bundle",
           "_encode_failure",
@@ -4050,7 +4104,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261120": "2026-11-20: wait_until_armed names an unsupported game build and shows one status line."
+      "reconciliation_20261120": "2026-11-20: wait_until_armed names an unsupported game build and shows one status line.",
+      "reconciliation_20261122": "2026-11-22: unused write_previews/encode_layer removed; a failed capture-marker write removes the temp and the new scratch folder (player_scratch.discard_new)."
     },
     {
       "path": "dolly/player_pixels.py",
@@ -4077,7 +4132,7 @@
     },
     {
       "path": "dolly/player_scratch.py",
-      "sha256": "bd90514407dffd98a4f7cdbfdf16f6a7e01b4e2c3db1946e701f8aae8ccb337f",
+      "sha256": "9d12b9b5ce931fe6e3ae05a17077894244de517e902fba5c21210d42973f7fa7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -4117,7 +4172,8 @@
           "create",
           "validate",
           "update",
-          "from_marker"
+          "from_marker",
+          "discard_new"
         ],
         "imports": [
           "pathlib"
@@ -4126,7 +4182,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: create()'s cleanup is discard_new, now also reached from begin_capture after a marker-publication failure. ScratchCreate scope otherwise unchanged."
     },
     {
       "path": "dolly/preload.py",
@@ -4384,7 +4441,7 @@
     },
     {
       "path": "dolly/replay_repair.py",
-      "sha256": "238f5de94b00abd60f2293fcb2db77d36b7acd5d77d8bea60d0881bba0d4b87c",
+      "sha256": "1608a94ab89b7409c28ae1b0b80efc3032cb161a4256816ddec12ad190289bc1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4428,6 +4485,7 @@
         "imports": [
           "__future__",
           "demo_packets",
+          "file_ops",
           "pathlib"
         ],
         "persistent_state_signals": [
@@ -4435,7 +4493,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: no-overwrite publish now calls file_ops.publish_new."
     },
     {
       "path": "dolly/replay_warmup.py",
@@ -4503,7 +4562,7 @@
     },
     {
       "path": "dolly/reshade_setup.py",
-      "sha256": "11f1e1b89c5ebbdccdb98e70f855f65a2b403c962eedf5bfc893e8a956093071",
+      "sha256": "4456a74c1eae08d08d5bbd0ac165aecb90998b6f91f3d8503a3eb36c4b83ceb8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4552,6 +4611,7 @@
         ],
         "imports": [
           "__future__",
+          "file_ops",
           "pathlib",
           "runtime"
         ],
@@ -4559,7 +4619,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: ReShade.ini is flushed and fsynced before a retried replace; no-overwrite publish uses file_ops.publish_new. ReShade.ini read-only state is still respected."
     },
     {
       "path": "dolly/runtime.py",
@@ -4725,7 +4786,7 @@
     },
     {
       "path": "dolly/session_cleanup.py",
-      "sha256": "97aa5f46da931744395083da83849d8afec00a86cd86d0c76ea9ede75bdf0d19",
+      "sha256": "b9b5a20cb0c4786e0b9385f9ed3b8dc991a8c7285c1c7b8e6847756b55d0cb60",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4744,6 +4805,13 @@
           "configs": [
             "dolly/GameinfoTransaction.cfg",
             "dolly/GameinfoTransaction-api.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/LaunchRecovery.tla",
+          "scope": "recover_orphans locked with running re-check",
+          "configs": [
+            "dolly/LaunchRecovery.cfg"
           ]
         }
       ],
@@ -4788,11 +4856,12 @@
       "reconciliation_20261114k": "2026-11-14 boundaries: remove_overlay treats the game's session-files/cache_<id>.soc and an empty cvar_unlocker/save as session output (real leftovers showed these kept every session's folder); other session-files content is still preserved. The marker accepts the same logs/<id> session after the Dolly folder moved. A non-UTF-8 gameinfo.gi is a LaunchError.",
       "reconciliation_20261114n": "2026-11-14 two cleaners: wait_and_cleanup re-checks clean and game state inside game_config_lock before restoring and removing.",
       "reconciliation_20261118": "2026-11-18: _append_log refuses linked session folders and log files.",
-      "reconciliation_20261120": "2026-11-20: The Players capture progress file and its temporary are generated files removed with the session folder."
+      "reconciliation_20261120": "2026-11-20: The Players capture progress file and its temporary are generated files removed with the session folder.",
+      "reconciliation_20261122": "2026-11-22: recover_orphans checks the marker, journal, restore and remove_overlay inside game_config_lock with a running-game re-check; crashed .dolly-write-*.tmp files in the overlay root and cvar_unlocker/cfg are removable. LaunchRecovery bounds this."
     },
     {
       "path": "dolly/session_recovery.py",
-      "sha256": "3357dfd5d96c5a1cc69752e6d5c1146c7cbfb7add325f810792d9672934a194a",
+      "sha256": "001f50eddf7cece6a05f66655fe4c07ade19939c3ae556be4a65afc71ec238b1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4836,11 +4905,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261114c": "2026-11-14 storage: a gameinfo conflict keeps its GameinfoConflict type through the combined restoration error so the desktop can offer the user's choice.",
-      "reconciliation_20261114n": "2026-11-14 two cleaners: game_config_lock (per-user named mutex, re-entrant, released by Windows if the holder dies) serializes restore and overlay removal across Dolly processes; restore_session_configs takes it. GameinfoCleaners models the helper against another Dolly's launch."
+      "reconciliation_20261114n": "2026-11-14 two cleaners: game_config_lock (per-user named mutex, re-entrant, released by Windows if the holder dies) serializes restore and overlay removal across Dolly processes; restore_session_configs takes it. GameinfoCleaners models the helper against another Dolly's launch.",
+      "reconciliation_20261122": "2026-11-22: unused graphics_profiles import and dead assignment removed."
     },
     {
       "path": "dolly/settings.py",
-      "sha256": "d6f0b038c2b4178867cdc1392a9fd96743d95bfcb0ca78b6e4df48009be7ae57",
+      "sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -4891,6 +4961,7 @@
           "bindings",
           "dataclasses",
           "editor_actions",
+          "file_ops",
           "pathlib",
           "replays"
         ],
@@ -4900,7 +4971,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114k": "2026-11-14 boundaries: a settings file whose load failed with an I/O error is copied aside before the next save replaces it (the save fails if it still cannot be read)."
+      "reconciliation_20261114k": "2026-11-14 boundaries: a settings file whose load failed with an I/O error is copied aside before the next save replaces it (the save fails if it still cannot be read).",
+      "reconciliation_20261122": "2026-11-22: save_settings replaces with a bounded lock retry; load_settings retries a briefly locked read before treating the file as unread; no-overwrite backup publish uses file_ops.publish_new."
     },
     {
       "path": "dolly/shot_history.py",
@@ -6774,7 +6846,7 @@
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836",
+      "sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6852,6 +6924,7 @@
           "__future__",
           "contextlib",
           "ctypes",
+          "file_ops",
           "pathlib",
           "runtime",
           "tkinter",
@@ -6870,7 +6943,8 @@
       "reconciliation_20261114m": "2026-11-14 path kinds: install removes before it writes (deepest first, pruning emptied folders) and accepts a folder where the new release has a file only if it holds just owned files being removed; rollback drops added files first, then restores. UpdateRollback fileToDir/dirToFile model both directions; a folder holding a user file still refuses.",
       "reconciliation_20261118": "2026-11-18: InstallLockBusy for lock contention.",
       "reconciliation_20261119u": "2026-11-19: cleanup keeps a verified download of a newer release and ages other workspaces by their newest content. Install clears the read-only flag before removing a file a release drops. A failed recovery-record write rolls back inside the transaction, and an applying journal without its record (nothing installed changed) no longer blocks a retry. A complete journal is never rolled back: install and recovery only retry removing the recovery record. The failure message says the update is not finished and that opening Dolly.exe again recovers it while the recovery record remains.",
-      "reconciliation_20261120": "2026-11-20: A recovery waits for another recovery of the same folder and does nothing (no result, no relaunch) when the record is already gone. check_processes_settled gives a second Dolly.exe launcher time to exit; an open editor still refuses at once. smoke ends every process the startup check started when it times out, and reports the timeout as a failed startup check."
+      "reconciliation_20261120": "2026-11-20: A recovery waits for another recovery of the same folder and does nothing (no result, no relaunch) when the record is already gone. check_processes_settled gives a second Dolly.exe launcher time to exit; an open editor still refuses at once. smoke ends every process the startup check started when it times out, and reports the timeout as a failed startup check.",
+      "reconciliation_20261122": "2026-11-22: atomic_json uses file_ops._atomic_write; _replace_retrying keeps its 3.75 s bound on the shared retry helper; rollback removes the pending record with _remove_pending. UpdateRollback scope unchanged."
     },
     {
       "path": "dolly/updater.py",
@@ -6930,7 +7004,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8",
+      "sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -7007,7 +7081,8 @@
           "video_suffix",
           "default_video_path",
           "recording_ready",
-          "format_video_status"
+          "format_video_status",
+          "_auto_key"
         ],
         "imports": [
           "",
@@ -7034,7 +7109,8 @@
       "reconciliation_20261118_ffmpeg_run": "2026-11-18: Depth preview uses the shared FFmpeg runner and its partial cleanup.",
       "reconciliation_20261118_take_path": "2026-11-18: validated() refuses a take folder whose longest file or folder would exceed Windows MAX_PATH, naming the folder and how to shorten it.",
       "reconciliation_20261119n": "2026-11-19: safe_stem(): one filename-stem rule for shot names (Windows-forbidden and control characters and unpaired surrogates to _, trailing spaces/dots stripped, device names prefixed with _, empty to a fallback). default_video_path keeps its own rule; its Dolly_ prefix already avoids device names.",
-      "reconciliation_20261120d4": "2026-11-20: LOST_FRAMES_ERROR names the start of the native lost-frames message for the desktop offer. No recorder behavior change."
+      "reconciliation_20261120d4": "2026-11-20: LOST_FRAMES_ERROR names the start of the native lost-frames message for the desktop offer. No recorder behavior change.",
+      "reconciliation_20261122": "2026-11-22: Auto resolves its encoder once per take (VideoOptions.auto_codec); odd depth preview sizes are padded for yuv420p encoders; stop() waits past the native finalize cap by default."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -8233,7 +8309,7 @@
     },
     {
       "path": "native/include/dolly_video_math.hpp",
-      "sha256": "f99c734d21065232e4acf5ab2f91700a6efae805a029cef894114259a50dc9d8",
+      "sha256": "13ca4d1296afd0c39418a7c881b860cf55ef5d149f150224ae4ab415575ecbe9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8253,7 +8329,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: pure FinalizeWatch, write-stall and ChildRegistry rules, owner-tested in video_math_tests."
     },
     {
       "path": "native/include/dolly_visualization.hpp",
@@ -8543,7 +8620,7 @@
     },
     {
       "path": "native/src/dolly_compat_runtime.hpp",
-      "sha256": "bd59ce66746ef5e5970a08845e5fbf34fafe1addae01ac1831a687c606d83125",
+      "sha256": "f9c7c113b3e93dd131b3e31380ea8ecc0bd881aae66a945f044318573efa0ad7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L05",
       "disposition": "native owner/delegated contract open",
@@ -8564,7 +8641,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: bundled and published signature fallbacks now return client-base-relative offsets like the exact-hash path (consumers compute gClient + offset); previously neither fallback could resolve. Owner-tested in compat_locator_tests."
     },
     {
       "path": "native/src/dolly_confetti.cpp",
@@ -9839,7 +9917,7 @@
     },
     {
       "path": "native/src/dolly_ui_storage.cpp",
-      "sha256": "edf48b1843c3157a8adfe8ea9933494cf288c1f28e0143f3cf40bf278e0250b2",
+      "sha256": "8b0ee2ee2d98eabc5484d8635cd61006a82cf541469e9e6b33d980e4ec4c331c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "native owner/delegated contract open",
@@ -9862,11 +9940,12 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: load removes ui-layout temporaries left by an exited process or older than a day. A read-only layout file is still reported, not overridden."
     },
     {
       "path": "native/src/dolly_ui_storage.hpp",
-      "sha256": "b544a3e55ee5417c4a2b96d23d1c9851f6f525d21eb15ef18fd9d93878fe2e32",
+      "sha256": "186a0fe4d010d29fac45b80f9ad6e464a0bea4431a0c965b16eb7ae59921a493",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "native owner/delegated contract open",
@@ -9883,7 +9962,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261122": "2026-11-22: declares the stale-temporary cleanup."
     },
     {
       "path": "native/src/dolly_ui_tokens_generated.hpp",
@@ -9905,7 +9985,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "d3558907caacb76aeadaff84aeb330859abdd971aeccb748e7d05fb288955ab8",
+      "sha256": "14aae7dde6a1e1154b0a0b80b710351ea0bc3c404dd4623cec1abe47c30c3ec6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9971,7 +10051,8 @@
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261113": "2026-11-13 native sweep: quiesce_producers() makes the ready/producer_active stop handshake seq_cst on the worker side for the FFmpeg, Media Foundation and camera-only workers (all barriers kept); capture ProducerScope and CameraProducer fetch_add and ready load seq_cst. decide_cancel() applies a deferred stop once and takes one cancel snapshot after the final barrier; terminate/drop accounting/reject_incomplete_take/depth/color delete/sidecars/camera-trace publication/state follow it. A cancel after that point completes the take; Python's own cancel check still refuses a .crav.",
       "reconciliation_20261114b": "2026-11-14 capture fault gap closed: capture() reads the backbuffer (GetBuffer) and checks resolution/swapchain only inside the producer gate after the ready check (one ProducerScope for video and camera-only); startup configuration before any output stays ungated. A late fault after the decision is no longer observed, so the kept take stays completed. video_late_fault_smoke (generated test copy with a post-decision hook) fails before and passes after. VideoCompleteness CaptureFault and CameraOnlyCapture outside-the-gate mutants added; RecorderApi GapFinish/AllowLateCaptureFault removed.",
-      "reconciliation_20261119v": "2026-11-19: present_should_capture() also feeds Presents while finalizing so the copy submitted on the last recording Present is drained, not counted as dropped (V2); capture() still admits no new frame once stopping. VideoCompleteness/CameraOnlyCapture unchanged: Drain is already enabled before the stop barrier and the overlay gate is outside both models. start() resets the lock-free status cache to the new take under control_mutex, and the cached error text is read through the owning session (cached_owner) instead of a raw pointer into a possibly freed error_buffer (V1). No model change: status caching is outside VideoCompleteness/CameraOnlyCapture. .shot.json now goes through publish_sidecar (shared with the camera track): CREATE_NEW temporary, fflush/ferror/_commit checks, no-replace MoveFileEx, temporary removed on failure; write_shot_sidecar returns false when not published and never truncates a foreign sidecar (V5). Sidecars stay additive after the color decision; VideoCompleteness SidecarStep/OutcomeAgrees unchanged (a failed optional sidecar never was modeled as success)."
+      "reconciliation_20261119v": "2026-11-19: present_should_capture() also feeds Presents while finalizing so the copy submitted on the last recording Present is drained, not counted as dropped (V2); capture() still admits no new frame once stopping. VideoCompleteness/CameraOnlyCapture unchanged: Drain is already enabled before the stop barrier and the overlay gate is outside both models. start() resets the lock-free status cache to the new take under control_mutex, and the cached error text is read through the owning session (cached_owner) instead of a raw pointer into a possibly freed error_buffer (V1). No model change: status caching is outside VideoCompleteness/CameraOnlyCapture. .shot.json now goes through publish_sidecar (shared with the camera track): CREATE_NEW temporary, fflush/ferror/_commit checks, no-replace MoveFileEx, temporary removed on failure; write_shot_sidecar returns false when not published and never truncates a foreign sidecar (V5). Sidecars stay additive after the color decision; VideoCompleteness SidecarStep/OutcomeAgrees unchanged (a failed optional sidecar never was modeled as success).",
+      "reconciliation_20261122": "2026-11-22: FFmpeg children are kept in ChildRegistry and terminated on cancel or failure; a Finish whose pipe write makes no progress for 30 s while inputs are open fails and ends FFmpeg; finalize waits while FFmpeg progresses (30 s idle, 20 min cap, 120 s after editor close) and keeps the file on timeout; write/drain share one helper per backend. VideoCompleteness stop handshake unchanged."
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -10544,7 +10625,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "d89cad07daf1abdad7a8bfdd07c4aa6b65a3adaf8002c3adcda4f9b53a3ce22d",
+      "sha256": "350287f58d242114d80ac04103555ecb5bf954a112020b1e03786def0a6996ec",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10576,7 +10657,8 @@
       "reconciliation_20261114c": "2026-11-14 storage: GameinfoTransaction.cfg added to REQUIRED. No checker behavior change.",
       "reconciliation_20261114m": "2026-11-14: UpdateRollback-fileToDir/-dirToFile and CloseFlow configs added to REQUIRED. No checker behavior change.",
       "reconciliation_20261114n": "2026-11-14: CloseFlow, GameinfoCleaners, DialogRule, GameinfoTransaction-api and the UpdateRollback path-kind configs added to REQUIRED. No checker behavior change.",
-      "reconciliation_20261118": "2026-11-18: HudOwnership.cfg added to REQUIRED. No checker behavior change."
+      "reconciliation_20261118": "2026-11-18: HudOwnership.cfg added to REQUIRED. No checker behavior change.",
+      "reconciliation_20261122": "2026-11-22: ConsoleReconnect.cfg and LaunchRecovery.cfg added to REQUIRED. No checker behavior change."
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -11192,7 +11274,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -11203,7 +11285,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
+      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11215,7 +11297,7 @@
       "instances": [
         "AtomicModeApi"
       ],
-      "owner_utf8_lf_sha256": "b7d2662d23338b4e3578b448775297f6e3a758f1600436cf735e05dff700cedf"
+      "owner_utf8_lf_sha256": "0f0711dcfb37c168f7afde9cf819abd76a90359bc9305407117dcae52137180c"
     },
     "dolly/AttachObservation.tla": {
       "path": "dolly/editor_session.py",
@@ -11249,7 +11331,7 @@
       "instances": [
         "BackupPublishApi"
       ],
-      "owner_utf8_lf_sha256": "d6f0b038c2b4178867cdc1392a9fd96743d95bfcb0ca78b6e4df48009be7ae57"
+      "owner_utf8_lf_sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7"
     },
     "dolly/BridgeClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -11269,7 +11351,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -11281,7 +11363,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -11289,7 +11371,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8"
+      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11300,7 +11382,7 @@
       "instances": [
         "OwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "97aa5f46da931744395083da83849d8afec00a86cd86d0c76ea9ede75bdf0d19"
+      "owner_utf8_lf_sha256": "b9b5a20cb0c4786e0b9385f9ed3b8dc991a8c7285c1c7b8e6847756b55d0cb60"
     },
     "dolly/CleanupResult.tla": {
       "path": "dolly/file_ops.py",
@@ -11311,7 +11393,7 @@
       "instances": [
         "CleanupResultApi"
       ],
-      "owner_utf8_lf_sha256": "b7d2662d23338b4e3578b448775297f6e3a758f1600436cf735e05dff700cedf"
+      "owner_utf8_lf_sha256": "0f0711dcfb37c168f7afde9cf819abd76a90359bc9305407117dcae52137180c"
     },
     "dolly/CleanupWorker.tla": {
       "path": "dolly/player_encode.py",
@@ -11331,7 +11413,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "34a4d2a13518dddd6cfe5678392bfbce9cce4d019da70ba0286abdf387bfbf2e"
+      "owner_utf8_lf_sha256": "e53b734b040a8c0084e3de42b579fa83f465c124a85d1bebc98f38ef85dad4e5"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11342,7 +11424,18 @@
       "instances": [
         "ConfigModeApi"
       ],
-      "owner_utf8_lf_sha256": "b7d2662d23338b4e3578b448775297f6e3a758f1600436cf735e05dff700cedf"
+      "owner_utf8_lf_sha256": "0f0711dcfb37c168f7afde9cf819abd76a90359bc9305407117dcae52137180c"
+    },
+    "dolly/ConsoleReconnect.tla": {
+      "path": "dolly/controller.py",
+      "scope": "connect versus an unwinding playback worker and console socket failure retirement; one connect, one worker, one old and one new client, at most one failure per socket; start_editing polling, multiple workers and the request/echo protocol not modeled",
+      "configs": [
+        "dolly/ConsoleReconnect.cfg"
+      ],
+      "instances": [
+        "ConsoleReconnectApi"
+      ],
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -11353,7 +11446,7 @@
       "instances": [
         "ConsoleStartApi"
       ],
-      "owner_utf8_lf_sha256": "25f50fd458c83051b8bb85827e0870852695e26b4718fbb6eeb2f5dcff95ffbb"
+      "owner_utf8_lf_sha256": "4f6c0cb9c047586360c477673710619bcf43ba1562fa7814006075504c7e167c"
     },
     "dolly/CravCapture.tla": {
       "path": "dolly/crav_capture.py",
@@ -11362,7 +11455,7 @@
         "dolly/CravCapture.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "5d4e50f497b83640ab2af8402e4e9b3c2ec3dfeaa393296b0d9783257776698b"
+      "owner_utf8_lf_sha256": "94db14ea7ae9c437ab007518795f62e472a0e1c7edf82df8bca33cf63239ca41"
     },
     "dolly/DefinitionsFirstRead.tla": {
       "path": "dolly/definitions.py",
@@ -11373,7 +11466,7 @@
       "instances": [
         "DefinitionsFirstReadApi"
       ],
-      "owner_utf8_lf_sha256": "1e78a7b7074b4ee64679f32abbbcb81ec4ffa904f6e43505e8b4ed71c8b20123"
+      "owner_utf8_lf_sha256": "5f68e6c5a84c38e5a4979f7ea487434917267c1b922bb1d868fcc8ca390341b4"
     },
     "dolly/DialogRule.tla": {
       "path": "dolly/gui.py",
@@ -11382,7 +11475,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "34a4d2a13518dddd6cfe5678392bfbce9cce4d019da70ba0286abdf387bfbf2e"
+      "owner_utf8_lf_sha256": "e53b734b040a8c0084e3de42b579fa83f465c124a85d1bebc98f38ef85dad4e5"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11399,7 +11492,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/EncoderUnwind.tla": {
       "path": "dolly/player_layer.py",
@@ -11410,7 +11503,7 @@
       "instances": [
         "EncoderUnwindApi"
       ],
-      "owner_utf8_lf_sha256": "7f3e4ccb6f501b00dcca30ff571e7a3b3ba083fc7e836841b29cafbd4acf33c8"
+      "owner_utf8_lf_sha256": "2ecfec533d551bbdcbe60cb808b09b980c5749cfa7c48e7737acdd921fade651"
     },
     "dolly/ExportCleanup.tla": {
       "path": "dolly/camera_export.py",
@@ -11422,7 +11515,7 @@
       "instances": [
         "ExportCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "7906af20121d474b416865b4befa5d1241ebd6598e03a2c14f08bb40e33c3893"
+      "owner_utf8_lf_sha256": "b715238cf9fe3af02b886438493a141b48c0e6a73fe3af1d516811801b4952d6"
     },
     "dolly/FollowLens.tla": {
       "path": "dolly/follow_camera.py",
@@ -11440,7 +11533,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -11469,7 +11562,7 @@
         "dolly/GameinfoCleaners.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "3357dfd5d96c5a1cc69752e6d5c1146c7cbfb7add325f810792d9672934a194a"
+      "owner_utf8_lf_sha256": "001f50eddf7cece6a05f66655fe4c07ade19939c3ae556be4a65afc71ec238b1"
     },
     "dolly/GameinfoTransaction.tla": {
       "path": "dolly/launcher.py",
@@ -11481,7 +11574,7 @@
       "instances": [
         "dolly/GameinfoInstallApi.tla"
       ],
-      "owner_utf8_lf_sha256": "00934f8b1911725d66174c38ef64ed561232c23c3a4ad26ee534a5179ba8bd52"
+      "owner_utf8_lf_sha256": "4a87e370ec2eb33d515a672d4fde50cf67f81c23b596417408033bd867731596"
     },
     "dolly/HeartbeatUnmap.tla": {
       "path": "dolly/native_bridge.py",
@@ -11523,7 +11616,7 @@
       "instances": [
         "HotkeyStartApi"
       ],
-      "owner_utf8_lf_sha256": "a4b7ce5f23d9c5b1fe818669c8d1988119976ce3f3b5bd71015f505b4193baa2"
+      "owner_utf8_lf_sha256": "54b31723003d3938d81665e6804bdea17e77e035666555147decedc2200cd0a8"
     },
     "dolly/HudOwnership.tla": {
       "path": "dolly/controller.py",
@@ -11532,7 +11625,16 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
+    },
+    "dolly/LaunchRecovery.tla": {
+      "path": "dolly/launcher.py",
+      "scope": "launcher.launch versus another window's recover_pending/recover_orphans under game_config_lock; one launcher, one recoverer, one session, no outside edits, the game never exits",
+      "configs": [
+        "dolly/LaunchRecovery.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "4a87e370ec2eb33d515a672d4fde50cf67f81c23b596417408033bd867731596"
     },
     "dolly/LauncherHandoff.tla": {
       "path": "dolly/release_launcher.py",
@@ -11619,7 +11721,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -11630,7 +11732,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -11639,7 +11741,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8"
+      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11648,7 +11750,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8"
+      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11657,7 +11759,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8"
+      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11678,7 +11780,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -11691,7 +11793,7 @@
       "instances": [
         "PresetPublishApi"
       ],
-      "owner_utf8_lf_sha256": "11f1e1b89c5ebbdccdb98e70f855f65a2b403c962eedf5bfc893e8a956093071"
+      "owner_utf8_lf_sha256": "4456a74c1eae08d08d5bbd0ac165aecb90998b6f91f3d8503a3eb36c4b83ceb8"
     },
     "dolly/ProjectOpenSnapshot.tla": {
       "path": "dolly/gui.py",
@@ -11702,7 +11804,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "34a4d2a13518dddd6cfe5678392bfbce9cce4d019da70ba0286abdf387bfbf2e"
+      "owner_utf8_lf_sha256": "e53b734b040a8c0084e3de42b579fa83f465c124a85d1bebc98f38ef85dad4e5"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11714,7 +11816,7 @@
       "instances": [
         "PublishReplayApi"
       ],
-      "owner_utf8_lf_sha256": "238f5de94b00abd60f2293fcb2db77d36b7acd5d77d8bea60d0881bba0d4b87c"
+      "owner_utf8_lf_sha256": "1608a94ab89b7409c28ae1b0b80efc3032cb161a4256816ddec12ad190289bc1"
     },
     "dolly/ReaderStart.tla": {
       "path": "dolly/replay_events.py",
@@ -11747,7 +11849,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8"
+      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -11769,7 +11871,7 @@
       "instances": [
         "ReshadeResultApi"
       ],
-      "owner_utf8_lf_sha256": "11f1e1b89c5ebbdccdb98e70f855f65a2b403c962eedf5bfc893e8a956093071"
+      "owner_utf8_lf_sha256": "4456a74c1eae08d08d5bbd0ac165aecb90998b6f91f3d8503a3eb36c4b83ceb8"
     },
     "dolly/RestoreHandles.tla": {
       "path": "dolly/game_logging.py",
@@ -11791,7 +11893,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "4b1b7f95f994583a91532172ed683a0d0b0b0331ed4ac14e396109c6ef30d18f"
+      "owner_utf8_lf_sha256": "dc93f5d7b76e0f3bb13001f8bb3aa1b81c724367172be50de41ada3b4f3a4a1f"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",
@@ -11802,7 +11904,7 @@
       "instances": [
         "SaveResultApi"
       ],
-      "owner_utf8_lf_sha256": "d6f0b038c2b4178867cdc1392a9fd96743d95bfcb0ca78b6e4df48009be7ae57"
+      "owner_utf8_lf_sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7"
     },
     "dolly/SavedSnapshot.tla": {
       "path": "dolly/shot_history.py",
@@ -11822,7 +11924,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "284e05f2b9d8e243681daf74abf84c700f4682adcdd4fd85d6f4fb5bf219c1ac"
+      "owner_utf8_lf_sha256": "380abecbb8e752b82ab7098bf27c9930edaeee90caa16ba6fa94c08ef28c4034"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",
@@ -11833,7 +11935,7 @@
       "instances": [
         "ScratchCompletionApi"
       ],
-      "owner_utf8_lf_sha256": "7f3e4ccb6f501b00dcca30ff571e7a3b3ba083fc7e836841b29cafbd4acf33c8"
+      "owner_utf8_lf_sha256": "2ecfec533d551bbdcbe60cb808b09b980c5749cfa7c48e7737acdd921fade651"
     },
     "dolly/ScratchCreate.tla": {
       "path": "dolly/player_scratch.py",
@@ -11844,7 +11946,7 @@
       "instances": [
         "ScratchCreateApi"
       ],
-      "owner_utf8_lf_sha256": "bd90514407dffd98a4f7cdbfdf16f6a7e01b4e2c3db1946e701f8aae8ccb337f"
+      "owner_utf8_lf_sha256": "9d12b9b5ce931fe6e3ae05a17077894244de517e902fba5c21210d42973f7fa7"
     },
     "dolly/ScratchStatus.tla": {
       "path": "dolly/player_scratch.py",
@@ -11859,7 +11961,7 @@
       "instances": [
         "ScratchStatusApi"
       ],
-      "owner_utf8_lf_sha256": "bd90514407dffd98a4f7cdbfdf16f6a7e01b4e2c3db1946e701f8aae8ccb337f"
+      "owner_utf8_lf_sha256": "9d12b9b5ce931fe6e3ae05a17077894244de517e902fba5c21210d42973f7fa7"
     },
     "dolly/SocketSetup.tla": {
       "path": "dolly/console.py",
@@ -11870,7 +11972,7 @@
       "instances": [
         "SocketSetupApi"
       ],
-      "owner_utf8_lf_sha256": "25f50fd458c83051b8bb85827e0870852695e26b4718fbb6eeb2f5dcff95ffbb"
+      "owner_utf8_lf_sha256": "4f6c0cb9c047586360c477673710619bcf43ba1562fa7814006075504c7e167c"
     },
     "dolly/StatusSnapshot.tla": {
       "path": "dolly/native_bridge.py",
@@ -11900,7 +12002,7 @@
       "instances": [
         "TimingSwitchApi"
       ],
-      "owner_utf8_lf_sha256": "1f7b858981cd4ec2aa52893ce241210b5705455be89584bfb39e1a9a6c0a7716"
+      "owner_utf8_lf_sha256": "3f9b79265acf179fadc1839cb42b745232d66fac8ceab1103fecf04ea7edff54"
     },
     "dolly/UpdateRollback.tla": {
       "path": "dolly/update_worker.py",
@@ -11914,7 +12016,7 @@
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
+      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -11936,7 +12038,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "21b74580ce38fa70a6661a5b68654a2dbe9e55fdded7a9a54702da04d42636f8"
+      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
@@ -11947,7 +12049,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
+      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -11958,7 +12060,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "98004194cae30ea7443c93702815848e1ca57812ec8d468c64aec852d72f3836"
+      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",
@@ -12057,7 +12159,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "d3558907caacb76aeadaff84aeb330859abdd971aeccb748e7d05fb288955ab8"
+      "owner_utf8_lf_sha256": "14aae7dde6a1e1154b0a0b80b710351ea0bc3c404dd4623cec1abe47c30c3ec6"
     },
     "native/src/CaptureFailure.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -12105,7 +12207,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "d3558907caacb76aeadaff84aeb330859abdd971aeccb748e7d05fb288955ab8"
+      "owner_utf8_lf_sha256": "14aae7dde6a1e1154b0a0b80b710351ea0bc3c404dd4623cec1abe47c30c3ec6"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",
@@ -13791,6 +13893,26 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/ConsoleReconnect.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/ConsoleReconnect.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/ConsoleReconnect.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/ConsoleReconnectApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/ConsoleStart.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -14124,6 +14246,21 @@
     },
     {
       "path": "dolly/HudOwnership.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/LaunchRecovery.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/LaunchRecovery.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/LaunchRecovery.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17339,6 +17476,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/tests/video_stalled_encoder_smoke.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/tests/visualization_tests.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17614,6 +17756,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_assert_watcher.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_audio_boundaries.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17689,6 +17836,11 @@
       "path": "tests/test_crav_export.py",
       "category": "test/support input",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "tests/test_display.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
     },
     {
       "path": "tests/test_export_hardening.py",

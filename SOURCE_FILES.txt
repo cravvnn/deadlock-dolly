@@ -1353,3 +1353,13 @@ tests/test_session_state.py
 docs/RELEASE_NOTES_0.7.48-beta.md
 tests/test_replay_player_focus.py
 docs/RELEASE_NOTES_0.7.49-beta.md
+dolly/ConsoleReconnect.tla
+dolly/ConsoleReconnectApi.tla
+dolly/ConsoleReconnect.cfg
+dolly/ConsoleReconnect.mutants.json
+dolly/LaunchRecovery.tla
+dolly/LaunchRecovery.cfg
+dolly/LaunchRecovery.mutants.json
+native/tests/video_stalled_encoder_smoke.cpp
+tests/test_assert_watcher.py
+tests/test_display.py
