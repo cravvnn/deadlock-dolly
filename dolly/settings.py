@@ -19,7 +19,7 @@ from .editor_actions import (
     ACTION_LABELS, EditorBinding, bindings_from_dict, bindings_to_dict,
     default_action_bindings, validate_action_bindings,
 )
-from .file_ops import replace_retrying
+from .file_ops import replace_retrying, retry_locked
 from .replays import parse_launch_options
 
 SETTINGS_VERSION = 11
@@ -229,9 +229,13 @@ def load_settings(path: str | os.PathLike[str] | None = None) -> AppSettings:
     ``ValueError`` and ``OSError``, explain the problem, and use ``AppSettings()``.
     """
     target = Path(path) if path is not None else settings_path()
-    try:
+
+    def read() -> bytes:
         with target.open("rb") as handle:
-            data = handle.read(MAX_SETTINGS_BYTES + 1)
+            return handle.read(MAX_SETTINGS_BYTES + 1)
+
+    try:
+        data = retry_locked(read)  # A scanner may hold the file just after a save.
     except FileNotFoundError:
         return AppSettings()
     except OSError:

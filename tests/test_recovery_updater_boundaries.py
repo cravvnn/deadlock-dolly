@@ -196,6 +196,26 @@ class SettingsBoundary(unittest.TestCase):
             settings.save_settings(mine, target)  # Only the first save needs the copy.
             self.assertEqual(len([p for p in Path(folder).iterdir() if p != target]), 1)
 
+    def test_settings_held_briefly_by_a_scanner_still_load(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'settings.json'
+            mine = settings.AppSettings(full_editor=True, movement_speed=500)
+            settings.save_settings(mine, target)
+            real_open, held = Path.open, []
+
+            def locked_twice(path, *args, **kwargs):
+                if path == target and len(held) < 2:
+                    held.append(path)
+                    raise PermissionError(13, 'The process cannot access the file (scanner)')
+                return real_open(path, *args, **kwargs)
+
+            settings._UNREAD.clear()
+            with patch.object(Path, 'open', locked_twice), patch('dolly.file_ops.time.sleep') as sleep:
+                self.assertEqual(settings.load_settings(target), mine)
+            self.assertEqual(len(held), 2)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(settings._UNREAD, set())
+
 
 class CloseAndDialogBoundaries(unittest.TestCase):
     def test_failed_stop_while_closing_still_asks_about_unsaved_work(self):
