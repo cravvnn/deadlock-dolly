@@ -108,8 +108,7 @@ class InstallTests(unittest.TestCase):
         self.assertIsNone(generate_compatibility.check_generated())
         self.assertEqual(tree(self.game), before)
 
-    def test_p02_launch_transaction_restores_install_on_exit_and_failure(self):
-        from dolly import editing_assets, editing_session
+    def editing_fixture(self):
         editing = self.root / 'editing'; editing.mkdir()
         source = ROOT / 'assets/editing'
         shutil.copytree(source / 'cfg', editing / 'cfg'); shutil.copyfile(source / 'cfg-manifest.json', editing / 'cfg-manifest.json')
@@ -129,6 +128,11 @@ class InstallTests(unittest.TestCase):
                    'configuration_modules': {n: modules[n] for n in CONFIGURATION_MODULES},
                    'unlocker_server_sha256': digest((self.game / 'citadel/bin/win64/server.dll').read_bytes())}
         (editing / 'profile.json').write_text(json.dumps(profile))
+        return editing
+
+    def test_p02_launch_transaction_restores_install_on_exit_and_failure(self):
+        from dolly import editing_assets, editing_session
+        editing = self.editing_fixture()
         replay = self.root / 'chosen.dem'; replay.write_bytes(b'replay')
         player = self.game / 'citadel/cfg/config.cfg'; player.parent.mkdir(parents=True, exist_ok=True); player.write_bytes(b'user cfg\r\n')
         (self.game / 'citadel/addons/models').mkdir(parents=True); (self.game / 'citadel/hyperline/panorama').mkdir(parents=True)
@@ -255,6 +259,61 @@ class InstallTests(unittest.TestCase):
                 shutil.rmtree(self.package, ignore_errors=True)
                 for overlay in self.game.glob('citadel_dolly_*'): shutil.rmtree(overlay)
                 self.assertEqual(tree(self.game), before)
+
+    def test_p02b_recovery_waits_for_a_launch_until_its_game_starts(self):
+        # Another Dolly window's recovery must not restore a launching session's
+        # journal or delete its overlay before the game process exists.
+        import threading
+        from contextlib import contextmanager
+        from dolly import editing_session
+        editing = self.editing_fixture()
+        lock = threading.RLock()  # The named mutex is re-entrant per thread.
+
+        @contextmanager
+        def config_lock(timeout_ms=60_000):
+            with lock:
+                yield
+        processes = {'steam.exe'}
+        preparing, release = threading.Event(), threading.Event()
+        real_prepare = editing_session.prepare
+
+        def prepare(*args, **kwargs):
+            result = real_prepare(*args, **kwargs)
+            preparing.set()
+            release.wait(10)
+            return result
+        process = MagicMock(); process.pid = 4321; process.poll.return_value = None
+
+        def spawn(command, **kwargs):
+            processes.add('deadlock.exe')
+            return process
+        outcome = {}
+
+        def run(name, call):
+            try:
+                outcome[name] = call()
+            except Exception as exc:
+                outcome[name] = exc
+        launching = threading.Thread(target=run, args=('launch', lambda: launcher.launch(self.paths.root)))
+        recovering = threading.Thread(target=run, args=('recover', launcher.recover_pending))
+        with patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.package),              patch.object(launcher, 'EDITING_ROOT', editing), patch.object(session_recovery, 'game_config_lock', config_lock),              patch.object(game_processes, 'running_processes', side_effect=lambda: set(processes)),              patch.object(launcher, 'running_processes', side_effect=lambda: set(processes)),              patch.object(launcher, 'discover_game', return_value=None),              patch('dolly.stock_provenance.verify', return_value={}), patch.object(editing_session, 'prepare', side_effect=prepare),              patch.object(launcher.threading, 'Thread'), patch.object(launcher.Session, 'start_cleanup_helper'),              patch.object(launcher.subprocess, 'Popen', side_effect=spawn):
+            launching.start()
+            self.assertTrue(preparing.wait(10))
+            session_dir = next((self.package / 'logs').iterdir())
+            overlay = next(self.game.glob('citadel_dolly_*'))
+            recovering.start()
+            recovering.join(0.5)
+            self.assertTrue(recovering.is_alive())  # Waits for the launch.
+            self.assertEqual(gameinfo_transaction.load_record(session_dir)['config_state'], 'prepared')
+            self.assertTrue((overlay / '.dolly-session.json').is_file())
+            release.set()
+            launching.join(10); recovering.join(10)
+        self.assertIsInstance(outcome['launch'], launcher.Session)
+        # The game started while recovery waited; it leaves that game's files alone.
+        self.assertIsInstance(outcome['recover'], LaunchError)
+        self.assertEqual(gameinfo_transaction.load_record(session_dir)['config_state'], 'mounted')
+        self.assertTrue((overlay / 'cvar_unlocker/bin/win64/server.dll').is_file())
+        self.assertNotEqual(self.paths.gameinfo.read_bytes(), GAMEINFO)
 
     def test_p03b_conflict_choice_and_recovery_when_dolly_opens(self):
         env = lambda processes: (patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.package),

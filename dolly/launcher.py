@@ -9,6 +9,7 @@ initialization or game exit; recovery also runs before the next launch.
 """
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import hashlib
 import json
@@ -755,6 +756,10 @@ def recover_pending(game_path: str | os.PathLike[str] | None = None) -> list[str
         installations[paths.game_dir] = paths
         from .session_recovery import game_config_lock
         with game_config_lock():
+            # Re-check inside the lock: a launch this recovery waited for may
+            # have started its game, which now owns this journal and overlay.
+            if _game_is_running(running_processes()):
+                raise LaunchError("Exit Deadlock before recovering a previous Dolly game configuration.")
             _restore_session_configs(journal.parent)
             overlay = Path(record["overlay_dir"])
             removed = remove_overlay(overlay, paths, journal.parent)
@@ -766,7 +771,7 @@ def recover_pending(game_path: str | os.PathLike[str] | None = None) -> list[str
             paths = validate_game(discovered)
             installations[paths.game_dir] = paths
     for paths in installations.values():
-        recovered.extend(recover_orphans(paths))
+        recovered.extend(recover_orphans(paths, lambda: _game_is_running(running_processes())))
     return list(dict.fromkeys(recovered))
 
 
@@ -932,6 +937,20 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
     if type(nvidia_dlss) is not bool:
         raise LaunchError("NVIDIA DLSS support must be a boolean.")
     native_dll = _verified_native(paths) if native else None
+    # Hold the cross-window game-file lock from recovery until the game process
+    # exists, so another Dolly's recovery cannot restore this session's journal
+    # or remove its overlay while it is still launching (LaunchRecovery.tla).
+    from .session_recovery import game_config_lock
+    with contextlib.ExitStack() as config_lock:
+        config_lock.enter_context(game_config_lock())
+        return _launch_locked(config_lock, paths, demo, port, protocol, native, native_dll, processes,
+                              launch_options, graphics_profile, allow_mod_overrides, nvidia_dlss)
+
+
+def _launch_locked(config_lock: contextlib.ExitStack, paths: GamePaths, demo: Path | None, port: int,
+                   protocol: str, native: bool, native_dll: Path | None, processes: set[str],
+                   launch_options: str, graphics_profile: str, allow_mod_overrides: bool,
+                   nvidia_dlss: bool) -> Session:
     # Recover any unfinished previous session first, so the original we back up
     # and journal is the user's true file, not a still-mounted Dolly session.
     recover_pending(paths.root)
@@ -1086,6 +1105,9 @@ def launch(game_path: str | os.PathLike[str], demo_path: str | os.PathLike[str] 
                         "If administrator access is required on this computer, close Dolly and use "
                         "Run as administrator on Dolly.exe before retrying.\n\n"
                         f"Launch log: {log_path}") from exc
+        # The game process exists; its own exit watcher and helper clean up
+        # from here, and they take this lock themselves.
+        config_lock.close()
         session = Session(process, session_dir, overlay, log_path, tuple(command), port, protocol, native=bridge, nvidia_dlss=nvidia_dlss)
 
         def watch() -> None:

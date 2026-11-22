@@ -265,30 +265,39 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
     return True
 
 
-def recover_orphans(paths) -> list[str]:
+def recover_orphans(paths, game_is_running=None) -> list[str]:
     """Find mounts made by an older/moved copy of Dolly in this installation."""
     from .gameinfo_transaction import load_record as _load_record
     from .session_recovery import restore_session_configs as _restore_session_configs
+    from .session_recovery import game_config_lock
+    if game_is_running is None:
+        from .game_processes import running_processes, _game_is_running
+        game_is_running = lambda: _game_is_running(running_processes())
     recovered = []
     for overlay in sorted(paths.game_dir.glob(PREFIX + "*")):
-        try:
-            marker = _marker(overlay, paths)
-        except LaunchError:
-            continue  # A name alone is not proof of ownership.
-        session = Path(marker["session_dir"])
-        journal = session / "session.json"
-        if journal.is_file():
-            if not _plain_ancestors(session) or not _plain_path(journal):
-                continue
-            record = _load_record(session)
-            if (Path(record["overlay_dir"]).resolve() != overlay.resolve()
-                    or record["original_sha256"] != marker["original_sha256"]):
-                continue
-            _restore_session_configs(session)
-        # Even if its old portable folder was deleted, a marked mount can be
-        # removed once the current gameinfo demonstrably does not reference it.
-        if remove_overlay(overlay, paths, session):
-            recovered.append(str(session))
+        # A launching Dolly holds this lock from creating its mount until its
+        # game starts, so the marker, journal and game check are read together.
+        with game_config_lock():
+            if game_is_running():
+                raise LaunchError("Exit Deadlock before recovering a previous Dolly game configuration.")
+            try:
+                marker = _marker(overlay, paths)
+            except LaunchError:
+                continue  # A name alone is not proof of ownership.
+            session = Path(marker["session_dir"])
+            journal = session / "session.json"
+            if journal.is_file():
+                if not _plain_ancestors(session) or not _plain_path(journal):
+                    continue
+                record = _load_record(session)
+                if (Path(record["overlay_dir"]).resolve() != overlay.resolve()
+                        or record["original_sha256"] != marker["original_sha256"]):
+                    continue
+                _restore_session_configs(session)
+            # Even if its old portable folder was deleted, a marked mount can be
+            # removed once the current gameinfo demonstrably does not reference it.
+            if remove_overlay(overlay, paths, session):
+                recovered.append(str(session))
     return recovered
 
 

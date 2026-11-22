@@ -1,0 +1,12 @@
+[
+  {
+    "name": "launch prepares and spawns without the shared lock",
+    "replace": [["LaunchLocks == TRUE", "LaunchLocks == FALSE"]],
+    "expect": "RestoredNotPatched"
+  },
+  {
+    "name": "recovery does not re-check the game inside the lock",
+    "replace": [["Recheck == TRUE", "Recheck == FALSE"]],
+    "expect": "RunningGameUntouched"
+  }
+]
