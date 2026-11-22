@@ -667,6 +667,30 @@ class UpdaterBoundaries(unittest.TestCase):
         message = update_worker._install_error_message(failure.exception, work, target)
         self.assertIn('Your previous files were retained or restored', message)
 
+    def test_rollback_removes_a_briefly_locked_recovery_record(self):
+        plan, target, work, before = self.staged_release()
+        marker = target / update_worker.PENDING
+        real = Path.unlink
+        held = []
+
+        def locked_once(path, *args, **kwargs):
+            if path == marker and not held:
+                held.append(path)
+                raise PermissionError(13, 'The file is in use (simulated)')
+            return real(path, *args, **kwargs)
+
+        def failed_health(_target):
+            raise RuntimeError('simulated startup failure')
+
+        with patch.object(Path, 'unlink', locked_once), patch.object(update_worker.time, 'sleep'):
+            with self.assertRaises(RuntimeError) as failure:
+                update_worker.install(plan, failed_health)
+        self.assertEqual(held, [marker])
+        self.assertEqual(self.installed(target, work), before)
+        self.assertFalse(marker.exists())
+        message = update_worker._install_error_message(failure.exception, work, target)
+        self.assertIn('Your previous files were retained or restored', message)
+
     def test_update_poll_survives_one_failing_event(self):
         ui = self.ui()
         ui._status.side_effect = RuntimeError('widget gone')

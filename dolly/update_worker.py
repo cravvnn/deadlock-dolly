@@ -166,7 +166,7 @@ def rollback(plan):
         replace_file(backup, path)
     state["state"] = "rolled_back"
     atomic_json(work / "journal.json", state)
-    (target / PENDING).unlink(missing_ok=True)
+    _remove_pending(target)
 
 
 def install(plan, health_check=lambda target: None, replace=replace_file):
