@@ -262,6 +262,9 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
     }
     if (!allow_signature)
         return result;
+    // Every CompatResolution address is relative to the client base, exactly
+    // like the exact-hash table; the bridge adds gClient at each use.
+    const auto base = reinterpret_cast<std::uintptr_t>(client);
     // A published profile's own signature is checked before the legacy bundled
     // fallback: it identifies this exact build, while the bundled patterns only
     // describe older builds with the same code shape.
@@ -274,7 +277,7 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
             const std::size_t matches = dolly::find_pattern(
                 reinterpret_cast<const unsigned char*>(text), text_size, profile.signature,
                 profile.signature_mask, profile.signature_size, offset);
-            if (matches != 1 || text + offset != text + profile.main_view_setup)
+            if (matches != 1 || text + offset != base + profile.main_view_setup)
                 continue;
             if (std::memcmp(reinterpret_cast<const void*>(text + offset), profile.setup_prologue,
                             sizeof(profile.setup_prologue)) != 0)
@@ -322,11 +325,11 @@ inline CompatResolution resolve_client_profile(HMODULE client, bool allow_signat
             continue;
         result.resolved = true;
         result.exact = false;
-        result.setup = setup;
-        result.caller = caller;
-        result.view_table = view_table;
-        result.globals = globals;
-        result.engine_client = engine_client;
+        result.setup = setup - base;
+        result.caller = caller - base;
+        result.view_table = view_table - base;
+        result.globals = globals - base;
+        result.engine_client = engine_client - base;
         result.note = "AOB signature, layout re-derived";
         return result;
     }

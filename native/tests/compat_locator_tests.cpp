@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <memory>
 #include <vector>
 
 #if defined(_WIN32) && !defined(DOLLY_COMPAT_TEST_STUBS)
@@ -218,6 +219,63 @@ int main() {
 
     CompatResolution unresolved = resolve_client_profile(module, true);
     check(!unresolved.resolved, "resolve_client_profile fails closed with no matching profile");
+
+    // Fallback results are client-base relative like the exact-hash table; the
+    // bridge adds the client base at every use. .text starts at kText, not 0.
+    auto remote = std::make_unique<dolly_remote::Definitions>();
+    remote->loaded = true;
+    remote->client_count = 1;
+    auto& published = remote->clients[0];
+    published.main_view_setup = kSetup;
+    published.main_view_caller = kCallerReturn;
+    published.primary_vtable = 0x3408;
+    published.globals = 0x3100;
+    published.engine_client = 0x3300;
+    std::memcpy(published.setup_prologue, kSetupPrologue, sizeof(kSetupPrologue));
+    published.prologue_size = sizeof(kSetupPrologue);
+    std::memcpy(published.signature, kSetupPrologue, sizeof(kSetupPrologue));
+    std::memset(published.signature_mask, 1, sizeof(kSetupPrologue));
+    published.signature_size = sizeof(kSetupPrologue);
+    CompatResolution signed_profile = resolve_client_profile(module, true, remote.get());
+    check(signed_profile.resolved && !signed_profile.exact,
+          "published signature resolves when .text does not start at the image base");
+    check(signed_profile.setup == kSetup, "published signature keeps the base-relative setup");
+    published.main_view_setup = kSetup + 0x10;
+    check(!resolve_client_profile(module, true, remote.get()).resolved,
+          "published signature refuses a match away from the reviewed setup");
+
+    const dolly_compat::CompatClientProfile* bundled = nullptr;
+    for (const auto& profile : dolly_compat::kCompatClientProfiles)
+        if (!bundled && !profile.camera_layout_revision && profile.signature &&
+            profile.signature_size)
+            bundled = &profile;
+    check(bundled != nullptr, "a bundled signature profile exists");
+    if (bundled) {
+        // A second setup copy carries the bundled signature, its own unique
+        // caller and an aspect-source anchor inside its body.
+        constexpr std::uint32_t kBundledSetup = 0x1500, kBundledCall = 0x1020;
+        Image signed_image;
+        std::memcpy(signed_image.at(kBundledSetup), bundled->signature, bundled->signature_size);
+        const auto call = signed_image.displacement(kBundledCall, 5, kBundledSetup);
+        signed_image.bytes(kBundledCall, {0xE8, static_cast<unsigned char>(call & 0xFF),
+                                          static_cast<unsigned char>((call >> 8) & 0xFF),
+                                          static_cast<unsigned char>((call >> 16) & 0xFF),
+                                          static_cast<unsigned char>((call >> 24) & 0xFF)});
+        const auto source = signed_image.displacement(0x1700, 7, 0x3300);
+        signed_image.bytes(0x1700, {0x48, 0x8B, 0x0D, static_cast<unsigned char>(source & 0xFF),
+                                    static_cast<unsigned char>((source >> 8) & 0xFF),
+                                    static_cast<unsigned char>((source >> 16) & 0xFF),
+                                    static_cast<unsigned char>((source >> 24) & 0xFF)});
+        signed_image.bytes(0x1710, {0x48, 0x8B, 0x01, 0xFF, 0x90, 0xB0, 0x02, 0x00, 0x00});
+        HMODULE signed_module = reinterpret_cast<HMODULE>(signed_image.buffer.data());
+        CompatResolution aob = resolve_client_profile(signed_module, true);
+        check(aob.resolved && !aob.exact, "bundled signature resolves the synthetic build");
+        check(aob.setup == kBundledSetup, "bundled signature setup is base-relative");
+        check(aob.caller == kBundledCall + 5, "bundled signature caller is base-relative");
+        check(aob.view_table == 0x3408, "bundled signature vtable is base-relative");
+        check(aob.globals == 0x3100, "bundled signature globals are base-relative");
+        check(aob.engine_client == 0x3300, "bundled signature engine client is base-relative");
+    }
 
     if (failures) {
         std::printf("%d compatibility locator test(s) failed\n", failures);
