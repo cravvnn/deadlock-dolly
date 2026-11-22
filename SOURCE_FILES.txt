@@ -1363,3 +1363,4 @@ dolly/LaunchRecovery.mutants.json
 native/tests/video_stalled_encoder_smoke.cpp
 tests/test_assert_watcher.py
 tests/test_display.py
+docs/RELEASE_NOTES_0.7.50-beta.md
