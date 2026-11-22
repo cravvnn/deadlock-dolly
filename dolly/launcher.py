@@ -1011,7 +1011,9 @@ def _launch_locked(config_lock: contextlib.ExitStack, paths: GamePaths, demo: Pa
         overlay.mkdir(exist_ok=False)
         (overlay / 'session-files').mkdir(exist_ok=False)
         marker = {"owner": "Deadlock Dolly", "session_dir": str(session_dir), "original_gameinfo": str(paths.gameinfo), "original_sha256": hashlib.sha256(original_data).hexdigest()}
-        (overlay / ".dolly-session.json").write_text(json.dumps(marker, indent=2), encoding="utf-8")
+        # Atomic: a torn marker would leave this mount unrecognised, and so
+        # uncleanable, forever.
+        _atomic_write(overlay / ".dolly-session.json", json.dumps(marker, indent=2).encode("utf-8"))
         target = overlay / "cvar_unlocker" / "bin" / "win64"
         target.mkdir(parents=True)
         editing_assets.deploy(overlay, config_files)

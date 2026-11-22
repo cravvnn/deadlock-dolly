@@ -45,6 +45,43 @@ class RecoveryBoundaries(unittest.TestCase):
         self.assertFalse(session_cleanup.remove_overlay(overlay, self.paths, session))
         self.assertEqual((overlay / 'session-files' / 'my-notes.txt').read_bytes(), b'keep')
 
+    def test_session_folder_with_a_crashed_atomic_write_temp_is_removed(self):
+        # A crash inside editing_assets.deploy leaves file_ops' temporary file
+        # in the cfg folder; it is Dolly's own and must not keep the folder.
+        session, overlay, backup, record, patched = self.journal_fixture('cfgtemp')
+        self.paths.gameinfo.write_bytes(core.GAMEINFO)
+        cfg = overlay / 'cvar_unlocker' / 'cfg'
+        cfg.mkdir(parents=True)
+        (cfg / '.dolly-write-abc_123.tmp').write_bytes(b'partial')
+        self.assertTrue(session_cleanup.remove_overlay(overlay, self.paths, session))
+        self.assertFalse(overlay.exists())
+        # Similar names elsewhere, or without the exact shape, stay the user's.
+        session, overlay, backup, record, patched = self.journal_fixture('cfgkeep')
+        self.paths.gameinfo.write_bytes(core.GAMEINFO)
+        cfg = overlay / 'cvar_unlocker' / 'cfg'
+        cfg.mkdir(parents=True)
+        kept = [cfg / 'dolly-write-abc.tmp', cfg / '.dolly-write-abc.txt', overlay / 'cvar_unlocker' / '.dolly-write-abc.tmp']
+        for path in kept:
+            path.write_bytes(b'keep')
+        self.assertFalse(session_cleanup.remove_overlay(overlay, self.paths, session))
+        self.assertEqual([path.read_bytes() for path in kept], [b'keep'] * 3)
+
+    def test_failed_marker_write_leaves_no_partial_marker(self):
+        editing = core.InstallTests.editing_fixture(self)
+        real_replace = os.replace
+
+        def replace(source, target):
+            if Path(target).name == '.dolly-session.json':
+                raise OSError(28, 'No space left on device')
+            return real_replace(source, target)
+        with patch.object(launcher, '_check_runtime'), patch.object(launcher, 'PACKAGE_ROOT', self.root / 'Dolly'),              patch.object(launcher, 'EDITING_ROOT', editing),              patch.object(launcher, 'running_processes', return_value={'steam.exe'}),              patch('dolly.stock_provenance.verify', return_value={}), patch('dolly.file_ops.os.replace', side_effect=replace),              patch.object(launcher.subprocess, 'Popen', side_effect=OSError('launched')) as popen:
+            with self.assertRaisesRegex(LaunchError, 'No space left'):
+                launcher.launch(self.paths.root)
+            popen.assert_not_called()
+        self.assertEqual(self.paths.gameinfo.read_bytes(), core.GAMEINFO)
+        for overlay in self.game.glob('citadel_dolly_*'):
+            self.assertEqual([p.name for p in overlay.rglob('*') if p.is_file()], [])
+
     def test_session_folder_is_removed_after_a_players_capture(self):
         from dolly import player_layer
         session, overlay, backup, record, patched = self.journal_fixture('players')

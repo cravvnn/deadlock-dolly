@@ -48,6 +48,9 @@ GENERATED_DIRS = frozenset({"cvar_unlocker", "cvar_unlocker/bin", "cvar_unlocker
 # is treated as session output rather than enumerated file by file.
 GENERATED_TREES = frozenset({"cvar_unlocker/rpt"})
 _STEAM_CACHE = re.compile(r"session-files/cache_[0-9]{1,20}\.soc")
+# file_ops._atomic_write's own temporary, left by a crash while Dolly wrote
+# its marker or deployed its editing cfg files.
+_ATOMIC_TEMP = re.compile(r"(cvar_unlocker/cfg/)?\.dolly-write-[A-Za-z0-9_]{1,32}\.tmp")
 
 
 def _holds_user_files(session_files: Path) -> bool:
@@ -204,7 +207,7 @@ def remove_overlay(overlay: Path, paths, session_dir: Path | None = None) -> boo
             elif child.is_dir() and relative in generated_dirs:
                 directories.append(child)
                 pending.append(child)
-            elif child.is_file() and relative in generated_files:
+            elif child.is_file() and (relative in generated_files or _ATOMIC_TEMP.fullmatch(relative)):
                 files.append(child)
             elif not child.exists():
                 continue
