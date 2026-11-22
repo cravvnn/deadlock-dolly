@@ -616,6 +616,20 @@ class AutoEncoderTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.calls = []
+        # Background probes run only when a test runs them.
+        self.started = []
+        started = self.started
+
+        class Thread:
+            def __init__(self, target, args=(), **options):
+                self.run = lambda: target(*args)
+                started.append(self)
+
+            def start(self):
+                pass
+        patcher = patch.object(encoder_select.threading, 'Thread', Thread)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def run_ffmpeg(self, command, **options):
         self.calls.append(list(command))
@@ -665,6 +679,40 @@ class AutoEncoderTests(unittest.TestCase):
             explicit = VideoOptions(self.ffmpeg.parent / 'take.mp4', codec='h264_mf',
                                     ffmpeg_path=self.ffmpeg, auto_codec='h264_amf').validated()
             self.assertEqual(explicit.auto_codec, '')
+
+    def test_a_probe_timeout_is_not_remembered(self):
+        from dolly import encoder_select
+        outcomes = [subprocess.TimeoutExpired('ffmpeg', 10), NS(returncode=0, stdout='', stderr='')]
+
+        def run(command, **options):
+            self.calls.append(command)
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        with patch.object(subprocess, 'run', side_effect=run),                 self.assertLogs('dolly.encoder_select', 'WARNING'):
+            self.assertFalse(encoder_select.encoder_works(self.ffmpeg, 'h264_nvenc'))
+            self.assertEqual(encoder_select._PROBE_CACHE, {})
+            self.assertTrue(encoder_select.encoder_works(self.ffmpeg, 'h264_nvenc'))
+            self.assertTrue(encoder_select.encoder_works(self.ffmpeg, 'h264_nvenc'))
+        self.assertEqual(len(self.calls), 2)
+
+    def test_record_uses_the_prewarmed_answer_and_never_waits_for_one(self):
+        from dolly import encoder_select
+        with patch.object(encoder_select, 'gpu_adapters', return_value=(('nvidia', 'GeForce'),)),                 patch.object(subprocess, 'run', side_effect=self.run_ffmpeg):
+            # Prewarm not finished: Record keeps NVENC and runs no test encode itself.
+            encoder_select.prewarm(self.ffmpeg)
+            options = VideoOptions(self.ffmpeg.parent / 'take.mp4', ffmpeg_path=self.ffmpeg).validated()
+            self.assertEqual(options.auto_codec, 'h264_nvenc')
+            self.assertEqual([c for c in self.calls if 'lavfi' in c], [])
+            # The background probes answer once, then Record uses that answer.
+            with self.assertLogs('dolly.encoder_select', 'WARNING'):
+                for thread in list(self.started):
+                    thread.run()
+            self.assertEqual(len([c for c in self.calls if 'lavfi' in c]), 1)
+            options = VideoOptions(self.ffmpeg.parent / 'take.mp4', ffmpeg_path=self.ffmpeg).validated()
+            self.assertEqual(options.auto_codec, 'h264_mf')
+            self.assertEqual(len([c for c in self.calls if 'lavfi' in c]), 1)
 
 
 if __name__ == '__main__':

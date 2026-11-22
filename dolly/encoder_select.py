@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 
 LOG = logging.getLogger(__name__)
 
@@ -103,49 +104,100 @@ def describe_adapters(adapters: tuple[tuple[str, str], ...] | None = None) -> st
 
 
 _PROBE_CACHE: dict[tuple[str, int, str], bool] = {}
+_PROBING: set[tuple[str, int, str]] = set()
+_PROBING_LOCK = threading.Lock()
 
 
-def encoder_works(ffmpeg, codec: str) -> bool:
+def _probe(path: Path, key: tuple[str, int, str], codec: str) -> bool:
+    """Run one test encode. Only a clean answer is cached for the session.
+
+    A timeout or a process that could not start can pass a moment later, so
+    those fail this call without being remembered.
+    """
+    from .runtime import external_program_environment
+    try:
+        with external_program_environment() as environment:
+            result = subprocess.run(
+                [str(path), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                 "-i", "color=s=256x144", "-frames:v", "1", "-c:v", codec, "-f", "null", "-"],
+                capture_output=True, text=True, timeout=10, env=environment,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOG.warning("Auto encoder: %s probe could not run: %s", codec, exc)
+        return False
+    if result.returncode:
+        lines = (result.stderr or "").strip().splitlines()
+        LOG.warning("Auto encoder: %s failed its test encode (%s).", codec,
+                    lines[-1] if lines else f"exit {result.returncode}")
+    _PROBE_CACHE[key] = result.returncode == 0
+    return _PROBE_CACHE[key]
+
+
+def _probe_once(path: Path, key: tuple[str, int, str], codec: str) -> None:
+    """Background probe; skips an answered or already running test encode."""
+    with _PROBING_LOCK:
+        if key in _PROBING or key in _PROBE_CACHE:
+            return
+        _PROBING.add(key)
+    try:
+        _probe(path, key, codec)
+    finally:
+        with _PROBING_LOCK:
+            _PROBING.discard(key)
+
+
+def _probe_key(ffmpeg, codec: str):
+    try:
+        path = Path(ffmpeg)
+        return path, (str(path), path.stat().st_mtime_ns, codec)
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def encoder_works(ffmpeg, codec: str, *, wait: bool = True) -> bool:
     """Encode one tiny frame once per FFmpeg build; never raises.
 
     ``ffmpeg -encoders`` lists NVENC, AMF and Quick Sync whatever the
     hardware, so only a real encode shows whether the driver can use them.
+    With ``wait=False`` an unanswered probe continues in the background and
+    the encoder is assumed to work; a real failure is still reported when
+    the take starts encoding.
     """
-    try:
-        path = Path(ffmpeg)
-        key = (str(path), path.stat().st_mtime_ns, codec)
-    except (OSError, TypeError, ValueError):
+    probe = _probe_key(ffmpeg, codec)
+    if probe is None:
         return False
-    if key not in _PROBE_CACHE:
-        from .runtime import external_program_environment
-        try:
-            with external_program_environment() as environment:
-                result = subprocess.run(
-                    [str(path), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
-                     "-i", "color=s=256x144", "-frames:v", "1", "-c:v", codec, "-f", "null", "-"],
-                    capture_output=True, text=True, timeout=10, env=environment,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except (OSError, subprocess.SubprocessError) as exc:
-            LOG.warning("Auto encoder: %s probe could not run: %s", codec, exc)
-            _PROBE_CACHE[key] = False
-        else:
-            _PROBE_CACHE[key] = result.returncode == 0
-            if result.returncode:
-                lines = (result.stderr or "").strip().splitlines()
-                LOG.warning("Auto encoder: %s failed its test encode (%s).", codec,
-                            lines[-1] if lines else f"exit {result.returncode}")
-    return _PROBE_CACHE[key]
+    path, key = probe
+    cached = _PROBE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if not wait:
+        threading.Thread(target=_probe_once, args=(path, key, codec),
+                         name="Dolly encoder probe", daemon=True).start()
+        LOG.info("Auto encoder: %s test encode not finished; using it for this take.", codec)
+        return True
+    return _probe(path, key, codec)
 
 
-def auto_encoder(vendor: str | None = None, ffmpeg=None) -> tuple[str, str]:
+def prewarm(ffmpeg) -> None:
+    """Answer Auto's test encode off the UI thread before Record needs it."""
+    def run():
+        preferred = VENDOR_ENCODERS.get(detect_vendor())
+        probe = _probe_key(ffmpeg, preferred[0]) if preferred is not None else None
+        if probe is not None:
+            _probe_once(*probe, preferred[0])
+    threading.Thread(target=run, name="Dolly encoder prewarm", daemon=True).start()
+
+
+def auto_encoder(vendor: str | None = None, ffmpeg=None, *, wait: bool = True) -> tuple[str, str]:
     """Return the (codec key, label) Auto should use for this machine.
 
     With ``ffmpeg``, a vendor encoder that cannot encode a test frame falls
-    back to the vendor-neutral Media Foundation encoder.
+    back to the vendor-neutral Media Foundation encoder. ``wait`` is passed
+    to :func:`encoder_works`.
     """
     resolved = detect_vendor() if vendor is None else vendor
     preferred = VENDOR_ENCODERS.get(resolved)
-    if preferred is None or (ffmpeg is not None and not encoder_works(ffmpeg, preferred[0])):
+    if preferred is None or (ffmpeg is not None and not encoder_works(ffmpeg, preferred[0], wait=wait)):
         if preferred is not None:
             LOG.warning("Auto encoder: using %s instead of %s.", FALLBACK_CODEC, preferred[0])
         return FALLBACK_CODEC, "H.264 via ffmpeg Media Foundation"

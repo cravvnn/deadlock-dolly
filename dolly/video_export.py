@@ -414,7 +414,8 @@ class VideoOptions:
                 if resolved_key is None:
                     adapters = encoder_select.gpu_adapters()
                     vendor = encoder_select.detect_vendor(adapters)
-                    resolved_key, _label = encoder_select.auto_encoder(vendor, ffmpeg=ffmpeg)
+                    # Never wait on Tk for the test encode; prewarm answers it early.
+                    resolved_key, _label = encoder_select.auto_encoder(vendor, ffmpeg=ffmpeg, wait=False)
                     LOG.info("Auto encoder: %s selected for %s (vendor=%s).", resolved_key,
                              encoder_select.describe_adapters(adapters), vendor or "unknown")
                 result = replace(result, auto_codec=resolved_key)

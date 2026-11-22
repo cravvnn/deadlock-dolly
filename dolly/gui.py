@@ -44,6 +44,7 @@ from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknow
 from dolly.clip_audio import ClipAudioCapture
 from dolly.curve import POSITION_CHANNELS, POSITION_LIMIT
 from dolly.display import focus_window
+from dolly import encoder_select
 from dolly.ffmpeg_color import REC709_FRAME_TAGS, REC709_OUTPUT_ARGS, REC709_SCALE
 from dolly.ffmpeg_run import last_line, remove_partial, run_ffmpeg, scaled_timeout
 from dolly.hotkey import CaptureHotkey
@@ -1326,7 +1327,16 @@ class DollyApp:
                 raise ValueError("Choose an existing FFmpeg executable.")
             custom = "" if bundled and selected and Path(selected).resolve() == bundled.resolve() else selected
             self._commit_settings(ffmpeg_path=custom)
+            self._prewarm_auto_encoder()
         self._guard("Save FFmpeg preference", save)
+
+    def _prewarm_auto_encoder(self):
+        """Start Auto's test encode now so Record never waits for it on Tk."""
+        if CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY) != "auto":
+            return
+        ffmpeg = resolve_ffmpeg(self.ffmpeg_path.get().strip() or None)
+        if ffmpeg is not None:
+            encoder_select.prewarm(ffmpeg)
 
     def _use_bundled_ffmpeg(self):
         if self.busy or self.video_export.status().get("state") in ACTIVE_STATES:
@@ -1468,6 +1478,7 @@ class DollyApp:
                                       ffmpeg_available=self._ffmpeg_available())
         self.video_format.set(dict(CONTAINER_CHOICES)[container])
         self._sync_video_extension()
+        self._prewarm_auto_encoder()
 
     def _sync_video_extension(self):
         if not self.video_path.get().strip():
@@ -5716,6 +5727,7 @@ def main():
     try:
         app = DollyApp(root)
         app.start_discord_presence()
+        app._prewarm_auto_encoder()
         from .update_ui import UpdateUI
         app.update_manager = UpdateUI(app, skip_startup="--updated" in sys.argv)
         root.mainloop()
