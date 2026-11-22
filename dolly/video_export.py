@@ -26,6 +26,9 @@ from .display import client_size
 
 ACTIVE_STATES = frozenset(("starting", "recording", "finalizing"))
 TERMINAL_STATES = frozenset(("idle", "completed", "cancelled", "failed"))
+# Matches kFinalizeHardCapMs in native/include/dolly_video_math.hpp: the native
+# encoder keeps waiting while FFmpeg still makes progress, up to this bound.
+NATIVE_FINALIZE_LIMIT_S = 20 * 60
 # How the native recorder's error starts when it discards a take with missing
 # frames (its error code is 0x8007000D).
 LOST_FRAMES_ERROR = "Export lost frames and was discarded"
@@ -875,13 +878,13 @@ class VideoExport:
             + str(last_timeout) + " Raw capture data and restoration settings are kept. "
             "Use Finish or discard again after Deadlock responds.") from last_timeout
 
-    def stop(self, *, cancel: bool = False, timeout: float = 120.0) -> dict:
+    def stop(self, *, cancel: bool = False,
+             timeout: float = NATIVE_FINALIZE_LIMIT_S + 60.0) -> dict:
         """Request shutdown and wait on the operation worker, never on Tk.
 
-        The native encoder itself waits up to 120 s for FFmpeg to finalize a
-        large take before it reports a terminal state, so the desktop wait must
-        not give up sooner: a shorter window reported "still finishing" on big
-        or drop-heavy takes while finalization was still progressing normally.
+        The native encoder keeps waiting for FFmpeg to finalize a large take
+        while it still makes progress, up to NATIVE_FINALIZE_LIMIT_S, before it
+        reports a terminal state, so the desktop wait must not give up sooner.
         """
         stop_error = None
         try:

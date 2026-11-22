@@ -170,6 +170,27 @@ int main() {
     require(depth_gray16(std::numeric_limits<float>::infinity(), kDepthUnitMax) == 65535);
     require(depth_gray16(std::numeric_limits<float>::quiet_NaN(), kDepthUnitMax) == 65535);
     require(depth_gray16(0.25f, 1.0) == 16384);
+    // A slow but progressing finalization is never cut off at a fixed time;
+    // a stalled one ends after the idle limit; the hard cap bounds both.
+    FinalizeWatch watch;
+    watch.begin(1000, 7);
+    std::uint64_t counters = 7, now = 1000;
+    for (; now < 1000 + 600000; now += 1000)
+        require(watch.keep_waiting(now, ++counters));
+    const auto last = now - 1000;
+    require(watch.keep_waiting(last + kFinalizeIdleLimitMs - 1, counters));
+    require(!watch.keep_waiting(last + kFinalizeIdleLimitMs, counters));
+    watch.begin(0, 0);
+    for (now = 0; now < kFinalizeHardCapMs; now += 1000)
+        require(watch.keep_waiting(now, now + 1));
+    require(!watch.keep_waiting(kFinalizeHardCapMs, kFinalizeHardCapMs + 1));
+    watch.begin(0, 0);
+    require(watch.keep_waiting(kFinalizeIdleLimitMs - 1, 0));
+    watch.next_child(kFinalizeIdleLimitMs - 1, 5);
+    require(watch.keep_waiting(2 * kFinalizeIdleLimitMs - 2, 5));
+    require(!watch.keep_waiting(2 * kFinalizeIdleLimitMs - 1, 5));
+    watch.next_child(kFinalizeHardCapMs - 1, 9);
+    require(!watch.keep_waiting(kFinalizeHardCapMs, 10));
     std::puts(
         "Video cadence, timestamps, color conversion, depth mapping and row orientation passed.");
 }

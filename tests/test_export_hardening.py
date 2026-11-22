@@ -3,9 +3,11 @@
 FFmpeg is replaced by a controlled Python child or a controlled result; no
 game, encoder or network is used.
 """
+import inspect
 import json
 import shutil
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -78,6 +80,16 @@ class ExportHardeningTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix='dolly-export-hardening-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+
+    def test_stop_waits_at_least_as_long_as_native_finalization(self):
+        header = (Path(__file__).resolve().parents[1] / 'native' / 'include'
+                  / 'dolly_video_math.hpp').read_text(encoding='utf-8')
+        match = re.search(r'kFinalizeHardCapMs = (\d+) \* (\d+) \* (\d+)', header)
+        self.assertIsNotNone(match)
+        native_ms = int(match[1]) * int(match[2]) * int(match[3])
+        self.assertEqual(video_export.NATIVE_FINALIZE_LIMIT_S * 1000, native_ms)
+        default = inspect.signature(VideoExport.stop).parameters['timeout'].default
+        self.assertGreater(default, video_export.NATIVE_FINALIZE_LIMIT_S)
 
     # D1 ---------------------------------------------------------------
     def movie_take(self, endmovie):

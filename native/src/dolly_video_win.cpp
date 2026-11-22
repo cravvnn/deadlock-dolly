@@ -881,6 +881,31 @@ struct Child {
         }
     }
 };
+// Any change in the child's transfer counts or CPU time counts as progress.
+std::uint64_t child_activity(HANDLE process) noexcept {
+    std::uint64_t total = 0;
+    IO_COUNTERS io{};
+    if (GetProcessIoCounters(process, &io))
+        total += io.ReadTransferCount + io.WriteTransferCount + io.OtherTransferCount;
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (GetProcessTimes(process, &created, &exited, &kernel, &user))
+        total += (std::uint64_t(kernel.dwHighDateTime) << 32 | kernel.dwLowDateTime) +
+                 (std::uint64_t(user.dwHighDateTime) << 32 | user.dwLowDateTime);
+    return total;
+}
+enum class Finish { exited, stalled, cancelled };
+// Waits for an encoder whose input is closed while it keeps making progress.
+Finish wait_for_finish(Session& s, HANDLE process, FinalizeWatch& watch) noexcept {
+    while (WaitForSingleObject(process, 250) == WAIT_TIMEOUT) {
+        apply_deferred_stop(s);
+        if (s.cancel.load(std::memory_order_acquire))
+            return Finish::cancelled;
+        if (!watch.keep_waiting(GetTickCount64(), child_activity(process)))
+            return Finish::stalled;
+    }
+    apply_deferred_stop(s);
+    return s.cancel.load(std::memory_order_acquire) ? Finish::cancelled : Finish::exited;
+}
 // Names the first failing write stage and appends the first diagnostic from that
 // child's stderr, so a stopped take keeps its cause in the media error even
 // though the temporary FFmpeg logs are removed during cleanup.
@@ -992,7 +1017,9 @@ void reject_incomplete_take(Session& s, bool& finalized, bool cancelled) noexcep
 }
 
 void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
-    bool created = false, finalized = false, wrote_any = false;
+    // A finalization that stopped making progress fails the take but keeps
+    // its files: a long take is never deleted because FFmpeg was slow.
+    bool created = false, finalized = false, wrote_any = false, keep_unfinished = false;
     std::uint64_t frames = 0;
     Child child, depth_child;
     std::vector<std::uint16_t> depth_gray;
@@ -1131,14 +1158,21 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         }
         child.close_input();
         depth_child.close_input();
+        FinalizeWatch watch;
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
                 fail_text(*s, E_FAIL, zero_frame_message(*s));
             } else {
-                const DWORD wait = WaitForSingleObject(child.process, 120000);
+                watch.begin(GetTickCount64(), child_activity(child.process));
+                const Finish finish = wait_for_finish(*s, child.process, watch);
                 DWORD code = 1;
                 GetExitCodeProcess(child.process, &code);
-                if (wait != WAIT_OBJECT_0 || code != 0) {
+                if (finish == Finish::stalled) {
+                    keep_unfinished = true;
+                    fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                         L"FFmpeg stopped making progress while finishing the recording. The "
+                         L"unfinished file was kept.");
+                } else if (finish == Finish::exited && code != 0) {
                     const auto tail = read_log_error(child.log);
                     fail_text(
                         *s, E_FAIL,
@@ -1146,16 +1180,23 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                             ? std::wstring(
                                   L"FFmpeg could not encode the recording. This build may lack the selected encoder.")
                             : tail);
-                } else {
+                } else if (finish == Finish::exited) {
                     finalized = true;
                 }
             }
         }
         if (finalized && depth_child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
-            const DWORD wait = WaitForSingleObject(depth_child.process, 120000);
+            watch.next_child(GetTickCount64(), child_activity(depth_child.process));
+            const Finish finish = wait_for_finish(*s, depth_child.process, watch);
             DWORD code = 1;
             GetExitCodeProcess(depth_child.process, &code);
-            if (wait != WAIT_OBJECT_0 || code != 0) {
+            if (finish == Finish::stalled) {
+                keep_unfinished = true;
+                fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                     L"The depth encoder stopped making progress while finishing. The recorded "
+                     L"files were kept.");
+                finalized = false;
+            } else if (finish == Finish::exited && code != 0) {
                 const auto tail = read_log_error(depth_child.log);
                 fail_text(
                     *s, E_FAIL,
@@ -1202,10 +1243,10 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             fail(*s, s->depth_output.error(), message);
             finalized = false;
         }
-        if (!finalized || cancelled)
+        if ((!finalized || cancelled) && !keep_unfinished)
             s->depth_output.discard();
     }
-    if (created && (!finalized || cancelled))
+    if (created && (!finalized || cancelled) && !keep_unfinished)
         DeleteFileW(s->path.c_str());
     if (finalized && !cancelled && SUCCEEDED(s->error.load())) {
         if (s->shot.open())

@@ -6,6 +6,31 @@
 #include <cstdint>
 
 namespace dolly::video {
+// FFmpeg finalization after its input closes: the encoder tail and the MP4
+// +faststart rewrite of a long take can take minutes on a slow disk. The wait
+// continues while the child's I/O or CPU counters advance, ends after the idle
+// limit without progress, and never exceeds the hard cap (desktop waits longer).
+constexpr std::uint64_t kFinalizeIdleLimitMs = 30 * 1000;
+constexpr std::uint64_t kFinalizeHardCapMs = 20 * 60 * 1000;
+struct FinalizeWatch {
+    std::uint64_t started = 0, progressed = 0, activity = 0;
+    void begin(std::uint64_t now, std::uint64_t counters) noexcept {
+        started = progressed = now;
+        activity = counters;
+    }
+    // A further child keeps the original start, so the cap bounds them all.
+    void next_child(std::uint64_t now, std::uint64_t counters) noexcept {
+        progressed = now;
+        activity = counters;
+    }
+    bool keep_waiting(std::uint64_t now, std::uint64_t counters) noexcept {
+        if (counters != activity) {
+            activity = counters;
+            progressed = now;
+        }
+        return now - progressed < kFinalizeIdleLimitMs && now - started < kFinalizeHardCapMs;
+    }
+};
 inline bool frame_admission_open(std::uint64_t submitted, std::uint32_t limit) noexcept {
     return !limit || submitted < limit;
 }
