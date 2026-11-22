@@ -16,7 +16,6 @@ from typing import Callable
 from .bindings import CaptureBinding, DEFAULT_BINDING
 
 log = logging.getLogger(__name__)
-HOTKEY_LABEL = DEFAULT_BINDING.label  # Compatibility with older imports.
 _POLL_SECONDS = 0.008
 _VK_CONTROL = 0x11
 _VK_MENU = 0x12
