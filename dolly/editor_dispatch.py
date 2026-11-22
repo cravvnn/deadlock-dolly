@@ -9,7 +9,6 @@ import time
 from .editor_wire import ATTACH_OFFSET_LIMIT
 from .native_effects import model_token
 from .path import AttachKey, channel_value
-from .settings import save_settings
 from .video_export import BITRATE_PRESETS
 
 LOG = logging.getLogger("dolly.editor_session")
@@ -409,25 +408,21 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "object_transform":
         _object_transform(app, event, publish)
     elif action == "framing_grid":
-        settings = replace(app.app_settings,
-                           framing_grid_enabled=not app.app_settings.framing_grid_enabled)
-        def saved(_result):
-            app.app_settings = settings
-            publish()
-        app.status_text.set("Framing guide " +
-                            ("on." if settings.framing_grid_enabled else "off."))
-        app._submit("Saving framing guide", lambda: save_settings(settings), saved)
+        enabled = not app.app_settings.framing_grid_enabled
+        app.status_text.set("Framing guide " + ("on." if enabled else "off."))
+        app._submit("Saving framing guide",
+                    lambda: app._commit_settings(framing_grid_enabled=enabled),
+                    lambda _settings: publish())
     elif action == "set_pause_after_capture":
         value = event["value"]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value not in (0, 1):
             raise ValueError("Pause after capture must be on or off.")
-        settings = replace(app.app_settings, pause_after_capture=bool(value))
-        def saved(_result):
-            app.app_settings = settings
+        def saved(settings):
             app.status_text.set("Capture will pause the replay." if settings.pause_after_capture
                                 else "Capture will keep the replay running.")
             publish()
-        app._submit("Saving capture playback preference", lambda: save_settings(settings), saved)
+        app._submit("Saving capture playback preference",
+                    lambda: app._commit_settings(pause_after_capture=bool(value)), saved)
     elif action == "play_pause":
         _native_operation(app, "Toggling replay playback", app.controller.toggle_replay, bridge)
     elif action == "play_path":
@@ -617,14 +612,12 @@ def _dispatch(app, event, bridge, *, publish):
         value = event["value"]
         if not math.isfinite(value) or not 1 <= value <= 10000:
             raise ValueError("Movement speed must be between 1 and 10,000")
-        settings = replace(app.app_settings, movement_speed=value)
         # Save on the worker, not on either UI/render thread.
-        def saved(_result):
-            app.app_settings = settings
+        def saved(_settings):
             if hasattr(app, "editor_move_speed"):
                 app.editor_move_speed.set(f"{value:g}")
             publish()
-        app._submit("Saving movement speed", lambda: save_settings(settings), saved)
+        app._submit("Saving movement speed", lambda: app._commit_settings(movement_speed=value), saved)
     elif action in ("set_playback_speed", "set_playback_rate"):
         value = event["value"]
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):

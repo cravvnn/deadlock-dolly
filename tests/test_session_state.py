@@ -270,6 +270,73 @@ class SettingsLostUpdate(unittest.TestCase):
         self.assertFalse(saved.discord_presence)
         self.assertEqual((app.app_settings.game_path, saved.game_path), ('chosen', 'chosen'))
 
+    def settings_file(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / 'settings.json'
+        patcher = patch('dolly.settings.settings_path', return_value=path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_in_game_preference_saves_keep_a_discord_toggle_made_while_pending(self):
+        from dolly import editor_dispatch
+        from dolly.settings import AppSettings, load_settings
+        self.settings_file()
+        events = (({'action': 'framing_grid'}, 'framing_grid_enabled', True),
+                  ({'action': 'set_pause_after_capture', 'value': 0}, 'pause_after_capture', False),
+                  ({'action': 'set_speed', 'value': 900.0}, 'movement_speed', 900.0))
+        for event, field, expected in events:
+            with self.subTest(event['action']):
+                app = MagicMock()
+                app.busy, app._bone_picker_context = False, None
+                app.app_settings = AppSettings(framing_grid_enabled=False, pause_after_capture=True)
+                app._commit_settings = lambda **owned: DollyApp._commit_settings(app, **owned)
+                submitted = []
+                app._submit = lambda label, operation, callback: submitted.append((operation, callback)) or True
+                editor_dispatch.dispatch(app, event, None, publish=lambda: None)
+                operation, complete = submitted[0]
+                DollyApp._commit_settings(app, discord_presence=False)
+                complete(operation())
+                saved = load_settings()
+                for settings in (app.app_settings, saved):
+                    self.assertFalse(settings.discord_presence)
+                    self.assertEqual(getattr(settings, field), expected)
+
+    def test_capture_shortcut_toggle_keeps_a_discord_toggle_made_while_it_ran(self):
+        from dolly.settings import AppSettings, load_settings
+        self.settings_file()
+
+        class Helper:
+            running = False
+
+            def __init__(self, callback, game_pid, binding):
+                pass
+
+            def start(self):
+                self.running = True
+
+            def stop(self):
+                self.running = False
+
+        settings = AppSettings()
+        app = NS(app_settings=settings, capture_binding=settings.capture_binding, capture_hotkey=None,
+                 capture_generation=0, closed=False, busy=False, hotkey_enabled=Var(), hotkey_label=Var(),
+                 status_text=Var(), errors=[], events=NS(put=lambda event: None),
+                 controller=NS(game_pid=lambda: None), _capture_binding_label=lambda: 'label',
+                 _refresh_bindings=lambda: None)
+        app._error = lambda title, exc: app.errors.append(str(exc))
+        submitted = []
+        app._submit = lambda label, operation, callback: submitted.append((operation, callback)) or True
+        with patch.object(gui, 'CaptureHotkey', Helper):
+            DollyApp._change_capture_listener(app, settings.capture_binding, True)
+            operation, complete = submitted[0]
+            result = operation()
+            DollyApp._commit_settings(app, discord_presence=False)
+            complete(result)
+        self.assertTrue(app.hotkey_enabled.get())
+        self.assertFalse(app.app_settings.discord_presence)
+        self.assertFalse(load_settings().discord_presence)
+
 
 class Reconnect(unittest.TestCase):
     def test_connect_works_while_game_follow_still_needs_the_console(self):

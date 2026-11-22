@@ -922,10 +922,8 @@ class DollyApp:
 
     def _save_layout_paths(self):
         def save():
-            settings = replace(self.app_settings, game_path=self.game_path.get(),
-                               replay_folder=self.replay_folder.get(), demo_path=self.demo_path.get())
-            save_settings(settings)
-            self.app_settings = settings
+            self._commit_settings(game_path=self.game_path.get(),
+                                  replay_folder=self.replay_folder.get(), demo_path=self.demo_path.get())
             self.status_text.set("Game and replay paths saved.")
         self._guard("Save paths", save)
 
@@ -1299,9 +1297,7 @@ class DollyApp:
             # An incomplete edit or an unplugged drive must not erase the last choice.
             if not folder.is_dir() or str(folder) == settings.export_folder:
                 return
-            updated = replace(settings, export_folder=str(folder))
-            save_settings(updated)
-            self.app_settings = updated
+            self._commit_settings(export_folder=str(folder))
         except (OSError, ValueError) as exc:
             self._error("Save export folder", exc)
 
@@ -1329,9 +1325,7 @@ class DollyApp:
             if selected and not Path(selected).is_file():
                 raise ValueError("Choose an existing FFmpeg executable.")
             custom = "" if bundled and selected and Path(selected).resolve() == bundled.resolve() else selected
-            settings = replace(self.app_settings, ffmpeg_path=custom)
-            save_settings(settings)
-            self.app_settings = settings
+            self._commit_settings(ffmpeg_path=custom)
         self._guard("Save FFmpeg preference", save)
 
     def _use_bundled_ffmpeg(self):
@@ -1348,9 +1342,7 @@ class DollyApp:
 
     def _save_update_preference(self):
         def save():
-            settings = replace(self.app_settings, auto_updates=self.auto_updates.get())
-            save_settings(settings)
-            self.app_settings = settings
+            self._commit_settings(auto_updates=self.auto_updates.get())
         self._guard("Save update preference", save)
 
     def start_discord_presence(self):
@@ -1416,10 +1408,7 @@ class DollyApp:
 
     def _save_mod_preference(self):
         def save():
-            settings = replace(self.app_settings,
-                               allow_mod_overrides=self.allow_mod_overrides.get())
-            save_settings(settings)
-            self.app_settings = settings
+            self._commit_settings(allow_mod_overrides=self.allow_mod_overrides.get())
             self.status_text.set(
                 "Mixed mod packs will load on the next launch. UI, shader and "
                 "post-processing overrides may appear in captures.")
@@ -2437,13 +2426,11 @@ class DollyApp:
             self.reshade_status_text.set("ReShade unavailable: " + issue)
             self._log("ReShade: " + issue)
             return False
-        settings = replace(self.app_settings, reshade_runtime_path=text)
         try:
-            save_settings(settings)
+            self._commit_settings(reshade_runtime_path=text)
         except OSError as exc:
             self.reshade_status_text.set("Could not save the ReShade runtime selection: " + str(exc))
             return False
-        self.app_settings = settings
         bridge = self.controller._native_bridge()
         if recording_ready(self.controller.status()) and bridge is not None:
             self.reshade_status_text.set("ReShade runtime selected. Enabling it now…")
@@ -4868,8 +4855,8 @@ class DollyApp:
                 return settings, None, False, exc
             return settings, helper, True, None
         def changed(result):
+            # The listener owns no preference: keep commits made while it changed.
             settings, helper, succeeded, error = result
-            self.app_settings = settings
             self.capture_binding = settings.capture_binding
             self.hotkey_label.set(self._capture_binding_label())
             self._refresh_bindings()
