@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import copy
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import datetime
 import json
 import logging
@@ -100,6 +100,8 @@ LOG = logging.getLogger("dolly")
 ASPECT_PRESETS = {"16:9": 16 / 9, "16:10": 16 / 10, "21:9": 21 / 9, "4:3": 4 / 3}
 # Header game-status tones: resting states read dim, trouble reads as an error.
 _QUIET_SESSION = {"Game not connected", "Game not launched", "Game closed"}
+# Serializes preference commits between settings workers and the GUI thread.
+_SETTINGS_COMMIT = threading.Lock()
 # Finish/Discard attempts at an unconfirmed endmovie before Dolly stops retrying
 # on its own. The movie audio owner is still kept: the engine may be recording.
 MOVIE_STOP_ATTEMPTS = 3
@@ -225,6 +227,11 @@ def _history_group(app, key=None):
         yield
     finally:
         app._history_edit_group = previous_group
+
+
+def _changed_settings(old, new) -> dict:
+    return {item.name: getattr(new, item.name) for item in fields(new)
+            if item.compare and getattr(old, item.name) != getattr(new, item.name)}
 
 
 def _finite(value: str, label: str) -> float:
@@ -1356,16 +1363,26 @@ class DollyApp:
             except Exception:
                 LOG.debug("Discord presence startup unavailable", exc_info=True)
 
+    def _commit_settings(self, **owned):
+        """Save only the owned fields over the latest preferences.
+
+        Settings workers call this too. Rebuilding from the current settings
+        under the lock keeps a Discord or DLSS toggle made while they ran.
+        """
+        with _SETTINGS_COMMIT:
+            settings = replace(self.app_settings, **owned)
+            save_settings(settings)
+            self.app_settings = settings
+        return settings
+
     def _save_discord_preference(self):
         # Sharing controls remain available during playback and exports.
         try:
-            settings = replace(self.app_settings, discord_presence=self.discord_presence.get())
-            save_settings(settings)
+            self._commit_settings(discord_presence=self.discord_presence.get())
         except Exception as exc:
             self.discord_presence.set(self.app_settings.discord_presence)
             self._error("Save Discord preference", exc)
             return
-        self.app_settings = settings
         self._refresh_discord_presence()
 
     def _refresh_discord_presence(self, status=None):
@@ -1388,13 +1405,11 @@ class DollyApp:
 
     def _save_dlss_preference(self):
         try:
-            settings = replace(self.app_settings, nvidia_dlss=self.nvidia_dlss.get())
-            save_settings(settings)
+            self._commit_settings(nvidia_dlss=self.nvidia_dlss.get())
         except Exception as exc:
             self.nvidia_dlss.set(self.app_settings.nvidia_dlss)
             self._error("Save NVIDIA DLSS preference", exc)
             return
-        self.app_settings = settings
         self.status_text.set("NVIDIA DLSS support preference saved for the next launch.")
 
     def _save_mod_preference(self):
@@ -2480,7 +2495,6 @@ class DollyApp:
             path = Path(selected).expanduser().absolute()
             if path.suffix.lower() != ".dll":
                 raise ValueError("Choose the 64-bit ReShade runtime DLL.")
-            settings = replace(self.app_settings, reshade_runtime_path=str(path))
             config = reshade_config_path()
             self._auto_reshade_bridge = self.controller._native_bridge()
             def configure():
@@ -2490,10 +2504,9 @@ class DollyApp:
                 from dolly.reshade_setup import discover_library, prepare_config
                 summary = prepare_config(config, library_root=discover_library(path))
                 bridge.configure_reshade(str(path), str(config))
-                save_settings(settings)
+                self._commit_settings(reshade_runtime_path=str(path))
                 return summary
             def complete(summary):
-                self.app_settings = settings
                 if summary.get("shaders") is None and summary.get("textures") is None:
                     self.reshade_status_text.set(
                         "ReShade requested, but no FX library was found. Use Browse FX library... "
@@ -2523,7 +2536,6 @@ class DollyApp:
         def operation():
             if self.video_export.status().get("state") in ACTIVE_STATES:
                 raise RuntimeError("Finish recording before changing ReShade.")
-            settings = replace(self.app_settings, reshade_runtime_path="")
             bridge = self.controller._native_bridge()
             self._auto_reshade_bridge = bridge
             def forget():
@@ -2533,10 +2545,9 @@ class DollyApp:
                         bridge.disable_reshade()
                     except (RuntimeError, ValueError, OSError) as exc:
                         warning = "Current ReShade could not be disabled: " + str(exc)
-                save_settings(settings)
+                self._commit_settings(reshade_runtime_path="")
                 return warning
             def complete(warning):
-                self.app_settings = settings
                 self.reshade_runtime_path.set("")
                 message = "Runtime forgotten. ReShade will not load on the next launch."
                 if warning:
@@ -3000,14 +3011,14 @@ class DollyApp:
         if old_helper is not None:
             self.capture_generation += 1
             self.hotkey_enabled.set(False)
+        owned = _changed_settings(self.app_settings, settings)
         def save():
             if old_helper is not None:
                 old_helper.stop()
-            save_settings(settings)
-        def complete(_result):
+            return self._commit_settings(**owned)
+        def complete(settings):
             if old_helper is not None:
                 self.capture_hotkey = None
-            self.app_settings = settings
             self.capture_binding = settings.capture_binding
             self.hotkey_label.set(self._capture_binding_label())
             self._refresh_bindings()
@@ -3071,8 +3082,9 @@ class DollyApp:
             parse_launch_options(options)
             from .graphics_profiles_ui import launch_options as graphics_launch_options
             graphics_options = graphics_launch_options(self)
-            settings = replace(self.app_settings, game_path=game, demo_path=demo,
-                               replay_folder=self.replay_folder.get().strip(), launch_options=self.launch_options.get().strip())
+            owned = dict(game_path=game, demo_path=demo,
+                         replay_folder=self.replay_folder.get().strip(), launch_options=self.launch_options.get().strip())
+            replace(self.app_settings, **owned)  # Validate before launching.
             cancel = threading.Event()
             protocol = "vconsole" if self.protocol.get() == "VConsole" else "netcon"
             native = self.camera_driver.get() == "Native (experimental)"
@@ -3082,7 +3094,7 @@ class DollyApp:
             def start():
                 if not native and cancel.is_set():
                     raise RuntimeError("Console startup cancelled before launch.")
-                save_settings(settings)
+                self._commit_settings(**owned)
                 if native:
                     return self.controller.start_editing(game, demo, protocol=protocol, native=True,
                         launch_options=options, cancel_event=cancel,
@@ -3092,7 +3104,6 @@ class DollyApp:
                 return self.controller.launch(game, demo, protocol=protocol, native=False,
                     launch_options=options, **mod_options, **graphics_options)
             def complete(result):
-                self.app_settings = settings
                 if native:
                     self._editing_started(result)
                 else:

@@ -177,6 +177,50 @@ class SecondLaunch(unittest.TestCase):
         self.assertEqual(app.attach_fields, {'fields': 'ready'})
 
 
+class SettingsLostUpdate(unittest.TestCase):
+    def test_launch_completion_keeps_a_discord_toggle_made_while_it_waited(self):
+        from dolly.settings import AppSettings, load_settings
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / 'settings.json'
+        app = MagicMock()
+        app.app_settings = AppSettings()
+        app.launch_options.get.return_value = ''
+        for variable in (app.game_path, app.demo_path, app.replay_folder):
+            variable.get.return_value = 'chosen'
+        app.camera_driver.get.return_value = 'Native (experimental)'
+        app._mod_launch_options.return_value = {}
+        app.controller.status.return_value = {}
+        app._guard = lambda title, operation: operation()
+        app._commit_settings = lambda **owned: DollyApp._commit_settings(app, **owned)
+        waiting, release = threading.Event(), threading.Event()
+
+        def start_editing(*args, **kwargs):
+            waiting.set()
+            release.wait(5)
+            return 'started'
+        app.controller.start_editing = start_editing
+        submitted = []
+        app._submit = lambda label, operation, callback: submitted.append((operation, callback)) or True
+        with patch('dolly.settings.settings_path', return_value=path),                 patch('dolly.graphics_profiles_ui.launch_options', return_value={}):
+            DollyApp._start_editing_session(app)
+            operation, complete = submitted[0]
+            result = []
+            worker = threading.Thread(target=lambda: result.append(operation()))
+            worker.start()
+            self.assertTrue(waiting.wait(5))
+            app.discord_presence.get.return_value = False
+            DollyApp._save_discord_preference(app)
+            release.set()
+            worker.join(5)
+            complete(result[0])
+            saved = load_settings()
+        app._error.assert_not_called()
+        self.assertFalse(app.app_settings.discord_presence)
+        self.assertFalse(saved.discord_presence)
+        self.assertEqual((app.app_settings.game_path, saved.game_path), ('chosen', 'chosen'))
+
+
 class Reconnect(unittest.TestCase):
     def test_connect_works_while_game_follow_still_needs_the_console(self):
         # Game Follow restores its rig through the console. With the connection
