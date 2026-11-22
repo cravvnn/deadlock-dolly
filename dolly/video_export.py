@@ -146,7 +146,7 @@ def resolve_backend(options: "VideoOptions") -> tuple[int, int]:
     if options.codec == "auto":
         if not options.ffmpeg_path:
             return 0, 0
-        key, _resolved_label = encoder_select.auto_encoder()
+        key, _resolved_label = encoder_select.auto_encoder(ffmpeg=options.ffmpeg_path)
         _key_label, encoder, codec_id, _needs = CODEC_BY_KEY[key]
         return encoder, codec_id
     if needs_ffmpeg and not options.ffmpeg_path:
@@ -397,7 +397,7 @@ class VideoOptions:
             if self.codec == "auto":
                 backend_encoder, _backend_codec = resolve_backend(result)
                 if backend_encoder == 1:
-                    resolved_key, _label = encoder_select.auto_encoder()
+                    resolved_key, _label = encoder_select.auto_encoder(ffmpeg=ffmpeg)
             elif CODEC_BY_KEY[self.codec][3]:
                 resolved_key = self.codec
             if resolved_key is not None:
@@ -621,7 +621,7 @@ class VideoExport:
             return encoder, codec_id, codec_name
         if encoder == 0:
             return encoder, codec_id, "Auto → Built-in Windows Media Foundation"
-        key, _label = encoder_select.auto_encoder()
+        key, _label = encoder_select.auto_encoder(ffmpeg=options.ffmpeg_path)
         resolved_label, encoder, codec_id, _needs = CODEC_BY_KEY[key]
         LOG.info("Auto encoder: %s selected for %s (vendor=%s).", key,
                  encoder_select.describe_adapters(), encoder_select.detect_vendor() or "unknown")

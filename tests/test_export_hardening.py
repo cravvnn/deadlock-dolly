@@ -573,5 +573,53 @@ class FfmpegRunTests(unittest.TestCase):
         self.assertEqual(ffmpeg_run.scaled_timeout(120.0, 0.5, 36000), 18000.0)
         self.assertEqual(ffmpeg_run.scaled_timeout(120.0, 0.5, 10), 120.0)
 
+
+class AutoEncoderTests(unittest.TestCase):
+    """Auto's vendor encoder must pass one real test encode before it is used."""
+
+    def setUp(self):
+        from dolly import encoder_select
+        temporary = tempfile.TemporaryDirectory(prefix='dolly-auto-encoder-')
+        self.addCleanup(temporary.cleanup)
+        self.ffmpeg = Path(temporary.name) / 'ffmpeg.exe'
+        self.ffmpeg.write_bytes(b'fixture')
+        patcher = patch.dict(encoder_select._PROBE_CACHE, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.calls = []
+
+    def run_ffmpeg(self, command, **options):
+        self.calls.append(list(command))
+        if '-encoders' in command:
+            return NS(returncode=0, stdout=' V....D h264_nvenc\n V....D h264_mf\n', stderr='')
+        failed = command[command.index('-c:v') + 1] == 'h264_nvenc'
+        return NS(returncode=1 if failed else 0, stdout='',
+                  stderr='Cannot load nvcuda.dll\n' if failed else '')
+
+    def test_failed_vendor_probe_falls_back_once_and_explicit_choice_is_kept(self):
+        from dolly import encoder_select
+        probes = lambda: [c for c in self.calls if 'lavfi' in c]
+        with patch.object(encoder_select, 'gpu_adapters', return_value=(('nvidia', 'GeForce'),)), \
+                patch.object(subprocess, 'run', side_effect=self.run_ffmpeg), \
+                self.assertLogs('dolly.encoder_select', 'WARNING') as logs:
+            auto = VideoOptions(self.ffmpeg.parent / 'take.mp4', ffmpeg_path=self.ffmpeg)
+            self.assertEqual(video_export.resolve_backend(auto), (1, 3))  # h264_mf
+            self.assertEqual(video_export.resolve_backend(auto), (1, 3))
+            self.assertEqual(len(probes()), 1)
+            self.assertIn('-frames:v', probes()[0])
+            explicit = VideoOptions(self.ffmpeg.parent / 'take.mp4', codec='h264_nvenc',
+                                    ffmpeg_path=self.ffmpeg)
+            self.assertEqual(video_export.resolve_backend(explicit), (1, 1))
+            self.assertEqual(len(probes()), 1)
+        self.assertIn('nvcuda.dll', '\n'.join(logs.output))
+
+    def test_working_vendor_probe_keeps_the_hardware_encoder(self):
+        from dolly import encoder_select
+        with patch.object(encoder_select, 'gpu_adapters', return_value=(('amd', 'Radeon'),)), \
+                patch.object(subprocess, 'run', side_effect=self.run_ffmpeg):
+            auto = VideoOptions(self.ffmpeg.parent / 'take.mp4', ffmpeg_path=self.ffmpeg)
+            self.assertEqual(video_export.resolve_backend(auto), (1, 8))  # h264_amf
+
+
 if __name__ == '__main__':
     unittest.main()

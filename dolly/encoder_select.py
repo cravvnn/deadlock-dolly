@@ -10,7 +10,9 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wintypes
 import logging
+from pathlib import Path
 import re
+import subprocess
 import sys
 
 LOG = logging.getLogger(__name__)
@@ -100,10 +102,51 @@ def describe_adapters(adapters: tuple[tuple[str, str], ...] | None = None) -> st
                      for vendor, description in entries)
 
 
-def auto_encoder(vendor: str | None = None) -> tuple[str, str]:
-    """Return the (codec key, label) Auto should use for this machine."""
+_PROBE_CACHE: dict[tuple[str, int, str], bool] = {}
+
+
+def encoder_works(ffmpeg, codec: str) -> bool:
+    """Encode one tiny frame once per FFmpeg build; never raises.
+
+    ``ffmpeg -encoders`` lists NVENC, AMF and Quick Sync whatever the
+    hardware, so only a real encode shows whether the driver can use them.
+    """
+    try:
+        path = Path(ffmpeg)
+        key = (str(path), path.stat().st_mtime_ns, codec)
+    except (OSError, TypeError, ValueError):
+        return False
+    if key not in _PROBE_CACHE:
+        from .runtime import external_program_environment
+        try:
+            with external_program_environment() as environment:
+                result = subprocess.run(
+                    [str(path), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                     "-i", "color=s=256x144", "-frames:v", "1", "-c:v", codec, "-f", "null", "-"],
+                    capture_output=True, text=True, timeout=10, env=environment,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError) as exc:
+            LOG.warning("Auto encoder: %s probe could not run: %s", codec, exc)
+            _PROBE_CACHE[key] = False
+        else:
+            _PROBE_CACHE[key] = result.returncode == 0
+            if result.returncode:
+                lines = (result.stderr or "").strip().splitlines()
+                LOG.warning("Auto encoder: %s failed its test encode (%s).", codec,
+                            lines[-1] if lines else f"exit {result.returncode}")
+    return _PROBE_CACHE[key]
+
+
+def auto_encoder(vendor: str | None = None, ffmpeg=None) -> tuple[str, str]:
+    """Return the (codec key, label) Auto should use for this machine.
+
+    With ``ffmpeg``, a vendor encoder that cannot encode a test frame falls
+    back to the vendor-neutral Media Foundation encoder.
+    """
     resolved = detect_vendor() if vendor is None else vendor
     preferred = VENDOR_ENCODERS.get(resolved)
-    if preferred is None:
+    if preferred is None or (ffmpeg is not None and not encoder_works(ffmpeg, preferred[0])):
+        if preferred is not None:
+            LOG.warning("Auto encoder: using %s instead of %s.", FALLBACK_CODEC, preferred[0])
         return FALLBACK_CODEC, "H.264 via ffmpeg Media Foundation"
     return preferred
