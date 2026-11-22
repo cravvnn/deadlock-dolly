@@ -1048,6 +1048,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             except Exception as exc:
                 if self._console is not None and self._console.is_connected:
                     raise
+                # A worker still unwinding would run its playback cleanup
+                # through the new connection, outside the operation lock.
+                if self._thread is not None and self._thread.is_alive():
+                    raise
                 # A restore that needs the console (Game Follow's rig) cannot
                 # run while it is lost. It stays pending for Stop / restore
                 # after this connection; refusing here made Connect impossible.

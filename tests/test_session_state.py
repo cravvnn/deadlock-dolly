@@ -292,6 +292,33 @@ class Reconnect(unittest.TestCase):
         # The pending restore is kept for the next Stop / restore.
         self.assertIsNotNone(controller._follow_transaction)
 
+    def test_connect_waits_for_a_playback_worker_that_is_still_unwinding(self):
+        # Its cleanup would otherwise reach the new connection without the
+        # operation lock and race the first commands.
+        controller = Controller(lambda *args, **kwargs: None)
+        controller._session = NS(pid=42, native=None, session_dir=None, command=[],
+                                 process=NS(poll=lambda: None), owns_console_port=lambda: True)
+        controller._console = None
+        release = threading.Event()
+
+        class SlowWorker(threading.Thread):
+            def join(self, timeout=None):
+                super().join(0.05)
+
+        worker = SlowWorker(target=release.wait, daemon=True)
+        worker.start()
+        controller._thread = worker
+        opened = Mock()
+        try:
+            with patch('dolly.controller.ConsoleClient', opened):
+                with self.assertRaisesRegex(RuntimeError, 'still waiting for the game console'):
+                    controller.connect()
+        finally:
+            release.set()
+            threading.Thread.join(worker, 2)
+        opened.assert_not_called()
+        self.assertIsNone(controller._console)
+
     def test_connect_still_reports_a_failed_restore_on_a_live_console(self):
         controller = Controller(lambda *args, **kwargs: None)
         controller._session = NS(pid=42, native=None, session_dir=None, command=[],
