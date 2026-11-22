@@ -1072,7 +1072,9 @@ class VideoExport:
                 "-video_size", f"{width}x{height}", "-framerate", str(options.fps),
                 "-i", str(source), "-c:v", codec]
         if codec != "ffv1":
-            args += ["-pix_fmt", "yuv420p", "-b:v", str(options.bitrate)]
+            # The native preview is half the scene size and can be odd; yuv420p needs even.
+            args += ["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                     "-pix_fmt", "yuv420p", "-b:v", str(options.bitrate)]
         args.append(str(target))
         try:
             frames = max(1, source.stat().st_size // max(1, width * height))

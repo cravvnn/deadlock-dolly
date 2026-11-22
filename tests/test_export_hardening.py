@@ -341,6 +341,22 @@ class ExportHardeningTests(unittest.TestCase):
         self.assertEqual(status['depth_preview'], str(take / 'depth' / 'preview.mkv'))
         self.assertEqual(sorted(p.name for p in (take / 'depth').iterdir()), ['preview.mkv'])
 
+    def test_depth_preview_pads_odd_sizes_for_yuv420p_encoders(self):
+        for codec, padded in (('h264_mf', True), ('lossless', False)):
+            with self.subTest(codec=codec):
+                take, exporter = self.depth_take('odd_' + codec, codec)
+                raw = take / 'depth' / 'preview_64x64.raw'
+                raw.rename(raw.with_name('preview_743x418.raw'))
+                commands = []
+                def run(command, **options):
+                    commands.append(command)
+                    Path(command[-1]).write_bytes(b'preview')
+                    return NS(returncode=0, stderr='')
+                with patch.object(video_export.subprocess, 'run', side_effect=run):
+                    exporter._encode_depth_preview({'state': 'completed'})
+                self.assertIn('743x418', commands[0])
+                self.assertEqual('pad=ceil(iw/2)*2:ceil(ih/2)*2' in commands[0], padded)
+
     # D2 / D3: layer alpha combine --------------------------------------
     def layer_app(self, frames=None):
         base = VideoOptions(self.root / 'Иван' / 'clip.mp4', codec='hevc_amf', fps=60,
