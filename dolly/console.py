@@ -401,16 +401,31 @@ class ConsoleClient:
             self._socket = None
             self._failure = "Console connection closed."
             self._condition.notify_all()
+        self._shutdown(sock)
+        reader = self._reader
+        if reader is not None and reader is not threading.current_thread():
+            reader.join(timeout=0.5)
+        self._reader = None
+
+    @staticmethod
+    def _shutdown(sock: socket.socket | None) -> None:
         if sock is not None:
             try:
                 sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
             sock.close()
-        reader = self._reader
-        if reader is not None and reader is not threading.current_thread():
-            reader.join(timeout=0.5)
-        self._reader = None
+
+    def _fail(self, sock: socket.socket, failure: str) -> None:
+        # Retire a failed socket so the reader stops polling it. A concurrent
+        # close or reconnect already owns the state and keeps its own reason.
+        with self._condition:
+            if self._socket is not sock:
+                return
+            self._socket = None
+            self._failure = failure
+            self._condition.notify_all()
+        self._shutdown(sock)
 
     def _read_loop(self, sock: socket.socket) -> None:
         decoder = VConsoleDecoder()
@@ -448,18 +463,12 @@ class ConsoleClient:
                         self._event_bytes -= len(old.encode("utf-8"))
                     self._condition.notify_all()
         except (OSError, ConsoleError) as exc:
-            with self._condition:
-                if self._socket is sock:
-                    self._failure = str(exc)
-                    self._condition.notify_all()
+            self._fail(sock, str(exc))
         except Exception as exc:  # noqa: BLE001 - a decoder failure must fail requests, not silently kill the reader
             # Any unexpected error used to kill this thread while is_connected
             # stayed true, so every later request burned its full timeout and
             # reported a misleading timeout. Record a real failure instead.
-            with self._condition:
-                if self._socket is sock:
-                    self._failure = f"Console reader failed: {exc}"
-                    self._condition.notify_all()
+            self._fail(sock, f"Console reader failed: {exc}")
 
     def _send_locked(self, command: str) -> None:
         self._send_commands_locked((command,))
@@ -478,10 +487,10 @@ class ConsoleClient:
         try:
             sock.sendall(data)
         except OSError as exc:
+            self._fail(sock, f"Console send failed: {exc}")
             with self._condition:
-                self._failure = f"Console send failed: {exc}"
-                self._condition.notify_all()
-            raise ConsoleError(self._failure) from exc
+                failure = self._failure
+            raise ConsoleError(failure or "Console is not connected.") from exc
 
     def send(self, command: str) -> None:
         """Send a trusted batch without waiting. Caller owns replay guards."""

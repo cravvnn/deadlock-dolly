@@ -193,3 +193,61 @@ class StartupAuditBoundaries(unittest.TestCase):
             with patch.object(Path, 'open', growing):
                 self.assertIsNone(export_audit._load(target))
             self.assertEqual(reads, [1024 * 1024 + 1])
+
+
+class ConsoleSocketRetirement(unittest.TestCase):
+    def connected(self, on_send=None):
+        class Sending(socket.socket):
+            def sendall(self, data, *args):
+                if on_send is not None:
+                    on_send()
+                    raise OSError('send refused')
+                return super().sendall(data, *args)
+        raw, peer = socket.socketpair()
+        sock = Sending(raw.family, raw.type, raw.proto, fileno=raw.detach())
+        self.addCleanup(peer.close)
+        self.addCleanup(sock.close)
+        client = console.ConsoleClient(protocol='netcon')
+        self.addCleanup(client.close)
+        with patch.object(console.socket, 'create_connection', return_value=sock), \
+                patch.object(socket.socket, 'setsockopt', return_value=None):
+            client.connect()
+        peer.sendall(b'before failure\n')
+        for _ in range(100):
+            if 'before failure' in client.recent_output():
+                break
+            _Event().wait(0.01)
+        return client, sock, peer
+
+    def assertRetired(self, client, sock, reason):
+        reader = client._reader
+        reader.join(0.5)
+        self.assertFalse(reader.is_alive())
+        self.assertFalse(client.is_connected)
+        self.assertIsNone(client._socket)
+        self.assertEqual(sock.fileno(), -1)
+        self.assertIn(reason, client._failure)
+        self.assertIn('before failure', client.recent_output())
+
+    def test_send_failure_retires_the_socket_and_stops_the_reader(self):
+        client, sock, _ = self.connected(on_send=lambda: None)
+        with self.assertRaisesRegex(console.ConsoleError, 'send failed'):
+            client.send('status')
+        self.assertRetired(client, sock, 'send failed')
+
+    def test_read_failure_retires_the_socket(self):
+        client, sock, peer = self.connected()
+        peer.close()
+        client._reader.join(0.5)
+        self.assertRetired(client, sock, 'Game closed the console connection')
+
+    def test_send_failure_after_close_reports_the_close(self):
+        holder = {}
+        client, sock, _ = self.connected(on_send=lambda: holder['client'].close())
+        holder['client'] = client
+        reader = client._reader
+        with self.assertRaisesRegex(console.ConsoleError, 'Console connection closed'):
+            client.send('status')
+        reader.join(0.5)
+        self.assertFalse(reader.is_alive())
+        self.assertEqual(sock.fileno(), -1)
