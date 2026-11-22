@@ -534,7 +534,7 @@ class InstallTests(unittest.TestCase):
         session, overlay, backup, record, patched = self.journal_fixture('foreign')
         self.paths.gameinfo.write_bytes(GAMEINFO)
         marker = overlay / '.dolly-session.json'; marker.write_text(json.dumps({**record, 'original_gameinfo': str(self.root / 'other')}))
-        self.assertEqual(session_cleanup.recover_orphans(self.paths), [])
+        self.assertEqual(session_cleanup.recover_orphans(self.paths, lambda: False), [])
         self.assertTrue(marker.exists())
 
 class SessionCloseSerialization(unittest.TestCase):
