@@ -1957,7 +1957,8 @@ class DollyApp:
                             quality=base.quality, preset=base.preset, ffmpeg_path=base.ffmpeg_path,
                             fixed_step=True, speed=base.speed, layers=layers,
                             white_clear=white_clear, shot_only=shot_only,
-                            full_resolution=base.full_resolution, container=base.container).validated()
+                            full_resolution=base.full_resolution, container=base.container,
+                            auto_codec=base.auto_codec).validated()
 
     def _start_pass(self, layer, pass_name, options, before_record, **start_options):
         self._active_layer_take = (layer, pass_name)

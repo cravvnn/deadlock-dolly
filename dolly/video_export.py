@@ -136,6 +136,17 @@ def ffmpeg_encoder_names(ffmpeg: "Path | None") -> "frozenset[str] | None":
     return value
 
 
+AUTO_CODECS = frozenset({codec for codec, _label in encoder_select.VENDOR_ENCODERS.values()}
+                        | {encoder_select.FALLBACK_CODEC})
+
+
+def _auto_key(options: "VideoOptions") -> str:
+    """Auto's encoder key: the one validated() stored, else resolved now."""
+    if options.auto_codec in AUTO_CODECS:
+        return options.auto_codec
+    return encoder_select.auto_encoder(ffmpeg=options.ffmpeg_path)[0]
+
+
 def resolve_backend(options: "VideoOptions") -> tuple[int, int]:
     """Choose the native (encoder, codec) pair for validated options.
 
@@ -146,8 +157,7 @@ def resolve_backend(options: "VideoOptions") -> tuple[int, int]:
     if options.codec == "auto":
         if not options.ffmpeg_path:
             return 0, 0
-        key, _resolved_label = encoder_select.auto_encoder(ffmpeg=options.ffmpeg_path)
-        _key_label, encoder, codec_id, _needs = CODEC_BY_KEY[key]
+        _key_label, encoder, codec_id, _needs = CODEC_BY_KEY[_auto_key(options)]
         return encoder, codec_id
     if needs_ffmpeg and not options.ffmpeg_path:
         return 0, 0
@@ -295,6 +305,8 @@ class VideoOptions:
     # codec-derived choice; validated() records the resolved container.
     container: str = ""
     camera_only: bool = False
+    # Auto's encoder, resolved once by validated() and reused for the take.
+    auto_codec: str = ""
 
     def validated(self) -> VideoOptions:
         if type(self.camera_only) is not bool:
@@ -395,9 +407,14 @@ class VideoOptions:
             # untouched instead of stopping the FFmpeg pipe on frame one.
             resolved_key = None
             if self.codec == "auto":
-                backend_encoder, _backend_codec = resolve_backend(result)
-                if backend_encoder == 1:
-                    resolved_key, _label = encoder_select.auto_encoder(ffmpeg=ffmpeg)
+                resolved_key = self.auto_codec if self.auto_codec in AUTO_CODECS else None
+                if resolved_key is None:
+                    adapters = encoder_select.gpu_adapters()
+                    vendor = encoder_select.detect_vendor(adapters)
+                    resolved_key, _label = encoder_select.auto_encoder(vendor, ffmpeg=ffmpeg)
+                    LOG.info("Auto encoder: %s selected for %s (vendor=%s).", resolved_key,
+                             encoder_select.describe_adapters(adapters), vendor or "unknown")
+                result = replace(result, auto_codec=resolved_key)
             elif CODEC_BY_KEY[self.codec][3]:
                 resolved_key = self.codec
             if resolved_key is not None:
@@ -621,11 +638,7 @@ class VideoExport:
             return encoder, codec_id, codec_name
         if encoder == 0:
             return encoder, codec_id, "Auto → Built-in Windows Media Foundation"
-        key, _label = encoder_select.auto_encoder(ffmpeg=options.ffmpeg_path)
-        resolved_label, encoder, codec_id, _needs = CODEC_BY_KEY[key]
-        LOG.info("Auto encoder: %s selected for %s (vendor=%s).", key,
-                 encoder_select.describe_adapters(), encoder_select.detect_vendor() or "unknown")
-        return encoder, codec_id, f"Auto → {resolved_label}"
+        return encoder, codec_id, f"Auto → {CODEC_BY_KEY[_auto_key(options)][0]}"
 
     def _start(self, options: VideoOptions, project=None, *, frozen=False,
                before_record=None, capture_only=False, pov=False) -> dict:

@@ -583,15 +583,17 @@ class AutoEncoderTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.ffmpeg = Path(temporary.name) / 'ffmpeg.exe'
         self.ffmpeg.write_bytes(b'fixture')
-        patcher = patch.dict(encoder_select._PROBE_CACHE, clear=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for cache in (encoder_select._PROBE_CACHE, video_export._ENCODER_LIST_CACHE):
+            patcher = patch.dict(cache, clear=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.calls = []
 
     def run_ffmpeg(self, command, **options):
         self.calls.append(list(command))
         if '-encoders' in command:
-            return NS(returncode=0, stdout=' V....D h264_nvenc\n V....D h264_mf\n', stderr='')
+            return NS(returncode=0, stdout=' V....D h264_nvenc\n V....D h264_amf\n V....D h264_mf\n',
+                      stderr='')
         failed = command[command.index('-c:v') + 1] == 'h264_nvenc'
         return NS(returncode=1 if failed else 0, stdout='',
                   stderr='Cannot load nvcuda.dll\n' if failed else '')
@@ -619,6 +621,22 @@ class AutoEncoderTests(unittest.TestCase):
                 patch.object(subprocess, 'run', side_effect=self.run_ffmpeg):
             auto = VideoOptions(self.ffmpeg.parent / 'take.mp4', ffmpeg_path=self.ffmpeg)
             self.assertEqual(video_export.resolve_backend(auto), (1, 8))  # h264_amf
+
+    def test_auto_resolves_once_per_start_and_reuses_the_validated_key(self):
+        from dolly import encoder_select
+        with patch.object(encoder_select, 'gpu_adapters', return_value=(('amd', 'Radeon'),)) as adapters, \
+                patch.object(subprocess, 'run', side_effect=self.run_ffmpeg):
+            options = VideoOptions(self.ffmpeg.parent / 'take.mp4', ffmpeg_path=self.ffmpeg).validated()
+            adapters.return_value = (('nvidia', 'GeForce'),)  # must not change the take's encoder
+            options = options.validated()
+            self.assertEqual(options.auto_codec, 'h264_amf')
+            self.assertEqual(video_export.resolve_backend(options), (1, 8))
+            self.assertEqual(VideoExport._resolve_recording_backend(None, options),
+                             (1, 8, 'Auto → AMD H.264 (AMF)'))
+            self.assertEqual(adapters.call_count, 1)
+            explicit = VideoOptions(self.ffmpeg.parent / 'take.mp4', codec='h264_mf',
+                                    ffmpeg_path=self.ffmpeg, auto_codec='h264_amf').validated()
+            self.assertEqual(explicit.auto_codec, '')
 
 
 if __name__ == '__main__':
