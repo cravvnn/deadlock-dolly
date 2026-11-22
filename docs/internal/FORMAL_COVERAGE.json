@@ -7004,7 +7004,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5",
+      "sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -7082,7 +7082,9 @@
           "default_video_path",
           "recording_ready",
           "format_video_status",
-          "_auto_key"
+          "_auto_key",
+          "partial_video_path",
+          "_name_taken"
         ],
         "imports": [
           "",
@@ -7110,7 +7112,7 @@
       "reconciliation_20261118_take_path": "2026-11-18: validated() refuses a take folder whose longest file or folder would exceed Windows MAX_PATH, naming the folder and how to shorten it.",
       "reconciliation_20261119n": "2026-11-19: safe_stem(): one filename-stem rule for shot names (Windows-forbidden and control characters and unpaired surrogates to _, trailing spaces/dots stripped, device names prefixed with _, empty to a fallback). default_video_path keeps its own rule; its Dolly_ prefix already avoids device names.",
       "reconciliation_20261120d4": "2026-11-20: LOST_FRAMES_ERROR names the start of the native lost-frames message for the desktop offer. No recorder behavior change.",
-      "reconciliation_20261122": "2026-11-22: Auto resolves its encoder once per take (VideoOptions.auto_codec); odd depth preview sizes are padded for yuv420p encoders; stop() waits past the native finalize cap by default."
+      "reconciliation_20261122": "2026-11-22: Auto resolves its encoder once per take (VideoOptions.auto_codec); odd depth preview sizes are padded for yuv420p encoders; stop() waits past the native finalize cap by default; validated() refuses a name whose .partial take file exists and default_video_path skips it (partial_video_path)."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -8309,7 +8311,7 @@
     },
     {
       "path": "native/include/dolly_video_math.hpp",
-      "sha256": "13ca4d1296afd0c39418a7c881b860cf55ef5d149f150224ae4ab415575ecbe9",
+      "sha256": "30a7162a3fa588564af91305afcd5a396e6fde280e885f31038a0dadc41ac65c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8330,7 +8332,7 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261122": "2026-11-22: pure FinalizeWatch, write-stall and ChildRegistry rules, owner-tested in video_math_tests."
+      "reconciliation_20261122": "2026-11-22: pure FinalizeWatch, write-stall and ChildRegistry rules and partial_path naming, owner-tested in video_math_tests."
     },
     {
       "path": "native/include/dolly_visualization.hpp",
@@ -9985,7 +9987,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "14aae7dde6a1e1154b0a0b80b710351ea0bc3c404dd4623cec1abe47c30c3ec6",
+      "sha256": "28df34e8282d34e99d42d9169711669eda654c495b42f6a6fc06c35cb71c2509",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -10052,7 +10054,7 @@
       "reconciliation_20261113": "2026-11-13 native sweep: quiesce_producers() makes the ready/producer_active stop handshake seq_cst on the worker side for the FFmpeg, Media Foundation and camera-only workers (all barriers kept); capture ProducerScope and CameraProducer fetch_add and ready load seq_cst. decide_cancel() applies a deferred stop once and takes one cancel snapshot after the final barrier; terminate/drop accounting/reject_incomplete_take/depth/color delete/sidecars/camera-trace publication/state follow it. A cancel after that point completes the take; Python's own cancel check still refuses a .crav.",
       "reconciliation_20261114b": "2026-11-14 capture fault gap closed: capture() reads the backbuffer (GetBuffer) and checks resolution/swapchain only inside the producer gate after the ready check (one ProducerScope for video and camera-only); startup configuration before any output stays ungated. A late fault after the decision is no longer observed, so the kept take stays completed. video_late_fault_smoke (generated test copy with a post-decision hook) fails before and passes after. VideoCompleteness CaptureFault and CameraOnlyCapture outside-the-gate mutants added; RecorderApi GapFinish/AllowLateCaptureFault removed.",
       "reconciliation_20261119v": "2026-11-19: present_should_capture() also feeds Presents while finalizing so the copy submitted on the last recording Present is drained, not counted as dropped (V2); capture() still admits no new frame once stopping. VideoCompleteness/CameraOnlyCapture unchanged: Drain is already enabled before the stop barrier and the overlay gate is outside both models. start() resets the lock-free status cache to the new take under control_mutex, and the cached error text is read through the owning session (cached_owner) instead of a raw pointer into a possibly freed error_buffer (V1). No model change: status caching is outside VideoCompleteness/CameraOnlyCapture. .shot.json now goes through publish_sidecar (shared with the camera track): CREATE_NEW temporary, fflush/ferror/_commit checks, no-replace MoveFileEx, temporary removed on failure; write_shot_sidecar returns false when not published and never truncates a foreign sidecar (V5). Sidecars stay additive after the color decision; VideoCompleteness SidecarStep/OutcomeAgrees unchanged (a failed optional sidecar never was modeled as success).",
-      "reconciliation_20261122": "2026-11-22: FFmpeg children are kept in ChildRegistry and terminated on cancel or failure; a Finish whose pipe write makes no progress for 30 s while inputs are open fails and ends FFmpeg; finalize waits while FFmpeg progresses (30 s idle, 20 min cap, 120 s after editor close) and keeps the file on timeout; write/drain share one helper per backend. VideoCompleteness stop handshake unchanged."
+      "reconciliation_20261122": "2026-11-22: FFmpeg children are kept in ChildRegistry and terminated on cancel or failure; a Finish whose pipe write makes no progress for 30 s while inputs are open fails and ends FFmpeg; finalize waits while FFmpeg progresses (30 s idle, 20 min cap, 120 s after editor close) and keeps the file on timeout; write/drain share one helper per backend. The colour file records under <stem>.partial<ext> (Session.staging) and publish_take renames it to the final name without replacing, only after a completed decision; a refused rename keeps the .partial file and fails the take, and an unfinished file is kept under the .partial name. VideoCompleteness stop handshake unchanged (a final-name output still exists only for a completed take)."
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -11371,7 +11373,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
+      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11741,7 +11743,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
+      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11750,7 +11752,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
+      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11759,7 +11761,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
+      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11849,7 +11851,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
+      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -12038,7 +12040,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "94d3edb57e2114f9c5ce0ab02b2fa3cb3ddf93d06ce45631b5209c51be25fce5"
+      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
@@ -12159,7 +12161,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "14aae7dde6a1e1154b0a0b80b710351ea0bc3c404dd4623cec1abe47c30c3ec6"
+      "owner_utf8_lf_sha256": "28df34e8282d34e99d42d9169711669eda654c495b42f6a6fc06c35cb71c2509"
     },
     "native/src/CaptureFailure.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -12207,7 +12209,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "14aae7dde6a1e1154b0a0b80b710351ea0bc3c404dd4623cec1abe47c30c3ec6"
+      "owner_utf8_lf_sha256": "28df34e8282d34e99d42d9169711669eda654c495b42f6a6fc06c35cb71c2509"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",

@@ -4,8 +4,18 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace dolly::video {
+// A take records under "<stem>.partial<ext>" and is renamed to its final name
+// only once complete, so a crash never leaves a cut-short file under that name.
+inline std::wstring partial_path(const std::wstring& path) {
+    const auto dot = path.find_last_of(L'.');
+    const auto slash = path.find_last_of(L"\\/");
+    if (dot == std::wstring::npos || (slash != std::wstring::npos && dot < slash))
+        return path + L".partial";
+    return path.substr(0, dot) + L".partial" + path.substr(dot);
+}
 // FFmpeg finalization after its input closes: the encoder tail and the MP4
 // +faststart rewrite of a long take can take minutes on a slow disk. The wait
 // continues while the child's I/O or CPU counters advance, ends after the idle

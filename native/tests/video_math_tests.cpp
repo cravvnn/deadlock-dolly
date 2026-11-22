@@ -15,6 +15,9 @@ void require(bool value) {
 
 int main() {
     using namespace dolly::video;
+    require(partial_path(L"C:\\Videos\\take.mp4") == L"C:\\Videos\\take.partial.mp4");
+    require(partial_path(L"C:\\Videos\\a.b\\take.v2.mkv") == L"C:\\Videos\\a.b\\take.v2.partial.mkv");
+    require(partial_path(L"C:\\Videos\\a.b\\take") == L"C:\\Videos\\a.b\\take.partial");
     const std::wstring first = L"Driver does not support the required nvenc API version.";
     const std::wstring log = L"\r\n[h264_nvenc @ 00000123] " + first + L"\r\n" +
         std::wstring(700, L'x') + L"\n[out @ 0123] Nothing was written into output file, "

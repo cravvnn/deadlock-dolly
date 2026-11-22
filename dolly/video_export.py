@@ -205,6 +205,17 @@ def safe_stem(name: str, fallback: str = "shot") -> str:
     return stem
 
 
+def partial_video_path(path: Path) -> Path:
+    """Where a take records until it is complete (the native recorder renames it)."""
+    path = Path(path)
+    return path.with_name(path.stem + ".partial" + path.suffix)
+
+
+def _name_taken(path: Path) -> bool:
+    partial = partial_video_path(path)
+    return path.exists() or path.is_symlink() or partial.exists() or partial.is_symlink()
+
+
 def default_video_path(shot_name: str, directory: Path | None = None, *, now: datetime | None = None) -> Path:
     """Choose an unused filename without creating directories or files."""
     if directory is None:
@@ -216,7 +227,7 @@ def default_video_path(shot_name: str, directory: Path | None = None, *, now: da
     stem = f"Dolly_{name}_{stamp}"
     candidate = Path(directory) / (stem + ".mp4")
     sequence = 2
-    while candidate.exists() or candidate.is_symlink():
+    while _name_taken(candidate):
         candidate = Path(directory) / f"{stem}_{sequence}.mp4"
         sequence += 1
     return candidate
@@ -356,6 +367,10 @@ class VideoOptions:
             raise ValueError("Choose an existing output folder.")
         if path.exists() or path.is_symlink():
             raise ValueError("That output file already exists. Choose a new filename.")
+        partial = partial_video_path(path)
+        if partial.exists() or partial.is_symlink():
+            raise ValueError(f"An unfinished take named {partial.name} is in the way. "
+                             "Rename or delete it, or choose a new filename.")
         if type(self.fixed_step) is not bool:
             raise ValueError("Fixed-step export must be on or off.")
         if type(self.depth) is not bool:

@@ -108,6 +108,8 @@ int main(int argc, char** argv) {
     }
     ok = check(GetFileAttributesW(output.c_str()) == INVALID_FILE_ATTRIBUTES,
                "the stopped take leaves no output") && ok;
+    ok = check(GetFileAttributesW(partial_path(output).c_str()) == INVALID_FILE_ATTRIBUTES,
+               "the stopped take leaves no .partial file") && ok;
     if (terminal(result.state)) {
         shutdown();
         reset_resources();

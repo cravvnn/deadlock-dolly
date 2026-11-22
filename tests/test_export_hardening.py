@@ -452,6 +452,19 @@ class ExportHardeningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'take folder'):
             VideoOptions(self.root / 'clip.mp4', codec='builtin', bundle_audio=True).validated()
 
+    def test_leftover_partial_take_blocks_its_name_and_the_default_skips_it(self):
+        self.assertEqual(video_export.partial_video_path(self.root / 'clip.mp4'),
+                         self.root / 'clip.partial.mp4')
+        (self.root / 'clip.partial.mp4').write_bytes(b'x')
+        with self.assertRaisesRegex(ValueError, r'unfinished take named clip\.partial\.mp4'):
+            VideoOptions(self.root / 'clip.mp4', codec='builtin').validated()
+        from datetime import datetime
+        now = datetime(2026, 11, 22, 10, 0, 0)
+        first = video_export.default_video_path('shot', self.root, now=now)
+        video_export.partial_video_path(first).write_bytes(b'x')
+        second = video_export.default_video_path('shot', self.root, now=now)
+        self.assertEqual(second.name, first.stem + '_2.mp4')
+
     # D8: take folder paths stay within Windows MAX_PATH ---------------
     def long_parent(self, length):
         parent = self.root / ('a' * (length - len(str(self.root)) - 1))

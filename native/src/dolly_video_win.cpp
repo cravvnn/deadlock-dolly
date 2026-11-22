@@ -120,6 +120,7 @@ struct CpuFrame {
 };
 struct Session {
     std::wstring path;
+    std::wstring staging; // The take's file until publish_take renames it to path.
     std::uint32_t fps = 30, bitrate = 20000000;
     Encoder encoder = Encoder::media_foundation;
     Codec codec = Codec::auto_select;
@@ -330,6 +331,27 @@ void publish_error(Session& s, HRESULT hr, const wchar_t* message, std::size_t l
 void fail(Session& s, HRESULT hr, const wchar_t* message) noexcept {
     publish_error(s, hr, message, message ? wcsnlen(message, 255) : 0);
 }
+// A complete take moves from its .partial name to the requested one. No
+// MOVEFILE_REPLACE_EXISTING: a file that appeared there meanwhile is not ours,
+// so the take stays under its .partial name and the recording reports why.
+void publish_take(Session& s) noexcept {
+    if (s.staging == s.path ||
+        MoveFileExW(s.staging.c_str(), s.path.c_str(), MOVEFILE_WRITE_THROUGH))
+        return;
+    const auto error = GetLastError();
+    try {
+        const auto slash = s.staging.find_last_of(L"\\/");
+        const std::wstring message =
+            L"The take was recorded but kept as " +
+            s.staging.substr(slash == std::wstring::npos ? 0 : slash + 1) +
+            (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS
+                 ? L" because a file with the final name appeared during recording."
+                 : L" because it could not be renamed.");
+        publish_error(s, HRESULT_FROM_WIN32(error), message.c_str(), message.size());
+    } catch (...) {
+        fail(s, HRESULT_FROM_WIN32(error), L"The take was recorded but could not be renamed.");
+    }
+}
 bool active(State state) noexcept {
     return state == State::starting || state == State::recording || state == State::finalizing;
 }
@@ -513,8 +535,10 @@ HRESULT begin_writer(MediaApi& api, Session& s, Com<IMFByteStream>& file,
                      Com<IMFSinkWriter>& writer, DWORD& stream, bool& created) {
     // This operation atomically refuses existing files, including races after
     // a file picker/launcher existence check. It never truncates another file.
+    if (GetFileAttributesW(s.path.c_str()) != INVALID_FILE_ATTRIBUTES)
+        return HRESULT_FROM_WIN32(ERROR_FILE_EXISTS);
     HRESULT hr = api.MFCreateFile(MF_ACCESSMODE_WRITE, MF_OPENMODE_FAIL_IF_EXIST, MF_FILEFLAGS_NONE,
-                                  s.path.c_str(), file.put());
+                                  s.staging.c_str(), file.put());
     if (FAILED(hr))
         return hr;
     created = true;
@@ -831,7 +855,7 @@ std::wstring build_ffmpeg_command(const Session& s) {
     if (mp4)
         cmd += L" -movflags +faststart";
     cmd += L" ";
-    cmd += quote_arg(s.path);
+    cmd += quote_arg(s.staging);
     return cmd;
 }
 // The paired depth master is a 10-bit ProRes 4444 .mov fed with linear
@@ -1070,7 +1094,11 @@ bool spawn_encoder(Session& s, Child& child, const std::wstring& command,
     return true;
 }
 bool spawn_ffmpeg(Session& s, Child& child, std::wstring& error) {
-    return spawn_encoder(s, child, build_ffmpeg_command(s), s.path, L"color", error);
+    if (GetFileAttributesW(s.path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        error = L"The output file already exists. Choose a new filename.";
+        return false;
+    }
+    return spawn_encoder(s, child, build_ffmpeg_command(s), s.staging, L"color", error);
 }
 bool spawn_depth_ffmpeg(Session& s, Child& child, std::uint32_t width, std::uint32_t height,
                         std::wstring& error) {
@@ -1255,7 +1283,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                     keep_unfinished = true;
                     fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
                          L"FFmpeg stopped making progress while finishing the recording. The "
-                         L"unfinished file was kept.");
+                         L"unfinished file was kept with .partial in its name.");
                 } else if (finish == Finish::exited && code != 0) {
                     const auto tail = read_log_error(child.log);
                     fail_text(
@@ -1278,7 +1306,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 keep_unfinished = true;
                 fail(*s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
                      L"The depth encoder stopped making progress while finishing. The recorded "
-                     L"files were kept.");
+                     L"files were kept, the video with .partial in its name.");
                 finalized = false;
             } else if (finish == Finish::exited && code != 0) {
                 const auto tail = read_log_error(depth_child.log);
@@ -1332,7 +1360,9 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             s->depth_output.discard();
     }
     if (created && (!finalized || cancelled) && !keep_unfinished)
-        DeleteFileW(s->path.c_str());
+        DeleteFileW(s->staging.c_str());
+    if (created && finalized && !cancelled && SUCCEEDED(s->error.load()))
+        publish_take(*s);
     if (finalized && !cancelled && SUCCEEDED(s->error.load())) {
         if (s->shot.open())
             write_shot_sidecar(*s);
@@ -1538,7 +1568,9 @@ void encode(std::shared_ptr<Session> s) noexcept {
     // Delete only an output atomically created by this recording, never an
     // existing destination rejected by MF_OPENMODE_FAIL_IF_EXIST.
     if (created && (!finalized || cancelled))
-        DeleteFileW(s->path.c_str());
+        DeleteFileW(s->staging.c_str());
+    if (created && finalized && !cancelled && SUCCEEDED(s->error.load()))
+        publish_take(*s);
     if (finalized && !cancelled && SUCCEEDED(s->error.load())) {
         if (s->shot.open())
             write_shot_sidecar(*s);
@@ -1675,6 +1707,7 @@ bool start(const Options& options) noexcept {
         }
         auto next = std::make_shared<Session>();
         next->path = path;
+        next->staging = options.camera_only ? next->path : partial_path(next->path);
         next->fps = options.fps;
         next->bitrate = options.bitrate;
         next->encoder = options.encoder;

@@ -15,6 +15,7 @@
 #include <thread>
 #include <fstream>
 #include "dolly_video.hpp"
+#include "dolly_video_math.hpp"
 
 namespace {
 template <class T> void release(T*& p) {
@@ -478,6 +479,11 @@ int main(int argc, char** argv) {
             break;
         Sleep(8);
     }
+    const auto staging = dolly::video::partial_path(path);
+    ok = check(GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES &&
+                   GetFileAttributesW(staging.c_str()) != INVALID_FILE_ATTRIBUTES,
+               "a take records under its .partial name") &&
+         ok;
     stop();
     // Deliberately provide no more Presents: finalization must still finish
     // without blocking or requiring the game to regain foreground focus.
@@ -485,6 +491,9 @@ int main(int argc, char** argv) {
     const auto result = status();
     ok = check(result.state == State::completed && result.frames_written >= 4,
                "real frames were written to a completed recording") &&
+         ok;
+    ok = check(GetFileAttributesW(staging.c_str()) == INVALID_FILE_ATTRIBUTES,
+               "a completed take is renamed from its .partial name") &&
          ok;
     shutdown();
     reset_resources();
@@ -504,6 +513,46 @@ int main(int argc, char** argv) {
         ok = GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &after) &&
              before.nFileSizeHigh == after.nFileSizeHigh &&
              before.nFileSizeLow == after.nFileSizeLow && ok;
+    }
+    // A file that takes the final name during recording is not replaced: the
+    // take stays under its .partial name and the recording reports a failure.
+    const auto raced_path = path + L"-raced.mp4";
+    const auto raced_staging = dolly::video::partial_path(raced_path);
+    if (ok) {
+        ok = check(start(raced_path.c_str(), 30, 2000000), "raced job starts");
+        const auto raced_deadline = GetTickCount64() + 10000;
+        while (ok && status().frames_written < 4 && GetTickCount64() < raced_deadline) {
+            const float color[] = {0.3f, 0.3f, 0.7f, 1.0f};
+            context->ClearRenderTargetView(view, color);
+            capture(swapchain, device, context);
+            swapchain->Present(0, 0);
+            ok = check(!terminal(status().state), "raced encoder remains active");
+            Sleep(8);
+        }
+        HANDLE foreign = CreateFileW(raced_path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                     FILE_ATTRIBUTE_NORMAL, nullptr);
+        DWORD wrote = 0;
+        ok = check(foreign != INVALID_HANDLE_VALUE && WriteFile(foreign, "x", 1, &wrote, nullptr) &&
+                       wrote == 1,
+                   "a foreign file takes the final name") &&
+             ok;
+        if (foreign != INVALID_HANDLE_VALUE)
+            CloseHandle(foreign);
+        stop();
+        ok = check(wait_terminal() && status().state == State::failed,
+                   "a take whose final name was taken reports a failure") &&
+             ok;
+        shutdown();
+        reset_resources();
+        WIN32_FILE_ATTRIBUTE_DATA raced{};
+        ok = check(GetFileAttributesExW(raced_path.c_str(), GetFileExInfoStandard, &raced) &&
+                       raced.nFileSizeHigh == 0 && raced.nFileSizeLow == 1,
+                   "the foreign file is not replaced") &&
+             check(GetFileAttributesW(raced_staging.c_str()) != INVALID_FILE_ATTRIBUTES,
+                   "the take is kept under its .partial name") &&
+             ok;
+        DeleteFileW(raced_path.c_str());
+        DeleteFileW(raced_staging.c_str());
     }
     const auto high_path = path + L"-120.mp4";
     if (ok) {
