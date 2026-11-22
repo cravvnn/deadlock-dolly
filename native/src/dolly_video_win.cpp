@@ -1074,6 +1074,31 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             }
             return S_OK;
         };
+        // Writes the oldest queued frame. False once the failure is recorded,
+        // with the live or finishing wording for the color or paired take.
+        const auto write_next = [&](const wchar_t* color_failed,
+                                    const wchar_t* paired_failed) -> bool {
+            const auto read = s->consumed.load(std::memory_order_relaxed);
+            const auto& frame = s->cpu[read % kSlots];
+            const auto stamp = frame.stamp;
+            const HRESULT hr = write_frame(frame);
+            s->consumed.store(read + 1, std::memory_order_release);
+            s->wake.notify_all();
+            if (FAILED(hr)) {
+                std::wstring message = s->depth_enabled ? paired_failed : color_failed;
+                message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
+                fail_text(*s, hr, message);
+                return false;
+            }
+            wrote_any = true;
+            ++frames;
+            // Raw frames are piped at a constant rate: frame N is at N / fps.
+            observe_written_frame(*s, stamp,
+                                  double(frames - 1) / std::max<std::uint32_t>(1, s->fps));
+            s->duration.store(frames * 10000000ull / std::max<std::uint32_t>(1, s->fps),
+                              std::memory_order_release);
+            return true;
+        };
         std::uint64_t stop_deadline = 0;
         while (child.process && SUCCEEDED(s->error.load()) && !s->cancel.load()) {
             apply_deferred_stop(*s);
@@ -1082,31 +1107,12 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 s->state.store(State::finalizing, std::memory_order_release);
                 stop_deadline = GetTickCount64() + 250;
             }
-            const auto read = s->consumed.load(std::memory_order_relaxed);
-            if (read != s->produced.load(std::memory_order_acquire)) {
-                const auto& frame = s->cpu[read % kSlots];
-                const auto stamp = frame.stamp;
-                const HRESULT hr = write_frame(frame);
-                s->consumed.store(read + 1, std::memory_order_release);
-                s->wake.notify_all();
-                if (FAILED(hr)) {
-                    std::wstring message =
-                        s->depth_enabled
-                            ? L"Paired color/depth recording stopped."
-                            : L"FFmpeg stopped accepting frames. Check the encoder and "
-                              L"output path.";
-                    message +=
-                        L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
-                    fail_text(*s, hr, message);
+            if (s->consumed.load(std::memory_order_relaxed) !=
+                s->produced.load(std::memory_order_acquire)) {
+                if (!write_next(L"FFmpeg stopped accepting frames. Check the encoder and "
+                                L"output path.",
+                                L"Paired color/depth recording stopped."))
                     break;
-                }
-                wrote_any = true;
-                ++frames;
-                // Raw frames are piped at a constant rate: frame N is at N / fps.
-                observe_written_frame(*s, stamp,
-                                      double(frames - 1) / std::max<std::uint32_t>(1, s->fps));
-                s->duration.store(frames * 10000000ull / std::max<std::uint32_t>(1, s->fps),
-                                  std::memory_order_release);
                 continue;
             }
             if (stopping && (!s->gpu_pending.load(std::memory_order_acquire) ||
@@ -1119,26 +1125,9 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         s->dropped.fetch_add(s->gpu_pending.exchange(0), std::memory_order_relaxed);
         while (child.process && !s->cancel.load() && SUCCEEDED(s->error.load()) &&
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
-            const auto read = s->consumed.load(std::memory_order_relaxed);
-            const auto& frame = s->cpu[read % kSlots];
-            const auto stamp = frame.stamp;
-            const HRESULT hr = write_frame(frame);
-            s->consumed.store(read + 1, std::memory_order_release);
-            s->wake.notify_all();
-            if (FAILED(hr)) {
-                std::wstring message =
-                    s->depth_enabled ? L"Paired color/depth recording failed while finishing."
-                                     : L"FFmpeg stopped accepting frames while finishing.";
-                message += L" (" + write_failure_detail(write_stage, hr, child, depth_child) + L")";
-                fail_text(*s, hr, message);
+            if (!write_next(L"FFmpeg stopped accepting frames while finishing.",
+                            L"Paired color/depth recording failed while finishing."))
                 break;
-            }
-            wrote_any = true;
-            ++frames;
-            observe_written_frame(*s, stamp,
-                                  double(frames - 1) / std::max<std::uint32_t>(1, s->fps));
-            s->duration.store(frames * 10000000ull / std::max<std::uint32_t>(1, s->fps),
-                              std::memory_order_release);
         }
         child.close_input();
         depth_child.close_input();
@@ -1325,6 +1314,14 @@ void encode(std::shared_ptr<Session> s) noexcept {
                 }
             }
         }
+        // Encodes the oldest queued frame. False once the failure is recorded.
+        const auto consume_next = [&](const wchar_t* failed) -> bool {
+            const HRESULT hr =
+                consume_frame(api, *s, writer.p, stream, previous, previous_pts, previous_stamp);
+            if (FAILED(hr))
+                fail(*s, hr, failed);
+            return SUCCEEDED(hr);
+        };
         std::uint64_t stop_deadline = 0;
         while (writer.p && SUCCEEDED(s->error.load()) && !s->cancel.load()) {
             apply_deferred_stop(*s);
@@ -1335,13 +1332,9 @@ void encode(std::shared_ptr<Session> s) noexcept {
             }
             const auto read = s->consumed.load(std::memory_order_relaxed);
             if (read != s->produced.load(std::memory_order_acquire)) {
-                const HRESULT hr = consume_frame(api, *s, writer.p, stream, previous, previous_pts,
-                                                 previous_stamp);
-                if (FAILED(hr)) {
-                    fail(*s, hr,
-                         L"Video encoding failed. Check available disk space and encoder support.");
+                if (!consume_next(
+                        L"Video encoding failed. Check available disk space and encoder support."))
                     break;
-                }
                 continue;
             }
             if (stopping && (!s->gpu_pending.load(std::memory_order_acquire) ||
@@ -1360,10 +1353,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
         // the bounded CPU queue before finalizing instead of silently losing it.
         while (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load()) &&
                s->consumed.load() != s->produced.load(std::memory_order_acquire)) {
-            const HRESULT hr =
-                consume_frame(api, *s, writer.p, stream, previous, previous_pts, previous_stamp);
-            if (FAILED(hr))
-                fail(*s, hr, L"Video encoding failed while finishing the last frames.");
+            if (!consume_next(L"Video encoding failed while finishing the last frames."))
+                break;
         }
         if (writer.p && !s->cancel.load() && SUCCEEDED(s->error.load()) && previous.p) {
             const auto first = s->first_qpc.load(std::memory_order_acquire);
