@@ -132,6 +132,68 @@ def fatal_error(session_dir, *, tail=256_000, limit=300):
     return None
 
 
+UNLOCKER_REPORT = "dolly_unlocker_load.txt"
+# Windows errors that mean a security policy or product refused the file.
+_BLOCKED_BY_POLICY = {
+    5: "access was denied",
+    225: "the file was flagged by antivirus",
+    226: "the file was flagged by antivirus",
+    1260: "a Windows policy blocked this file",
+    4551: "an Application Control policy blocked this file",
+}
+
+
+def unlocker_load_failure(*directories):
+    """Why the native DLL could not start the cvar unlocker, or None.
+
+    The native DLL writes a three-line report beside itself when the unlocker
+    does not load. It is copied into the session folder at game exit, so read
+    whichever of the given folders still has it.
+    """
+    for directory in directories:
+        if not directory:
+            continue
+        try:
+            with (Path(directory) / UNLOCKER_REPORT).open("rb") as stream:
+                lines = stream.read(256).decode("ascii", errors="replace").split("\n")
+        except OSError:
+            continue
+        if len(lines) < 3 or lines[0] != "DOLLY_UNLOCKER_LOAD_1":
+            continue
+        stage, error = lines[1].partition(" "), lines[2].partition(" ")
+        if (stage[0] != "stage" or error[0] != "error" or not error[2].isdecimal()
+                or stage[2] not in ("flags", "path", "read", "hash", "load", "export")):
+            continue
+        return {"stage": stage[2], "error": int(error[2])}
+    return None
+
+
+def unlocker_failure_advice(failure):
+    """What to tell the user when the game could not get the unlocker interface."""
+    stage = failure.get("stage") if failure else None
+    code = failure.get("error", 0) if failure else 0
+    blocked = _BLOCKED_BY_POLICY.get(code)
+    if stage in ("load", "read") and blocked:
+        return (f"Windows refused to load Dolly's cvar unlocker (error {code}: {blocked}). "
+                "Smart App Control and some antivirus products block unsigned DLLs like this one. "
+                "Turn off Smart App Control in Windows Security > App & browser control, or allow "
+                "Dolly's folder and the Deadlock folder in your security software, then launch again.")
+    if stage in ("read", "hash"):
+        return ("Dolly's cvar unlocker was removed or changed after Dolly copied it into the game "
+                "folder. Antivirus quarantine usually does this. Allow Dolly's folder and the "
+                "Deadlock folder in your security software, then launch again.")
+    if stage == "load":
+        return (f"Windows could not load Dolly's cvar unlocker (error {code}). "
+                "Export diagnostics so the cause can be checked.")
+    if stage is not None:
+        return (f"Dolly's native camera could not start its cvar unlocker (step: {stage}, "
+                f"error {code}). Export diagnostics so the cause can be checked.")
+    return ("Deadlock could not start Dolly's cvar unlocker. Windows security software that "
+            "blocks or removes unsigned DLLs (Smart App Control, antivirus) is the usual cause. "
+            "Allow Dolly's folder and the Deadlock folder, then launch again; export diagnostics "
+            "if it keeps happening.")
+
+
 def diagnostic_log(path, *, limit=2_000_000):
     """Keep startup and the latest failure when an engine log grows large."""
     path = Path(path)

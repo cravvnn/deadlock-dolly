@@ -57,7 +57,7 @@ MAX_ENGINE_FPS = 600.0
 DIAGNOSTIC_NAMES = (STATUS_NAME, MARKER_NAME, PACING_NAME, "dolly_owner_stall.txt",
                     "dolly_owner_draws.txt", "dolly_owner_captures.txt",
                     "dolly_owner_producers.txt", "dolly_owner_frame_stats.txt",
-                    "dolly_minimap_guard.txt")
+                    "dolly_minimap_guard.txt", "dolly_unlocker_load.txt")
 DIAGNOSTIC_LIMIT = 64 * 1024
 
 

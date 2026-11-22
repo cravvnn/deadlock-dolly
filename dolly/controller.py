@@ -657,6 +657,16 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             from .game_logging import fatal_error
             directory = getattr(self._session, "session_dir", None)
             fatal = fatal_error(directory) if directory else None
+        if fatal and "Source2ServerConfig001" in fatal:
+            # Dolly's own DLL stands in for the game's server module. This
+            # engine message means it could not hand over the cvar unlocker.
+            from .game_logging import unlocker_failure_advice, unlocker_load_failure
+            overlay = getattr(self._session, "overlay_dir", None)
+            failure = unlocker_load_failure(
+                getattr(self._session, "session_dir", None),
+                Path(overlay) / "cvar_unlocker" / "bin" / "win64" if overlay else None)
+            return (f"{reason} while {context}. {unlocker_failure_advice(failure)} "
+                    "Your shot remains available." + self._crash_suffix())
         if fatal:
             # The game named its own reason; say that instead of guessing.
             repair = ("In Steam, right-click Deadlock > Properties > Installed Files > Verify integrity "

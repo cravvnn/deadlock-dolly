@@ -30,6 +30,7 @@ GENERATED_FILES = frozenset({
     "cvar_unlocker/bin/win64/dolly_definitions.txt",
     "cvar_unlocker/bin/win64/dolly_hide_report.txt",
     "cvar_unlocker/bin/win64/dolly_minimap_guard.txt",
+    "cvar_unlocker/bin/win64/dolly_unlocker_load.txt",
     *(_CAPTURE_BIN + name for name in (
         "dolly_owner_start.txt", "dolly_owner_start.tmp", "dolly_owner_status.txt",
         "dolly_owner_events.bin", "dolly_owner_color_frame.bin", "dolly_owner_frame_meta.bin",

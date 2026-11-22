@@ -378,6 +378,57 @@ class GameFatalErrorTests(unittest.TestCase):
         self.assertNotIn("Installed Files", message)
         self.assertLess(len(message), 900)
 
+    UNLOCKER_FATAL = (b"11/22 13:54:59 FATAL ERROR: CAppSystemDict:Unable to create interface "
+                      b"Source2ServerConfig001 from server (Dependency of application)\n")
+
+    def unlocker_message(self, report, *, beside_dll=False):
+        with tempfile.TemporaryDirectory() as folder:
+            c = self.controller(folder, self.UNLOCKER_FATAL)
+            c._replay_requested = False
+            target = Path(folder)
+            if beside_dll:
+                c._session.overlay_dir = target / "overlay"
+                target = c._session.overlay_dir / "cvar_unlocker" / "bin" / "win64"
+                target.mkdir(parents=True)
+            if report is not None:
+                (target / "dolly_unlocker_load.txt").write_bytes(report)
+            return c._game_death_message("starting the replay editor")
+
+    def test_a_policy_blocked_unlocker_names_smart_app_control(self):
+        for beside_dll in (False, True):
+            with self.subTest(beside_dll=beside_dll):
+                message = self.unlocker_message(
+                    b"DOLLY_UNLOCKER_LOAD_1\nstage load\nerror 4551\n", beside_dll=beside_dll)
+                self.assertIn("Deadlock crashed (exit code 1", message)
+                self.assertIn("error 4551: an Application Control policy blocked this file", message)
+                self.assertIn("Smart App Control", message)
+                self.assertNotIn("Deadlock reported", message)
+                self.assertIn("Your shot remains available", message)
+
+    def test_a_removed_or_changed_unlocker_names_quarantine(self):
+        for report in (b"DOLLY_UNLOCKER_LOAD_1\nstage read\nerror 2\n",
+                       b"DOLLY_UNLOCKER_LOAD_1\nstage hash\nerror 0\n"):
+            with self.subTest(report=report):
+                message = self.unlocker_message(report)
+                self.assertIn("removed or changed", message)
+                self.assertNotIn("Smart App Control", message)
+
+    def test_other_unlocker_failures_keep_their_step_and_error(self):
+        self.assertIn("could not load Dolly's cvar unlocker (error 126)",
+                      self.unlocker_message(b"DOLLY_UNLOCKER_LOAD_1\nstage load\nerror 126\n"))
+        self.assertIn("step: export, error 127",
+                      self.unlocker_message(b"DOLLY_UNLOCKER_LOAD_1\nstage export\nerror 127\n"))
+
+    def test_a_missing_or_malformed_unlocker_report_still_explains_the_interface(self):
+        for report in (None, b"", b"DOLLY_UNLOCKER_LOAD_2\nstage load\nerror 4551\n",
+                       b"DOLLY_UNLOCKER_LOAD_1\nstage load\nerror x\n",
+                       b"DOLLY_UNLOCKER_LOAD_1\nstage elsewhere\nerror 5\n"):
+            with self.subTest(report=report):
+                message = self.unlocker_message(report)
+                self.assertIn("could not start Dolly's cvar unlocker", message)
+                self.assertNotIn("error 4551", message)
+                self.assertNotIn("Deadlock reported", message)
+
     def test_without_a_fatal_line_or_log_the_message_is_unchanged(self):
         for log in (None, b"11/19 16:01:55 nothing fatal here\n"):
             with self.subTest(log=log), tempfile.TemporaryDirectory() as folder:
