@@ -8,6 +8,37 @@ import os
 from pathlib import Path
 import stat
 import tempfile
+import time
+from typing import Callable, TypeVar
+
+_T = TypeVar("_T")
+
+# OneDrive and antivirus scanners can hold a just-written file for a moment;
+# Windows then refuses access with a sharing or access error (WinError 32 or
+# 5). Retry that case for about a second; every other error fails at once.
+LOCK_RETRY_DELAYS = (0.1, 0.2, 0.3, 0.4)
+
+
+def _transient_lock(error: OSError) -> bool:
+    return isinstance(error, PermissionError) or getattr(error, "winerror", None) in (5, 32)
+
+
+def retry_locked(action: Callable[[], _T], delays: tuple[float, ...] = LOCK_RETRY_DELAYS) -> _T:
+    """Run one file operation, repeating it while a brief lock refuses it."""
+    for delay in (*delays, None):
+        try:
+            return action()
+        except OSError as error:
+            if delay is None or not _transient_lock(error):
+                raise
+            time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
+def replace_retrying(source: str | os.PathLike[str], destination: str | os.PathLike[str],
+                     delays: tuple[float, ...] = LOCK_RETRY_DELAYS) -> None:
+    """os.replace that tolerates a briefly held destination, within a bound."""
+    retry_locked(lambda: os.replace(source, destination), delays)
 
 
 def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
@@ -29,14 +60,16 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
         if mode is not None:
             os.chmod(temp, mode)
         try:
-            os.replace(temp, path)
+            replace_retrying(temp, path)
         except PermissionError:
             if os.name != "nt" or not path.exists():
                 raise
             original_mode = stat.S_IMODE(path.stat().st_mode)
+            if original_mode & stat.S_IWRITE:
+                raise  # Not read-only: a lock that outlasted the retries.
             os.chmod(path, writable)
             try:
-                os.replace(temp, path)
+                replace_retrying(temp, path)
             except BaseException:
                 try:
                     os.chmod(path, original_mode)

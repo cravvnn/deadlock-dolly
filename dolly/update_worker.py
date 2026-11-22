@@ -14,6 +14,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
+from .file_ops import _atomic_write, replace_retrying
 from .updater import MANIFEST, digest_file, read_manifest, version_key, owned_name
 
 PENDING = "DOLLY_UPDATE_PENDING.json"
@@ -28,21 +29,7 @@ SMOKE_TIMEOUT = 60
 
 
 def atomic_json(path, value):
-    path = Path(path)
-    handle = tempfile.NamedTemporaryFile(dir=path.parent, prefix=".dolly-", delete=False)
-    temporary = Path(handle.name)
-    try:
-        with handle:
-            handle.write((json.dumps(value, indent=2) + "\n").encode("utf-8"))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        # Best-effort cleanup; a successful replace already moved the temporary.
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass  # A locked temporary must not replace the primary write error.
+    _atomic_write(Path(path), (json.dumps(value, indent=2) + "\n").encode("utf-8"))
 
 
 def checked_file(root, name, *, allow_dir=False):
@@ -111,14 +98,7 @@ def _replace_retrying(temporary, target, attempts=6, delay=0.25):
     a genuine lock (for example a protected folder) still fails closed.
     """
     _clear_readonly(target)
-    for attempt in range(attempts):
-        try:
-            os.replace(temporary, target)
-            return
-        except OSError as error:
-            if getattr(error, "winerror", None) not in (5, 32) or attempt == attempts - 1:
-                raise
-            time.sleep(delay * (attempt + 1))
+    replace_retrying(temporary, target, tuple(delay * (attempt + 1) for attempt in range(attempts - 1)))
 
 
 def replace_file(source, target):

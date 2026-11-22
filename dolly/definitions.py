@@ -21,15 +21,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
-import os
 from pathlib import Path
 import re
-import tempfile
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import file_ops
 from .runtime import application_root
 
 LOG = logging.getLogger("dolly")
@@ -505,16 +504,7 @@ def fetch(url: str = URL, *, timeout: float = 8.0) -> bytes:
 
 def _atomic_write(path: Path, raw: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(dir=path.parent, prefix=".dolly-definitions-", delete=False)
-    temporary = Path(handle.name)
-    try:
-        with handle:
-            handle.write(raw)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    file_ops._atomic_write(path, raw)
 
 
 def refresh(url: str = URL, *, cache: Path | None = None, timeout: float = 8.0,

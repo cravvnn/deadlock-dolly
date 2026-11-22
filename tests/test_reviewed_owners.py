@@ -68,7 +68,7 @@ class ReviewedOwnerTests(unittest.TestCase):
                     raise PermissionError(13, 'The process cannot access the file (OneDrive)')
                 return real_replace(source, destination)
             with patch('os.replace', side_effect=locked_twice), \
-                    patch('dolly.path.time.sleep', side_effect=sleeps.append):
+                    patch('dolly.file_ops.time.sleep', side_effect=sleeps.append):
                 project.save(target)
             self.assertEqual(len(calls), 3)
             self.assertEqual(Project.load(target), project)
@@ -79,7 +79,7 @@ class ReviewedOwnerTests(unittest.TestCase):
                 calls.append(destination)
                 raise PermissionError(13, 'locked')
             with patch('os.replace', side_effect=always_locked), \
-                    patch('dolly.path.time.sleep', side_effect=sleeps.append):
+                    patch('dolly.file_ops.time.sleep', side_effect=sleeps.append):
                 with self.assertRaises(PermissionError):
                     project.save(target)
             self.assertGreater(len(calls), 1)
@@ -91,7 +91,7 @@ class ReviewedOwnerTests(unittest.TestCase):
                 calls.append(destination)
                 raise OSError(28, 'disk full')
             with patch('os.replace', side_effect=disk_failure), \
-                    patch('dolly.path.time.sleep', side_effect=sleeps.append):
+                    patch('dolly.file_ops.time.sleep', side_effect=sleeps.append):
                 with self.assertRaisesRegex(OSError, 'disk full'):
                     project.save(target)
             self.assertEqual((len(calls), sleeps), (1, []))
@@ -113,6 +113,49 @@ class ReviewedOwnerTests(unittest.TestCase):
             with patch.object(Path, 'unlink', side_effect=RuntimeError('programmer error')):
                 with self.assertRaisesRegex(RuntimeError, 'programmer error'):
                     project.save(target)
+
+    def test_settings_and_atomic_writes_retry_a_briefly_locked_destination(self):
+        from dolly import file_ops, settings
+        mine = settings.AppSettings(full_editor=True, movement_speed=500)
+        writers = {
+            'save_settings': (lambda target: settings.save_settings(mine, target),
+                              lambda target: settings.load_settings(target) == mine),
+            '_atomic_write': (lambda target: file_ops._atomic_write(target, b'new bytes'),
+                              lambda target: target.read_bytes() == b'new bytes'),
+        }
+        real_replace = os.replace
+        for name, (write, written) in writers.items():
+            with self.subTest(writer=name), tempfile.TemporaryDirectory() as folder:
+                target = Path(folder)/'settings.json'
+                settings.save_settings(settings.AppSettings(), target)
+                previous = target.read_bytes()
+                calls, sleeps = [], []
+                def locked_twice(source, destination):
+                    calls.append(destination)
+                    if len(calls) <= 2:
+                        raise PermissionError(13, 'The process cannot access the file (scanner)')
+                    return real_replace(source, destination)
+                with patch('os.replace', side_effect=locked_twice), \
+                        patch('dolly.file_ops.time.sleep', side_effect=sleeps.append):
+                    write(target)
+                self.assertEqual(len(calls), 3)
+                self.assertTrue(written(target))
+                self.assertEqual([p.name for p in Path(folder).iterdir()], ['settings.json'])
+                # A lock that outlasts about a second still fails and keeps the old bytes.
+                target.write_bytes(previous)
+                calls.clear(); sleeps.clear()
+                def always_locked(source, destination):
+                    calls.append(destination)
+                    raise PermissionError(13, 'locked')
+                with patch('os.replace', side_effect=always_locked), \
+                        patch('dolly.file_ops.time.sleep', side_effect=sleeps.append):
+                    with self.assertRaises(PermissionError):
+                        write(target)
+                self.assertGreater(len(calls), 1)
+                self.assertLessEqual(len(calls), 6)
+                self.assertLessEqual(sum(sleeps), 1.5)
+                self.assertEqual(target.read_bytes(), previous)
+                self.assertEqual([p.name for p in Path(folder).iterdir()], ['settings.json'])
 
     def test_export_timing_requires_both_readbacks_then_allows_retry_and_restore(self):
         for action in ('resume', 'suspend'):

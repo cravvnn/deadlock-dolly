@@ -15,12 +15,12 @@ import json
 import math
 from pathlib import Path
 import re
-import time
 from typing import Any, Iterable
 
 from .particles import (PARTICLE_DEFAULT, PARTICLE_IDS, PARTICLE_INTENSITY_DEFAULT,
                         PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN)
 from .object_model import PlacedObject, validate_objects
+from .file_ops import replace_retrying
 
 
 FORMAT_NAME = "deadlock-dolly"
@@ -582,25 +582,6 @@ class CameraChannelSamples:
                        self.incoming_tangents, self.outgoing_tangents)
 
 
-# OneDrive and antivirus scanners can hold a just-saved shot open for a moment;
-# Windows then refuses the replace with a sharing or access error. Retry that
-# case for about a second; every other error fails at once.
-_SAVE_LOCK_RETRY_DELAYS = (0.1, 0.2, 0.3, 0.4)
-
-
-def _replace_retrying_lock(source: str, destination: Path) -> None:
-    import os
-
-    for delay in (*_SAVE_LOCK_RETRY_DELAYS, None):
-        try:
-            os.replace(source, destination)
-            return
-        except PermissionError:
-            if delay is None:
-                raise
-            time.sleep(delay)
-
-
 @dataclass
 class Project:
     name: str = "Untitled"
@@ -1147,7 +1128,7 @@ class Project:
                 handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
-            _replace_retrying_lock(temporary, destination)
+            replace_retrying(temporary, destination)  # OneDrive or a scanner may hold the shot briefly.
         finally:
             if temporary is not None:
                 try:

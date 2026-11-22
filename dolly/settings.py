@@ -19,6 +19,7 @@ from .editor_actions import (
     ACTION_LABELS, EditorBinding, bindings_from_dict, bindings_to_dict,
     default_action_bindings, validate_action_bindings,
 )
+from .file_ops import replace_retrying
 from .replays import parse_launch_options
 
 SETTINGS_VERSION = 11
@@ -334,7 +335,7 @@ def save_settings(
             handle.flush()
             os.fsync(handle.fileno())
         _backup_invalid_settings(target)
-        os.replace(temporary, target)
+        replace_retrying(temporary, target)
         _UNREAD.discard(os.path.normcase(os.path.abspath(target)))
     finally:
         if temporary is not None:
