@@ -21,10 +21,15 @@ _ACTIONS = ("Ignore For 24 Hours", "Ignore", "Ignore This File", "Always Ignore"
 _BM_CLICK = 0x00F5
 
 
+def _label(text: str) -> str:
+    # Standard message-box buttons carry mnemonics ("&Continue").
+    return text.replace("&", "").strip()
+
+
 def choose_assert_action(buttons: Iterable[str]) -> str | None:
     """Return the dialog's preferred ignore action, or None when unknown."""
-    available = {name.strip().casefold(): name.strip()
-                 for name in buttons if name and name.strip()}
+    available = {_label(name).casefold(): _label(name)
+                 for name in buttons if name and _label(name)}
     for action in _ACTIONS:
         if action.casefold() in available:
             return available[action.casefold()]
@@ -98,7 +103,7 @@ def dismiss_assert_dialogs(pid: int) -> list[str]:
         if action is None:
             return True
         for child, text in buttons:
-            if text.casefold() == action.casefold():
+            if _label(text).casefold() == action.casefold():
                 _user32.PostMessageW(child, _BM_CLICK, 0, 0)
                 clicked.append(action)
                 break
