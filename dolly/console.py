@@ -470,9 +470,6 @@ class ConsoleClient:
             # reported a misleading timeout. Record a real failure instead.
             self._fail(sock, f"Console reader failed: {exc}")
 
-    def _send_locked(self, command: str) -> None:
-        self._send_commands_locked((command,))
-
     def _send_commands_locked(self, commands: tuple[str, ...]) -> None:
         # Validate every command before writing any bytes. Keep the individual
         # protocol frames intact, but submit a request's delimiters/command in
@@ -495,7 +492,7 @@ class ConsoleClient:
     def send(self, command: str) -> None:
         """Send a trusted batch without waiting. Caller owns replay guards."""
         with self._lock:
-            self._send_locked(command)
+            self._send_commands_locked((command,))
 
     def request(self, command: str, timeout: float = 2.0, *,
                 completion_patterns: tuple[str, ...] | None = None,
