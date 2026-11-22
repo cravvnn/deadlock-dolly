@@ -54,13 +54,11 @@ def restore_session_configs(
     game_is_running: Callable[[], bool] | None = None,
 ) -> None:
     """Attempt both independent restorations, even if either has a conflict."""
-    from . import graphics_profiles
     if restore_gameinfo is None:
         restore_gameinfo = gameinfo_transaction.restore_record
     if game_is_running is None:
         game_is_running = lambda: game_processes._game_is_running(game_processes.running_processes())
     errors = []
-    conflict = None
     with game_config_lock():
         _restore_each(session_dir, restore_gameinfo, game_is_running, errors)
     conflict = next((item for item in errors if isinstance(item, gameinfo_transaction.GameinfoConflict)), None)
