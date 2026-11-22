@@ -297,6 +297,10 @@ if(WIN32)
             target_link_libraries(video_stalled_encoder_smoke PRIVATE dolly_overlay)
             add_test(NAME native_video_stalled_encoder_smoke COMMAND video_stalled_encoder_smoke)
             set_tests_properties(native_video_stalled_encoder_smoke PROPERTIES TIMEOUT 40)
+            # A normal Finish ends the stalled write after the write stall limit.
+            add_test(NAME native_video_stalled_finish_smoke
+                COMMAND video_stalled_encoder_smoke --finish)
+            set_tests_properties(native_video_stalled_finish_smoke PROPERTIES TIMEOUT 75)
             # A late capture fault after the encoder's stop decision: a generated
             # test copy calls a hook after each decide_cancel. Never add the hook
             # to the production recorder.

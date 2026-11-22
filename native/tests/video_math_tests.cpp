@@ -191,6 +191,16 @@ int main() {
     require(!watch.keep_waiting(2 * kFinalizeIdleLimitMs - 1, 5));
     watch.next_child(kFinalizeHardCapMs - 1, 9);
     require(!watch.keep_waiting(kFinalizeHardCapMs, 10));
+    // Pipe writes are watched only after a stop, and any completed chunk
+    // restarts the stall limit.
+    WriteStallWatch stall;
+    require(!stall.stalled(0, false, 0));
+    require(!stall.stalled(kWriteStallLimitMs * 4, false, 0));
+    require(!stall.stalled(1000, true, 3));
+    require(!stall.stalled(1000 + kWriteStallLimitMs - 1, true, 3));
+    require(!stall.stalled(1000 + kWriteStallLimitMs - 1, true, 4));
+    require(!stall.stalled(1000 + 2 * kWriteStallLimitMs - 2, true, 4));
+    require(stall.stalled(1000 + 2 * kWriteStallLimitMs - 1, true, 4));
     // FFmpeg child ownership: a stop terminates only registered handles, a
     // closed handle is never touched, and a child added after the stop is
     // terminated immediately instead of escaping cancellation.

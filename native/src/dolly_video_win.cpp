@@ -175,12 +175,17 @@ struct Session {
     std::uint64_t frequency = 1;
     std::mutex wait_mutex;
     std::condition_variable wake;
-    // FFmpeg children that stop(true), a failure or shutdown may terminate
-    // from another thread; see ChildRegistry. inputs_closed marks the end of
-    // pipe writes: after it the encoder bounds its own wait for FFmpeg.
+    // FFmpeg children that stop(true), a failure or a write stall may
+    // terminate from another thread; see ChildRegistry. inputs_closed marks
+    // the end of pipe writes: after it the encoder bounds its own wait for
+    // FFmpeg. It is set under stall_mutex so a write-stall failure can never
+    // end an FFmpeg that is already finalizing.
     std::mutex child_mutex;
     ChildRegistry<HANDLE, 2> children;
+    std::mutex stall_mutex;
+    std::condition_variable stall_wake;
     std::atomic<bool> inputs_closed{false};
+    std::atomic<std::uint64_t> pipe_writes{0};
 };
 struct GpuSlot {
     FrameStamp stamp;
@@ -843,18 +848,61 @@ std::wstring build_depth_command(const Session& s, std::uint32_t width, std::uin
     cmd += quote_arg(s.depth_video_path);
     return cmd;
 }
-HRESULT write_all(HANDLE pipe, const void* data, std::size_t bytes) noexcept {
+HRESULT write_all(Session& s, HANDLE pipe, const void* data, std::size_t bytes) noexcept {
     const auto* cursor = static_cast<const unsigned char*>(data);
     while (bytes) {
         DWORD written = 0;
         const DWORD chunk = static_cast<DWORD>(std::min<std::size_t>(bytes, 1u << 24));
         if (!WriteFile(pipe, cursor, chunk, &written, nullptr) || !written)
             return HRESULT_FROM_WIN32(GetLastError() ? GetLastError() : ERROR_BROKEN_PIPE);
+        s.pipe_writes.fetch_add(1, std::memory_order_release);
         cursor += written;
         bytes -= written;
     }
     return S_OK;
 }
+// Ends the pipe writes once they stall after a stop (WriteStallWatch). The
+// encoder thread cannot do this itself while it is blocked in WriteFile. The
+// failure is published under stall_mutex only while inputs are still open.
+class WriteStallGuard {
+public:
+    explicit WriteStallGuard(Session& s) : s_(s), thread_([this] { run(); }) {}
+    ~WriteStallGuard() { close(); }
+    WriteStallGuard(const WriteStallGuard&) = delete;
+    WriteStallGuard& operator=(const WriteStallGuard&) = delete;
+    void close() noexcept {
+        {
+            std::lock_guard<std::mutex> lock(s_.stall_mutex);
+            s_.inputs_closed.store(true, std::memory_order_release);
+        }
+        s_.stall_wake.notify_all();
+        if (thread_.joinable())
+            thread_.join();
+    }
+
+private:
+    void run() noexcept {
+        WriteStallWatch watch;
+        std::unique_lock<std::mutex> lock(s_.stall_mutex);
+        while (!s_.inputs_closed.load(std::memory_order_acquire)) {
+            s_.stall_wake.wait_for(lock, std::chrono::milliseconds(100));
+            if (s_.inputs_closed.load(std::memory_order_acquire))
+                return;
+            const bool stopping = s_.stopping.load(std::memory_order_acquire) &&
+                                  !s_.cancel.load(std::memory_order_acquire) &&
+                                  SUCCEEDED(s_.error.load());
+            if (watch.stalled(GetTickCount64(), stopping,
+                              s_.pipe_writes.load(std::memory_order_acquire))) {
+                fail(s_, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                     L"FFmpeg stopped reading frames and was ended after the recording was "
+                     L"stopped.");
+                return;
+            }
+        }
+    }
+    Session& s_;
+    std::thread thread_;
+};
 std::wstring read_log_error(const std::wstring& path) {
     HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -1045,6 +1093,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
     std::uint64_t frames = 0;
     Child child, depth_child;
     std::vector<std::uint16_t> depth_gray;
+    std::unique_ptr<WriteStallGuard> stall_guard;
     try {
         const auto deadline = GetTickCount64() + 10000;
         while (!s->configured.load(std::memory_order_acquire) &&
@@ -1064,6 +1113,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                           error.empty() ? std::wstring(L"FFmpeg is unavailable.") : error);
             } else {
                 created = true;
+                stall_guard = std::make_unique<WriteStallGuard>(*s);
                 // The depth encoder starts with the first verified depth frame:
                 // only then is the scene target's size (and therefore the raw
                 // stream size) known, which can be below the color size when
@@ -1090,7 +1140,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         WriteStage write_stage = WriteStage::color_pipe;
         const auto write_frame = [&](const CpuFrame& frame) -> HRESULT {
             write_stage = WriteStage::color_pipe;
-            HRESULT hr = write_all(child.input, frame.pixels.data(), frame.pixels.size());
+            HRESULT hr = write_all(*s, child.input, frame.pixels.data(), frame.pixels.size());
             if (FAILED(hr))
                 return hr;
             if (!s->depth_enabled)
@@ -1118,7 +1168,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                 depth_gray.resize(count);
                 for (std::size_t i = 0; i < count; ++i)
                     depth_gray[i] = depth_gray16(linear[i], kDepthUnitMax);
-                return write_all(depth_child.input, depth_gray.data(),
+                return write_all(*s, depth_child.input, depth_gray.data(),
                                  depth_gray.size() * sizeof(std::uint16_t));
             }
             return S_OK;
@@ -1182,9 +1232,12 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
                             L"Paired color/depth recording failed while finishing."))
                 break;
         }
+        if (stall_guard)
+            stall_guard->close();
+        else
+            s->inputs_closed.store(true, std::memory_order_release);
         child.close_input();
         depth_child.close_input();
-        s->inputs_closed.store(true, std::memory_order_release);
         FinalizeWatch watch;
         if (child.process && !s->cancel.load() && SUCCEEDED(s->error.load())) {
             if (!wrote_any) {
@@ -1238,6 +1291,7 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
         fail(*s, E_OUTOFMEMORY,
              L"Video recording ran out of memory or the encoder could not continue.");
     }
+    stall_guard.reset();
     quiesce_producers(*s);
     const bool cancelled = decide_cancel(*s);
     if (child.process && (cancelled || FAILED(s->error.load()))) {
@@ -2275,20 +2329,8 @@ void shutdown() noexcept {
         if (encoder_thread)
             worker = std::move(*encoder_thread);
     }
-    // Finishing bounds its own wait for FFmpeg; only a pipe write to an FFmpeg
-    // that stopped reading cannot return by itself, so end it after a while.
-    if (worker.joinable() && session && session->encoder == Encoder::ffmpeg) {
-        const auto deadline = GetTickCount64() + 30000;
-        while (!session->done.load(std::memory_order_acquire) &&
-               !session->inputs_closed.load(std::memory_order_acquire)) {
-            if (GetTickCount64() >= deadline) {
-                fail(*session, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
-                     L"FFmpeg stopped reading frames and was ended when the editor closed.");
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    }
+    // The encoder bounds both a stalled pipe write after the stop above
+    // (WriteStallGuard) and its own wait for FFmpeg to finish.
     if (worker.joinable())
         worker.join();
 }

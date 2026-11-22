@@ -1,8 +1,10 @@
 // An FFmpeg that stops reading its input must not wedge the recorder: the
 // encoder thread blocks in WriteFile on the full pipe, and cancel has to end
 // the child so the write returns, the take reaches a terminal state and a new
-// take can start. This executable is its own stand-in FFmpeg: started with
-// FFmpeg arguments it sleeps without ever reading stdin.
+// take can start. With --finish, a normal stop must end the stalled write
+// itself within a bounded time instead of waiting on FFmpeg indefinitely.
+// This executable is its own stand-in FFmpeg: started with FFmpeg arguments
+// it sleeps without ever reading stdin.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -12,6 +14,7 @@
 #include <cstring>
 #include <string>
 #include "dolly_video.hpp"
+#include "dolly_video_math.hpp"
 
 namespace {
 bool check(bool condition, const char* message) {
@@ -27,10 +30,11 @@ bool terminal(dolly::video::State state) {
 
 int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "-hide_banner") == 0) {
-        Sleep(60000);
+        Sleep(120000);
         return 0;
     }
     using namespace dolly::video;
+    const bool finish = argc > 1 && std::strcmp(argv[1], "--finish") == 0;
     wchar_t self[MAX_PATH]{}, temporary[MAX_PATH]{};
     if (!GetModuleFileNameW(nullptr, self, MAX_PATH) || !GetTempPathW(MAX_PATH, temporary))
         return 1;
@@ -83,17 +87,27 @@ int main(int argc, char** argv) {
         Sleep(8);
     }
     ok = ok && check(recording_at != 0, "recording reached the encoder");
-    stop(true);
-    const auto cancel_until = GetTickCount64() + 10000;
-    while (!terminal(status().state) && GetTickCount64() < cancel_until) {
+    stop(!finish);
+    const auto stopped_at = GetTickCount64();
+    const auto stop_until = stopped_at + (finish ? kWriteStallLimitMs + 10000 : 10000);
+    while (!terminal(status().state) && GetTickCount64() < stop_until) {
         capture(swapchain, device, context);
         Sleep(5);
     }
     const auto result = status();
-    ok = check(result.state == State::cancelled, "cancel ends a write blocked on a stalled FFmpeg") &&
-         ok;
+    if (finish) {
+        ok = check(result.state == State::failed,
+                   "Finish ends a write blocked on a stalled FFmpeg") && ok;
+        ok = check(GetTickCount64() - stopped_at >= kWriteStallLimitMs - 1000,
+                   "Finish waits out the write stall limit first") && ok;
+        ok = check(result.error_code == std::uint32_t(HRESULT_FROM_WIN32(ERROR_TIMEOUT)),
+                   "the stalled Finish reports a timeout") && ok;
+    } else {
+        ok = check(result.state == State::cancelled,
+                   "cancel ends a write blocked on a stalled FFmpeg") && ok;
+    }
     ok = check(GetFileAttributesW(output.c_str()) == INVALID_FILE_ATTRIBUTES,
-               "the cancelled take leaves no output") && ok;
+               "the stopped take leaves no output") && ok;
     if (terminal(result.state)) {
         shutdown();
         reset_resources();
@@ -103,7 +117,8 @@ int main(int argc, char** argv) {
     swapchain->Release();
     DestroyWindow(window);
     if (ok)
-        std::puts("Cancel ends a recording whose FFmpeg stopped reading.");
+        std::puts(finish ? "Finish ends a recording whose FFmpeg stopped reading."
+                         : "Cancel ends a recording whose FFmpeg stopped reading.");
     std::fflush(stdout);
     // A wedged encoder thread would hang a normal exit; report and leave.
     ExitProcess(ok ? 0 : 1);

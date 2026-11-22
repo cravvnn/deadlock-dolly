@@ -31,6 +31,27 @@ struct FinalizeWatch {
         return now - progressed < kFinalizeIdleLimitMs && now - started < kFinalizeHardCapMs;
     }
 };
+// A pipe write to an FFmpeg that stopped reading never returns by itself, and
+// a normal Finish does not end the children. Once a stop is requested, writes
+// that complete no chunk for the stall limit end the take.
+constexpr std::uint64_t kWriteStallLimitMs = 30 * 1000;
+struct WriteStallWatch {
+    std::uint64_t since = 0, progress = 0;
+    bool armed = false;
+    bool stalled(std::uint64_t now, bool stopping, std::uint64_t writes) noexcept {
+        if (!stopping) {
+            armed = false;
+            return false;
+        }
+        if (!armed || writes != progress) {
+            armed = true;
+            since = now;
+            progress = writes;
+            return false;
+        }
+        return now - since >= kWriteStallLimitMs;
+    }
+};
 // Encoder children another thread may terminate, so a write blocked on an
 // FFmpeg that stopped reading returns. The owner holds one lock around every
 // call. A handle leaves the registry before its owner closes it, so stop()
