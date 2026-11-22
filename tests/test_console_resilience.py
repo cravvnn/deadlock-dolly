@@ -273,6 +273,32 @@ class DiagnosticsExportTests(unittest.TestCase):
             found = c._crash_dumps()
         self.assertIn(stable.resolve(), [path.resolve() for path in found])
 
+    def test_saved_game_path_finds_dumps_before_any_launch(self):
+        # Reopen Dolly after a crash and export straight away: no launch attempt.
+        game = self.root / "Deadlock" / "game"
+        executable_folder = game / "bin" / "win64"
+        executable_folder.mkdir(parents=True)
+        dump = executable_folder / "deadlock_2026_1115_143907_0_accessviolation.mdmp"
+        dump.write_bytes(b"MDMP")
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        c = C.Controller(lambda *a, **k: None)
+        with patch.object(C, "ROOT", elsewhere):
+            self.assertEqual(c._crash_dumps(), [])
+            for saved in (self.root / "Deadlock", executable_folder / "deadlock.exe", executable_folder):
+                with self.subTest(saved=saved):
+                    found = c._crash_dumps(game_path=str(saved))
+                    self.assertEqual([path.resolve() for path in found], [dump.resolve()])
+            self.assertEqual(c._crash_dumps(game_path="  "), [])
+            c._launch_attempt = {"game_path": str(self.root / "Deadlock")}
+            self.assertEqual(len(c._crash_dumps(game_path=str(self.root / "Deadlock"))), 1)
+            c._launch_attempt = None
+            result = c.export_diagnostics(self.out / "saved.zip", game_path=str(self.root / "Deadlock"))
+        with zipfile.ZipFile(result) as archive:
+            report = json.loads(archive.read("diagnostics.json"))
+            self.assertIn("crashes/" + dump.name, archive.namelist())
+        self.assertEqual(report["crash_dumps"], [{"name": dump.name, "bytes": 4}])
+
     def test_crash_dump_vanishing_mid_export_does_not_fail(self):
         dump = self.root / "deadlock_a.mdmp"
         dump.write_bytes(b"a")
@@ -286,7 +312,7 @@ class DiagnosticsExportTests(unittest.TestCase):
                     raise FileNotFoundError(2, "gone", str(path))
             return real_stat(path, *a, **k)
         c = C.Controller(lambda *a, **k: None)
-        c._crash_dumps = lambda: [dump]
+        c._crash_dumps = lambda game_path=None: [dump]
         with patch.object(C, "ROOT", self.root), patch.object(Path, "stat", stat):
             result = c.export_diagnostics(self.out / "report.zip")
         with zipfile.ZipFile(result) as archive:

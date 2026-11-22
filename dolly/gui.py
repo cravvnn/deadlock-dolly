@@ -5597,7 +5597,10 @@ class DollyApp:
         path = filedialog.asksaveasfilename(parent=self.root, title="Export diagnostics", defaultextension=".zip",
                                            initialfile="dolly-diagnostics.zip", filetypes=(("Diagnostic archive", "*.zip"),))
         if path:
-            self._submit("Exporting diagnostics", lambda: self.controller.export_diagnostics(path),
+            # The saved game location finds crash dumps when nothing was launched since Dolly opened.
+            game_path = self.game_path.get().strip()
+            self._submit("Exporting diagnostics",
+                         lambda: self.controller.export_diagnostics(path, game_path=game_path),
                          lambda result: self.status_text.set(f"Diagnostics exported to {Path(result or path).name}."))
 
     def _check_dof(self):

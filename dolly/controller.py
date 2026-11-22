@@ -6104,18 +6104,24 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                           connected=False,playing=False,paused_flight=False,startup_stage='game_closed')
             return True
 
-    def _crash_dumps(self, limit: int = 3) -> list:
+    def _crash_dumps(self, limit: int = 3, game_path=None) -> list:
         """Newest Deadlock breakpad minidumps, newest first. Never raises.
 
         Breakpad writes the dump beside the game executable (its ``.\\`` is the
         executable folder, not the launcher's working directory), so the
         executable folder is searched as well as the game folder used by
-        older/side-by-side launches.
+        older/side-by-side launches. ``game_path`` is the saved game location:
+        after a crash people reopen Dolly and export before launching again,
+        when there is no launch attempt to take the folder from.
         """
         roots = []
-        game_path = str((self._launch_attempt or {}).get("game_path") or "").strip()
-        if game_path:
-            base = Path(game_path)
+        game_paths = []
+        for value in ((self._launch_attempt or {}).get("game_path"), game_path):
+            value = str(value or "").strip()
+            if value and value not in game_paths:
+                game_paths.append(value)
+        for value in game_paths:
+            base = Path(value)
             try:
                 paths = launcher.validate_game(base)
             except (launcher.LaunchError, OSError):
@@ -6126,6 +6132,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     roots.append(base.parent)
                 elif base.name.casefold() == "win64" and base.parent.name.casefold() == "bin":
                     roots.append(base)
+                else:
+                    roots.append(roots[-1] / "bin" / "win64")
             else:
                 roots.append(paths.game_dir)
                 roots.append(paths.executable.parent)
@@ -6149,7 +6157,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         newest = sorted(found.values(), key=lambda item: item[0], reverse=True)[:limit]
         return [path for _mtime, path in newest]
 
-    def export_diagnostics(self, destination):
+    def export_diagnostics(self, destination, game_path=None):
         from .player_layer import DIAGNOSTIC_NAMES, preserve_diagnostics
         if self._session:
             deployment = self.deployment_directory()
@@ -6220,7 +6228,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         # to the game install. Oversized full-memory dumps are skipped.
         dumps = []
         sizes = []
-        for path in self._crash_dumps():
+        for path in self._crash_dumps(game_path=game_path):
             try:
                 size = path.stat().st_size
             except OSError:
