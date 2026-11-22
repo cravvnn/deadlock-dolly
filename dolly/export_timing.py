@@ -12,6 +12,15 @@ from .camera_commands import numeric
 from .convar_response import read_cvar_value
 
 
+def console_connected(console) -> bool:
+    """Whether a console is connected, for a value read once.
+
+    The operations worker may clear ``_console`` while the Tk poll reads it,
+    so callers pass ``self._console`` instead of reading it twice.
+    """
+    return console is not None and bool(getattr(console, "is_connected", False))
+
+
 class ExportTimingMixin:
     def set_export_resolution(self):
         """Use a verified full-target depth pass, independent of render scaling.
@@ -20,7 +29,7 @@ class ExportTimingMixin:
         pass. Keep this snapshot separate from playback: Play calls Stop before
         dispatching the take, and must not undo the recording's resolution.
         """
-        if self._console is None or not self._console.is_connected or not self._alive():
+        if not console_connected(self._console) or not self._alive():
             raise RuntimeError("Connect to the game before depth export.")
         if getattr(self, "_export_resolution", None) is None:
             original = float(read_cvar_value("mat_viewportscale", self._request("mat_viewportscale")))
@@ -37,7 +46,7 @@ class ExportTimingMixin:
         if original is None:
             return
         if self._alive():
-            if self._console is None or not self._console.is_connected:
+            if not console_connected(self._console):
                 raise RuntimeError("Reconnect and finish the recording to restore the game render scale.")
             self._request("mat_viewportscale " + numeric(original))
             actual = read_cvar_value("mat_viewportscale", self._request("mat_viewportscale"))
@@ -69,7 +78,7 @@ class ExportTimingMixin:
             if previous.get("restore_pending"):
                 raise RuntimeError("Restore the previous export timing before starting another export.")
             return
-        if self._console is None or not self._console.is_connected or not self._alive():
+        if not console_connected(self._console) or not self._alive():
             raise RuntimeError("Connect to the game before fixed-step export.")
         snapshot = {name: float(read_cvar_value(name, self._request(name)))
                     for name in ("host_framerate", "r_wait_on_present")}
@@ -96,7 +105,7 @@ class ExportTimingMixin:
             self._export_timing = None
             return
         state["restore_pending"] = True
-        if self._console is None or not self._console.is_connected:
+        if not console_connected(self._console):
             raise RuntimeError("Reconnect and finish the recording to restore export timing.")
         restore = state.get("restore") or {}
         host = restore.get("host_framerate")
@@ -125,7 +134,7 @@ class ExportTimingMixin:
             return
         if state.get("restore_pending"):
             raise RuntimeError("Restore the previous export timing before continuing playback.")
-        if self._console is None or not self._console.is_connected or not self._alive():
+        if not console_connected(self._console) or not self._alive():
             return
         restore = state.get("restore") or {}
         host = restore.get("host_framerate")
@@ -147,7 +156,7 @@ class ExportTimingMixin:
             return
         if state.get("restore_pending"):
             raise RuntimeError("Restore the previous export timing before continuing playback.")
-        if self._console is None or not self._console.is_connected or not self._alive():
+        if not console_connected(self._console) or not self._alive():
             return
         engine_fps = state["fps"] / state["speed"]
         self._request(f"host_framerate {numeric(engine_fps)}; r_wait_on_present 1; "

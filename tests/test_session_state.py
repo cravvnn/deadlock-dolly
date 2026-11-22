@@ -252,6 +252,28 @@ class Reconnect(unittest.TestCase):
             controller.connect()
 
 
+class ConsoleClearedDuringStatus(unittest.TestCase):
+    def test_status_reads_the_console_once(self):
+        # The operations worker can clear _console between two reads by the poll.
+        class Racing(Controller):
+            reads = 0
+
+            @property
+            def _console(self):
+                Racing.reads += 1
+                return NS(is_connected=True) if Racing.reads == 1 else None
+
+            @_console.setter
+            def _console(self, value):
+                pass
+        controller = Racing(lambda *args, **kwargs: None)
+        controller._session = NS(pid=42, native=None, session_dir=None, command=[],
+                                 process=NS(poll=lambda: None))
+        controller._alive = lambda: True
+        Racing.reads = 0
+        self.assertTrue(controller.status()['connected'])
+
+
 class PlaybackSpeed(unittest.TestCase):
     def test_choosing_the_shown_speed_again_applies_it_again(self):
         # A take, Play or a new game session returns the replay to 1x while

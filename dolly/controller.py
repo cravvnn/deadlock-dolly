@@ -34,7 +34,7 @@ from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPEC
 from .camera_commands import (ASPECT_CVAR, DISCRETE, DOF_RANGES, LEGACY_FOV_CONTROLS, frame_commands,
                               motion_clock_info, numeric, parse_camera, parse_camera_readback,
                               _tail_file, tick_rate_advice, tick_rates_match)
-from .export_timing import ExportTimingMixin
+from .export_timing import ExportTimingMixin, console_connected
 from .layer_modes import LayerModesMixin
 from .game_ui_handoff import GameUiHandoffMixin, OWN_HEALTH_HUD
 from .paused_flight import PausedFlightMixin, CAMERA_READBACK_INTERVAL
@@ -490,7 +490,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def status(self):
         with self._state_lock:
             state = dict(self._state)
-        state["connected"] = bool(self._console and self._console.is_connected and self._alive())
+        state["connected"] = bool(console_connected(self._console) and self._alive())
         state["unlocker_ready"] = bool(self._alive() and self._unlocker_pid == self._session.pid)
         state["camera_backend"] = "native" if self._native_bridge() is not None else "console"
         state["native_holding"] = self._native_active and not state.get("playing", False)
@@ -633,7 +633,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             raise RuntimeError(self._game_death_message("Dolly was running a console command"))
         if not self._alive():
             raise RuntimeError("Launch the local replay from Dolly first. Connections to separately launched games are disabled.")
-        if not self._console or not self._console.is_connected:
+        if not console_connected(self._console):
             raise RuntimeError("The console is disconnected. Use Connect after Deadlock finishes loading.")
 
     def _game_death_message(self, context):
@@ -3646,7 +3646,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     if game_path is None else game_path)
         raw = str(selected or "").strip()
         setting = None
-        if self._console is not None and getattr(self._console, "is_connected", False):
+        if console_connected(self._console):
             try:
                 setting = read_cvar_value(
                     dof_support.DOF_SHADER_SETTING,
@@ -3670,7 +3670,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         """
         if self._dof_shader_checked or not self._project_uses_native_dof(project):
             return False
-        if self._console is None or not self._console.is_connected or not self._alive():
+        if not console_connected(self._console) or not self._alive():
             return False
         evidence = {"settings": {}, "reload": None}
         changed = False
@@ -3775,7 +3775,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def _restore_dof_shader_settings(self):
         if not self._dof_shader_restore:
             return None
-        if self._console is None or not self._console.is_connected or not self._alive():
+        if not console_connected(self._console) or not self._alive():
             return ("Native DOF changed the game's shader setting for this session; "
                     "reconnect and use Stop / restore to put it back.")
         error = None
@@ -5917,7 +5917,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def pause(self):
         hud_error = self._halt(native_action="hold")
         restoration_error = " ".join(part for part in (hud_error, self._restore_playback_settings()) if part) or None
-        if self._console and self._console.is_connected and self._alive():
+        if console_connected(self._console) and self._alive():
             self._require_demo(require_tick=False)
             self._request("demo_pause")
         self._message(restoration_error or "Paused. The current camera and lens values are held.", playing=False)
@@ -5945,7 +5945,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         ui_error = self._restore_game_ui_settings()
         look_error = self._restore_look_values() if self._look_restore else None
         restoration_error = " ".join(part for part in (hud_error, restoration_error, ui_error, look_error) if part) or None
-        if (self._restore or (self._demo_speed_changed and not preserve_speed)) and self._console and self._console.is_connected and self._alive():
+        if (self._restore or (self._demo_speed_changed and not preserve_speed)) and console_connected(self._console) and self._alive():
             try:
                 self._require_demo(require_tick=False)
                 commands = []
@@ -5967,7 +5967,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     restoration_error, "Could not restore all cvars: " + str(exc)) if part)
         with self._state_lock:
             self._state["playing"] = False
-        if not preserve_layers and self._console and self._console.is_connected and self._alive():
+        if not preserve_layers and console_connected(self._console) and self._alive():
             try:
                 self.end_matte_layer()
             except (RuntimeError, ValueError, OSError) as exc:
@@ -6005,12 +6005,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 close_media()
             except Exception:  # noqa: BLE001 - media cleanup is best-effort on disconnect
                 LOG.warning("Could not close native media during disconnect", exc_info=True)
-        if self._near_opacity_restore and self._console and self._console.is_connected and self._alive():
+        if self._near_opacity_restore and console_connected(self._console) and self._alive():
             try:
                 self._restore_near_player_opacity()
             except Exception:
                 LOG.warning("Could not restore near-player opacity during disconnect", exc_info=True)
-        if self._healthbar_restore and self._console and self._console.is_connected and self._alive():
+        if self._healthbar_restore and console_connected(self._console) and self._alive():
             try:
                 self._restore_healthbar_values()
             except Exception:  # noqa: BLE001 - the game may have closed mid-restore
