@@ -191,6 +191,16 @@ int main() {
     require(!watch.keep_waiting(2 * kFinalizeIdleLimitMs - 1, 5));
     watch.next_child(kFinalizeHardCapMs - 1, 9);
     require(!watch.keep_waiting(kFinalizeHardCapMs, 10));
+    // Editor close: finishing ends kShutdownFinalizeMs after the close even
+    // while FFmpeg still progresses, and a late close never extends the cap.
+    watch.begin(0, 0);
+    watch.cap(5000, kShutdownFinalizeMs);
+    require(watch.keep_waiting(5000 + kShutdownFinalizeMs - 1, 1));
+    require(!watch.keep_waiting(5000 + kShutdownFinalizeMs, 2));
+    watch.begin(0, 0);
+    watch.cap(kFinalizeHardCapMs - 1000, kShutdownFinalizeMs);
+    require(watch.keep_waiting(kFinalizeHardCapMs - 1, 3));
+    require(!watch.keep_waiting(kFinalizeHardCapMs, 4));
     // Pipe writes are watched only after a stop, and any completed chunk
     // restarts the stall limit.
     WriteStallWatch stall;

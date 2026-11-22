@@ -186,6 +186,8 @@ struct Session {
     std::condition_variable stall_wake;
     std::atomic<bool> inputs_closed{false};
     std::atomic<std::uint64_t> pipe_writes{0};
+    // GetTickCount64 when the editor closed; bounds finishing (kShutdownFinalizeMs).
+    std::atomic<std::uint64_t> closing_at{0};
 };
 struct GpuSlot {
     FrameStamp stamp;
@@ -967,6 +969,8 @@ Finish wait_for_finish(Session& s, HANDLE process, FinalizeWatch& watch) noexcep
         apply_deferred_stop(s);
         if (s.cancel.load(std::memory_order_acquire))
             return Finish::cancelled;
+        if (const auto closing = s.closing_at.load(std::memory_order_acquire))
+            watch.cap(closing, kShutdownFinalizeMs);
         if (!watch.keep_waiting(GetTickCount64(), child_activity(process)))
             return Finish::stalled;
     }
@@ -2320,17 +2324,18 @@ void reset_resources() noexcept {
 }
 void shutdown() noexcept {
     std::thread worker;
-    std::shared_ptr<Session> session;
     {
         std::lock_guard<std::mutex> lock(control_mutex);
-        if (current && !current->done.load())
+        if (current && !current->done.load()) {
+            current->closing_at.store(GetTickCount64(), std::memory_order_release);
             request_stop(*current, false);
-        session = current;
+        }
         if (encoder_thread)
             worker = std::move(*encoder_thread);
     }
-    // The encoder bounds both a stalled pipe write after the stop above
-    // (WriteStallGuard) and its own wait for FFmpeg to finish.
+    // The encoder bounds a stalled pipe write after the stop above
+    // (WriteStallGuard) and, once the editor closes, its wait for FFmpeg to
+    // finish (kShutdownFinalizeMs); an unfinished file is kept.
     if (worker.joinable())
         worker.join();
 }

@@ -12,11 +12,19 @@ namespace dolly::video {
 // limit without progress, and never exceeds the hard cap (desktop waits longer).
 constexpr std::uint64_t kFinalizeIdleLimitMs = 30 * 1000;
 constexpr std::uint64_t kFinalizeHardCapMs = 20 * 60 * 1000;
+// When the editor closes, finishing ends this long after the close and keeps
+// the unfinished file, so the shutdown join is not held for the full cap.
+constexpr std::uint64_t kShutdownFinalizeMs = 120 * 1000;
 struct FinalizeWatch {
-    std::uint64_t started = 0, progressed = 0, activity = 0;
+    std::uint64_t deadline = 0, progressed = 0, activity = 0;
     void begin(std::uint64_t now, std::uint64_t counters) noexcept {
-        started = progressed = now;
+        deadline = now + kFinalizeHardCapMs;
+        progressed = now;
         activity = counters;
+    }
+    // Brings the deadline forward to limit after since; never extends it.
+    void cap(std::uint64_t since, std::uint64_t limit) noexcept {
+        deadline = std::min(deadline, since + limit);
     }
     // A further child keeps the original start, so the cap bounds them all.
     void next_child(std::uint64_t now, std::uint64_t counters) noexcept {
@@ -28,7 +36,7 @@ struct FinalizeWatch {
             activity = counters;
             progressed = now;
         }
-        return now - progressed < kFinalizeIdleLimitMs && now - started < kFinalizeHardCapMs;
+        return now - progressed < kFinalizeIdleLimitMs && now < deadline;
     }
 };
 // A pipe write to an FFmpeg that stopped reading never returns by itself, and
