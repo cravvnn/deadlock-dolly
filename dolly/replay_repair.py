@@ -13,6 +13,7 @@ from pathlib import Path
 import struct
 
 from .demo_packets import packet_index
+from .file_ops import publish_new
 
 _MAX_PACKET = 8 * 1024 * 1024
 _MAX_FILE = (1 << 32) - 1
@@ -421,10 +422,7 @@ def repair_replay(source: Path, output: Path) -> Path:
         if (verified is None or verified.ticks != index.ticks or verified.total_ticks != index.total_ticks
                 or verified.playback_time != index.playback_time):
             raise ReplayRepairUnavailable("The repaired copy did not pass its replay checks.")
-        if os.name == "nt":
-            os.rename(staging, output)  # Windows refuses an existing destination.
-        else:
-            os.link(staging, output)  # Same-filesystem no-replace publication.
+        publish_new(staging, output)
         return output
     finally:
         if staging is not None:

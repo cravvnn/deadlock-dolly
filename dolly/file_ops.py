@@ -41,6 +41,18 @@ def replace_retrying(source: str | os.PathLike[str], destination: str | os.PathL
     retry_locked(lambda: os.replace(source, destination), delays)
 
 
+def publish_new(temporary: str | os.PathLike[str], destination: str | os.PathLike[str]) -> None:
+    """Publish a completed temporary under a name that must not exist yet.
+
+    Raises FileExistsError rather than replacing anything. On POSIX the
+    temporary keeps its own link, so the caller still removes it afterwards.
+    """
+    if os.name == "nt":
+        os.rename(temporary, destination)  # Windows refuses an existing name.
+    else:
+        os.link(temporary, destination)  # Same-filesystem no-overwrite publication.
+
+
 def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
     """Replace one file atomically after flushing its new contents to disk.
 

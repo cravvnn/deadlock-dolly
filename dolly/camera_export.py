@@ -29,6 +29,7 @@ import math
 from pathlib import Path
 from typing import NamedTuple
 
+from .file_ops import publish_new
 from .path import CURVE_CHANNELS, POSITION_CHANNELS, Project, _finite
 
 DEFAULT_LENS = .75
@@ -772,10 +773,7 @@ def write_script(path: str | Path, script: str) -> None:
             handle.write(script.encode("utf-8"))
             handle.flush()
             os.fsync(handle.fileno())
-        if os.name == "nt":
-            os.rename(temporary, destination)  # Windows refuses an existing destination.
-        else:
-            os.link(temporary, destination)  # Same-directory atomic no-replace publication.
+        publish_new(temporary, destination)
     finally:
         if temporary is not None:
             try:

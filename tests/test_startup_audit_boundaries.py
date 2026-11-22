@@ -149,6 +149,20 @@ class StartupAuditBoundaries(unittest.TestCase):
                         file_ops._atomic_write(target, b'replacement')
                 self.assertEqual(target.read_bytes(), b'previous settings')
 
+    def test_publish_new_never_replaces_an_existing_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            stage, target = folder/'stage.tmp', folder/'published.txt'
+            stage.write_bytes(b'first')
+            file_ops.publish_new(stage, target)
+            stage.unlink(missing_ok=True)  # POSIX keeps a second link for the caller.
+            self.assertEqual(target.read_bytes(), b'first')
+            stage.write_bytes(b'second')
+            with self.assertRaises(FileExistsError):
+                file_ops.publish_new(stage, target)
+            self.assertEqual(target.read_bytes(), b'first')
+            self.assertEqual(stage.read_bytes(), b'second')
+
     def test_decoded_audit_reports_invalid_color_counts_and_keeps_valid_take(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)

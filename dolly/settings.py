@@ -19,7 +19,7 @@ from .editor_actions import (
     ACTION_LABELS, EditorBinding, bindings_from_dict, bindings_to_dict,
     default_action_bindings, validate_action_bindings,
 )
-from .file_ops import replace_retrying, retry_locked
+from .file_ops import publish_new, replace_retrying, retry_locked
 from .replays import parse_launch_options
 
 SETTINGS_VERSION = 11
@@ -280,10 +280,7 @@ def _backup_invalid_settings(target: Path) -> None:
                 destination.flush()
                 os.fsync(destination.fileno())
             published = staging.with_suffix("")
-            if os.name == "nt":
-                os.rename(staging, published)  # Windows refuses an existing name.
-            else:
-                os.link(staging, published)  # Non-overwriting publication on POSIX.
+            publish_new(staging, published)
         finally:
             if staging is not None:
                 try:

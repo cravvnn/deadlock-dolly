@@ -14,7 +14,7 @@ import os
 import secrets
 import tempfile
 
-from .file_ops import replace_retrying
+from .file_ops import publish_new, replace_retrying
 
 PRESET_NAME = "Deadlock-Dolly.ini"
 _SHADER_RELATIVE = Path("third_party") / "reshade_shaders"
@@ -205,10 +205,7 @@ def _install_presets(config: Path, preset: Path | None) -> tuple[Path | None, li
             with stream as output:
                 output.write(data)
             try:
-                if os.name == "nt":
-                    os.rename(temporary, target)  # Windows refuses an existing target.
-                else:
-                    os.link(temporary, target)  # Same-filesystem no-overwrite publication.
+                publish_new(temporary, target)
             except FileExistsError:
                 continue  # Preserve the user's edits, including a competing install.
             created.append(target)
