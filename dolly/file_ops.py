@@ -53,6 +53,14 @@ def publish_new(temporary: str | os.PathLike[str], destination: str | os.PathLik
         os.link(temporary, destination)  # Same-filesystem no-overwrite publication.
 
 
+def _read_only_mode(path: Path) -> int | None:
+    """The mode of an existing read-only Windows file, else None."""
+    if os.name != "nt" or not path.exists():
+        return None
+    mode = stat.S_IMODE(path.stat().st_mode)
+    return None if mode & stat.S_IWRITE else mode
+
+
 def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
     """Replace one file atomically after flushing its new contents to disk.
 
@@ -71,14 +79,16 @@ def _atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
             os.fsync(stream.fileno())
         if mode is not None:
             os.chmod(temp, mode)
-        try:
-            replace_retrying(temp, path)
-        except PermissionError:
-            if os.name != "nt" or not path.exists():
-                raise
-            original_mode = stat.S_IMODE(path.stat().st_mode)
-            if original_mode & stat.S_IWRITE:
-                raise  # Not read-only: a lock that outlasted the retries.
+        # Check the attribute first: a read-only file is no lock to wait out.
+        original_mode = _read_only_mode(path)
+        if original_mode is None:
+            try:
+                replace_retrying(temp, path)
+            except PermissionError:
+                original_mode = _read_only_mode(path)
+                if original_mode is None:
+                    raise  # Not read-only: a lock that outlasted the retries.
+        if original_mode is not None:
             os.chmod(path, writable)
             try:
                 replace_retrying(temp, path)

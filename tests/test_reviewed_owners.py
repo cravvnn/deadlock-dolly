@@ -157,6 +157,23 @@ class ReviewedOwnerTests(unittest.TestCase):
                 self.assertEqual(target.read_bytes(), previous)
                 self.assertEqual([p.name for p in Path(folder).iterdir()], ['settings.json'])
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows read-only attribute')
+    def test_a_read_only_destination_is_replaced_without_waiting_out_lock_retries(self):
+        import stat
+        from dolly import file_ops
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)/'gameinfo.gi'
+            target.write_bytes(b'old')
+            os.chmod(target, stat.S_IREAD)
+            try:
+                with patch('dolly.file_ops.time.sleep') as sleep:
+                    file_ops._atomic_write(target, b'new')
+                sleep.assert_not_called()
+                self.assertEqual(target.read_bytes(), b'new')
+                self.assertEqual([p.name for p in Path(folder).iterdir()], ['gameinfo.gi'])
+            finally:
+                os.chmod(target, stat.S_IREAD | stat.S_IWRITE)
+
     def test_export_timing_requires_both_readbacks_then_allows_retry_and_restore(self):
         for action in ('resume', 'suspend'):
             for ignored in ('host_framerate', 'r_wait_on_present'):
