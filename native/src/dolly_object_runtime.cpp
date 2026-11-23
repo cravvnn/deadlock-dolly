@@ -1,4 +1,5 @@
 #include "dolly_object_runtime.hpp"
+#include "dolly_source_axes.hpp"
 #include <cmath>
 
 namespace dolly::object_runtime {
@@ -34,13 +35,8 @@ struct Basis {
     Vec3 x{}, y{}, z{};
 };
 Basis angles_to_basis(const float* a) noexcept {
-    constexpr double r = 3.14159265358979323846 / 180.0;
-    const double p = a[0] * r, y = a[1] * r, rl = a[2] * r;
-    const double sp = std::sin(p), cp = std::cos(p), sy = std::sin(y), cy = std::cos(y);
-    const double sr = std::sin(rl), cr = std::cos(rl);
-    return {{cp * cy, cp * sy, -sp},
-            {-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp},
-            {cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp}};
+    const auto axes = source_axes(a[0], a[1], a[2]);
+    return {axes.forward, axes.right, axes.up};
 }
 
 Vec3 to_world(const Basis& b, const float* origin, double lx, double ly, double lz) noexcept {

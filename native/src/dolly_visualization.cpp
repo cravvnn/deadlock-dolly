@@ -1,4 +1,5 @@
 #include "dolly_visualization.hpp"
+#include "dolly_source_axes.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -55,16 +56,9 @@ struct Basis {
     Vec3 forward{}, right{}, up{};
 };
 Basis angle_vectors(const CameraPose& p) noexcept {
-    constexpr double radians = 3.14159265358979323846 / 180;
-    const double pitch = std::remainder(p[3], 360.0) * radians;
-    const double yaw = std::remainder(p[4], 360.0) * radians;
-    const double roll = std::remainder(p[5], 360.0) * radians;
-    const double sp = std::sin(pitch), cp = std::cos(pitch), sy = std::sin(yaw), cy = std::cos(yaw);
-    const double sr = std::sin(roll), cr = std::cos(roll);
-    // Source coordinates: Z up, yaw zero faces +X, positive pitch looks down.
-    return {{cp * cy, cp * sy, -sp},
-            {-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp},
-            {cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp}};
+    const auto axes = source_axes(std::remainder(p[3], 360.0), std::remainder(p[4], 360.0),
+                                  std::remainder(p[5], 360.0));
+    return {axes.forward, axes.right, axes.up};
 }
 struct Projection {
     Basis basis{};

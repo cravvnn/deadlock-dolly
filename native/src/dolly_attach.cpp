@@ -1,4 +1,5 @@
 #include "dolly_attach.hpp"
+#include "dolly_source_axes.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -50,19 +51,11 @@ bool finite3(const std::array<double, 3>& value, double limit) noexcept {
 // Source pitch/yaw/roll degrees, the same convention as camera poses: yaw zero
 // faces +X, pitch is positive down, and right is -Y at yaw zero.
 void source_basis(const std::array<double, 3>& angles, double basis[3][3]) noexcept {
-    const double sp = std::sin(angles[0] * kDegreesToRadians),
-                 cp = std::cos(angles[0] * kDegreesToRadians);
-    const double sy = std::sin(angles[1] * kDegreesToRadians),
-                 cy = std::cos(angles[1] * kDegreesToRadians);
-    const double sr = std::sin(angles[2] * kDegreesToRadians),
-                 cr = std::cos(angles[2] * kDegreesToRadians);
-    const double forward[3] = {cp * cy, cp * sy, -sp};
-    const double right[3] = {-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp};
-    const double up[3] = {cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp};
+    const auto axes = source_axes(angles[0], angles[1], angles[2]);
     for (int i = 0; i < 3; ++i) {
-        basis[i][0] = forward[i];
-        basis[i][1] = right[i];
-        basis[i][2] = up[i];
+        basis[i][0] = axes.forward[i];
+        basis[i][1] = axes.right[i];
+        basis[i][2] = axes.up[i];
     }
 }
 

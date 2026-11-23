@@ -1,4 +1,5 @@
 #include "dolly_object_picker.hpp"
+#include "dolly_source_axes.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -18,15 +19,9 @@ struct Basis {
 };
 
 Basis angle_vectors(const CameraPose& p) noexcept {
-    constexpr double radians = kPi / 180;
-    const double pitch = std::remainder(p[3], 360.0) * radians;
-    const double yaw = std::remainder(p[4], 360.0) * radians;
-    const double roll = std::remainder(p[5], 360.0) * radians;
-    const double sp = std::sin(pitch), cp = std::cos(pitch), sy = std::sin(yaw), cy = std::cos(yaw);
-    const double sr = std::sin(roll), cr = std::cos(roll);
-    return {{cp * cy, cp * sy, -sp},
-            {-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp},
-            {cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp}};
+    const auto axes = source_axes(std::remainder(p[3], 360.0), std::remainder(p[4], 360.0),
+                                  std::remainder(p[5], 360.0));
+    return {axes.forward, axes.right, axes.up};
 }
 
 double dot(const Vec3& a, const Vec3& b) noexcept {

@@ -2,6 +2,7 @@
 #include "dolly_effects.hpp"
 #include "dolly_flight.hpp"
 #include "dolly_hide.hpp"
+#include "dolly_source_axes.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -1397,8 +1398,23 @@ void rendered_pose_history() {
     require(!history.apply(sample, 2.02, 22), "Large local discontinuity reused old pose");
 }
 
+void source_axes_convention() {
+    // Shared by attach, object, picker and path-visualization math.
+    const auto level = dolly::source_axes(0, 0, 0);
+    require(near(level.forward[0], 1) && near(level.right[1], -1) && near(level.up[2], 1),
+            "Yaw zero faces +X with right -Y and up +Z");
+    const auto turned = dolly::source_axes(0, 90, 0);
+    require(near(turned.forward[1], 1) && near(turned.right[0], 1),
+            "Positive yaw turns toward +Y");
+    const auto down = dolly::source_axes(90, 0, 0);
+    require(near(down.forward[2], -1) && near(down.up[0], 1), "Positive pitch looks down");
+    const auto rolled = dolly::source_axes(0, 0, 90);
+    require(near(rolled.right[2], -1) && near(rolled.up[1], -1), "Roll turns right toward -Z");
+}
+
 int main() {
     try {
+        source_axes_convention();
         unsigned hide_index = 999;
         require(dolly::hide_instance_index(1, 4, 8, 4, 2, 64, hide_index) && hide_index == 5,
                 "Hide identity offset must include stream, element and first instance");
