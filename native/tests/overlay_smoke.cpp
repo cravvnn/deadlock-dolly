@@ -16,6 +16,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "../src/dolly_overlay_panel.hpp"
+#include "../src/dolly_retry_backoff.hpp"
 #include "../src/dolly_ui_storage.hpp"
 #include <d3d11.h>
 #include <dxgi.h>
@@ -87,6 +88,35 @@ std::string read_layout_fixture(const std::wstring& path) {
     const bool okay=ReadFile(file,bytes.data(),DWORD(bytes.size()),&count,nullptr) && count==bytes.size();
     CloseHandle(file);require(okay,"Cannot read isolated layout fixture bytes");return bytes;
 }
+// Expensive Present-thread retries (overlay init, layout saves) back off and
+// reset on success or a new identity instead of repeating every few seconds.
+void retry_backoff_regressions() {
+    dolly::RetryBackoff backoff{2, 60};
+    require(backoff.due(0, 7), "A fresh retry backoff blocks the first attempt");
+    double now = 0, expected = 2;
+    for (int failure = 0; failure < 8; ++failure) {
+        backoff.failed(now);
+        require(backoff.delay == expected && !backoff.due(now + expected - .5, 7) &&
+                    backoff.due(now + expected, 7),
+                "Retry backoff does not double up to its limit");
+        now += expected;
+        expected = std::min(expected * 2, 60.0);
+    }
+    require(backoff.delay == 60, "Retry backoff exceeded its limit");
+    backoff.failed(now);
+    require(!backoff.due(now + 1, 7) && backoff.due(now + 1, 8),
+            "A new identity still waits out the old backoff");
+    backoff.failed(now);
+    require(backoff.delay == 2, "A new identity kept the old backoff");
+    backoff.defer(now, 2);
+    require(backoff.delay == 2 && !backoff.due(now + 1, 8) && backoff.due(now + 2, 8),
+            "A deferred retry changed the backoff");
+    backoff.failed(now);
+    backoff.clear();
+    require(backoff.due(now, 8) && backoff.delay == 0, "Success did not clear the retry backoff");
+    std::puts("Retry backoff doubles to its limit and resets on success or a new identity.");
+}
+
 void ui_storage_regressions() {
     const auto directory=layout_test_directory(),path=directory+L"\\layout.ini",backup=path+L".bak",orphan=path+L".tmp";
     const std::string a="[Window][Deadlock Dolly]\nPos=140,90\nSize=700,400\nCollapsed=0\n\n"
@@ -5332,6 +5362,7 @@ int main(int argc, char** argv) {
         staging->Release();
         require(drawn, "Present ran but the in-game panel did not change the backbuffer");
         ui_storage_regressions();
+        retry_backoff_regressions();
         layout_crash_restore_regressions();
         layout_view_restore_regressions(viewer);
         default_panel_placement_regressions(1);

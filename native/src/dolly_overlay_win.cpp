@@ -14,6 +14,7 @@
 #include "dolly_player_capture.hpp"
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
+#include "dolly_retry_backoff.hpp"
 #include "MinHook.h"
 #include <d3d11_1.h>
 #include <dxgi.h>
@@ -88,7 +89,11 @@ bool win32_ready = false, dx11_ready = false, last_panel = false;
 depth::LiveDepth depth_live;
 std::shared_ptr<depth::SceneTracker> depth_tracker;
 bool media_suspended = false;
-ULONGLONG next_initialization = 0;
+// A failure before the ImGui context exists is cheap and often transient (the
+// window is not yet visible); it retries every 2 s. A later failure repeats a
+// new context, layout I/O, font reads and shader compiles, so it backs off.
+RetryBackoff initialization_backoff{2, 60};
+bool initialization_costly = false;
 constexpr wchar_t kWindowProperty[] = L"DeadlockDolly.Overlay.OriginalWindowProcedure";
 
 // Serialize our ImGui context across Present and window-message callbacks,
@@ -424,6 +429,7 @@ bool initialize_device(IDXGISwapChain* chain) {
         t_phase = now;
     };
     diagnostic_init_attempts.fetch_add(1, std::memory_order_relaxed);
+    initialization_costly = false;
     DXGI_SWAP_CHAIN_DESC description{};
     if (FAILED(chain->GetDesc(&description)) || !suitable_window(description.OutputWindow))
         return false;
@@ -465,6 +471,7 @@ bool initialize_device(IDXGISwapChain* chain) {
         return false;
     }
     mark("create_target");
+    initialization_costly = true;
     IMGUI_CHECKVERSION();
     auto* previous = ImGui::GetCurrentContext();
     imgui = ImGui::CreateContext();
@@ -547,13 +554,17 @@ bool initialize_device(IDXGISwapChain* chain) {
 }
 
 bool try_initialize_device(IDXGISwapChain* chain) {
-    if (GetTickCount64() < next_initialization)
+    const double now = double(GetTickCount64()) / 1000.0;
+    if (!initialization_backoff.due(now, reinterpret_cast<std::uintptr_t>(chain)))
         return false;
     if (initialize_device(chain)) {
-        next_initialization = 0;
+        initialization_backoff.clear();
         return true;
     }
-    next_initialization = GetTickCount64() + 2000;
+    if (initialization_costly)
+        initialization_backoff.failed(now);
+    else
+        initialization_backoff.defer(now, 2);
     return false;
 }
 void render_overlay(IDXGISwapChain* chain) {
