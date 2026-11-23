@@ -13,7 +13,6 @@ would change the distribution terms.
 from __future__ import annotations
 
 import argparse
-import hashlib
 from pathlib import Path
 import shutil
 import sys
@@ -21,19 +20,13 @@ import tempfile
 import urllib.request
 import zipfile
 
+from release_files import sha256
+
 URL = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/"
        "autobuild-2026-11-14-12-37/"
        "ffmpeg-n8.1.3-35-gf1acb0a266-win64-lgpl-shared-8.1.zip")
 SHA256 = "97927ac5391d5e3a11dc3bce679d54f7fde04cf54380a09970c32eea49ba20a2"
 ARCHIVE_NAME = "ffmpeg-n8.1.3-35-gf1acb0a266-win64-lgpl-shared-8.1.zip"
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def download(cache: Path) -> Path:

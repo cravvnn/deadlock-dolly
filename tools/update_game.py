@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -31,20 +30,13 @@ sys.path.insert(0, str(ROOT / "tools"))
 ANALYSIS = ROOT / "analysis"
 
 from check_game_update import read_steam_inf, resolve_game_dir  # noqa: E402
+from release_files import sha256  # noqa: E402
 
 CLIENT_SCRIPTS = ("collect_anchors.py", "audit_full_{b}.py", "build_map_{b}.py",
                   "resolve_data_{b}.py", "resolve_settings_{b}.py", "resolve_missing_{b}.py",
                   "merge_resolved_{b}.py", "translate_contract_{b}.py", "materialize_{b}.py",
                   "resolve_server_{b}.py")
 UNLOCKER_SCRIPTS = ("prepare_unlocker_{b}.py", "finalize_unlocker_{b}.py", "promote_unlocker_{b}.py")
-
-
-def sha256(path: Path) -> str:
-    hasher = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            hasher.update(block)
-    return hasher.hexdigest()
 
 
 def run_dir_identity(directory: Path) -> tuple[str, str]:

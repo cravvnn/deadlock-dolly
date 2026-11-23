@@ -338,5 +338,18 @@ class SoundProfileReview(unittest.TestCase):
                 generate_compatibility.generated_outputs(ROOT)
 
 
+class SharedDigest(unittest.TestCase):
+    def test_tools_share_one_streamed_sha256(self):
+        import hashlib
+        import fetch_ffmpeg
+        self.assertIs(fetch_ffmpeg.sha256, release_files.sha256)
+        self.assertIs(update_game.sha256, release_files.sha256)
+        self.assertIs(release_status.sha256, release_files.sha256)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'blob'
+            path.write_bytes(b'x' * (3 * 1024 * 1024 + 7))
+            self.assertEqual(release_files.sha256(path), hashlib.sha256(path.read_bytes()).hexdigest())
+
+
 if __name__ == '__main__':
     unittest.main()
