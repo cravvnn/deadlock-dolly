@@ -1,0 +1,52 @@
+[
+  {
+    "name": "busy read acknowledges the action",
+    "replace": [
+      [
+        "/\\ acked' = acked",
+        "/\\ acked' = [acked EXCEPT ![s] = Head(s)]"
+      ]
+    ],
+    "expect": "AckedHandled"
+  },
+  {
+    "name": "action applied in the editor session from before the bridge change",
+    "replace": [
+      [
+        "/\\ where' = [where EXCEPT ![s][e] = s]",
+        "/\\ where' = [where EXCEPT ![s][e] = session]"
+      ]
+    ],
+    "expect": "NoCrossSession"
+  },
+  {
+    "name": "accepted action applied but left queued",
+    "replace": [
+      [
+        "/\\ where' = [where EXCEPT ![s][e] = s]\n          /\\ acked' = [acked EXCEPT ![s] = e]",
+        "/\\ where' = [where EXCEPT ![s][e] = s]\n          /\\ acked' = acked"
+      ]
+    ],
+    "expect": "Unacked"
+  },
+  {
+    "name": "poll stops dispatching queued actions",
+    "replace": [
+      [
+        "Spec == Init /\\ [][Next]_vars /\\ WF_vars(Dispatch)",
+        "Spec == Init /\\ [][Next]_vars /\\ WF_vars(Idle)"
+      ]
+    ],
+    "expect": "Handled"
+  },
+  {
+    "name": "acknowledgement skips ahead of the queue",
+    "replace": [
+      [
+        "/\\ refused' = [refused EXCEPT ![s][e] = TRUE]\n          /\\ acked' = [acked EXCEPT ![s] = e]",
+        "/\\ refused' = [refused EXCEPT ![s][e] = TRUE]\n          /\\ acked' = [acked EXCEPT ![s] = produced[s]]"
+      ]
+    ],
+    "expect": "AckedHandled"
+  }
+]

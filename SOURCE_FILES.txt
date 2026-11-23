@@ -1365,3 +1365,7 @@ tests/test_assert_watcher.py
 tests/test_display.py
 docs/RELEASE_NOTES_0.7.50-beta.md
 docs/RELEASE_NOTES_0.7.51-beta.md
+dolly/EditorEventQueue.tla
+dolly/EditorEventQueueApi.tla
+dolly/EditorEventQueue.cfg
+dolly/EditorEventQueue.mutants.json
