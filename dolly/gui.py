@@ -3318,8 +3318,8 @@ class DollyApp:
     def _when_idle(self, action):
         """Run ``action`` on the window's thread once no operation is running."""
         def check():
-            if self.closed:
-                return
+            if self.closed or getattr(self, "_closing", False):
+                return  # A close in progress drops queued work such as Record again.
             if self.busy:
                 self.root.after(100, check)
             else:

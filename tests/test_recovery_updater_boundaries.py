@@ -301,6 +301,24 @@ class CloseAndDialogBoundaries(unittest.TestCase):
         gui.DollyApp._retry_close(app)
         app._finish_close.assert_not_called()
 
+    def test_work_queued_for_idle_does_not_run_during_a_close(self):
+        # Record again waits for the failed take's restore; a close requested
+        # meanwhile must not start a new recording behind it.
+        from dolly import gui
+        app = SimpleNamespace(closed=False, busy=True, _closing=False, root=MagicMock())
+        action = MagicMock()
+        gui.DollyApp._when_idle(app, action)
+        app.root.after.call_args.args[1]()
+        action.assert_not_called()
+        app.busy = False
+        app.root.after.call_args.args[1]()
+        action.assert_called_once()
+        action.reset_mock()
+        gui.DollyApp._when_idle(app, action)
+        app._closing = True
+        app.root.after.call_args.args[1]()
+        action.assert_not_called()
+
     def test_background_results_wait_for_an_open_dialog(self):
         from dolly import gui
         show = MagicMock(return_value='ok')
