@@ -119,6 +119,11 @@ def configure(app):
     was_active = bool(getattr(app, "native_editor_active", False))
     active = bool(was_active or status.get("native_editor_active"))
     active = active and bool(status.get("connected"))
+    if not active and getattr(app, "_bone_picker_context", None):
+        # A lost editor never sends the picker's finish/cancel event, and an
+        # open picker blocks every desktop operation, including Connect.
+        from .bone_picker import discard
+        discard(app)
     # start_flight enables native input before its acknowledgement reaches the
     # controller. Do not turn it off while the startup worker is still arming.
     if not active and not was_active:

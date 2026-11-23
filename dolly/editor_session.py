@@ -2,7 +2,7 @@
 import logging
 import time
 from .native_bridge import NativeBridgeError, NativeEditorStatusBusy, NativeStatusBusy
-from . import editor_publication, editor_dispatch
+from . import bone_picker, editor_publication, editor_dispatch
 from .editor_publication import _bridge
 
 LOG = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ def poll(app):
     if bridge is None:
         app.native_editor_active = False
         cancel_snap(app, None)
+        bone_picker.discard(app)
         app._native_editor_bridge = None
         app._native_visualization_bridge = None
         app._native_visualization_cache = None

@@ -59,6 +59,16 @@ def still_current(app, context):
             app.project.keyframes[index] == context["key"])
 
 
+def discard(app):
+    """Cancel locally when the editor is gone and native can no longer finish."""
+    context = getattr(app, "_bone_picker_context", None)
+    if not context:
+        return
+    app._bone_picker_context = None
+    app.preview_attach = context["preview"] if still_current(app, context) else False
+    app.status_text.set("Bone Picker cancelled. Your saved camera is unchanged.")
+
+
 def close_picker(app, *, publish, result=None, resume=True):
     context = getattr(app, "_bone_picker_context", None)
     if not context:
@@ -82,9 +92,7 @@ def close_picker(app, *, publish, result=None, resume=True):
         app._commit_camera(keys, selected.time)
         app.status_text.set("Attached preview: " + result["name"] + ". Reopen Bone Picker to change it.")
     else:
-        app._bone_picker_context = None
-        app.preview_attach = context["preview"] if still_current(app, context) else False
-        app.status_text.set("Bone Picker cancelled. Your saved camera is unchanged.")
+        discard(app)
     publish()
     if context["resume"] and resume:
         app._submit("Resuming replay after Bone Picker", app.controller.toggle_replay)
