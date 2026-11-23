@@ -115,6 +115,12 @@ void retry_backoff_regressions() {
     backoff.clear();
     require(backoff.due(now, 8) && backoff.delay == 0, "Success did not clear the retry backoff");
     std::puts("Retry backoff doubles to its limit and resets on success or a new identity.");
+    // The rail and both rail pickers share one clamped layout scale.
+    require(dolly::rail_layout_scale(ImVec2(1920, 1080)) == 1 &&
+                dolly::rail_layout_scale(ImVec2(3840, 1080)) == 1 &&
+                dolly::rail_layout_scale(ImVec2(960, 1080)) == .5f &&
+                dolly::rail_layout_scale(ImVec2(320, 200)) == .25f,
+            "Rail layout scale is not the clamped 1920x1080 ratio");
 }
 
 void ui_storage_regressions() {

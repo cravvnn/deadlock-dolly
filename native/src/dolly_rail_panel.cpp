@@ -11,9 +11,24 @@
 #include <cstdio>
 
 namespace dolly {
-void OverlayPanel::draw_bone_picker(const EditorSnapshot& state, const PickerPortrait& portrait) {
+float rail_layout_scale(ImVec2 display) noexcept {
+    return std::max(.25f, std::min(display.x / 1920.f, display.y / 1080.f));
+}
+void OverlayPanel::remap_panel_colors(ImGuiStyle& style) const {
+    for (auto& color : style.Colors) {
+        const unsigned rgb = (unsigned(std::round(color.x * 255)) << 16) |
+                             (unsigned(std::round(color.y * 255)) << 8) |
+                             unsigned(std::round(color.z * 255));
+        color = panel_color(rgb, color.w);
+    }
+}
+// A picker in rail mode: its own right-side controls in rail styling, plus the
+// top rail shifted right by `bar_offset` design pixels.
+template <class Controls>
+void OverlayPanel::draw_rail_picker(const EditorSnapshot& state, float bar_offset,
+                                    Controls&& controls) {
     if (!rail_enabled_ || !rail_font_) {
-        draw_bone_picker_controls(state, portrait);
+        controls();
         return;
     }
     const ImGuiStyle previous = ImGui::GetStyle();
@@ -23,79 +38,36 @@ void OverlayPanel::draw_bone_picker(const EditorSnapshot& state, const PickerPor
     rail_kit::SetFonts(rail_font_, rail_medium_, rail_small_, rail_chip_, rail_heading_,
                        rail_font_dpi_);
     const float old_scale = panel_scale;
-    panel_scale =
-        std::min(ImGui::GetIO().DisplaySize.x / 1920.f, ImGui::GetIO().DisplaySize.y / 1080.f);
+    panel_scale = rail_layout_scale(ImGui::GetIO().DisplaySize);
     rail_kit::SetScale(panel_scale);
     const auto old_heading = heading_font, old_title = title_font;
     rail_drawing_ = true;
     auto& style = ImGui::GetStyle();
     style.FrameBorderSize = 0;
     style.FrameRounding = 4 * panel_scale;
-    for (auto& color : style.Colors) {
-        const unsigned rgb = (unsigned(std::round(color.x * 255)) << 16) |
-                             (unsigned(std::round(color.y * 255)) << 8) |
-                             unsigned(std::round(color.z * 255));
-        color = panel_color(rgb, color.w);
-    }
+    remap_panel_colors(style);
     if (rail_heading_)
         heading_font = title_font = rail_heading_;
     ImGui::PushFont(rail_font_);
-    draw_bone_picker_controls(state, portrait);
-    rail_bar_offset_.x += 160 * panel_scale;
+    controls();
+    rail_bar_offset_.x += bar_offset * panel_scale;
     rail_picker_mode_ = true;
     draw_rail(state, rail_background_);
     rail_picker_mode_ = false;
-    rail_bar_offset_.x -= 160 * panel_scale;
+    rail_bar_offset_.x -= bar_offset * panel_scale;
     ImGui::PopFont();
     heading_font = old_heading;
     title_font = old_title;
     rail_drawing_ = false;
     panel_scale = old_scale;
     style = previous;
+}
+void OverlayPanel::draw_bone_picker(const EditorSnapshot& state, const PickerPortrait& portrait) {
+    draw_rail_picker(state, 160, [&] { draw_bone_picker_controls(state, portrait); });
 }
 void OverlayPanel::draw_object_picker(const EditorSnapshot& state) {
-    if (!rail_enabled_ || !rail_font_) {
-        draw_object_picker_controls(state);
-        return;
-    }
-    const ImGuiStyle previous = ImGui::GetStyle();
-    if (!rail_design_)
-        rail_design_ = std::make_shared<RailDesignState>();
-    rail_kit::Scope scope(rail_design_->kit);
-    rail_kit::SetFonts(rail_font_, rail_medium_, rail_small_, rail_chip_, rail_heading_,
-                       rail_font_dpi_);
-    const float old_scale = panel_scale;
-    panel_scale =
-        std::min(ImGui::GetIO().DisplaySize.x / 1920.f, ImGui::GetIO().DisplaySize.y / 1080.f);
-    rail_kit::SetScale(panel_scale);
-    const auto old_heading = heading_font, old_title = title_font;
-    rail_drawing_ = true;
-    auto& style = ImGui::GetStyle();
-    style.FrameBorderSize = 0;
-    style.FrameRounding = 4 * panel_scale;
-    for (auto& color : style.Colors) {
-        const unsigned rgb = (unsigned(std::round(color.x * 255)) << 16) |
-                             (unsigned(std::round(color.y * 255)) << 8) |
-                             unsigned(std::round(color.z * 255));
-        color = panel_color(rgb, color.w);
-    }
-    if (rail_heading_)
-        heading_font = title_font = rail_heading_;
-    ImGui::PushFont(rail_font_);
-    draw_object_picker_controls(state);
-    rail_bar_offset_.x += 40 * panel_scale;
-    rail_picker_mode_ = true;
-    draw_rail(state, rail_background_);
-    rail_picker_mode_ = false;
-    rail_bar_offset_.x -= 40 * panel_scale;
-    ImGui::PopFont();
-    heading_font = old_heading;
-    title_font = old_title;
-    rail_drawing_ = false;
-    panel_scale = old_scale;
-    style = previous;
+    draw_rail_picker(state, 40, [&] { draw_object_picker_controls(state); });
 }
-
 void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background) {
     namespace k = rail_kit;
     namespace t = rail_theme;
@@ -107,7 +79,7 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
     auto& io = ImGui::GetIO();
     const float old_scale = panel_scale;
     const auto old_font = panel_font, old_heading = heading_font;
-    const float s = std::max(.25f, std::min(io.DisplaySize.x / 1920.f, io.DisplaySize.y / 1080.f));
+    const float s = rail_layout_scale(io.DisplaySize);
     const float origin = (io.DisplaySize.x - 1920 * s) * .5f;
     panel_scale = s;
     rail_drawing_ = true;
@@ -121,12 +93,7 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
     const float font_scale = s / rail_font_dpi_;
     const auto previous = ImGui::GetStyle();
     auto& style = ImGui::GetStyle();
-    for (auto& color : style.Colors) {
-        const unsigned rgb = (unsigned(std::round(color.x * 255)) << 16) |
-                             (unsigned(std::round(color.y * 255)) << 8) |
-                             unsigned(std::round(color.z * 255));
-        color = panel_color(rgb, color.w);
-    }
+    remap_panel_colors(style);
     style.WindowPadding = ImVec2();
     style.WindowBorderSize = 0;
     style.FrameBorderSize = 0;

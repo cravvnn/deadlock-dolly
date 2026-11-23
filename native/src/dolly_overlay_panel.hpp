@@ -15,6 +15,9 @@ struct RailDesignState;
 // False for an unnamed key; the chip is then skipped.
 bool key_cap_label(std::uint16_t vk, std::uint32_t modifiers, char* out,
                    std::size_t capacity) noexcept;
+// Rail layout scale against the 1920x1080 design, clamped so tiny displays
+// still lay out (the rail and both pickers share it).
+float rail_layout_scale(ImVec2 display) noexcept;
 // Borrowed renderer operations; the panel never creates/releases a GPU resource.
 struct PickerPortrait {
     void (*reset)() noexcept;
@@ -138,6 +141,9 @@ private:
     void draw_controls_footer(const EditorSnapshot& state);
     void draw_bone_picker_controls(const EditorSnapshot& state, const PickerPortrait& portrait);
     void draw_object_picker_controls(const EditorSnapshot& state);
+    template <class Controls>
+    void draw_rail_picker(const EditorSnapshot& state, float bar_offset, Controls&& controls);
+    void remap_panel_colors(ImGuiStyle& style) const;
     ImVec4 panel_color(unsigned rgb, float alpha = 1.0f) const;
     ImVec4 lite_color(unsigned rgb) const { return panel_color(rgb); }
     bool layout_editing_ = false, reduced_motion_ = false, classic_layout_ = false, layout_custom_ = false;
