@@ -222,8 +222,7 @@ void OverlayPanel::draw_bone_picker_controls(const EditorSnapshot& state,
         }
         k::VGap(15);
         k::BeginRow(30, 8);
-        if (k::Button("Cancel", 196.5, k::Btn::Secondary, false, k::Align::Left) ||
-            ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (k::Button("Cancel", 196.5, k::Btn::Secondary, false, k::Align::Left))
             d.send(EditorAction::CancelBonePicker);
         if (k::Button("Use this bone", 196.5, k::Btn::Primary,
                       !selected || !snapshot.ready || snapshot.finishing, k::Align::Left)) {
@@ -382,7 +381,7 @@ void OverlayPanel::draw_bone_picker_controls(const EditorSnapshot& state,
         ImGui::EndDisabled();
         const float half =
             (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * .5f;
-        if (ImGui::Button("Cancel", ImVec2(half, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (ImGui::Button("Cancel", ImVec2(half, 0)))
             editor_enqueue(EditorAction::CancelBonePicker);
         ImGui::SameLine();
         ImGui::BeginDisabled(!selected || !snapshot.ready || snapshot.finishing);

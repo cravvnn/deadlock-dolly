@@ -2489,6 +2489,15 @@ void editor_object_checks() {
     require(editor_snapshot().object_picker && editor_snapshot().object_count == 1,
             "Object Picker config did not reach the snapshot");
 
+    // Escape closes the picker first and leaves the panel open.
+    dolly::key_event(VK_ESCAPE, true);
+    dolly::key_event(VK_ESCAPE, false);
+    require(dolly::gOwner == EditorOwner::Panel &&
+                dolly::gEvents[(dolly::gLastEvent - 1) % kEditorEventCount].action ==
+                    std::uint32_t(EditorAction::ObjectPickerCancel),
+            "Escape did not close only the Object Picker");
+    dolly::gAcknowledged = dolly::gLastEvent;
+
     // Open and cancel round-trip.
     require(editor_enqueue(EditorAction::ObjectPickerCancel),
             "Object picker cancel was rejected by the action range");

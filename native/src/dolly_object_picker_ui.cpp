@@ -361,7 +361,7 @@ void OverlayPanel::draw_object_picker_controls(const EditorSnapshot& state) {
         snap("Angle", g_snap_angle_enabled, g_snap_angle, 1, 90, "%.0f deg");
         snap("Drop on place", g_drop_on_place, g_drop_height, 0, 1500, "%.0f up");
         k::BeginRow(30, 8);
-        if (k::Button("Close", 152) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (k::Button("Close", 152))
             d.send(EditorAction::ObjectPickerCancel);
         if (k::Button("Delete selected", 152, k::Btn::Secondary,
                       !state.object_count || state.object_selected < 0))
@@ -554,7 +554,7 @@ void OverlayPanel::draw_object_picker_controls(const EditorSnapshot& state) {
 
         const float half =
             (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * .5f;
-        if (ImGui::Button("Close", ImVec2(half, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (ImGui::Button("Close", ImVec2(half, 0)))
             editor_enqueue(EditorAction::ObjectPickerCancel);
         ImGui::SameLine();
         ImGui::BeginDisabled(state.object_count == 0 || state.object_selected < 0);

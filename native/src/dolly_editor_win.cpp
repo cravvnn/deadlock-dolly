@@ -350,9 +350,16 @@ void dispatch_key_press(unsigned vk) noexcept {
         }
         return;
     }
-    // The first Escape closes rail drawers. With none open it behaves like F8.
-    // Text edits and modal popups keep Escape; game UI/console own their Escape.
+    // Escape closes an open picker first, then rail drawers. With neither open
+    // it behaves like F8. Text edits and modal popups keep Escape; game
+    // UI/console own their Escape.
     if (vk == VK_ESCAPE && gOwner.load() == EditorOwner::Panel && !gTextInput.load()) {
+        const auto state = editor_snapshot();
+        if (state.bone_picker || state.object_picker) {
+            editor_enqueue(state.bone_picker ? EditorAction::CancelBonePicker
+                                             : EditorAction::ObjectPickerCancel);
+            return;
+        }
         if (overlay_close_drawers_on_escape()) return;
         dispatch(EditorAction::Panel);
         return;
