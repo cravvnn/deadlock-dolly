@@ -8660,7 +8660,7 @@
     },
     {
       "path": "native/src/dolly_bone_picker_ui.cpp",
-      "sha256": "cedec5cdfe72dbc5520e8196ac238623cf1e9e93a24b01100c8df2470c6eb9da",
+      "sha256": "fc5f33e3f4bbe0330488fbd0a09f9e05b2e0ab366530a1f8df6b9dbb704dd7bc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8683,7 +8683,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; Escape handled by the key dispatcher only"
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
@@ -8760,7 +8760,7 @@
     },
     {
       "path": "native/src/dolly_curve_panel.cpp",
-      "sha256": "212c57036569f1b7f34102d0eb8791cff99dde7e746740bceb529dfb3cbfc3b1",
+      "sha256": "2e99caca3dd9813d1afda21423944177781eb90221fc6a19d744ba045c122700",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8783,7 +8783,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23:; speed list offers 0.05x and 0.1x"
     },
     {
       "path": "native/src/dolly_depth.cpp",
@@ -8931,7 +8932,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "78eb2835a788bc040d377a44172e4e782c34360599c4f78af2a1d1b6de4b23cc",
+      "sha256": "1ce27a6ebadf5b7b9e0bcc7440c335f5a9802e02213431ad1a92d47cd8c9003e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8971,7 +8972,7 @@
       "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1).",
       "reconciliation_20261120e": "2026-11-20: editor_enqueue waits up to 10 ms for the event ring instead of dropping the action when the worker holds it. A shot seek whose float slider value rounds just past the duration is clamped to the duration.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; Escape closes an open picker before drawers or the panel"
     },
     {
       "path": "native/src/dolly_effects.cpp",
@@ -9083,7 +9084,7 @@
     },
     {
       "path": "native/src/dolly_lite_panel.cpp",
-      "sha256": "a932d22b04fc6613b743b51f5dda300ab94cdd923f8cf1f218d183491ce753a4",
+      "sha256": "b7b2875a1b5cbb564479d991862c59e8a87aa476defc3863f3277bca5a117769",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9112,7 +9113,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; speed list offers 0.05x and 0.1x"
     },
     {
       "path": "native/src/dolly_media_win.cpp",
@@ -9181,7 +9182,7 @@
     },
     {
       "path": "native/src/dolly_object_picker_ui.cpp",
-      "sha256": "202787d62ba2a2b1497d4cd04d671a8aff6a1a46a8ef485ac852d06446e0cba3",
+      "sha256": "1fb5681df478f62584fff0fadf981b018b852456948552295d884f4edcc733fd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9213,7 +9214,7 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; Escape handled by the key dispatcher only"
     },
     {
       "path": "native/src/dolly_object_runtime.cpp",
@@ -10738,7 +10739,7 @@
     },
     {
       "path": "tools/check_game_update.py",
-      "sha256": "c3bc4e774ab94c5f7b658e78bda8e1f51fe689baf9a70f55bc98d7d26843d640",
+      "sha256": "ca10e7152d0dff892644d1328e228dba998940258d7e9fcce81e898ffec38a51",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10765,7 +10766,7 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log; invalid definitions feed exits 2"
     },
     {
       "path": "tools/check_release_notes.py",
@@ -12428,7 +12429,7 @@
         "native/src/PickerGizmoSession.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "202787d62ba2a2b1497d4cd04d671a8aff6a1a46a8ef485ac852d06446e0cba3"
+      "owner_utf8_lf_sha256": "1fb5681df478f62584fff0fadf981b018b852456948552295d884f4edcc733fd"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
