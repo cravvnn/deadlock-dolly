@@ -5658,8 +5658,20 @@ class DollyApp:
             return
         self._discard_asked = True
         editor_session.close(self)
-        self._close_submitted = True
-        self._submit(CLOSE_STEPS[1], self.controller.close, lambda _result: self._destroy())
+        if self._submit(CLOSE_STEPS[1], self.controller.close, lambda _result: self._destroy()):
+            self._close_submitted = True
+        else:
+            # Work started while the save question was open; close once it ends.
+            self.root.after(100, self._retry_close)
+
+    def _retry_close(self):
+        if (self.closed or not getattr(self, "_closing", False) or not getattr(self, "_discard_asked", False)
+                or getattr(self, "_close_submitted", False)):
+            return  # Closed, kept open, or a newer close took over.
+        if self.busy:
+            self.root.after(100, self._retry_close)
+        else:
+            self._finish_close()
 
     def _close_after_failure(self):
         """Finish a requested close after a teardown step failed.

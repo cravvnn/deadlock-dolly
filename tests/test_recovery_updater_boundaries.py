@@ -276,6 +276,31 @@ class CloseAndDialogBoundaries(unittest.TestCase):
             app._close_after_failure.assert_called_once()
             app._report_operation_error.assert_not_called()
 
+    def test_a_close_refused_as_busy_runs_once_the_work_ends(self):
+        # Work started while the save question was open; Don't save then found
+        # the worker busy and the close silently never ran.
+        from dolly import gui
+        app = SimpleNamespace(playing=False, busy=True, closed=False, _closing=True, _discard_asked=False,
+                              _close_submitted=False, _allow_discard=MagicMock(return_value=True),
+                              root=MagicMock(), controller=MagicMock(), _destroy=MagicMock())
+        app._submit = lambda *args: not app.busy
+        app._finish_close = lambda: gui.DollyApp._finish_close(app)
+        app._retry_close = lambda: gui.DollyApp._retry_close(app)
+        with patch.object(gui, 'editor_session'):
+            gui.DollyApp._finish_close(app)
+            self.assertFalse(app._close_submitted)
+            app.root.after.call_args.args[1]()  # Still busy: wait again.
+            self.assertEqual(app.root.after.call_count, 2)
+            app.busy = False
+            app.root.after.call_args.args[1]()
+        self.assertTrue(app._close_submitted)
+        app._allow_discard.assert_called_once()
+        # A newer close that is asking again owns the retry.
+        app = SimpleNamespace(closed=False, busy=False, _closing=True, _discard_asked=False,
+                              _close_submitted=False, _finish_close=MagicMock())
+        gui.DollyApp._retry_close(app)
+        app._finish_close.assert_not_called()
+
     def test_background_results_wait_for_an_open_dialog(self):
         from dolly import gui
         show = MagicMock(return_value='ok')
