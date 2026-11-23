@@ -87,6 +87,7 @@ REQUIRED.add("CameraSessionJoin-success.cfg")
 REQUIRED.update({'ReleaseJoin.cfg', 'NativeSnapshotClose.cfg', 'CameraSessionJoin.cfg', 'CaptureRestoreJoin.cfg', 'PreparedShot.cfg', 'HeartbeatUnmap.cfg', 'StatusSnapshot.cfg'})
 REQUIRED.add("HudOwnership.cfg")
 REQUIRED.add("EditorEventQueue.cfg")
+REQUIRED.add("BonePickerTransaction.cfg")
 
 
 def main():

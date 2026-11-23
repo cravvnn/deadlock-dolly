@@ -1,0 +1,36 @@
+[
+  {
+    "name": "lost editor keeps the picker open",
+    "replace": [
+      [
+        "Discard == /\\ editor = \"lost\" /\\ picker = \"open\"",
+        "Discard == /\\ FALSE /\\ picker = \"open\""
+      ]
+    ],
+    "expect": "PickerEndsWhenLost"
+  },
+  {
+    "name": "request read after a skipped publication",
+    "replace": [
+      [
+        "/\\ picker' = \"open\" /\\ request' = 0",
+        "/\\ picker' = \"open\" /\\ request' = seq"
+      ],
+      [
+        "/\\ request' = IF request = 0 THEN seq + 1 ELSE request",
+        "/\\ request' = request"
+      ]
+    ],
+    "expect": "RequestIsFirstPublish"
+  },
+  {
+    "name": "republication replaces the stored request",
+    "replace": [
+      [
+        "/\\ request' = IF request = 0 THEN seq + 1 ELSE request",
+        "/\\ request' = seq + 1"
+      ]
+    ],
+    "expect": "RequestIsFirstPublish"
+  }
+]
