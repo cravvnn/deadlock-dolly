@@ -68,7 +68,8 @@ def check(root=ROOT):
                              str(root / "native" / "src" / "CaptureFailure.cfg"),
                              str(root / "native" / "src" / "MediaDetach.cfg"),
                              str(root / "native" / "src" / "NativeSnapshotClose.cfg"),
-                             str(root / "native" / "src" / "CameraOnlyCapture.cfg")],
+                             str(root / "native" / "src" / "CameraOnlyCapture.cfg"),
+                             str(root / "native" / "src" / "BridgeCommandAdmission.cfg")],
                             cwd=root, text=True, capture_output=True)
     rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     checked = {Path(row["name"]).name for row in rows if row.get("kind") == "model"}
@@ -133,6 +134,7 @@ REQUIRED.add("HudOwnership.cfg")
 REQUIRED.add("EditorEventQueue.cfg")
 REQUIRED.add("BonePickerTransaction.cfg")
 REQUIRED.add("ReleasePublishOrder.cfg")
+REQUIRED.add("BridgeCommandAdmission.cfg")
 
 
 def main():

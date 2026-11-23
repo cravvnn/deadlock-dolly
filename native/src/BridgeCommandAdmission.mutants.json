@@ -1,0 +1,7 @@
+[
+ {"name":"refusal sets the worker error the view reads as an expired connection","replace":[["RefusalFaultsView == FALSE","RefusalFaultsView == TRUE"]],"expect":"RejectedNeverFaultsAcked"},
+ {"name":"refused snapshot is copied and parsed again every pass","replace":[["RememberRefusal == TRUE","RememberRefusal == FALSE"]],"expect":"RejectionNotReparsed"},
+ {"name":"acknowledged command with unchanged flags is read again","replace":[["        \\/ slot.cmd = accepted /\\ slot.flags = pub.flags\n",""]],"expect":"RejectionNotReparsed"},
+ {"name":"flags refresh skips the header checks","replace":[["ValidateRefresh == TRUE","ValidateRefresh == FALSE"]],"expect":"FlagsRefreshKeepsIdentity"},
+ {"name":"refusal remembered by command id only","replace":[["KeyBySequence == TRUE","KeyBySequence == FALSE"]],"expect":"Settles"}
+]
