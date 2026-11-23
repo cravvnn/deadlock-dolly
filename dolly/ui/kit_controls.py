@@ -77,17 +77,6 @@ def surface_of(widget) -> str:
     return ui_theme.TOKENS["panel"]
 
 
-def safe_unbind(widget, sequence, funcid) -> None:
-    """Remove only ``funcid`` from ``widget``'s ``sequence`` binding (older tkinter drops them all)."""
-    try:
-        script = str(widget.tk.call("bind", widget._w, sequence))
-        keep = "\n".join(line for line in script.split("\n") if funcid not in line)
-        widget.tk.call("bind", widget._w, sequence, keep)
-        widget.deletecommand(funcid)
-    except tk.TclError:
-        pass
-
-
 def _register(canvas, control) -> None:
     controls = getattr(canvas, "_kit_controls", None)
     if controls is None:

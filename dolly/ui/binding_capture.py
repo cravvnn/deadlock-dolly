@@ -14,6 +14,7 @@ from dolly.editor_actions import (
     OBJECT_PICKER_ENABLED, EditorBinding,
 )
 from dolly.settings import AppSettings
+from .widgets import safe_unbind
 
 
 _UNSUPPORTED_MODIFIERS = frozenset(("Win_L", "Win_R", "Super_L", "Super_R", "Meta_L", "Meta_R"))
@@ -289,7 +290,7 @@ class SideMouseCapture:
         if self._destroy_binding is not None:
             token, self._destroy_binding = self._destroy_binding, None
             try:
-                self.dialog.unbind("<Destroy>", token)
+                safe_unbind(self.dialog, "<Destroy>", token)
             except Exception:
                 pass
 

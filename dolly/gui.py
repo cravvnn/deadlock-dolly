@@ -23,7 +23,7 @@ from tkinter import filedialog, ttk
 
 from dolly import __version__, attach_camera, dialogs, dof_preflight, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
 from .ui import (art, camera_page, chrome, controls_page, export_page, fonts, library_page as replay_page, look_page,
-                 settings_page, shot_commands, window_bars, window_chrome)
+                 settings_page, shot_commands, widgets, window_bars, window_chrome)
 from .ui.action_proxy import ActionProxy
 from .ui.backdrop import Backdrop
 from .ui.boil import BoilClock
@@ -720,7 +720,7 @@ class DollyApp:
         self._window_chrome_done = True
         binding, self._window_chrome_map = getattr(self, "_window_chrome_map", None), None
         if binding is not None:
-            window_chrome.unbind_tag(self.root, binding[0], "<Map>", binding[1])
+            widgets.safe_unbind(self.root, "<Map>", binding[1], tag=binding[0])
         window = self.window_chrome
         if window.frameless:
             if window.finish():

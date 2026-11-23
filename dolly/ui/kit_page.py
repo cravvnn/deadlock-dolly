@@ -52,12 +52,12 @@ from .boil import IdleUpdate
 from .canvas_controls import CanvasControl
 from .fade import ScrollFade
 from .kit_card import KitBlock, KitCard, KitColumn, KitFlow, KitRow, KitSection, KitText, _Element
-from .kit_controls import RowLayout, SearchField, finish_motion, safe_unbind
+from .kit_controls import RowLayout, SearchField, finish_motion
 from .scale import hairline, px, ui_scale
 from .stage_page import BUBBLE_RADIUS, BUBBLE_WIDTH, END_GAP, REVEAL_MARGIN, CanvasRail, StagePage, end_gap, \
     retain_surface, set_window_region
 from .tween import WheelScroller
-from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS
+from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS, safe_unbind
 
 
 @dataclass(frozen=True)

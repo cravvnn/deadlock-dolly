@@ -414,8 +414,8 @@ class SettingsWidgetBoundaries(unittest.TestCase):
     def test_graphics_profiles_build_on_their_settings_card(self):
         from dolly import graphics_profiles_ui
         from dolly.ui import widgets
-        self.assertEqual({name for name in vars(widgets) if not name.startswith('_')} - {'annotations', 'ttk'},
-                         {'GAP', 'WHEEL_PIXELS_PER_NOTCH', 'WHEEL_UNIT_PIXELS', 'card', 'scaler'})
+        self.assertEqual({name for name in vars(widgets) if not name.startswith('_')} - {'annotations', 'tk', 'ttk'},
+                         {'GAP', 'WHEEL_PIXELS_PER_NOTCH', 'WHEEL_UNIT_PIXELS', 'card', 'safe_unbind', 'scaler'})
 
         class Var:
             def __init__(self, value=''):
@@ -436,6 +436,39 @@ class SettingsWidgetBoundaries(unittest.TestCase):
         self.assertEqual(panel.selection.get(), 'Recording')
         self.assertIs(panel.status_text, card.text.return_value)
         self.assertEqual(card.row.call_count, 1 + len(graphics_profiles_ui.BUTTON_ROWS))
+
+
+class UnbindBoundaries(unittest.TestCase):
+    def test_removing_one_handler_keeps_the_others(self):
+        import tkinter as tk
+        from dolly.ui import binding_capture, widgets
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            fired = []
+            dialog = tk.Toplevel(root)
+            dialog.bind('<Destroy>', lambda event: fired.append('mine') if event.widget is dialog else None, add='+')
+            api = MagicMock()
+            api.focused.return_value = False
+            capture = binding_capture.SideMouseCapture(dialog, MagicMock(), api=api)
+            self.assertTrue(capture.start())
+            def older_unbind(widget, sequence, funcid=None):  # tkinter before 3.12.x: drops every handler
+                widget.tk.call('bind', widget._w, sequence, '')
+                if funcid:
+                    widget.deletecommand(funcid)
+            with patch.object(tk.Misc, 'unbind', older_unbind):
+                capture.stop()  # Its own <Destroy> handler goes; the dialog's stays.
+            dialog.destroy()
+            self.assertEqual(fired, ['mine'])
+            # The same for a bind tag.
+            first = root.bind_class('DollyTest', '<Map>', lambda _event: fired.append('first'), add='+')
+            root.bind_class('DollyTest', '<Map>', lambda _event: fired.append('second'), add='+')
+            widgets.safe_unbind(root, '<Map>', first, tag='DollyTest')
+            script = root.tk.call('bind', 'DollyTest', '<Map>')
+            self.assertNotIn(first, script)
+            self.assertTrue(str(script).strip())
+        finally:
+            root.destroy()
 
 
 class UpdaterBoundaries(unittest.TestCase):

@@ -96,21 +96,6 @@ def window_tag(top) -> str:
     return tag
 
 
-def unbind_tag(widget, tag: str, sequence: str, funcid: str) -> None:
-    """Remove one handler (``funcid``, from ``bind_class``) from ``tag``'s ``sequence``, keeping the others.
-
-    (Python 3.12's ``unbind`` with a funcid drops every handler of the sequence, and
-    ``unbind_class`` takes no funcid.)
-    """
-    try:
-        script = str(widget.tk.call("bind", tag, sequence))
-        keep = "\n".join(line for line in script.split("\n") if funcid not in line)
-        widget.tk.call("bind", tag, sequence, keep if keep.strip() else "")
-        widget.deletecommand(funcid)
-    except tk.TclError:
-        pass
-
-
 def maximized_rect(work, screen, autohide) -> tuple[int, int, int, int]:
     """(x, y, width, height) a maximized frameless window covers on one monitor.
 

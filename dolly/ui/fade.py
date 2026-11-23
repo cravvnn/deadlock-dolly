@@ -507,7 +507,7 @@ class ScrollFade:
                 self._root.after_cancel(self._move_job)
         except tk.TclError:
             pass
-        from .kit_controls import safe_unbind
+        from .widgets import safe_unbind
         safe_unbind(self._root, "<Configure>", self._root_binding)
         for band in self.bands.values():
             if band.handle is not None and self.backend is not None:

@@ -40,7 +40,7 @@ from .backdrop import Backdrop
 from .boil import IdleUpdate
 from .scale import hairline, px, ui_scale
 from .tween import ColorRamp, WheelScroller
-from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS
+from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS, safe_unbind
 
 # Segoe Fluent Icons / Segoe MDL2 Assets glyphs: Info, ChevronRight, ChevronDown.
 INFO_GLYPH, CLOSED_GLYPH, OPEN_GLYPH = "\ue946", "\ue76c", "\ue70d"
@@ -1290,7 +1290,7 @@ class StagePage(ttk.Frame):
         if event.widget is self:
             self.scroller.stop()
             self.scrollbar._cancel_repeat()
-            self.winfo_toplevel().unbind("<MouseWheel>", self.bind_id)
+            safe_unbind(self.winfo_toplevel(), "<MouseWheel>", self.bind_id)
             if self.backdrop is not None:
                 self.backdrop.detach(self.canvas)
                 self.backdrop.detach(self.side)
