@@ -37,7 +37,9 @@ PUNCTUATION = re.compile(
 def owned_files(root: Path = ROOT) -> list[Path]:
     files = sorted(path for directory in OWNED_DIRS
                    for path in (root / directory).rglob("*")
-                   if path.is_file() and path.suffix in CPP_SUFFIXES)
+                   if path.is_file() and path.suffix in CPP_SUFFIXES
+                   # Generators own these bytes; check_generated rejects any drift.
+                   and not path.name.endswith("_generated.hpp"))
     if not files:
         raise ValueError("No owned C++ files found")
     for path in files:

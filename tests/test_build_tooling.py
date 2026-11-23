@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 
 import build_native
+import format_cpp
 import release_files
 import release_status
 
@@ -159,6 +160,13 @@ class ReleaseStatus(unittest.TestCase):
         self.assertIn('STATUS: LOCAL AHEAD', self.status('0.7.50-beta', '0.7.51-beta')[0])
         self.assertIn('STATUS: LOCAL BEHIND', self.status('0.7.51', '0.7.51-beta')[0])
         self.assertIn('STATUS: VERSION MATCH', self.status('0.7.51-beta', '0.7.51-beta')[0])
+
+
+class FormatCpp(unittest.TestCase):
+    def test_generated_headers_are_not_reformatted(self):
+        names = {path.name for path in format_cpp.owned_files(ROOT)}
+        self.assertIn('dolly_path.hpp', names)
+        self.assertFalse([name for name in names if name.endswith('_generated.hpp')])
 
 
 if __name__ == '__main__':
