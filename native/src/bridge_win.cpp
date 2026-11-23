@@ -1736,6 +1736,15 @@ static unsigned admit_control(const ControlHeader& control,
                                std::memory_order_release);
     return 0;
 }
+// Both worker exits hand everything back: relief cvars, editor input and
+// cursor, the viewer and media mappings, and any running recording.
+static void release_worker_session() noexcept {
+    seek_relief_tick(false);
+    editor_worker_tick(gMemory, false);
+    visualization_worker_tick(nullptr, false);
+    media_worker_tick(nullptr, false);
+    video::shutdown();
+}
 static DWORD WINAPI worker(void*) {
     try {
         std::wstring mapping;
@@ -1921,11 +1930,7 @@ static DWORD WINAPI worker(void*) {
             publish_follow_anchor(gMemory);
             if (WaitForSingleObject(gEditor, 0) != WAIT_TIMEOUT) {
                 gWorkerError = 30;
-                seek_relief_tick(false);
-                editor_worker_tick(gMemory, false);
-                visualization_worker_tick(nullptr, false);
-                media_worker_tick(nullptr, false);
-                video::shutdown();
+                release_worker_session();
                 break;
             }
             editor_worker_tick(gMemory, now_seconds() - gHeartbeatTime.load() < 2.0);
@@ -2087,9 +2092,7 @@ static DWORD WINAPI worker(void*) {
             Sleep(5);
         }
     } catch (...) {
-        seek_relief_tick(false);
-        visualization_worker_tick(nullptr, false);
-        media_worker_tick(nullptr, false);
+        release_worker_session();
         gWorkerError = 99;
         if (!gHookInstalled)
             startup_status(

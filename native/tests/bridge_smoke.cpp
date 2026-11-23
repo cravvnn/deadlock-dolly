@@ -2543,6 +2543,31 @@ void editor_heartbeat_reconnect_checks() {
             "A returning heartbeat did not restore the published editor owner");
 }
 
+void worker_session_release_checks() {
+    // Both worker exits (editor gone, and the worker's catch) release the
+    // editor's input and cursor ownership through one helper.
+    std::vector<unsigned char> memory(kMappingBytes);
+    EditorConfig config{};
+    std::memcpy(config.magic, "DLYEDIT1", 8);
+    config.sequence = 0x7100;
+    config.abi = kEditorAbi;
+    config.enabled = 1;
+    config.owner = std::uint32_t(EditorOwner::Panel);
+    config.owner_sequence = 0x7101;
+    config.speed = 400;
+    config.sensitivity = .08;
+    std::memcpy(memory.data() + kEditorConfigOffset, &config, sizeof(config));
+    const auto saved_memory = gMemory;
+    gMemory = memory.data();
+    editor_worker_tick(gMemory, true);
+    require(dolly::gConnected && dolly::gOwner == EditorOwner::Panel,
+            "Published panel owner was not applied");
+    release_worker_session();
+    gMemory = saved_memory;
+    require(!dolly::gConnected && dolly::gOwner == EditorOwner::Disabled,
+            "A worker exit kept the editor connected or its panel owner");
+}
+
 void independent_heartbeat() {
     alignas(8) unsigned char memory[64]{};
     auto* beat = reinterpret_cast<volatile LONG64*>(memory + 32);
@@ -2852,6 +2877,7 @@ void run() {
     updated_camera_cache_decoder();
     atomic_exports();
     independent_heartbeat();
+    worker_session_release_checks();
     replay_identity();
     Fixture f;
     follow_anchor_guard_checks(f);
