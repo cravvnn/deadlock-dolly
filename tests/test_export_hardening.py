@@ -584,7 +584,7 @@ class FfmpegRunTests(unittest.TestCase):
             ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=2.0, partial=self.partial)
         self.assertFalse(self.partial.exists())
         with self.assertRaisesRegex(RuntimeError, 'took too long'):
-            ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=2.0, partial=self.partial,
+            ffmpeg_run.run_ffmpeg(self.child('time.sleep(30)'), timeout=0.5, partial=self.partial,
                                   timeout_message='took too long')
         self.assertFalse(self.partial.exists())
 

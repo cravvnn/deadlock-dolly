@@ -100,6 +100,7 @@ class StartupAuditBoundaries(unittest.TestCase):
                     case.controller._thread = None
                     case.doCleanups()
 
+    @patch('dolly.file_ops.time.sleep', new=lambda *_: None)
     def test_failed_config_replace_keeps_bytes_mode_and_primary_error(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)/'owned.cfg'

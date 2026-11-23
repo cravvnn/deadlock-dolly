@@ -97,6 +97,7 @@ class ReviewedOwnerTests(unittest.TestCase):
             self.assertEqual((len(calls), sleeps), (1, []))
             self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ['shot.json'])
 
+    @patch('dolly.file_ops.time.sleep', new=lambda *_: None)
     def test_project_save_cleanup_keeps_primary_error_and_completed_bytes(self):
         project = Project(keyframes=[Keyframe(0, 1, 2, 3, 4, 5, 6)])
         with tempfile.TemporaryDirectory() as folder:

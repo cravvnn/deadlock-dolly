@@ -170,6 +170,7 @@ class ReviewHardeningTests(unittest.TestCase):
             self.assertFalse((folder/player_scratch.MANIFEST).exists())
             self.assertEqual((folder/'user-note').read_bytes(), b'user')
 
+    @patch('dolly.file_ops.time.sleep', new=lambda *_: None)
     def test_reshade_cleanup_keeps_original_error_user_bytes_and_narrow_exception_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'ReShade.ini'; path.write_bytes(b'user config')

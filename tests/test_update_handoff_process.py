@@ -1,5 +1,4 @@
 """Public executable startup, safe handoff, recovery and package migration."""
-from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -8,7 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from dolly import release_launcher as boot, update_worker as worker, updater
 REQUIRED = ("Dolly.exe", "DollyUpdater.exe", "_internal/native/bin/win64/DollyNative.dll", "_internal/third_party/ffmpeg/bin/ffmpeg.exe")
 
@@ -110,6 +109,7 @@ except OSError:
                             return allowed
 
                         with patch.object(worker, "_workspace_finished", side_effect=interleave), \
+                             patch.object(boot, "LOCK_WAIT_SECONDS", .2), \
                              patch.object(boot, "open_editor") as editor, \
                              patch.object(worker, "notify") as notify:
                             code = boot.main([], target=self.target)

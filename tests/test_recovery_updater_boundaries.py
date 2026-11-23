@@ -181,6 +181,7 @@ class RecoveryBoundaries(unittest.TestCase):
 
 
 class SettingsBoundary(unittest.TestCase):
+    @patch('dolly.file_ops.time.sleep', new=lambda *_: None)
     def test_settings_that_could_not_be_read_are_kept_before_a_save_replaces_them(self):
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder) / 'settings.json'
