@@ -410,6 +410,34 @@ class CloseAndDialogBoundaries(unittest.TestCase):
             self.assertIn('_background_dialog(', source[max(0, source.index(title) - 120):source.index(title)], title)
 
 
+class SettingsWidgetBoundaries(unittest.TestCase):
+    def test_graphics_profiles_build_on_their_settings_card(self):
+        from dolly import graphics_profiles_ui
+        from dolly.ui import widgets
+        self.assertEqual({name for name in vars(widgets) if not name.startswith('_')} - {'annotations', 'ttk'},
+                         {'GAP', 'WHEEL_PIXELS_PER_NOTCH', 'WHEEL_UNIT_PIXELS', 'card', 'scaler'})
+
+        class Var:
+            def __init__(self, value=''):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        card = MagicMock()
+        library = {'profiles': [{'id': 'a', 'name': 'Recording'}], 'selected': 'a'}
+        with patch.object(graphics_profiles_ui, 'tk', SimpleNamespace(StringVar=Var)), \
+                patch.object(graphics_profiles_ui, 'ttk'), \
+                patch.object(graphics_profiles_ui.profiles, 'load_library', return_value=library):
+            panel = graphics_profiles_ui.GraphicsProfiles(root=MagicMock(), on_error=MagicMock(), card=card)
+        self.assertEqual(panel.selection.get(), 'Recording')
+        self.assertIs(panel.status_text, card.text.return_value)
+        self.assertEqual(card.row.call_count, 1 + len(graphics_profiles_ui.BUTTON_ROWS))
+
+
 class UpdaterBoundaries(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

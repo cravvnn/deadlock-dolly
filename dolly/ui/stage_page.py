@@ -1,11 +1,11 @@
 """Replay page stage: cards on a canvas, so the window's backdrop shows between them.
 
-``ScrollPage`` keeps one opaque body frame over its whole canvas; this page gives
+A plain scrolled frame keeps one opaque body frame over its whole canvas; this page gives
 every card its own canvas window instead, inside a rounded plate drawn on the
 canvas. The gaps, the area below the last card and the rounded corners stay
 open, so the animated backdrop (when the shell installed one) shows through and
 stays fixed to the window while the cards scroll over it. Scrolling, the wheel
-rules and ``reveal`` follow ``ScrollPage``; the wheel is eased
+rules and ``reveal`` match the earlier scroll page; the wheel is eased
 (:class:`.tween.WheelScroller`), everything else scrolls at once.
 
 What one scroll step costs (PERF-NOTES): Tk redraws the whole visible canvas
@@ -40,7 +40,7 @@ from .backdrop import Backdrop
 from .boil import IdleUpdate
 from .scale import hairline, px, ui_scale
 from .tween import ColorRamp, WheelScroller
-from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS, ScrollPage
+from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS
 
 # Segoe Fluent Icons / Segoe MDL2 Assets glyphs: Info, ChevronRight, ChevronDown.
 INFO_GLYPH, CLOSED_GLYPH, OPEN_GLYPH = "\ue946", "\ue76c", "\ue70d"
@@ -1153,7 +1153,7 @@ class StagePage(ttk.Frame):
         target = event.widget
         while target is not None and target is not self:
             # A nested page or a control with its own wheel semantics owns the event.
-            if isinstance(target, (ScrollPage, StagePage, ttk.Treeview, tk.Text, tk.Listbox,
+            if isinstance(target, (StagePage, ttk.Treeview, tk.Text, tk.Listbox,
                                    ttk.Combobox, tk.Spinbox, ttk.Spinbox, tk.Scrollbar, ttk.Scrollbar)):
                 return
             target = getattr(target, "master", None)
@@ -1162,7 +1162,7 @@ class StagePage(ttk.Frame):
             return "break"
 
     def scroll_page_wheel(self, event):
-        # Same distances as ScrollPage: subpixel input kept, 60 design px per notch;
+        # Same distances as the earlier scroll page: subpixel input kept, 60 design px per notch;
         # the scroller travels them eased, or at once with motion off.
         notch = WHEEL_PIXELS_PER_NOTCH * self.scale
         if event.delta:

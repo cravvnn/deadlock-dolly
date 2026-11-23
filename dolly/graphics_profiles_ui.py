@@ -9,7 +9,7 @@ from . import graphics_profiles as profiles
 from .ui import text_dialog as simpledialog
 from .ui import question_dialog as messagebox
 
-# The help text under the controls; on the Settings card it is the title's info bubble.
+# The help text; the Settings card shows it as the title's info bubble.
 PROFILES_INFO = ("Profiles apply when Dolly starts a replay. Dolly uses separate replay settings; your normal game settings stay untouched. "
                  "A profile holds quality, upscaler/DLSS, resolution and window settings. Change graphics in a Dolly session "
                  "and Dolly offers to save them when the game closes. Display launch options still win for one launch.")
@@ -24,23 +24,19 @@ BUTTON_ROWS = ((("Save current graphics...", "capture"), ("Import video.txt...",
 class GraphicsProfiles:
     """The profile dropdown, its actions and status line.
 
-    ``card=None`` builds today's layout in ``parent`` (a plain card frame). With
-    ``card`` (a kit card of the Settings page) it builds the card's rows instead:
-    "Next replay session" and a filling dropdown, two indented rows of kit
-    buttons and a wrapping status line; the help text is left to the card's info
-    icon (``PROFILES_INFO``). ``status_text`` is the status line either way.
+    Built as rows of ``card`` (a kit card of the Settings page): "Next replay
+    session" and a filling dropdown, two indented rows of kit buttons and a
+    wrapping status line (``status_text``); the help text is left to the card's
+    info icon (``PROFILES_INFO``).
     """
 
-    def __init__(self, parent, *, root, on_error, card=None):
+    def __init__(self, *, root, on_error, card):
         self.root = root
         self.on_error = on_error
         self.library = None
         self.selection = tk.StringVar(value=profiles.CURRENT)
         self.status = tk.StringVar()
-        if card is None:
-            self._build_frame(parent)
-        else:
-            self._build_card(card)
+        self._build_card(card)
         self.combo.bind("<<ComboboxSelected>>", lambda _event: self.run(self.select))
         try:
             self.refresh()
@@ -49,20 +45,6 @@ class GraphicsProfiles:
             # after construction so a damaged library cannot prevent startup.
             self.status.set(str(exc))
             self.root.after_idle(lambda error=exc: self.on_error("Graphics profiles", error))
-
-    def _build_frame(self, parent):
-        from .ui.scale import scaler
-        from .ui.widgets import actions, field
-        dp = scaler(parent)
-        self.combo = field(parent, "Next replay session", self.selection, values=(profiles.CURRENT,))
-        actions(parent, (("Save current graphics...", lambda: self.run(self.capture)),
-                         ("Import video.txt...", lambda: self.run(self.import_file)),
-                         ("Preview changes...", lambda: self.run(self.preview))))
-        actions(parent, (("Rename...", lambda: self.run(self.rename)),
-                         ("Delete...", lambda: self.run(self.delete))), 2)
-        ttk.Label(parent, text=PROFILES_INFO, wraplength=dp(700), style="CardMuted.TLabel").pack(fill="x")
-        self.status_text = ttk.Label(parent, textvariable=self.status, wraplength=dp(700), style="CardMuted.TLabel")
-        self.status_text.pack(fill="x", pady=dp((8, 0)))
 
     def _build_card(self, card):
         row = card.row()
@@ -76,7 +58,7 @@ class GraphicsProfiles:
             for index, (text, name) in enumerate(specs):
                 if index:
                     row.gap(10)
-                # Looked up when pressed, like the frame layout's buttons.
+                # Looked up when pressed.
                 row.button(text, lambda name=name: self.run(getattr(self, name)))
         self.status_text = card.text(textvariable=self.status, top=15)
 
@@ -194,19 +176,18 @@ class GraphicsProfiles:
                  font=fonts.font(dialog, "page_title"), anchor="w").pack(fill="x", pady=dp((0, 15)))
         buttons = ttk.Frame(body)
         buttons.pack(side="bottom", fill="x", pady=dp((24, 0)))
-        if save is not None:
-            def commit():
-                save()
-                dialog.destroy()
-            ttk.Button(buttons, text="Save profile for next launch", style="Primary.TButton",
-                       command=lambda: self.run(commit)).pack(side="right")
-        ttk.Button(buttons, text="Cancel" if save else "Close", command=dialog.destroy).pack(side="right", padx=dp((0, 10)))
+        def commit():
+            save()
+            dialog.destroy()
+        ttk.Button(buttons, text="Save profile for next launch", style="Primary.TButton",
+                   command=lambda: self.run(commit)).pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=dp((0, 10)))
 
         # The save flow already provides these three sections; retain all values
         # and excluded fields, rather than hard-coding the design's sample data.
         first = "\n\nQuality values to save:\n"
         second = "\n\nExcluded fields (kept from the destination):\n"
-        if save is not None and text.startswith("Source: ") and first in text and second in text:
+        if text.startswith("Source: ") and first in text and second in text:
             source, rest = text[len("Source: "):].split(first, 1)
             values, excluded = rest.split(second, 1)
             source_card = ttk.Frame(body, style="Rounded.Card.TFrame", padding=dp(20))

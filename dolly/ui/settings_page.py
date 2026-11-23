@@ -145,7 +145,7 @@ class SettingsPage:
                              ("Display launch options...", commands.open_launch_options)), indent=INDENT)
 
         self.profiles_card = page.add_card("Replay Graphics Profiles", info=PROFILES_INFO)
-        self.graphics_profiles = GraphicsProfiles(None, root=root, on_error=on_error, card=self.profiles_card)
+        self.graphics_profiles = GraphicsProfiles(root=root, on_error=on_error, card=self.profiles_card)
 
         dlss = self.dlss_card = page.add_card("NVIDIA DLSS", info=(
             "Dolly keeps engine, received console and native-hook diagnostics with DLSS. "

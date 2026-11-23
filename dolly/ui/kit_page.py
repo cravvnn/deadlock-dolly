@@ -57,7 +57,7 @@ from .scale import hairline, px, ui_scale
 from .stage_page import BUBBLE_RADIUS, BUBBLE_WIDTH, END_GAP, REVEAL_MARGIN, CanvasRail, StagePage, end_gap, \
     retain_surface, set_window_region
 from .tween import WheelScroller
-from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS, ScrollPage
+from .widgets import WHEEL_PIXELS_PER_NOTCH, WHEEL_UNIT_PIXELS
 
 
 @dataclass(frozen=True)
@@ -1028,7 +1028,7 @@ class KitPage(ttk.Frame):
             self.backdrop.sync(self.foot, redraw=True)
 
     def _owns_wheel(self, widget) -> bool:
-        if isinstance(widget, (ScrollPage, StagePage, KitPage, ttk.Treeview, tk.Text, tk.Listbox, ttk.Combobox,
+        if isinstance(widget, (StagePage, KitPage, ttk.Treeview, tk.Text, tk.Listbox, ttk.Combobox,
                                tk.Spinbox, ttk.Spinbox, tk.Scrollbar, ttk.Scrollbar)):
             return True
         try:
