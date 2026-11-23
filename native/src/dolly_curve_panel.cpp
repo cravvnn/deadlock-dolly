@@ -380,7 +380,7 @@ void OverlayPanel::draw_curve_workspace(const EditorSnapshot& state, const Edito
     char speed[20];
     std::snprintf(speed, sizeof(speed), "%gx", state.playback_speed);
     float speed_text_width = CalcTextSize(speed).x;
-    for (const char* label : {"0.25x", "0.5x", "1x", "2x", "4x"})
+    for (const char* label : {"0.05x", "0.25x", "0.5x", "1x", "2x", "4x"})
         speed_text_width = std::max(speed_text_width, CalcTextSize(label).x);
     const float speed_width = std::ceil(speed_text_width + GetFrameHeight() + 2 * pad_x);
     char transport_time[64]{};
@@ -1701,7 +1701,7 @@ void OverlayPanel::draw_curve_workspace(const EditorSnapshot& state, const Edito
         }
         SetNextItemWidth(speed_width);
         if (BeginCombo("##curve-speed", speed, ImGuiComboFlags_HeightSmall)) {
-            for (double value : {.25, .5, 1., 2., 4.}) {
+            for (double value : {.05, .1, .25, .5, 1., 2., 4.}) {
                 char label[20];
                 std::snprintf(label, sizeof(label), "%gx", value);
                 if (Selectable(label, std::abs(state.playback_speed - value) < .0001))

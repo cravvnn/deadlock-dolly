@@ -894,7 +894,7 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
     // the popup still fits smaller viewports with every speed and FOV control.
     if (!compact_popup) SameLine();
     TextDisabled("Speed");SameLine();
-    for(double value : {.25,.5,1.,2.,4.}) {
+    for(double value : {.05,.1,.25,.5,1.,2.,4.}) {
         char label[16];std::snprintf(label,sizeof(label),"%gx",value);
         const bool selected=std::abs(state.playback_speed-value)<.0001;
         if(selected) {PushStyleColor(ImGuiCol_Button,lite_color(ui::SELECTED_BLUE));PushStyleColor(ImGuiCol_Text,lite_color(ui::STRONG));}
