@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 // Model a hook engine that can fail at each installation boundary, including
 // after enabling the first callback. Never permit removal of exposed code.
@@ -111,4 +112,22 @@ int main() {
     publish_seqlocked(shared, block);
     std::memcpy(&read, shared, sizeof(read));
     assert(sequence_at() == 8 && read.payload[2] == 4);
+    // The matching reader: accepts a new even sequence once, carries the
+    // observed sequence, and skips odd (mid-write) or invalid blocks.
+    std::shared_ptr<const Block> slot;
+    const auto valid = [](const Block& value) { return value.abi == 7; };
+    Block accepted{};
+    assert(accept_seqlocked(shared, slot, valid, accepted) && slot && slot->sequence == 8 &&
+           accepted.sequence == 8 && accepted.payload[2] == 4);
+    assert(!accept_seqlocked(shared, slot, valid)); // unchanged sequence
+    const std::uint32_t writing = 9;
+    std::memcpy(shared + 8, &writing, 4);
+    assert(!accept_seqlocked(shared, slot, valid) && slot->sequence == 8);
+    block.abi = 8;
+    publish_seqlocked(shared, block);
+    assert(!accept_seqlocked(shared, slot, valid) && slot->sequence == 8 && slot->abi == 7);
+    block.abi = 7;
+    block.payload[0] = 6;
+    publish_seqlocked(shared, block);
+    assert(accept_seqlocked(shared, slot, valid) && slot->sequence == 14 && slot->payload[0] == 6);
 }

@@ -1543,205 +1543,87 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
         accepted = owner_sequence = ~0u;
     static double configured_speed = -1;
     if (memory && connected) {
-        auto source = memory + kEditorDofOffset;
-        auto sequence = reinterpret_cast<volatile LONG*>(source + 8);
-        const auto first = InterlockedCompareExchange(sequence, 0, 0);
-        const auto previous = std::atomic_load(&gDofConfig);
-        if (!(first & 1) && (!previous || previous->sequence != std::uint32_t(first))) {
-            EditorDofConfig dof{};
-            std::memcpy(&dof, source, sizeof(dof));
-            MemoryBarrier();
-            bool valid = first == InterlockedCompareExchange(sequence, 0, 0) &&
-                         std::memcmp(dof.magic, "DLYDOF01", 8) == 0 && dof.abi == 1 &&
+        accept_seqlocked(memory + kEditorDofOffset, gDofConfig, [](const EditorDofConfig& dof) {
+            bool valid = std::memcmp(dof.magic, "DLYDOF01", 8) == 0 && dof.abi == 1 &&
                          dof.enabled <= 1 && dof.reserved == 0;
             for (double value : dof.values)
                 valid = valid && std::isfinite(value) && std::abs(value) <= 3.4028234663852886e38;
             for (unsigned i = 0; i < 2; ++i)
                 valid = valid && (dof.values[i] == 0 || dof.values[i] == 1);
-            if (valid) {
-                try {
-                    std::atomic_store(&gDofConfig, std::make_shared<const EditorDofConfig>(dof));
-                } catch (...) {
-                }
-            }
-        }
-        auto citadel_source = memory + kEditorCitadelDofOffset;
-        auto citadel_sequence = reinterpret_cast<volatile LONG*>(citadel_source + 8);
-        const auto citadel_first = InterlockedCompareExchange(citadel_sequence, 0, 0);
-        const auto citadel_previous = std::atomic_load(&gCitadelDofConfig);
-        if (!(citadel_first & 1) &&
-            (!citadel_previous || citadel_previous->sequence != std::uint32_t(citadel_first))) {
-            EditorCitadelDofConfig citadel{};
-            std::memcpy(&citadel, citadel_source, sizeof(citadel));
-            MemoryBarrier();
-            const bool valid =
-                citadel_first == InterlockedCompareExchange(citadel_sequence, 0, 0) &&
-                std::memcmp(citadel.magic, "DLYCDOF1", 8) == 0 && citadel.abi == 1 &&
-                citadel.available <= 1 && citadel.enabled <= 1 &&
-                std::isfinite(citadel.sensor_size) && citadel.sensor_size >= .5 &&
-                citadel.sensor_size <= 3 && std::isfinite(citadel.focus_distance) &&
-                citadel.focus_distance >= 0 && citadel.focus_distance <= 10000;
-            if (valid) {
-                try {
-                    std::atomic_store(&gCitadelDofConfig,
-                                      std::make_shared<const EditorCitadelDofConfig>(citadel));
-                } catch (...) {
-                }
-            }
-        }
-        auto cameras_source = memory + kEditorCameraListOffset;
-        auto cameras_sequence = reinterpret_cast<volatile LONG*>(cameras_source + 8);
-        const auto cameras_first = InterlockedCompareExchange(cameras_sequence, 0, 0);
-        const auto cameras_previous = std::atomic_load(&gCameraList);
-        if (!(cameras_first & 1) &&
-            (!cameras_previous || cameras_previous->sequence != std::uint32_t(cameras_first))) {
-            EditorCameraList list{};
-            std::memcpy(&list, cameras_source, sizeof(list));
-            MemoryBarrier();
-            if (cameras_first == InterlockedCompareExchange(cameras_sequence, 0, 0) &&
-                valid_editor_camera_list(list)) {
-                try {
-                    std::atomic_store(&gCameraList, std::make_shared<const EditorCameraList>(list));
-                } catch (...) {
-                }
-            }
-        }
-        auto lite_source=memory+kEditorLiteReplayOffset;
-        auto lite_sequence=reinterpret_cast<volatile LONG*>(lite_source+8);
-        const auto lite_first=InterlockedCompareExchange(lite_sequence,0,0);
-        const auto lite_previous=std::atomic_load(&gLiteReplay);
-        if(!(lite_first&1)&&(!lite_previous||lite_previous->sequence!=std::uint32_t(lite_first))){
-            EditorLiteReplayInfo info{};std::memcpy(&info,lite_source,sizeof(info));MemoryBarrier();
-            if(lite_first==InterlockedCompareExchange(lite_sequence,0,0)&&valid_lite_replay_info(info)){
-                try{std::atomic_store(&gLiteReplay,std::make_shared<const EditorLiteReplayInfo>(info));}catch(...){}
-            }
-        }
-        auto event_source = memory + kReplayEventsOffset;
-        auto event_sequence = reinterpret_cast<volatile LONG*>(event_source + 8);
-        const auto event_first = InterlockedCompareExchange(event_sequence, 0, 0);
-        const auto event_previous = std::atomic_load(&gReplayEvents);
-        if (!(event_first & 1) && (!event_previous || event_previous->sequence != std::uint32_t(event_first))) {
-            EditorReplayEvents events{};
-            std::memcpy(&events, event_source, sizeof(events)); MemoryBarrier();
-            if (event_first == InterlockedCompareExchange(event_sequence, 0, 0) && valid_replay_events(events)) {
-                try { std::atomic_store(&gReplayEvents, std::make_shared<const EditorReplayEvents>(events)); }
-                catch (...) {}
-            }
-        }
-        auto follow_source = memory + kEditorFollowOffset;
-        auto cinematic_source = memory + kEditorCinematicOffset;
-        auto cinematic_sequence = reinterpret_cast<volatile LONG*>(cinematic_source + 8);
-        const auto cinematic_first = InterlockedCompareExchange(cinematic_sequence, 0, 0);
-        const auto cinematic_previous = std::atomic_load(&gCinematicStatus);
-        if (!(cinematic_first & 1) && (!cinematic_previous || cinematic_previous->sequence != std::uint32_t(cinematic_first))) {
-            EditorCinematicStatus status{};
-            std::memcpy(&status, cinematic_source, sizeof(status)); MemoryBarrier();
-            if (cinematic_first == InterlockedCompareExchange(cinematic_sequence, 0, 0) &&
-                std::memcmp(status.magic, "DLYCIN01", 8) == 0 && status.abi == 1 &&
-                status.token && status.state >= 1 && status.state <= 3) {
-                try { std::atomic_store(&gCinematicStatus, std::make_shared<const EditorCinematicStatus>(status)); }
-                catch (...) {}
-            }
-        }
-        auto follow_sequence = reinterpret_cast<volatile LONG*>(follow_source + 8);
-        const auto follow_first = InterlockedCompareExchange(follow_sequence, 0, 0);
-        const auto follow_previous = std::atomic_load(&gFollowConfig);
-        if (!(follow_first & 1) &&
-            (!follow_previous || follow_previous->sequence != std::uint32_t(follow_first))) {
-            EditorFollowConfig follow{};
-            std::memcpy(&follow, follow_source, sizeof(follow));
-            MemoryBarrier();
-            if (follow_first == InterlockedCompareExchange(follow_sequence, 0, 0) &&
-                std::memcmp(follow.magic, "DLYFOLL1", 8) == 0 && follow.abi == 1 &&
-                !(follow.flags & ~15u) && !follow.reserved && std::isfinite(follow.distance) &&
-                follow.distance >= 0 && follow.distance <= 400 && std::isfinite(follow.shoulder) &&
-                std::abs(follow.shoulder) <= 150 && std::isfinite(follow.height) &&
-                std::abs(follow.height) <= 150) {
-                try {
-                    std::atomic_store(&gFollowConfig,
-                                      std::make_shared<const EditorFollowConfig>(follow));
-                } catch (...) {
-                }
-            }
-        }
-        auto grid_source = memory + kEditorFramingGridOffset;
-        auto grid_sequence = reinterpret_cast<volatile LONG*>(grid_source + 8);
-        const auto grid_first = InterlockedCompareExchange(grid_sequence, 0, 0);
-        const auto grid_previous = std::atomic_load(&gFramingGridConfig);
-        if (!(grid_first & 1) &&
-            (!grid_previous || grid_previous->sequence != std::uint32_t(grid_first))) {
-            EditorFramingGridConfig grid{};
-            std::memcpy(&grid, grid_source, sizeof(grid));
-            MemoryBarrier();
-            const auto grid_binding = packed_binding(grid.reserved);
-            if (grid_first == InterlockedCompareExchange(grid_sequence, 0, 0) &&
-                std::memcmp(grid.magic, "DLYGRID1", 8) == 0 && grid.abi == 1 &&
-                !(grid.flags & ~1u) && grid_binding.vk <= 0xff && grid_binding.modifiers <= 7) {
-                try {
-                    std::atomic_store(&gFramingGridConfig,
-                                      std::make_shared<const EditorFramingGridConfig>(grid));
-                } catch (...) {
-                }
-            }
-        }
-        auto level_source = memory + kEditorLevelViewOffset;
-        auto level_sequence = reinterpret_cast<volatile LONG*>(level_source + 8);
-        const auto level_first = InterlockedCompareExchange(level_sequence, 0, 0);
-        const auto level_previous = std::atomic_load(&gLevelViewConfig);
-        if (!(level_first & 1) &&
-            (!level_previous || level_previous->sequence != std::uint32_t(level_first))) {
-            EditorLevelViewConfig level{};
-            std::memcpy(&level, level_source, sizeof(level));
-            MemoryBarrier();
-            const auto level_binding = packed_binding(level.reserved);
-            if (level_first == InterlockedCompareExchange(level_sequence, 0, 0) &&
-                std::memcmp(level.magic, "DLYLEVL1", 8) == 0 && level.abi == 1 &&
-                !(level.flags & ~1u) && level_binding.vk <= 0xff &&
-                level_binding.modifiers <= 7 &&
-                (!std::isfinite(level.standard_aspect) ||
-                 (level.standard_aspect >= .5 && level.standard_aspect <= 4.0))) {
-                try {
-                    std::atomic_store(&gLevelViewConfig,
-                                      std::make_shared<const EditorLevelViewConfig>(level));
-                } catch (...) {
-                }
-            }
-        }
-        auto object_source = memory + kEditorObjectOffset;
-        auto object_sequence = reinterpret_cast<volatile LONG*>(object_source + 8);
-        const auto object_first = InterlockedCompareExchange(object_sequence, 0, 0);
-        const auto object_previous = std::atomic_load(&gObjectConfig);
-        if (!(object_first & 1) &&
-            (!object_previous || object_previous->sequence != std::uint32_t(object_first))) {
-            EditorObjectConfig objects{};
-            std::memcpy(&objects, object_source, sizeof(objects));
-            MemoryBarrier();
-            objects.sequence = std::uint32_t(object_first);
-            if (object_first == InterlockedCompareExchange(object_sequence, 0, 0) &&
-                valid_editor_object_config(objects)) {
-                try {
-                    std::atomic_store(&gObjectConfig,
-                                      std::make_shared<const EditorObjectConfig>(objects));
-                } catch (...) {
-                }
-                // Publish the accepted status so the editor can confirm the
-                // runtime holds the list. Written with the object seqlock.
-                EditorObjectStatus status{};
-                std::memcpy(status.magic, "DLYOBS01", 8);
-                status.sequence = std::uint32_t(object_first);
-                status.abi = 1;
-                // bit 0 available (a valid list was accepted), bit 1 active
-                // (mode open), bit 2 preview.
-                status.flags = 1u;
-                if (objects.flags & 1u)
-                    status.flags |= 2u;
-                if (objects.flags & 2u)
-                    status.flags |= 4u;
-                status.active_count = objects.count;
-                status.selected = std::uint32_t(objects.selected);
-                status.error = 0;
-                publish_seqlocked(memory + kEditorObjectStatusOffset, status);
-            }
+            return valid;
+        });
+        accept_seqlocked(memory + kEditorCitadelDofOffset, gCitadelDofConfig,
+                         [](const EditorCitadelDofConfig& citadel) {
+                             return std::memcmp(citadel.magic, "DLYCDOF1", 8) == 0 &&
+                                    citadel.abi == 1 && citadel.available <= 1 &&
+                                    citadel.enabled <= 1 && std::isfinite(citadel.sensor_size) &&
+                                    citadel.sensor_size >= .5 && citadel.sensor_size <= 3 &&
+                                    std::isfinite(citadel.focus_distance) &&
+                                    citadel.focus_distance >= 0 &&
+                                    citadel.focus_distance <= 10000;
+                         });
+        accept_seqlocked(memory + kEditorCameraListOffset, gCameraList,
+                         [](const EditorCameraList& list) { return valid_editor_camera_list(list); });
+        accept_seqlocked(memory + kEditorLiteReplayOffset, gLiteReplay,
+                         [](const EditorLiteReplayInfo& info) { return valid_lite_replay_info(info); });
+        accept_seqlocked(memory + kReplayEventsOffset, gReplayEvents,
+                         [](const EditorReplayEvents& events) { return valid_replay_events(events); });
+        accept_seqlocked(memory + kEditorCinematicOffset, gCinematicStatus,
+                         [](const EditorCinematicStatus& status) {
+                             return std::memcmp(status.magic, "DLYCIN01", 8) == 0 &&
+                                    status.abi == 1 && status.token && status.state >= 1 &&
+                                    status.state <= 3;
+                         });
+        accept_seqlocked(memory + kEditorFollowOffset, gFollowConfig,
+                         [](const EditorFollowConfig& follow) {
+                             return std::memcmp(follow.magic, "DLYFOLL1", 8) == 0 &&
+                                    follow.abi == 1 && !(follow.flags & ~15u) &&
+                                    !follow.reserved && std::isfinite(follow.distance) &&
+                                    follow.distance >= 0 && follow.distance <= 400 &&
+                                    std::isfinite(follow.shoulder) &&
+                                    std::abs(follow.shoulder) <= 150 &&
+                                    std::isfinite(follow.height) && std::abs(follow.height) <= 150;
+                         });
+        accept_seqlocked(memory + kEditorFramingGridOffset, gFramingGridConfig,
+                         [](const EditorFramingGridConfig& grid) {
+                             const auto binding = packed_binding(grid.reserved);
+                             return std::memcmp(grid.magic, "DLYGRID1", 8) == 0 &&
+                                    grid.abi == 1 && !(grid.flags & ~1u) && binding.vk <= 0xff &&
+                                    binding.modifiers <= 7;
+                         });
+        accept_seqlocked(memory + kEditorLevelViewOffset, gLevelViewConfig,
+                         [](const EditorLevelViewConfig& level) {
+                             const auto binding = packed_binding(level.reserved);
+                             return std::memcmp(level.magic, "DLYLEVL1", 8) == 0 &&
+                                    level.abi == 1 && !(level.flags & ~1u) &&
+                                    binding.vk <= 0xff && binding.modifiers <= 7 &&
+                                    (!std::isfinite(level.standard_aspect) ||
+                                     (level.standard_aspect >= .5 &&
+                                      level.standard_aspect <= 4.0));
+                         });
+        EditorObjectConfig objects{};
+        if (accept_seqlocked(memory + kEditorObjectOffset, gObjectConfig,
+                             [](const EditorObjectConfig& value) {
+                                 return valid_editor_object_config(value);
+                             },
+                             objects)) {
+            // Publish the accepted status so the editor can confirm the
+            // runtime holds the list. Written with the object seqlock.
+            EditorObjectStatus status{};
+            std::memcpy(status.magic, "DLYOBS01", 8);
+            status.sequence = objects.sequence;
+            status.abi = 1;
+            // bit 0 available (a valid list was accepted), bit 1 active
+            // (mode open), bit 2 preview.
+            status.flags = 1u;
+            if (objects.flags & 1u)
+                status.flags |= 2u;
+            if (objects.flags & 2u)
+                status.flags |= 4u;
+            status.active_count = objects.count;
+            status.selected = std::uint32_t(objects.selected);
+            status.error = 0;
+            publish_seqlocked(memory + kEditorObjectStatusOffset, status);
         }
         // Experimental prop-persistence probe request. The editor advances the
         // sequence; the render thread (prop_runtime::tick) consumes it. Status
@@ -1784,17 +1666,8 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             publish_seqlocked(memory + kEditorPropProbeOffset + sizeof(EditorPropProbeConfig),
                               status);
         }
-        auto attach_source = memory + kEditorAttachOffset;
-        auto attach_sequence = reinterpret_cast<volatile LONG*>(attach_source + 8);
-        const auto attach_first = InterlockedCompareExchange(attach_sequence, 0, 0);
-        const auto attach_previous = std::atomic_load(&gAttachConfig);
-        if (!(attach_first & 1) &&
-            (!attach_previous || attach_previous->sequence != std::uint32_t(attach_first))) {
-            EditorAttachConfig attach{};
-            std::memcpy(&attach, attach_source, sizeof(attach));
-            MemoryBarrier();
+        accept_seqlocked(memory + kEditorAttachOffset, gAttachConfig, [](const EditorAttachConfig& attach) {
             bool valid =
-                attach_first == InterlockedCompareExchange(attach_sequence, 0, 0) &&
                 std::memcmp(attach.magic, "DLYATTC1", 8) == 0 &&
                 (attach.abi == 2 || attach.abi == 3 || attach.abi == 4 || attach.abi == 5 ||
                  attach.abi == 6) &&
@@ -1825,59 +1698,24 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                                             : attach.bone_name[0] == 0);
             for (double value : attach.offset)
                 valid = valid && std::isfinite(value) && std::abs(value) <= 10000;
-            valid = valid && std::isfinite(attach.smoothing) && attach.smoothing >= 0 &&
-                    attach.smoothing <= 5 && attach.attached_keys <= attach.key_count &&
-                    attach.key_count <= 100000;
-            if (valid) {
-                try {
-                    std::atomic_store(&gAttachConfig,
-                                      std::make_shared<const EditorAttachConfig>(attach));
-                } catch (...) {
-                }
-            }
-        }
-        auto bones_source = memory + kEditorBonesOffset;
-        auto bones_sequence = reinterpret_cast<volatile LONG*>(bones_source + 8);
-        const auto bones_first = InterlockedCompareExchange(bones_sequence, 0, 0);
-        const auto bones_previous = std::atomic_load(&gBones);
-        if (!(bones_first & 1) &&
-            (!bones_previous || bones_previous->sequence != std::uint32_t(bones_first))) {
-            EditorBones bones{};
-            std::memcpy(&bones, bones_source, sizeof(bones));
-            MemoryBarrier();
-            if (bones_first == InterlockedCompareExchange(bones_sequence, 0, 0) &&
-                std::memcmp(bones.magic, "DLYBONE1", 8) == 0 && bones.abi == 1 &&
-                bones.count <= kEditorBoneCount && bones.count <= bones.total &&
-                bones.total <= 4096) {
-                try {
-                    std::atomic_store(&gBones, std::make_shared<const EditorBones>(bones));
-                } catch (...) {
-                }
-            }
-        }
-        auto roster_source = memory + kEditorRosterOffset;
-        auto roster_sequence = reinterpret_cast<volatile LONG*>(roster_source + 8);
-        const auto roster_first = InterlockedCompareExchange(roster_sequence, 0, 0);
-        const auto roster_previous = std::atomic_load(&gRoster);
-        if (!(roster_first & 1) &&
-            (!roster_previous || roster_previous->sequence != std::uint32_t(roster_first))) {
-            EditorRoster roster{};
-            std::memcpy(&roster, roster_source, sizeof(roster));
-            MemoryBarrier();
-            bool valid = roster_first == InterlockedCompareExchange(roster_sequence, 0, 0) &&
-                         std::memcmp(roster.magic, "DLYROS01", 8) == 0 &&
+            return valid && std::isfinite(attach.smoothing) && attach.smoothing >= 0 &&
+                   attach.smoothing <= 5 && attach.attached_keys <= attach.key_count &&
+                   attach.key_count <= 100000;
+        });
+        accept_seqlocked(memory + kEditorBonesOffset, gBones, [](const EditorBones& bones) {
+            return std::memcmp(bones.magic, "DLYBONE1", 8) == 0 && bones.abi == 1 &&
+                   bones.count <= kEditorBoneCount && bones.count <= bones.total &&
+                   bones.total <= 4096;
+        });
+        accept_seqlocked(memory + kEditorRosterOffset, gRoster, [](const EditorRoster& roster) {
+            bool valid = std::memcmp(roster.magic, "DLYROS01", 8) == 0 &&
                          roster.abi == kEditorRosterAbi && roster.count <= kEditorRosterPlayers &&
                          (roster.flags & ~1u) == 0;
             for (std::uint32_t index = 0; index < roster.count && valid; ++index)
                 valid = std::memchr(roster.players[index].model_path, 0,
                                     sizeof(roster.players[index].model_path)) != nullptr;
-            if (valid) {
-                try {
-                    std::atomic_store(&gRoster, std::make_shared<const EditorRoster>(roster));
-                } catch (...) {
-                }
-            }
-        }
+            return valid;
+        });
         auto src = memory + kEditorConfigOffset;
         auto seq = reinterpret_cast<volatile LONG*>(src + 8);
         LONG before = InterlockedCompareExchange(seq, 0, 0);
