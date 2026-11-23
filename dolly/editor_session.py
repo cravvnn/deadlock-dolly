@@ -173,6 +173,8 @@ def poll(app):
 
 def close(app):
     app._bone_picker_context = None
+    from . import curve_preview
+    curve_preview.clear(app)
     bridge = _bridge(app)
     if bridge is not None:
         try:

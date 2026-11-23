@@ -683,6 +683,24 @@ class EditorEventBusyTests(unittest.TestCase):
         self.assertIsNotNone(state.last_identity)
         self.assertFalse(state.native_terminal)
 
+    def test_closing_the_editor_retires_its_curve_preview(self):
+        from dolly import curve_preview, editor_session, visualization_preview_wire as wire
+        cleared, configured = [], []
+        bridge = SimpleNamespace(publish_visualization_preview=lambda packet, **identity: cleared.append(
+                                     (packet, identity)),
+                                 configure_editor=lambda **kwargs: configured.append(kwargs))
+        state = curve_preview._State()
+        state.bridge, state.native_session, state.native_token = bridge, 5, 9
+        state.last_identity = dict(source=wire.NATIVE, token=9, revision=3, session_id=5,
+                                   selected_camera=0, channel=0, key_time=0.0)
+        app = SimpleNamespace(_curve_preview_state=state,
+                              controller=SimpleNamespace(status=lambda: {}, _native_bridge=lambda: bridge))
+        editor_session.close(app)
+        self.assertEqual([(packet, identity["token"]) for packet, identity in cleared], [(None, 9)])
+        self.assertIsNone(state.last_identity)
+        self.assertTrue(state.native_terminal)
+        self.assertEqual(configured, [{"enabled": False, "owner": "disabled"}])
+
 
 if __name__ == "__main__":
     unittest.main()
