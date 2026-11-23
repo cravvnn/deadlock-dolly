@@ -351,5 +351,36 @@ class SharedDigest(unittest.TestCase):
             self.assertEqual(release_files.sha256(path), hashlib.sha256(path.read_bytes()).hexdigest())
 
 
+class BundleManifest(unittest.TestCase):
+    def bundle(self, temp):
+        from dolly.updater import write_manifest
+        bundle = Path(temp) / 'bundle'
+        (bundle / '_internal/logs').mkdir(parents=True)
+        (bundle / 'Dolly.exe').write_bytes(b'exe')
+        for name in ('_internal/DollyApp.exe', '_internal/native/bin/win64/DollyNative.dll',
+                     '_internal/third_party/ffmpeg/bin/ffmpeg.exe'):
+            (bundle / name).parent.mkdir(parents=True, exist_ok=True)
+            (bundle / name).write_bytes(name.encode())
+        return bundle, write_manifest
+
+    def test_manifest_files_must_ship_in_the_zip(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bundle, write_manifest = self.bundle(temp)
+            # The manifest owns _internal/, but the ZIP drops runtime logs.
+            (bundle / '_internal/logs/run.txt').write_text('private')
+            write_manifest(bundle, '1.0.0')
+            output = Path(temp) / 'dist/Deadlock_Dolly_1.0.0_Windows_x64.zip'
+            with self.assertRaisesRegex(OSError, 'missing from the Windows archive'):
+                release_files.bundle_zip(bundle, output)
+            self.assertFalse(output.exists())
+
+    def test_matching_manifest_zip_is_published(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bundle, write_manifest = self.bundle(temp)
+            write_manifest(bundle, '1.0.0')
+            output = Path(temp) / 'dist/Deadlock_Dolly_1.0.0_Windows_x64.zip'
+            self.assertEqual(release_files.bundle_zip(bundle, output), output)
+
+
 if __name__ == '__main__':
     unittest.main()

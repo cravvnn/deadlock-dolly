@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import zipfile
@@ -69,6 +70,25 @@ def _partial(output: Path) -> Path:
     return output.with_name(output.name + ".partial")
 
 
+def _check_update_manifest(archive: zipfile.ZipFile) -> None:
+    """Every file the updater manifest names must ship in the ZIP, unchanged."""
+    manifest = "DeadlockDolly/UPDATE_MANIFEST.json"
+    names = set(archive.namelist())
+    if manifest not in names:
+        return
+    files = json.loads(archive.read(manifest).decode("utf-8")).get("files", {})
+    for relative, expected in files.items():
+        name = "DeadlockDolly/" + relative
+        if name not in names:
+            raise OSError(f"Update manifest file is missing from the Windows archive: {relative}")
+        digest = hashlib.sha256()
+        with archive.open(name) as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != expected:
+            raise OSError(f"Update manifest hash differs in the Windows archive: {relative}")
+
+
 def bundle_zip(bundle: Path, output: Path) -> Path:
     bundle = Path(bundle).resolve()
     files = bundle_files(bundle)
@@ -86,6 +106,7 @@ def bundle_zip(bundle: Path, output: Path) -> Path:
                 relative = PurePosixPath(name.removeprefix("DeadlockDolly/"))
                 if _excluded_bundle_path(relative):
                     raise OSError(f"Excluded runtime data entered the Windows archive: {name}")
+            _check_update_manifest(archive)
         os.replace(partial, output)
     finally:
         partial.unlink(missing_ok=True)
