@@ -38,5 +38,45 @@
       ]
     ],
     "expect": "NoSilentLoss"
+  },
+  {
+    "name": "any failure while closing finishes the close",
+    "replace": [
+      [
+        "RouteAll == FALSE",
+        "RouteAll == TRUE"
+      ]
+    ],
+    "expect": "AtMostOneDiscardPrompt"
+  },
+  {
+    "name": "drop a close submit refused as busy",
+    "replace": [
+      [
+        "THEN ui' = \"waiting\" /\\ UNCHANGED submitted",
+        "THEN ui' = \"idle\" /\\ submitted' = TRUE"
+      ]
+    ],
+    "expect": "CloseEnds"
+  },
+  {
+    "name": "close directly beside the running work",
+    "replace": [
+      [
+        "THEN ui' = \"waiting\" /\\ UNCHANGED submitted",
+        "THEN ui' = \"closing\" /\\ submitted' = TRUE"
+      ]
+    ],
+    "expect": "CloseRunsAlone"
+  },
+  {
+    "name": "the wait for running work ends in a bare exit",
+    "replace": [
+      [
+        "ui' = IF closing THEN \"finish\" ELSE \"idle\"",
+        "ui' = IF closing THEN \"destroyed\" ELSE \"idle\""
+      ]
+    ],
+    "expect": "DestroyImpliesCloseRanOrFailed"
   }
 ]
