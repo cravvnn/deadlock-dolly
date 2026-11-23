@@ -783,18 +783,24 @@ def self_test(report):
             plan = {"work": str(work), "target": str(target)}
             def failed_health(_target):
                 raise RuntimeError("simulated startup failure")
+            # Explicit checks: assert statements vanish under python -O.
+            def require(condition, message):
+                if not condition:
+                    raise RuntimeError(message)
             try:
                 install(plan, failed_health)
             except RuntimeError as error:
-                assert str(error) == "simulated startup failure"
-            assert (target / "Dolly.exe").read_text() == "1.0.0"
-            assert (target / "my-shot.json").read_text() == "keep this shot"
-            assert not (target / PENDING).exists()
+                require(str(error) == "simulated startup failure", f"unexpected install error: {error}")
+            else:
+                raise RuntimeError("a failed health check did not stop the install")
+            require((target / "Dolly.exe").read_text() == "1.0.0", "rollback did not restore Dolly.exe")
+            require((target / "my-shot.json").read_text() == "keep this shot", "rollback lost a user file")
+            require(not (target / PENDING).exists(), "rollback left a pending record")
             # Exercise a fresh transaction after recovery.
             (work / "journal.json").unlink()
             install(plan)
-            assert (target / "Dolly.exe").read_text() == "1.0.1"
-            assert (target / "my-shot.json").read_text() == "keep this shot"
+            require((target / "Dolly.exe").read_text() == "1.0.1", "install did not replace Dolly.exe")
+            require((target / "my-shot.json").read_text() == "keep this shot", "install lost a user file")
             result.update(passed=True, rollback=True, install=True, user_files_preserved=True)
     except Exception as error:
         result["error"] = str(error)

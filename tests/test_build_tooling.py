@@ -269,5 +269,28 @@ class BuildDesktopJob(unittest.TestCase):
                 child.wait()
 
 
+class UpdaterSelfTest(unittest.TestCase):
+    def run_self_test(self, stub_install):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / 'updater-smoke.json'
+            code = ('import sys; import dolly.update_worker as worker\n'
+                    + ('worker.install = lambda *args, **kwargs: None\n' if stub_install else '')
+                    + 'sys.exit(worker.self_test(sys.argv[1]))')
+            # -O strips assert statements; the self-test must still check.
+            result = subprocess.run([sys.executable, '-O', '-c', code, str(report)], cwd=ROOT)
+            return result.returncode, json.loads(report.read_text(encoding='utf-8'))
+
+    def test_self_test_passes_with_the_real_installer(self):
+        code, report = self.run_self_test(False)
+        self.assertEqual(code, 0)
+        self.assertTrue(report['passed'])
+
+    def test_self_test_fails_under_optimisation_when_install_does_nothing(self):
+        code, report = self.run_self_test(True)
+        self.assertEqual(code, 1)
+        self.assertFalse(report['passed'])
+        self.assertIn('did not stop the install', report['error'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -193,6 +193,8 @@ def main(output_dir: Path | None = None) -> int:
                     "--add-data", str(ROOT / "assets/dolly.ico") + ";assets",
                     str(ROOT / "packaging/bootstrap_entrypoint.py")], cwd=ROOT, check=True)
     shutil.copy2(build / "bootstrap/Dolly.exe", bundle / "Dolly.exe")
+    # A report left by an earlier build must never stand in for this one.
+    (checks / "updater-smoke.json").unlink(missing_ok=True)
     subprocess.run([str(bundle / "Dolly.exe"), "--updater-self-test", str(checks / "updater-smoke.json")], check=True, timeout=60)
     if not json.loads((checks / "updater-smoke.json").read_text()).get("passed"):
         raise RuntimeError("Embedded updater smoke test failed")
