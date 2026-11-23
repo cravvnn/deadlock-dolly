@@ -4312,6 +4312,33 @@ int main(int argc, char** argv) {
                                                         &feature, 1, D3D11_SDK_VERSION, &desc,
                                                         &chain, &device, nullptr, &context)),
                 "WARP DX11 device creation failed");
+        // The scene depth hand-off runs on the Present thread; it writes no file.
+        {
+            wchar_t temp[MAX_PATH]{};
+            require(GetTempPathW(MAX_PATH, temp) != 0, "Temp path unavailable");
+            const std::wstring log = std::wstring(temp) + L"dolly_depth_debug.log";
+            WIN32_FILE_ATTRIBUTE_DATA before{}, after{};
+            const bool existed =
+                GetFileAttributesExW(log.c_str(), GetFileExInfoStandard, &before) != 0;
+            D3D11_TEXTURE2D_DESC depth_desc{};
+            depth_desc.Width = depth_desc.Height = 4;
+            depth_desc.MipLevels = depth_desc.ArraySize = 1;
+            depth_desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+            depth_desc.SampleDesc.Count = 1;
+            depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+            ID3D11Texture2D* depth_texture = nullptr;
+            require(SUCCEEDED(device->CreateTexture2D(&depth_desc, nullptr, &depth_texture)),
+                    "Could not create a synthetic scene depth texture");
+            dolly::reshade_set_scene_depth(depth_texture);
+            dolly::reshade_set_scene_depth(nullptr);
+            depth_texture->Release();
+            const bool exists =
+                GetFileAttributesExW(log.c_str(), GetFileExInfoStandard, &after) != 0;
+            require(exists == existed &&
+                        (!exists || (before.nFileSizeLow == after.nFileSizeLow &&
+                                     before.nFileSizeHigh == after.nFileSizeHigh)),
+                    "Scene depth hand-off wrote a diagnostic file");
+        }
         // Optional graphics diagnostics must stay inside their unused block and
         // fail closed on an unrecognized renderer, without changing camera state.
         std::vector<unsigned char> diagnostic_memory(dolly::kMappingBytes, 0xa5);

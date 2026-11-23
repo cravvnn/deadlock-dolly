@@ -700,20 +700,6 @@ void render_overlay(IDXGISwapChain* chain) {
                 scene_sample = &scene_frame;
                 if (scene_frame.result == depth::SceneResult::ready)
                     reshade_set_scene_depth(scene_frame.texture());
-                char depth_debug[176]{};
-                std::snprintf(depth_debug, sizeof(depth_debug),
-                              "consume: result=%d tex=%p live=%d tracker=%d",
-                              static_cast<int>(scene_frame.result),
-                              static_cast<const void*>(scene_frame.texture()),
-                              depth_live.active() ? 1 : 0, depth_tracker ? 1 : 0);
-                reshade_depth_debug(depth_debug);
-            } else {
-                char depth_debug[176]{};
-                std::snprintf(depth_debug, sizeof(depth_debug),
-                              "consume: skipped live=%d tracker=%d requested=%d hooks=%d",
-                              depth_live.active() ? 1 : 0, depth_tracker ? 1 : 0,
-                              depth_live.requested() ? 1 : 0, depth_live.hooks() ? 1 : 0);
-                reshade_depth_debug(depth_debug);
             }
         }
     }

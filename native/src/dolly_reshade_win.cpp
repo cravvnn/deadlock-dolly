@@ -286,30 +286,6 @@ void clear_frame() noexcept {
 }
 }
 
-// TEMPORARY diagnostic for the live ReShade depth investigation. Writes state
-// changes to %TEMP%\dolly_depth_debug.log, deduplicated within one second so
-// the render path never blocks on I/O.
-void reshade_depth_debug(const char* text) noexcept {
-    if (!text)
-        return;
-    static std::uint64_t last_tick = 0;
-    static char last_text[192]{};
-    const std::uint64_t now = GetTickCount64();
-    if (std::strcmp(text, last_text) == 0 && now - last_tick < 1000)
-        return;
-    std::snprintf(last_text, sizeof(last_text), "%s", text);
-    last_tick = now;
-    wchar_t directory[MAX_PATH]{};
-    if (GetTempPathW(MAX_PATH, directory) == 0)
-        return;
-    std::wstring path = directory;
-    path += L"dolly_depth_debug.log";
-    if (FILE* file = _wfopen(path.c_str(), L"a")) {
-        std::fprintf(file, "%llu %s\n", static_cast<unsigned long long>(now), text);
-        std::fclose(file);
-    }
-}
-
 static bool initialize_impl(const wchar_t* library_path, const wchar_t* config_path) noexcept {
     std::lock_guard<std::mutex> lock(initialize_mutex);
     try {
@@ -539,7 +515,6 @@ void release_depth_resources(Runtime* target) noexcept {
         } catch (...) {
         }
     }
-    reshade_depth_debug("depth: binding released");
     publish_depth_ready(target, false);
     depth_bound = false;
     depth_ping = 0;
@@ -566,10 +541,6 @@ bool build_depth_resources(ID3D11Device* device, const D3D11_TEXTURE2D_DESC& sou
         view_format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
         copy_format = DXGI_FORMAT_R24G8_TYPELESS;
     } else {
-        char debug[128]{};
-        std::snprintf(debug, sizeof(debug), "build: unsupported format=%d",
-                      static_cast<int>(source.Format));
-        reshade_depth_debug(debug);
         return false;
     }
     // The game's depth target may be created without D3D11_BIND_SHADER_RESOURCE,
@@ -586,64 +557,14 @@ bool build_depth_resources(ID3D11Device* device, const D3D11_TEXTURE2D_DESC& sou
     view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     view.Texture2D.MipLevels = 1;
     for (auto& texture : {&copies[0], &copies[1]}) {
-        if (FAILED(device->CreateTexture2D(&copy, nullptr, texture->put()))) {
-            reshade_depth_debug("build: create copy failed");
+        if (FAILED(device->CreateTexture2D(&copy, nullptr, texture->put())))
             return false;
-        }
     }
     for (unsigned i = 0; i < 2; ++i) {
-        if (FAILED(device->CreateShaderResourceView(copies[i].p, &view, views[i].put()))) {
-            reshade_depth_debug("build: create view failed");
+        if (FAILED(device->CreateShaderResourceView(copies[i].p, &view, views[i].put())))
             return false;
-        }
     }
     return true;
-}
-
-// TEMPORARY diagnostics: once per second, read the first 64 pixels of the
-// just-filled copy and report the 24-bit depth range. Distinguishes a stale
-// binding from a copy that was never filled.
-void probe_depth_copy(ID3D11Device* device, ID3D11DeviceContext* context,
-                      ID3D11Texture2D* copy) noexcept {
-    if (!device || !context || !copy)
-        return;
-    static std::uint64_t last_tick = 0;
-    const std::uint64_t now = GetTickCount64();
-    if (now - last_tick < 1000)
-        return;
-    last_tick = now;
-    try {
-        D3D11_TEXTURE2D_DESC desc{};
-        copy->GetDesc(&desc);
-        D3D11_TEXTURE2D_DESC staging = desc;
-        staging.Usage = D3D11_USAGE_STAGING;
-        staging.BindFlags = 0;
-        staging.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-        staging.MiscFlags = 0;
-        Com<ID3D11Texture2D> readback;
-        if (FAILED(device->CreateTexture2D(&staging, nullptr, readback.put())))
-            return;
-        const UINT width = desc.Width < 64 ? desc.Width : 64;
-        const D3D11_BOX box{0, 0, 0, width, 1, 1};
-        context->CopySubresourceRegion(readback.p, 0, 0, 0, 0, copy, 0, &box);
-        D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(context->Map(readback.p, 0, D3D11_MAP_READ, 0, &mapped)))
-            return;
-        const auto* row = static_cast<const std::uint32_t*>(mapped.pData);
-        std::uint32_t minimum = 0xffffffffu, maximum = 0;
-        for (UINT x = 0; x < width; ++x) {
-            const std::uint32_t value = row[x] & 0x00ffffffu;
-            if (value < minimum)
-                minimum = value;
-            if (value > maximum)
-                maximum = value;
-        }
-        context->Unmap(readback.p, 0);
-        char debug[160]{};
-        std::snprintf(debug, sizeof(debug), "probe: row0 min=%u max=%u", minimum, maximum);
-        reshade_depth_debug(debug);
-    } catch (...) {
-    }
 }
 
 void publish_depth(ID3D11Device* device, ID3D11DeviceContext* context, Runtime* target) noexcept {
@@ -671,21 +592,10 @@ void publish_depth(ID3D11Device* device, ID3D11DeviceContext* context, Runtime* 
             // samples DEPTH during its present, so binding an empty texture
             // would show a constant depth map until the next frame.
             context->CopyResource(copies[0].p, depth_source);
-            probe_depth_copy(device, context, copies[0].p);
             target->update_texture_bindings(
                 "DEPTH",
                 reshade::api::resource_view{reinterpret_cast<std::uint64_t>(views[0].p)},
                 reshade::api::resource_view{0});
-            {
-                char debug[192]{};
-                std::snprintf(debug, sizeof(debug),
-                              "publish: rebuild src=%p %ux%u fmt=%d view=%p copy=%p",
-                              static_cast<const void*>(depth_source), source.Width, source.Height,
-                              static_cast<int>(source.Format),
-                              static_cast<const void*>(views[0].p),
-                              static_cast<const void*>(copies[0].p));
-                reshade_depth_debug(debug);
-            }
             depth_bound = true;
             for (unsigned i = 0; i < 2; ++i) {
                 depth_copies[i] = std::move(copies[i]);
@@ -698,21 +608,13 @@ void publish_depth(ID3D11Device* device, ID3D11DeviceContext* context, Runtime* 
         }
         const unsigned index = depth_ping;
         context->CopyResource(depth_copies[index].p, depth_source);
-        probe_depth_copy(device, context, depth_copies[index].p);
         depth_ping ^= 1;
         target->update_texture_bindings(
             "DEPTH",
             reshade::api::resource_view{reinterpret_cast<std::uint64_t>(depth_views[index].p)},
             reshade::api::resource_view{0});
-        {
-            char debug[160]{};
-            std::snprintf(debug, sizeof(debug), "publish: steady src=%p index=%u",
-                          static_cast<const void*>(depth_source), index);
-            reshade_depth_debug(debug);
-        }
         depth_bound = true;
     } catch (...) {
-        reshade_depth_debug("publish: exception");
         // Depth is best-effort; it must never take the runtime down.
     }
 }
@@ -727,12 +629,6 @@ void reshade_set_scene_depth(ID3D11Texture2D* texture) noexcept {
     depth_source = texture;
     // Resources are reused when the layout matches, so a source change only
     // needs to hand the next publish a fresh copy of the new texture.
-    {
-        char debug[128]{};
-        std::snprintf(debug, sizeof(debug), "scene: set tex=%p",
-                      static_cast<const void*>(texture));
-        reshade_depth_debug(debug);
-    }
 }
 
 bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceContext* context,
@@ -816,7 +712,6 @@ bool reshade_render(IDXGISwapChain* chain, ID3D11Device* device, ID3D11DeviceCon
         const auto rendered = ++frames;
         if (!clean_delivered) {
             ++missing_clean;
-            reshade_depth_debug("present: clean frame missing");
             if (rendered == 1) {
                 // A runtime that never delivers the callback is unusable.
                 failed.store(true, std::memory_order_release);
