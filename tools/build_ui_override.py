@@ -76,12 +76,14 @@ def compile_sources(sdk: Path, compiler: Path) -> tuple[Path, list[Path]]:
         target = content / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
+        produced = (output / relative).with_suffix(EXPECTED_SOURCES[relative.as_posix()])
+        # A compiler that exits 0 without writing must not pass off a stale output.
+        produced.unlink(missing_ok=True)
         result = subprocess.run([str(compiler), "-game", str(game_dir),
                                  "-i", str(target), "-nop4", "-f"],
                                 cwd=str(compiler.parent))
         if result.returncode != 0:
             raise SystemExit(f"resourcecompiler failed for {relative} (rc={result.returncode})")
-        produced = (output / relative).with_suffix(EXPECTED_SOURCES[relative.as_posix()])
         if not produced.is_file():
             raise SystemExit(f"resourcecompiler produced no output for {relative}")
         compiled.append(produced)

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 
 import build_native
+import build_ui_override
 import format_cpp
 import release_files
 import release_status
@@ -209,6 +210,23 @@ class UpdateGamePipeline(unittest.TestCase):
             with patch.object(confetti_offsets, 'scan', return_value={}), \
                     patch.object(confetti_offsets, 'newest_row_matches', return_value=True):
                 self.assertIs(update_game.refresh_confetti_table(game), True)
+
+
+class UiOverrideCompile(unittest.TestCase):
+    def test_stale_output_is_not_accepted_when_the_compiler_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sdk = Path(temp)
+            (sdk / 'game/citadel').mkdir(parents=True)
+            (sdk / 'game/citadel/gameinfo.gi').write_text('')
+            output = sdk / 'game/citadel_addons' / build_ui_override.ADDON
+            for name, suffix in build_ui_override.EXPECTED_SOURCES.items():
+                stale = (output / name).with_suffix(suffix)
+                stale.parent.mkdir(parents=True, exist_ok=True)
+                stale.write_bytes(b'stale')
+            with patch.object(build_ui_override.subprocess, 'run',
+                              return_value=subprocess.CompletedProcess([], 0)):
+                with self.assertRaisesRegex(SystemExit, 'produced no output'):
+                    build_ui_override.compile_sources(sdk, sdk / 'resourcecompiler.exe')
 
 
 if __name__ == '__main__':
