@@ -292,5 +292,28 @@ class UpdaterSelfTest(unittest.TestCase):
         self.assertIn('did not stop the install', report['error'])
 
 
+class TlaDiscovery(unittest.TestCase):
+    def test_unlisted_configs_and_skipped_mutants_are_reported(self):
+        import check_tla
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for relative in ('dolly/A.tla', 'dolly/A.cfg', 'native/src/B.tla', 'native/src/B.cfg',
+                             'native/src/B-fast.cfg', 'native/vendor/C.tla', 'native/vendor/C.cfg',
+                             'tools/tla/node_modules/D.tla', 'tools/tla/node_modules/D.cfg',
+                             'native/assets/game.cfg', 'tools/BApi.tla'):
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text('')
+            (root / 'native/src/B.mutants.json').write_text('[{"name": "x"}, {"name": "y"}]')
+            (root / 'tools').mkdir(exist_ok=True)
+            rows = [{'kind': 'model', 'name': r'dolly\A.cfg'},
+                    {'kind': 'model', 'name': r'native\src\B.cfg'},
+                    {'kind': 'mutant', 'name': r'native\src\B.tla mutant "x"'}]
+            self.assertEqual(check_tla.unchecked(rows, root),
+                             ['native/src/B-fast.cfg', 'native/src/B.tla (2 mutants, 1 ran)'])
+            rows += [{'kind': 'model', 'name': r'native\src\B-fast.cfg'},
+                     {'kind': 'mutant', 'name': r'native\src\B.tla mutant "y"'}]
+            self.assertEqual(check_tla.unchecked(rows, root), [])
+
+
 if __name__ == '__main__':
     unittest.main()

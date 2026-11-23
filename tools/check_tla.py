@@ -10,6 +10,47 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = {'BridgeClose.cfg','MediaAdmission.cfg','AttachObservation.cfg','StillCleanup.cfg','ScratchCompletion.cfg','ScrollCommand.cfg',"SceneOpacity.cfg", "PlayersRestoreRetry.cfg", "PlayersRecovery.cfg", "CleanupResult-guarded.cfg", "BackupPublish.cfg", "BackupPublish-link.cfg", "AtomicMode.cfg", "AtomicMode-noFaults.cfg", "AtomicCopy.cfg", "UpdateRollback.cfg", "WorkspaceCleanup.cfg", "LauncherHandoff.cfg", "FollowSelection.cfg", "CleanupMarker.cfg", "FollowLens.cfg", "PlaybackIdentity.cfg"}
+# check.mjs never walks these; vendored and generated trees hold no owned models.
+SKIP_DIRS = {"node_modules", "vendor", "dist", "build", "testdata"}
+MODEL_DIRS = ("dolly", "native", "tools")
+
+
+def _model_dirs(directory: Path):
+    yield directory
+    for child in sorted(directory.iterdir()):
+        if child.is_dir() and not child.name.startswith(".") and child.name not in SKIP_DIRS:
+            yield from _model_dirs(child)
+
+
+def discovered_models(root=ROOT):
+    """Every config check.mjs would pair with a spec, and each spec's mutant count."""
+    configs, mutants = set(), {}
+    for top in MODEL_DIRS:
+        for directory in _model_dirs(Path(root) / top):
+            stems = sorted((p.stem for p in directory.glob("*.tla")), key=len, reverse=True)
+            for config in directory.glob("*.cfg"):
+                if any(config.stem == s or config.stem.startswith(s + "-") for s in stems):
+                    configs.add(config.relative_to(root).as_posix())
+            for file in directory.glob("*.mutants.json"):
+                spec = file.with_name(file.name.removesuffix(".mutants.json") + ".tla")
+                mutants[spec.relative_to(root).as_posix()] = len(json.loads(file.read_text(encoding="utf-8")))
+    return configs, mutants
+
+
+def unchecked(rows, root=ROOT):
+    """Models or mutants on disk that the run did not report, e.g. a config
+    missing from the hand-listed native/tools paths."""
+    configs, mutants = discovered_models(root)
+    checked = {Path(row["name"]).as_posix() for row in rows if row.get("kind") == "model"}
+    ran = {}
+    for row in rows:
+        if row.get("kind") == "mutant":
+            spec = Path(row["name"].split(' mutant "', 1)[0]).as_posix()
+            ran[spec] = ran.get(spec, 0) + 1
+    missing = sorted(configs - checked)
+    missing += sorted(f"{spec} ({count} mutants, {ran.get(spec, 0)} ran)"
+                      for spec, count in mutants.items() if ran.get(spec, 0) != count)
+    return missing
 
 
 def check(root=ROOT):
@@ -34,6 +75,9 @@ def check(root=ROOT):
     if result.returncode or not REQUIRED.issubset(checked):
         raise RuntimeError("TLA model/mutant checks failed or required configs were not checked.\n"
                            + result.stdout + result.stderr)
+    missing = unchecked(rows, root)
+    if missing:
+        raise RuntimeError("TLA models or mutants on disk were not checked: " + ", ".join(missing))
     return rows
 
 
