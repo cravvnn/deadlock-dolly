@@ -46,7 +46,6 @@ def open_picker(app, *, publish):
         app._bone_picker_context = context
         app.status_text.set("Bone Picker is open in the game. Choose a joint, then preview its attached view.")
         publish()
-        context["request"] = bridge._editor_attach_sequence
 
     app._submit("Opening Bone Picker", start, ready)
 

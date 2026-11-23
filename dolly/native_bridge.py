@@ -988,6 +988,7 @@ class NativeBridge(MediaTransport):
             self._editor_attach_diagnostics = {"sequence": even, "offsets": dict(offsets),
                 "selection": deepcopy(attach), "preview": bool(preview), "snap_request": snap_request,
                 "picker": bool(picker)}
+            return even
 
     def editor_bone_picker(self):
         """Optional native picker session/result; old DLLs leave it unwritten."""

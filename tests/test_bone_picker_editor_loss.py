@@ -2,8 +2,9 @@
 from copy import deepcopy
 from types import SimpleNamespace as NS
 import unittest
+from unittest.mock import Mock, patch
 
-from dolly import editor_publication, editor_session
+from dolly import bone_picker, editor_publication, editor_session
 from dolly.path import AttachKey, Keyframe, Project
 
 
@@ -45,6 +46,50 @@ class EditorLossTests(unittest.TestCase):
         editor_session.poll(app)
         self.assertIsNone(app._bone_picker_context)
         self.assertFalse(app.preview_attach)
+
+
+class _AttachBridge:
+    def __init__(self):
+        self._editor_attach_sequence = 10
+        self.configure_editor = Mock()
+        self.pickers = []
+
+    def editor_status(self):
+        return dict(ready=True, flight_active=True, paused=True)
+
+    def configure_editor_attach(self, offsets, attach=None, picker=False, **_options):
+        self._editor_attach_sequence += 2
+        self.pickers.append((self._editor_attach_sequence, picker))
+        return self._editor_attach_sequence
+
+
+class PickerRequestTests(unittest.TestCase):
+    def test_request_is_the_first_published_picker_sequence(self):
+        bridge = _AttachBridge()
+        app = _app(dict(game_running=True, connected=True, native_editor_active=True), bridge)
+        app._bone_picker_context = None
+        app.native_editor_active = True
+        app.attach_fields = {"offset": 0}
+        app.playing = False
+        app.app_settings = NS()
+        app.controller._follow_active = False
+        app.controller._recorder_active = lambda: False
+
+        def submit(_label, worker, ready=None):
+            result = worker()
+            if ready:
+                ready(result)
+        app._submit = submit
+        # The opening publication can be skipped (here by a history refresh);
+        # the picker then first reaches native on a later poll.
+        app._refreshing_shot_history = True
+        with patch.object(editor_publication.editor_view, "editor_values", return_value={}),                 patch.object(editor_publication, "_playback_values", return_value=(1, 1)),                 patch.object(editor_publication, "_video_values", return_value=(0,) * 7),                 patch.object(editor_publication, "_pov_duration", return_value=0),                 patch.object(editor_publication, "_attach_state", return_value=None),                 patch.object(editor_publication, "_configure_visualization"),                 patch("dolly.curve_preview.configure"):
+            bone_picker.open_picker(app, publish=lambda: editor_publication.configure(app))
+            app._refreshing_shot_history = False
+            editor_publication.configure(app)
+            editor_publication.configure(app)
+        self.assertEqual(bridge.pickers, [(12, True)])
+        self.assertEqual(app._bone_picker_context["request"], 12)
 
 
 if __name__ == "__main__":

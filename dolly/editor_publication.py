@@ -295,5 +295,8 @@ def configure(app):
             kwargs = dict(preview=preview, snap_request=snap_request)
             if picker_context:
                 kwargs["picker"] = True
-            publish_attach(dict(fields), attach[1], **kwargs)
+            sequence = publish_attach(dict(fields), attach[1], **kwargs)
+            # Native latches the first picker=True sequence as the session.
+            if picker_context and picker_context.get("request") is None:
+                picker_context["request"] = sequence
             app._native_attach_bridge, app._native_attach_cache = bridge, attach
