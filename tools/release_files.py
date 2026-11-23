@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path, PurePosixPath
 import zipfile
 
@@ -64,20 +65,30 @@ def bundle_files(bundle: Path) -> list[Path]:
     return sorted(result)
 
 
+def _partial(output: Path) -> Path:
+    return output.with_name(output.name + ".partial")
+
+
 def bundle_zip(bundle: Path, output: Path) -> Path:
     bundle = Path(bundle).resolve()
     files = bundle_files(bundle)
     output.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for file in files:
-            archive.write(file, "DeadlockDolly/" + file.relative_to(bundle).as_posix())
-    with zipfile.ZipFile(output) as archive:
-        if archive.testzip() is not None:
-            raise OSError("Windows archive integrity check failed")
-        for name in archive.namelist():
-            relative = PurePosixPath(name.removeprefix("DeadlockDolly/"))
-            if _excluded_bundle_path(relative):
-                raise OSError(f"Excluded runtime data entered the Windows archive: {name}")
+    # Build beside the final name so a failure never leaves a partial release ZIP.
+    partial = _partial(output)
+    try:
+        with zipfile.ZipFile(partial, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            for file in files:
+                archive.write(file, "DeadlockDolly/" + file.relative_to(bundle).as_posix())
+        with zipfile.ZipFile(partial) as archive:
+            if archive.testzip() is not None:
+                raise OSError("Windows archive integrity check failed")
+            for name in archive.namelist():
+                relative = PurePosixPath(name.removeprefix("DeadlockDolly/"))
+                if _excluded_bundle_path(relative):
+                    raise OSError(f"Excluded runtime data entered the Windows archive: {name}")
+        os.replace(partial, output)
+    finally:
+        partial.unlink(missing_ok=True)
     return output
 
 
@@ -85,13 +96,41 @@ def source_zip(root: Path, output: Path) -> Path:
     root = Path(root).resolve()
     files = source_files(root)
     output.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for file in files:
-            archive.write(file, file.relative_to(root).as_posix())
-    with zipfile.ZipFile(output) as archive:
-        if archive.testzip() is not None:
-            raise OSError("Source archive integrity check failed")
+    partial = _partial(output)
+    try:
+        with zipfile.ZipFile(partial, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            for file in files:
+                archive.write(file, file.relative_to(root).as_posix())
+        with zipfile.ZipFile(partial) as archive:
+            if archive.testzip() is not None:
+                raise OSError("Source archive integrity check failed")
+        os.replace(partial, output)
+    finally:
+        partial.unlink(missing_ok=True)
     return output
+
+
+def release_set(bundle: Path, root: Path, dist: Path, version: str) -> tuple[Path, Path]:
+    """Write both release ZIPs, then SHA256SUMS.txt last and atomically.
+
+    The old checksum file goes first, so an interrupted build never leaves a
+    SHA256SUMS.txt that names ZIPs it does not match.
+    """
+    source_files(root)
+    dist = Path(dist)
+    dist.mkdir(parents=True, exist_ok=True)
+    sums = dist / "SHA256SUMS.txt"
+    sums.unlink(missing_ok=True)
+    windows_zip = bundle_zip(bundle, dist / f"Deadlock_Dolly_{version}_Windows_x64.zip")
+    sources = source_zip(root, dist / f"Deadlock_Dolly_{version}_Source.zip")
+    partial = _partial(sums)
+    try:
+        partial.write_text("".join(f"{sha256(path)}  {path.name}\n" for path in (windows_zip, sources)),
+                           encoding="utf-8")
+        os.replace(partial, sums)
+    finally:
+        partial.unlink(missing_ok=True)
+    return windows_zip, sources
 
 
 def sha256(path: Path) -> str:

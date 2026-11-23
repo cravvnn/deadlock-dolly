@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from dolly import __version__
 from dolly.launcher import UNLOCKER_SHA256
-from release_files import bundle_zip, sha256, source_zip
+from release_files import release_set, sha256, source_files
 from check_release_notes import validate_publish_body
 from build_native import build_native, copy_native_runtime, reject_game_binaries
 from fetch_ffmpeg import download as download_ffmpeg, stage as stage_ffmpeg
@@ -162,6 +162,7 @@ def main(output_dir: Path | None = None) -> int:
     notes = ROOT / "docs" / f"RELEASE_NOTES_{__version__}.md"
     validate_publish_body(notes.read_text(encoding="utf-8-sig"), __version__)
     dist = distribution_dir(output_dir, __version__)
+    source_files(ROOT)  # Refuse a bad source list before the long build.
     build = ROOT / "build"
     checks = build / "checks"
     checks.mkdir(parents=True, exist_ok=True)
@@ -255,11 +256,7 @@ def main(output_dir: Path | None = None) -> int:
     (bundle / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     from dolly.updater import write_manifest
     write_manifest(bundle, __version__)
-    dist.mkdir(parents=True, exist_ok=True)
-    windows_zip = dist / f"Deadlock_Dolly_{__version__}_Windows_x64.zip"
-    bundle_zip(bundle, windows_zip)
-    sources = source_zip(ROOT, dist / f"Deadlock_Dolly_{__version__}_Source.zip")
-    (dist / "SHA256SUMS.txt").write_text("".join(f"{sha256(path)}  {path.name}\n" for path in (windows_zip, sources)), encoding="utf-8")
+    windows_zip, sources = release_set(bundle, ROOT, dist, __version__)
     print(f"Ready: {windows_zip}\nSource: {sources}\nNothing was uploaded or published.")
     return 0
 
