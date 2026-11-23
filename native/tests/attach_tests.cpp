@@ -774,22 +774,22 @@ void smoothing_behavior() {
     require(sampled.origin[0] == 24, "Changing target discards paused pose");
     dolly::AttachSmoothing smoothing;
     dolly::CameraPose pose{100, 200, 300, 0, 0, 0, 16.0 / 9};
-    smoothing.apply(pose, 0.016, 0);
+    smoothing.apply_anchored(pose, {0, 0, 0}, 0.016, 0, 1e6);
     require(smoothing.primed() && near(pose[0], 100), "Zero smoothing snaps and primes");
     const dolly::CameraPose target{200, 200, 300, 0, 0, 0, 16.0 / 9};
     for (int i = 0; i < 600; ++i) {
         dolly::CameraPose step = target;
-        smoothing.apply(step, 0.016, 0.2);
+        smoothing.apply_anchored(step, {0, 0, 0}, 0.016, 0.2, 1e6);
         pose = step;
     }
     require(near(pose[0], 200, 1e-3), "Exponential smoothing converges on its target");
     dolly::AttachSmoothing wrap;
     dolly::CameraPose start{};
     start[4] = 350;
-    wrap.apply(start, 0, 0);
+    wrap.apply_anchored(start, {0, 0, 0}, 0, 0, 1e6);
     dolly::CameraPose step{};
     step[4] = 10;
-    wrap.apply(step, 0.016, 0.5);
+    wrap.apply_anchored(step, {0, 0, 0}, 0.016, 0.5, 1e6);
     require(step[4] > 350 && step[4] < 360, "Angle smoothing takes the short way across the wrap");
 
     dolly::AttachSmoothing anchored;
@@ -967,7 +967,6 @@ void python_fixture_loads() {
     require(near(attached->offset[0], 1.0) && near(attached->offset[5], 6.0),
             "Fixture offsets differ");
     require(near(attached->smoothing, 0.25), "Fixture smoothing differs");
-    require(shot.attach.first_enabled() == attached, "First enabled segment differs");
     dolly::CameraPose pose{};
     require(shot.camera.evaluate(0.5, pose) && near(pose[0], 50.0), "Fixture camera pose differs");
 }

@@ -348,10 +348,4 @@ void picker_result(PickerResult& out) noexcept {
             std::memcpy(out.name, frame.catalog->bones[frame.selected].name, sizeof(out.name));
     }
 }
-void picker_abandon() noexcept {
-    std::lock_guard<std::mutex> lock(guard);
-    frame.active = frame.ready = false;
-    saved = false;
-    rejected = true;
-}
 } // namespace dolly

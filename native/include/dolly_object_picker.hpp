@@ -28,10 +28,6 @@ bool object_place_on_plane(const std::array<double, 3>& origin,
                            const std::array<double, 3>& direction, double plane_z,
                            std::array<double, 3>& point) noexcept;
 
-// Convenience: screen point -> world point at a fixed distance, using a view.
-bool object_place_screen(const VisualizationView& view, double screen_x, double screen_y,
-                         double distance, std::array<double, 3>& point) noexcept;
-
 // Placement mode for the Object Picker. Distance places the object a fixed
 // distance ahead of the camera (always valid); Ground intersects the aim ray
 // with the horizontal plane at ``plane_z`` and falls back to Distance when the
@@ -43,16 +39,6 @@ enum class PlaceMode : std::uint32_t { Distance = 0, Ground = 1 };
 bool object_place_view(const VisualizationView& view, double screen_x, double screen_y,
                        PlaceMode mode, double distance, double plane_z,
                        std::array<double, 3>& point) noexcept;
-
-// Rotate an object's authored angles so ``yaw`` follows the camera facing,
-// while pitch/roll are preserved. Used when a placed object should look at the
-// viewer by default.
-void object_face_camera(double camera_yaw, const std::array<double, 3>& authored,
-                        std::array<double, 3>& angles) noexcept;
-
-// Clamp a placement into the reviewed world bounds. Returns false when the point
-// is non-finite; otherwise the point is clamped in place and true is returned.
-bool object_clamp_bounds(std::array<double, 3>& point, double limit) noexcept;
 
 // Snap a world point to a grid of ``step`` world units per axis (nearest
 // multiple). Returns false for a non-finite point or a non-positive step, in

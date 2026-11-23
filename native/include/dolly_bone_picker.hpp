@@ -79,6 +79,5 @@ bool picker_preview(std::uint32_t request, bool preview) noexcept;
 bool picker_orbit(std::uint32_t request, double yaw, double pitch) noexcept;
 bool picker_finish(std::uint32_t request, int index) noexcept;
 void picker_result(PickerResult&) noexcept;
-void picker_abandon() noexcept;
 std::uint64_t picker_now() noexcept;
 } // namespace dolly

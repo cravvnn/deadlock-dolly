@@ -190,7 +190,6 @@ class AttachSmoothing {
 public:
     void reset() noexcept;
     bool primed() const noexcept { return primed_; }
-    void apply(CameraPose& pose, double dt, double tau) noexcept;
     void apply_anchored(CameraPose& pose, const std::array<double, 3>& anchor, double dt,
                         double tau, double max_error) noexcept;
 
@@ -267,8 +266,6 @@ public:
     static constexpr std::size_t segment_bytes = 96;
     static constexpr std::size_t segment_bytes2 = 104;
     static constexpr std::size_t segment_bytes3 = 112;
-    static constexpr std::size_t max_bytes = header_bytes + max_segments * segment_bytes;
-    static constexpr std::size_t max_bytes2 = header_bytes + max_segments * segment_bytes2;
     static constexpr std::size_t max_bytes3 = header_bytes + max_segments * segment_bytes3;
 
     // Load one DLYATT01 block on the non-render thread. Zero bytes is a valid
@@ -280,8 +277,6 @@ public:
     // segment. The caller checks the enabled flag.
     const AttachSegment* at(double phase) const noexcept;
     const AttachSegment* arriving(double phase, double& weight) const noexcept;
-    // First enabled segment, used by the worker to resolve a target once.
-    const AttachSegment* first_enabled() const noexcept;
     bool empty() const noexcept { return segments_.empty(); }
     const std::vector<AttachSegment>& segments() const noexcept { return segments_; }
     double duration() const noexcept { return duration_; }

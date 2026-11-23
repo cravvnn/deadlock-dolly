@@ -5784,8 +5784,9 @@ int main(int argc, char** argv) {
                                                 double(snapshot.view_width),
                                                 double(snapshot.view_height), 1};
             std::array<double, 3> centre{};
-            require(dolly::object_place_screen(place_view, snapshot.view_width * 0.5,
-                                               snapshot.view_height * 0.5, 600.0, centre),
+            require(dolly::object_place_view(place_view, snapshot.view_width * 0.5,
+                                             snapshot.view_height * 0.5,
+                                             dolly::PlaceMode::Distance, 600.0, 0, centre),
                     "Object placement failed in smoke test");
             snapshot.object_items[0].position[0] = float(centre[0]);
             snapshot.object_items[0].position[1] = float(centre[1]);

@@ -40,12 +40,15 @@ int main() {
 
         // Fixed-distance placement.
         std::array<double, 3> point{};
-        require(object_place_screen(view, 800, 450, 500, point), "Place at center");
+        require(object_place_view(view, 800, 450, PlaceMode::Distance, 500, 0, point),
+                "Place at center");
         require(std::abs(point[0] - 600) < 1e-6 && std::abs(point[1] - 200) < 1e-6 &&
                     std::abs(point[2] - 300) < 1e-6,
                 "Center place is 500 units ahead");
-        require(!object_place_screen(view, 800, 450, 0, point), "Reject zero distance");
-        require(!object_place_screen(view, 800, 450, -5, point), "Reject negative distance");
+        require(!object_place_view(view, 800, 450, PlaceMode::Distance, 0, 0, point),
+                "Reject zero distance");
+        require(!object_place_view(view, 800, 450, PlaceMode::Distance, -5, 0, point),
+                "Reject negative distance");
 
         // Ground/plane placement. Camera at z=300 looking level never hits z=0.
         const std::array<double, 3> level{1, 0, 0};
@@ -62,20 +65,6 @@ int main() {
         const std::array<double, 3> downward2{1, 0, -1};
         require(!object_place_on_plane({0, 0, 100}, downward2, 200, point),
                 "Ray behind the plane is rejected");
-
-        // Face-camera rotation keeps pitch/roll, adopts camera yaw.
-        std::array<double, 3> angles{};
-        object_face_camera(45.0, {10, 20, 30}, angles);
-        require(angles[0] == 10 && angles[1] == 45 && angles[2] == 30, "Face camera adopts yaw only");
-        object_face_camera(std::numeric_limits<double>::quiet_NaN(), {10, 20, 30}, angles);
-        require(angles[1] == 20, "Nonfinite camera yaw leaves authored yaw");
-
-        // Bounds clamp.
-        std::array<double, 3> far{5e6, -5e6, 100};
-        require(object_clamp_bounds(far, 100000.0), "Clamp within limit");
-        require(far[0] == 100000.0 && far[1] == -100000.0 && far[2] == 100.0, "Clamp bounds applied");
-        std::array<double, 3> nan{std::numeric_limits<double>::quiet_NaN(), 0, 0};
-        require(!object_clamp_bounds(nan, 100000.0), "Reject nonfinite point");
 
         // Grid snap: nearest multiple per axis; a bad step leaves it untouched.
         std::array<double, 3> snap{17.0, -9.0, 31.5};

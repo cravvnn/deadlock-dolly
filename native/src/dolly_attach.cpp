@@ -288,22 +288,6 @@ void AttachSmoothing::reset() noexcept {
     pose_[6] = 16.0 / 9;
 }
 
-void AttachSmoothing::apply(CameraPose& pose, double dt, double tau) noexcept {
-    if (!primed_ || !(tau > 0) || !(dt > 0)) {
-        pose_ = pose;
-        primed_ = true;
-        return;
-    }
-    dt = std::min(dt, 0.25); // A stall must not snap the camera.
-    const double alpha = 1 - std::exp(-dt / tau);
-    for (int i = 0; i < 3; ++i)
-        pose_[i] += (pose[i] - pose_[i]) * alpha;
-    for (int i = 3; i < 6; ++i)
-        pose_[i] += std::remainder(pose[i] - pose_[i], 360.0) * alpha;
-    pose_[6] = pose[6];
-    pose = pose_;
-}
-
 void AttachSmoothing::apply_anchored(CameraPose& pose, const std::array<double, 3>& anchor,
                                      double dt, double tau, double max_error) noexcept {
     if (!finite3(anchor, 1e8) || !std::isfinite(max_error) || max_error < 0) {
@@ -816,13 +800,6 @@ const AttachSegment* AttachTrack::arriving(double phase, double& weight) const n
         return nullptr;
     weight = attach_blend_weight(phase, start, next.begin);
     return &next;
-}
-
-const AttachSegment* AttachTrack::first_enabled() const noexcept {
-    for (const auto& segment : segments_)
-        if (segment.flags & 1)
-            return &segment;
-    return nullptr;
 }
 
 } // namespace dolly

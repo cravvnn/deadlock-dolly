@@ -599,28 +599,6 @@ inline bool locate_bone_array(const Offsets& offsets, std::uintptr_t node,
     return false;
 }
 
-[[maybe_unused]] inline void quat_to_angles(const float* transform,
-                                            std::array<double, 3>& out) noexcept {
-    double x = transform[4], y = transform[5], z = transform[6], w = transform[7];
-    const double norm = std::sqrt(x * x + y * y + z * z + w * w);
-    if (norm < 1e-6) {
-        x = y = z = 0;
-        w = 1;
-    } else {
-        x /= norm;
-        y /= norm;
-        z /= norm;
-        w /= norm;
-    }
-    const double r00 = 1 - 2 * (y * y + z * z), r10 = 2 * (x * y + w * z),
-                 r20 = 2 * (x * z - w * y), r21 = 2 * (y * z + w * x),
-                 r22 = 1 - 2 * (x * x + y * y);
-    constexpr double pi = 3.14159265358979323846;
-    out[0] = -std::asin(std::fmin(1.0, std::fmax(-1.0, r20))) * 180.0 / pi;
-    out[1] = std::atan2(r10, r00) * 180.0 / pi;
-    out[2] = std::atan2(-r21, r22) * 180.0 / pi;
-}
-
 // A texture/skin mod may replace a hero model with a resource whose internal
 // name differs (for example "magician_default.vmdl") while it still occupies
 // the same model slot. The exact name token is the strict identity; when it
