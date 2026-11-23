@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 
 import build_native
 import build_ui_override
+import check_game_update
 import format_cpp
 import release_files
 import release_status
@@ -189,6 +190,24 @@ class UpdateGamePaths(unittest.TestCase):
                 with self.subTest(selected=selected.name):
                     self.assertEqual(update_game.installed_game_dir(selected).resolve(), game)
             self.assertEqual(update_game.read_steam_inf(game), {'ClientVersion': '1'})
+
+
+class GameUpdateCheck(unittest.TestCase):
+    def run_check(self, published):
+        report = type('Report', (), {'modules': []})()
+        with tempfile.TemporaryDirectory() as temp,                 patch.object(check_game_update.compatibility, 'scan_game_modules', return_value=report),                 patch.object(check_game_update, 'published_definitions', return_value=published),                 contextlib.redirect_stdout(io.StringIO()) as out:
+            game = Path(temp) / 'game'
+            (game / 'citadel').mkdir(parents=True)
+            return check_game_update.main(['--game-dir', str(game)]), out.getvalue()
+
+    def test_invalid_definitions_feed_fails_the_check(self):
+        code, text = self.run_check((None, 'bad feed'))
+        self.assertEqual(code, 2)
+        self.assertIn('SUMMARY: the published definitions feed is invalid: bad feed', text)
+
+    def test_valid_feed_with_reviewed_modules_passes(self):
+        code, text = self.run_check(check_game_update.published_definitions())
+        self.assertEqual(code, 0, text)
 
 
 class UpdateGamePipeline(unittest.TestCase):

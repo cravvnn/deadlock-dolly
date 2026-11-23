@@ -176,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SUMMARY: {len(missing)} reviewed module(s) missing: "
               + ", ".join(m.name for m in missing))
         return 2
+    if published is None:
+        print(f"SUMMARY: the published definitions feed is invalid: {published_error}")
+        return 2
     camera_changed = [m for m in changed
                       if m.relative in compatibility.CAMERA_MODULE_RELATIVES]
     other_changed = [m for m in changed if m not in camera_changed]
