@@ -110,6 +110,9 @@ MOVIE_STOP_ATTEMPTS = 3
 TAKE_RESTORE_ATTEMPTS = 3
 # Automatic tries at clearing a closed game's session state.
 GAME_EXIT_CLEANUP_ATTEMPTS = 3
+# The close's own worker steps. Only their failures finish a requested close;
+# other work that fails while the save question is open reports as usual.
+CLOSE_STEPS = ("Stopping before closing", "Closing replay connection")
 MOVIE_STOP_HELD = (
     "Deadlock did not confirm that the movie audio recording stopped after {attempts} tries, "
     "so it may still be writing the WAV. Dolly kept the recording and stopped retrying on its own. "
@@ -3619,7 +3622,7 @@ class DollyApp:
             elif kind in ("error", "export_error"):
                 self.busy = False
                 self.busy_text.set("")
-                if getattr(self, "_closing", False):
+                if getattr(self, "_closing", False) and label in CLOSE_STEPS:
                     # The user asked to close Dolly and a teardown step (such as
                     # Stop) failed, often because the game was already closed
                     # from its own window. Still run the file-level close and
@@ -5643,7 +5646,7 @@ class DollyApp:
         # instead of stacking an error dialog behind an unclosable app.
         self._closing = True
         if self.playing:
-            self._submit("Stopping before closing", self.controller.stop, lambda _result: self._finish_close())
+            self._submit(CLOSE_STEPS[0], self.controller.stop, lambda _result: self._finish_close())
         else:
             self._finish_close()
 
@@ -5656,7 +5659,7 @@ class DollyApp:
         self._discard_asked = True
         editor_session.close(self)
         self._close_submitted = True
-        self._submit("Closing replay connection", self.controller.close, lambda _result: self._destroy())
+        self._submit(CLOSE_STEPS[1], self.controller.close, lambda _result: self._destroy())
 
     def _close_after_failure(self):
         """Finish a requested close after a teardown step failed.
@@ -5684,7 +5687,7 @@ class DollyApp:
             self._destroy()
             return
         self._close_submitted = True
-        if self._submit("Closing replay connection", self.controller.close,
+        if self._submit(CLOSE_STEPS[1], self.controller.close,
                         lambda _result: self._destroy()):
             return
         try:

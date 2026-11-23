@@ -251,6 +251,31 @@ class CloseAndDialogBoundaries(unittest.TestCase):
         gui.DollyApp._on_close(app)
         self.assertFalse(app._close_submitted)
 
+    def test_only_the_close_steps_finish_a_close_after_a_failure(self):
+        # The save question keeps the poll running; a game-exit cleanup that
+        # fails then must not open a second save question or end the close.
+        from dolly import gui
+
+        def polled(label):
+            app = MagicMock()
+            app.closed = app.busy = app.playing = False
+            app._closing = True
+            app.startup_cancel = None
+            app.capture_buttons = []
+            app.controller.status.return_value = {'connected': False, 'startup_stage': 'game_closed'}
+            app.operations.pending_events.return_value = [('error', label, RuntimeError('worker still stopping'))]
+            with patch.object(gui, 'editor_session'):
+                gui.DollyApp._poll_once(app)
+            return app
+
+        app = polled('Clearing closed game session')
+        app._close_after_failure.assert_not_called()
+        app._report_operation_error.assert_called_once()
+        for label in ('Stopping before closing', 'Closing replay connection'):
+            app = polled(label)
+            app._close_after_failure.assert_called_once()
+            app._report_operation_error.assert_not_called()
+
     def test_background_results_wait_for_an_open_dialog(self):
         from dolly import gui
         show = MagicMock(return_value='ok')
