@@ -2602,6 +2602,106 @@ void confetti_control_updates() {
     require(!read(), "Same-ID flag refresh must not change the playback clock");
 }
 
+void control_rejection_checks() {
+    Fixture f;
+    f.fresh_hold(.25);
+    const DWORD editor_pid = 4242;
+    auto owned = std::make_shared<Command>(*std::atomic_load(&gCommand));
+    owned->wire.editor_pid = editor_pid;
+    owned->wire.game_pid = GetCurrentProcessId();
+    const std::shared_ptr<const Command> acknowledged = owned;
+    std::atomic_store(&gCommand, acknowledged);
+    ControlHeader incoming{};
+    std::memcpy(incoming.magic, kControlMagic, 8);
+    incoming.abi = kBridgeAbi;
+    incoming.sequence = 2;
+    incoming.command = f.next_command + 1;
+    incoming.mode = std::uint32_t(Mode::Hold);
+    incoming.editor_pid = editor_pid;
+    incoming.game_pid = GetCurrentProcessId();
+    incoming.speed = 1;
+    incoming.payload_bytes = 16;
+    std::snprintf(incoming.demo_name, sizeof(incoming.demo_name), "native-smoke.dem");
+    require(validate_control(incoming, editor_pid), "Valid control header was refused");
+    for (int field = 0; field < 7; ++field) {
+        auto bad = incoming;
+        if (field == 0)
+            bad.editor_pid = editor_pid + 1;
+        else if (field == 1)
+            bad.game_pid = 0;
+        else if (field == 2)
+            bad.mode = 5;
+        else if (field == 3)
+            bad.speed = 0;
+        else if (field == 4)
+            bad.start_phase = -1;
+        else if (field == 5)
+            bad.flags = kConfetti | (50u << kConfettiHeightShift);
+        else
+            std::memset(bad.demo_name, 'x', sizeof(bad.demo_name));
+        require(!validate_control(bad, editor_pid), "Invalid control header was admitted");
+    }
+    std::memset(gMemory + kPayloadOffset, 0x5a, incoming.payload_bytes);
+    std::shared_ptr<const NativeShot> shot;
+    std::uint32_t accepted = f.next_command;
+    bool manual = false;
+    ControlRejection rejection;
+    ControlHeader observed{};
+    std::vector<unsigned char> payload;
+    // One worker pass, as in the worker loop.
+    const auto pass = [&] {
+        payload.clear();
+        std::memcpy(gMemory, &incoming, sizeof(incoming));
+        if (!read_control(observed, payload, accepted, rejection))
+            return false;
+        const auto refused = admit_control(observed, payload, editor_pid, shot, accepted, manual);
+        rejection = refused ? ControlRejection{observed.sequence, observed.command, refused}
+                            : ControlRejection{};
+        return true;
+    };
+    // An unparseable shot is refused without faulting the running camera.
+    require(pass() && rejection.error == 32, "Malformed shot payload was not refused");
+    require(std::atomic_load(&gCommand) == acknowledged && gWorkerError.load() == 0,
+            "A refused command replaced or faulted the acknowledged one");
+    auto status = f.frame();
+    require(status.state == unsigned(State::Armed) && !status.error &&
+                status.ack_command == acknowledged->wire.command,
+            "A refused command released the acknowledged camera");
+    // The same snapshot is neither copied nor parsed again.
+    require(!pass() && payload.empty(), "A refused snapshot was read again");
+    // A flags-only refresh under the acknowledged command that fails the
+    // header checks keeps the command and its flags.
+    incoming.sequence = 4;
+    incoming.command = accepted;
+    incoming.mode = acknowledged->wire.mode;
+    incoming.start_phase = acknowledged->wire.start_phase;
+    incoming.speed = acknowledged->wire.speed;
+    incoming.editor_pid = acknowledged->wire.editor_pid;
+    incoming.game_pid = acknowledged->wire.game_pid;
+    incoming.payload_bytes = 0;
+    incoming.flags = acknowledged->wire.flags | kConfetti | (50u << kConfettiHeightShift);
+    require(pass() && rejection.error == 31, "Invalid flags refresh was not refused");
+    require(std::atomic_load(&gCommand) == acknowledged, "Refused refresh changed the command");
+    status = f.frame();
+    require(status.state == unsigned(State::Armed) && !status.error,
+            "A refused flags refresh released the acknowledged camera");
+    require(!pass(), "A refused refresh was read again");
+    // The next publication is read again and can be admitted.
+    incoming.sequence = 6;
+    incoming.command = accepted + 1;
+    incoming.mode = std::uint32_t(Mode::Release);
+    incoming.flags = 0;
+    incoming.editor_pid = editor_pid;
+    incoming.game_pid = GetCurrentProcessId();
+    incoming.speed = 1;
+    require(pass() && !rejection.error && accepted == incoming.command &&
+                std::atomic_load(&gCommand)->wire.command == incoming.command,
+            "A valid command after a refusal was not admitted");
+    status = f.frame();
+    require(status.state == unsigned(State::Stopped) && status.ack_command == incoming.command,
+            "Release after a refusal was not acknowledged");
+}
+
 void confetti_diagnostics_publish() {
     dolly::confetti::Camera camera{};
     dolly::confetti::on_frame(10.0, true, false, &camera, true, 250.0f, false, 0, 1.0f);
@@ -2742,6 +2842,7 @@ void prop_probe_main_view_only(Fixture& f) {
 void run() {
     gameplay_effect_filter_checks();
     confetti_control_updates();
+    control_rejection_checks();
     confetti_diagnostics_publish();
     attach_preview_continuity_checks();
     bone_string_bounds();

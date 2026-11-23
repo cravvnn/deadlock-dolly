@@ -349,13 +349,24 @@ static void startup_status(State state, unsigned error, const char* message) noe
     std::snprintf(status.message, sizeof(status.message), "%s", message);
     write_status(status, true);
 }
+// The last control snapshot the worker refused. An error of zero means none.
+struct ControlRejection {
+    std::uint32_t sequence = 0;
+    std::uint32_t command = 0;
+    unsigned error = 0;
+};
 static bool read_control(ControlHeader& h, std::vector<unsigned char>& payload,
-                         std::uint32_t accepted) {
+                         std::uint32_t accepted, const ControlRejection& rejected = {}) {
     auto sequence = reinterpret_cast<volatile LONG*>(gMemory + 12);
     LONG before = InterlockedCompareExchange(sequence, 0, 0);
     if (before & 1)
         return false;
     std::memcpy(&h, gMemory, sizeof(h));
+    // Each publication advances the sequence. A refused snapshot is not copied
+    // or parsed again until the editor publishes another one.
+    if (rejected.error && std::uint32_t(before) == rejected.sequence &&
+        h.command == rejected.command)
+        return false;
     if (h.payload_bytes > kMaxPayloadBytes)
         return false;
     payload.resize(h.payload_bytes);
@@ -1601,6 +1612,130 @@ __declspec(noinline) static void __fastcall setup_hook(void* self, std::uintptr_
     gOriginalSetup(self, opaque);
     on_view(self, caller);
 }
+// The fixed header checks for one control snapshot. Payload checks follow
+// in admit_control.
+static bool validate_control(const ControlHeader& c, DWORD editor_pid) noexcept {
+    const auto height = (c.flags >> kConfettiHeightShift) & kConfettiHeightMask;
+    const auto preset = (c.flags >> kParticlePresetShift) & kParticlePresetMask;
+    return c.editor_pid == editor_pid && c.game_pid == GetCurrentProcessId() && c.mode <= 4 &&
+           !(c.flags & ~(kFrozen | kAspect | kNoSeekRelief | kGamePov | kConfettiControlMask)) &&
+           !((c.flags & kGamePov) &&
+             ((c.flags & (kFrozen | kAspect)) || c.mode == std::uint32_t(Mode::Manual))) &&
+           !((c.flags & kConfetti) &&
+             (height < 100 || height > 1500 || preset >= confetti::kPresetCount)) &&
+           std::isfinite(c.start_phase) && c.start_phase >= 0 && std::isfinite(c.speed) &&
+           c.speed >= .05 && c.speed <= 4 && std::memchr(c.demo_name, 0, sizeof(c.demo_name));
+}
+// Admit one coherent control snapshot on the worker. Returns zero once a new
+// command or a flags refresh is published, otherwise the refusal code
+// (31 header, 32 payload, 33 start). A refusal leaves gCommand untouched.
+static unsigned admit_control(const ControlHeader& control,
+                              const std::vector<unsigned char>& payload, DWORD editor_pid,
+                              std::shared_ptr<const NativeShot>& shot, std::uint32_t& accepted,
+                              bool& manual) {
+    if (!validate_control(control, editor_pid))
+        return 31;
+    gReliefAllowed.store(!(control.flags & kNoSeekRelief), std::memory_order_relaxed);
+    if (control.command == accepted) {
+        auto current = std::atomic_load(&gCommand);
+        if (current) {
+            auto refreshed = std::make_shared<Command>(*current);
+            refreshed->wire.flags = control.flags;
+            std::atomic_store(&gCommand, std::shared_ptr<const Command>(refreshed));
+        }
+        return 0;
+    }
+    auto candidate = shot;
+    bool next_manual = control.mode == std::uint32_t(Mode::Manual) ||
+                       (manual && control.mode == std::uint32_t(Mode::HoldCurrent));
+    CameraPose seed{};
+    bool has_seed = false;
+    if (control.mode == std::uint32_t(Mode::Manual)) {
+        if (control.payload_bytes) {
+            if (control.payload_bytes != sizeof(seed))
+                return 32;
+            std::memcpy(seed.data(), payload.data(), sizeof(seed));
+            if (!pose_valid(seed))
+                return 32;
+            has_seed = true;
+        }
+    } else if (control.payload_bytes) {
+        auto parsed = std::make_shared<NativeShot>();
+        std::string error;
+        if (!parsed->load(payload.data(), payload.size(), error))
+            return 32;
+        candidate = parsed;
+        next_manual = false;
+    }
+    if (control.mode && !next_manual &&
+        (!candidate || control.start_phase > candidate->camera.duration()))
+        return 33;
+    std::vector<std::shared_ptr<const attach_runtime::Cache>> attach_caches;
+    if ((control.flags & kGamePov) && candidate &&
+        (!candidate->effects.empty() ||
+         std::any_of(candidate->attach.segments().begin(),
+                     candidate->attach.segments().end(),
+                     [](const auto& segment) { return (segment.flags & 1) != 0; })))
+        return 32;
+    if (candidate)
+        for (const auto& attach_segment : candidate->attach.segments()) {
+            if (!(attach_segment.flags & 1)) {
+                attach_caches.push_back(nullptr);
+                continue;
+            }
+            // A shot may cut between players or bones. Resolve each distinct
+            // source on the worker, never reuse the first source blindly.
+            std::shared_ptr<const attach_runtime::Cache> reused;
+            for (std::size_t index = 0; index < attach_caches.size(); ++index) {
+                const auto& previous = candidate->attach.segments()[index];
+                if (attach_caches[index] &&
+                    previous.target.handle == attach_segment.target.handle &&
+                    previous.target.entity_id == attach_segment.target.entity_id &&
+                    previous.target.model == attach_segment.target.model &&
+                    previous.point == attach_segment.point &&
+                    previous.bone_hash == attach_segment.bone_hash) {
+                    reused = attach_caches[index];
+                    break;
+                }
+            }
+            if (reused) {
+                attach_caches.push_back(reused);
+                continue;
+            }
+            auto attach_cache = std::make_shared<attach_runtime::Cache>();
+            EditorAttachConfig attach_config{};
+            if (!editor_attach_config(attach_config)) {
+                attach_cache->error =
+                    "Attach camera offsets are not available yet; reconnect "
+                    "the editor session or re-play the shot.";
+            } else {
+                const char* attach_error = nullptr;
+                attach_runtime::resolve(reinterpret_cast<HMODULE>(gClient),
+                                        attach_runtime::offsets_from(attach_config),
+                                        attach_segment.target, attach_segment,
+                                        *attach_cache, attach_error);
+                if (!attach_cache->ready && attach_error)
+                    attach_cache->error = attach_error;
+            }
+            attach_caches.push_back(attach_cache);
+        }
+    auto command = std::make_shared<Command>();
+    command->wire = control;
+    command->shot = candidate;
+    command->attach = std::move(attach_caches);
+    command->manual = next_manual;
+    command->has_manual_pose = has_seed;
+    command->manual_pose = seed;
+    manual = next_manual;
+    if (candidate)
+        command->path =
+            std::shared_ptr<const NativePath>(candidate, &candidate->camera);
+    shot = candidate;
+    accepted = control.command;
+    std::atomic_store_explicit(&gCommand, std::shared_ptr<const Command>(command),
+                               std::memory_order_release);
+    return 0;
+}
 static DWORD WINAPI worker(void*) {
     try {
         std::wstring mapping;
@@ -1780,6 +1915,7 @@ static DWORD WINAPI worker(void*) {
         ULONGLONG next_renderer_probe = 0;
         ULONGLONG next_sound_probe = 0;
         unsigned sound_attempts = 0;
+        ControlRejection rejection;
         for (;;) {
             minimap_guard_diagnostics();
             publish_follow_anchor(gMemory);
@@ -1835,145 +1971,18 @@ static DWORD WINAPI worker(void*) {
                 gReliefAllowed.load(std::memory_order_relaxed) &&
                 (gDemoSeeking.load(std::memory_order_relaxed) || overlay_renderer_pressure()));
             ControlHeader control{};
-            if (read_control(control, payload, accepted)) {
+            if (read_control(control, payload, accepted, rejection)) {
                 // CreateProcess can reach the proxy before the launcher receives the PID.
                 if (control.game_pid == 0) {
                     Sleep(5);
                     continue;
                 }
-                if (control.editor_pid != editor_pid || control.game_pid != GetCurrentProcessId() ||
-                    control.mode > 4 ||
-                    control.flags &
-                        ~(kFrozen | kAspect | kNoSeekRelief | kGamePov | kConfettiControlMask) ||
-                    ((control.flags & kGamePov) && ((control.flags & (kFrozen | kAspect)) ||
-                                                    control.mode == std::uint32_t(Mode::Manual))) ||
-                    ((control.flags & kConfetti) &&
-                     (((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) < 100 ||
-                      ((control.flags >> kConfettiHeightShift) & kConfettiHeightMask) > 1500 ||
-                      ((control.flags >> kParticlePresetShift) & kParticlePresetMask) >=
-                          confetti::kPresetCount)) ||
-                    !std::isfinite(control.start_phase) || control.start_phase < 0 ||
-                    !std::isfinite(control.speed) || control.speed < .05 || control.speed > 4 ||
-                    !std::memchr(control.demo_name, 0, sizeof(control.demo_name))) {
-                    gWorkerError = 31;
-                    Sleep(10);
-                    continue;
-                }
-                gReliefAllowed.store(!(control.flags & kNoSeekRelief), std::memory_order_relaxed);
-                if (control.command == accepted) {
-                    auto current = std::atomic_load(&gCommand);
-                    if (current) {
-                        auto refreshed = std::make_shared<Command>(*current);
-                        refreshed->wire.flags = control.flags;
-                        std::atomic_store(&gCommand, std::shared_ptr<const Command>(refreshed));
-                    }
-                    continue;
-                }
-                auto candidate = shot;
-                bool next_manual = control.mode == std::uint32_t(Mode::Manual) ||
-                                   (manual && control.mode == std::uint32_t(Mode::HoldCurrent));
-                CameraPose seed{};
-                bool has_seed = false;
-                if (control.mode == std::uint32_t(Mode::Manual)) {
-                    if (control.payload_bytes) {
-                        if (control.payload_bytes != sizeof(seed)) {
-                            gWorkerError = 32;
-                            Sleep(10);
-                            continue;
-                        }
-                        std::memcpy(seed.data(), payload.data(), sizeof(seed));
-                        if (!pose_valid(seed)) {
-                            gWorkerError = 32;
-                            Sleep(10);
-                            continue;
-                        }
-                        has_seed = true;
-                    }
-                } else if (control.payload_bytes) {
-                    auto parsed = std::make_shared<NativeShot>();
-                    std::string error;
-                    if (!parsed->load(payload.data(), payload.size(), error)) {
-                        gWorkerError = 32;
-                        Sleep(10);
-                        continue;
-                    }
-                    candidate = parsed;
-                    next_manual = false;
-                }
-                if (control.mode && !next_manual &&
-                    (!candidate || control.start_phase > candidate->camera.duration())) {
-                    gWorkerError = 33;
-                    Sleep(10);
-                    continue;
-                }
-                std::vector<std::shared_ptr<const attach_runtime::Cache>> attach_caches;
-                if ((control.flags & kGamePov) && candidate &&
-                    (!candidate->effects.empty() ||
-                     std::any_of(candidate->attach.segments().begin(),
-                                 candidate->attach.segments().end(),
-                                 [](const auto& segment) { return (segment.flags & 1) != 0; }))) {
-                    gWorkerError = 32;
-                    Sleep(10);
-                    continue;
-                }
-                if (candidate)
-                    for (const auto& attach_segment : candidate->attach.segments()) {
-                        if (!(attach_segment.flags & 1)) {
-                            attach_caches.push_back(nullptr);
-                            continue;
-                        }
-                        // A shot may cut between players or bones. Resolve each distinct
-                        // source on the worker, never reuse the first source blindly.
-                        std::shared_ptr<const attach_runtime::Cache> reused;
-                        for (std::size_t index = 0; index < attach_caches.size(); ++index) {
-                            const auto& previous = candidate->attach.segments()[index];
-                            if (attach_caches[index] &&
-                                previous.target.handle == attach_segment.target.handle &&
-                                previous.target.entity_id == attach_segment.target.entity_id &&
-                                previous.target.model == attach_segment.target.model &&
-                                previous.point == attach_segment.point &&
-                                previous.bone_hash == attach_segment.bone_hash) {
-                                reused = attach_caches[index];
-                                break;
-                            }
-                        }
-                        if (reused) {
-                            attach_caches.push_back(reused);
-                            continue;
-                        }
-                        auto attach_cache = std::make_shared<attach_runtime::Cache>();
-                        EditorAttachConfig attach_config{};
-                        if (!editor_attach_config(attach_config)) {
-                            attach_cache->error =
-                                "Attach camera offsets are not available yet; reconnect "
-                                "the editor session or re-play the shot.";
-                        } else {
-                            const char* attach_error = nullptr;
-                            attach_runtime::resolve(reinterpret_cast<HMODULE>(gClient),
-                                                    attach_runtime::offsets_from(attach_config),
-                                                    attach_segment.target, attach_segment,
-                                                    *attach_cache, attach_error);
-                            if (!attach_cache->ready && attach_error)
-                                attach_cache->error = attach_error;
-                        }
-                        attach_caches.push_back(attach_cache);
-                    }
-                auto command = std::make_shared<Command>();
-                command->wire = control;
-                command->shot = candidate;
-                command->attach = std::move(attach_caches);
-                command->manual = next_manual;
-                command->has_manual_pose = has_seed;
-                command->manual_pose = seed;
-                manual = next_manual;
-                if (candidate)
-                    command->path =
-                        std::shared_ptr<const NativePath>(candidate, &candidate->camera);
-                shot = candidate;
-                accepted = control.command;
-                gWorkerError = 0;
-                std::atomic_store_explicit(&gCommand, std::shared_ptr<const Command>(command),
-                                           std::memory_order_release);
+                // A refusal keeps the acknowledged command running; the editor
+                // sees its new command go unacknowledged.
+                const auto refused =
+                    admit_control(control, payload, editor_pid, shot, accepted, manual);
+                rejection = refused ? ControlRejection{control.sequence, control.command, refused}
+                                    : ControlRejection{};
             }
             static double last_roster_publish = 0;
             const double roster_now = now_seconds();
