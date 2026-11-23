@@ -1,0 +1,5 @@
+[
+ {"name":"keep the drag across a picker close","replace":[["UseSessionReset == TRUE","UseSessionReset == FALSE"]],"expect":"CommitInSession"},
+ {"name":"commit without checking the grabbed object","replace":[["UseTargetCheck == TRUE","UseTargetCheck == FALSE"]],"expect":"CommitTargetsGrabbed"},
+ {"name":"mouse-up never commits","replace":[["IF kept /\\ ~down","IF FALSE"]],"expect":"DragCommits"}
+]
