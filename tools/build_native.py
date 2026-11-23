@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -24,6 +25,19 @@ REPLAY_INDEX_RELATIVE = Path("bin/win64/DollyReplayIndex.exe")
 REQUIRED_EXPORTS = {
     "CreateInterface", "DollyNativeProtocolVersion",
     "DollyAtomicExchange32", "DollyAtomicExchange64", "DollyAtomicCompareExchange32",
+}
+# build_info.json flag -> the ctest that must have run for it to be true.
+RESULT_TESTS = {
+    "native_path_tests_passed": "native_path_tests",
+    "native_effect_tests_passed": "native_effect_tests",
+    "native_visualization_tests_passed": "native_visualization_tests",
+    "native_callback_tests_passed": "native_bridge_callback_smoke",
+    "native_flight_tests_passed": "native_flight_tests",
+    "native_attach_tests_passed": "native_attach_tests",
+    "native_overlay_tests_passed": "native_dx11_overlay_smoke",
+    "native_video_math_tests_passed": "native_video_math_tests",
+    "native_video_encoder_tests_passed": "native_video_encoder_smoke",
+    "native_depth_scene_tests_passed": "native_depth_scene_smoke",
 }
 
 
@@ -125,6 +139,54 @@ def reject_game_binaries(bundle: Path) -> None:
         raise RuntimeError("Game client.dll/engine2.dll/tier0.dll must never enter a Dolly release")
 
 
+def declared_tests(cmake_lists: str) -> set[str]:
+    """Every add_test name in native/CMakeLists.txt, expanding foreach items."""
+    loops: list[tuple[str, list[str]]] = []
+    names: set[str] = set()
+    for line in cmake_lists.splitlines():
+        line = line.split("#", 1)[0].strip()
+        loop = re.match(r"foreach\((\w+)\s+IN\s+ITEMS\s+([^)]*)\)", line)
+        if loop:
+            loops.append((loop.group(1), loop.group(2).split()))
+            continue
+        if line.startswith("endforeach"):
+            loops.pop()
+            continue
+        test = re.match(r"add_test\(NAME\s+(\S+)", line)
+        if not test:
+            continue
+        expanded = [test.group(1).rstrip(")")]
+        for variable, items in loops:
+            expanded = [name.replace("${%s}" % variable, item)
+                        for name in expanded for item in items]
+        if any("${" in name for name in expanded):
+            raise ValueError(f"Cannot resolve native test name {test.group(1)}")
+        names.update(expanded)
+    return names
+
+
+def registered_tests(build: Path, root: Path) -> set[str]:
+    listing = subprocess.run(
+        ["ctest", "--test-dir", str(build), "-C", "Release", "--show-only=json-v1"],
+        cwd=root, capture_output=True, text=True, check=True)
+    return {test["name"] for test in json.loads(listing.stdout).get("tests", [])}
+
+
+def test_results(declared: set[str], registered: set[str], skipped: list[str]) -> dict:
+    """Derive build_info result flags from the tests that actually ran."""
+    unknown = registered - declared
+    if unknown:
+        raise RuntimeError("Unrecognised native tests: " + ", ".join(sorted(unknown)))
+    if not set(RESULT_TESTS.values()) <= declared:
+        raise RuntimeError("A native result test is no longer declared in CMakeLists.txt")
+    # A declared test CMake did not register (CI omits the video tests) did not
+    # run, so record it as skipped rather than passing.
+    skipped = list(skipped) + sorted(declared - registered - set(skipped))
+    ran = registered - set(skipped)
+    flags = {flag: test in ran for flag, test in RESULT_TESTS.items()}
+    return {**flags, "skipped_tests": skipped, "full_suite_complete": not skipped}
+
+
 def build_native(root: Path = ROOT) -> dict:
     if (sys.platform != "win32" or struct.calcsize("P") != 8
             or platform.machine().lower() not in {"amd64", "x86_64"}):
@@ -148,7 +210,8 @@ def build_native(root: Path = ROOT) -> dict:
     # generated compat header changed, shipping a DLL whose compiled hash table
     # disagrees with the manifest. Removing it guarantees the link runs.
     (native / DLL_RELATIVE).unlink(missing_ok=True)
-    ctest = ["ctest", "--test-dir", str(build), "-C", "Release", "--output-on-failure"]
+    ctest = ["ctest", "--test-dir", str(build), "-C", "Release", "--output-on-failure",
+             "--no-tests=error"]
     # The H.264 encoder smoke test needs a machine that can sustain 120 FPS
     # Media Foundation encoding. CI skips it (see native/CMakeLists.txt); a local
     # builder can opt out the same way for machines that cannot.
@@ -172,12 +235,15 @@ def build_native(root: Path = ROOT) -> dict:
          "-A", "x64", "-DBUILD_TESTING=ON"],
         ["cmake", "--build", str(build), "--config", "Release", "--parallel", str(jobs),
          "--", "/nodeReuse:false"],
-        ctest,
     ]
     print("Building and testing the native x64 camera bridge...", flush=True)
     with (checks / "native-build.log").open("w", encoding="utf-8") as log:
         for command in commands:
             subprocess.run(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, check=True)
+        results = test_results(
+            declared_tests((native / "CMakeLists.txt").read_text(encoding="utf-8")),
+            registered_tests(build, root), skipped_tests)
+        subprocess.run(ctest, cwd=root, stdout=log, stderr=subprocess.STDOUT, check=True)
     dll = native / DLL_RELATIVE
     recorder = native / AUDIO_RELATIVE
     report = verify_native_dll(dll)
@@ -187,15 +253,7 @@ def build_native(root: Path = ROOT) -> dict:
             "game_audio_sha256": sha256(recorder),
             "built_utc": datetime.now(timezone.utc).isoformat(),
             "compiler": "Visual Studio 17 2022", "configuration": "Release",
-            "runtime": "static", "native_path_tests_passed": True,
-            "native_effect_tests_passed": True, "native_visualization_tests_passed": True,
-            "native_callback_tests_passed": True,
-            "native_flight_tests_passed": True, "native_attach_tests_passed": True,
-            "native_overlay_tests_passed": True,
-            "native_video_math_tests_passed": True,
-            "native_video_encoder_tests_passed": "native_video_encoder_smoke" not in skipped_tests,
-            "native_depth_scene_tests_passed": "native_depth_scene_smoke" not in skipped_tests,
-            "skipped_tests": skipped_tests, "full_suite_complete": not skipped_tests,
+            "runtime": "static", **results,
             "reshade_game_runtime_verified": False,
             "game_runtime_verified": False, "pe": report}
     reader = native / REPLAY_INDEX_RELATIVE
