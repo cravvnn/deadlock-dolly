@@ -197,6 +197,43 @@ inline bool identity_list_has_player(std::uintptr_t entity_system, unsigned head
     return false;
 }
 
+// Search the client image window [first, last) for a CGameEntitySystem
+// pointer, preferring one whose identity lists hold a player. The window is
+// copied a page at a time; a page that cannot be read is skipped.
+inline bool scan_entity_window(std::uintptr_t first, std::uintptr_t last, std::uintptr_t base,
+                               std::uintptr_t size, std::uintptr_t vtable,
+                               std::uintptr_t& out) noexcept {
+    std::uintptr_t fallback = 0;
+    std::uintptr_t values[512];
+    for (std::uintptr_t address = first; address + 8 <= last;) {
+        const std::uintptr_t end = std::min<std::uintptr_t>((address | 0xfff) + 1, last);
+        const std::size_t count = std::size_t(end - address) / 8;
+        const bool readable = read_memory(address, values, count * 8);
+        address += count * 8;
+        if (!readable)
+            continue;
+        for (std::size_t index = 0; index < count; ++index) {
+            const std::uintptr_t value = values[index];
+            std::uintptr_t first_entry = 0;
+            if (value < 0x10000000000ull || value > 0x7f0000000000ull || (value & 7) ||
+                (value >= base && value < base + size) || !read_value(value, first_entry) ||
+                first_entry != vtable)
+                continue;
+            if (identity_list_has_player(value, 0x210) || identity_list_has_player(value, 0x230)) {
+                out = value;
+                return true;
+            }
+            if (!fallback)
+                fallback = value;
+        }
+    }
+    if (fallback) {
+        out = fallback;
+        return true;
+    }
+    return false;
+}
+
 inline bool locate_entity_system(HMODULE client, std::uintptr_t& out) noexcept {
     if (!client)
         return false;
@@ -262,24 +299,7 @@ inline bool locate_entity_system(HMODULE client, std::uintptr_t& out) noexcept {
     }
     const std::uintptr_t first = base + (previous_rva > window ? previous_rva - window : 0);
     const std::uintptr_t last = base + std::min<std::uintptr_t>(size, previous_rva + window);
-    std::uintptr_t fallback = 0;
-    for (std::uintptr_t address = first; address + 8 <= last; address += 8) {
-        const std::uintptr_t value = *reinterpret_cast<const std::uintptr_t*>(address);
-        if (value < 0x10000000000ull || value > 0x7f0000000000ull || (value & 7) ||
-            (value >= base && value < base + size) || !valid(value))
-            continue;
-        if (identity_list_has_player(value, 0x210) || identity_list_has_player(value, 0x230)) {
-            out = value;
-            return true;
-        }
-        if (!fallback)
-            fallback = value;
-    }
-    if (fallback) {
-        out = fallback;
-        return true;
-    }
-    return false;
+    return scan_entity_window(first, last, base, size, vtable, out);
 }
 
 inline bool scan_identity_players(std::uintptr_t entity_system, std::vector<PlayerEntity>& out) noexcept {

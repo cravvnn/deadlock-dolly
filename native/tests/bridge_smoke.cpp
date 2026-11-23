@@ -2568,6 +2568,41 @@ void worker_session_release_checks() {
             "A worker exit kept the editor connected or its panel owner");
 }
 
+void entity_window_scan_checks() {
+    // Legacy CGameEntitySystem search over a client window whose middle page
+    // cannot be read. The scan skips that page and still finds the pointer.
+    constexpr std::size_t page = 0x1000;
+    Allocation window(3 * page);
+    void* system = nullptr;
+    for (std::uintptr_t hint = 0x20000000000ull; !system && hint < 0x7e0000000000ull;
+         hint += 0x8000000000ull)
+        system = VirtualAlloc(reinterpret_cast<void*>(hint), page, MEM_RESERVE | MEM_COMMIT,
+                              PAGE_READWRITE);
+    require(system != nullptr, "Could not allocate a synthetic entity system");
+    const auto system_address = reinterpret_cast<std::uintptr_t>(system);
+    const std::uintptr_t vtable = 0x7ff612345670ull;
+    put(system_address, vtable);
+    put(window.address() + 2 * page + 16, system_address);
+    DWORD previous = 0;
+    require(VirtualProtect(reinterpret_cast<void*>(window.address() + page), page, PAGE_NOACCESS,
+                           &previous) != FALSE,
+            "Could not protect the synthetic client page");
+    std::uintptr_t found = 0;
+    const bool located = attach_runtime::scan_entity_window(
+        window.address() + 8, window.address() + 3 * page, window.address(), 3 * page, vtable,
+        found);
+    std::uintptr_t missing = 0;
+    const bool wrong_vtable = attach_runtime::scan_entity_window(
+        window.address(), window.address() + 3 * page, window.address(), 3 * page, vtable + 8,
+        missing);
+    VirtualProtect(reinterpret_cast<void*>(window.address() + page), page, PAGE_READWRITE,
+                   &previous);
+    VirtualFree(system, 0, MEM_RELEASE);
+    require(located && found == system_address,
+            "Entity system scan did not skip an unreadable client page");
+    require(!wrong_vtable && !missing, "Entity system scan accepted a different vtable");
+}
+
 void independent_heartbeat() {
     alignas(8) unsigned char memory[64]{};
     auto* beat = reinterpret_cast<volatile LONG64*>(memory + 32);
@@ -2878,6 +2913,7 @@ void run() {
     atomic_exports();
     independent_heartbeat();
     worker_session_release_checks();
+    entity_window_scan_checks();
     replay_identity();
     Fixture f;
     follow_anchor_guard_checks(f);
