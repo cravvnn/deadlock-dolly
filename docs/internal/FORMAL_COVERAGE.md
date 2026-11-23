@@ -1,12 +1,14 @@
 # Formal accounting and remaining obligations
 
-This review draft accounts for309implementation/tool units. All source exports
+This review draft accounts for317implementation/tool units. All source exports
 have explicit roles in FORMAL_COVERAGE.json. This is accounting, not full-file
 semantic review or whole-program proof. Test-reference leads are navigation,
 not execution coverage. No row has full formal signoff.
 
-The draft has93bounded model scopes/111configurations, with298expected failing
-mutants (the 2026-11-22 sweep added ConsoleReconnect and LaunchRecovery, 2
+The draft has98bounded model scopes/116configurations, with323expected failing
+mutants (the 2026-11-23 sweep added EditorEventQueue, BonePickerTransaction,
+BridgeCommandAdmission, PickerGizmoSession and ReleasePublishOrder and extended
+CloseFlow, 5 configurations and 25 mutants; the 2026-11-22 sweep added ConsoleReconnect and LaunchRecovery, 2
 configurations and 5 mutants; 0.7.35 added CameraOnlyCapture/CravCapture; the 2026-11-13 native sweep
 added 17 across VideoCompleteness, NativeSnapshotClose, MediaDetach,
 StatusSnapshot, ReleaseJoin, BridgeClose and CameraOnlyCapture, and the DollyRoot
@@ -26,13 +28,18 @@ handshake only. None of them prove the C++ memory model or game/GPU behavior. Th
 self-halt and arbitrary concurrent callers. These assumptions are open work.
 
 The ledger distinguishes39modules without independent lifecycles,10generated
-inputs,27offline tools,4entrypoints and1child job from120Python/UI and108native/
+inputs,27offline tools,4entrypoints and1child job from120Python/UI and111native/
 delegated partial/open owner records. These are dispositions, not pass rates.
 
 L01camera/session still needs manual/hold/play, self-halt/reentrancy and native
 publication composition. L02media still needs GPU/drain/device-removal and native
 buffer lifetime. L03storage needs full caller-lock/crash composition. L04UI needs
-complete queued/modal/timer interfaces. L01 adds CameraSessionModes (free flight, worker self-finish, halt races).
+complete queued/modal/timer interfaces. L01 adds CameraSessionModes (free flight, worker self-finish, halt races),
+EditorEventQueue (the in-game action queue: busy retry, in-order ack, per-bridge
+session), BonePickerTransaction and BridgeCommandAdmission (worker refusals never
+fault an acknowledged camera). L04 adds PickerGizmoSession and other work during
+the CloseFlow save question. L06 adds ReleasePublishOrder (release ZIP/checksum
+order and crash leftovers).
 L05process has GameExitClose (game exit
 versus start_flight waits and close) and ConsoleReconnect (connect versus an
 unwinding worker, failed-socket retirement), and still needs GUI

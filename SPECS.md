@@ -49,6 +49,7 @@ for this development check. No hosted checker or workflow is needed.
 | `session_cleanup.remove_overlay`; Session.close, recover_pending, recover_orphans, detached waiter | [CleanupMarker.tla](dolly/CleanupMarker.tla), [OwnershipApi.tla](dolly/OwnershipApi.tla) | One validated unmounted overlay, one late plain user file, final-directory failure and staged marker repair. Successful compensation restores retry evidence. Crash/repair failure are unresolved terminal outcomes; no universal crash-recovery or hostile namespace-race claim. Actual cleanup/recovery regression preserves late user bytes. |
 | `update_worker.rollback`; called by `install` on failure and `_apply_plan` during recovery | [UpdateRollback.tla](dolly/UpdateRollback.tla), [RollbackApi.tla](dolly/RollbackApi.tla) | Three sorted owned files: replacement, addition, removal; each interrupted install prefix; up to two process restarts during rollback. Restore all original contents before acknowledgement and pending-marker removal. Backups stay immutable. |
 | `update_worker.replace_file`; used by installation and rollback | [AtomicCopy.tla](dolly/AtomicCopy.tla), [FileOpsApi.tla](dolly/FileOpsApi.tla) | Single-file temporary copy/flush/replace and process interruption. Preserve the source and publish original bytes. Temporary leftovers after abrupt exit or denied cleanup are allowed; normal failures attempt cleanup without masking the primary exception (owning test). |
+| `release_files.release_set`; `build_windows` release output | [ReleasePublishOrder](tools/ReleasePublishOrder.tla), [API](tools/ReleasePublishOrderApi.tla) | Windows ZIP, source ZIP, then SHA256SUMS.txt; one run with a crash at any step (leaving .partial files) or a normal failure (bad source list, failed ZIP test) that removes its .partial. os.replace assumed atomic; contents abstracted to none/old/new/partial. SHA256SUMS.txt, when present, names exactly the final-name ZIPs; no final-name ZIP is partial; a completed run publishes both new ZIPs and matching sums; a normal failure leaves no .partial; the checksum file moves only old -> absent -> new. Disk faults, power loss, concurrent writers and ZIP bytes are not modeled. 23 states. |
 | `release_launcher.main` ordinary startup, concurrent `_apply_plan`/`install` | [LauncherHandoff.tla](dolly/LauncherHandoff.tla), [RecoveryResourcesApi.tla](dolly/RecoveryResourcesApi.tla) | One writer admitted before startup or attempting admission while startup owns the shared install lock; one old staged workspace, one file, one optional writer exit, one editor handoff. Pending check, cleanup and handoff share ownership. Target-side staging and commit are separate, allowing delayed executable replacement. |
 | `cleanup_workspaces`, `_workspace_finished`; sole production caller `release_launcher.main` | [WorkspaceCleanup.tla](dolly/WorkspaceCleanup.tla) | Lower projection of the caller-held lock around eligibility and removal. Backup unlink and directory removal are separate actions. Preserve recovery resources and unfinished journals; PENDING prevents cleanup. This helper does not reacquire the caller's lock. |
 | Input validation, reviewed-build admission, manifest verification and explicit update consent | Core Python contracts P1, P13 and P15 in [TESTING.md](docs/internal/TESTING.md); outside these implementation models | Tests exercise validated files and simulated network/process boundaries. Models still assume correct hashes and OS lock semantics; source tests do not qualify a published game profile or packaged Windows update. |
@@ -1108,6 +1109,15 @@ a pending gameinfo conflict made controller.close fail on every attempt and
 Dolly looped), an update restart that does not ask, and a close that skips
 an unasked question.
 
+2026-11-23: While the save question is open the poll keeps running and can start
+one other operation (the closed-game cleanup), which may fail. Only the close's
+own steps (CLOSE_STEPS) finish a close after a failure; other failures report as
+usual. A close submit refused because that work is running waits for it
+(_retry_close), and controller.close never runs beside it. Invariants:
+CancelNeverDestroys, AtMostOneDiscardPrompt, DestroyImpliesCloseRanOrFailed,
+CloseRunsAlone. Bounds: one other operation per behavior; Stop and close
+outcomes fixed per behavior; 596 states.
+
 UpdateRollback (2026-11-14) adds path kinds: configs fileToDir and dirToFile
 cover a release that turns a file into a folder or back. install and rollback
 now remove before they write and prune emptied folders; mutants cover
@@ -1276,3 +1286,70 @@ unlocked launch (RestoredNotPatched) and no in-lock game re-check
 `.dolly-write-*.tmp` files in the overlay root and `cvar_unlocker/cfg` are
 removable; a crash during the marker write itself still leaves an unmarked
 overlay, the same as the existing crash-before-marker case.
+
+## In-game action queue (EditorEventQueue)
+
+`dolly/EditorEventQueue.tla` is an L01 model of editor_session.poll draining the
+native editor action queue on Tk's thread. Each tick reads the controller's
+current bridge, rebinds the editor to it (configure), and takes the head event
+in sequence order. The head is accepted (applied, then acknowledged), refused
+with a message (app._error, then acknowledged), deferred (dispatch returned
+False and the event stays queued) or hits a torn native read: NativeStatusBusy
+from a handler's reread, or NativeEditorStatusBusy from the status block. A torn
+read leaves the event queued for the next tick. Handlers raise busy before they
+change anything. Before 2026-11-23 a busy reread was caught as a generic error,
+shown as a modal and acknowledged, so the action was lost. The controller can
+replace the bridge at any time, and a replaced game's queue goes with it.
+AckInOrder, AckedHandled (every acknowledged action was applied once or refused,
+never silently dropped), Unacked, AppliedOnce, NoCrossSession (an action from
+bridge A is never applied in bridge B's session), Handled (while its bridge
+stays current, every queued action is eventually acknowledged) and Refines
+(EditorEventQueueApi: each step acknowledges the next action of one bridge) hold
+for B = 2 bridges, N = 2 actions per bridge, K = 1 busy read and 1 deferral.
+Five mutants fail: busy acknowledges, apply in the session from before the
+bridge change, accepted but left queued, poll stops dispatching, acknowledgement
+skips ahead. Not modeled: handler internals, curve preview offers,
+dropped_events, save_shot during busy, and worker operations submitted by
+handlers.
+
+## Bone Picker transaction (BonePickerTransaction)
+
+BonePickerTransaction (`dolly/BonePickerTransaction.tla`, MaxSeq = 4) models the
+desktop Bone Picker transaction in L01: open/ready/publish/close against an
+active or lost editor, with Connect refused while the picker context is set.
+Safety `RequestIsFirstPublish`: the stored request equals the first picker=True
+attach sequence that native latches, even when the publication in `ready()` is
+skipped. Liveness `PickerEndsWhenLost`: a lost editor always leads to a closed
+picker. `LostReconnects`: a lost editor is eventually reconnected. Three mutants
+are caught: a lost editor keeps the picker open, the request is read after a
+skipped publication, and a republication replaces the stored request. Native
+rejection of a republished session and game exit are out of scope.
+
+## Bridge command admission (BridgeCommandAdmission)
+
+`native/src/BridgeCommandAdmission.tla` models how the bridge worker admits
+editor control snapshots (`read_control`/`validate_control`/`admit_control`)
+against one main-view callback (`on_view`). The bound is one worker, one view
+and MaxWrites=3 editor publications, each either a new command (valid or
+refused, codes 31–33) or a flags-only refresh under the editor's current command
+id (valid or refused). The seqlock is treated as an atomic snapshot. Invariants:
+TypeOK, RejectedNeverFaultsAcked, RejectionNotReparsed,
+FlagsRefreshKeepsIdentity. Liveness: Settles (once the editor stops, a valid
+last snapshot is admitted and acknowledged), under weak fairness of Worker and
+View. Payload contents, attach resolution, editor exit (30) and worker
+exceptions (99) are not modelled. Mutants: refusal sets gWorkerError; refusal
+not remembered; acknowledged unchanged command re-read; refresh skips header
+checks; refusal keyed by command only.
+
+## Object Picker gizmo session (PickerGizmoSession)
+
+`native/src/PickerGizmoSession.tla`, beside dolly_object_picker_ui.cpp, models
+the Object Picker gizmo drag. ObjectTransform carries only an index, so a commit
+must target the grabbed object within the picker session the drag began in. Draw
+is one drawn picker frame: a gap (Close) starts a new session and drops the
+drag, a drag whose object changed (undo/delete/load) is dropped, and mouse-up
+commits once. Object identity abstracts the shape+transform comparison. Bounds:
+2 slots, 3 clicks, 1 list edit, 1 close. Invariants: CommitTargetsGrabbed,
+CommitInSession. Liveness: DragCommits. Mutants: no session reset, no target
+check, no commit. Excludes ImGui hit testing, gizmo math, the editor queue and
+Python.

@@ -1,13 +1,13 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 314,
+  "accounted_units": 317,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
     "no independent lifecycle": 40,
     "stateful partial/open": 124,
     "generated data/schema": 10,
-    "native owner/delegated contract open": 108,
+    "native owner/delegated contract open": 111,
     "offline-tool scope": 27,
     "entrypoint delegated contract open": 4,
     "child-job contract open": 1
@@ -16,18 +16,18 @@
     "value": 40,
     "L05": 21,
     "generated": 10,
-    "L01": 70,
+    "L01": 72,
     "L03": 29,
     "L02": 50,
-    "L04": 67,
+    "L04": 68,
     "L06": 27
   },
   "backlog": {
     "L01": {
       "title": "Camera/session/native command ownership",
-      "status": "expanded bounded joins and heartbeat fix; DollyRoot composes the lease and worker-retirement interfaces; full semantic composition still open",
+      "status": "expanded bounded joins and heartbeat fix; DollyRoot composes the lease and worker-retirement interfaces; full semantic composition still open; EditorEventQueue, BonePickerTransaction and BridgeCommandAdmission bound the poll action queue, the Bone Picker transaction and native command admission (2026-11-23)",
       "priority": 1,
-      "remaining": "mixed-session observation and command publication, bridge close and callback races; CameraSessionModes now bounds manual/hold/play and worker self-finish"
+      "remaining": "mixed-session observation and command publication, bridge close and callback races; CameraSessionModes now bounds manual/hold/play and worker self-finish; EditorEventQueue bounds the poll action queue (busy reread retry, in-order ack, per-bridge session); BonePickerTransaction ties the picker request to the first publication and cancels locally on editor loss; BridgeCommandAdmission bounds worker refusals (remembered, never fault an acknowledged camera)"
     },
     "L02": {
       "title": "Capture/media/native completion",
@@ -43,7 +43,7 @@
     },
     "L04": {
       "title": "Desktop input/UI lifetimes and publication",
-      "status": "partial guards/model scopes; complete screen/event composition open; CloseFlow bounds the close sequence (2026-11-14); DialogRule bounds the one-dialog rule; HudOwnership bounds game HUD restore ownership (2026-11-18)",
+      "status": "partial guards/model scopes; complete screen/event composition open; CloseFlow bounds the close sequence and other work during its save question (2026-11-23) (2026-11-14); DialogRule bounds the one-dialog rule; HudOwnership bounds game HUD restore ownership (2026-11-18); PickerGizmoSession bounds the Object Picker gizmo drag per picker session (2026-11-23)",
       "priority": 2,
       "remaining": "queued event identity, modal/input owner transitions, widget/timer cancellation and publication/dispatch acknowledgement joins"
     },
@@ -55,9 +55,9 @@
     },
     "L06": {
       "title": "Build/generation/tooling scope",
-      "status": "outside product-runtime model; explicit tool verification boundaries",
+      "status": "outside product-runtime model; explicit tool verification boundaries; ReleasePublishOrder bounds release ZIP/checksum publication order and crash leftovers (2026-11-23)",
       "priority": 3,
-      "remaining": "keep real builder/package/export/checksum/native-platform gates; tool I/O/crash and network behavior are not formally proved"
+      "remaining": "keep real builder/package/export/checksum/native-platform gates; tool network behavior and tool I/O other than release_set publication are not formally proved"
     },
     "L07": {
       "title": "Root end-to-end formal composition",
@@ -308,12 +308,20 @@
     },
     {
       "path": "dolly/bone_picker.py",
-      "sha256": "02616c88db0fbe8ce444e882b9283dc02e16c653158f2fddee3e580a78723f75",
+      "sha256": "5eec023681053cc8d6464e3f4dc60150ce5e2662cb339aa2bc77ff428c5bd3d3",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
       "reason": "Persistent/context/transaction state belongs to this source family. Retain any bounded scopes and tests; full caller/lifecycle contract is tracked under L01.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "dolly/BonePickerTransaction.tla",
+          "scope": "picker context, request = first picker publication, local cancel on editor loss",
+          "configs": [
+            "dolly/BonePickerTransaction.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [
         "tests/camera_modes.py"
       ],
@@ -327,7 +335,8 @@
           "close_picker",
           "dispatch",
           "start_attached_view",
-          "timed_attachment"
+          "timed_attachment",
+          "discard"
         ],
         "imports": [
           "copy",
@@ -337,7 +346,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: busy by type; discard() for local cancel; request from the first picker publication"
     },
     {
       "path": "dolly/bootstrap.py",
@@ -1057,7 +1067,7 @@
     },
     {
       "path": "dolly/curve.py",
-      "sha256": "8c2428ddb1482a8b290b4f47ff62c0f5540de01f390132e99d03bceb45552dbe",
+      "sha256": "f863a7c507eab9b36f76f76b8adde1a2cb9158df4d36b790e9c5767120688c4d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1086,11 +1096,12 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261118_curve": "2026-11-18: Removed the unused AspectCurve/RotationCurve/PositionCurve widgets and their helpers; the curve workspace keeps the shared timeline math."
+      "reconciliation_20261118_curve": "2026-11-18: Removed the unused AspectCurve/RotationCurve/PositionCurve widgets and their helpers; the curve workspace keeps the shared timeline math.",
+      "reconciliation_20261123": "2026-11-23: re-exports path limits"
     },
     {
       "path": "dolly/curve_preview.py",
-      "sha256": "df3e5d792c01da5a6105b699e503868445fa0d5f5cc60a2016a7f95f9ba1669d",
+      "sha256": "bd879429892b1c6f2c54d6c7593782d39dacc0f332888eaef4e4816af8fd4e4a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1124,6 +1135,7 @@
           "",
           "__future__",
           "dataclasses",
+          "native_bridge",
           "native_path",
           "path",
           "video_export",
@@ -1134,7 +1146,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261123": "2026-11-23: busy admission read is non-terminal"
     },
     {
       "path": "dolly/curve_workspace.py",
@@ -1716,12 +1729,20 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "11b2134eed3557ffdaeb7b18bec06067a8608ee301526d9b38250cadb3035973",
+      "sha256": "18390d4bea9de12dafa07bbb20476a0cd5ddf64be77db896a91b7108cb064224",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
       "reason": "Persistent/context/transaction state belongs to this source family. Retain any bounded scopes and tests; full caller/lifecycle contract is tracked under L01.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "dolly/EditorEventQueue.tla",
+          "scope": "handlers raise busy before changing state",
+          "configs": [
+            "dolly/EditorEventQueue.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
@@ -1772,7 +1793,8 @@
       "reconciliation_20261120e": "2026-11-20: In-game bank edits merge in history by the edited camera, so a bank drag on an unselected camera is one undo step.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
-      "reconciliation_20261122": "2026-11-22: framing grid, pause-after-capture and movement speed save through DollyApp._commit_settings (owned fields over the latest settings) instead of a stale snapshot."
+      "reconciliation_20261122": "2026-11-22: framing grid, pause-after-capture and movement speed save through DollyApp._commit_settings (owned fields over the latest settings) instead of a stale snapshot.",
+      "reconciliation_20261123": "2026-11-23: cinematic prepare cleanup keeps the original error"
     },
     {
       "path": "dolly/editor_dof.py",
@@ -1809,12 +1831,20 @@
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "5315ac110870b821d2432f842314bbcf9cd264d3281efcf090be9c182424187e",
+      "sha256": "f8cd15be25ba83edc478c0e85073c0e39c7373c24fb481b67024655292a2fd40",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
       "reason": "Persistent/context/transaction state belongs to this source family. Retain any bounded scopes and tests; full caller/lifecycle contract is tracked under L01.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "dolly/BonePickerTransaction.tla",
+          "scope": "attach block stores the first picker sequence; lost editor discards the picker",
+          "configs": [
+            "dolly/BonePickerTransaction.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
@@ -1849,11 +1879,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261120e": "2026-11-20: DOF blocks publish range-limited values, so an out-of-range saved effect value cannot stop the editor poll."
+      "reconciliation_20261120e": "2026-11-20: DOF blocks publish range-limited values, so an out-of-range saved effect value cannot stop the editor poll.",
+      "reconciliation_20261123": "2026-11-23: lost editor discards the picker locally; first picker sequence stored; no republish after close"
     },
     {
       "path": "dolly/editor_session.py",
-      "sha256": "9dc2920b7e565766dc13e23bb541962f87ff3d0600ada0b5ed21e0255642e523",
+      "sha256": "b6b3d7413a676d6fbdb6b792344d2608218f1940e9386b0324496cc47b1db168",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1864,6 +1895,13 @@
           "scope": "poll",
           "configs": [
             "dolly/AttachObservation.cfg"
+          ]
+        },
+        {
+          "spec": "dolly/EditorEventQueue.tla",
+          "scope": "poll action queue, busy retry, per-bridge session",
+          "configs": [
+            "dolly/EditorEventQueue.cfg"
           ]
         }
       ],
@@ -1881,7 +1919,8 @@
           "snap_is_current",
           "cancel_snap",
           "poll",
-          "close"
+          "close",
+          "snap_result_current"
         ],
         "imports": [
           "",
@@ -1895,7 +1934,8 @@
       "reconciliation_20261118": "2026-11-18: Attach picker keeps its list while the roster is busy.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
-      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view",
+      "reconciliation_20261123": "2026-11-23: poll leaves a busy event queued; drops/errors keyed by bridge; close clears the curve preview and marks the editor closed; snap results correlated to the snap publication"
     },
     {
       "path": "dolly/editor_view.py",
@@ -2594,7 +2634,7 @@
     },
     {
       "path": "dolly/graphics_profiles_ui.py",
-      "sha256": "0a6fdc74897e26bb156a98aa5b2c6c747b22dedfae138a3b9a698e1bd3ce4fc2",
+      "sha256": "d5f9f372ebb8dc503739bc80b303faee0a95be5ffbfdf3a85a5e280f77bfbaf6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2618,19 +2658,19 @@
           "tkinter",
           "ui",
           "ui.chrome",
-          "ui.scale",
-          "ui.widgets"
+          "ui.scale"
         ],
         "persistent_state_signals": [
           "mutable instance"
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114d": "2026-11-14 profiles: labels cover every profile field and the help text describes the wider profile and the after-session offer."
+      "reconciliation_20261114d": "2026-11-14 profiles: labels cover every profile field and the help text describes the wider profile and the after-session offer.",
+      "reconciliation_20261123": "2026-11-23: dead card=None path removed"
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "b243aa53922a9153492e3e073012c08c6b1e7265ce27e985c2b51bc68906b84f",
+      "sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2785,7 +2825,8 @@
       "reconciliation_20261120d4": "2026-11-20: A real-time take that fails with the recorder's lost-frames error asks once whether to turn on fixed-step export and record again, in place of the error dialog; the second report of the same failure is only logged. Yes records again once Dolly is idle. Fixed-step takes, and so every layered run, keep the error dialog.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
-      "reconciliation_20261122": "2026-11-22: every settings writer commits only its owned fields over the latest settings under _SETTINGS_COMMIT (_commit_settings); game-exit cleanup is marked done only on success and retried up to GAME_EXIT_CLEANUP_ATTEMPTS; Auto encoder prewarm on startup/codec/ffmpeg change; layer passes reuse auto_codec."
+      "reconciliation_20261122": "2026-11-22: every settings writer commits only its owned fields over the latest settings under _SETTINGS_COMMIT (_commit_settings); game-exit cleanup is marked done only on success and retried up to GAME_EXIT_CLEANUP_ATTEMPTS; Auto encoder prewarm on startup/codec/ffmpeg change; layer passes reuse auto_codec.",
+      "reconciliation_20261123": "2026-11-23: only close steps finish a close after a failure; busy close waits (_retry_close); idle work dropped during close; launch options set after save; snap correlation"
     },
     {
       "path": "dolly/gui_layout.py",
@@ -3117,7 +3158,7 @@
     },
     {
       "path": "dolly/layer_modes.py",
-      "sha256": "e83872b31ca406f58ec0e277f3a2dbe2f05d7b3a2abd2004de5404f5a3f557a2",
+      "sha256": "52f1cb3d6f35504b0df43633aebd065bb9cba5b1baa84fc5a9f4e77c6ce328e4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3141,7 +3182,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: unreachable hide branch removed"
     },
     {
       "path": "dolly/lite_mode.py",
@@ -3392,7 +3434,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "6aca4524113ca726bb690e4748b84eb623cace82f4ce897c313278c2cf5ea34b",
+      "sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3477,7 +3519,8 @@
       "reconciliation_20261113": "2026-11-13 native sweep: status() raises NativeStatusBusy (a NativeBridgeError subclass) after its bounded rereads; _wait polls busy refusals until its deadline, other status errors still end the wait. Release accepts only Stopped (Probe skips effect restoration and cannot follow a command). Close/heartbeat/publication unchanged.",
       "reconciliation_20261114": "2026-11-14 process hardening: bind_game(pid, exited) stores the game's exit check; _wait and _wait_editor_input raise after a status read once the game has exited, so start_flight leaves _operations within one poll instead of up to 8 s + 8 s. GameExitClose (bounded, watcher/user close vs flight wait) added; existing BridgeClose/ReleaseJoin/HeartbeatUnmap/StatusSnapshot scopes unchanged (close's release(0.25) now also ends at once on a dead game).",
       "reconciliation_20261118": "2026-11-18: editor_roster raises NativeStatusBusy when busy (dead raise removed); _wait_editor_input keeps polling through a busy status.",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261123": "2026-11-23: bone readers raise NativeStatusBusy; configure_editor_attach returns its sequence"
     },
     {
       "path": "dolly/native_capabilities.py",
@@ -4499,7 +4542,7 @@
     },
     {
       "path": "dolly/replay_warmup.py",
-      "sha256": "1f905b4871c9c2c84911c79f10c9837c2a51474bdd334dc66b4ffe03a28f1a6d",
+      "sha256": "753d04ee0da56e423a3602ac4aa45e7c46740a67a2244f351fce7f6600682e4d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -4524,7 +4567,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: cleanup failure no longer replaces the original error"
     },
     {
       "path": "dolly/replays.py",
@@ -5303,7 +5347,7 @@
     },
     {
       "path": "dolly/ui/binding_capture.py",
-      "sha256": "febe2d6e788e2f11af87326c9f7daefa7c1c74d5b8a9fd5cee27246494b71762",
+      "sha256": "0997d45ed0434a6c0497066f5de725f7279c22cdfe1005455904fba6e5a1832a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -5330,14 +5374,16 @@
           "ctypes",
           "dataclasses",
           "dolly.editor_actions",
-          "dolly.settings"
+          "dolly.settings",
+          "widgets"
         ],
         "persistent_state_signals": [
           "mutable instance",
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/boil.py",
@@ -5683,7 +5729,7 @@
     },
     {
       "path": "dolly/ui/fade.py",
-      "sha256": "a624ce6eef4db5407041e579296ad656e3148611b25afcb11c34479feb6dd35c",
+      "sha256": "c94f182933ca3d8df7134f5dc8b09fd549770873662f08a1d99b46721d272011",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -5720,16 +5766,17 @@
           "__future__",
           "collections",
           "ctypes",
-          "kit_controls",
           "scale",
-          "tween"
+          "tween",
+          "widgets"
         ],
         "persistent_state_signals": [
           "mutable instance",
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/fonts.py",
@@ -5874,7 +5921,7 @@
     },
     {
       "path": "dolly/ui/kit_controls.py",
-      "sha256": "f651f94de70611ebff20250ba243f0935a4155c9abb12de288d023f92b1d1e89",
+      "sha256": "606e248e73019ae8630e7fef5101daf6298912da3a197e79dad594725419710d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -5903,7 +5950,6 @@
         "functions": [
           "page_of",
           "surface_of",
-          "safe_unbind",
           "_register",
           "_unregister",
           "buttons",
@@ -5926,7 +5972,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/kit_fields.py",
@@ -5961,7 +6008,7 @@
     },
     {
       "path": "dolly/ui/kit_page.py",
-      "sha256": "07545e8155265da075cc5450792482f5bdfd56ded6361b6e33bc242ef6e913e7",
+      "sha256": "fcf2510bbb88dd8a7cbc3dd6c57f4b222fdefb1b88bd64ac207899d40224249f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6005,7 +6052,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/kit_styles.py",
@@ -6253,7 +6301,7 @@
     },
     {
       "path": "dolly/ui/question_dialog.py",
-      "sha256": "9cc0a3783e4cdeb9b594a8d21f7a150839ee36877a3ee72a1298ecbd4d170342",
+      "sha256": "270e490fe3d44dbfd2b0e47a40621296a03127bc914a74ff388f47dfa57399e7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6273,12 +6321,14 @@
           "askyesnocancel",
           "_notice",
           "showinfo",
-          "showwarning"
+          "showwarning",
+          "restoring_grab"
         ],
         "imports": [
           "",
           "__future__",
           "chrome",
+          "contextlib",
           "scale",
           "tkinter"
         ],
@@ -6287,7 +6337,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114c": "2026-11-14 storage: askchoice with custom button labels (cancel returns None)."
+      "reconciliation_20261114c": "2026-11-14 storage: askchoice with custom button labels (cancel returns None).",
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/scale.py",
@@ -6326,7 +6377,7 @@
     },
     {
       "path": "dolly/ui/settings_page.py",
-      "sha256": "e72e6391e3da208dc97837e3ef1aff52768fa5fa9a71e776525c83260cbcf6a1",
+      "sha256": "6b3b755e0db8a6fabfa33959146dad4ec3a8a7a1db7e2e89135fa3ea40bc86c3",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6362,7 +6413,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/shot_commands.py",
@@ -6449,7 +6501,7 @@
     },
     {
       "path": "dolly/ui/stage_page.py",
-      "sha256": "a56afb6196828fd0da19ef42df42e65c65ce5822bfca0e0517dfd8181624de1b",
+      "sha256": "a68760967877559aee0ae31ea799522509dc21776a12fa58e9e07d61eda7a885",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6495,7 +6547,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/stickers.py",
@@ -6530,7 +6583,7 @@
     },
     {
       "path": "dolly/ui/text_dialog.py",
-      "sha256": "ddbd3c5f39eeff1bdfe861d5fe01ed931e0c9ac60dd270774405d7f2a95dfc6f",
+      "sha256": "fe27ad7f446d37373a9392cdb58acbe795ff06171e08234d3526f4aceda56fcb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6550,6 +6603,7 @@
           "",
           "__future__",
           "chrome",
+          "question_dialog",
           "scale",
           "tkinter"
         ],
@@ -6557,7 +6611,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/tween.py",
@@ -6654,7 +6709,7 @@
     },
     {
       "path": "dolly/ui/widgets.py",
-      "sha256": "be017a841fe7c8bdbeed5216696951668cb0209fd27970824cb9434eb0c263b2",
+      "sha256": "d39b5cb6ba61ebe1ea2850f521cf54d22cde7798ef640efdda1aa795300db301",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6664,20 +6719,12 @@
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
         "module_purpose": "Shared Tk widgets; independent of page builders and application state.",
-        "classes": [
-          "NavigationMarker",
-          "ScrollPage",
-          "Disclosure"
-        ],
+        "classes": [],
         "functions": [
-          "surface_style",
           "card",
-          "field",
-          "actions",
-          "disclosure"
+          "safe_unbind"
         ],
         "imports": [
-          "",
           "__future__",
           "scale",
           "tkinter"
@@ -6687,7 +6734,8 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui/window_bars.py",
@@ -6737,7 +6785,7 @@
     },
     {
       "path": "dolly/ui/window_chrome.py",
-      "sha256": "43e7998846048c0ea01344683ed23e88b38309e594956e105e555e8b89b04fd1",
+      "sha256": "34b3a5a9e69cd79b45c00f2d776e6a80d4bfd868b52e3ebed6e840813a580f51",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6755,7 +6803,6 @@
         "functions": [
           "_colorref",
           "window_tag",
-          "unbind_tag",
           "maximized_rect",
           "release"
         ],
@@ -6769,7 +6816,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: dead widgets removed, one safe_unbind helper, one restoring_grab helper (behaviour-preserving)"
     },
     {
       "path": "dolly/ui_theme.py",
@@ -6847,7 +6895,7 @@
     },
     {
       "path": "dolly/update_worker.py",
-      "sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574",
+      "sha256": "88b1b2d26d7ab12503a93ce46e3b4a2c51be326ffefabb3ab1df8d64b75d943c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -6945,7 +6993,8 @@
       "reconciliation_20261118": "2026-11-18: InstallLockBusy for lock contention.",
       "reconciliation_20261119u": "2026-11-19: cleanup keeps a verified download of a newer release and ages other workspaces by their newest content. Install clears the read-only flag before removing a file a release drops. A failed recovery-record write rolls back inside the transaction, and an applying journal without its record (nothing installed changed) no longer blocks a retry. A complete journal is never rolled back: install and recovery only retry removing the recovery record. The failure message says the update is not finished and that opening Dolly.exe again recovers it while the recovery record remains.",
       "reconciliation_20261120": "2026-11-20: A recovery waits for another recovery of the same folder and does nothing (no result, no relaunch) when the record is already gone. check_processes_settled gives a second Dolly.exe launcher time to exit; an open editor still refuses at once. smoke ends every process the startup check started when it times out, and reports the timeout as a failed startup check.",
-      "reconciliation_20261122": "2026-11-22: atomic_json uses file_ops._atomic_write; _replace_retrying keeps its 3.75 s bound on the shared retry helper; rollback removes the pending record with _remove_pending. UpdateRollback scope unchanged."
+      "reconciliation_20261122": "2026-11-22: atomic_json uses file_ops._atomic_write; _replace_retrying keeps its 3.75 s bound on the shared retry helper; rollback removes the pending record with _remove_pending. UpdateRollback scope unchanged.",
+      "reconciliation_20261123": "2026-11-23: self-test uses explicit checks"
     },
     {
       "path": "dolly/updater.py",
@@ -7173,7 +7222,7 @@
     },
     {
       "path": "native/include/dolly_attach.hpp",
-      "sha256": "c01145a80c7534c37c65ca1225ac95246cd28e7770e69381fd38ec1705a0bc30",
+      "sha256": "5f97ee5c8d6eb47586a99de72b9e0efc53a036cc4f6712d3b023b840838896f0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7200,11 +7249,12 @@
       "reconciliation_20261120e": "2026-11-20: attach_offset_entry keeps a typed position offset within the supported limit.",
       "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag",
       "reconciliation_attach_aim": "2026-11-20: aim easing filter",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/include/dolly_bone_picker.hpp",
-      "sha256": "1782759f54199cedd156e1a46b192c594333c54c6115ae246486d71d7e5bb98e",
+      "sha256": "e1a1570b7d5b540aa39d7a57dd5f3242d1fb752228739bb6e7243ee22cd12e0a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7226,7 +7276,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/include/dolly_capabilities.hpp",
@@ -7657,7 +7708,7 @@
     },
     {
       "path": "native/include/dolly_object_picker.hpp",
-      "sha256": "4449c9bf16e056765230c53d5b7e30f9dcd8ea48b56365c2d369208f25f5fd8c",
+      "sha256": "7964bd0fea1bfee6a58d1673e2628f6b58904a41e11fd5aaecd61f19122fb3ef",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -7677,7 +7728,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/include/dolly_object_runtime.hpp",
@@ -8199,7 +8251,7 @@
     },
     {
       "path": "native/include/dolly_reshade.hpp",
-      "sha256": "c6c8fa4d35aada112bc8b7a14e64e2368e3c3354a070a4907150ac037077a691",
+      "sha256": "9afe829eed4a2973d3ec59623d3fbb62669044f3cebc700c7f3258b5ffdd0a19",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8216,7 +8268,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
@@ -8279,6 +8332,25 @@
           "cstdint",
           "cstring",
           "dolly_pattern_scan.hpp"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "native/include/dolly_source_axes.hpp",
+      "sha256": "0a8bf50906548e7aa958d5ff733f9c8e4b37ee535a35e4667efabfc1b2831a0e",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "array",
+          "cmath"
         ],
         "persistent_state_signals": []
       },
@@ -8405,7 +8477,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "821be1eed4d284dc539acff61fc4b4c5d50af1ff6ff86fe2f029c3b43796fdb8",
+      "sha256": "ac7b33d6c2e535f565993c5c68f8e19aae197b290e329e7f277a451cd7d6bd43",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8416,6 +8488,13 @@
           "scope": "Immutable shared command snapshot and resident native mapping versus desktop close; one serialized callback, no C++ weak-memory proof",
           "configs": [
             "native/src/NativeSnapshotClose.cfg"
+          ]
+        },
+        {
+          "spec": "native/src/BridgeCommandAdmission.tla",
+          "scope": "refused commands remembered and never fault an acknowledged camera",
+          "configs": [
+            "native/src/BridgeCommandAdmission.cfg"
           ]
         }
       ],
@@ -8489,11 +8568,12 @@
       "reconciliation_attach_hitch": "2026-11-20: attach samples pass through the anchor filter in preview and playback",
       "reconciliation_attach_aim": "2026-11-20: attach samples pass through the aim easing in preview and playback",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_attach.cpp",
-      "sha256": "9e57018cf0321782d52620891ee65fc82bd8ca8ac54b26ae26ba245c42e81c20",
+      "sha256": "9065339e62800ea179f9d548906529bb4cd4600ac7823c44331148eda070de4d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8521,11 +8601,12 @@
       "reconciliation_attach_hitch": "2026-11-20: anchor filter for the one-tick draw lag",
       "reconciliation_attach_aim": "2026-11-20: aim easing filter",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261121release": "2026-11-21: 2026-11-21 late-tick correction releases when the next frame fits neither pattern"
+      "reconciliation_20261121release": "2026-11-21: 2026-11-21 late-tick correction releases when the next frame fits neither pattern",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
-      "sha256": "3ec2dd0a1a0d62945d56559afaee987a8c15c52249d0a650367867ad70696d76",
+      "sha256": "d7694f031b9ac7fda19ebd67f0cf5961fd62409094fd4ca53095ca1ad5f7b360",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8543,11 +8624,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation_attach_retry": "2026-11-20: bone lookup looks again when the pose buffer is replaced mid-read",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_bone_picker.cpp",
-      "sha256": "9072b717d0408a655db8f750ac83c4a1a2fb00ffefa43ffacfc41cc15aac8ae3",
+      "sha256": "1a0e655da48461208660ea1b23bb5e510e0590148009d4fe409eb5cd85f03e77",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8573,11 +8655,12 @@
           "timer/event"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_bone_picker_ui.cpp",
-      "sha256": "a1144a6c7001345246edfe4099f7be2621ef443e8c32c6870c00537c665e8f22",
+      "sha256": "cedec5cdfe72dbc5520e8196ac238623cf1e9e93a24b01100c8df2470c6eb9da",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8599,7 +8682,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
@@ -8847,7 +8931,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "984514ef97082577c0c69059d5d5f990e8a7484e33547ba4ea90dff678d9fa79",
+      "sha256": "78eb2835a788bc040d377a44172e4e782c34360599c4f78af2a1d1b6de4b23cc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8886,7 +8970,8 @@
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1).",
       "reconciliation_20261120e": "2026-11-20: editor_enqueue waits up to 10 ms for the event ring instead of dropping the action when the worker holds it. A shot seek whose float slider value rounds just past the duration is clamped to the duration.",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_effects.cpp",
@@ -8998,7 +9083,7 @@
     },
     {
       "path": "native/src/dolly_lite_panel.cpp",
-      "sha256": "1f0f6316a8980113352f0f7cc563cf2431bfc8400c786ece36b1385eb2858c5c",
+      "sha256": "a932d22b04fc6613b743b51f5dda300ab94cdd923f8cf1f218d183491ce753a4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9026,7 +9111,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_media_win.cpp",
@@ -9071,7 +9157,7 @@
     },
     {
       "path": "native/src/dolly_object_picker.cpp",
-      "sha256": "6715f67eb954bb25ff8cd771fde7a914d52f3a9e6ee41a90d835bf1140a1e1b1",
+      "sha256": "65cc3ffd2bae0e2b99d7e2381ca08745610ae0b1da9379ee613d5bd1c2ea7eb3",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9090,16 +9176,25 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_object_picker_ui.cpp",
-      "sha256": "fdd811700162628efd0afa38ef61207d2459fe57cb7263b82f42a89ed64f317e",
+      "sha256": "202787d62ba2a2b1497d4cd04d671a8aff6a1a46a8ef485ac852d06446e0cba3",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
       "reason": "Native header/implementation participates in Desktop input/UI lifetimes and publication. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "native/src/PickerGizmoSession.tla",
+          "scope": "gizmo drag reset per picker session",
+          "configs": [
+            "native/src/PickerGizmoSession.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
@@ -9117,11 +9212,12 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_object_runtime.cpp",
-      "sha256": "c001f77dca009f4ddccaa1eb360385fb4611e772593d74438fd04bea119be8e7",
+      "sha256": "68670ddc62f6f8b51b79c2d1e504aca3bc7caf09217454f5e3eb5bf87318ac93",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9138,7 +9234,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_overlay_assets.cpp",
@@ -9225,7 +9322,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
-      "sha256": "088605f773a9bb31f01a604970ee45c07c723b7cf2629129a0ff9696e6181706",
+      "sha256": "4adad0285214abf3b86d4407705b80f73e99d89058519fc5f21890c3ac1ef9d7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9250,11 +9347,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3).",
-      "reconciliation_20261120e": "2026-11-20: Remembers the camera range the Shot timeline view was fitted to."
+      "reconciliation_20261120e": "2026-11-20: Remembers the camera range the Shot timeline view was fitted to.",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",
-      "sha256": "3bd4fb5260ade0dfc350d38075666c6ca822992e59d3f60f2b399932d97b33a0",
+      "sha256": "8fa66c2cbdba962dc900f3c9e6a91cbcc102e7aed6cf3b0cb8619bad319825e5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9302,7 +9400,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261119v": "2026-11-19: clean_frame gates capture() through video::present_should_capture so finalizing takes keep draining (V2)."
+      "reconciliation_20261119v": "2026-11-19: clean_frame gates capture() through video::present_should_capture so finalizing takes keep draining (V2).",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_path.cpp",
@@ -9630,7 +9729,7 @@
     },
     {
       "path": "native/src/dolly_rail_panel.cpp",
-      "sha256": "ce2cebdd2306f5279eab6e076400432765476a7635f411f304cc487c8a19e4b4",
+      "sha256": "c8ba1e04d7235ccc8ff2da36d2ea16c27fa29baa5d303d7a1dc34649bb03764c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9653,7 +9752,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_rail_theme.hpp",
@@ -9775,7 +9875,7 @@
     },
     {
       "path": "native/src/dolly_renderer_diagnostics_win.cpp",
-      "sha256": "134d7f6ff3057a9c41409a94ff6c680287f03467e3d3f519b4a9b45dfe3c7e36",
+      "sha256": "e22c13658eba14a964bd558be9938f830c9aea0119b66811d3f4a1b8b1948969",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9797,11 +9897,12 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_reshade_win.cpp",
-      "sha256": "e215c941ff37a179dc46c37b5cea6ce53793f97be7c400af4becfd9e4d9012a9",
+      "sha256": "f295f62204865a53d0986d2af59312f6fff20403c4f2bd0f1cbcadcc915223ff",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9830,6 +9931,50 @@
           "thread/lock",
           "native retained state"
         ]
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+    },
+    {
+      "path": "native/src/dolly_retry_backoff.hpp",
+      "sha256": "5c317d050efbbb1f7a75fbf547c4f9f94edec6a87bc2218cfb6af77d0d2e7317",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L04",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Desktop input/UI lifetimes and publication. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "algorithm",
+          "cstdint"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "native/src/dolly_seqlock_win.hpp",
+      "sha256": "280909055eadaa5d285b6eefb785c57e2a2415300deb670657582e61ce0c011a",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "windows.h",
+          "atomic",
+          "cstddef",
+          "cstdint",
+          "cstring",
+          "memory",
+          "utility"
+        ],
+        "persistent_state_signals": []
       },
       "full_formal_signoff": false
     },
@@ -9891,7 +10036,7 @@
     },
     {
       "path": "native/src/dolly_ui_layout.cpp",
-      "sha256": "395df827efaff641efbf1d623c8d940b74b75fd02aa3bc8b536ebb87a65af5ef",
+      "sha256": "9516bb10c4faaf20ef1cc91c0a9fd99dc2d07b0dd1456fc94f00e5e24cb24ced",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9916,7 +10061,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_ui_storage.cpp",
@@ -10059,7 +10205,7 @@
     },
     {
       "path": "native/src/dolly_visualization.cpp",
-      "sha256": "ca905aa1564e50099e43b65cbd25df793f81bdbfc117f1062400998490ea3d14",
+      "sha256": "d3618344b4749eb4d9e96dc749ed060bcc1a427fb19a8edd90e3284005d38049",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10080,7 +10226,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/dolly_visualization_runtime_win.cpp",
@@ -10148,7 +10295,7 @@
     },
     {
       "path": "native/src/native_feature_status_win.hpp",
-      "sha256": "91a35e4df871698d15be7256a963ce83adf760f2174d5eec97e176be8ad29d2c",
+      "sha256": "f7f95129abf8db2d62534530ad0eeedde04f6266ed93b19c4125dcf7d8d0584f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10162,11 +10309,12 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/native_follow_anchor_win.hpp",
-      "sha256": "af6eb667a62d753e215c592295b9ad5b903688eadc7fb65984bd430d18bed4c4",
+      "sha256": "7e50e36a6e56607ed005de747cc82392a2436c6028e71c495475db122bb0ace4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10184,7 +10332,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "Existing hook admits active owned Follow during game-owned POV arm/play/hold as well as gameplayCameraActive. Replay/lease/identity/heartbeat/camera-writing refusals retained; current synthetic bridge and qualified release POV evidence bound this admission, not callback reentrancy."
+      "reconciliation": "Existing hook admits active owned Follow during game-owned POV arm/play/hold as well as gameplayCameraActive. Replay/lease/identity/heartbeat/camera-writing refusals retained; current synthetic bridge and qualified release POV evidence bound this admission, not callback reentrancy.",
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
@@ -10227,7 +10376,7 @@
     },
     {
       "path": "native/src/native_relief_win.hpp",
-      "sha256": "d6fb5aa2b76d80e22334493cc078901150c7b6fc507bc56a332025e0fb6d747f",
+      "sha256": "a3fb3befd82be29a82779e415073e27766fe8a88bfa6e69c48509c13b084f2ce",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10246,7 +10395,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
     },
     {
       "path": "packaging/bootstrap_entrypoint.py",
@@ -10344,7 +10494,7 @@
     },
     {
       "path": "tools/build_desktop.py",
-      "sha256": "756343cfab41f876221e39cb4bdf19c0fa35b526155ac7493b1fb106eda8139b",
+      "sha256": "6315669c00004c0c3aa4a5063427aa80dafd3b0beeff494c230471b7a0ed8393",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10357,7 +10507,8 @@
         "classes": [],
         "functions": [
           "desktop_name",
-          "isolate_build"
+          "isolate_build",
+          "kill_on_close_job"
         ],
         "imports": [
           "contextlib",
@@ -10367,11 +10518,12 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/build_native.py",
-      "sha256": "1b5c042773c6aefc1e46565a8cbfa80e355060ad3a74af211eac1e6ed87e6e12",
+      "sha256": "a3d8a5cbea64a19ca479079e1f0fa8b2531c53353e47658ea2b8da7333cd39e1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10387,7 +10539,11 @@
           "runtime_files",
           "copy_native_runtime",
           "reject_game_binaries",
-          "build_native"
+          "build_native",
+          "declared_tests",
+          "registered_tests",
+          "test_results",
+          "check_ui_generated"
         ],
         "imports": [
           "__future__",
@@ -10403,7 +10559,8 @@
           "native retained state"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/build_replay_index.py",
@@ -10498,7 +10655,7 @@
     },
     {
       "path": "tools/build_ui_override.py",
-      "sha256": "e4afd15812b842d69e2cb7c2aa673209655766d5105b4acd7ff291d206869bfe",
+      "sha256": "17415e1e6522c3aaa48bcc3d2bf5bee117e48e461688d34ad47f9345bfd54289",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10524,16 +10681,25 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/build_windows.py",
-      "sha256": "2bf50e2c3c0623d581f88f93f8f5d33c64c5b10cded32f0bf291182588a4568a",
+      "sha256": "8c1eef4e4ea23fad76d56f9300f7683769aa739dfd4a5b90727b9efb4cbd5886",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
       "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "tools/ReleasePublishOrder.tla",
+          "scope": "calls release_set after validating the source list",
+          "configs": [
+            "tools/ReleasePublishOrder.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
@@ -10567,11 +10733,12 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/check_game_update.py",
-      "sha256": "6c4ed84e449fe4aa3fb659d14833da231149dcd8df1c29e5da98475084e3a90b",
+      "sha256": "c3bc4e774ab94c5f7b658e78bda8e1f51fe689baf9a70f55bc98d7d26843d640",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10597,7 +10764,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/check_release_notes.py",
@@ -10628,7 +10796,7 @@
     },
     {
       "path": "tools/check_tla.py",
-      "sha256": "350287f58d242114d80ac04103555ecb5bf954a112020b1e03786def0a6996ec",
+      "sha256": "6a68a795fce448e26f9191289da7ae7aa45b68617fd8f591eab22f34129d115c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10641,7 +10809,10 @@
         "classes": [],
         "functions": [
           "check",
-          "main"
+          "main",
+          "_model_dirs",
+          "discovered_models",
+          "unchecked"
         ],
         "imports": [
           "__future__",
@@ -10661,7 +10832,8 @@
       "reconciliation_20261114m": "2026-11-14: UpdateRollback-fileToDir/-dirToFile and CloseFlow configs added to REQUIRED. No checker behavior change.",
       "reconciliation_20261114n": "2026-11-14: CloseFlow, GameinfoCleaners, DialogRule, GameinfoTransaction-api and the UpdateRollback path-kind configs added to REQUIRED. No checker behavior change.",
       "reconciliation_20261118": "2026-11-18: HudOwnership.cfg added to REQUIRED. No checker behavior change.",
-      "reconciliation_20261122": "2026-11-22: ConsoleReconnect.cfg and LaunchRecovery.cfg added to REQUIRED. No checker behavior change."
+      "reconciliation_20261122": "2026-11-22: ConsoleReconnect.cfg and LaunchRecovery.cfg added to REQUIRED. No checker behavior change.",
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/confetti_offsets.py",
@@ -10782,7 +10954,7 @@
     },
     {
       "path": "tools/fetch_ffmpeg.py",
-      "sha256": "4d6f9ab5adafbd8c8592eff22bda15ff5bedb3167705e30f6c9d1a561b2e93fa",
+      "sha256": "42b6aa667689c4948edfdf02437cc4aa5e42d9fa029e950296869e7c01f98b14",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10794,7 +10966,6 @@
         "module_purpose": "Stage the pinned LGPL FFmpeg runtime used by Dolly's external encoder.",
         "classes": [],
         "functions": [
-          "sha256",
           "download",
           "_extract",
           "stage",
@@ -10802,14 +10973,16 @@
         ],
         "imports": [
           "__future__",
-          "pathlib"
+          "pathlib",
+          "release_files"
         ],
         "persistent_state_signals": [
           "file/process"
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261114": "2026-11-14 FFmpeg pin refresh: the dated autobuild-2026-10-17 asset was pruned upstream (404). Pinned autobuild-2026-11-14-12-37 n8.1.3-35-gf1acb0a266 win64 LGPL shared; SHA-256 matches GitHub's published asset digest, proved from an empty cache; same DLL names and encoder list (NVENC/QSV/AMF/MF/FFV1, no libx264/x265), configuration --enable-version3 without GPL. Constants only; no behavior change."
+      "reconciliation_20261114": "2026-11-14 FFmpeg pin refresh: the dated autobuild-2026-10-17 asset was pruned upstream (404). Pinned autobuild-2026-11-14-12-37 n8.1.3-35-gf1acb0a266 win64 LGPL shared; SHA-256 matches GitHub's published asset digest, proved from an empty cache; same DLL names and encoder list (NVENC/QSV/AMF/MF/FFV1, no libx264/x265), configuration --enable-version3 without GPL. Constants only; no behavior change.",
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/filter_captured_audio_window.py",
@@ -10887,7 +11060,7 @@
     },
     {
       "path": "tools/format_cpp.py",
-      "sha256": "cfa03dc620bb9c38ea50faeb9692a2b982494639e03e05ee5bdbedf46fb79e05",
+      "sha256": "3679ae4946c1a66e5dbaa78096750f41cbf78384b3b471b726760157a4984433",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10913,11 +11086,12 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/generate_compatibility.py",
-      "sha256": "7503ba78b7b019d80f9f984e3839bcdd593f260cb16da493327ed97551cae11f",
+      "sha256": "7f1e906c31d1fbbade319d0d5958c44d75c196e55fa867aad858febf555084e4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10964,7 +11138,8 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/generate_profile.py",
@@ -11016,7 +11191,7 @@
     },
     {
       "path": "tools/generate_sound_profile.py",
-      "sha256": "3ed1378f107eca4e1e04cd673edf5015dfff5095b136d6be1c23042b8303ae43",
+      "sha256": "995948d8c905ad2a4ea6ff54d2048945888a16896f77e51a42a96111b5a1d792",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -11041,7 +11216,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "Generator updates6861voice anchors and retains previous6853profile. No new product runtime state; local generation/immutable-profile/build checks own its job boundary."
+      "reconciliation": "Generator updates6861voice anchors and retains previous6853profile. No new product runtime state; local generation/immutable-profile/build checks own its job boundary.",
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/generate_ui_tokens.py",
@@ -11118,12 +11294,20 @@
     },
     {
       "path": "tools/release_files.py",
-      "sha256": "5344ba03773a46b7e2b926a157c1bd86afd2d6bf9a21d4defdcec8e86c15df2a",
+      "sha256": "4ea1e643fe7003321df14ec1584e62e7868fbe374067c3093e7efccd96b2b8bd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
       "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
-      "bounded_models": [],
+      "bounded_models": [
+        {
+          "spec": "tools/ReleasePublishOrder.tla",
+          "scope": "release_set partial-then-replace and checksum order",
+          "configs": [
+            "tools/ReleasePublishOrder.cfg"
+          ]
+        }
+      ],
       "test_reference_leads": [],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
@@ -11135,7 +11319,10 @@
           "bundle_files",
           "bundle_zip",
           "source_zip",
-          "sha256"
+          "sha256",
+          "_partial",
+          "_check_update_manifest",
+          "release_set"
         ],
         "imports": [
           "__future__",
@@ -11145,11 +11332,12 @@
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/release_status.py",
-      "sha256": "d13d4cb1c35f0ebd795e1cd65fd6b6fe920ebdfcff1ead8d9589dfb2f34a6be6",
+      "sha256": "e03fe2041fff639a3105327605a8f7011ee5d85a582ee06066f0af2b98e63e8b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -11164,19 +11352,21 @@
           "_run",
           "_gh_json",
           "_slug",
-          "_sha256",
           "main"
         ],
         "imports": [
           "__future__",
           "dolly",
-          "pathlib"
+          "dolly.updater",
+          "pathlib",
+          "release_files"
         ],
         "persistent_state_signals": [
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     },
     {
       "path": "tools/test-lite-policy.cmd",
@@ -11222,7 +11412,7 @@
     },
     {
       "path": "tools/update_game.py",
-      "sha256": "a12389ac679277092ce26f4c6e25caefe610b16f446111cf8b562efeedc2a51e",
+      "sha256": "6128cfc6c9f07629890515459a1bb3839c8012ae20c2f9fc8075e0dae1d7228f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -11234,15 +11424,12 @@
         "module_purpose": "Add reviewed support for a new Deadlock build by driving the update pipeline.",
         "classes": [],
         "functions": [
-          "sha256",
           "run_dir_identity",
           "latest_run",
           "read_names",
           "shift",
           "first_match",
-          "read_steam_inf",
           "parse_version_date",
-          "resolve_game_dir",
           "build_pairs",
           "_normalize_patched",
           "_client_autofix",
@@ -11252,19 +11439,23 @@
           "generate_unlocker",
           "run_script",
           "refresh_confetti_table",
-          "main"
+          "main",
+          "installed_game_dir"
         ],
         "imports": [
           "__future__",
+          "check_game_update",
           "datetime",
           "dolly.settings",
-          "pathlib"
+          "pathlib",
+          "release_files"
         ],
         "persistent_state_signals": [
           "file/process"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
     }
   ],
   "models": {
@@ -11288,7 +11479,7 @@
       "instances": [
         "FileOpsApi"
       ],
-      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
+      "owner_utf8_lf_sha256": "88b1b2d26d7ab12503a93ce46e3b4a2c51be326ffefabb3ab1df8d64b75d943c"
     },
     "dolly/AtomicMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11311,7 +11502,7 @@
       "instances": [
         "AttachObservationApi"
       ],
-      "owner_utf8_lf_sha256": "9dc2920b7e565766dc13e23bb541962f87ff3d0600ada0b5ed21e0255642e523"
+      "owner_utf8_lf_sha256": "b6b3d7413a676d6fbdb6b792344d2608218f1940e9386b0324496cc47b1db168"
     },
     "dolly/AudioWorkRetirement.tla": {
       "path": "dolly/clip_audio.py",
@@ -11336,6 +11527,15 @@
       ],
       "owner_utf8_lf_sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7"
     },
+    "dolly/BonePickerTransaction.tla": {
+      "path": "dolly/bone_picker.py",
+      "scope": "desktop Bone Picker transaction (bone_picker.py, editor_publication.py, editor_session.py): open/ready/publish/close against an active or lost editor; request tied to the first picker publication; MaxSeq=4; native rejection and game exit not modeled",
+      "configs": [
+        "dolly/BonePickerTransaction.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "5eec023681053cc8d6464e3f4dc60150ce5e2662cb339aa2bc77ff428c5bd3d3"
+    },
     "dolly/BridgeClose.tla": {
       "path": "dolly/native_bridge.py",
       "scope": "NativeBridge.close; a media fault skips the forced diagnostic sample (FaultSkipsSample), release/heartbeat stop/unmap still run",
@@ -11345,7 +11545,7 @@
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "6aca4524113ca726bb690e4748b84eb623cace82f4ce897c313278c2cf5ea34b"
+      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -11411,12 +11611,12 @@
     },
     "dolly/CloseFlow.tla": {
       "path": "dolly/gui.py",
-      "scope": "closing Dolly across the window's X and the update restart: Stop first when playing, the unsaved-changes question asked once per close (also after a failed Stop), controller.close on the worker. Dolly never exits over an unsaved shot the user did not agree to discard; once agreed it exits even if every close fails; every close ends. Outcomes fixed per behavior; edits after consent and busy refusal excluded",
+      "scope": "closing Dolly across the window's X and the update restart: Stop first when playing, the unsaved-changes question asked once per close (also after a failed Stop), controller.close on the worker. Dolly never exits over an unsaved shot the user did not agree to discard; once agreed it exits even if every close fails; every close ends. Outcomes fixed per behavior; edits after consent and busy refusal excluded; 2026-11-23: one other operation that can start and fail during the save question, a close refused as busy waits for it (_retry_close), only the close steps finish a close after a failure",
       "configs": [
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "b243aa53922a9153492e3e073012c08c6b1e7265ce27e985c2b51bc68906b84f"
+      "owner_utf8_lf_sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11478,7 +11678,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "b243aa53922a9153492e3e073012c08c6b1e7265ce27e985c2b51bc68906b84f"
+      "owner_utf8_lf_sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11496,6 +11696,17 @@
         "dolly/DollyRoot-success.cfg"
       ],
       "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+    },
+    "dolly/EditorEventQueue.tla": {
+      "path": "dolly/editor_session.py",
+      "scope": "editor_session.poll draining the native editor action queue: in-order ack, busy reread retry, accept/defer/refuse, bridge replacement; B=2 bridges, N=2 actions, one busy read and one deferral; handler internals, curve preview offers and worker operations not modeled",
+      "configs": [
+        "dolly/EditorEventQueue.cfg"
+      ],
+      "instances": [
+        "EditorEventQueueApi"
+      ],
+      "owner_utf8_lf_sha256": "b6b3d7413a676d6fbdb6b792344d2608218f1940e9386b0324496cc47b1db168"
     },
     "dolly/EncoderUnwind.tla": {
       "path": "dolly/player_layer.py",
@@ -11545,7 +11756,7 @@
         "dolly/GameExitClose.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "6aca4524113ca726bb690e4748b84eb623cace82f4ce897c313278c2cf5ea34b"
+      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
     },
     "dolly/GameFileCache.tla": {
       "path": "dolly/preload.py",
@@ -11585,7 +11796,7 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "6aca4524113ca726bb690e4748b84eb623cace82f4ce897c313278c2cf5ea34b"
+      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
     },
     "dolly/HelperWorkspace.tla": {
       "path": "dolly/source2viewer.py",
@@ -11807,7 +12018,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "b243aa53922a9153492e3e073012c08c6b1e7265ce27e985c2b51bc68906b84f"
+      "owner_utf8_lf_sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -11860,7 +12071,7 @@
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "6aca4524113ca726bb690e4748b84eb623cace82f4ce897c313278c2cf5ea34b",
+      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be",
       "instances": [
         "CameraLeaseApi"
       ]
@@ -11983,7 +12194,7 @@
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "6aca4524113ca726bb690e4748b84eb623cace82f4ce897c313278c2cf5ea34b"
+      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
     },
     "dolly/StillCleanup.tla": {
       "path": "dolly/screenshot.py",
@@ -12019,7 +12230,7 @@
         "FileOpsApi",
         "RollbackApi"
       ],
-      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
+      "owner_utf8_lf_sha256": "88b1b2d26d7ab12503a93ce46e3b4a2c51be326ffefabb3ab1df8d64b75d943c"
     },
     "dolly/UpdateStart.tla": {
       "path": "dolly/update_ui.py",
@@ -12052,7 +12263,7 @@
       "instances": [
         "RecoveryResourcesApi"
       ],
-      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
+      "owner_utf8_lf_sha256": "88b1b2d26d7ab12503a93ce46e3b4a2c51be326ffefabb3ab1df8d64b75d943c"
     },
     "dolly/WorkspaceEligibility.tla": {
       "path": "dolly/update_worker.py",
@@ -12063,7 +12274,7 @@
       "instances": [
         "WorkspaceEligibilityApi"
       ],
-      "owner_utf8_lf_sha256": "42318b1143ce1dc77e941b4aec8580e51ec40920a140aec1cdd47897869e0574"
+      "owner_utf8_lf_sha256": "88b1b2d26d7ab12503a93ce46e3b4a2c51be326ffefabb3ab1df8d64b75d943c"
     },
     "dolly/ui/Admission.tla": {
       "path": "dolly/ui/operations.py",
@@ -12096,7 +12307,7 @@
       "instances": [
         "FadeSurfaceApi"
       ],
-      "owner_utf8_lf_sha256": "a624ce6eef4db5407041e579296ad656e3148611b25afcb11c34479feb6dd35c"
+      "owner_utf8_lf_sha256": "c94f182933ca3d8df7134f5dc8b09fd549770873662f08a1d99b46721d272011"
     },
     "dolly/ui/LayerAdmission.tla": {
       "path": "dolly/ui/layer_pipeline.py",
@@ -12153,6 +12364,15 @@
       ],
       "owner_utf8_lf_sha256": "a2173594d83962b9313c9247fa6577e6413c063f2c97071e9cddc7198230fbba"
     },
+    "native/src/BridgeCommandAdmission.tla": {
+      "path": "native/src/bridge_win.cpp",
+      "scope": "bridge worker admission of editor control snapshots (read_control, validate_control, admit_control) against one on_view callback; MaxWrites=3, seqlock as atomic snapshot; payloads, attach resolution, editor exit and worker exceptions not modeled",
+      "configs": [
+        "native/src/BridgeCommandAdmission.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "ac7b33d6c2e535f565993c5c68f8e19aae197b290e329e7f277a451cd7d6bd43"
+    },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
       "scope": "Native camera-only admission, callback drain and complete publication safety; 2026-11-13: cancel may arrive until done, one cancel decision drives raw-trace publication and terminal state (OutcomeAgrees); handshake race modeled in VideoCompleteness; refines RecorderApi without its late-capture-fault gap (RefinesRecorder)",
@@ -12199,7 +12419,16 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "821be1eed4d284dc539acff61fc4b4c5d50af1ff6ff86fe2f029c3b43796fdb8"
+      "owner_utf8_lf_sha256": "ac7b33d6c2e535f565993c5c68f8e19aae197b290e329e7f277a451cd7d6bd43"
+    },
+    "native/src/PickerGizmoSession.tla": {
+      "path": "native/src/dolly_object_picker_ui.cpp",
+      "scope": "Object Picker gizmo drag commit targets the grabbed object within one picker session; picker close and object-list edits drop the drag; 2 slots, 3 clicks, 1 edit, 1 close; ImGui input and Python not modeled",
+      "configs": [
+        "native/src/PickerGizmoSession.cfg"
+      ],
+      "instances": [],
+      "owner_utf8_lf_sha256": "202787d62ba2a2b1497d4cd04d671a8aff6a1a46a8ef485ac852d06446e0cba3"
     },
     "native/src/VideoCompleteness.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -12233,6 +12462,17 @@
         "AssetFailureApi"
       ],
       "owner_utf8_lf_sha256": "469addd166c5e4d149647d3726f398b1d4c8de6bc296a94986a9ad529c3b2474"
+    },
+    "tools/ReleasePublishOrder.tla": {
+      "path": "tools/release_files.py",
+      "scope": "release_set: Windows ZIP, source ZIP, then SHA256SUMS.txt with a crash or normal failure at any step; os.replace atomic; contents abstracted; disk faults, concurrent writers and ZIP bytes not modeled",
+      "configs": [
+        "tools/ReleasePublishOrder.cfg"
+      ],
+      "instances": [
+        "ReleasePublishOrderApi"
+      ],
+      "owner_utf8_lf_sha256": "4ea1e643fe7003321df14ec1584e62e7868fbe374067c3093e7efccd96b2b8bd"
     },
     "tools/VoiceWindowReuse.tla": {
       "path": "tools/filter_captured_audio_window.py",
@@ -13735,6 +13975,21 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/BonePickerTransaction.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/BonePickerTransaction.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/BonePickerTransaction.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/BridgeClose.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -14012,6 +14267,26 @@
     },
     {
       "path": "dolly/DollyRoot.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/EditorEventQueue.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/EditorEventQueue.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/EditorEventQueue.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/EditorEventQueueApi.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -16338,6 +16613,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/include/dolly_source_axes.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/include/dolly_video.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16852,6 +17132,21 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/src/BridgeCommandAdmission.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/BridgeCommandAdmission.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/BridgeCommandAdmission.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/src/CameraOnlyCapture.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
@@ -16927,6 +17222,21 @@
     {
       "path": "native/src/NativeSnapshotClose.tla",
       "category": "formal spec/interface"
+    },
+    {
+      "path": "native/src/PickerGizmoSession.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/PickerGizmoSession.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/PickerGizmoSession.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
     },
     {
       "path": "native/src/VideoCompleteness.cfg",
@@ -17190,6 +17500,16 @@
     },
     {
       "path": "native/src/dolly_reshade_win.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_retry_backoff.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_seqlock_win.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17789,6 +18109,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_bone_picker_editor_loss.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_bone_picker_recovery.py",
       "category": "test/support input"
     },
@@ -17802,6 +18127,11 @@
       "category": "test/support input"
     },
     {
+      "path": "tests/test_build_tooling.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_camera_session_contracts.py",
       "category": "test/support input"
     },
@@ -17812,6 +18142,11 @@
     },
     {
       "path": "tests/test_capture_completion.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_cinematic_prepare_failure.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17875,6 +18210,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_layer_modes.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_metadata_boundaries.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17916,6 +18256,11 @@
     },
     {
       "path": "tests/test_replay_repair.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_replay_warmup_cleanup.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18832,6 +19177,26 @@
     },
     {
       "path": "tools/AssetFailureApi.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tools/ReleasePublishOrder.cfg",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tools/ReleasePublishOrder.mutants.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tools/ReleasePublishOrder.tla",
+      "category": "formal spec/interface",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tools/ReleasePublishOrderApi.tla",
       "category": "formal spec/interface",
       "coverage": "explicit source role, not proof or execution coverage"
     },
