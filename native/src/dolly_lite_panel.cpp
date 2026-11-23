@@ -797,10 +797,8 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
                       (!lite_campath_timeline_ && (!state.paused ||
                        editor_recording_locks_cameras(editor_recording_status().state))));
         if (lite_campath_timeline_) action_button("Seek here",EditorAction::SeekShot,95*s,double(lite_shot_time_));
-        else if (Button("Seek camera",ImVec2(95*s,0))) {
-            CameraPose request{}; request[0]=double(list.revision);
+        else if (Button("Seek camera",ImVec2(95*s,0)))
             camera_request(EditorAction::SeekCamera,state.selected_camera,list);
-        }
         SameLine();action_button("<",EditorAction::PreviousView,32*s);
         SameLine();action_button(">",EditorAction::NextView,32*s);
         EndDisabled();

@@ -183,10 +183,7 @@ void OverlayPanel::draw_bone_picker_controls(const EditorSnapshot& state,
                     picker_select(request, int(index));
                 auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
                 bool on = int(index) == snapshot.selected;
-                if (on)
-                    dl = ImGui::GetWindowDrawList();
-                else
-                    dl = ImGui::GetWindowDrawList();
+                dl = ImGui::GetWindowDrawList();
                 if (on)
                     dl->AddRectFilled(lo, hi, t::U32(t::bg_rail_selected), 4 * scale);
                 ImVec2 dot(lo.x + 13 * scale, lo.y + 12.5f * scale);
