@@ -564,5 +564,43 @@ class CurveGraphPressTests(unittest.TestCase):
             root.destroy()
 
 
+class EditorEventBusyTests(unittest.TestCase):
+    def _follow_app(self, bridge):
+        from unittest.mock import Mock
+        app = SimpleNamespace(
+            closed=False, busy=False, native_editor_active=True, _attach_roster_at=float("inf"),
+            _bone_picker_context=None, _attach_snap_pending=False, preview_attach=False,
+            status_text=_Var(), camera_tree=object(), _selection_index=lambda _: 0,
+            _error=Mock(), _submit=Mock(),
+            controller=SimpleNamespace(status=lambda: {"connected": True}, _native_bridge=lambda: bridge))
+        return app
+
+    def test_busy_roster_keeps_the_follow_event_queued(self):
+        from dolly import editor_session
+        from dolly.native_bridge import NativeStatusBusy
+        event = {"action": "start_game_follow", "sequence": 1, "value": 135.0,
+                 "pose": (34.0, 0.0, 0.0, 7, 3, 5, 0)}
+        acks, reads = [], []
+
+        def roster():
+            reads.append(True)
+            if len(reads) == 1:
+                raise NativeStatusBusy("The native attach roster is busy; retry in a moment.")
+            return {"players": [{"handle": 7, "entity_index": 3, "model": 5}]}
+
+        bridge = SimpleNamespace(editor_status=lambda: {"enabled": True, "events": [event] if not acks else []},
+                                 editor_roster=roster, acknowledge_editor_event=acks.append)
+        app = self._follow_app(bridge)
+        with patch.object(editor_session, "configure"):
+            editor_session.poll(app)
+            app._error.assert_not_called()
+            app._submit.assert_not_called()
+            self.assertEqual(acks, [])
+            editor_session.poll(app)
+        app._error.assert_not_called()
+        self.assertEqual(app._submit.call_count, 1)
+        self.assertEqual(acks, [1])
+
+
 if __name__ == "__main__":
     unittest.main()

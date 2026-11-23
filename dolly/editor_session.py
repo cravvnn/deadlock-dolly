@@ -136,6 +136,10 @@ def poll(app):
                 break
             try:
                 accepted = dispatch(app, event, bridge)
+            except NativeStatusBusy:
+                # A torn native read happens before the handler changes
+                # anything. Keep the event queued and retry on the next tick.
+                break
             except (RuntimeError, ValueError, OSError) as exc:
                 LOG.exception("Native editor action failed: %s", event["action"])
                 app._error("In-game editor", exc)
