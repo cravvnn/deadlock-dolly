@@ -7,6 +7,7 @@ from tkinter import simpledialog, ttk
 from .. import ui_theme
 from . import fonts
 from .chrome import style_title_bar
+from .question_dialog import restoring_grab
 from .scale import ui_scale, px
 
 
@@ -54,17 +55,5 @@ class _TextDialog(simpledialog.Dialog):
 
 def askstring(title, prompt, *, initialvalue=None, parent=None):
     """Return the entered string, or ``None`` on Cancel, Escape, or close."""
-    previous = parent.grab_current() if parent is not None else None
-    status = previous.grab_status() if previous is not None else None
-    try:
+    with restoring_grab(parent):
         return _TextDialog(parent, title, prompt, initialvalue).result
-    finally:
-        if previous is not None:
-            try:
-                if previous.winfo_exists():
-                    if status == "global":
-                        previous.grab_set_global()
-                    else:
-                        previous.grab_set()
-            except tk.TclError:
-                pass

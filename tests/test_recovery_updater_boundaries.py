@@ -354,6 +354,41 @@ class CloseAndDialogBoundaries(unittest.TestCase):
         app._persist_preferences.call_args.args[2]()  # The save completed.
         self.assertEqual(app.launch_options.get(), '-w 1920')
 
+    def test_dialogs_give_the_parent_grab_back(self):
+        import tkinter as tk
+        from dolly.ui import question_dialog, text_dialog
+
+        def parent(status):
+            previous = MagicMock()
+            previous.grab_status.return_value = status
+            previous.winfo_exists.return_value = True
+            window = MagicMock()
+            window.grab_current.return_value = previous
+            return window, previous
+
+        for status in ('local', 'global'):
+            window, previous = parent(status)
+            with patch.object(question_dialog, '_QuestionDialog', return_value=SimpleNamespace(result=True)):
+                self.assertTrue(question_dialog.askyesno('Title', 'Text', parent=window))
+            (previous.grab_set_global if status == 'global' else previous.grab_set).assert_called_once()
+        window, previous = parent('local')
+        with patch.object(question_dialog, '_QuestionDialog', side_effect=tk.TclError('no window')), \
+                patch.object(question_dialog, '_system') as system:
+            system.askyesnocancel.return_value = None
+            self.assertIsNone(question_dialog.askchoice('Title', 'Text', 'Finish', 'Discard', parent=window))
+        previous.grab_set.assert_called_once()
+        window, previous = parent('local')
+        previous.grab_set.side_effect = tk.TclError('gone')
+        with patch.object(question_dialog, '_NoticeDialog'):
+            self.assertEqual(question_dialog.showinfo('Title', 'Text', parent=window), 'ok')
+        window, previous = parent('local')
+        previous.winfo_exists.return_value = False
+        with patch.object(text_dialog, '_TextDialog', return_value=SimpleNamespace(result='Name')):
+            self.assertEqual(text_dialog.askstring('Title', 'Prompt', parent=window), 'Name')
+        previous.grab_set.assert_not_called()
+        with patch.object(text_dialog, '_TextDialog', return_value=SimpleNamespace(result=None)):
+            self.assertIsNone(text_dialog.askstring('Title', 'Prompt'))
+
     def test_background_results_wait_for_an_open_dialog(self):
         from dolly import gui
         show = MagicMock(return_value='ok')

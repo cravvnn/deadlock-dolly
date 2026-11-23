@@ -1,6 +1,7 @@
 """Dolly-styled Yes/No prompts using Tk's modal window lifecycle."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 import tkinter as tk
 from tkinter import messagebox as _system, simpledialog, ttk
 
@@ -91,11 +92,13 @@ class _QuestionDialog(simpledialog.Dialog):
         self.cancel()
 
 
-def _ask(title, message, *, parent, cancel):
+@contextmanager
+def restoring_grab(parent):
+    """Give the parent window's grab back once a modal dialog closes."""
     previous = parent.grab_current() if parent is not None else None
     status = previous.grab_status() if previous is not None else None
     try:
-        return _QuestionDialog(parent, title, str(message), cancel=cancel).result
+        yield
     finally:
         if previous is not None:
             try:
@@ -106,26 +109,20 @@ def _ask(title, message, *, parent, cancel):
                         previous.grab_set()
             except tk.TclError:
                 pass
+
+
+def _ask(title, message, *, parent, cancel):
+    with restoring_grab(parent):
+        return _QuestionDialog(parent, title, str(message), cancel=cancel).result
 
 
 def askchoice(title, message, first, second, *, parent=None):
     """Return True for the first choice, False for the second, None if cancelled."""
-    previous = parent.grab_current() if parent is not None else None
-    status = previous.grab_status() if previous is not None else None
-    try:
-        return _QuestionDialog(parent, title, str(message), cancel=True, labels=(first, second)).result
-    except tk.TclError:
-        return _system.askyesnocancel(title, f"{message}\n\nYes: {first}\nNo: {second}", parent=parent)
-    finally:
-        if previous is not None:
-            try:
-                if previous.winfo_exists():
-                    if status == "global":
-                        previous.grab_set_global()
-                    else:
-                        previous.grab_set()
-            except tk.TclError:
-                pass
+    with restoring_grab(parent):
+        try:
+            return _QuestionDialog(parent, title, str(message), cancel=True, labels=(first, second)).result
+        except tk.TclError:
+            return _system.askyesnocancel(title, f"{message}\n\nYes: {first}\nNo: {second}", parent=parent)
 
 
 def askyesno(title, message, *, parent=None):
@@ -158,21 +155,9 @@ class _NoticeDialog(_QuestionDialog):
 
 
 def _notice(title, message, *, parent, kind):
-    previous = parent.grab_current() if parent is not None else None
-    status = previous.grab_status() if previous is not None else None
-    try:
+    with restoring_grab(parent):
         _NoticeDialog(parent, title, str(message), kind)
         return "ok"
-    finally:
-        if previous is not None:
-            try:
-                if previous.winfo_exists():
-                    if status == "global":
-                        previous.grab_set_global()
-                    else:
-                        previous.grab_set()
-            except tk.TclError:
-                pass
 
 
 def showinfo(title, message, *, parent=None):
