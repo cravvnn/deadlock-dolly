@@ -153,6 +153,11 @@ void OverlayPanel::initialize_layout() {
     io.IniFilename=nullptr;
     io.IniSavingRate=.5f;
     io.WantSaveIniSettings=false;
+    // A re-created device keeps this session's layout when its last save
+    // failed: the copy on disk is older than what the user arranged.
+    const std::wstring unsaved_file=std::move(layout_unsaved_file_);
+    const std::string unsaved=std::move(layout_unsaved_);
+    layout_unsaved_file_.clear(); layout_unsaved_.clear();
     layout_file_.clear(); layout_last_saved_.clear();
     layout_save_requested_=false; layout_save_failed_=false; layout_save_backoff_=RetryBackoff{};
     wchar_t configured[32768]{};
@@ -169,6 +174,11 @@ void OverlayPanel::initialize_layout() {
             layout_file_.clear(); return;
         }
         layout_file_+=L"\\ui-layout.ini";
+    }
+    if(!unsaved.empty() && unsaved_file==layout_file_) {
+        ImGui::LoadIniSettingsFromMemory(unsaved.data(),unsaved.size());
+        layout_save_requested_=true;
+        return;
     }
     std::string saved;
     bool recovered=false;
@@ -270,8 +280,10 @@ bool OverlayPanel::flush_layout(bool force) noexcept {
         if(saved!=layout_last_saved_ && !save_ui_layout(layout_file_,saved)) {
             layout_save_requested_=true; layout_save_failed_=true;
             layout_save_backoff_.failed(now);
+            layout_unsaved_file_=layout_file_; layout_unsaved_=std::move(saved);
             return false;
         }
+        layout_unsaved_file_.clear(); layout_unsaved_.clear();
         layout_last_saved_=std::move(saved);
         layout_save_requested_=false; layout_save_failed_=false; io.WantSaveIniSettings=false; layout_save_backoff_.clear();
         return true;

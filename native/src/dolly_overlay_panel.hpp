@@ -186,6 +186,8 @@ private:
     std::uint32_t cinematic_revision_ = 0, cinematic_token_ = 0;
     std::wstring layout_file_;
     std::string layout_last_saved_;
+    std::wstring layout_unsaved_file_; // the last failed save, kept across device re-creation
+    std::string layout_unsaved_;
     bool layout_save_requested_ = false;
     bool layout_save_failed_ = false;
     RetryBackoff layout_save_backoff_{};

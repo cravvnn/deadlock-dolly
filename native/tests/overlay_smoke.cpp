@@ -2766,6 +2766,60 @@ static void card_row_alignment_regressions(float font_scale) {
     // Deliberately skip context teardown and the normal overlay shutdown flush.
     ExitProcess(0);
 }
+// A device re-creation re-initializes the layout. When the last save failed,
+// the session's arrangement must survive instead of reverting to the disk copy.
+static void layout_reinit_unsaved_regressions() {
+    const auto directory=layout_test_directory(),path=directory+L"\\reinit.ini";
+    require(SetEnvironmentVariableW(L"DOLLY_UI_LAYOUT_FILE",path.c_str()),"Cannot isolate re-init layout storage");
+    auto* previous=ImGui::GetCurrentContext();const auto original=snapshot;
+    snapshot.enabled=snapshot.focused=snapshot.ready=snapshot.paused=snapshot.manual_active=true;
+    snapshot.busy=snapshot.playing=snapshot.attach_preview=snapshot.bone_picker=snapshot.object_picker=false;
+    snapshot.owner=dolly::EditorOwner::Panel;snapshot.camera_count=2;snapshot.selected_camera=0;snapshot.duration=3;
+    dolly::OverlayPanel panel;
+    auto open=[&] {
+        auto* ctx=ImGui::CreateContext();ImGui::SetCurrentContext(ctx);
+        auto& io=ImGui::GetIO();io.DisplaySize=ImVec2(1920,1080);io.DeltaTime=1.f/60;
+        panel.style_panel();panel.initialize_layout();panel.load_panel_fonts(1);io.Fonts->Build();
+        return ctx;
+    };
+    auto frame=[&] {ImGui::NewFrame();panel.draw_panel(snapshot);panel.draw_lite_campaths(snapshot);
+                    panel.draw_lite_timeline(snapshot);ImGui::Render();panel.flush_layout();};
+    auto* ctx=open();
+    for(unsigned i=0;i<30;++i)frame();
+    require(panel.flush_layout(true),"Re-init fixture could not save its first layout");
+    const auto before=read_layout_fixture(path);
+    HANDLE locked=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    require(locked!=INVALID_HANDLE_VALUE,"Cannot lock the re-init layout");
+    auto& io=ImGui::GetIO();
+    auto* main=ImGui::FindWindowByName("Deadlock Dolly");
+    const auto old_x=main->Pos.x;
+    io.AddMousePosEvent(main->Pos.x+main->Size.x*.5f,main->Pos.y+7);frame();frame();
+    io.AddMouseButtonEvent(0,true);frame();io.AddMousePosEvent(io.MousePos.x-24,io.MousePos.y);frame();frame();
+    io.AddMouseButtonEvent(0,false);frame();frame();
+    main=ImGui::FindWindowByName("Deadlock Dolly");
+    const auto moved_x=main->Pos.x;
+    require(std::abs(moved_x-(old_x-24))<1,"The re-init fixture did not complete its header gesture");
+    require(!panel.flush_layout(true),"A locked re-init layout save did not fail");
+    ImGui::DestroyContext(ctx);
+    ctx=open();
+    for(unsigned i=0;i<30;++i)frame();
+    main=ImGui::FindWindowByName("Deadlock Dolly");
+    require(main && std::abs(main->Pos.x-moved_x)<1,"Device re-init reverted an unsaved layout to the disk copy");
+    require(read_layout_fixture(path)==before,"A failed re-init save damaged the previous layout");
+    CloseHandle(locked);
+    require(panel.flush_layout(true),"The kept session layout was not saved after the lock cleared");
+    char expected_position[128]{};
+    std::snprintf(expected_position,sizeof(expected_position),"[Window][Deadlock Dolly]\nPos=%d,%d\n",int(main->Pos.x),int(main->Pos.y));
+    std::string saved;
+    require(dolly::load_ui_layout(path,saved) && saved.find(expected_position)!=std::string::npos,
+            "The kept session layout did not reach disk");
+    ImGui::DestroyContext(ctx);
+    ImGui::SetCurrentContext(previous);snapshot=original;
+    require(SetEnvironmentVariableA("DOLLY_UI_LAYOUT_FILE","none"),"Cannot restore disabled test layout persistence");
+    DeleteFileW((path+L".bak").c_str());
+    require(DeleteFileW(path.c_str()) && RemoveDirectoryW(directory.c_str()),"Cannot clean the re-init layout fixture");
+    std::puts("Managed layout UI: a device re-init keeps the session layout after a failed save.");
+}
 static void layout_crash_restore_regressions() {
     const auto directory=layout_test_directory(),path=directory+L"\\crash.ini";
     require(SetEnvironmentVariableW(L"DOLLY_UI_LAYOUT_FILE",path.c_str()),"Cannot isolate crash-save fixture storage");
@@ -5371,6 +5425,7 @@ int main(int argc, char** argv) {
         ui_storage_regressions();
         retry_backoff_regressions();
         layout_crash_restore_regressions();
+        layout_reinit_unsaved_regressions();
         layout_view_restore_regressions(viewer);
         default_panel_placement_regressions(1);
         default_panel_placement_regressions(1.5f);
