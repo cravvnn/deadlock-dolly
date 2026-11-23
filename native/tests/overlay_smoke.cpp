@@ -2835,8 +2835,15 @@ static void layout_crash_restore_regressions() {
             io.AddMousePosEvent(main->Pos.x+main->Size.x*.5f,main->Pos.y+7);frame();frame();
             io.AddMouseButtonEvent(0,true);frame();io.AddMousePosEvent(io.MousePos.x-24,io.MousePos.y);frame();frame();
             io.AddMouseButtonEvent(0,false);frame();frame();
+            // Failed saves back off inside Present: 1 s, then 2 s, ... while
+            // the same payload is pending. Fail the 1 s retry, then unlock.
+            for(unsigned i=0;i<72;++i)frame();
             const auto after_failed_save=read_layout_fixture(path);CloseHandle(locked);
             require(after_failed_save==before,"A failed real gesture save damaged the previous custom layout");
+            for(unsigned i=0;i<72;++i)frame();
+            require(read_layout_fixture(path)==before,"A failed layout save retried before its backoff elapsed");
+            for(unsigned i=0;i<60;++i)frame();
+            require(read_layout_fixture(path)!=before,"A failed layout save did not retry after its backoff");
             require(std::abs(main->Pos.x-(old_x-24))<1,"The failed-save fixture did not complete its real header gesture");
             require(panel.flush_layout(true),"A failed layout save was not retained for a later retry");
             char expected_position[128]{};

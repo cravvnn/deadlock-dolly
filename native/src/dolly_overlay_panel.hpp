@@ -3,6 +3,7 @@
 #include "dolly_editor.hpp"
 #include "dolly_bone_picker.hpp"
 #include "dolly_visualization.hpp"
+#include "dolly_retry_backoff.hpp"
 #include "imgui.h"
 #include <memory>
 #include <string>
@@ -187,7 +188,7 @@ private:
     std::string layout_last_saved_;
     bool layout_save_requested_ = false;
     bool layout_save_failed_ = false;
-    double layout_save_retry_at_ = 0;
+    RetryBackoff layout_save_backoff_{};
     void layout_controls();
     void panel_handle(const char* label, bool editor = false);
     void constrain_panel();

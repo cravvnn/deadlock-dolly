@@ -8,6 +8,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cwchar>
+#include <functional>
 #include <iterator>
 #include <utility>
 #include <windows.h>
@@ -153,7 +154,7 @@ void OverlayPanel::initialize_layout() {
     io.IniSavingRate=.5f;
     io.WantSaveIniSettings=false;
     layout_file_.clear(); layout_last_saved_.clear();
-    layout_save_requested_=false; layout_save_failed_=false; layout_save_retry_at_=0;
+    layout_save_requested_=false; layout_save_failed_=false; layout_save_backoff_=RetryBackoff{};
     wchar_t configured[32768]{};
     const auto override_length=GetEnvironmentVariableW(L"DOLLY_UI_LAYOUT_FILE",configured,DWORD(std::size(configured)));
     if(override_length) {
@@ -249,24 +250,34 @@ bool OverlayPanel::flush_layout(bool force) noexcept {
     auto& context=*ImGui::GetCurrentContext();
     auto& io=ImGui::GetIO();
     if(!layout_save_requested_ && !io.WantSaveIniSettings && !(force && context.SettingsDirtyTimer>0)) return true;
-    if(!force && ImGui::GetTime()<layout_save_retry_at_) return false;
+    // A failed write backs off (1 s doubling to 60 s) since it runs inside
+    // Present. ImGui re-flags a changed layout through WantSaveIniSettings;
+    // only a payload that differs from the failed one retries any sooner.
+    const double now=ImGui::GetTime();
+    if(!force && layout_save_backoff_.waiting(now) && !io.WantSaveIniSettings) return false;
     // The last applied window geometry and the custom preferences are now in
     // the same completed frame. A failed write remains pending for retry.
     try {
         std::size_t length=0;
         const char* memory=ImGui::SaveIniSettingsToMemory(&length);
         std::string saved(memory,length);
+        const auto key=std::uint64_t(std::hash<std::string>{}(saved));
+        if(!force && layout_save_backoff_.waiting(now) && key==layout_save_backoff_.identity) {
+            io.WantSaveIniSettings=false;
+            return false;
+        }
+        layout_save_backoff_.identity=key;
         if(saved!=layout_last_saved_ && !save_ui_layout(layout_file_,saved)) {
             layout_save_requested_=true; layout_save_failed_=true;
-            layout_save_retry_at_=ImGui::GetTime()+1.;
+            layout_save_backoff_.failed(now);
             return false;
         }
         layout_last_saved_=std::move(saved);
-        layout_save_requested_=false; layout_save_failed_=false; io.WantSaveIniSettings=false; layout_save_retry_at_=0;
+        layout_save_requested_=false; layout_save_failed_=false; io.WantSaveIniSettings=false; layout_save_backoff_.clear();
         return true;
     } catch(...) {
         layout_save_requested_=true; layout_save_failed_=true;
-        layout_save_retry_at_=ImGui::GetTime()+1.;
+        layout_save_backoff_.failed(now);
         return false;
     }
 }
