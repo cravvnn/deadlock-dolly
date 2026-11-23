@@ -1505,7 +1505,8 @@ static void object_picker_session_regressions() {
     snapshot.object_items[0].scale = 40.0f;
     dolly::VisualizationView view{snapshot.pose, 90, 1920, 1080, 1};
     std::array<double, 3> centre{};
-    require(dolly::object_place_screen(view, 960, 540, 600.0, centre),
+    require(dolly::object_place_view(view, 960, 540, dolly::PlaceMode::Distance, 600.0, 0,
+                                     centre),
             "Object session placement failed");
     for (int axis = 0; axis < 3; ++axis)
         snapshot.object_items[0].position[axis] = float(centre[axis]);
