@@ -110,7 +110,9 @@ def _configure_visualization(app, bridge, active, selected):
 
 
 def configure(app):
-    if getattr(app, "_refreshing_shot_history", False):
+    # After close() the controller still reports the editor active until its
+    # disconnect finishes; never re-enable it while that close runs.
+    if getattr(app, "_refreshing_shot_history", False) or getattr(app, "_editor_closed", False):
         return
     bridge = _bridge(app)
     if bridge is None or getattr(app, "closed", False):

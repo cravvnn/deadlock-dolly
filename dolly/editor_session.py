@@ -56,7 +56,7 @@ def cancel_snap(app, message):
 
 
 def poll(app):
-    if getattr(app, "closed", False):
+    if getattr(app, "closed", False) or getattr(app, "_editor_closed", False):
         return
     bridge = _bridge(app)
     if bridge is None:
@@ -188,6 +188,7 @@ def poll(app):
 
 
 def close(app):
+    app._editor_closed = True  # The window closes after this; see configure.
     app._bone_picker_context = None
     from . import curve_preview
     curve_preview.clear(app)

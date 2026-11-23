@@ -92,5 +92,18 @@ class PickerRequestTests(unittest.TestCase):
         self.assertEqual(app._bone_picker_context["request"], 12)
 
 
+class EditorCloseTests(unittest.TestCase):
+    def test_closing_editor_is_not_re_enabled_by_the_next_poll(self):
+        bridge = NS(configure_editor=Mock(), editor_status=Mock(return_value={"enabled": True}))
+        app = _app(dict(game_running=True, connected=True, native_editor_active=True), bridge)
+        app.native_editor_active = True
+        editor_session.close(app)
+        editor_session.poll(app)
+        editor_publication.configure(app)
+        bridge.configure_editor.assert_called_once_with(enabled=False, owner="disabled")
+        bridge.editor_status.assert_not_called()
+        self.assertFalse(app.native_editor_active)
+
+
 if __name__ == "__main__":
     unittest.main()
