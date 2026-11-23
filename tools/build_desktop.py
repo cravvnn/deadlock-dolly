@@ -30,6 +30,41 @@ def desktop_name():
     return name.value
 
 
+def kill_on_close_job(kernel):
+    """A job object whose processes all end when its last handle closes.
+
+    The worker and everything it starts go in it, so a parent that exits or is
+    killed never leaves an orphaned build rewriting native/bin behind it.
+    """
+    class Basic(ctypes.Structure):
+        _fields_ = [('PerProcessUserTimeLimit', ctypes.c_int64), ('PerJobUserTimeLimit', ctypes.c_int64),
+                    ('LimitFlags', w.DWORD), ('MinimumWorkingSetSize', ctypes.c_size_t),
+                    ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', w.DWORD),
+                    ('Affinity', ctypes.c_size_t), ('PriorityClass', w.DWORD), ('SchedulingClass', w.DWORD)]
+    class Extended(ctypes.Structure):
+        _fields_ = [('BasicLimitInformation', Basic), ('IoInfo', ctypes.c_uint64 * 6),
+                    ('ProcessMemoryLimit', ctypes.c_size_t), ('JobMemoryLimit', ctypes.c_size_t),
+                    ('PeakProcessMemoryUsed', ctypes.c_size_t), ('PeakJobMemoryUsed', ctypes.c_size_t)]
+    kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, w.LPCWSTR]
+    kernel.CreateJobObjectW.restype = w.HANDLE
+    kernel.SetInformationJobObject.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD]
+    kernel.SetInformationJobObject.restype = w.BOOL
+    kernel.AssignProcessToJobObject.argtypes = [w.HANDLE, w.HANDLE]
+    kernel.AssignProcessToJobObject.restype = w.BOOL
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    kernel.CloseHandle.restype = w.BOOL
+    job = kernel.CreateJobObjectW(None, None)
+    if not job:
+        raise ctypes.WinError(ctypes.get_last_error())
+    limits = Extended()
+    limits.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+        error = ctypes.WinError(ctypes.get_last_error())
+        kernel.CloseHandle(job)
+        raise error
+    return job
+
+
 def isolate_build():
     """Return child exit code in the parent, None in the verified worker.
 
@@ -75,13 +110,19 @@ def isolate_build():
     kernel.GetExitCodeProcess.restype = w.BOOL
     kernel.CloseHandle.argtypes = [w.HANDLE]
     kernel.CloseHandle.restype = w.BOOL
+    kernel.ResumeThread.argtypes = [w.HANDLE]
+    kernel.ResumeThread.restype = w.DWORD
+    kernel.TerminateProcess.argtypes = [w.HANDLE, w.UINT]
+    kernel.TerminateProcess.restype = w.BOOL
     name = 'DollyBuild_' + uuid.uuid4().hex
     desktop = user.CreateDesktopW(name, None, None, 0, 0x10000000, None)
     if not desktop:
         raise ctypes.WinError(ctypes.get_last_error())
     attributes = None
+    job = None
     process = Process()
     try:
+        job = kill_on_close_job(kernel)
         size = ctypes.c_size_t()
         kernel.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
         if not 0 < size.value <= 65536:
@@ -113,12 +154,21 @@ def isolate_build():
                 environment = dict(os.environ, **{_MARKER: name})
                 block = ctypes.create_unicode_buffer('\0'.join(f'{k}={v}' for k,v in sorted(environment.items(),key=lambda item:item[0].upper())) + '\0')
                 command = ctypes.create_unicode_buffer(subprocess.list2cmdline([sys.executable, *sys.argv]))
-                flags = subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS | 0x400 | 0x80000
+                # CREATE_SUSPENDED: nothing runs until the worker is inside the job.
+                flags = subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS | 0x400 | 0x80000 | 0x4
                 if not kernel.CreateProcessW(sys.executable, command, None, None, True, flags, block, os.getcwd(), ctypes.byref(startup), ctypes.byref(process)):
                     raise ctypes.WinError(ctypes.get_last_error())
             finally:
                 for handle, inherited in zip(unique, original):
                     os.set_handle_inheritable(handle, inherited)
+            if not kernel.AssignProcessToJobObject(job, process.process):
+                error = ctypes.WinError(ctypes.get_last_error())
+                kernel.TerminateProcess(process.process, 1)
+                raise error
+            if kernel.ResumeThread(process.thread) == 0xffffffff:
+                error = ctypes.WinError(ctypes.get_last_error())
+                kernel.TerminateProcess(process.process, 1)
+                raise error
             kernel.CloseHandle(process.thread)
             process.thread = None
             if kernel.WaitForSingleObject(process.process, 0xffffffff) != 0:
@@ -133,4 +183,5 @@ def isolate_build():
         if process.thread: kernel.CloseHandle(process.thread)
         if process.process: kernel.CloseHandle(process.process)
         if attributes is not None: kernel.DeleteProcThreadAttributeList(attributes)
+        if job: kernel.CloseHandle(job)
         user.CloseDesktop(desktop)

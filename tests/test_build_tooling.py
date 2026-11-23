@@ -249,5 +249,25 @@ class UiGenerated(unittest.TestCase):
                 build_native.check_ui_generated(Path(temp))
 
 
+@unittest.skipUnless(sys.platform == 'win32', 'Windows job objects')
+class BuildDesktopJob(unittest.TestCase):
+    def test_closing_the_job_ends_the_worker(self):
+        import ctypes
+        import build_desktop
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        job = build_desktop.kill_on_close_job(kernel)
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        try:
+            self.assertTrue(kernel.AssignProcessToJobObject(job, int(child._handle)))
+        finally:
+            kernel.CloseHandle(job)
+        try:
+            child.wait(timeout=10)  # The 60 s sleeper ends only if the job killed it.
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+
+
 if __name__ == '__main__':
     unittest.main()
