@@ -147,11 +147,21 @@ struct SeekRelief {
             auto& item = items[i];
             if (!item.bound && !item.bind(kReliefSpecs[i].name, kReliefSpecs[i].value))
                 continue;
+            // A restore that never succeeded still holds the user's value;
+            // re-reading now would capture the relief value instead.
+            if (item.active) {
+                item.write(kReliefSpecs[i].value);
+                continue;
+            }
             double current = 0;
             if (!item.read(current))
                 continue;
             item.restore = current;
-            item.active = item.write(kReliefSpecs[i].value);
+            // The game can clamp the relief value. Whatever it changed is
+            // still restored on leave().
+            double applied = 0;
+            item.active = item.write(kReliefSpecs[i].value) || !item.read(applied) ||
+                          applied != current;
         }
         active = true;
     }
@@ -173,8 +183,10 @@ struct SeekRelief {
             restore_failures = 0;
         } else if (++restore_failures > 8) {
             // Give up retrying rather than spin forever; the game resets its own
-            // cvars on exit and the user can retune after the session.
+            // cvars on exit and the user can retune after the session. The
+            // next session starts with a full retry budget.
             active = false;
+            restore_failures = 0;
         }
     }
 };
@@ -184,5 +196,11 @@ inline void seek_relief_tick(bool engage) noexcept {
     if (engage)
         gSeekRelief.enter();
     else
+        gSeekRelief.leave();
+}
+// The worker is exiting and no later tick will retry. leave() gives up after
+// a bounded number of failures, so this ends.
+inline void seek_relief_release() noexcept {
+    while (gSeekRelief.active)
         gSeekRelief.leave();
 }

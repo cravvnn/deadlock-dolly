@@ -1739,7 +1739,7 @@ static unsigned admit_control(const ControlHeader& control,
 // Both worker exits hand everything back: relief cvars, editor input and
 // cursor, the viewer and media mappings, and any running recording.
 static void release_worker_session() noexcept {
-    seek_relief_tick(false);
+    seek_relief_release();
     editor_worker_tick(gMemory, false);
     visualization_worker_tick(nullptr, false);
     media_worker_tick(nullptr, false);

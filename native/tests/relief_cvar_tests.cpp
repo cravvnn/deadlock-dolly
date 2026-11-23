@@ -31,6 +31,18 @@ static void __fastcall set_cvar(CvarRef*, int, const void* value, void* current,
     ++writes;
     std::memcpy(current, value, 4);
 }
+// The game clamps this float to at most .5.
+static void __fastcall clamp_cvar(CvarRef*, int, const void* value, void* current, void*) {
+    ++writes;
+    float v = 0;
+    std::memcpy(&v, value, 4);
+    v = v > .5f ? .5f : v;
+    std::memcpy(current, &v, 4);
+}
+// The game ignores every write.
+static void __fastcall ignore_cvar(CvarRef*, int, const void*, void*, void*) {
+    ++writes;
+}
 FindCvarFn gFindCvar = find_cvar;
 CvarDataFn gGetCvarData = get_data;
 SetCvarFn gSetCvar = set_cvar;
@@ -107,6 +119,57 @@ int main() {
         ReliefCvar invalid_float;
         check(invalid_float.bind("r_wait_on_present", 0));
         check(!invalid_float.read(value) && writes == 0);
+        const auto stored = [] {
+            float v = 0;
+            std::memcpy(&v, storage.data() + 0x58, 4);
+            return v;
+        };
+        const auto seed = [] {
+            prepare(2, 0);
+            const float v = .375f;
+            std::memcpy(storage.data() + 0x58, &v, 4);
+        };
+        // A clamped relief write is still restored.
+        seed();
+        gSetCvar = clamp_cvar;
+        {
+            SeekRelief relief;
+            relief.enter();
+            check(stored() == .5f && relief.items[0].active);
+            relief.leave();
+            check(stored() == .375f && !relief.active && !relief.items[0].active);
+        }
+        // Giving up on a restore keeps the user's value for the next session.
+        seed();
+        gSetCvar = set_cvar;
+        {
+            SeekRelief relief;
+            relief.enter();
+            check(stored() == 1.0f);
+            gSetCvar = ignore_cvar;
+            for (unsigned i = 0; i < 9; ++i)
+                relief.leave();
+            check(!relief.active && relief.items[0].active && stored() == 1.0f);
+            relief.enter();
+            relief.leave();
+            check(relief.active && relief.restore_failures == 1);
+            gSetCvar = set_cvar;
+            relief.enter();
+            check(relief.items[0].restore == .375);
+            relief.leave();
+            check(stored() == .375f && !relief.active);
+        }
+        // Worker exit retries the restore, bounded when the game keeps refusing.
+        seed();
+        gSetCvar = set_cvar;
+        gSeekRelief.enter();
+        gSetCvar = ignore_cvar;
+        seek_relief_release();
+        check(!gSeekRelief.active && stored() == 1.0f);
+        gSetCvar = set_cvar;
+        gSeekRelief.enter();
+        seek_relief_release();
+        check(!gSeekRelief.active && stored() == .375f);
         std::cout << "relief cvar owner type, write, restoration and rejection tests passed\n";
         return 0;
     } catch (const std::exception& e) {
