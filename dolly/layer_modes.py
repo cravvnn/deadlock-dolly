@@ -63,16 +63,13 @@ class LayerModesMixin:
             raise ValueError("Unknown layer mode: " + str(mode))
         classes = self.scene_classes()
         spec = self.LAYER_MODES[mode]
-        keep = set(spec.get("keep", ()))
-        hide = set(spec.get("hide", ()))
-        required = keep | hide
-        missing = sorted(required - set(classes))
+        keep = set(spec["keep"])
+        missing = sorted(keep - set(classes))
         if missing:
             raise RuntimeError("The game no longer reports the scene classes needed for the "
                                + mode + " layer: " + ", ".join(missing))
         keep.update(spec.get("optional_keep", ()))
-        targets = [name for name in classes if name not in keep] if keep else [
-            name for name in classes if name in hide]
+        targets = [name for name in classes if name not in keep]
         # A console batch can fail after earlier classes were hidden. Retain
         # every possible owned change before the first command, for retry.
         self._layer_hidden = set(targets) | set(self._layer_hidden or ())
