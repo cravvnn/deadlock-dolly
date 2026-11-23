@@ -185,5 +185,31 @@ class UpdateGamePaths(unittest.TestCase):
             self.assertEqual(update_game.read_steam_inf(game), {'ClientVersion': '1'})
 
 
+class UpdateGamePipeline(unittest.TestCase):
+    def test_latest_run_is_newest_date_and_build_not_mtime(self):
+        with tempfile.TemporaryDirectory() as temp:
+            analysis = Path(temp)
+            for index, name in enumerate(('update-20261118-6870', 'update-20261118-6864',
+                                          'update-20261101-7000', 'update-notes')):
+                (analysis / name).mkdir()
+                os.utime(analysis / name, (1000 + index, 1000 + index))
+            with patch.object(update_game, 'ANALYSIS', analysis):
+                self.assertEqual(update_game.latest_run().name, 'update-20261118-6870')
+
+    def test_confetti_refresh_reports_failure(self):
+        import confetti_offsets
+        with tempfile.TemporaryDirectory() as temp:
+            game = Path(temp)
+            self.assertIs(update_game.refresh_confetti_table(game), False)
+            client = game / 'citadel/bin/win64/client.dll'
+            client.parent.mkdir(parents=True)
+            client.write_bytes(b'client')
+            with patch.object(confetti_offsets, 'scan', side_effect=ValueError('no pattern')):
+                self.assertIs(update_game.refresh_confetti_table(game), False)
+            with patch.object(confetti_offsets, 'scan', return_value={}), \
+                    patch.object(confetti_offsets, 'newest_row_matches', return_value=True):
+                self.assertIs(update_game.refresh_confetti_table(game), True)
+
+
 if __name__ == '__main__':
     unittest.main()

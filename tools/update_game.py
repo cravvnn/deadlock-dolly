@@ -59,7 +59,8 @@ def latest_run() -> Path:
     runs = [p for p in ANALYSIS.glob("update-*") if p.is_dir() and re.fullmatch(r"update-\d{8}-\d+", p.name)]
     if not runs:
         raise SystemExit("No previous analysis/update-* run found; pass --prev")
-    return max(runs, key=lambda p: p.stat().st_mtime)
+    # Newest by the (date, build) in the name; mtimes change on copy or edit.
+    return max(runs, key=lambda p: tuple(int(part) for part in p.name.split("-")[1:]))
 
 
 def read_names(build: str, date: str) -> list[str]:
@@ -210,32 +211,34 @@ def run_script(script: Path) -> None:
         raise SystemExit(f"{script.name} failed with {result.returncode}")
 
 
-def refresh_confetti_table(game_dir: Path) -> None:
+def refresh_confetti_table(game_dir: Path) -> bool:
     """Derive and append the confetti/particle kBuilds row for the new client.
 
     This table is not part of the module manifest, so the compatibility pipeline
     used to leave it stale (particles silently disabled). Append the derived row
     when the newest committed row no longer matches the installed client.
+    Returns False when the table could not be checked.
     """
     import confetti_offsets  # noqa: E402
     client = game_dir / "citadel" / "bin" / "win64" / "client.dll"
     if not client.is_file():
         print(f"confetti table: no client.dll at {client}; skipped")
-        return
+        return False
     try:
         row = confetti_offsets.scan(client)
     except ValueError as error:
         print(f"confetti table: could not derive a row ({error}); review manually")
-        return
+        return False
     source = confetti_offsets.source_path().read_text(encoding="utf-8")
     rows = confetti_offsets.parse_rows(source)
     if confetti_offsets.newest_row_matches(rows, row):
         print("confetti table: already matches the installed client; no change")
-        return
+        return True
     confetti_offsets.source_path().write_text(
         confetti_offsets.append_row(source, row), encoding="utf-8", newline="\n")
     print("confetti table: appended a derived row to native/src/dolly_confetti.cpp; "
           "REVIEW the diff and run the native tests.")
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -310,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     for template in CLIENT_SCRIPTS:
         run_script(new_dir / template.format(b=new_build))
 
-    refresh_confetti_table(game_dir)
+    confetti_ok = refresh_confetti_table(game_dir)
 
     new_server_json = new_dir / f"resolve-server-{new_build}.json"
     if not new_server_json.is_file():
@@ -330,6 +333,9 @@ def main(argv: list[str] | None = None) -> int:
                    cwd=ROOT, check=True)
     run_script(new_dir / f"finalize_unlocker_{new_build}.py")
     run_script(new_dir / f"promote_unlocker_{new_build}.py")
+    if not confetti_ok:
+        print("\nPipeline INCOMPLETE: the confetti table was not refreshed; fix it before building.")
+        return 1
     print("\nPipeline complete. Next: python tools/generate_compatibility.py --write, review, then build.")
     return 0
 
