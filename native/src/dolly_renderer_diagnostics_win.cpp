@@ -7,6 +7,7 @@
 #include "dolly_renderer_diagnostics.hpp"
 #include "dolly_overlay.hpp"
 #include "dolly_render_class.hpp"
+#include "dolly_seqlock_win.hpp"
 namespace dolly {
 namespace {
 constexpr std::uintptr_t kRetirementContext = 0x40;
@@ -73,15 +74,7 @@ bool node_unchanged(const QueueHeader& header, std::uint16_t index,
            std::memcmp(&before, &after, sizeof(after)) == 0;
 }
 void publish(unsigned char* memory, RendererDiagnostics& result) noexcept {
-    auto out = memory + kRendererDiagnosticsOffset;
-    auto sequence = reinterpret_cast<volatile LONG*>(out + 8);
-    LONG old = InterlockedCompareExchange(sequence, 0, 0);
-    LONG even = (old & 1) ? old + 1 : old;
-    InterlockedExchange(sequence, even + 1);
-    std::memcpy(out, &result, 8);
-    std::memcpy(out + 12, reinterpret_cast<unsigned char*>(&result) + 12, sizeof(result) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, even + 2);
+    publish_seqlocked(memory + kRendererDiagnosticsOffset, result);
 }
 void sample_queue(RendererDiagnostics& result) noexcept {
     auto finish = [&](RendererProbeState state, const char* message) {

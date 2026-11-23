@@ -39,6 +39,7 @@
 #include "dolly_confetti.hpp"
 #include "dolly_prop_runtime.hpp"
 #include "dolly_remote_definitions.hpp"
+#include "dolly_seqlock_win.hpp"
 // Pulled in again (as a no-op) by dolly_compat_runtime.hpp from inside the
 // anonymous namespace below. Declaring it here first keeps `#pragma once` from
 // introducing a `dolly` namespace in that anonymous namespace, which would

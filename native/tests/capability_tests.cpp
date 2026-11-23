@@ -1,11 +1,14 @@
 #include "dolly_capabilities.hpp"
 #include "dolly_optional_hooks.hpp"
+#include "../src/dolly_seqlock_win.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
 #include <cassert>
 #include <array>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 // Model a hook engine that can fail at each installation boundary, including
 // after enabling the first callback. Never permit removal of exposed code.
@@ -83,4 +86,29 @@ int main() {
     assert(legacy_profile.follow_available());
     legacy_profile.at(Capability::CameraCore) = {};
     assert(!legacy_profile.camera_available() && !legacy_profile.follow_available());
+    // The shared seqlock writer used for capabilities and diagnostics: magic
+    // and payload copied, the sequence left odd-free and advanced by two.
+    struct Block {
+        char magic[8];
+        std::uint32_t sequence, abi;
+        double payload[3];
+    };
+    alignas(8) unsigned char shared[sizeof(Block)]{};
+    Block block{{'D', 'L', 'Y', 'T', 'E', 'S', 'T', '1'}, 99, 7, {1.5, -2, 3}};
+    const auto sequence_at = [&] {
+        std::uint32_t value = 0;
+        std::memcpy(&value, shared + 8, 4);
+        return value;
+    };
+    publish_seqlocked(shared, block);
+    Block read{};
+    std::memcpy(&read, shared, sizeof(read));
+    assert(sequence_at() == 2 && std::memcmp(read.magic, block.magic, 8) == 0 && read.abi == 7 &&
+           read.payload[0] == 1.5 && read.payload[1] == -2 && read.payload[2] == 3);
+    const std::uint32_t torn = 5; // a writer that died mid-publish
+    std::memcpy(shared + 8, &torn, 4);
+    block.payload[2] = 4;
+    publish_seqlocked(shared, block);
+    std::memcpy(&read, shared, sizeof(read));
+    assert(sequence_at() == 8 && read.payload[2] == 4);
 }

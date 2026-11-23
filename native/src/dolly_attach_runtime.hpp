@@ -1093,7 +1093,7 @@ inline void publish_bones(unsigned char* mapping, const Cache* cache) noexcept {
     EditorBones bones = cache ? cache->bones : EditorBones{};
     std::memcpy(bones.magic, "DLYBONE1", 8);
     bones.abi = 1;
-    publish_seqlocked(mapping + kEditorBonesOffset, bones);
+    attach_runtime::publish_seqlocked(mapping + kEditorBonesOffset, bones);
 }
 
 // Worker thread: publish the live player roster for the editor target picker.
@@ -1133,7 +1133,7 @@ inline void publish_roster(unsigned char* mapping, HMODULE client) noexcept {
             }
         }
     }
-    publish_seqlocked(mapping + kEditorRosterOffset, roster);
+    attach_runtime::publish_seqlocked(mapping + kEditorRosterOffset, roster);
 }
 
 } // namespace attach_runtime

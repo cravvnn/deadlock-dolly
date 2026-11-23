@@ -252,15 +252,10 @@ static void publish_follow_anchor(unsigned char* memory) noexcept {
     value.blends = gFollowAnchorBlends.load();
     value.corrections = gFollowAnchorCorrections.load();
     value.rejected = gFollowAnchorRejected.load();
-    constexpr std::size_t offset = 2 * 1024 * 1024 + 23088;
-    auto out = memory + offset;
-    auto sequence = reinterpret_cast<volatile LONG*>(out + 8);
-    auto old = InterlockedCompareExchange(sequence, 0, 0);
-    auto even = (old & 1) ? old + 1 : old;
-    InterlockedExchange(sequence, even + 1);
-    value.sequence = even + 2;
-    std::memcpy(out, value.magic, 8);
-    std::memcpy(out + 12, reinterpret_cast<unsigned char*>(&value) + 12, sizeof(value) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, even + 2);
+    // dolly/native_bridge.py FOLLOW_ANCHOR_DIAGNOSTICS_OFFSET; ends where the
+    // capability snapshot begins.
+    constexpr std::size_t kFollowAnchorDiagnosticsOffset = kControlBytes + 23088;
+    static_assert(kFollowAnchorDiagnosticsOffset + sizeof(value) == kCapabilitiesOffset,
+                  "Optional Follow diagnostics overlap the capability snapshot");
+    publish_seqlocked(memory + kFollowAnchorDiagnosticsOffset, value);
 }

@@ -20,6 +20,7 @@
 #include "dolly_reshade.hpp"
 #include "dolly_visualization_runtime.hpp"
 #include "dolly_prop_runtime.hpp"
+#include "dolly_seqlock_win.hpp"
 namespace dolly {
 namespace {
 std::atomic<HWND> gWindow{nullptr};
@@ -198,20 +199,6 @@ bool speed_key(EditorOwner owner, unsigned vk) noexcept {
     return (owner == EditorOwner::Flight || owner == EditorOwner::Panel) && !gTextInput.load() &&
            !(modifiers() & 3u) && !key_down(VK_LWIN) && !key_down(VK_RWIN) &&
            (vk == VK_OEM_PLUS || vk == VK_ADD || vk == VK_OEM_MINUS || vk == VK_SUBTRACT);
-}
-// Shared-memory blocks keep magic at 0-7, a seqlock sequence at 8-11 written only
-// through Interlocked calls, and the payload from 12.
-template <class T>
-void publish_seqlocked(unsigned char* out, const T& value) noexcept {
-    static_assert(offsetof(T, sequence) == 8, "Seqlocked block layout");
-    auto* sequence = reinterpret_cast<volatile LONG*>(out + 8);
-    const LONG old = InterlockedCompareExchange(sequence, 0, 0);
-    const LONG even = (old & 1) ? old + 1 : old;
-    InterlockedExchange(sequence, even + 1);
-    std::memcpy(out, &value, 8);
-    std::memcpy(out + 12, reinterpret_cast<const unsigned char*>(&value) + 12, sizeof(T) - 12);
-    MemoryBarrier();
-    InterlockedExchange(sequence, even + 2);
 }
 bool reserved_input(unsigned vk) noexcept {
     if (!configured() || !focused())
