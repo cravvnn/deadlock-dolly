@@ -1,0 +1,51 @@
+[
+  {
+    "name": "keep the old checksum file",
+    "replace": [
+      [
+        "sums' = Absent\n",
+        "sums' = sums\n"
+      ]
+    ],
+    "expect": "SumsMatch"
+  },
+  {
+    "name": "write the Windows zip at its final name",
+    "replace": [
+      [
+        "/\\ win' = win",
+        "/\\ win' = \"partial\""
+      ]
+    ],
+    "expect": "NoPartialFinal"
+  },
+  {
+    "name": "leave the partial zip after a failed test",
+    "replace": [
+      [
+        "pc' = \"failed\" /\\ winPart' = \"none\"",
+        "pc' = \"failed\" /\\ winPart' = winPart"
+      ]
+    ],
+    "expect": "FailureClean"
+  },
+  {
+    "name": "write checksums before the source zip",
+    "replace": [
+      [
+        "/\\ pc = \"winTest\" /\\ pc' = \"srcStart\"",
+        "/\\ pc = \"winTest\" /\\ pc' = \"sumsWrite\""
+      ]
+    ],
+    "expect": "CompleteRelease"
+  },
+  {
+    "name": "checksum the previous source zip",
+    "replace": [
+      [
+        "sumsPart' = Matching",
+        "sumsPart' = Set(win, \"old\")"
+      ]
+    ]
+  }
+]

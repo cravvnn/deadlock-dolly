@@ -1370,3 +1370,7 @@ dolly/EditorEventQueueApi.tla
 dolly/EditorEventQueue.cfg
 dolly/EditorEventQueue.mutants.json
 tests/test_build_tooling.py
+tools/ReleasePublishOrder.tla
+tools/ReleasePublishOrderApi.tla
+tools/ReleasePublishOrder.cfg
+tools/ReleasePublishOrder.mutants.json

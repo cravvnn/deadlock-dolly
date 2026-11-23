@@ -61,7 +61,7 @@ def check(root=ROOT):
     if not (tools / "node_modules" / "tla-ts" / "package.json").is_file():
         raise RuntimeError("Install model dependencies: npm ci --prefix tools/tla --ignore-scripts")
     result = subprocess.run([node, str(tools / "check.mjs"), "-json", str(root / "dolly"),
-                             *(str(root / "tools" / name) for name in ("AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg", "VoiceWindowReuse.cfg")),
+                             *(str(root / "tools" / name) for name in ("AssetEnvironment.cfg", "AssetFailure.cfg", "WindowCreate.cfg", "VoiceWindowReuse.cfg", "ReleasePublishOrder.cfg")),
                              str(root / "native" / "include" / "WriterAdmission.cfg"),
                              str(root / "native" / "src" / "VideoCompleteness.cfg"),
                              str(root / "native" / "src" / "DrawProof.cfg"),
@@ -132,6 +132,7 @@ REQUIRED.update({'ReleaseJoin.cfg', 'NativeSnapshotClose.cfg', 'CameraSessionJoi
 REQUIRED.add("HudOwnership.cfg")
 REQUIRED.add("EditorEventQueue.cfg")
 REQUIRED.add("BonePickerTransaction.cfg")
+REQUIRED.add("ReleasePublishOrder.cfg")
 
 
 def main():
