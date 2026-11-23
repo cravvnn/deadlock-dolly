@@ -51,23 +51,6 @@ class BonePickerRecovery(unittest.TestCase):
 
 
 class BonePickerBusyReads(unittest.TestCase):
-    def _bridge(self, offset):
-        import threading
-        from dolly.native_bridge import NativeBridge
-        bridge = object.__new__(NativeBridge)
-        bridge._lock, bridge._closed, bridge._read32 = threading.RLock(), False, None
-        bridge._mapping = bytearray(offset + 4096)
-        bridge._mapping[offset + 8] = 1  # Odd sequence: native is mid-publication.
-        return bridge
-
-    def test_torn_bone_blocks_raise_the_retryable_busy_error(self):
-        from dolly import editor_wire
-        from dolly.native_bridge import NativeStatusBusy
-        with self.assertRaises(NativeStatusBusy):
-            self._bridge(editor_wire.BONES_OFFSET).editor_bones()
-        with self.assertRaises(NativeStatusBusy):
-            self._bridge(editor_wire.PICKER_OFFSET).editor_bone_picker()
-
     def test_busy_picker_result_waits_by_type_not_by_message(self):
         from dolly.native_bridge import NativeStatusBusy
 

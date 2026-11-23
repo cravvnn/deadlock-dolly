@@ -234,7 +234,7 @@ class EditorBlockReadTests(unittest.TestCase):
     def readers(self):
         from dolly import object_wire
         return [
-            ("editor_bone_picker", editor_wire.PICKER_OFFSET, nb.NativeBridgeError,
+            ("editor_bone_picker", editor_wire.PICKER_OFFSET, nb.NativeStatusBusy,
              "The Bone Picker is updating; retry in a moment."),
             ("editor_object_status", object_wire.OBJECT_STATUS_OFFSET, nb.NativeBridgeError,
              "The Object Picker is updating; retry in a moment."),
@@ -242,7 +242,7 @@ class EditorBlockReadTests(unittest.TestCase):
              "The native attach roster is busy; retry in a moment."),
             ("editor_prop_probe_status", editor_wire.PROP_PROBE_OFFSET + editor_wire.PROP_PROBE_CONFIG.size,
              nb.NativeBridgeError, "The prop probe is updating; retry in a moment."),
-            ("editor_bones", editor_wire.BONES_OFFSET, nb.NativeBridgeError,
+            ("editor_bones", editor_wire.BONES_OFFSET, nb.NativeStatusBusy,
              "The native bone picker is busy; retry in a moment."),
             ("editor_attach_result", editor_wire.ATTACH_RESULT_OFFSET, nb.NativeBridgeError,
              "The native attach result is busy; retry in a moment."),
