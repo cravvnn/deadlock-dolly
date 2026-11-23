@@ -89,16 +89,20 @@ def poll(app):
                 if callable(handler):
                     handler(roster)
             bones = None
+            busy = False
             reader = getattr(bridge, "editor_bones", None)
             if callable(reader):
                 try:
                     bones = reader()
+                except NativeStatusBusy:
+                    busy = True  # Keep the current bone list until the next refresh.
                 except (NativeBridgeError, ValueError, OSError):
                     pass
-            app.attach_bones = bones
-            handler = getattr(app, "_attach_bones_changed", None)
-            if callable(handler):
-                handler(bones)
+            if not busy:
+                app.attach_bones = bones
+                handler = getattr(app, "_attach_bones_changed", None)
+                if callable(handler):
+                    handler(bones)
         # Native snap / attached-fly offsets feed the selected attach key.
         result_reader = getattr(bridge, "editor_attach_result", None)
         if callable(result_reader):

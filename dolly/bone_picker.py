@@ -100,11 +100,11 @@ def dispatch(app, event, bridge, *, publish):
         context = getattr(app, "_bone_picker_context", None)
         if not context:
             raise ValueError("This Bone Picker session has already ended.")
-        from .native_bridge import NativeBridgeError
+        from .native_bridge import NativeBridgeError, NativeStatusBusy
         try:
             result = bridge.editor_bone_picker()
         except NativeBridgeError as exc:
-            if "updating" not in str(exc):
+            if not isinstance(exc, NativeStatusBusy):
                 close_picker(app, resume=False, publish=publish)
                 raise
             result = None

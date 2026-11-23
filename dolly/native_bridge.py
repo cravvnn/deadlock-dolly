@@ -995,7 +995,8 @@ class NativeBridge(MediaTransport):
         with self._lock:
             self._check_open()
             return wire.unpack_picker(self._read_block(wire.PICKER_OFFSET, wire.PICKER_RESULT.size,
-                                                       "The Bone Picker is updating; retry in a moment."))
+                                                       "The Bone Picker is updating; retry in a moment.",
+                                                       NativeStatusBusy))
 
     def editor_object_status(self):
         """Optional native Object Picker status; old DLLs leave it unwritten."""
@@ -1044,7 +1045,7 @@ class NativeBridge(MediaTransport):
         with self._lock:
             self._check_open()
             data = self._read_block(wire.BONES_OFFSET, wire.BONES_BYTES,
-                                    "The native bone picker is busy; retry in a moment.")
+                                    "The native bone picker is busy; retry in a moment.", NativeStatusBusy)
             return wire.unpack_bones(data) if any(data) else None
 
     def editor_attach_result(self):

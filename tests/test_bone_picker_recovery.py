@@ -50,5 +50,56 @@ class BonePickerRecovery(unittest.TestCase):
         self.assertEqual(len(project.keyframes), 2)
 
 
+class BonePickerBusyReads(unittest.TestCase):
+    def _bridge(self, offset):
+        import threading
+        from dolly.native_bridge import NativeBridge
+        bridge = object.__new__(NativeBridge)
+        bridge._lock, bridge._closed, bridge._read32 = threading.RLock(), False, None
+        bridge._mapping = bytearray(offset + 4096)
+        bridge._mapping[offset + 8] = 1  # Odd sequence: native is mid-publication.
+        return bridge
+
+    def test_torn_bone_blocks_raise_the_retryable_busy_error(self):
+        from dolly import editor_wire
+        from dolly.native_bridge import NativeStatusBusy
+        with self.assertRaises(NativeStatusBusy):
+            self._bridge(editor_wire.BONES_OFFSET).editor_bones()
+        with self.assertRaises(NativeStatusBusy):
+            self._bridge(editor_wire.PICKER_OFFSET).editor_bone_picker()
+
+    def test_busy_picker_result_waits_by_type_not_by_message(self):
+        from dolly.native_bridge import NativeStatusBusy
+
+        def busy():
+            raise NativeStatusBusy("Native block is mid-publication")
+
+        context = dict(index=0, key=None, bridge=None, preview=False, resume=False, request=2)
+        app = NS(_bone_picker_context=context)
+        accepted = bone_picker.dispatch(app, {"action": "finish_bone_picker", "value": 0, "pose": (2,)},
+                                        NS(editor_bone_picker=busy), publish=Mock())
+        self.assertFalse(accepted)
+        self.assertIs(app._bone_picker_context, context)
+
+    def test_busy_bone_list_is_kept_until_the_next_refresh(self):
+        from unittest.mock import patch
+        from dolly import editor_session
+        from dolly.native_bridge import NativeStatusBusy
+
+        def busy():
+            raise NativeStatusBusy("The native bone picker is busy; retry in a moment.")
+
+        bridge = NS(editor_bones=busy, editor_status=lambda: {"enabled": True, "events": []})
+        changed = Mock()
+        app = NS(closed=False, busy=False, native_editor_active=True, _attach_roster_at=0.0,
+                 _attach_snap_pending=False, attach_bones={"names": ["head"]}, _attach_bones_changed=changed,
+                 status_text=NS(set=Mock()), controller=NS(status=lambda: {"connected": True},
+                                                          _native_bridge=lambda: bridge))
+        with patch.object(editor_session, "configure"):
+            editor_session.poll(app)
+        self.assertEqual(app.attach_bones, {"names": ["head"]})
+        changed.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
