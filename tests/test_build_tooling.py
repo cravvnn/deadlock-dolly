@@ -151,7 +151,11 @@ class ReleaseStatus(unittest.TestCase):
             return {'assets': []}
 
         output = io.StringIO()
-        with tempfile.TemporaryDirectory() as temp,                 patch.object(release_status, '_slug', return_value='owner/repo'),                 patch.object(release_status, '_gh_json', side_effect=gh),                 patch.object(release_status, 'ROOT', Path(temp)),                 contextlib.redirect_stdout(output):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(release_status, '_slug', return_value='owner/repo'), \
+                patch.object(release_status, '_gh_json', side_effect=gh), \
+                patch.object(release_status, 'ROOT', Path(temp)), \
+                contextlib.redirect_stdout(output):
             self.assertEqual(release_status.main(['--version', local]), 0)
         return output.getvalue(), calls
 
