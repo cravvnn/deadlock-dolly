@@ -3004,7 +3004,7 @@ class DollyApp:
             self._persist_preferences(settings, f"Mouse sensitivity saved ({settings.mouse_sensitivity:.3g}).")
         self._guard("Mouse sensitivity", operation)
 
-    def _persist_preferences(self, settings, message):
+    def _persist_preferences(self, settings, message, saved=None):
         if self.busy or self.playing:
             self.status_text.set("Finish the current operation and stop playback before saving preferences.")
             return False
@@ -3028,6 +3028,8 @@ class DollyApp:
             self._refresh_bindings()
             self.binding_feedback.set(message)
             self.status_text.set(message)
+            if saved is not None:
+                saved()
             editor_session.configure(self)
         return self._submit("Saving preferences", save, complete)
 
@@ -3063,8 +3065,9 @@ class DollyApp:
                 text = value.get().strip()
                 parse_launch_options(text)
                 candidate = replace(self.app_settings, launch_options=text)
-                self.launch_options.set(text)
-                if self._persist_preferences(candidate, "Launch options saved for the next session."):
+                # Start uses these only once they are saved.
+                if self._persist_preferences(candidate, "Launch options saved for the next session.",
+                                             lambda: self.launch_options.set(text)):
                     dialog.destroy()
             self._guard("Launch options", operation)
         ttk.Button(body, text="Save options", style="Primary.TButton", command=save).grid(row=2, column=0, sticky="e", pady=self._px((24, 0)))

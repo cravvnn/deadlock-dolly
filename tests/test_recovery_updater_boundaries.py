@@ -319,6 +319,41 @@ class CloseAndDialogBoundaries(unittest.TestCase):
         app.root.after.call_args.args[1]()
         action.assert_not_called()
 
+    def test_launch_options_apply_only_once_they_are_saved(self):
+        from dolly import gui, settings as app_settings_module
+
+        class Var:
+            def __init__(self, value=''):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        buttons = []
+        fake_tk = SimpleNamespace(Toplevel=MagicMock(), Label=MagicMock(), StringVar=lambda value='': Var(value))
+        fake_ttk = MagicMock()
+        fake_ttk.Button.side_effect = lambda *args, **kwargs: buttons.append(kwargs['command']) or MagicMock()
+        app = SimpleNamespace(root=MagicMock(), launch_options=Var('-windowed'), busy=False, playing=False,
+                              app_settings=app_settings_module.AppSettings(), _error=MagicMock(),
+                              _window_size=lambda *args: '1x1', _px=lambda value: value,
+                              _persist_preferences=MagicMock(return_value=False))
+        app._guard = lambda title, function: gui.DollyApp._guard(app, title, function)
+        with patch.object(gui, 'tk', fake_tk), patch.object(gui, 'ttk', fake_ttk), \
+                patch.object(gui, 'chrome'), patch.object(gui, 'fonts'):
+            gui.DollyApp._open_launch_options(app)
+        entry_value = fake_ttk.Entry.call_args.kwargs['textvariable']
+        entry_value.set('-w 1920')
+        buttons[0]()  # Rejected (or the save fails): the next Start keeps the old options.
+        self.assertEqual(app.launch_options.get(), '-windowed')
+        app._persist_preferences.return_value = True
+        buttons[0]()
+        self.assertEqual(app.launch_options.get(), '-windowed')
+        app._persist_preferences.call_args.args[2]()  # The save completed.
+        self.assertEqual(app.launch_options.get(), '-w 1920')
+
     def test_background_results_wait_for_an_open_dialog(self):
         from dolly import gui
         show = MagicMock(return_value='ok')
