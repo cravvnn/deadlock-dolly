@@ -5705,6 +5705,12 @@ class DollyApp:
         if self._submit(CLOSE_STEPS[1], self.controller.close,
                         lambda _result: self._destroy()):
             return
+        if self.busy:
+            # Work started while the save question was open; never close the
+            # replay connection beside it. Close once it ends.
+            self._close_submitted = False
+            self.root.after(100, self._retry_close)
+            return
         try:
             self.controller.close()
         except Exception:  # noqa: BLE001 - the window must close regardless

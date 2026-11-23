@@ -295,6 +295,21 @@ class CloseAndDialogBoundaries(unittest.TestCase):
             app.root.after.call_args.args[1]()
         self.assertTrue(app._close_submitted)
         app._allow_discard.assert_called_once()
+        # The same after a failed Stop: no direct close beside the running work.
+        app = SimpleNamespace(playing=False, busy=False, closed=False, _closing=True, _discard_asked=False,
+                              _close_submitted=False, root=MagicMock(), controller=MagicMock(), _destroy=MagicMock())
+        app._allow_discard = MagicMock(side_effect=lambda: setattr(app, 'busy', True) or True)
+        app._submit = lambda *args: not app.busy
+        app._finish_close = lambda: gui.DollyApp._finish_close(app)
+        app._retry_close = lambda: gui.DollyApp._retry_close(app)
+        gui.DollyApp._close_after_failure(app)
+        app.controller.close.assert_not_called(); app._destroy.assert_not_called()
+        self.assertFalse(app._close_submitted)
+        app.busy = False
+        with patch.object(gui, 'editor_session'):
+            app.root.after.call_args.args[1]()
+        self.assertTrue(app._close_submitted)
+        app._allow_discard.assert_called_once()
         # A newer close that is asking again owns the retry.
         app = SimpleNamespace(closed=False, busy=False, _closing=True, _discard_asked=False,
                               _close_submitted=False, _finish_close=MagicMock())
