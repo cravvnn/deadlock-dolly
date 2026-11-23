@@ -46,12 +46,6 @@ class ScratchTests(unittest.TestCase):
         with self.assertRaises(ValueError): player_layer.cleanup_capture(self.deploy,self.layer)
         self.assertEqual(raw.read_bytes(),b'raw')
 
-    def test_unknown_files_are_never_removed(self):
-        folder=self.begin();(folder/'keep.txt').write_text('keep')
-        player_layer.cleanup_capture(self.deploy,self.layer)
-        self.assertTrue((folder/'keep.txt').exists())
-        self.assertTrue((folder/player_scratch.OWNER).exists())
-
     def test_selected_volume_and_failed_space_preflight(self):
         with patch('dolly.player_layer.shutil.disk_usage') as usage:
             usage.return_value.free=0

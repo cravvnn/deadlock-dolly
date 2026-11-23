@@ -6,7 +6,6 @@ are real. This does not run the game, encoder, GPU, or desktop UI.
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from dolly import player_layer
 from dolly.path import Keyframe, Project
 from dolly.video_export import VideoExport, VideoOptions
 

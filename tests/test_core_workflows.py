@@ -1,5 +1,4 @@
 """Seven headless product workflows; external game and encoder boundaries are simulated."""
-import hashlib
 import json
 import math
 import os
@@ -16,7 +15,7 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from core_helpers import FakeConsole, FakeClock, CountedEvent
+from core_helpers import FakeConsole
 from dolly import native_path, updater
 from dolly.camera_export import depth_of_field, export_jsx, export_usda, horizontal_fov, sample_camera
 from dolly.controller import Controller

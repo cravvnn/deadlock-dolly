@@ -41,7 +41,6 @@ class Bridge:
         self.frame_count = 0
         self.events = []
         self.requests = []
-        self.fail_prepare = False
         self.fail_handoff = False
         self.freeze_frames = False
         self.change_demo = False
@@ -72,8 +71,6 @@ class Bridge:
 
     def prepare(self, project, start, speed, frozen, demo_name, timeout=5):
         self.events.append("native.prepare")
-        if self.fail_prepare:
-            raise RuntimeError("Native prepare timed out")
         self.project = deepcopy(project)
         self.manual_pose = None
         self.effect_originals = {name:self.console.values[name] for name in project.evaluate(start)["cvars"]}

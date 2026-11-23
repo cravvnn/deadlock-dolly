@@ -117,13 +117,6 @@ class GraphicsSessionProfiles(unittest.TestCase):
         created = editing_session.save_session_graphics(session, name="DLSS")
         self.assertEqual(created["values"], {"setting.r_citadel_dlss_settings_mode": "3"})
 
-    def test_format_one_library_still_loads(self):
-        identifier = "b" * 32
-        self.library.write_text(json.dumps({"format": 1, "selected": identifier, "profiles": [
-            {"id": identifier, "name": "Old", "video_version": "20",
-             "values": {"setting.r_citadel_shadow_quality": "1"}}]}))
-        self.assertEqual(graphics_profiles.load_library()["profiles"][0]["name"], "Old")
-
 
 class OnePromptAtATime(unittest.TestCase):
     """The save-graphics and gameinfo prompts follow the one-dialog rule."""

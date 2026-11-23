@@ -6,7 +6,6 @@ class FakeConsole:
         self.is_connected = True
         self.demo_name = "example.dem"
         self.tick = 100
-        self.demo_outputs = deque()
         self.demo_output = None
         self.goto_outputs = deque()
         self.goto_output = None
@@ -14,10 +13,7 @@ class FakeConsole:
         self.requests = []
         self.sent = []
         self.events = []
-        self.operations = []
-        self.resume_snapshots = []
         self.paused = True
-        self.unhide_output = "Removed hidden flags from 120 concommands\nRemoved hidden flags from 340 cvars"
         self.complete_replay_on_send = False
         self.values = {
             "r_aspectratio": 0.0,
@@ -38,16 +34,9 @@ class FakeConsole:
         self.closed = False
         self.fail_commands = set()
 
-    def connect(self, **kwargs):
-        self.is_connected = True
-
     def close(self):
         self.is_connected = False
         self.closed = True
-
-    @property
-    def camera_writes(self):
-        return [command for command in self.requests + self.sent if command.startswith("spec_goto ")]
 
     def supports(self, name):
         return True
@@ -73,8 +62,6 @@ class FakeConsole:
                 self.paused = True
             elif parts[0] == "demo_resume":
                 self.paused = False
-                self.resume_snapshots.append({"tick": self.tick, "pose": list(self.pose),
-                                              "values": dict(self.values)})
             elif parts[0] in self.values and len(parts) == 2:
                 self.values[parts[0]] = float(parts[1])
 
@@ -90,7 +77,6 @@ class FakeConsole:
             item = item.strip()
             if not item:
                 continue
-            self.operations.append(item)
             if item in self.fail_commands:
                 raise RuntimeError("Simulated console failure")
             output = self._request_item(item)
@@ -112,30 +98,14 @@ class FakeConsole:
                         f"Minutes:42.04 File:{self.demo_name}")
             return self.goto_output or ""
         if command == "demo_info":
-            if self.demo_outputs:
-                item = self.demo_outputs.popleft()
-                if isinstance(item, int):
-                    self.tick = item
-                else:
-                    self.demo_output = item
             return self.demo_output if self.demo_output is not None else (
                 f"[Demo] Playing back demo: '{self.demo_name}' at tick {self.tick}")
         if command == "spec_pos":
             return "[Console] spec_goto " + " ".join(map(str, self.pose))
-        if command == "cvar_unhide":
-            return self.unhide_output
         if command in self.values:
             return f'[Console] "{command}" = "{self.values[command]}" ( def. "12345" )'
         self._execute(command)
         return ""
-
-
-class FakeClock:
-    def __init__(self):
-        self.now = 0.0
-
-    def monotonic(self):
-        return self.now
 
 
 class CountedEvent:

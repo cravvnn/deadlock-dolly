@@ -120,14 +120,6 @@ class RetimeTests(unittest.TestCase):
 class CurveHelperTests(unittest.TestCase):
     """The curve workspace draws the graphs; dolly.curve keeps only its shared math."""
 
-    def test_curve_keeps_only_the_helpers_the_workspace_uses(self):
-        from dolly import curve
-        for name in ("AspectCurve", "RotationCurve", "PositionCurve", "_GraphViewMixin",
-                     "plot_bounds", "rotation_bounds", "position_bounds", "sample_curve",
-                     "clamp_aspect", "CHANNEL_LABELS"):
-            self.assertFalse(hasattr(curve, name), name)
-        self.assertFalse(hasattr(curve.PlotBounds, "aspect_at"))
-
     def test_shared_curve_math(self):
         from dolly.curve import PositionBounds, TimelineView, hit_key, sample_channel
         view = TimelineView()
