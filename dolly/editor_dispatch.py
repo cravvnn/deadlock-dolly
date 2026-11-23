@@ -445,7 +445,10 @@ def _dispatch(app, event, bridge, *, publish):
             try:
                 return app.controller.seek(snapshot, 0)
             except Exception:
-                bridge.configure_editor_cinematic(token, revision, 3)
+                try:
+                    bridge.configure_editor_cinematic(token, revision, 3)
+                except Exception:
+                    LOG.warning("Could not report the cancelled cinematic", exc_info=True)
                 raise
 
         def prepared(result):
