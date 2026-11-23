@@ -1,6 +1,6 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 317,
+  "accounted_units": 316,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
@@ -8,7 +8,7 @@
     "stateful partial/open": 124,
     "generated data/schema": 10,
     "native owner/delegated contract open": 111,
-    "offline-tool scope": 27,
+    "offline-tool scope": 26,
     "entrypoint delegated contract open": 4,
     "child-job contract open": 1
   },
@@ -20,7 +20,7 @@
     "L03": 29,
     "L02": 50,
     "L04": 68,
-    "L06": 27
+    "L06": 26
   },
   "backlog": {
     "L01": {
@@ -7414,8 +7414,7 @@
       "reason": "Native header/implementation participates in Capture/media/native completion. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
       "bounded_models": [],
       "test_reference_leads": [
-        "native/tests/depth_scene_smoke.cpp",
-        "native/tests/depth_video_smoke.cpp"
+        "native/tests/depth_scene_smoke.cpp"
       ],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
       "source_structure": {
@@ -8365,10 +8364,8 @@
       "reason": "Native header/implementation participates in Capture/media/native completion. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
       "bounded_models": [],
       "test_reference_leads": [
-        "native/tests/depth_video_smoke.cpp",
         "native/tests/media_disconnect_tests.cpp",
         "native/tests/overlay_smoke.cpp",
-        "native/tests/video_color_smoke.cpp",
         "native/tests/video_smoke.cpp"
       ],
       "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
@@ -11368,24 +11365,6 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
-    },
-    {
-      "path": "tools/test-lite-policy.cmd",
-      "sha256": "0bc5d71949f7a2ffda67c0f78fbba275f077ac3073a04a6494963a5b9d5287aa",
-      "digest_kind": "utf8-bom-stripped-lf",
-      "family": "L06",
-      "disposition": "offline-tool scope",
-      "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
-      "bounded_models": [],
-      "test_reference_leads": [],
-      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
-      "source_structure": {
-        "includes": [],
-        "persistent_state_signals": [
-          "explicit first-party entrypoint/helper/tool scope"
-        ]
-      },
-      "full_formal_signoff": false
     },
     {
       "path": "tools/tla/check.mjs",
@@ -17650,11 +17629,6 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
-      "path": "native/tests/depth_video_smoke.cpp",
-      "category": "test/support input",
-      "coverage": "explicit source role, not proof or execution coverage"
-    },
-    {
       "path": "native/tests/effect_tests.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17786,11 +17760,6 @@
     },
     {
       "path": "native/tests/sound_compat_tests.cpp",
-      "category": "test/support input",
-      "coverage": "explicit source role, not proof or execution coverage"
-    },
-    {
-      "path": "native/tests/video_color_smoke.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -19353,11 +19322,6 @@
     },
     {
       "path": "tools/release_status.py",
-      "category": "implementation/tool",
-      "coverage": "explicit source role, not proof or execution coverage"
-    },
-    {
-      "path": "tools/test-lite-policy.cmd",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },

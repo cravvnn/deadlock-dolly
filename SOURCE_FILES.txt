@@ -514,7 +514,6 @@ native/tests/depth_readback_smoke.cpp
 native/tests/depth_scene_smoke.cpp
 native/tests/depth_sequence_tests.cpp
 native/tests/depth_tests.cpp
-native/tests/depth_video_smoke.cpp
 native/tests/effect_tests.cpp
 native/tests/fixtures/attach-shot.bin
 native/tests/flight_tests.cpp
@@ -537,7 +536,6 @@ native/tests/replay_clock_tests.cpp
 native/tests/replay_events_tests.cpp
 native/tests/reviewed_contract_tests.cpp
 native/tests/sound_compat_tests.cpp
-native/tests/video_color_smoke.cpp
 native/tests/video_late_fault_smoke.cpp
 native/tests/video_math_tests.cpp
 native/tests/video_smoke.cpp
@@ -729,7 +727,6 @@ tools/generate_ui_tokens.py
 tools/publish_definitions.py
 tools/release_files.py
 tools/release_status.py
-tools/test-lite-policy.cmd
 tools/update_game.py
 assets/fonts/inter/Inter-Bold.ttf
 assets/fonts/inter/Inter-Medium.ttf
