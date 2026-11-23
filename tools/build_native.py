@@ -187,6 +187,20 @@ def test_results(declared: set[str], registered: set[str], skipped: list[str]) -
     return {**flags, "skipped_tests": skipped, "full_suite_complete": not skipped}
 
 
+def check_ui_generated(root: Path) -> None:
+    """Refuse UI token headers or desktop art that drifted from their generators."""
+    import build_ui_art
+    import generate_ui_tokens
+    src = Path(root) / "native" / "src"
+    for header, text in ((src / generate_ui_tokens.HEADER.name, generate_ui_tokens.render()),
+                         (src / generate_ui_tokens.RAIL_HEADER.name, generate_ui_tokens.render_rail())):
+        if not header.is_file() or header.read_text(encoding="utf-8") != text:
+            raise RuntimeError(f"{header.name} is out of date; run tools/generate_ui_tokens.py")
+    problems = build_ui_art.verify(Path(root) / "assets" / "ui")
+    if problems:
+        raise RuntimeError("Desktop UI art drift: " + "; ".join(problems))
+
+
 def build_native(root: Path = ROOT) -> dict:
     if (sys.platform != "win32" or struct.calcsize("P") != 8
             or platform.machine().lower() not in {"amd64", "x86_64"}):
@@ -194,6 +208,7 @@ def build_native(root: Path = ROOT) -> dict:
     root = Path(root)
     # Refuse stale/unreviewed generated data before deleting the last good DLL.
     check_generated(root)
+    check_ui_generated(root)
     native = root / "native"
     build = root / "build" / "native-msvc"
     checks = root / "build" / "checks"

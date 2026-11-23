@@ -43,6 +43,7 @@ class NativeBuildResults(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0)
 
             with patch.object(build_native, 'check_generated'), \
+                    patch.object(build_native, 'check_ui_generated'), \
                     patch.object(build_native, 'verify_native_dll', return_value={}), \
                     patch.object(build_native.subprocess, 'run', side_effect=run), \
                     patch.dict(os.environ, env or {}, clear=False):
@@ -227,6 +228,25 @@ class UiOverrideCompile(unittest.TestCase):
                               return_value=subprocess.CompletedProcess([], 0)):
                 with self.assertRaisesRegex(SystemExit, 'produced no output'):
                     build_ui_override.compile_sources(sdk, sdk / 'resourcecompiler.exe')
+
+
+class UiGenerated(unittest.TestCase):
+    def test_checked_in_ui_headers_match_their_generator(self):
+        import generate_ui_tokens
+        src = ROOT / 'native/src'
+        self.assertEqual((src / 'dolly_ui_tokens_generated.hpp').read_text(encoding='utf-8'),
+                         generate_ui_tokens.render())
+        self.assertEqual((src / 'dolly_rail_tokens_generated.hpp').read_text(encoding='utf-8'),
+                         generate_ui_tokens.render_rail())
+        build_native.check_ui_generated(ROOT)
+
+    def test_native_build_refuses_a_stale_token_header(self):
+        with tempfile.TemporaryDirectory() as temp:
+            src = Path(temp) / 'native/src'
+            src.mkdir(parents=True)
+            (src / 'dolly_ui_tokens_generated.hpp').write_text('// stale\n', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, 'out of date'):
+                build_native.check_ui_generated(Path(temp))
 
 
 if __name__ == '__main__':
