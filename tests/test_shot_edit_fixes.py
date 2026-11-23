@@ -601,6 +601,47 @@ class EditorEventBusyTests(unittest.TestCase):
         self.assertEqual(app._submit.call_count, 1)
         self.assertEqual(acks, [1])
 
+    def test_dropped_actions_and_errors_are_reported_per_bridge(self):
+        from dolly import editor_session
+        from dolly.native_bridge import NativeBridgeError
+        dropped = "The editor was busy; an in-game action was ignored. Retry the action."
+
+        def bridge(count):
+            return SimpleNamespace(editor_status=lambda: {"enabled": True, "events": [],
+                                                          "dropped_events": count})
+
+        one, two = bridge(3), bridge(1)
+        current = [one]
+        app = self._follow_app(None)
+        app.controller._native_bridge = lambda: current[0]
+        with patch.object(editor_session, "configure"), self.assertLogs("dolly.editor_session", "ERROR"):
+            editor_session.poll(app)
+            self.assertEqual(app.status_text.get(), dropped)
+            app.status_text.set("")
+            editor_session.poll(app)
+            self.assertEqual(app.status_text.get(), "")
+            current[0] = two
+            editor_session.poll(app)
+            self.assertEqual(app.status_text.get(), dropped)
+            app.status_text.set("")
+            current[0] = bridge(1)  # Reconnected to the same game: no new drops.
+            editor_session.poll(app)
+            self.assertEqual(app.status_text.get(), "")
+            current[0] = two
+
+            failure = NativeBridgeError("The native editor stopped answering")
+            two.editor_status = lambda: (_ for _ in ()).throw(failure)
+            editor_session.poll(app)
+            self.assertEqual(app.status_text.get(), str(failure))
+            app.status_text.set("")
+            editor_session.poll(app)
+            self.assertEqual(app.status_text.get(), "")
+            two.editor_status = lambda: {"enabled": True, "events": [], "dropped_events": 1}
+            editor_session.poll(app)
+            two.editor_status = lambda: (_ for _ in ()).throw(failure)
+            editor_session.poll(app)
+        self.assertEqual(app.status_text.get(), str(failure))
+
     def test_busy_status_skips_one_curve_preview_frame_only(self):
         from dolly import curve_preview
         from dolly.native_bridge import NativeStatusBusy

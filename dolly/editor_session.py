@@ -67,6 +67,7 @@ def poll(app):
                     app._disable_external_input()
         configure(app)
         if not getattr(app, "native_editor_active", False):
+            app._native_editor_error = None
             return
         # The attach target picker refreshes from the native roster at a low
         # rate; a stale or unavailable block must never break camera control.
@@ -132,8 +133,12 @@ def poll(app):
             cancel_snap(app, "Attach here did not finish. Pause, check the player, and try again.")
         status = bridge.editor_status()
         app._native_editor_status = status
-        if status.get("dropped_events", 0) > getattr(app, "_native_editor_dropped", 0):
-            app._native_editor_dropped = status["dropped_events"]
+        # The native counter only grows within one game process. A new bridge
+        # reporting fewer drops means the game restarted with its own count.
+        dropped = status.get("dropped_events", 0)
+        seen_bridge, seen = getattr(app, "_native_editor_dropped", (None, 0))
+        app._native_editor_dropped = (bridge, dropped)
+        if dropped > seen or (seen_bridge is not bridge and 0 < dropped < seen):
             app.status_text.set("The editor was busy; an in-game action was ignored. Retry the action.")
         for event in status.get("events", ()):
             if app.busy and event.get("action") != "save_shot":
@@ -151,6 +156,7 @@ def poll(app):
             if not accepted:
                 break
             bridge.acknowledge_editor_event(event["sequence"])
+        app._native_editor_error = None
     except NativeEditorStatusBusy:
         return
     except NativeBridgeError as exc:
