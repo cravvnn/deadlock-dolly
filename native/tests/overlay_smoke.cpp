@@ -6013,6 +6013,18 @@ int main(int argc, char** argv) {
             snapshot.object_selected = -1;
             require(SUCCEEDED(chain->Present(0, 0)), "Object Picker cleanup Present failed");
         }
+        // Renderer pressure suspends media and skips the editor frame; the
+        // overlay resumes on the same device once pressure clears.
+        {
+            const int frames = ImGui::GetFrameCount();
+            dolly::overlay_set_renderer_pressure(true);
+            require(SUCCEEDED(chain->Present(0, 0)) && SUCCEEDED(chain->Present(0, 0)),
+                    "Renderer pressure Present failed");
+            require(ImGui::GetFrameCount() == frames, "Renderer pressure still drew the editor");
+            dolly::overlay_set_renderer_pressure(false);
+            require(SUCCEEDED(chain->Present(0, 0)) && ImGui::GetFrameCount() > frames && available,
+                    "The editor did not resume after renderer pressure cleared");
+        }
         // Exercise the real Present capture across the editor-to-path handoff.
         // A valid session starts without focus (desktop export), then survives
         // loss of manual input, pose readiness and later focus changes.

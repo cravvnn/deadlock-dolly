@@ -567,6 +567,21 @@ bool try_initialize_device(IDXGISwapChain* chain) {
         initialization_backoff.defer(now, 2);
     return false;
 }
+// Retire effects and capture on the presenting device once until rendering
+// resumes; the editor itself stays initialized.
+void suspend_media(IDXGISwapChain* chain) {
+    if (media_suspended || chain != swapchain || !immediate)
+        return;
+    reset_depth_lifecycle();
+    video::reset_resources();
+    reshade_set_enabled(false);
+    if (context1 && overlay_state) {
+        DeviceStateScope graphics_scope;
+        reshade_release_device();
+    } else
+        reshade_release_device();
+    media_suspended = true;
+}
 void render_overlay(IDXGISwapChain* chain) {
     const auto state = editor_snapshot();
     if (!state.enabled || !state.focused || state.owner != EditorOwner::Panel ||
@@ -581,17 +596,7 @@ void render_overlay(IDXGISwapChain* chain) {
         panel_ui.cancel_position_graph();
         // Playback may disable manual editor input. Only a lost session retires
         // media here; control ownership and camera readiness are transient.
-        if (!media_suspended && chain == swapchain && immediate) {
-            reset_depth_lifecycle();
-            video::reset_resources();
-            reshade_set_enabled(false);
-            if (context1 && overlay_state) {
-                DeviceStateScope graphics_scope;
-                reshade_release_device();
-            } else
-                reshade_release_device();
-            media_suspended = true;
-        }
+        suspend_media(chain);
         return;
     }
     if (renderer_pressure.load(std::memory_order_acquire)) {
@@ -601,18 +606,7 @@ void render_overlay(IDXGISwapChain* chain) {
         // and the editor) so the engine can retire queued buffers and avoid the
         // fatal "EnsureCapacity allocation count overflow". The editor itself
         // stays alive and resumes automatically once pressure clears.
-        if (!media_suspended && chain == swapchain && immediate) {
-            reset_depth_lifecycle();
-            video::reset_resources();
-            reshade_set_enabled(false);
-            if (context1 && overlay_state) {
-                DeviceStateScope graphics_scope;
-                reshade_release_device();
-            } else {
-                reshade_release_device();
-            }
-            media_suspended = true;
-        }
+        suspend_media(chain);
         return;
     }
     media_suspended = false;
