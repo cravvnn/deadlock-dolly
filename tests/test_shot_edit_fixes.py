@@ -601,6 +601,47 @@ class EditorEventBusyTests(unittest.TestCase):
         self.assertEqual(app._submit.call_count, 1)
         self.assertEqual(acks, [1])
 
+    def test_busy_status_skips_one_curve_preview_frame_only(self):
+        from dolly import curve_preview
+        from dolly.native_bridge import NativeStatusBusy
+        reads, published = [], []
+
+        def status():
+            reads.append(True)
+            if len(reads) == 1:
+                raise NativeStatusBusy("Native editor status is being updated")
+            return {"enabled": True, "ready": True, "paused": True, "flight_active": True,
+                    "focused": True, "input_mode": "panel"}
+
+        bridge = SimpleNamespace(editor_status=status,
+                                 publish_visualization_preview=lambda data, **identity: published.append(identity))
+        app = SimpleNamespace(project=Project(keyframes=[_key(0.0), _key(1.0, x=10.0)]),
+                              shot_history=SimpleNamespace(session_id=5, revision=3),
+                              camera_tree=object(), _selection_index=lambda _: 0)
+        event = {"action": "preview_camera_curve_value", "value": 0, "pose": (3, 0, 4.0, 0.0, 5, 0, 9)}
+        self.assertFalse(curve_preview.offer_native(app, event, bridge))
+        self.assertFalse(app._curve_preview_state.native_terminal)
+        self.assertTrue(curve_preview.offer_native(app, event, bridge))
+        self.assertEqual(published[-1]["token"], 9)
+
+    def test_busy_status_does_not_retire_a_paused_curve_preview(self):
+        from dolly import curve_preview, visualization_preview_wire as wire
+        from dolly.native_bridge import NativeStatusBusy
+
+        def busy():
+            raise NativeStatusBusy("Native editor status is being updated")
+
+        state = curve_preview._State()
+        state.native_session, state.native_token = 5, 9
+        state.last_identity = dict(source=wire.NATIVE, token=9, revision=3, session_id=5,
+                                   selected_camera=0, channel=0, key_time=0.0)
+        bridge = SimpleNamespace(editor_status=busy, publish_visualization_preview=lambda *a, **k: None)
+        state.bridge = bridge
+        app = SimpleNamespace(_curve_preview_state=state)
+        curve_preview.configure(app, bridge, active=True, selected=0)
+        self.assertIsNotNone(state.last_identity)
+        self.assertFalse(state.native_terminal)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ import secrets
 import time
 
 from . import visualization_preview_wire as wire
+from .native_bridge import NativeStatusBusy
 from .native_path import CHANNELS, MAX_CAMERA_KEYS
 from .path import (ASPECT_MAX, ASPECT_MIN, AUTHORED_POSITION_LIMIT, CURVE_CHANNELS, POSITION_CHANNELS,
                    TANGENT_MODES, Project, channel_value)
@@ -246,6 +247,8 @@ def offer_native(app, event, bridge, *, tangent=False):
         return False
     try:
         admitted = _admitted(app, bridge, wire.NATIVE)
+    except NativeStatusBusy:
+        return False  # Skip this frame; the same gesture's next offer may proceed.
     except (RuntimeError, ValueError, OSError):
         admitted = False
     if (index != _selected(app) or app.project.keyframes[index].source != "free" or not admitted):
@@ -325,6 +328,8 @@ def configure(app, bridge, *, active, selected):
             try:
                 if not active or not _admitted(app, bridge, state.last_identity["source"]):
                     _clear(state)
+            except NativeStatusBusy:
+                pass  # A torn status read decides nothing; check again next tick.
             except (RuntimeError, ValueError, OSError):
                 _clear(state)
         return
