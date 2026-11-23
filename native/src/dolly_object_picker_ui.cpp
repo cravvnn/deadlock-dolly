@@ -21,6 +21,7 @@ struct GizmoDrag {
     bool active = false;
     int index = -1;
     int mode = 0; // 0 move, 1 rotate, 2 scale
+    std::uint32_t base_shape = 0;
     std::array<double, 3> base_position{};
     std::array<double, 3> base_angles{};
     double base_scale = 1.0;
@@ -64,6 +65,22 @@ bool g_snap_enabled = false;
 float g_snap_size = 16.0f; // world units per grid cell
 bool g_snap_angle_enabled = false;
 float g_snap_angle = 15.0f; // degrees per step on rotate
+
+// The grabbed object is still the one at the gizmo's index, unchanged. The
+// project is not touched mid-drag, so any difference means the list changed
+// underneath the drag (undo, delete, load) and the drag must not commit.
+bool gizmo_target_unchanged(const EditorSnapshot& state) {
+    if (g_gizmo.index < 0 || g_gizmo.index >= int(state.object_count))
+        return false;
+    const auto& item = state.object_items[g_gizmo.index];
+    if (item.shape != g_gizmo.base_shape || double(item.scale) != g_gizmo.base_scale)
+        return false;
+    for (int axis = 0; axis < 3; ++axis)
+        if (double(item.position[axis]) != g_gizmo.base_position[axis] ||
+            double(item.angles[axis]) != g_gizmo.base_angles[axis])
+            return false;
+    return true;
+}
 
 // A scene click resolves through object_place_view, then optional grid snap.
 bool resolve_place(const VisualizationView& view, const ImVec2& mouse, double fallback_distance,
@@ -136,6 +153,20 @@ VisualizationView object_view(const EditorSnapshot& state, const ImVec2& display
 void OverlayPanel::draw_object_picker_controls(const EditorSnapshot& state) {
     static int active_library = 0;
     auto& io = ImGui::GetIO();
+    // Drag, drop animation and placement count live for one picker session:
+    // consecutive drawn frames of one ImGui context. A gap means the picker was
+    // closed (or the overlay re-created), so stale state is dropped instead of
+    // committing or animating against whatever the snapshot holds now.
+    static ImGuiContext* session_context = nullptr;
+    static int session_frame = -1;
+    const int frame = ImGui::GetFrameCount();
+    if (ImGui::GetCurrentContext() != session_context || frame != session_frame + 1) {
+        g_gizmo.active = false;
+        cancel_drops();
+        g_last_object_count = int(state.object_count);
+    }
+    session_context = ImGui::GetCurrentContext();
+    session_frame = frame;
     // Same window geometry and chrome as the Bone Picker so the two right-side
     // modes read identically (panel_scale, rounding, padding, background).
     const float margin = rail_drawing_ ? 0 : 24 * panel_scale;
@@ -616,6 +647,8 @@ void OverlayPanel::draw_object_picker_controls(const EditorSnapshot& state) {
     // previewed live and committed once on release.
     const bool selected_valid =
         state.object_selected >= 0 && state.object_selected < int(state.object_count);
+    if (g_gizmo.active && !gizmo_target_unchanged(state))
+        g_gizmo.active = false;
     if (g_gizmo.active) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             const double dx = io.MousePos.x - g_gizmo.start_mouse.x;
@@ -680,6 +713,7 @@ void OverlayPanel::draw_object_picker_controls(const EditorSnapshot& state) {
             g_gizmo.active = true;
             g_gizmo.index = state.object_selected;
             g_gizmo.mode = g_gizmo_mode;
+            g_gizmo.base_shape = item.shape;
             g_gizmo.base_position = {double(item.position[0]), double(item.position[1]),
                                      double(item.position[2])};
             g_gizmo.base_angles = {double(item.angles[0]), double(item.angles[1]),

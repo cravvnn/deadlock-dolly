@@ -1440,6 +1440,104 @@ static void panel_option_regressions() {
     observed_actions.clear();
     std::puts("Look focus overrides and concurrent pending export controls passed.");
 }
+// A gizmo drag belongs to one Object Picker session and one object. Closing the
+// picker mid-drag, or the object list changing under the drag, must not commit
+// the live transform on a later mouse-up to whatever object holds the index.
+static void object_picker_session_regressions() {
+    auto* previous_context = ImGui::GetCurrentContext();
+    const auto previous_snapshot = snapshot;
+    auto* test_context = ImGui::CreateContext();
+    ImGui::SetCurrentContext(test_context);
+    auto& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1920, 1080);
+    io.DeltaTime = 1.f / 60;
+    io.IniFilename = nullptr;
+    dolly::OverlayPanel panel;
+    panel.style_panel();
+    panel.load_panel_fonts(1);
+    io.Fonts->Build();
+    snapshot = dolly::EditorSnapshot{};
+    snapshot.object_picker = snapshot.ready = true;
+    snapshot.pose = {0, 0, 0, 0, 0, 0, 16.0 / 9.0};
+    snapshot.horizontal_fov = 90;
+    snapshot.view_width = 1920;
+    snapshot.view_height = 1080;
+    snapshot.object_distance = 600.0;
+    snapshot.object_count = 1;
+    snapshot.object_selected = 0;
+    snapshot.object_items[0] = {};
+    snapshot.object_items[0].scale = 40.0f;
+    dolly::VisualizationView view{snapshot.pose, 90, 1920, 1080, 1};
+    std::array<double, 3> centre{};
+    require(dolly::object_place_screen(view, 960, 540, 600.0, centre),
+            "Object session placement failed");
+    for (int axis = 0; axis < 3; ++axis)
+        snapshot.object_items[0].position[axis] = float(centre[axis]);
+    bool picker = true;
+    auto frame = [&] {
+        ImGui::NewFrame();
+        if (picker)
+            panel.draw_object_picker(snapshot);
+        ImGui::Render();
+    };
+    auto transforms = [&] {
+        return std::count_if(observed_actions.begin(), observed_actions.end(), [](const auto& a) {
+            return a.action == dolly::EditorAction::ObjectTransform;
+        });
+    };
+    const std::array<double, 3> origin{centre[0], centre[1], centre[2]};
+    dolly::VisualizationPoint grab{};
+    require(dolly::project_visualization_point(view, origin, grab),
+            "Object session fixture is off screen");
+    auto grab_and_drag = [&] {
+        io.AddMousePosEvent(float(grab.x), float(grab.y));
+        frame(); frame();
+        io.AddMouseButtonEvent(0, true);
+        frame();
+        io.AddMousePosEvent(float(grab.x) + 40, float(grab.y));
+        frame(); frame();
+    };
+    frame(); frame();
+    observed_actions.clear();
+    grab_and_drag();
+    io.AddMouseButtonEvent(0, false);
+    frame();
+    require(transforms() == 1 && observed_actions.back().value == 0,
+            "Object gizmo release no longer commits one transform");
+    // Close the picker mid-drag, release elsewhere, then reopen it.
+    observed_actions.clear();
+    grab_and_drag();
+    picker = false;
+    frame();
+    io.AddMouseButtonEvent(0, false);
+    frame(); frame();
+    picker = true;
+    frame(); frame();
+    require(transforms() == 0, "A closed Object Picker committed a stale gizmo drag");
+    // The object at the index changes under a live drag (undo/delete/load).
+    observed_actions.clear();
+    grab_and_drag();
+    snapshot.object_items[0].shape = 3;
+    frame();
+    io.AddMouseButtonEvent(0, false);
+    frame(); frame();
+    require(transforms() == 0, "A gizmo drag committed to a replaced object");
+    snapshot.object_items[0].shape = 0;
+    observed_actions.clear();
+    grab_and_drag();
+    snapshot.object_count = 0;
+    snapshot.object_selected = -1;
+    frame();
+    io.AddMouseButtonEvent(0, false);
+    frame(); frame();
+    require(transforms() == 0, "A gizmo drag committed to a removed object index");
+    ImGui::DestroyContext(test_context);
+    ImGui::SetCurrentContext(previous_context);
+    snapshot = previous_snapshot;
+    observed_actions.clear();
+    std::puts("Object Picker gizmo session and target guards passed.");
+}
+
 static void ui_rework_regressions() {
     auto* previous = ImGui::GetCurrentContext();
     const auto original = snapshot;
@@ -5248,6 +5346,7 @@ int main(int argc, char** argv) {
         dropdown_preview_regressions(1);
         dropdown_preview_regressions(1.5f);
         panel_option_regressions();
+        object_picker_session_regressions();
         ui_rework_regressions();
         unified_curve_regressions(viewer);
         unified_curve_regressions(viewer,1.5f);
