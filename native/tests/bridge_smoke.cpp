@@ -14,10 +14,33 @@ static HWND editor_fixture_foreground_window() noexcept {
 #undef GetForegroundWindow
 
 #include <chrono>
+#include <cstdlib>
+#include <new>
 #include <thread>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+
+// Fail the Nth allocation made by the current thread (-1: never). Lets the
+// tests drive allocation failure through noexcept worker code.
+static thread_local int fail_allocation_after = -1;
+void* operator new(std::size_t bytes) {
+    if (fail_allocation_after == 0) {
+        fail_allocation_after = -1;
+        throw std::bad_alloc();
+    }
+    if (fail_allocation_after > 0)
+        --fail_allocation_after;
+    if (void* pointer = std::malloc(bytes ? bytes : 1))
+        return pointer;
+    throw std::bad_alloc();
+}
+void operator delete(void* pointer) noexcept {
+    std::free(pointer);
+}
+void operator delete(void* pointer, std::size_t) noexcept {
+    std::free(pointer);
+}
 
 namespace smoke {
 
@@ -2603,6 +2626,76 @@ void entity_window_scan_checks() {
     require(!wrong_vtable && !missing, "Entity system scan accepted a different vtable");
 }
 
+void attach_allocation_failure_checks() {
+    // A synthetic client with one player pawn, reached by both the reviewed
+    // identity-chunk scan and the legacy list walk. An allocation failure at
+    // any point must end the worker call, never terminate the game.
+    constexpr std::size_t image_size = 0x3640000;
+    Allocation image(image_size), objects(0x10000);
+    const auto base = image.address();
+    IMAGE_DOS_HEADER dos{};
+    dos.e_magic = IMAGE_DOS_SIGNATURE;
+    dos.e_lfanew = 0x80;
+    put(base, dos);
+    IMAGE_NT_HEADERS64 nt{};
+    nt.Signature = IMAGE_NT_SIGNATURE;
+    nt.OptionalHeader.SizeOfImage = DWORD(image_size);
+    put(base + 0x80, nt);
+    const auto system = objects.address(), identity = system + 0x1000,
+               instance = system + 0x2000, node = system + 0x3000, text = system + 0x4000;
+    put(base + dolly::reviewed::FollowTarget::ENTITY_LIST, system);
+    put(system, identity);
+    put(system + 0x210, identity);
+    put(identity, instance);
+    put(identity + 0x10, std::uint32_t(0x1234));
+    put(identity + 0x20, text);
+    put(instance, base + dolly::reviewed::FollowTarget::PLAYER_PAWN_VTABLE);
+    put(instance + 0x10, identity);
+    std::memcpy(reinterpret_cast<void*>(text), "player", 7);
+    constexpr char model[] = "models/heroes/smoke/smoke.vmdl";
+    std::memcpy(reinterpret_cast<void*>(text + 0x100), model, sizeof(model));
+    attach_runtime::Offsets offsets;
+    offsets.scene_node = 0x300;
+    offsets.owner = 0x30;
+    put(instance + offsets.scene_node, node);
+    put(node + offsets.owner, instance);
+    put(node + 0x100, text + 0x100);
+    AttachTarget target;
+    target.handle = 0x1234;
+    target.model = attach_runtime::model_token(model);
+    AttachSegment segment{};
+    segment.point = AttachPoint::eyes;
+    const auto client = reinterpret_cast<HMODULE>(base);
+    const auto saved_client = attach_runtime::configured_client;
+    for (const HMODULE configured : {client, HMODULE(nullptr)}) {
+        attach_runtime::configured_client = configured;
+        std::vector<attach_runtime::PlayerEntity> players;
+        require(attach_runtime::walk_players(system, players) && players.size() == 1 &&
+                    players[0].instance == instance && players[0].handle == 0x1234,
+                "Synthetic player was not found");
+        attach_runtime::Cache cache;
+        const char* error = nullptr;
+        require(attach_runtime::resolve(client, offsets, target, segment, cache, error) &&
+                    cache.ready && cache.pawn == instance,
+                "Synthetic attach target did not resolve");
+        for (int failing = 0; failing < 16; ++failing) {
+            fail_allocation_after = failing;
+            players.clear();
+            players.shrink_to_fit();
+            const bool walked = attach_runtime::walk_players(system, players);
+            fail_allocation_after = failing;
+            attach_runtime::Cache failed;
+            error = nullptr;
+            const bool resolved =
+                attach_runtime::resolve(client, offsets, target, segment, failed, error);
+            fail_allocation_after = -1;
+            require(walked == !players.empty() && resolved == failed.ready,
+                    "An allocation failure left a partial attach result");
+        }
+    }
+    attach_runtime::configured_client = saved_client;
+}
+
 void independent_heartbeat() {
     alignas(8) unsigned char memory[64]{};
     auto* beat = reinterpret_cast<volatile LONG64*>(memory + 32);
@@ -2914,6 +3007,7 @@ void run() {
     independent_heartbeat();
     worker_session_release_checks();
     entity_window_scan_checks();
+    attach_allocation_failure_checks();
     replay_identity();
     Fixture f;
     follow_anchor_guard_checks(f);

@@ -330,7 +330,13 @@ inline bool scan_identity_players(std::uintptr_t entity_system, std::vector<Play
             player.instance = instance;
             player.identity = identity;
             read_value(identity + dolly::reviewed::FollowTarget::IDENTITY_HANDLE, player.handle);
-            out.push_back(player);
+            // The worker must not terminate the game on an allocation failure.
+            try {
+                out.push_back(player);
+            } catch (...) {
+                out.clear();
+                return false;
+            }
             if (out.size() >= 64)
                 return true;
         }
@@ -361,7 +367,12 @@ inline bool walk_players(std::uintptr_t entity_system, std::vector<PlayerEntity>
                 }
             if (duplicate)
                 break;
-            seen.push_back(identity);
+            try {
+                seen.push_back(identity);
+            } catch (...) {
+                out.clear();
+                return false;
+            }
             std::uintptr_t instance = 0, backlink = 0;
             if (!read_value(identity, instance) || !instance ||
                 !read_value(instance + 0x10, backlink) || backlink != identity) {
@@ -375,7 +386,12 @@ inline bool walk_players(std::uintptr_t entity_system, std::vector<PlayerEntity>
                 player.instance = instance;
                 player.identity = identity;
                 read_value(identity + 0x10, player.handle);
-                out.push_back(player);
+                try {
+                    out.push_back(player);
+                } catch (...) {
+                    out.clear();
+                    return false;
+                }
             }
             if (!read_value(identity + 0x58, identity))
                 break;
@@ -878,10 +894,14 @@ inline bool resolve(HMODULE client, const Offsets& offsets, const dolly::AttachT
         found.entity_index = player.handle & 0x7fffu;
         if (!discover_model_name(node, found.name_offset, found.name_pointer, found.model))
             continue;
-        if (expected.handle && player.handle == expected.handle)
-            handle_matches.push_back(found);
-        if (expected.model && found.model == expected.model)
-            model_matches.push_back(found);
+        try {
+            if (expected.handle && player.handle == expected.handle)
+                handle_matches.push_back(found);
+            if (expected.model && found.model == expected.model)
+                model_matches.push_back(found);
+        } catch (...) {
+            return false;
+        }
     }
     const Found* selected = nullptr;
     if (!handle_matches.empty()) {
