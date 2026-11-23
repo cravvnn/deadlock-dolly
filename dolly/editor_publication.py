@@ -299,4 +299,8 @@ def configure(app):
             # Native latches the first picker=True sequence as the session.
             if picker_context and picker_context.get("request") is None:
                 picker_context["request"] = sequence
+            snap_context = getattr(app, "_attach_snap_context", None)
+            if (snap_context and getattr(app, "_attach_snap_pending", False)
+                    and snap_context.get("sequence") is None):
+                snap_context["sequence"] = sequence
             app._native_attach_bridge, app._native_attach_cache = bridge, attach

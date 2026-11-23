@@ -26,6 +26,21 @@ def snap_is_current(app, bridge):
             app.project.keyframes[index] == context["key"])
 
 
+def snap_result_current(app, bridge, config_sequence):
+    """Whether a snap result answers this request or a later republish of it.
+
+    Roster refreshes may republish the attach block while native is still
+    answering, so the latest sequence alone would reject a valid result.
+    """
+    latest = getattr(bridge, "_editor_attach_sequence", None)
+    if latest is None or config_sequence is None:
+        return False
+    first = (getattr(app, "_attach_snap_context", None) or {}).get("sequence")
+    if first is None:
+        return config_sequence == latest
+    return (latest - config_sequence) & 0xFFFFFFFF <= (latest - first) & 0xFFFFFFFF
+
+
 SNAP_FAILURES = {
     1: "Attach here could not keep this view: the camera is too far from the player. Fly closer and try again.",
     2: "Attach here could not read the player at this moment. Try again.",
@@ -126,7 +141,7 @@ def poll(app):
                 if identity != getattr(app, "_attach_result_sequence", None):
                     app._attach_result_sequence = identity
                     if (getattr(app, "_attach_snap_pending", False) and
-                            attach_result.get("config_sequence") == getattr(bridge, "_editor_attach_sequence", None)):
+                            snap_result_current(app, bridge, attach_result.get("config_sequence"))):
                         cancel_snap(app, SNAP_FAILURES.get(attach_result["snap_failure"], SNAP_FAILURES[2]))
         snap_started = getattr(app, "_attach_snap_started", None)
         if (getattr(app, "_attach_snap_pending", False) and snap_started is not None

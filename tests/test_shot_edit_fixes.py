@@ -1,4 +1,5 @@
 """Shot edits keep their effect: bank with a roll curve, parked framing, rebase, retime."""
+import itertools
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -393,6 +394,56 @@ class AttachHereKeepsViewTests(unittest.TestCase):
         self.assertTrue(app.preview_attach)
         self.assertFalse(app._attach_snap_pending)
         self.assertEqual(published[-1], True)
+
+    def test_attach_here_survives_a_roster_republish(self):
+        from dolly import editor_publication
+        from dolly.native_effects import model_token
+        from dolly.shot_history import ShotHistory
+        attach = AttachKey(handle=7, model="models/hero.vmdl")
+        project = Project(keyframes=[_key(0.0, source="attach", attach=attach)])
+
+        class Bridge:
+            _editor_attach_sequence = 10
+            configure_editor = staticmethod(lambda **values: None)
+
+            def configure_editor_attach(self, offsets, attach=None, **options):
+                self._editor_attach_sequence += 2
+                return self._editor_attach_sequence
+
+            def status(self):
+                return {"state": "manual"}
+        bridge = Bridge()
+        app = SimpleNamespace(
+            project=project, shot_history=None, preview_attach=False, dirty=False, busy=False,
+            playing=False, closed=False, native_editor_active=True, _bone_picker_context=None,
+            status_text=_Var(), attach_fields={"offset": 0}, app_settings=SimpleNamespace(),
+            camera_tree=SimpleNamespace(selection=lambda: ("0",)),
+            controller=SimpleNamespace(_native_bridge=lambda: bridge, _follow_active=False,
+                                       status=lambda: {"connected": True, "native_editor_active": True}),
+            _title=lambda: None, _refresh_attach_card=lambda _key: None, _publish_editor=lambda: None)
+        app.shot_history = ShotHistory(project)
+        app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
+        app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
+        states = itertools.chain(("row 0",), itertools.repeat("row 1"))
+        with patch.object(editor_publication.editor_view, "editor_values", return_value={}),                 patch.object(editor_publication, "_playback_values", return_value=(1, 1)),                 patch.object(editor_publication, "_video_values", return_value=(0,) * 7),                 patch.object(editor_publication, "_pov_duration", return_value=0),                 patch.object(editor_publication, "_attach_state", side_effect=lambda *_: next(states)),                 patch.object(editor_publication, "_configure_visualization"),                 patch("dolly.curve_preview.configure"):
+            publish = lambda: editor_publication.configure(app)
+            editor_dispatch.dispatch(app, {"action": "attach_preview", "value": 1}, bridge, publish=publish)
+            publish()  # The 2 s roster refresh reorders the target row.
+            self.assertEqual(bridge._editor_attach_sequence, 14)
+            gui.DollyApp._attach_result_changed(app, {
+                "config_sequence": 12, "handle": 7, "entity_index": 0,
+                "model": model_token(attach.model), "point": 0,
+                "offset": (10.0, 20.0, 30.0, 40.0, 50.0, 60.0)})
+        self.assertFalse(app._attach_snap_pending)
+        self.assertTrue(app.preview_attach)
+        self.assertEqual(app.project.keyframes[0].attach.offset, (10.0, 20.0, 30.0, 40.0, 50.0, 60.0))
+
+    def test_attach_here_ignores_results_older_than_the_request(self):
+        from dolly import editor_session
+        bridge = SimpleNamespace(_editor_attach_sequence=14)
+        app = SimpleNamespace(_attach_snap_context={"sequence": 12})
+        self.assertEqual([editor_session.snap_result_current(app, bridge, value) for value in (10, 12, 14, 16)],
+                         [False, True, True, False])
 
     def test_attach_here_says_why_native_could_not_keep_the_view(self):
         from unittest.mock import patch

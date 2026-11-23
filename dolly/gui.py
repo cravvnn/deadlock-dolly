@@ -4657,7 +4657,9 @@ class DollyApp:
         if snap_pending and not editor_session.snap_is_current(self, bridge):
             editor_session.cancel_snap(self, "Attach cancelled because the selected camera changed.")
             return
-        if (not bridge or result.get("config_sequence") != bridge._editor_attach_sequence or
+        current = (editor_session.snap_result_current(self, bridge, result.get("config_sequence"))
+                   if snap_pending else result.get("config_sequence") == getattr(bridge, "_editor_attach_sequence", None))
+        if (not bridge or not current or
                 result.get("handle") != key.attach.handle or
                 (key.attach.entity_id and result.get("entity_index") != key.attach.entity_id) or
                 result.get("model") != model_token(key.attach.model) or
