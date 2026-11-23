@@ -12,7 +12,6 @@ Run this before saying a version is unpublished:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -22,6 +21,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from dolly import __version__  # noqa: E402
+from dolly.updater import version_key  # noqa: E402
+from release_files import sha256  # noqa: E402
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess:
@@ -48,10 +49,6 @@ def _slug() -> str:
     return match.group("slug")
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", default=__version__,
@@ -59,7 +56,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         slug = _slug()
-        releases = _gh_json(["release", "list", "--limit", "1",
+        # Drafts are not published; never report one as the latest release.
+        releases = _gh_json(["release", "list", "--limit", "1", "--exclude-drafts",
                              "--json", "tagName,name,createdAt,isDraft,isPrerelease"])
         if not releases:
             print(f"No published releases found for {slug}.")
@@ -88,7 +86,7 @@ def main(argv=None) -> int:
             print(f"  {asset['name']}  {asset['size']} bytes  {digest}")
     print(f"Local version:    {args.version}")
     local = ROOT / "dist" / f"Deadlock_Dolly_{args.version}_Windows_x64.zip"
-    local_digest = _sha256(local) if local.is_file() else None
+    local_digest = sha256(local) if local.is_file() else None
     if local_digest:
         print(f"Local artifact:   {local.name}  {local.stat().st_size} bytes  sha256:{local_digest}")
     else:
@@ -99,13 +97,23 @@ def main(argv=None) -> int:
     for asset in assets:
         if asset["name"] == f"Deadlock_Dolly_{published_version}_Windows_x64.zip":
             published_digest = (asset.get("digest") or "").removeprefix("sha256:")
-    if published_version == args.version:
+    try:
+        order = (version_key(args.version) > version_key(published_version)) - (
+            version_key(args.version) < version_key(published_version))
+    except ValueError:
+        order = None
+    if order == 0:
         if local_digest and published_digest and local_digest == published_digest:
             print("STATUS: MATCH - the local build is the published artifact.")
         elif local_digest and published_digest:
             print("STATUS: VERSION MATCH, ARTIFACT DIFFERS - the published asset is not this local build.")
         else:
             print("STATUS: VERSION MATCH - no comparable local artifact.")
+    elif order is None:
+        print(f"STATUS: UNCOMPARABLE - cannot order {args.version} against {tag}.")
+    elif order < 0:
+        print(f"STATUS: LOCAL BEHIND - {args.version} is older than "
+              f"the latest published release {tag}.")
     else:
         print(f"STATUS: LOCAL AHEAD - {args.version} is unpublished; "
               f"the latest published release is {tag}.")

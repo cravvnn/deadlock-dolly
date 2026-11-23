@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import contextlib
+import io
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +15,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 
 import build_native
 import release_files
+import release_status
 
 
 class NativeBuildResults(unittest.TestCase):
@@ -131,6 +134,31 @@ class ReleaseSet(unittest.TestCase):
             with self.assertRaises(OSError):
                 release_files.bundle_zip(self.bundle, output)
         self.assertEqual(list(self.dist.iterdir()), [])
+
+
+class ReleaseStatus(unittest.TestCase):
+    def status(self, published, local):
+        calls = []
+
+        def gh(args):
+            calls.append(args)
+            if args[0] == 'release':
+                return [{'tagName': 'v' + published, 'name': published, 'createdAt': 'now'}]
+            return {'assets': []}
+
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp,                 patch.object(release_status, '_slug', return_value='owner/repo'),                 patch.object(release_status, '_gh_json', side_effect=gh),                 patch.object(release_status, 'ROOT', Path(temp)),                 contextlib.redirect_stdout(output):
+            self.assertEqual(release_status.main(['--version', local]), 0)
+        return output.getvalue(), calls
+
+    def test_latest_release_excludes_drafts(self):
+        _, calls = self.status('0.7.51-beta', '0.7.51-beta')
+        self.assertIn('--exclude-drafts', calls[0])
+
+    def test_versions_are_ordered_not_only_compared(self):
+        self.assertIn('STATUS: LOCAL AHEAD', self.status('0.7.50-beta', '0.7.51-beta')[0])
+        self.assertIn('STATUS: LOCAL BEHIND', self.status('0.7.51', '0.7.51-beta')[0])
+        self.assertIn('STATUS: VERSION MATCH', self.status('0.7.51-beta', '0.7.51-beta')[0])
 
 
 if __name__ == '__main__':
