@@ -46,7 +46,7 @@ def resolve_game_dir(selected: Path) -> tuple[Path, Path]:
     try:
         paths = launcher.validate_game(selected)
     except launcher.LaunchError:
-        if selected.name.lower() == "game":
+        if selected.name.lower() == "game" or (selected / STEAM_INF).is_file():
             return selected.parent, selected
         if selected.name.lower() == "win64":
             return selected.parents[2], selected.parents[1]

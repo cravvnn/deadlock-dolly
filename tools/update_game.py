@@ -30,6 +30,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 ANALYSIS = ROOT / "analysis"
 
+from check_game_update import read_steam_inf, resolve_game_dir  # noqa: E402
+
 CLIENT_SCRIPTS = ("collect_anchors.py", "audit_full_{b}.py", "build_map_{b}.py",
                   "resolve_data_{b}.py", "resolve_settings_{b}.py", "resolve_missing_{b}.py",
                   "merge_resolved_{b}.py", "translate_contract_{b}.py", "materialize_{b}.py",
@@ -91,17 +93,6 @@ def first_match(pattern: str, text: str, label: str) -> str:
     return match.group(1)
 
 
-def read_steam_inf(game_dir: Path) -> dict[str, str]:
-    info: dict[str, str] = {}
-    path = game_dir / "citadel" / "steam.inf"
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if "=" in line:
-                key, _, value = line.partition("=")
-                info[key.strip()] = value.strip()
-    return info
-
-
 def parse_version_date(value: str) -> str:
     for fmt in ("%b %d %Y", "%Y-%m-%d"):
         try:
@@ -111,13 +102,9 @@ def parse_version_date(value: str) -> str:
     raise SystemExit(f"Could not parse VersionDate {value!r}")
 
 
-def resolve_game_dir(selected: Path) -> Path:
-    selected = Path(selected)
-    if (selected / "citadel" / "steam.inf").is_file():
-        return selected
-    if selected.name.lower() == "game":
-        return selected
-    return selected / "game"
+def installed_game_dir(selected: Path) -> Path:
+    """The game dir from an install root, game dir, win64 dir or deadlock.exe."""
+    return resolve_game_dir(selected)[1]
 
 
 def build_pairs(prev_build: str, prev_date: str, prior_build: str, prior_date: str,
@@ -266,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
     if selected is None:
         from dolly.settings import load_settings
         selected = Path(load_settings().game_path)
-    game_dir = resolve_game_dir(selected)
+    game_dir = installed_game_dir(selected)
 
     steam = read_steam_inf(game_dir)
     new_build = steam.get("ClientVersion", "")

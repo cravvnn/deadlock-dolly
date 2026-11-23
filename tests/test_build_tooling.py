@@ -17,6 +17,7 @@ import build_native
 import format_cpp
 import release_files
 import release_status
+import update_game
 
 
 class NativeBuildResults(unittest.TestCase):
@@ -167,6 +168,21 @@ class FormatCpp(unittest.TestCase):
         names = {path.name for path in format_cpp.owned_files(ROOT)}
         self.assertIn('dolly_path.hpp', names)
         self.assertFalse([name for name in names if name.endswith('_generated.hpp')])
+
+
+class UpdateGamePaths(unittest.TestCase):
+    def test_game_dir_from_root_game_win64_or_executable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve() / 'Deadlock'
+            game = root / 'game'
+            for relative in ('bin/win64/deadlock.exe', 'citadel/gameinfo.gi',
+                             'citadel/bin/win64/server.dll', 'citadel/steam.inf'):
+                (game / relative).parent.mkdir(parents=True, exist_ok=True)
+                (game / relative).write_text('ClientVersion=1\n')
+            for selected in (root, game, game / 'bin/win64', game / 'bin/win64/deadlock.exe'):
+                with self.subTest(selected=selected.name):
+                    self.assertEqual(update_game.installed_game_dir(selected).resolve(), game)
+            self.assertEqual(update_game.read_steam_inf(game), {'ClientVersion': '1'})
 
 
 if __name__ == '__main__':
