@@ -182,9 +182,13 @@ class ReplayWarmupMixin:
                 if goal_owned and self._session is session and self._demo == demo and self._alive():
                     # Cancellation/timeout must not leave a future goal armed. Never
                     # send cleanup commands into a different replay or session.
-                    self._require_demo(require_tick=False)
-                    if self._session is session and self._demo == demo and self._alive():
-                        self._request("demo_resume; demo_pause")
+                    # Cleanup runs only while an error propagates; keep that error.
+                    try:
+                        self._require_demo(require_tick=False)
+                        if self._session is session and self._demo == demo and self._alive():
+                            self._request("demo_resume; demo_pause")
+                    except Exception:
+                        LOG.warning("Could not disarm the effect-settling pause goal", exc_info=True)
         finally:
             self._replay_warmup_active = False
 
