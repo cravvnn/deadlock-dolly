@@ -1,6 +1,8 @@
+#undef NDEBUG
 #include "dolly_lite.hpp"
 #include <cassert>
 #include <cmath>
+#include <cstring>
 int main(){
     assert(dolly::valid_lite_seek_tick(3470,146926));
     assert(!dolly::valid_lite_seek_tick(-1,146926));
