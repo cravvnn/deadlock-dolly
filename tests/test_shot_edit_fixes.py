@@ -427,7 +427,13 @@ class AttachHereKeepsViewTests(unittest.TestCase):
         app._selection_index = lambda tree: gui.DollyApp._selection_index(app, tree)
         app._mark_dirty = lambda: gui.DollyApp._mark_dirty(app)
         states = itertools.chain(("row 0",), itertools.repeat("row 1"))
-        with patch.object(editor_publication.editor_view, "editor_values", return_value={}),                 patch.object(editor_publication, "_playback_values", return_value=(1, 1)),                 patch.object(editor_publication, "_video_values", return_value=(0,) * 7),                 patch.object(editor_publication, "_pov_duration", return_value=0),                 patch.object(editor_publication, "_attach_state", side_effect=lambda *_: next(states)),                 patch.object(editor_publication, "_configure_visualization"),                 patch("dolly.curve_preview.configure"):
+        with (patch.object(editor_publication.editor_view, "editor_values", return_value={}),
+              patch.object(editor_publication, "_playback_values", return_value=(1, 1)),
+              patch.object(editor_publication, "_video_values", return_value=(0,) * 7),
+              patch.object(editor_publication, "_pov_duration", return_value=0),
+              patch.object(editor_publication, "_attach_state", side_effect=lambda *_: next(states)),
+              patch.object(editor_publication, "_configure_visualization"),
+              patch("dolly.curve_preview.configure")):
             publish = lambda: editor_publication.configure(app)
             editor_dispatch.dispatch(app, {"action": "attach_preview", "value": 1}, bridge, publish=publish)
             publish()  # The 2 s roster refresh reorders the target row.

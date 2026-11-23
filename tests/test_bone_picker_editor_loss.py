@@ -83,7 +83,13 @@ class PickerRequestTests(unittest.TestCase):
         # The opening publication can be skipped (here by a history refresh);
         # the picker then first reaches native on a later poll.
         app._refreshing_shot_history = True
-        with patch.object(editor_publication.editor_view, "editor_values", return_value={}),                 patch.object(editor_publication, "_playback_values", return_value=(1, 1)),                 patch.object(editor_publication, "_video_values", return_value=(0,) * 7),                 patch.object(editor_publication, "_pov_duration", return_value=0),                 patch.object(editor_publication, "_attach_state", return_value=None),                 patch.object(editor_publication, "_configure_visualization"),                 patch("dolly.curve_preview.configure"):
+        with (patch.object(editor_publication.editor_view, "editor_values", return_value={}),
+              patch.object(editor_publication, "_playback_values", return_value=(1, 1)),
+              patch.object(editor_publication, "_video_values", return_value=(0,) * 7),
+              patch.object(editor_publication, "_pov_duration", return_value=0),
+              patch.object(editor_publication, "_attach_state", return_value=None),
+              patch.object(editor_publication, "_configure_visualization"),
+              patch("dolly.curve_preview.configure")):
             bone_picker.open_picker(app, publish=lambda: editor_publication.configure(app))
             app._refreshing_shot_history = False
             editor_publication.configure(app)
