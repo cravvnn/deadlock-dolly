@@ -1387,3 +1387,4 @@ tests/test_bone_picker_editor_loss.py
 tests/test_cinematic_prepare_failure.py
 tests/test_layer_modes.py
 tests/test_replay_warmup_cleanup.py
+docs/RELEASE_NOTES_0.7.52-beta.md
