@@ -319,5 +319,24 @@ class TlaDiscovery(unittest.TestCase):
             self.assertEqual(check_tla.unchecked(rows, root), [])
 
 
+class SoundProfileReview(unittest.TestCase):
+    def test_recent_sound_profile_must_be_reviewed_in_the_manifest(self):
+        import generate_compatibility
+        import generate_sound_profile
+        recent = json.loads(generate_sound_profile.RECENT_PROFILE.read_text(encoding='utf-8'))['sha256']
+        real = generate_compatibility.read_json
+
+        def unreviewed(path):
+            data = real(path)
+            if Path(path).name == 'manifest.json':
+                module = data['modules']['bin/win64/soundsystem.dll']
+                module['accepted'] = [h for h in module['accepted'] if h != recent]
+            return data
+
+        with patch.object(generate_compatibility, 'read_json', side_effect=unreviewed):
+            with self.assertRaisesRegex(Exception, 'Sound profile hash is not reviewed'):
+                generate_compatibility.generated_outputs(ROOT)
+
+
 if __name__ == '__main__':
     unittest.main()

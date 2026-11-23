@@ -472,10 +472,12 @@ def generated_outputs(root=ROOT):
         current = profile_at(root, sound.PROFILE.name, manifest)
         legacy = profile_at(root, sound.LEGACY_PROFILE.name, manifest)
         previous = profile_at(root, sound.PREVIOUS_PROFILE.name, manifest)
+        recent = profile_at(root, sound.RECENT_PROFILE.name, manifest)
         accepted_sound = manifest['modules']['bin/win64/soundsystem.dll']['accepted']
-        require(all(profile['sha256'] in accepted_sound for profile in (current,legacy,previous)),
+        require(all(profile['sha256'] in accepted_sound for profile in (current,legacy,previous,recent)),
                 'Sound profile hash is not reviewed in the manifest')
-        sound.emit_sound_header(current, target, legacy_profile=legacy, previous_profile=previous)
+        sound.emit_sound_header(current, target, legacy_profile=legacy, previous_profile=previous,
+                                recent_profile=recent)
         outputs['native/src/dolly_sound_compat_generated.hpp'] = target.read_text(encoding='utf-8')
     return outputs
 

@@ -82,7 +82,8 @@ def _emit_profile(profile):
     return lines
 
 
-def emit_sound_header(profile, destination=HEADER, *, legacy_profile=None, previous_profile=None):
+def emit_sound_header(profile, destination=HEADER, *, legacy_profile=None, previous_profile=None,
+                      recent_profile=None):
     legacy = (json.loads(LEGACY_PROFILE.read_text(encoding="utf-8"))
               if legacy_profile is None else legacy_profile)
     previous = (json.loads(PREVIOUS_PROFILE.read_text(encoding="utf-8"))
@@ -98,7 +99,8 @@ def emit_sound_header(profile, destination=HEADER, *, legacy_profile=None, previ
     lines.extend(_emit_profile(previous))
     lines.append("} // namespace previous")
     lines.append("namespace recent {")
-    lines.extend(_emit_profile(json.loads(RECENT_PROFILE.read_text(encoding="utf-8"))))
+    lines.extend(_emit_profile(json.loads(RECENT_PROFILE.read_text(encoding="utf-8"))
+                               if recent_profile is None else recent_profile))
     lines.append("} // namespace recent")
     lines.append("inline constexpr Profile kProfiles[] = {")
     for prefix in ("", "legacy::", "recent::"):
