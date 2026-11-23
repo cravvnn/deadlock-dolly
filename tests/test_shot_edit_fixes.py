@@ -143,8 +143,10 @@ class CurveHelperTests(unittest.TestCase):
         self.assertAlmostEqual(samples[-1][1], 10.0)
 
     def test_curve_editor_uses_the_project_limits(self):
-        from dolly import curve_workspace, path
+        from dolly import curve, curve_workspace, path
         self.assertIs(curve_workspace.TANGENT_MODES, path.TANGENT_MODES)
+        self.assertIs(curve.POSITION_CHANNELS, path.POSITION_CHANNELS)
+        self.assertIs(curve.POSITION_LIMIT, path.AUTHORED_POSITION_LIMIT)
         self.assertTrue(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MAX))
         self.assertTrue(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MIN))
         self.assertFalse(curve_workspace.valid_value("aspect_ratio", path.ASPECT_MAX + 1e-9))

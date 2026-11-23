@@ -10,12 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from .path import Project
-
-
 # Position edits replace existing camera coordinates; they are not curve_* overrides.
-POSITION_CHANNELS = ("x", "y", "z")
-POSITION_LIMIT = 1e8  # Existing native path visualization validity limit.
+# The limit is the existing native path visualization validity bound.
+from .path import AUTHORED_POSITION_LIMIT as POSITION_LIMIT, POSITION_CHANNELS, Project
 
 
 @dataclass(frozen=True)
