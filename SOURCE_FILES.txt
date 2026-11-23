@@ -1388,3 +1388,6 @@ tests/test_cinematic_prepare_failure.py
 tests/test_layer_modes.py
 tests/test_replay_warmup_cleanup.py
 docs/RELEASE_NOTES_0.7.52-beta.md
+native/profiles/deadlock-2026-11-23-6865-complete.json
+third_party/cvar_unlocker/unlocker-build-6865.patch
+docs/RELEASE_NOTES_0.7.53-beta.md

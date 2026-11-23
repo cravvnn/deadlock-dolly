@@ -5,6 +5,20 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 23 build 6865 review
+
+Build 6865 changes `client.dll`, `server.dll` and the Steam depot manifests;
+`engine2.dll`, `tier0.dll`, `scenesystem.dll`, `soundsystem.dll`,
+`resourcesystem.dll`, `rendersystemdx11.dll`, `filesystem_stdio.dll` and the
+stock `gameinfo.gi`, cfg, video and UI payloads are unchanged from build 6864.
+Client camera, startup, Follow, effects, particle and replay-clock consumers
+relocated with exact masked bodies; the minimap jump table and two consumed
+mid-function sites were requalified individually. The exact-server unlocker was
+rebuilt against the unchanged Tier0 binary (`0x2b9f178`; slots
+`0x9abdc4`/`0x9abdd0`/`0x9b18b0`), passing 3 compiled suites and 1221
+actual-function pair/table checks; the 6864 predecessor refuses the new pair.
+These are offline proofs; live build 6865 acceptance is pending.
+
 ## November 18 build 6864 review
 
 Build 6864 changes every reviewed module, the server and the stock GameInfo (a

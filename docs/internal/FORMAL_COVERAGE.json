@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "578e68befd8eaa3ab786c086a675d0fe1027ebd36f7d49c3ccda51d2927463ea",
+      "sha256": "ee59dea1eb4efef5be872370d04df9ce2bf9e3ce3b14436c1dc86d8e673322f6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -151,7 +151,8 @@
       "reconciliation_20261120zz_version": "0.7.48-beta version string only.",
       "reconciliation_20261121_version": "0.7.49-beta version string only.",
       "reconciliation_20261122_version": "0.7.51-beta version string only.",
-      "reconciliation_20261123_version": "0.7.52-beta version string only."
+      "reconciliation_20261123_version": "0.7.52-beta version string only.",
+      "reconciliation_20261123b_version": "0.7.53-beta version string only."
     },
     {
       "path": "dolly/__main__.py",
@@ -190,7 +191,7 @@
     },
     {
       "path": "dolly/_runtime_generated.py",
-      "sha256": "9b566d4474cab573070e7e374d4163557aeed4513d6f1d6296c42678852d1960",
+      "sha256": "49218376421e8a3413164d8b8cc573355938992bd08b6419bbc3c1b3c52b8ad0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -2325,7 +2326,7 @@
     },
     {
       "path": "dolly/follow_target.py",
-      "sha256": "85e3c5ddc8d2ea8293b51bb14e906a3e2f4daed404bcbab6e51e493d2bd92d14",
+      "sha256": "210404c02842a06fa7bcdc50f11b0ce9ed21a8eaf4e4efaa11b10f570beb8270",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -8273,7 +8274,7 @@
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
-      "sha256": "b3fbb800c94997b45e822a1a10b88c434871bd09254a9f6c15bd303ac0ba1dc8",
+      "sha256": "08b54d1f1eecc5324fbb9f7da7c176bcf6e9efe551c0c0a24121c8134fbea310",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8685,7 +8686,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "026299619523b57979e9c3516e2e5e08e52a90ac5ddaf0188338971ff87aa07a",
+      "sha256": "92db10a286926fe9d75bf6b3265dbd3e037a80dd25a62f06268fd65759adca99",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8731,7 +8732,7 @@
     },
     {
       "path": "native/src/dolly_confetti.cpp",
-      "sha256": "3e540d4c4bb9774dd9c0261cf375cdaf3729a236881a1d35fd0085e02b09ce2f",
+      "sha256": "cb5bb0d927d514210ab0e5b183791ae59d525d25a280d11638fd455b7689055b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9000,7 +9001,7 @@
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
-      "sha256": "e57de01c24f08609213863c942bddcc9971f9b20932b50e343342ff0c4d95dc8",
+      "sha256": "b114af8dbb82cee1e8e27fef1ad23f1f97792069c39d1707b77c11bbfb085218",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -10336,7 +10337,7 @@
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
-      "sha256": "9472b7a870fc6867eb011257e7e7b68b94a0639fe3e9c0518936eade53200919",
+      "sha256": "b93d964cbd115e4369f6ebea0c1922b6542229f9e5d5470f48cf64d910a16796",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -13653,6 +13654,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.53-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.6-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16942,6 +16948,11 @@
       "category": "metadata/configuration/documentation input"
     },
     {
+      "path": "native/profiles/deadlock-2026-11-23-6865-complete.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18607,6 +18618,11 @@
       "category": "external dependency/resource"
     },
     {
+      "path": "third_party/cvar_unlocker/unlocker-build-6865.patch",
+      "category": "external dependency/resource",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "third_party/cvar_unlocker/unlocker-shutdown.patch",
       "category": "external dependency/resource",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19368,12 +19384,12 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 575,
+    "metadata/configuration/documentation input": 577,
     "implementation/tool": 316,
     "asset/compiled helper input": 28,
     "formal spec/interface": 169,
     "test/support input": 95,
-    "external dependency/resource": 203
+    "external dependency/resource": 204
   },
   "unclassified": 0,
   "full_program_formal_verified": false,
