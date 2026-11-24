@@ -1427,3 +1427,4 @@ third_party/cvar_unlocker/unlocker-build-6865.patch
 docs/RELEASE_NOTES_0.7.53-beta.md
 docs/RELEASE_NOTES_0.7.54-beta.md
 tests/test_capture_estimate.py
+docs/RELEASE_NOTES_0.7.55-beta.md

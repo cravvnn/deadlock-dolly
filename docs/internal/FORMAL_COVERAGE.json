@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "67aea835609188bbd15c65c7dc916e40570fbf15f7a0d91bc7e6f7acfcdb5ad7",
+      "sha256": "963e42678a270b64c4c0bc4e754be95f6e80f27e7750a5053798c7dec19c87d2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -151,7 +151,7 @@
       "reconciliation_20261120zz_version": "0.7.48-beta version string only.",
       "reconciliation_20261121_version": "0.7.49-beta version string only.",
       "reconciliation_20261122_version": "0.7.51-beta version string only.",
-      "reconciliation_20261123_version": "0.7.52-beta version string only.",
+      "reconciliation_20261123_version": "0.7.55-beta version string only.",
       "reconciliation_20261123b_version": "0.7.53-beta version string only."
     },
     {
@@ -14380,6 +14380,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.55-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.6-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20280,7 +20285,7 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 578,
+    "metadata/configuration/documentation input": 579,
     "implementation/tool": 342,
     "asset/compiled helper input": 28,
     "formal spec/interface": 169,
