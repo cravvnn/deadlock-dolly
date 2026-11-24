@@ -7729,7 +7729,7 @@
     },
     {
       "path": "native/include/dolly_lens_rain.hpp",
-      "sha256": "be799480cf8ed1e059ed6a4d0361e2d8aa7325e8ab3adfe775f63000c60e4462",
+      "sha256": "61ff2466057bd3f0877ad49ada16ccd11bfbfb9a1dc4f945da80150a0da16fa9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9444,7 +9444,7 @@
     },
     {
       "path": "native/src/dolly_lens_rain.cpp",
-      "sha256": "b3fdbc9146b5891d39025d5dc59d0ce5567a3455bad727144ac277321689d9fe",
+      "sha256": "4921a6a1a94d55f47a0e85aa38cf37f0c641f454ae5e715b9d1500246d2e6b64",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9465,7 +9465,7 @@
     },
     {
       "path": "native/src/dolly_lens_rain_dx11.cpp",
-      "sha256": "c3cb0fb39edc00904fc2b78492e7c6ce6c09bec4dae4e119954f4d390cbbb0f0",
+      "sha256": "b0b1ef25faff47af52e6ec259b00f940676a836d2e1b17a0be3c476c5491135b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

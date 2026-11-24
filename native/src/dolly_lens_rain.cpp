@@ -295,12 +295,12 @@ void Simulator::step(const Settings& s, const Frame& frame, std::int64_t index) 
                 bead.v0 = drop.tv;
                 bead.u = old_u;
                 bead.v = old_v;
-                bead.radius = drop.radius * (0.3f + 0.25f * s.trails);
+                bead.radius = drop.radius * kTrailWidth;
                 bead.life = bead.max_life = bead_life;
                 beads_.push_back(bead);
                 const float du = bead.u - bead.u0, dv = bead.v - bead.v0;
                 const float length = std::sqrt(du * du + dv * dv);
-                const float lost = bead.radius * bead.radius * length * 0.12f;
+                const float lost = bead.radius * bead.radius * length * 0.04f;
                 const float volume = drop.radius * drop.radius * drop.radius - lost;
                 drop.radius = volume > 0.0f ? std::cbrt(volume) : 0.0f;
             }

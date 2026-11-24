@@ -13,8 +13,11 @@ namespace {
 template <typename T> using Ptr = Microsoft::WRL::ComPtr<T>;
 
 // One capsule of water per instance: a segment (u0, v0)-(u1, v1) with a radius. Drops
-// have round ends (a disc when the segment is a point, a teardrop while running);
-// runoff streaks have flat ends so consecutive pieces join without bulges.
+// have round ends (a disc when the segment is a point, a teardrop while running).
+// Runoff streaks are a channel about as wide as the drop: a thin, nearly flat film
+// between two edges where the water's meniscus bends the view (a dark line with a
+// bright one just inside). Streak pieces reach a little past their ends so bends
+// leave no gaps; their slope is purely sideways, so the overlap does not show.
 const char kWaterShaders[] = R"(
 cbuffer Params : register(b0) { float4 a; float4 b; float4 c; };
 struct Water { float4 ends; float4 look; }; // ends: u0 v0 u1 v1; look: radius, water, flat
@@ -37,7 +40,7 @@ V vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float2 dir = len > 1e-6 ? axis / len : float2(1.0, 0.0);
     float2 perp = float2(-dir.y, dir.x);
     float r = w.look.x;
-    float pad = w.look.z > 0.5 ? 0.0 : r;      // flat ends need no room past the ends
+    float pad = w.look.z > 0.5 ? 0.4 * r : r;  // streak pieces overlap their neighbours
     float along = lerp(-pad, len + pad, k.x);
     float across = k.y * r;
     float2 p = p0 + dir * along + perp * across;
@@ -49,18 +52,34 @@ V vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     return o;
 }
 float4 ps_main(V i) : SV_Target {
-    float len = i.shape.x, r = i.shape.y;
+    float len = i.shape.x, r = i.shape.y, water = i.shape.z;
     float along = i.local.x;
-    if (i.shape.w > 0.5 && (along < 0.0 || along > len)) discard;
+    if (i.shape.w > 0.5) {
+        // Streak: water is the fraction of its life left (it dries at constant width).
+        if (along < -0.4 * r || along > len + 0.4 * r) discard;
+        float x = abs(i.local.y) / r;
+        if (x >= 1.0) discard;
+        float e = max(0.22, 2.0 * fwidth(x));        // rim at least ~2 water texels wide
+        float m = saturate((x - (1.0 - e)) / e);      // outer contact slope
+        float u = saturate((x - (1.0 - 2.0 * e)) / e); // inner side of the ridge
+        float s = m * m * (3.0 - 2.0 * m) - 0.4 * 4.0 * u * (1.0 - u) * (1.0 - m);
+        s *= sqrt(water);
+        float2 slope = sign(i.local.y) * s * i.frame.zw;
+        float t = water * (0.15 + 0.85 * m);           // thin film, heavy rim
+        float cover = saturate((1.0 - x) / (1.5 * max(fwidth(x), 1e-4))) *
+                      smoothstep(0.0, 0.25, water);
+        return float4(slope * t, t, cover);
+    }
     float2 d = float2(along - clamp(along, 0.0, len), i.local.y) / r;
     float q = dot(d, d);
     if (q >= 1.0) discard;
     float h = sqrt(1.0 - q);                    // height of the water's rounded surface
-    float t = i.shape.z * h;
+    float t = water * h;
     float edge = saturate((1.0 - q) * 6.0);
     float2 slope = d.x * i.frame.xy + d.y * i.frame.zw;  // back to picture axes (v down)
-    // rg: slope weighted by thickness, b: thickness, a: coverage
-    return float4(slope * t, t, i.shape.z * edge);
+    // rg: slope weighted by thickness, b: thickness, a: coverage. Drops weigh 4x so
+    // they win the slope average where they sit on a streak.
+    return float4(slope * t * 4.0, t * 4.0, water * edge);
 }
 )";
 
@@ -97,6 +116,11 @@ float4 ps_main(float4 pos : SV_Position) : SV_Target {
     float3 normal = normalize(float3(slope.x, -slope.y, 0.8));
     float glint = pow(saturate(dot(normal, normalize(float3(-0.35, 0.55, 0.76)))), 48.0);
     wet += 0.35 * glint * saturate(thick * 2.0);
+    // The edge facing the light catches it, so a streak shows one bright side.
+    float slope_len = length(slope);
+    if (slope_len > 1e-4)
+        wet += 0.25 * pow(saturate(dot(slope / slope_len, normalize(float2(-0.35, -0.55)))), 4.0) *
+               smoothstep(0.5, 0.9, slope_len);
     return float4(lerp(dry.rgb, wet, cover), dry.a);
 }
 )";
@@ -395,13 +419,11 @@ bool Renderer::render(ID3D11Device* device, ID3D11DeviceContext* context,
     // Gather the water first: no drops means nothing to draw at all.
     std::vector<float> data;
     data.reserve((simulator.drops().size() * 2 + simulator.beads().size()) * kFloatsPerWater);
-    const float trail_width = 0.3f + 0.25f * (std::min)((std::max)(settings.trails, 0.0f), 1.0f);
     // Trails first, so drops sit on top of the streak they leave.
     for (const Bead& b : simulator.beads()) {
         const float left = (std::min)((std::max)(b.life / b.max_life, 0.0f), 1.0f);
-        if (left > 0.0f && b.radius > 0.0f) // streaks thin as they dry
-            data.insert(data.end(), {b.u0, b.v0, b.u, b.v, b.radius * (0.5f + 0.5f * left),
-                                     0.7f * left, 1.0f, 0.0f});
+        if (left > 0.0f && b.radius > 0.0f) // streaks keep their width as they dry
+            data.insert(data.end(), {b.u0, b.v0, b.u, b.v, b.radius, left, 1.0f, 0.0f});
     }
     for (const Drop& d : simulator.drops()) {
         const float water = (std::min)((std::max)(d.water, 0.0f), 1.0f);
@@ -409,9 +431,16 @@ bool Renderer::render(ID3D11Device* device, ID3D11DeviceContext* context,
             continue;
         float tail_u = d.u, tail_v = d.v;
         if (d.sliding) {
-            // The streak still being laid down, from its start to the drop.
-            data.insert(data.end(),
-                        {d.tu, d.tv, d.u, d.v, d.radius * trail_width, 0.7f, 1.0f, 0.0f});
+            // The streak still being laid down, from its start to where it meets the
+            // drop's edge (a 0.85R channel meets the circle about 0.53R behind its centre).
+            const float du = d.u - d.tu, dv = d.v - d.tv;
+            const float length = std::sqrt(du * du + dv * dv);
+            const float stop = 0.53f * d.radius;
+            if (length > stop) {
+                const float end = (length - stop) / length;
+                data.insert(data.end(), {d.tu, d.tv, d.tu + du * end, d.tv + dv * end,
+                                         d.radius * kTrailWidth, 1.0f, 1.0f, 0.0f});
+            }
             // A running drop stretches into a teardrop along its path.
             const float speed = std::sqrt(d.vu * d.vu + d.vv * d.vv);
             if (speed > 1e-5f) {

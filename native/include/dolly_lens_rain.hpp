@@ -25,6 +25,8 @@ constexpr double kWarmupSeconds = 1.5;
 constexpr double kMaxJumpSeconds = 2.0;
 constexpr std::size_t kMaxDrops = 384;
 constexpr std::size_t kMaxBeads = 1024;
+// Runoff streaks are a channel nearly as wide as the drop that leaves them (radius ratio).
+constexpr float kTrailWidth = 0.85f;
 
 // Per-shot look controls. Ranges are clamped on use.
 struct Settings {
