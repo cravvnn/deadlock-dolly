@@ -60,7 +60,9 @@ struct Inputs {
 // Optional exact source of inputs at any replay time, for example the
 // authored camera path evaluated at each simulation step. With one, the lens
 // is identical at every frame rate. Without one, inputs are interpolated
-// between presented frames, which is close but not exact for turning cameras.
+// between presented frames and snapped to a coarse grid. Only rain, cover, wind
+// and the camera's orientation (for gravity and wind direction on the glass) are
+// used; camera turns and speed are not, so a re-render gives the same drops.
 class InputSource {
 public:
     virtual ~InputSource() = default;
@@ -71,15 +73,18 @@ struct Drop {
     float u = 0.0f, v = 0.0f;   // centre
     float vu = 0.0f, vv = 0.0f; // velocity, picture heights per second
     float radius = 0.0f;
-    float water = 1.0f;  // 1 = fresh, thins to 0
-    float travel = 0.0f; // distance since the last trail bead
+    float water = 1.0f;         // 1 = fresh, thins to 0
+    float travel = 0.0f;        // distance since the last trail segment
+    float tu = 0.0f, tv = 0.0f; // where the current trail segment starts
     std::uint32_t id = 0;
     std::uint32_t sliding = 0;
 };
 
+// A piece of runoff trail: a thin streak of water from (u0, v0) to (u, v).
 struct Bead {
     float u = 0.0f, v = 0.0f, radius = 0.0f;
     float life = 0.0f, max_life = 1.0f;
+    float u0 = 0.0f, v0 = 0.0f;
 };
 
 class Simulator {
@@ -110,15 +115,12 @@ private:
         float gravity_u = 0.0f, gravity_v = 1.0f; // screen-space down
         float wind_u = 0.0f, wind_v = 0.0f;       // screen-space wind push
         float wind_in = 0.0f;                     // wind blowing into the lens
-        float speed_in = 0.0f;                    // forward camera speed, 0..3
-        float turn_u = 0.0f, turn_v = 0.0f;       // camera turn rate
     };
 
     void reset(const Settings& settings, const Inputs& inputs);
     void step(const Settings& settings, const Frame& frame, std::int64_t index);
     void spawn(const Settings& settings, const Frame& frame, std::int64_t index);
-    // Inputs one step apart: `previous` at t - step, `current` at t.
-    static Frame frame_from(const Inputs& previous, const Inputs& current);
+    static Frame frame_from(const Inputs& current);
     Inputs interpolated(const Inputs& now, double at) const;
 
     std::vector<Drop> drops_;

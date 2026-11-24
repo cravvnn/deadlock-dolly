@@ -20,10 +20,12 @@ namespace dolly::lens_rain_runtime {
 void poll_editor_block(const unsigned char* memory) noexcept;
 
 // View thread: the replay clock and the camera this view rendered. `angles` are the
-// game's pitch, yaw and roll in degrees. The picture fills the back buffer (Dolly's
-// framing control zooms the view; it never letterboxes).
-void publish_view(double replay_time, bool seeking, const float position[3],
-                  const float angles[3]) noexcept;
+// game's pitch, yaw and roll in degrees. `shot_phase` is the authored shot time while a
+// shot plays (negative otherwise): each playback restarts the lens at its first frame,
+// so every render of a shot sees the same drops. The picture fills the back buffer
+// (Dolly's framing control zooms the view; it never letterboxes).
+void publish_view(double replay_time, bool seeking, const float position[3], const float angles[3],
+                  double shot_phase) noexcept;
 
 // Present thread: whether the lens pass has anything to do this frame (lens rain on,
 // or drops left to clear after it was turned off).

@@ -32,6 +32,7 @@ struct View {
     bool valid = false;
     double time = 0.0;
     bool seeking = false;
+    double shot_phase = -1.0;
     float position[3]{};
     float angles[3]{};
 };
@@ -41,8 +42,11 @@ View gView;
 // ---- Present-thread state ----
 lens_rain::Simulator gSimulator;
 lens_rain::Renderer gRenderer;
+double gLastShotPhase = -1.0;
 
-lens_rain::Vec3 vec(float x, float y, float z) { return {x, y, z}; }
+lens_rain::Vec3 vec(float x, float y, float z) {
+    return {x, y, z};
+}
 
 // The game's AngleVectors: pitch down is positive, yaw turns left, roll banks.
 void basis(const float angles[3], lens_rain::Inputs& in) {
@@ -75,14 +79,15 @@ void poll_editor_block(const unsigned char* memory) noexcept {
                      [](const lens_rain::Wire& w) { return lens_rain::decode(w).has_value(); });
 }
 
-void publish_view(double replay_time, bool seeking, const float position[3],
-                  const float angles[3]) noexcept {
+void publish_view(double replay_time, bool seeking, const float position[3], const float angles[3],
+                  double shot_phase) noexcept {
     if (!std::isfinite(replay_time) || !position || !angles)
         return;
     View next;
     next.valid = true;
     next.time = replay_time;
     next.seeking = seeking;
+    next.shot_phase = std::isfinite(shot_phase) ? shot_phase : -1.0;
     for (int i = 0; i < 3; ++i) {
         if (!std::isfinite(position[i]) || !std::isfinite(angles[i]))
             return;
@@ -140,7 +145,12 @@ void render(ID3D11Device* device, ID3D11DeviceContext* context,
 
         lens_rain::Inputs in;
         in.replay_time = view.time;
-        in.seeking = view.seeking;
+        // A shot that starts playing (or starts over) restarts the lens at that frame,
+        // so the lens never depends on the lead-in or on earlier playback.
+        const bool shot_started = view.shot_phase >= 0.0 &&
+                                  (gLastShotPhase < 0.0 || view.shot_phase + 1e-6 < gLastShotPhase);
+        gLastShotPhase = view.shot_phase;
+        in.seeking = view.seeking || shot_started;
         in.aspect = static_cast<float>(desc.Width) / static_cast<float>(desc.Height);
         in.position = vec(view.position[0], view.position[1], view.position[2]);
         basis(view.angles, in);
@@ -164,6 +174,7 @@ void render(ID3D11Device* device, ID3D11DeviceContext* context,
 void release() noexcept {
     gRenderer.release();
     gSimulator.clear();
+    gLastShotPhase = -1.0;
 }
 
 } // namespace dolly::lens_rain_runtime

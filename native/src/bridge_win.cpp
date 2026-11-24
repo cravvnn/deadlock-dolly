@@ -766,11 +766,12 @@ struct DemoState {
 };
 // View thread: the replay clock for the weather pass, with the heroes' origins when the
 // shot wants hero wakes (a dozen guarded reads).
-static void publish_weather_clock(const DemoState& demo, const confetti::Camera& camera) noexcept {
+static void publish_weather_clock(const DemoState& demo, const confetti::Camera& camera,
+                                  double shot_phase = -1.0) noexcept {
     // Lens rain reads the same clock and the camera this view rendered.
     const float origin[3]{camera.origin.x, camera.origin.y, camera.origin.z};
     const float angles[3]{camera.angles.pitch, camera.angles.yaw, camera.angles.roll};
-    lens_rain_runtime::publish_view(demo.time, demo.seeking, origin, angles);
+    lens_rain_runtime::publish_view(demo.time, demo.seeking, origin, angles, shot_phase);
     float origins[kEditorRosterPlayers][3];
     std::uint32_t count = 0;
     if (weather_runtime::wants_heroes()) {
@@ -1455,7 +1456,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         confetti::Camera camera{{original_xyz[0], original_xyz[1], original_xyz[2]},
                                 {original_angles[0], original_angles[1], original_angles[2]},
                                 original_fov};
-        publish_weather_clock(demo, camera);
+        publish_weather_clock(demo, camera, c.mode == std::uint32_t(Mode::Play) ? phase : -1.0);
         confetti::on_frame(demo.time, demo.playing, demo.seeking, &camera, confetti_enabled,
                            confetti_height, confetti_despawn, confetti_preset, confetti_intensity);
         player_capture::set_hidden_handles(0, 0, 5);
@@ -1620,7 +1621,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     status.applied_fov = fov;
     confetti::Camera confetti_camera{
         {xyz[0], xyz[1], xyz[2]}, {angles[0], angles[1], angles[2]}, float(fov)};
-    publish_weather_clock(demo, confetti_camera);
+    publish_weather_clock(demo, confetti_camera,
+                          c.mode == std::uint32_t(Mode::Play) ? phase : -1.0);
     confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera, confetti_enabled,
                        confetti_height, confetti_despawn, confetti_preset, confetti_intensity);
     if (c.mode == std::uint32_t(Mode::Play)) {

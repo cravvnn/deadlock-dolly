@@ -12,33 +12,55 @@ namespace {
 
 template <typename T> using Ptr = Microsoft::WRL::ComPtr<T>;
 
-// One drop or trail bead per instance: centre (u, v), radius, water.
+// One capsule of water per instance: a segment (u0, v0)-(u1, v1) with a radius. Drops
+// have round ends (a disc when the segment is a point, a teardrop while running);
+// runoff streaks have flat ends so consecutive pieces join without bulges.
 const char kWaterShaders[] = R"(
 cbuffer Params : register(b0) { float4 a; float4 b; float4 c; };
-StructuredBuffer<float4> drops : register(t0);
-struct V { float4 pos : SV_Position; float2 d : TEXCOORD0; float w : TEXCOORD1; };
+struct Water { float4 ends; float4 look; }; // ends: u0 v0 u1 v1; look: radius, water, flat
+StructuredBuffer<Water> drops : register(t0);
+struct V {
+    float4 pos : SV_Position;
+    float2 local : TEXCOORD0;   // along the segment, across it (picture heights)
+    float4 shape : TEXCOORD1;   // length, radius, water, flat
+    float4 frame : TEXCOORD2;   // segment direction (xy) and its perpendicular (zw)
+};
 V vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
-    const float2 corners[6] = { float2(-1,-1), float2(-1,1), float2(1,1),
-                                float2(-1,-1), float2(1,1), float2(1,-1) };
+    const float2 corners[6] = { float2(0,-1), float2(0,1), float2(1,1),
+                                float2(0,-1), float2(1,1), float2(1,-1) };
     float2 k = corners[vid];
-    float4 dr = drops[iid];
+    Water w = drops[iid];
     float aspect = a.x;
-    float2 centre = float2(dr.x / aspect * 2.0 - 1.0, 1.0 - 2.0 * dr.y);
-    float2 radius = float2(dr.z / aspect * 2.0, dr.z * 2.0);
+    float2 p0 = w.ends.xy, p1 = w.ends.zw;
+    float2 axis = p1 - p0;
+    float len = length(axis);
+    float2 dir = len > 1e-6 ? axis / len : float2(1.0, 0.0);
+    float2 perp = float2(-dir.y, dir.x);
+    float r = w.look.x;
+    float pad = w.look.z > 0.5 ? 0.0 : r;      // flat ends need no room past the ends
+    float along = lerp(-pad, len + pad, k.x);
+    float across = k.y * r;
+    float2 p = p0 + dir * along + perp * across;
     V o;
-    o.pos = float4(centre + k * radius, 0.0, 1.0);
-    o.d = float2(k.x, -k.y);
-    o.w = dr.w;
+    o.pos = float4(p.x / aspect * 2.0 - 1.0, 1.0 - 2.0 * p.y, 0.0, 1.0);
+    o.local = float2(along, across);
+    o.shape = float4(len, r, w.look.y, w.look.z);
+    o.frame = float4(dir, perp);
     return o;
 }
 float4 ps_main(V i) : SV_Target {
-    float q = dot(i.d, i.d);
+    float len = i.shape.x, r = i.shape.y;
+    float along = i.local.x;
+    if (i.shape.w > 0.5 && (along < 0.0 || along > len)) discard;
+    float2 d = float2(along - clamp(along, 0.0, len), i.local.y) / r;
+    float q = dot(d, d);
     if (q >= 1.0) discard;
-    float h = sqrt(1.0 - q);          // height of a spherical cap
-    float t = i.w * h;
+    float h = sqrt(1.0 - q);                    // height of the water's rounded surface
+    float t = i.shape.z * h;
     float edge = saturate((1.0 - q) * 6.0);
+    float2 slope = d.x * i.frame.xy + d.y * i.frame.zw;  // back to picture axes (v down)
     // rg: slope weighted by thickness, b: thickness, a: coverage
-    return float4(i.d * t, t, i.w * edge);
+    return float4(slope * t, t, i.shape.z * edge);
 }
 )";
 
@@ -63,17 +85,24 @@ float4 ps_main(float4 pos : SV_Position) : SV_Target {
     float thick = max(wv.b, 1e-4);
     float2 slope = wv.rg / thick;
     // A drop acts as a small lens: it shows a shrunken, flipped view of the
-    // scene behind it, so the sample moves against the slope.
-    float2 offset = -slope * refraction * 0.035 * float2(size.y / scene_size.x, size.y / scene_size.y);
+    // scene behind it, so the sample moves against the slope. The view stays
+    // mostly sharp; softness adds a little blur where the water is thick.
+    float2 offset = -slope * refraction * 0.11 * float2(size.y / scene_size.x, size.y / scene_size.y);
     float2 uv = pos.xy / scene_size + offset;
-    float lod = softness * lod_max * saturate(thick * 1.5);
+    float lod = softness * min(lod_max, 2.0) * saturate(thick * 1.2);
     float3 wet = scene.SampleLevel(linear_clamp, uv, lod).rgb;
-    float rim = saturate(dot(slope, slope));
-    wet *= lerp(1.0, 0.82, rim);                      // darker edges
-    wet += 0.05 * saturate(-slope.y) * saturate(thick);  // light from above
+    float edge = dot(slope, slope);
+    wet *= lerp(1.0, 0.6, edge * edge * edge);        // thin dark rim at the edge
+    // A small highlight from a light above and to the left of the lens.
+    float3 normal = normalize(float3(slope.x, -slope.y, 0.8));
+    float glint = pow(saturate(dot(normal, normalize(float3(-0.35, 0.55, 0.76)))), 48.0);
+    wet += 0.35 * glint * saturate(thick * 2.0);
     return float4(lerp(dry.rgb, wet, cover), dry.a);
 }
 )";
+
+// Floats per water instance (the shader's Water struct: ends and look).
+constexpr std::uint32_t kFloatsPerWater = 8;
 
 struct Constants {
     float a[4]; // aspect, refraction, softness, lod_max
@@ -335,14 +364,14 @@ bool Renderer::ensure_instances(ID3D11Device* device, std::uint32_t count) {
         return true;
     instances_.Reset();
     instances_view_.Reset();
-    const auto capacity = static_cast<std::uint32_t>(kMaxDrops + kMaxBeads);
+    const auto capacity = static_cast<std::uint32_t>(kMaxDrops * 2 + kMaxBeads);
     D3D11_BUFFER_DESC buffer{};
-    buffer.ByteWidth = capacity * 16;
+    buffer.ByteWidth = capacity * kFloatsPerWater * 4;
     buffer.Usage = D3D11_USAGE_DYNAMIC;
     buffer.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     buffer.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     buffer.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-    buffer.StructureByteStride = 16;
+    buffer.StructureByteStride = kFloatsPerWater * 4;
     D3D11_SHADER_RESOURCE_VIEW_DESC view{};
     view.Format = DXGI_FORMAT_UNKNOWN;
     view.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
@@ -365,18 +394,35 @@ bool Renderer::render(ID3D11Device* device, ID3D11DeviceContext* context,
 
     // Gather the water first: no drops means nothing to draw at all.
     std::vector<float> data;
-    data.reserve((simulator.drops().size() + simulator.beads().size()) * 4);
+    data.reserve((simulator.drops().size() * 2 + simulator.beads().size()) * kFloatsPerWater);
+    const float trail_width = 0.3f + 0.25f * (std::min)((std::max)(settings.trails, 0.0f), 1.0f);
+    // Trails first, so drops sit on top of the streak they leave.
+    for (const Bead& b : simulator.beads()) {
+        const float left = (std::min)((std::max)(b.life / b.max_life, 0.0f), 1.0f);
+        if (left > 0.0f && b.radius > 0.0f) // streaks thin as they dry
+            data.insert(data.end(), {b.u0, b.v0, b.u, b.v, b.radius * (0.5f + 0.5f * left),
+                                     0.7f * left, 1.0f, 0.0f});
+    }
     for (const Drop& d : simulator.drops()) {
         const float water = (std::min)((std::max)(d.water, 0.0f), 1.0f);
-        if (water > 0.0f && d.radius > 0.0f)
-            data.insert(data.end(), {d.u, d.v, d.radius, water});
+        if (!(water > 0.0f && d.radius > 0.0f))
+            continue;
+        float tail_u = d.u, tail_v = d.v;
+        if (d.sliding) {
+            // The streak still being laid down, from its start to the drop.
+            data.insert(data.end(),
+                        {d.tu, d.tv, d.u, d.v, d.radius * trail_width, 0.7f, 1.0f, 0.0f});
+            // A running drop stretches into a teardrop along its path.
+            const float speed = std::sqrt(d.vu * d.vu + d.vv * d.vv);
+            if (speed > 1e-5f) {
+                const float tail = (std::min)(speed * 0.06f, d.radius * 1.2f);
+                tail_u = d.u - d.vu / speed * tail;
+                tail_v = d.v - d.vv / speed * tail;
+            }
+        }
+        data.insert(data.end(), {tail_u, tail_v, d.u, d.v, d.radius, water, 0.0f, 0.0f});
     }
-    for (const Bead& b : simulator.beads()) {
-        const float water = 0.7f * (std::min)((std::max)(b.life / b.max_life, 0.0f), 1.0f);
-        if (water > 0.0f && b.radius > 0.0f)
-            data.insert(data.end(), {b.u, b.v, b.radius, water});
-    }
-    const auto count = static_cast<std::uint32_t>(data.size() / 4);
+    const auto count = static_cast<std::uint32_t>(data.size() / kFloatsPerWater);
     if (count == 0)
         return true;
 
@@ -415,7 +461,7 @@ bool Renderer::render(ID3D11Device* device, ID3D11DeviceContext* context,
     if (FAILED(context->Map(instances_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
         return fail("lens rain: map drops");
     std::memcpy(mapped.pData, data.data(),
-                (std::min<std::size_t>)(data.size(), instance_capacity_ * 4u) * 4);
+                (std::min<std::size_t>)(data.size(), instance_capacity_ * kFloatsPerWater) * 4);
     context->Unmap(instances_.Get(), 0);
 
     Constants constants{};

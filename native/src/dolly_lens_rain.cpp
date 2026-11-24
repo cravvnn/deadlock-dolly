@@ -11,9 +11,7 @@ namespace {
 constexpr float kBaseRate = 70.0f;
 // Interpolated inputs are snapped to this grid so the same moment produces
 // the same simulation inputs whether frames arrive at 30 or 120 per second.
-constexpr float kInputGrid = 4096.0f;
-// Forward camera speed (game units per second) that counts as 1.
-constexpr float kSpeedUnit = 400.0f;
+constexpr float kInputGrid = 256.0f;
 
 std::uint64_t mix(std::uint64_t x) {
     x += 0x9e3779b97f4a7c15ull;
@@ -49,10 +47,6 @@ float dot(const Vec3& a, const Vec3& b) {
 
 Vec3 lerp(const Vec3& a, const Vec3& b, float f) {
     return {a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.z + (b.z - a.z) * f};
-}
-
-Vec3 sub(const Vec3& a, const Vec3& b) {
-    return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
 Vec3 normalized(const Vec3& v, const Vec3& fallback) {
@@ -104,7 +98,7 @@ void Simulator::clear() {
     next_id_ = 1;
 }
 
-Simulator::Frame Simulator::frame_from(const Inputs& previous, const Inputs& current) {
+Simulator::Frame Simulator::frame_from(const Inputs& current) {
     Frame frame;
     frame.rain = snap(clampf(current.rain, 0.0f, 1.0f));
     frame.cover = snap(clampf(current.cover, 0.0f, 1.0f));
@@ -124,14 +118,8 @@ Simulator::Frame Simulator::frame_from(const Inputs& previous, const Inputs& cur
     frame.wind_u = snap(clampf(dot(wind, right), -2.0f, 2.0f));
     frame.wind_v = snap(clampf(-dot(wind, up), -2.0f, 2.0f));
     frame.wind_in = snap(clampf(-dot(wind, forward), 0.0f, 2.0f));
-
-    // Camera motion over one step.
-    const float inv = static_cast<float>(1.0 / kStepSeconds);
-    const Vec3 moved = sub(current.position, previous.position);
-    frame.speed_in = snap(clampf(dot(moved, forward) * inv / kSpeedUnit, 0.0f, 3.0f));
-    const Vec3 turned = sub(forward, normalized(previous.forward, forward));
-    frame.turn_u = snap(clampf(dot(turned, right) * inv, -8.0f, 8.0f));
-    frame.turn_v = snap(clampf(-dot(turned, up) * inv, -8.0f, 8.0f));
+    // Camera turns and forward speed are deliberately not inputs: they would come from
+    // per-frame samples, and a re-render must give the same drops.
     return frame;
 }
 
@@ -164,7 +152,7 @@ void Simulator::reset(const Settings& settings, const Inputs& inputs) {
     // already wet and the result only depends on the reset time.
     const std::int64_t target = step_for(inputs.replay_time);
     const std::int64_t first = step_for(inputs.replay_time - kWarmupSeconds);
-    const Frame frame = frame_from(inputs, inputs);
+    const Frame frame = frame_from(inputs);
     aspect_ = frame.aspect;
     for (std::int64_t index = first + 1; index <= target; ++index)
         step(settings, frame, index);
@@ -188,10 +176,8 @@ void Simulator::advance(const Settings& raw, const Inputs& inputs, const InputSo
     const double dt = now - last_time_;
     for (std::int64_t index = step_ + 1; index <= target; ++index) {
         const double at = static_cast<double>(index) * kStepSeconds;
-        const double before = at - kStepSeconds;
         const Inputs current = exact ? exact->at(at) : interpolated(inputs, at);
-        const Inputs previous = exact ? exact->at(before) : interpolated(inputs, before);
-        const Frame frame = frame_from(previous, current);
+        const Frame frame = frame_from(current);
         aspect_ = frame.aspect;
         step(settings, frame, index);
     }
@@ -204,7 +190,7 @@ void Simulator::advance(const Settings& raw, const Inputs& inputs, const InputSo
 }
 
 void Simulator::spawn(const Settings& s, const Frame& frame, std::int64_t index) {
-    const float impact = 1.0f + 0.8f * frame.speed_in + 0.6f * frame.wind_in;
+    const float impact = 1.0f + 0.6f * frame.wind_in;
     const float rate = s.amount * frame.rain * (1.0f - frame.cover) * kBaseRate * impact;
     const float expected = rate * static_cast<float>(kStepSeconds);
     if (!(expected > 0.0f))
@@ -221,6 +207,8 @@ void Simulator::spawn(const Settings& s, const Frame& frame, std::int64_t index)
         const float grain = unit(mix(h ^ 3));
         drop.radius = s.size * (0.0045f + 0.0170f * grain * grain * grain);
         drop.water = 1.0f;
+        drop.tu = drop.u;
+        drop.tv = drop.v;
 
         // A drop landing on another one joins it, keeping the volume.
         bool merged = false;
@@ -256,31 +244,33 @@ void Simulator::step(const Settings& s, const Frame& frame, std::int64_t index) 
     const float threshold = slide_radius(s);
     const float g_len =
         std::sqrt(frame.gravity_u * frame.gravity_u + frame.gravity_v * frame.gravity_v);
-    const float turning = std::sqrt(frame.turn_u * frame.turn_u + frame.turn_v * frame.turn_v);
     const float bead_life = 0.6f + 5.0f * s.trails;
 
     for (Drop& drop : drops_) {
         drop.water -= dt / drop_life;
+        const bool was_sliding = drop.sliding != 0;
         drop.sliding = 0;
         if (s.slide <= 0.0f || drop.radius <= threshold || g_len < 0.05f) {
             drop.vu = drop.vv = 0.0f;
             continue;
         }
         drop.sliding = 1;
+        if (!was_sliding) {
+            // Just started running: its trail starts here.
+            drop.tu = drop.u;
+            drop.tv = drop.v;
+            drop.travel = 0.0f;
+        }
         // Heavier drops run faster. The sideways wander changes every eighth
-        // of a second and grows while the camera turns.
+        // of a second.
         const float weight = std::min((drop.radius - threshold) / threshold, 3.0f);
         const std::uint64_t wiggle_key = static_cast<std::uint64_t>(index / 15);
-        const float wander = (unit(hash3(s.seed ^ 0x5a17u, drop.id, wiggle_key)) * 2.0f - 1.0f) *
-                             (0.35f + 0.5f * std::min(turning, 2.0f));
+        const float wander =
+            (unit(hash3(s.seed ^ 0x5a17u, drop.id, wiggle_key)) * 2.0f - 1.0f) * 0.35f;
         const float side_u = -frame.gravity_v, side_v = frame.gravity_u;
         const float accel = 0.9f * s.slide * weight;
-        drop.vu +=
-            (frame.gravity_u + 0.4f * frame.wind_u + wander * side_u - 0.05f * frame.turn_u) *
-            accel * dt;
-        drop.vv +=
-            (frame.gravity_v + 0.4f * frame.wind_v + wander * side_v - 0.05f * frame.turn_v) *
-            accel * dt;
+        drop.vu += (frame.gravity_u + 0.4f * frame.wind_u + wander * side_u) * accel * dt;
+        drop.vv += (frame.gravity_v + 0.4f * frame.wind_v + wander * side_v) * accel * dt;
         const float friction = 1.0f - 4.0f * dt;
         drop.vu *= friction;
         drop.vv *= friction;
@@ -295,20 +285,27 @@ void Simulator::step(const Settings& s, const Frame& frame, std::int64_t index) 
         drop.v += drop.vv * dt;
         drop.travel += speed * dt;
 
-        // Running water leaves a trail of small beads and loses volume.
-        if (s.trails > 0.0f && drop.travel > drop.radius * 0.7f) {
+        // Running water leaves a continuous streak behind it and loses volume. Each
+        // segment starts where the previous one ended, so the trail has no gaps.
+        if (s.trails > 0.0f && drop.travel > drop.radius * 1.2f) {
             drop.travel = 0.0f;
             if (beads_.size() < kMaxBeads) {
                 Bead bead;
+                bead.u0 = drop.tu;
+                bead.v0 = drop.tv;
                 bead.u = old_u;
                 bead.v = old_v;
                 bead.radius = drop.radius * (0.3f + 0.25f * s.trails);
                 bead.life = bead.max_life = bead_life;
                 beads_.push_back(bead);
-                const float lost = bead.radius * bead.radius * bead.radius * 0.5f;
+                const float du = bead.u - bead.u0, dv = bead.v - bead.v0;
+                const float length = std::sqrt(du * du + dv * dv);
+                const float lost = bead.radius * bead.radius * length * 0.12f;
                 const float volume = drop.radius * drop.radius * drop.radius - lost;
                 drop.radius = volume > 0.0f ? std::cbrt(volume) : 0.0f;
             }
+            drop.tu = old_u;
+            drop.tv = old_v;
         }
     }
 
@@ -355,13 +352,13 @@ std::uint64_t Simulator::state_hash() const {
     const std::uint64_t counts[2] = {drops_.size(), beads_.size()};
     hash_value(h, counts);
     for (const Drop& d : drops_) {
-        const float f[7] = {d.u, d.v, d.vu, d.vv, d.radius, d.water, d.travel};
+        const float f[9] = {d.u, d.v, d.vu, d.vv, d.radius, d.water, d.travel, d.tu, d.tv};
         hash_value(h, f);
         hash_value(h, d.id);
         hash_value(h, d.sliding);
     }
     for (const Bead& b : beads_) {
-        const float f[5] = {b.u, b.v, b.radius, b.life, b.max_life};
+        const float f[7] = {b.u, b.v, b.radius, b.life, b.max_life, b.u0, b.v0};
         hash_value(h, f);
     }
     return h;

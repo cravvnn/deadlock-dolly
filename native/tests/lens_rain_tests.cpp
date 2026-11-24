@@ -236,7 +236,8 @@ void editor_block() {
     lens_rain::Wire other = wire;
     other.start_tick = 4243;
     const auto next = lens_rain::decode(other);
-    expect(good && next && good->look.seed != next->look.seed, "each shot start gets its own drops");
+    expect(good && next && good->look.seed != next->look.seed,
+           "each shot start gets its own drops");
 
     lens_rain::Wire bad = wire;
     bad.size = 9.0f;
