@@ -91,9 +91,11 @@ constexpr char kBuild6793EngineHash[] =
 // Build 6801: independently reviewed named tables and complete accessor bodies.
 constexpr char kBuild6801EngineHash[] =
     "f7dd5763050e203361809360b4354ef3f768753bb6e43fb314d4822065d28da6";
+constexpr char kBuild6866EngineHash[] = "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f";
 constexpr char kBuild6864EngineHash[] = "179c1b91bf6555d22b0b991b5f8d3fbdc4536b6b8d8def0310fb9d26ee5e8cd2";
 constexpr char kBuild6861EngineHash[] = "cd066b699ac8cc2d74371f45d2854e562f52c9b66d8ccf1ed1b50cf49f8bd010";
 constexpr char kBuild6853EngineHash[] = "e5c84fc8f18a136858af9ec9fc1b2d5ddc745712f63988d58999def32426dcd9";
+constexpr char kSound6866Hash[] = "dd412055c28ac69bd4b28e3269ffd2906c5d97389aecd5a947b0069fdc3390ee";
 constexpr char kSound6864Hash[] = "f4dd8b65101495c89ba5e97a87b698bd051c80387d392eda1b50c163c7cebe2e";
 constexpr char kSound6861Hash[] = "1c8c499b7e1ad14bafddb657a956a7f6223ae0fbe046ba3f087102f4ed280acf";
 constexpr char kSound6853Hash[] = "a1a516ce5bb50167a7f259589eea5c6f824de5688e86433a9c170af5f691a488";
@@ -129,6 +131,9 @@ constexpr EngineLayout kEngine6726Layout{0x5b92b0, 0x4d7e88, 0x4e2790, 0x2d590, 
 constexpr EngineLayout kEngine6728Layout{0x5b92b0, 0x4d7e88, 0x4e2790, 0x2d590, 0x732c0,
                                          0x34ea0,  0x28b40,  0x34ee0,  0x73310};
 constexpr EngineLayout kEngine6853Layout{0x5b9430, 0x4d7e88, 0x4e27f0, 0x2d590, 0x732c0, 0x34ea0, 0x28b40, 0x34ee0, 0x73310};
+// Build 6866: CDemoPlayer accessors kept their RVAs; the demo pointer, both vtables and the
+// CEngineClient accessors moved. Named slot/body proofs, not carried offsets.
+constexpr EngineLayout kEngine6866Layout{0x5b9430, 0x4d8e88, 0x4e37c0, 0x2d560, 0x733b0, 0x34e70, 0x28b10, 0x34eb0, 0x73400};
 // Build 6864: every reviewed accessor, both tables and the demo pointer kept their RVAs.
 constexpr EngineLayout kEngine6861Layout{0x5b8430, 0x4d7e88, 0x4e27f0, 0x2d560, 0x73290, 0x34e70, 0x28b10, 0x34eb0, 0x732e0};
 EngineLayout gEngineLayout = kLegacyEngineLayout;
@@ -445,7 +450,7 @@ static bool module_matches(HMODULE module, const char* expected, std::uint32_t i
 static bool exact_sound_profile(HMODULE module) {
     return module_matches(module, kSoundSystemHash, 0x678000) ||
            module_matches(module, kSound6853Hash, 0x6c1000) ||
-           module_matches(module, kSound6864Hash, 0x6c0000);
+           module_matches(module, kSound6866Hash, 0x6c0000);
 }
 // Definitions published on the repository's default branch and cached by the
 // editor. Loaded once in the worker; everything else only reads it. Declared
@@ -472,6 +477,11 @@ camera_view::Cache gCameraCache;
 // published definitions entry may add another accepted engine identity that
 // reuses a named layout, but it can never override a compiled one.
 static bool resolve_engine_layout(HMODULE engine, EngineLayout& layout) {
+    if (module_matches(engine, kBuild6866EngineHash, 0x906000)) {
+        layout = kEngine6866Layout;
+        gReviewedMovieAudioEngine = true;
+        return true;
+    }
     if (module_matches(engine, kBuild6864EngineHash, 0x905000)) {
         layout = kEngine6861Layout;
         gReviewedMovieAudioEngine = true;
@@ -1990,10 +2000,13 @@ static DWORD WINAPI worker(void*) {
                 (module_matches(engine, kBuild6861EngineHash, 0x905000) &&
                  module_matches(sound_module, kSound6861Hash, 0x6c0000)) ||
                 (module_matches(engine, kBuild6864EngineHash, 0x905000) &&
-                 module_matches(sound_module, kSound6864Hash, 0x6c0000)),
+                 module_matches(sound_module, kSound6864Hash, 0x6c0000)) ||
+                (module_matches(engine, kBuild6866EngineHash, 0x906000) &&
+                 module_matches(sound_module, kSound6866Hash, 0x6c0000)),
                 module_matches(engine, kBuild6853EngineHash, 0x906000),
                 module_matches(engine, kBuild6861EngineHash, 0x905000),
-                module_matches(engine, kBuild6864EngineHash, 0x905000));
+                module_matches(engine, kBuild6864EngineHash, 0x905000),
+                module_matches(engine, kBuild6866EngineHash, 0x906000));
         };
         install_movie_audio(sound);
         // Hook and original trampoline remain resident until process exit. Losing

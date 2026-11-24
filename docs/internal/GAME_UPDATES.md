@@ -5,6 +5,33 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 24 build 6866 review
+
+Build 6866 changes `client.dll`, `server.dll`, `engine2.dll`, `tier0.dll`,
+`scenesystem.dll`, `soundsystem.dll`, `resourcesystem.dll`,
+`rendersystemdx11.dll` and `filesystem_stdio.dll`; the stock `gameinfo.gi`,
+cfg, video and UI payloads are unchanged. The 6865 binaries were not retained,
+so every module was reviewed directly against the frozen 6864 install (6865
+changed only the client and server); no separate 6865-to-6866 comparison is
+implied. Client camera, startup, Follow, effects, particle and replay-clock
+consumers relocated with exact masked bodies; the minimap jump table and two
+consumed mid-function sites were requalified individually. Engine `CDemoPlayer`
+accessors kept their RVAs while the demo pointer, both vtables and the
+`CEngineClient` accessors moved; the movie recorder table, recorder object,
+`host_framerate` registration and its framerate accessor moved (the accessor RVA
+is now selected per build instead of fixed). Tier0 kept its CCvar table, lookup,
+data and fourteen adapter methods; only the setter moved. Scene producer and
+sound owners are unchanged apart from relocations. The exact-server unlocker was
+rebuilt (`0x2ba0858`; slots `0x9aed9c`/`0x9aeda8`/`0x9b46e0`), passing 3
+compiled suites and 1231 actual-function pair/table checks; the 6865
+predecessor refuses the new pair.
+
+One bounded local check passed on build 6866: startup, Follow capabilities,
+four exact seeks, camera path playback, a 60-frame Color and paired Depth/EXR
+take and a 60-frame Players export with full decode, with normal exit,
+configuration and runtime restored and no new crash. Recorded game audio was
+not exercised live. This does not certify every replay, recording mode or driver.
+
 ## November 23 build 6865 review
 
 Build 6865 changes `client.dll`, `server.dll` and the Steam depot manifests;

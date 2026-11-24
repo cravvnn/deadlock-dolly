@@ -1428,3 +1428,8 @@ docs/RELEASE_NOTES_0.7.53-beta.md
 docs/RELEASE_NOTES_0.7.54-beta.md
 tests/test_capture_estimate.py
 docs/RELEASE_NOTES_0.7.55-beta.md
+native/profiles/deadlock-2026-11-24-6866-complete.json
+native/profiles/scenesystem-2026-11-24-6866.json
+native/profiles/soundsystem-2026-11-24-6866.json
+third_party/cvar_unlocker/unlocker-build-6866.patch
+docs/RELEASE_NOTES_0.7.56-beta.md

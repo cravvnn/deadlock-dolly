@@ -239,6 +239,13 @@ struct CvarLayout {
 };
 
 static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
+    // Build 6866 keeps the reviewed table, lookup and data RVAs; only the setter moved.
+    if (module_matches(tier0, "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7", 0x3fa000)) {
+        layout.table = 0x313208; layout.setter = 0x20fd10;
+        layout.find = 0x6c710; layout.data = 0x6c650;
+        layout.data_slot = 41; layout.extended = true;
+        return true;
+    }
     // Build 6864 keeps the reviewed 6861 table, setter, lookup and data RVAs.
     if (module_matches(tier0, "112d97c1380cff76a80d28eb8c2259fa2006113835b82e62ff948a6b26f0014c", 0x3fa000) ||
         module_matches(tier0, "29eae7e1e78245c64da8cb8ee7102df05cfc9c0c3181105d65c547f66e48bdf2", 0x3fa000)) {
