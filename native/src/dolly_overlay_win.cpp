@@ -746,7 +746,14 @@ void render_overlay(IDXGISwapChain* chain) {
     }
     auto* frame_user = const_cast<depth::SceneFrame*>(scene_sample);
     bool effects_handled = false;
-    if (reshade_enabled() || reshade_overlay_pending()) {
+    // The Effects layer's alpha comes from the difference between its black and white
+    // takes. ReShade shaders such as grading curves, grain or sharpening change the two
+    // differently and corrupt that alpha, so both takes are recorded ungraded. (Keyed DOF
+    // stays: it is the same linear blur in both takes, so the alpha is still exact.)
+    const auto plate = video::current_plate();
+    if (plate == video::Plate::EffectsBlack || plate == video::Plate::EffectsWhite) {
+        // clean_frame below records the ungraded frame.
+    } else if (reshade_enabled() || reshade_overlay_pending()) {
         // The manual ReShade API changes graphics state. Restore the exact
         // engine context before Dolly draws or the real Present continues.
         DeviceStateScope effects_scope;

@@ -9816,7 +9816,7 @@
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",
-      "sha256": "49fc1024fc43cdba4e49d291a704a22a7868c5b0552d05e0081d91ba18cf5c5b",
+      "sha256": "79651dc115b7383d0b45c7e68dd4d64ed6956bb576f707096286f797f88c8f67",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
