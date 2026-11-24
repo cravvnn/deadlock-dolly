@@ -1039,6 +1039,32 @@ int main(int argc, char** argv) {
         if (!out_dir.empty())
             CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_coating_shelter.png", vw, vh,
                                                    coated.data(), &err));
+        // Rain wets and pools only the open half; on this flat plane puddles take part of it.
+        coat_only.preset = dolly::env::AtmospherePreset::Rain;
+        coat_only.sim_time = 3.0f;
+        CHECK(renderer.render(ctx.Get(), grey_srv.Get(), ground_srv.Get(), out_rtv.Get(), top,
+                              coat_only, calm, nullptr, 0));
+        const auto rained = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        size_t wet_roofed = 0, wet_open = 0, pooled = 0;
+        for (uint32_t y = 0; y < vh; ++y)
+            for (uint32_t x = 0; x < vw; ++x) {
+                const uint8_t* q = rained.data() + (static_cast<size_t>(y) * vw + x) * 4;
+                const int diff =
+                    std::abs(int(q[0]) - 96) + std::abs(int(q[1]) - 96) + std::abs(int(q[2]) - 96);
+                if (x + margin < vw / 2)
+                    wet_roofed += diff > 6;
+                else if (x > vw / 2 + margin) {
+                    wet_open += diff > 6;
+                    pooled += int(q[1]) < 52; // water reads much darker than damp ground
+                }
+            }
+        std::printf("WARP rain shelter: %zu wet pixels under the roof, %zu in the open, %zu "
+                    "pooled\n",
+                    wet_roofed, wet_open, pooled);
+        CHECK(wet_roofed == 0 && wet_open > frame_px / 20 && pooled > 0 && pooled < wet_open);
+        if (!out_dir.empty())
+            CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_rain_shelter.png", vw, vh,
+                                                   rained.data(), &err));
         calm.shutdown();
     }
 
@@ -1241,6 +1267,83 @@ int main(int argc, char** argv) {
                     100.0 * visible / frame_px);
         CHECK(net_half != net_full); // the half-resolution path really ran
         CHECK(mean < 1.5 && visible < frame_px / 20);
+    }
+
+    // 7j) Rain on the ground: dry at the shot start, wetter as it goes on; raindrop rings move
+    //     with the replay time and repeat exactly at the same time; heroes stay dry.
+    {
+        dolly::weather::Settings rain =
+            dolly::weather::preset_settings(dolly::weather::Preset::RainStorm);
+        rain.build_up = 60.0f;
+        dolly::weather::Resolved res = dolly::weather::resolve(rain);
+        res.render.sim_time = 10.6f;
+        res.render.density_scale = 0.0f; // no haze: isolate the ground
+        res.render.enable_coating = false;
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        const auto dry = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        res.render.enable_coating = true;
+        const double ages[3] = {0.0, 20.0, 60.0};
+        size_t wet[3] = {};
+        double darkened[3] = {};
+        std::vector<uint8_t> frames[3];
+        for (int k = 0; k < 3; ++k) {
+            res.render.coating_growth = dolly::weather::coating_growth(rain, ages[k]);
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            frames[k] = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            wet[k] = changed_pixels(dry, frames[k]);
+            for (size_t i = 0; i < dry.size(); i += 4)
+                darkened[k] += (int(dry[i]) + dry[i + 1] + dry[i + 2]) -
+                               (int(frames[k][i]) + frames[k][i + 1] + frames[k][i + 2]);
+        }
+        std::printf("WARP rain ground: %.2f%% / %.2f%% / %.2f%% of pixels wet at 0 / 20 / 60 s, "
+                    "mean darkening %.2f / %.2f / %.2f\n",
+                    100.0 * wet[0] / frame_px, 100.0 * wet[1] / frame_px,
+                    100.0 * wet[2] / frame_px, darkened[0] / frame_px, darkened[1] / frame_px,
+                    darkened[2] / frame_px);
+        // Soaking saturates early; pools keep spreading, so the ground keeps darkening.
+        CHECK(frames[0] == dry);
+        CHECK(wet[1] > frame_px / 200 && darkened[2] > darkened[1] && darkened[1] > 0.0);
+
+        // The same replay time draws the same rings; half a second later they have moved.
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == frames[2]);
+        res.render.sim_time = 11.1f;
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        const auto later = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        const size_t rippled = changed_pixels(frames[2], later);
+        std::printf("WARP rain ripples: %zu pixels change over half a second\n", rippled);
+        CHECK(rippled > 0);
+        res.render.sim_time = 10.6f;
+
+        // Puddles mirror the frame only where reflections are allowed (the Color plate);
+        // without them they mirror the sky alone, and the pools themselves stay put.
+        res.render.puddle_reflections = false;
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        const auto sky_only = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        res.render.puddle_reflections = true;
+        const size_t mirrored = changed_pixels(sky_only, frames[2]);
+        std::printf("WARP rain reflections: %zu pixels mirror the frame (%zu wet without)\n",
+                    mirrored, changed_pixels(dry, sky_only));
+        CHECK(mirrored > 0 && mirrored < wet[2]);
+
+        res.render.heroes[0][0] = hero_pos[0];
+        res.render.heroes[0][1] = hero_pos[1];
+        res.render.heroes[0][2] = hero_pos[2];
+        res.render.hero_count = 1;
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        const auto masked = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        std::printf("WARP rain hero mask: %zu pixels kept dry around the hero\n",
+                    changed_pixels(frames[2], masked));
+        CHECK(changed_pixels(dry, masked) < wet[2]);
+        if (!out_dir.empty())
+            CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_rain_ground.png", vw, vh,
+                                                   frames[2].data(), &err));
     }
 
     // 8) Optionally export visual verification PNGs

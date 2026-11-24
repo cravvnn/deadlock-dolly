@@ -103,7 +103,16 @@ void maybe_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Textur
                 if (label.empty())
                     label = "now";
                 std::filesystem::remove(request, ec);
-                write_snapshot(device, ctx, back_buffer, dir / ("snap-" + label + ".bmp"));
+                if (write_snapshot(device, ctx, back_buffer, dir / ("snap-" + label + ".bmp"))) {
+                    // The replay time each frame was drawn at, so a script can tell a running
+                    // weather clock from a frozen one.
+                    if (FILE* f = _wfopen((dir / L"snaps.txt").c_str(), L"ab")) {
+                        std::fprintf(f, "%s time %.4f playing %d\n", label.c_str(),
+                                     gReplayTime.load(std::memory_order_relaxed),
+                                     gPlaying.load(std::memory_order_relaxed) ? 1 : 0);
+                        std::fclose(f);
+                    }
+                }
             }
         }
         if (gSnap.written >= 8)
@@ -833,6 +842,10 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
             video::wants_fixed_step();
         resolved.render.march_steps = exporting ? 128 : 64;
         resolved.render.allow_half_res = !exporting; // exports always march at full size
+        // Puddles mirror the frame only in the full-colour picture; the World and Effects
+        // plates keep the sky's sheen, so no plate carries another plate's content.
+        resolved.render.puddle_reflections =
+            plate == video::Plate::Unspecified || plate == video::Plate::Color;
         gpu.env.render(ctx, gpu.color_srv.Get(), gpu.depth_srv.Get(), target, camera,
                        resolved.render, gpu.solver, nullptr, 0);
         profiler.mark(ctx);

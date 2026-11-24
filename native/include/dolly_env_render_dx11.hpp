@@ -66,6 +66,9 @@ struct EnvRenderParams {
     static constexpr uint32_t kMaxCoatingHeroes = 12;
     float heroes[kMaxCoatingHeroes][3] = {};
     uint32_t hero_count = 0;
+    // Rain puddles mirror the frame itself (screen-space reflections) only when this is
+    // set; otherwise they mirror the sky alone. Off for layer plates other than Color.
+    bool puddle_reflections = true;
     // Safety net: above this many output pixels, march at half resolution and rebuild each
     // pixel from it, re-marching depth edges at full resolution. Exports turn it off.
     bool allow_half_res = true;

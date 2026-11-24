@@ -59,7 +59,7 @@ cbuffer EnvConstants : register(b0) {
     float4 sunColor;      // rgb sun light, w enableEmitterPlumes
     float4 ambientColor;  // rgb sky/ambient, w nearClip
     float4 thinColor;     // rgb thin scatter albedo, w farClip
-    float4 denseColor;    // rgb dense scatter albedo, w unused
+    float4 denseColor;    // rgb dense scatter albedo, w 1 = puddles reflect the frame
     float4 coatingInfo;   // x growth 0..1, y drift strength, z steady wind speed, w 1 = gpuView
     float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w unused
     float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
@@ -93,6 +93,7 @@ Texture2D<float> driftMap : register(t11);   // drift potential 0..2, stored hal
 RWTexture3D<float> sunBakeOut : register(u0);
 
 static float4x4 gInvViewProj;
+static float4x4 gViewProj;
 static float3 gCamPos;
 
 // The camera comes from the constant buffer, or (coatingInfo.w) from a view the GPU
@@ -101,10 +102,12 @@ bool LoadView() {
     if (coatingInfo.w > 0.5) {
         ViewData v = gpuView[0];
         gInvViewProj = v.invViewProj;
+        gViewProj = v.viewProj;
         gCamPos = v.cameraPos.xyz;
         return v.cameraPos.w > 0.5;
     }
     gInvViewProj = invViewProj;
+    gViewProj = viewProj;
     gCamPos = cameraPos.xyz;
     return true;
 }
@@ -338,34 +341,209 @@ float HeroMask(float3 p) {
     return m;
 }
 
+// The highest floor of map cell q at or below zLim, or fallback when it has none.
+float FloorBelowCell(int2 q, float zLim, float fallback) {
+    float4 codes = floorZMap.Load(int3(q, 0)) * 65535.0;
+    [unroll] for (int i = 0; i < 4; ++i) {
+        if (codes[i] < 0.5) continue;
+        float h = floorDecode.x + (codes[i] - 1.0) / 65534.0 * floorDecode.y;
+        if (h <= zLim) return h;
+    }
+    return fallback;
+}
+
+// The floor below p blended between the four nearest cells (those within a curb's step of
+// this cell's floor), so heights read from the map have no per-cell stairs.
+float SampleFloorBelowSmooth(float3 p) {
+    bool hasFloor;
+    float ref = SampleFloorBelow(p, hasFloor);
+    float2 uv = MapUV(p.xy);
+    if (!OnMap(uv)) return ref;
+    uint mw, mh;
+    floorZMap.GetDimensions(mw, mh);
+    float2 g = uv * float2(mw, mh) - 0.5;
+    int2 b = int2(floor(g));
+    float2 f = g - float2(b);
+    float sum = 0.0, wsum = 0.0;
+    [unroll] for (int k = 0; k < 4; ++k) {
+        int2 o = int2(k & 1, k >> 1);
+        int2 q = clamp(b + o, int2(0, 0), int2(mw - 1, mh - 1));
+        float h = FloorBelowCell(q, p.z + 16.0, ref);
+        float w = (o.x ? f.x : 1.0 - f.x) * (o.y ? f.y : 1.0 - f.y);
+        w *= step(abs(h - ref), 24.0);
+        sum += h * w;
+        wsum += w;
+    }
+    return wsum > 1e-4 ? sum / wsum : ref;
+}
+
+// Round specks (glints, flecks) fixed on the ground: `density` of the cell x cell squares
+// hold one. A speck spreads over at least a pixel and dims to keep its energy, so far
+// away specks fade into the average instead of flickering as squares.
+float RoundSpeck(float3 p, float cell, float density, float footprint, float seed) {
+    float3 c = float3(floor(p.xy / cell), floor(p.z / 64.0));
+    if (Hash3(c + seed) > density) return 0.0;
+    float2 center = (c.xy + 0.2 + 0.6 * float2(Hash3(c + seed + 1.7), Hash3(c + seed + 3.1))) * cell;
+    float r = max(0.3, footprint * 0.7);
+    float d = length(p.xy - center);
+    return (1.0 - smoothstep(r * 0.4, r, d)) * saturate(0.09 / (r * r));
+}
+
 // How high a drift banks against a wall at full cover, in world units.
 float BankHeight(int preset) {
-    if (preset == 6) return 34.0; // snow
-    if (preset == 1) return 22.0; // sandstorm sand
-    if (preset == 2) return 12.0; // dust
-    if (preset == 4) return 10.0; // ash
+    if (preset == 6) return 18.0; // snow
+    if (preset == 1) return 12.0; // sandstorm sand
+    if (preset == 2) return 7.0;  // dust
+    if (preset == 4) return 6.0;  // ash
     return 0.0;
 }
 
-// Rain wetness: darker porous albedo and a crisp Fresnel sheen on open, up-facing ground.
-float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
-                    float coat, float open) {
-    float upMask = smoothstep(0.28, 0.78, surfNormal.z);
-    float noise = Fbm3(surfPos * 0.0085);
-    float threshold = 1.0 - 1.25 * coat;
-    float cov = smoothstep(threshold, threshold + 0.25, noise) * saturate(coat * 4.0) * upMask * open;
-    if (cov <= 0.001) return baseColor;
-    float fresnel = pow(1.0 - saturate(dot(surfNormal, viewDir)), 4.0);
-    float3 wet = baseColor * lerp(1.0, 0.62, cov);
-    float3 spec = (ambientColor.rgb + sunColor.rgb * 0.4) * fresnel * cov * 0.55;
-    return wet + spec;
+)HLSL"
+                                  R"HLSL(
+// The sky a wet surface mirrors when nothing on screen is in the way: the ambient sky,
+// brighter toward the horizon, with the sun's glint.
+float3 SkyReflection(float3 r) {
+    float up = saturate(r.z);
+    float3 horizon = ambientColor.rgb * 1.15 + sunColor.rgb * 0.12;
+    float3 zenith = ambientColor.rgb * 0.8;
+    float s = saturate(dot(r, sunDir.xyz));
+    return lerp(horizon, zenith, sqrt(up)) + sunColor.rgb * (pow(s, 900.0) * 5.0 + pow(s, 48.0) * 0.2);
 }
 
+// How far the point q lies behind what the frame shows at its pixel (> 0 = behind), and
+// that pixel's uv. False when q leaves the screen or is behind the camera.
+bool ReflectProbe(float3 q, out float behind, out float2 uv) {
+    behind = -1.0;
+    uv = float2(0.0, 0.0);
+    float4 clip = mul(gViewProj, float4(q, 1.0));
+    if (clip.w <= 1e-3) return false;
+    float2 ndc = clip.xy / clip.w;
+    if (any(abs(ndc) > 1.0)) return false;
+    uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    float2 px = uv * screenInfo.xy - 0.5;
+    float d = ReadDepthPx(px);
+    if (IsSky(d)) return true; // nothing on screen there: keep marching
+    behind = length(q - gCamPos) - length(WorldFromPixelDepth(px, d) - gCamPos);
+    return true;
+}
+
+// What a puddle at p mirrors along r: rgb, and a = how much of it came from the frame
+// itself (0 = the sky only). With reflections allowed, the ray marches through the frame
+// (12 growing steps to about 600 u, then 4 halvings); anything it misses, leaves the
+// screen for, or finds only faintly falls back smoothly to the sky.
+float4 PuddleReflection(float3 p, float3 r, float footprint) {
+    float3 sky = SkyReflection(r);
+    if (denseColor.w < 0.5) return float4(sky, 0.0);
+    float prevT = 0.0, t = 4.0, dt = 10.0;
+    [loop] for (int i = 0; i < 12; ++i) {
+        float behind;
+        float2 uv;
+        if (!ReflectProbe(p + r * t, behind, uv)) break;
+        float thickness = max(24.0, dt * 1.5);
+        if (behind > 0.0 && behind < thickness) {
+            float a = prevT, b = t;
+            [unroll] for (int k = 0; k < 4; ++k) {
+                float m = 0.5 * (a + b);
+                float bm;
+                float2 um;
+                if (ReflectProbe(p + r * m, bm, um) && bm > 0.0) {
+                    b = m;
+                    uv = um;
+                } else {
+                    a = m;
+                }
+            }
+            float2 border = min(uv, 1.0 - uv);
+            float conf = smoothstep(0.0, 0.06, min(border.x, border.y)) *
+                         (1.0 - smoothstep(380.0, 600.0, b));
+            float3 hit = sceneColor.SampleLevel(linearClamp, uv, 0).rgb;
+            return float4(lerp(sky, hit, conf), conf);
+        }
+        prevT = t;
+        t += dt;
+        dt *= 1.25;
+    }
+    return float4(sky, 0.0);
+}
+
+// How much of a point is standing water: flat, open ground fills first in broad hollows,
+// creases and the gutters below the street deck, and the pools spread as the rain goes on.
+float PuddleAmount(float3 p, float3 n, float coat, float open, float cavity) {
+    float flat = smoothstep(0.93, 0.99, n.z);
+    if (flat * open <= 0.001) return 0.0;
+    float2 uv = MapUV(p.xy);
+    float gutter = 0.0;
+    if (OnMap(uv)) {
+        float below = streetZMap.SampleLevel(linearClamp, uv, 0) - p.z;
+        gutter = saturate((below - 1.0) / 6.0) * (1.0 - step(48.0, below));
+    }
+    float hollow = Fbm3(float3(p.xy * 0.0035, 7.3));
+    float field = hollow + 0.3 * gutter;
+    // About an eighth of open flat ground at the storm's default cover, half at full.
+    float threshold = 0.95 - 0.45 * coat;
+    return smoothstep(threshold, threshold + 0.05, field) * flat * open;
+}
+
+// Raindrop rings on standing water: the surface slope (xy) from a few hashed drops per
+// 14 u cell, each ring spreading and fading over its own cycle. Stateless in time.
+float2 RippleSlope(float2 xy, float time, float rate) {
+    float2 slope = float2(0.0, 0.0);
+    [unroll] for (int layer = 0; layer < 3; ++layer) {
+        float2 shift = float2(0.37, 0.71) * layer;
+        float2 q = xy / 14.0 + shift;
+        float2 cell = floor(q);
+        float h = Hash3(float3(cell, layer * 13.0));
+        float h2 = Hash3(float3(cell, layer * 13.0 + 5.0));
+        float2 center = (cell + 0.5 + (float2(h, h2) - 0.5) * 0.3 - shift) * 14.0;
+        float phase = frac(time * rate + h * 7.0 + h2 * 3.0);
+        float2 d = xy - center;
+        float dist = length(d);
+        float x = (dist - phase * 6.0) / 0.9;
+        float fade = (1.0 - phase) * (1.0 - phase);
+        slope += d / max(dist, 1e-3) * (-2.0 * x * exp(-x * x)) * fade;
+    }
+    return slope;
+}
+
+// Rain: open ground darkens as it soaks and takes a thin sheen; standing water pools on
+// flat ground and mirrors the sky (and, where allowed, the frame), stirred by raindrops.
+float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
+                    float coat, float open, float cavity, float footprint) {
+    float upMask = smoothstep(0.28, 0.78, surfNormal.z);
+    float wet = saturate(coat * 3.0) * open * lerp(0.3, 1.0, upMask);
+    if (wet <= 0.001) return baseColor;
+    float3 color = baseColor * lerp(1.0, 0.66, wet);
+
+    // Thin water film: a rough, faint mirror on every wet up-facing surface.
+    float nv = saturate(dot(surfNormal, viewDir));
+    float film = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
+    color += SkyReflection(reflect(-viewDir, surfNormal)) * film * wet * upMask * 0.3;
+
+    float puddle = PuddleAmount(surfPos, surfNormal, coat, open, cavity);
+    if (puddle <= 0.001) return color;
+    // Drops only where a pixel can resolve the rings; they stir harder in heavier rain.
+    float stir = (1.0 - saturate(footprint / 1.2)) * saturate(styleA.y) * open;
+    float2 slope = stir > 0.001 ? RippleSlope(surfPos.xy, windTime.z, 0.6 + 0.6 * styleA.y) * stir
+                                : float2(0.0, 0.0);
+    float3 pn = normalize(float3(-slope * 0.35, 1.0));
+    float pnv = saturate(dot(pn, viewDir));
+    float fresnel = 0.02 + 0.98 * pow(1.0 - pnv, 5.0);
+    float4 mirror = PuddleReflection(surfPos, reflect(-viewDir, pn), footprint);
+    // The light this pixel already has dims the sun's glint in shadow.
+    float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
+    float lit = lerp(0.35, 1.0, saturate(luma / 0.25));
+    float3 water = baseColor * 0.42;
+    float3 pool = lerp(water, mirror.rgb * lerp(lit, 1.0, mirror.a), fresnel);
+    return lerp(color, pool, puddle);
+}
+
+)HLSL"
+                                  R"HLSL(
 // Snow, sand and ash cover. Where it settles comes from the per-shot drift potential, so
 // it repeats exactly at every replay time; every visible edge comes from this pixel's
 // depth and world-fixed noise. Detail finer than a pixel fades instead of crawling.
 float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
-                           float cavity, float hitDist) {
+                           float cavity, float hitDist, float lumaAround) {
     // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
     float coat = styleB.y * coatingInfo.x;
     if (sunDir.w < 0.5 || coat <= 0.001) return baseColor;
@@ -375,43 +553,52 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     int preset = int(styleA.x + 0.5);
     float2 uv = MapUV(surfPos.xy);
     float open = SkyOpenAt(uv, surfPos.z);
-    if (preset == 5)
-        return lerp(ApplyWetness(baseColor, surfPos, surfNormal, viewDir, coat, open), baseColor,
-                    heroMask);
-
     // World size of one pixel at this distance (about a 90 degree view).
     float footprint = hitDist * 2.0 * screenInfo.w;
+    if (preset == 5)
+        return lerp(ApplyWetness(baseColor, surfPos, surfNormal, viewDir, coat, open, cavity,
+                                 footprint),
+                    baseColor, heroMask);
+
     float upMask = smoothstep(0.28, 0.78, surfNormal.z);
 
     float amount = coat * lerp(1.0, DriftAt(uv), coatingInfo.y);
 
-    // Top cover: thin cover settles into creases and corners first, full cover hides them.
+    // Top cover. Nothing here reads depth differences (creases): the game's depth bands
+    // with distance, and anything built on it drew rings around the camera.
     float noise = Fbm3(surfPos * 0.0085);
-    float crease = clamp(cavity, -1.0, 1.0) * 0.24 * (1.0 - saturate(amount));
     float threshold = 1.0 - 1.25 * amount;
     float soft = 0.22 + saturate(footprint / 48.0) * 0.3;
-    float top = smoothstep(threshold, threshold + soft, noise + crease) *
+    float top = smoothstep(threshold, threshold + soft, noise) *
                 saturate(amount * 4.0) * upMask * open;
     // Fine breakup along the cover's edge, only where a pixel can resolve it.
-    float fine = 1.0 - saturate(footprint / 5.0);
-    top = saturate(top + (ValueNoise3(surfPos * 0.11) - 0.5) * 1.6 * fine * top * (1.0 - top));
+    float fine = 1.0 - saturate(footprint / 4.0);
+    top = saturate(top + (Fbm3(float3(surfPos.xy * 0.07, 3.1)) - 0.5) * 1.6 * fine * top *
+                             (1.0 - top));
+    // Blown cover never lies as one even sheet: broad thin patches let the ground show.
+    float patchy = (preset == 6) ? 0.12 : 0.4;
+    top *= 1.0 - patchy * smoothstep(0.35, 0.7, ValueNoise3(float3(surfPos.xy * 0.0045, 11.0)));
 
     // Wall foot: a steep surface low above its floor is buried by a bank whose height
-    // follows the drift just out from the wall, where the sky is open.
+    // follows the drift just out from the wall, where the sky is open. The floor height
+    // is blended between cells and the bank's top line varies only along the wall, so the
+    // bank stays one smooth line.
     float wall = 0.0;
     float bankMax = BankHeight(preset);
-    if (bankMax > 0.0 && upMask < 0.999) {
+    float steep = 1.0 - smoothstep(0.2, 0.5, surfNormal.z);
+    if (bankMax > 0.0 && steep > 0.001) {
         float2 outXY = surfPos.xy + normalize(surfNormal.xy + 1e-5) * 28.0;
         float2 outUV = MapUV(outXY);
         float outOpen = SkyOpenAt(outUV, surfPos.z);
-        bool hasFloor;
-        float floorZ = SampleFloorBelow(float3(outXY, surfPos.z), hasFloor);
+        float floorZ = SampleFloorBelowSmooth(float3(outXY, surfPos.z));
         float above = surfPos.z - floorZ;
         float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
-        float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.6);
-        float bankLine = bank * (0.6 + 0.8 * Fbm3(surfPos * float3(0.04, 0.04, 0.015)));
-        wall = (1.0 - upMask) * outOpen * step(-6.0, above) *
-               (1.0 - smoothstep(bankLine * 0.7, bankLine + 0.5, above));
+        float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.3);
+        float bankLine = bank * (0.75 + 0.5 * ValueNoise3(float3(surfPos.xy * 0.018, 5.0)));
+        // Full at the foot, thinning over the bank's upper part to a soft top.
+        float edge = 1.5 + footprint * 1.5;
+        wall = steep * outOpen * smoothstep(-10.0, -4.0, above) *
+               (1.0 - smoothstep(bankLine * 0.55, bankLine + edge, above));
     }
 
     float cov = max(top, wall) * (1.0 - heroMask);
@@ -428,8 +615,10 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // The game's light on this surface, read from its luma against an average ground
     // albedo, so shadows, lamps and dusk still read through the cover; a little of the
     // light's colour carries over too.
+    // lumaAround averages a few pixels, so the ground's own fine texture and painted
+    // markings do not print through the cover; broad shadows and lamps still do.
     float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
-    float light = lerp(0.16, 1.12, saturate(pow(saturate(luma / 0.32), 0.8)));
+    float light = lerp(0.3, 1.08, saturate(pow(saturate(lumaAround / 0.32), 0.65)));
     float3 chroma = clamp(baseColor / max(luma, 1e-3), 0.0, 2.0);
     float3 lightTint = lerp(float3(1.0, 1.0, 1.0), chroma, 0.3);
 
@@ -437,40 +626,39 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float2 perp = float2(-wdir.y, wdir.x);
     float shadeMul = 1.0;
     float3 add = float3(0.0, 0.0, 0.0);
-    float detail = 1.0 - saturate(footprint / 2.5);
     if (preset == 6) {
-        // Snow: soft undulation, cool shade in low light, and a few world-fixed grains
+        // Snow: soft undulation, cool shade in low light, and a few tiny world-fixed glints
         // that catch the light as the camera moves.
-        shadeMul = 0.94 + 0.12 * Fbm3(surfPos * 0.03);
+        shadeMul = 0.95 + 0.1 * ValueNoise3(float3(surfPos.xy * 0.02, 1.0));
         lightTint *= lerp(float3(0.86, 0.92, 1.06), float3(1.0, 1.0, 1.0), saturate(light));
-        float3 cell = floor(surfPos / 1.6);
-        float grain = Hash3(cell);
-        float facing = Hash3(cell + floor(viewDir * 5.0) * 17.0);
-        add += sunColor.rgb * step(0.975, grain) * step(0.6, facing) * detail * upMask * 0.9 *
-               light;
+        float glint = RoundSpeck(surfPos, 4.0, 0.06, footprint, 17.0);
+        float facing = Hash3(floor(surfPos / 4.0) + floor(viewDir * 5.0) * 17.0);
+        add += sunColor.rgb * glint * step(0.5, facing) * upMask * 0.7 * light;
     } else if (preset == 1 || preset == 2) {
-        // Sand: ripples across the wind, lit on their sun-facing side.
-        float warp = ValueNoise3(float3(surfPos.xy * 0.012, 0.0)) * 6.0;
-        float phase = dot(surfPos.xy, wdir) / 7.0 + warp + dot(surfPos.xy, perp) * 0.01;
+        // Sand: low ripples across the wind, lit on their sun-facing side, uneven in
+        // strength and gone before they would shimmer.
+        float warp = Fbm3(float3(surfPos.xy * 0.008, 2.0)) * 9.0;
+        float phase = dot(surfPos.xy, wdir) / 9.0 + warp;
         float sunAlong = dot(normalize(sunDir.xy + 1e-4), wdir);
-        float ripple = 1.0 - saturate(footprint / 3.5);
-        shadeMul = 1.0 + 0.16 * cos(phase * 6.2831853) * sunAlong * ripple * upMask +
-                   0.1 * (Fbm3(surfPos * 0.02) - 0.5);
+        float ripple = (1.0 - saturate((footprint - 0.2) / 0.6)) *
+                       smoothstep(0.3, 0.65, Fbm3(float3(surfPos.xy * 0.006, 9.0)));
+        shadeMul = 1.0 + 0.07 * cos(phase * 6.2831853) * sunAlong * ripple * upMask +
+                   0.1 * (Fbm3(float3(surfPos.xy * 0.015, 4.0)) - 0.5);
     } else if (preset == 4) {
-        // Ash: dark flecks over a blotchy layer.
-        float fleck = step(0.82, Hash3(floor(surfPos / 2.2)));
-        shadeMul = lerp(1.0, 0.55, fleck * detail) * (0.9 + 0.2 * Fbm3(surfPos * 0.03));
+        // Ash: soft dark flecks over a blotchy layer.
+        float fleck = RoundSpeck(surfPos, 5.0, 0.25, footprint, 29.0);
+        shadeMul = lerp(1.0, 0.6, fleck) * (0.9 + 0.2 * Fbm3(float3(surfPos.xy * 0.02, 6.0)));
     }
 
-    // Spindrift: where the wind runs fast, streaks of snow or sand skim over the cover.
+    // Spindrift: where the wind runs fast, soft bands of snow or sand skim over the cover.
     if ((preset == 6 || preset == 1 || preset == 2) && OnMap(uv)) {
         float speed = length(fluidState.SampleLevel(linearClamp, uv, 0).xy);
         float gust = saturate((speed - 120.0) / 380.0);
         if (gust > 0.01) {
-            float3 q = float3((dot(surfPos.xy, wdir) - windTime.z * speed * 0.9) * 0.012,
-                              dot(surfPos.xy, perp) * 0.06, windTime.z * 0.6);
-            float streak = smoothstep(0.55, 0.85, ValueNoise3(q));
-            add += coatAlbedo * light * streak * gust * 0.35 * upMask;
+            float3 q = float3((dot(surfPos.xy, wdir) - windTime.z * speed * 0.9) * 0.006,
+                              dot(surfPos.xy, perp) * 0.02, windTime.z * 0.4);
+            float streak = smoothstep(0.5, 0.8, Fbm3(q));
+            add += coatAlbedo * light * streak * gust * 0.22 * upMask;
         }
     }
 
@@ -819,8 +1007,22 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
              (OnMap(suv) && surfPos.z - streetZMap.SampleLevel(linearClamp, suv, 0) < 64.0))) {
             float cavity;
             float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir, cavity);
+            // On a floor the map knows, the ground faces up: depth-built normals tilt on the
+            // rows where the game's depth steps, which drew arcs around the camera.
+            bool hasFloor;
+            float onFloor = 1.0 - smoothstep(2.0, 8.0,
+                                             abs(surfPos.z - SampleFloorBelow(surfPos, hasFloor)));
+            surfNormal = normalize(lerp(surfNormal, float3(0.0, 0.0, 1.0),
+                                        onFloor * smoothstep(0.5, 0.8, surfNormal.z)));
+            float3 around = baseColor;
+            int2 lim = int2(screenInfo.xy) - 1;
+            around += sceneColor.Load(int3(clamp(ipx + int2(-4, -4), int2(0, 0), lim), 0)).rgb;
+            around += sceneColor.Load(int3(clamp(ipx + int2(4, -4), int2(0, 0), lim), 0)).rgb;
+            around += sceneColor.Load(int3(clamp(ipx + int2(-4, 4), int2(0, 0), lim), 0)).rgb;
+            around += sceneColor.Load(int3(clamp(ipx + int2(4, 4), int2(0, 0), lim), 0)).rgb;
+            float lumaAround = dot(around * 0.2, float3(0.2126, 0.7152, 0.0722));
             baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir, cavity,
-                                            hitDist);
+                                            hitDist, lumaAround);
         }
     }
 
@@ -1182,7 +1384,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
     cb.dense_color[0] = dense[0];
     cb.dense_color[1] = dense[1];
     cb.dense_color[2] = dense[2];
-    cb.dense_color[3] = 0.0f;
+    cb.dense_color[3] = params.puddle_reflections ? 1.0f : 0.0f;
 
     cb.coating_info[0] = std::clamp(params.coating_growth, 0.0f, 1.0f);
     cb.coating_info[1] = std::clamp(params.coating_drift, 0.0f, 1.0f);
