@@ -62,6 +62,10 @@ struct EnvRenderParams {
     float coating_growth = 1.0f;
     // How strongly wind moves the coating: drifts in still air, scoured in fast air.
     float coating_drift = 1.0f;
+    // Heroes the coating leaves clean: feet positions (world), at most kMaxCoatingHeroes.
+    static constexpr uint32_t kMaxCoatingHeroes = 12;
+    float heroes[kMaxCoatingHeroes][3] = {};
+    uint32_t hero_count = 0;
     // Safety net: above this many output pixels, march at half resolution and rebuild each
     // pixel from it, re-marching depth edges at full resolution. Exports turn it off.
     bool allow_half_res = true;
@@ -86,6 +90,10 @@ public:
                 uint32_t emitter_count);
 
     bool ready() const noexcept;
+
+    // The drift potential over the map window (see map_grid::bake_drift_potential), n x n
+    // values in 0..2. Until one is set (or after an empty one) the coating is even.
+    bool set_drift_map(uint32_t n, const float* values);
 
 private:
     struct Impl;

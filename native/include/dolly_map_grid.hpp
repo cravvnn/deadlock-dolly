@@ -127,6 +127,15 @@ bool load_or_bake_map_grid(const std::filesystem::path& vpk_path,
 // four nearest cells so leaving cover fades smoothly. 0 off the map.
 float cover_above(const MapGrid& grid, float x, float y, float z) noexcept;
 
+// Drift potential: how much snow, sand or ash settles in each cell compared with open
+// ground (1), from the map and the steady wind alone, so it is the same at every replay
+// time. Ground in the lee of a wall collects more, open wind-swept ground less, and cells
+// beside a wall bank up. `wind_x, wind_y` is the direction the wind blows toward (any
+// length); `wind_strength` 0..1 fades the wind's shaping in (0 = no lee or scour, only the
+// wall banks). Returns `out_n` x `out_n` values in 0..2, row-major like the grid.
+std::vector<float> bake_drift_potential(const MapGrid& grid, float wind_x, float wind_y,
+                                        float wind_strength, uint32_t out_n);
+
 // Writes a 3-panel diagnostic PNG (tops heightmap, street obstacles/roofs/openness,
 // and stacked floor layers) for visual inspection.
 bool write_map_grid_diagnostic_png(const std::filesystem::path& png_path, const MapGrid& grid,

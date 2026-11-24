@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 namespace dolly::env {
 using Microsoft::WRL::ComPtr;
@@ -62,8 +63,10 @@ cbuffer EnvConstants : register(b0) {
     float4 coatingInfo;   // x growth 0..1, y drift strength, z steady wind speed, w 1 = gpuView
     float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w unused
     float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
-    float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold
+    float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold,
+                          // z 1 = driftMap holds a drift potential, w hero count
     EmitterGPU emitters[EMITTERS];
+    float4 heroes[12];    // xyz feet position of a hero the coating leaves clean
 };
 
 Texture2D<float4> sceneColor : register(t0);
@@ -86,6 +89,7 @@ StructuredBuffer<ViewData> gpuView : register(t8);
 // height above the floor the ray is over, from -18 to the volume reach (volumeBounds.z).
 Texture3D<float> sunBake : register(t9);
 Texture2D<float4> halfMarch : register(t10); // safety net: half-resolution march
+Texture2D<float> driftMap : register(t11);   // drift potential 0..2, stored halved (UNORM16)
 RWTexture3D<float> sunBakeOut : register(u0);
 
 static float4x4 gInvViewProj;
@@ -141,7 +145,13 @@ float3 WorldFromPixelDepth(float2 px, float d) {
 }
 
 // Edge-preserving surface normal reconstruction from depth (Turanszki 2019 / atyuwen 2021).
-float3 CoatingBaseNormal(float2 pixel, float depth, float3 center, float3 fallback) {
+// cavity > 0 in a crease or corner (the neighbours rise above the surface), < 0 on an edge.
+float3 CoatingBaseNormal(float2 pixel, float depth, float3 center, float3 fallback,
+                         out float cavity) {
+    cavity = 0.0;
+    float3 bend[2];
+    float bendSpan[2];
+    bool both[2];
     // With depth rendered below the output size (upscaling), one output pixel steps would
     // land on the same depth texel and flatten the normal; step whole depth texels instead.
     uint dw, dh;
@@ -163,13 +173,25 @@ float3 CoatingBaseNormal(float2 pixel, float depth, float3 center, float3 fallba
         if (!left && !right) return fallback;
         float el = left ? abs(2.0 * dl1 - dl2 - depth) : 1e30;
         float er = right ? abs(2.0 * dr1 - dr2 - depth) : 1e30;
-        tangent[a] = (el < er) ? (center - WorldFromPixelDepth(l1, dl1))
-                               : (WorldFromPixelDepth(r1, dr1) - center);
+        float3 wl = left ? WorldFromPixelDepth(l1, dl1) : center;
+        float3 wr = right ? WorldFromPixelDepth(r1, dr1) : center;
+        tangent[a] = (el < er) ? (center - wl) : (wr - center);
+        both[a] = left && right;
+        bend[a] = 0.5 * (wl + wr) - center;
+        bendSpan[a] = max(0.5 * length(wr - wl), 1e-3);
     }
     float3 n = cross(tangent[0], tangent[1]);
     if (dot(n, n) < 1e-12) return fallback;
     n = normalize(n);
-    return dot(n, gCamPos - center) < 0.0 ? -n : n;
+    n = dot(n, gCamPos - center) < 0.0 ? -n : n;
+    float sum = 0.0, used = 0.0;
+    [unroll] for (int b = 0; b < 2; ++b) {
+        if (!both[b]) continue;
+        sum += dot(bend[b], n) / bendSpan[b];
+        used += 1.0;
+    }
+    cavity = used > 0.0 ? clamp(sum / used * 4.0, -1.0, 1.0) : 0.0;
+    return n;
 }
 
 float Hash3(float3 p) {
@@ -293,51 +315,167 @@ float RoofShadowAt(float2 uv, float z) {
     return lerp(0.38, 1.0, BlendCells(lit, f));
 }
 
-float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir) {
+)HLSL"
+                                  R"HLSL(
+// Drift potential at a map point: 1 on open ground, more in the lee of walls and at their
+// foot, less where the wind sweeps (see map_grid::bake_drift_potential). Even without one.
+float DriftAt(float2 uv) {
+    if (netInfo.z < 0.5 || !OnMap(uv)) return 1.0;
+    return driftMap.SampleLevel(linearClamp, uv, 0) * 2.0;
+}
+
+// 1 on a hero (feet to head, a little wider than the body), so cover never lands on one.
+float HeroMask(float3 p) {
+    float m = 0.0;
+    int count = int(netInfo.w + 0.5);
+    [loop] for (int i = 0; i < 12; ++i) {
+        if (i >= count) break;
+        float3 d = p - heroes[i].xyz;
+        float across = 1.0 - smoothstep(30.0, 42.0, length(d.xy));
+        float along = step(-12.0, d.z) * (1.0 - smoothstep(104.0, 118.0, d.z));
+        m = max(m, across * along);
+    }
+    return m;
+}
+
+// How high a drift banks against a wall at full cover, in world units.
+float BankHeight(int preset) {
+    if (preset == 6) return 34.0; // snow
+    if (preset == 1) return 22.0; // sandstorm sand
+    if (preset == 2) return 12.0; // dust
+    if (preset == 4) return 10.0; // ash
+    return 0.0;
+}
+
+// Rain wetness: darker porous albedo and a crisp Fresnel sheen on open, up-facing ground.
+float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
+                    float coat, float open) {
+    float upMask = smoothstep(0.28, 0.78, surfNormal.z);
+    float noise = Fbm3(surfPos * 0.0085);
+    float threshold = 1.0 - 1.25 * coat;
+    float cov = smoothstep(threshold, threshold + 0.25, noise) * saturate(coat * 4.0) * upMask * open;
+    if (cov <= 0.001) return baseColor;
+    float fresnel = pow(1.0 - saturate(dot(surfNormal, viewDir)), 4.0);
+    float3 wet = baseColor * lerp(1.0, 0.62, cov);
+    float3 spec = (ambientColor.rgb + sunColor.rgb * 0.4) * fresnel * cov * 0.55;
+    return wet + spec;
+}
+
+// Snow, sand and ash cover. Where it settles comes from the per-shot drift potential, so
+// it repeats exactly at every replay time; every visible edge comes from this pixel's
+// depth and world-fixed noise. Detail finer than a pixel fades instead of crawling.
+float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
+                           float cavity, float hitDist) {
     // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
     float coat = styleB.y * coatingInfo.x;
     if (sunDir.w < 0.5 || coat <= 0.001) return baseColor;
+    float heroMask = HeroMask(surfPos);
+    if (heroMask >= 0.999) return baseColor;
 
-    float2 uv = MapUV(surfPos.xy);
-    float upMask = smoothstep(0.28, 0.78, surfNormal.z);
-    float open = SkyOpenAt(uv, surfPos.z);
-    if (upMask * open <= 0.001) return baseColor;
-
-    // Snow, sand and ash drift into still air (the lee of walls) and are scoured
-    // where the wind runs fast; rain wetness ignores the wind.
     int preset = int(styleA.x + 0.5);
-    float drift = 1.0;
-    if (preset != 5 && OnMap(uv)) {
-        float speed = length(fluidState.SampleLevel(linearClamp, uv, 0).xy);
-        float scour = saturate(speed / max(coatingInfo.z * 1.6, 96.0));
-        drift = lerp(1.0, lerp(1.3, 0.4, scour), coatingInfo.y);
+    float2 uv = MapUV(surfPos.xy);
+    float open = SkyOpenAt(uv, surfPos.z);
+    if (preset == 5)
+        return lerp(ApplyWetness(baseColor, surfPos, surfNormal, viewDir, coat, open), baseColor,
+                    heroMask);
+
+    // World size of one pixel at this distance (about a 90 degree view).
+    float footprint = hitDist * 2.0 * screenInfo.w;
+    float upMask = smoothstep(0.28, 0.78, surfNormal.z);
+
+    float amount = coat * lerp(1.0, DriftAt(uv), coatingInfo.y);
+
+    // Top cover: thin cover settles into creases and corners first, full cover hides them.
+    float noise = Fbm3(surfPos * 0.0085);
+    float crease = clamp(cavity, -1.0, 1.0) * 0.24 * (1.0 - saturate(amount));
+    float threshold = 1.0 - 1.25 * amount;
+    float soft = 0.22 + saturate(footprint / 48.0) * 0.3;
+    float top = smoothstep(threshold, threshold + soft, noise + crease) *
+                saturate(amount * 4.0) * upMask * open;
+    // Fine breakup along the cover's edge, only where a pixel can resolve it.
+    float fine = 1.0 - saturate(footprint / 5.0);
+    top = saturate(top + (ValueNoise3(surfPos * 0.11) - 0.5) * 1.6 * fine * top * (1.0 - top));
+
+    // Wall foot: a steep surface low above its floor is buried by a bank whose height
+    // follows the drift just out from the wall, where the sky is open.
+    float wall = 0.0;
+    float bankMax = BankHeight(preset);
+    if (bankMax > 0.0 && upMask < 0.999) {
+        float2 outXY = surfPos.xy + normalize(surfNormal.xy + 1e-5) * 28.0;
+        float2 outUV = MapUV(outXY);
+        float outOpen = SkyOpenAt(outUV, surfPos.z);
+        bool hasFloor;
+        float floorZ = SampleFloorBelow(float3(outXY, surfPos.z), hasFloor);
+        float above = surfPos.z - floorZ;
+        float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
+        float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.6);
+        float bankLine = bank * (0.6 + 0.8 * Fbm3(surfPos * float3(0.04, 0.04, 0.015)));
+        wall = (1.0 - upMask) * outOpen * step(-6.0, above) *
+               (1.0 - smoothstep(bankLine * 0.7, bankLine + 0.5, above));
     }
 
-    float amount = coat * drift;
-    float noise = Fbm3(surfPos * 0.0085);
-    float threshold = 1.0 - 1.25 * amount;
-    float cov = smoothstep(threshold, threshold + 0.25, noise) * saturate(amount * 4.0) * upMask * open;
+    float cov = max(top, wall) * (1.0 - heroMask);
     if (cov <= 0.001) return baseColor;
 
-    float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
-    float shade = lerp(0.45, 1.15, saturate(luma * 1.4));
-
-    if (preset == 5) {
-        // Rain wetness: darker porous albedo + crisp Fresnel specular sheen
-        float fresnel = pow(1.0 - saturate(dot(surfNormal, viewDir)), 4.0);
-        float3 wet = baseColor * lerp(1.0, 0.62, cov);
-        float3 spec = (ambientColor.rgb + sunColor.rgb * 0.4) * fresnel * cov * 0.55;
-        return wet + spec;
-    }
+    if (preset == 3) // damp ground fog
+        return lerp(baseColor, baseColor * 0.85, cov * 0.82);
 
     float3 coatAlbedo = thinColor.rgb;
     if (preset == 1 || preset == 2) coatAlbedo = float3(0.76, 0.62, 0.42); // desert sand/dust
     else if (preset == 6) coatAlbedo = float3(0.92, 0.94, 0.97);           // snow
     else if (preset == 4) coatAlbedo = float3(0.28, 0.26, 0.25);           // ash
-    else if (preset == 3) coatAlbedo = baseColor * 0.85;                   // damp ground fog
 
-    float3 coated = coatAlbedo * shade;
-    return lerp(baseColor, coated, cov * 0.82);
+    // The game's light on this surface, read from its luma against an average ground
+    // albedo, so shadows, lamps and dusk still read through the cover; a little of the
+    // light's colour carries over too.
+    float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
+    float light = lerp(0.16, 1.12, saturate(pow(saturate(luma / 0.32), 0.8)));
+    float3 chroma = clamp(baseColor / max(luma, 1e-3), 0.0, 2.0);
+    float3 lightTint = lerp(float3(1.0, 1.0, 1.0), chroma, 0.3);
+
+    float2 wdir = coatingInfo.z > 1.0 ? windTime.xy / coatingInfo.z : float2(1.0, 0.0);
+    float2 perp = float2(-wdir.y, wdir.x);
+    float shadeMul = 1.0;
+    float3 add = float3(0.0, 0.0, 0.0);
+    float detail = 1.0 - saturate(footprint / 2.5);
+    if (preset == 6) {
+        // Snow: soft undulation, cool shade in low light, and a few world-fixed grains
+        // that catch the light as the camera moves.
+        shadeMul = 0.94 + 0.12 * Fbm3(surfPos * 0.03);
+        lightTint *= lerp(float3(0.86, 0.92, 1.06), float3(1.0, 1.0, 1.0), saturate(light));
+        float3 cell = floor(surfPos / 1.6);
+        float grain = Hash3(cell);
+        float facing = Hash3(cell + floor(viewDir * 5.0) * 17.0);
+        add += sunColor.rgb * step(0.975, grain) * step(0.6, facing) * detail * upMask * 0.9 *
+               light;
+    } else if (preset == 1 || preset == 2) {
+        // Sand: ripples across the wind, lit on their sun-facing side.
+        float warp = ValueNoise3(float3(surfPos.xy * 0.012, 0.0)) * 6.0;
+        float phase = dot(surfPos.xy, wdir) / 7.0 + warp + dot(surfPos.xy, perp) * 0.01;
+        float sunAlong = dot(normalize(sunDir.xy + 1e-4), wdir);
+        float ripple = 1.0 - saturate(footprint / 3.5);
+        shadeMul = 1.0 + 0.16 * cos(phase * 6.2831853) * sunAlong * ripple * upMask +
+                   0.1 * (Fbm3(surfPos * 0.02) - 0.5);
+    } else if (preset == 4) {
+        // Ash: dark flecks over a blotchy layer.
+        float fleck = step(0.82, Hash3(floor(surfPos / 2.2)));
+        shadeMul = lerp(1.0, 0.55, fleck * detail) * (0.9 + 0.2 * Fbm3(surfPos * 0.03));
+    }
+
+    // Spindrift: where the wind runs fast, streaks of snow or sand skim over the cover.
+    if ((preset == 6 || preset == 1 || preset == 2) && OnMap(uv)) {
+        float speed = length(fluidState.SampleLevel(linearClamp, uv, 0).xy);
+        float gust = saturate((speed - 120.0) / 380.0);
+        if (gust > 0.01) {
+            float3 q = float3((dot(surfPos.xy, wdir) - windTime.z * speed * 0.9) * 0.012,
+                              dot(surfPos.xy, perp) * 0.06, windTime.z * 0.6);
+            float streak = smoothstep(0.55, 0.85, ValueNoise3(q));
+            add += coatAlbedo * light * streak * gust * 0.35 * upMask;
+        }
+    }
+
+    float3 coated = coatAlbedo * light * lightTint * shadeMul + add;
+    return lerp(baseColor, coated, saturate(cov * 0.9));
 }
 
 // Evaluates volumetric extinction and local scatter tint at world point q.
@@ -674,10 +812,15 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
         hitDist = min(length(surfPos - gCamPos), maxDist);
         // The depth-normal reconstruction (8 depth loads) runs only where coating can show:
         // coating on and grown, and open sky above the surface.
+        // Wall feet stand in their own wall's cell, so pixels near the street qualify too.
+        float2 suv = MapUV(surfPos.xy);
         if (sunDir.w > 0.5 && styleB.y * coatingInfo.x > 0.001 &&
-            SkyOpenAt(MapUV(surfPos.xy), surfPos.z) > 0.001) {
-            float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir);
-            baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir);
+            (SkyOpenAt(suv, surfPos.z) > 0.001 ||
+             (OnMap(suv) && surfPos.z - streetZMap.SampleLevel(linearClamp, suv, 0) < 64.0))) {
+            float cavity;
+            float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir, cavity);
+            baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir, cavity,
+                                            hitDist);
         }
     }
 
@@ -732,6 +875,7 @@ struct EnvConstants {
     float floor_decode[4];
     float net_info[4];
     EmitterGPU emitters[kMaxFluidEmitters];
+    float heroes[EnvRenderParams::kMaxCoatingHeroes][4];
 };
 static_assert(sizeof(EnvConstants) % 16 == 0, "EnvConstants must be 16-byte aligned");
 
@@ -813,6 +957,8 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11RasterizerState> rs_state;
     ComPtr<ID3D11DepthStencilState> ds_state;
     ComPtr<ID3D11BlendState> blend_state;
+    ComPtr<ID3D11Texture2D> drift_tex;
+    ComPtr<ID3D11ShaderResourceView> drift_srv;
     bool initialized = false;
 };
 
@@ -1111,13 +1257,21 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
     }
     cb.net_info[0] = net ? 2.0f : 0.0f;
     cb.net_info[1] = 0.08f; // relative depth change that counts as an edge
+    cb.net_info[2] = impl_->drift_srv ? 1.0f : 0.0f;
+    const uint32_t heroes = std::min(params.hero_count, EnvRenderParams::kMaxCoatingHeroes);
+    for (uint32_t i = 0; i < heroes; ++i) {
+        cb.heroes[i][0] = params.heroes[i][0];
+        cb.heroes[i][1] = params.heroes[i][1];
+        cb.heroes[i][2] = params.heroes[i][2];
+    }
+    cb.net_info[3] = static_cast<float>(heroes);
     ctx->UpdateSubresource(impl_->constants.Get(), 0, nullptr, &cb, 0, 0);
 
     D3D11_VIEWPORT vp{
         0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
         0.0f, 1.0f};
     ID3D11RenderTargetView* rtvs[1] = {out_rtv};
-    ID3D11ShaderResourceView* srvs[11] = {
+    ID3D11ShaderResourceView* srvs[12] = {
         scene_color_srv,
         scene_depth_srv,
         fluid.fluid_srv(),
@@ -1129,6 +1283,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         camera.gpu_view,
         nullptr,
         nullptr,
+        impl_->drift_srv.Get(),
     };
     ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
     ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
@@ -1175,20 +1330,48 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
         srvs[10] = impl_->half_srv.Get();
     }
-    ctx->PSSetShaderResources(0, 11, srvs);
+    ctx->PSSetShaderResources(0, 12, srvs);
 
     ctx->Draw(3, 0);
 
     // Unbind SRVs/RTVs to prevent hazard warnings in callers
-    ID3D11ShaderResourceView* null_srvs[11] = {};
+    ID3D11ShaderResourceView* null_srvs[12] = {};
     ID3D11RenderTargetView* null_rtvs[1] = {};
-    ctx->PSSetShaderResources(0, 11, null_srvs);
+    ctx->PSSetShaderResources(0, 12, null_srvs);
     ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
     return true;
 }
 
 bool EnvRendererDX11::ready() const noexcept {
     return impl_->initialized;
+}
+
+bool EnvRendererDX11::set_drift_map(uint32_t n, const float* values) {
+    impl_->drift_tex.Reset();
+    impl_->drift_srv.Reset();
+    if (!impl_->initialized || !impl_->device || !values || n < 8 || n > 4096)
+        return false;
+    std::vector<uint16_t> texels(std::size_t(n) * n);
+    for (std::size_t i = 0; i < texels.size(); ++i)
+        texels[i] = static_cast<uint16_t>(std::lround(std::clamp(values[i] * 0.5f, 0.0f, 1.0f) *
+                                                      65535.0f));
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = td.Height = n;
+    td.MipLevels = 1;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_R16_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA init{texels.data(), n * UINT(sizeof(uint16_t)), 0};
+    if (FAILED(impl_->device->CreateTexture2D(&td, &init, &impl_->drift_tex)) ||
+        FAILED(impl_->device->CreateShaderResourceView(impl_->drift_tex.Get(), nullptr,
+                                                        &impl_->drift_srv))) {
+        impl_->drift_tex.Reset();
+        impl_->drift_srv.Reset();
+        return false;
+    }
+    return true;
 }
 
 } // namespace dolly::env

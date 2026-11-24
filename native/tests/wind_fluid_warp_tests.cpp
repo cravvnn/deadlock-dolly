@@ -1070,15 +1070,58 @@ int main(int argc, char** argv) {
                     100.0 * covered[2] / frame_px);
         CHECK(coat_frames[0] == uncoated);
         CHECK(covered[1] > frame_px / 200 && covered[2] > covered[1]);
-        // Wind drift moves the coating: switching it off changes where snow settles.
+        // Drift potential: baked from the map and the steady wind alone, so two bakes match;
+        // it stays in 0..2, collects in the lee and thins on swept ground, and without wind
+        // only the wall banks remain.
+        constexpr uint32_t kDrift = 256;
+        const float wx = res.render.wind_xy[0], wy = res.render.wind_xy[1];
+        const auto drift = dolly::map_grid::bake_drift_potential(map_grid, wx, wy, 1.0f, kDrift);
+        CHECK(drift.size() == size_t(kDrift) * kDrift);
+        CHECK(drift == dolly::map_grid::bake_drift_potential(map_grid, wx, wy, 1.0f, kDrift));
+        float lo = 2.0f, hi = 0.0f;
+        for (float v : drift) {
+            lo = std::min(lo, v);
+            hi = std::max(hi, v);
+        }
+        const auto calm_drift =
+            dolly::map_grid::bake_drift_potential(map_grid, wx, wy, 0.0f, kDrift);
+        float calm_lo = 2.0f;
+        for (float v : calm_drift)
+            calm_lo = std::min(calm_lo, v);
+        std::printf("WARP drift potential: %.2f..%.2f with wind, >= %.2f calm\n", lo, hi,
+                    calm_lo);
+        CHECK(lo >= 0.0f && hi <= 2.0f && lo < 0.8f && hi > 1.3f && calm_lo >= 0.999f);
+
+        // The drift moves the coating: with it, snow settles elsewhere; with drift 0 the
+        // coating is even again.
+        CHECK(renderer.set_drift_map(kDrift, drift.data()));
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        const auto drifted = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        const size_t drift_moved = changed_pixels(coat_frames[2], drifted);
+        std::printf("WARP coating drift: %.2f%% of pixels differ with the drift potential\n",
+                    100.0 * drift_moved / frame_px);
+        CHECK(drift_moved > frame_px / 1000);
         res.render.coating_drift = 0.0f;
         CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
                               res.render, solver, emitters, 0));
-        const size_t drift_moved = changed_pixels(
-            coat_frames[2], readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh));
-        std::printf("WARP coating drift: %.2f%% of pixels differ without wind drift\n",
-                    100.0 * drift_moved / frame_px);
-        CHECK(drift_moved > frame_px / 1000);
+        CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == coat_frames[2]);
+        res.render.coating_drift = 1.0f;
+
+        // Heroes stay clean: the scene's hero loses its cover and nothing gains any.
+        res.render.heroes[0][0] = hero_pos[0];
+        res.render.heroes[0][1] = hero_pos[1];
+        res.render.heroes[0][2] = hero_pos[2];
+        res.render.hero_count = 1;
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        const auto masked = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        const size_t hero_cleaned = changed_pixels(drifted, masked);
+        std::printf("WARP coating hero mask: %zu pixels cleaned around the hero\n",
+                    hero_cleaned);
+        CHECK(hero_cleaned > 0 &&
+              changed_pixels(uncoated, masked) < changed_pixels(uncoated, drifted));
+        CHECK(!renderer.set_drift_map(0, nullptr)); // even cover again for the later checks
     }
 
     // 7g) GPU-built view from game per-view constants: same frame as the CPU camera, and

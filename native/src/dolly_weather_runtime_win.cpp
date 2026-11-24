@@ -14,6 +14,7 @@
 #include <dxgi.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -280,10 +281,46 @@ struct Gpu {
     D3D11_TEXTURE2D_DESC depth_desc{};
     std::string grid_map;                              // map whose grid is uploaded to the solver
     std::shared_ptr<const map_grid::MapGrid> grid_cpu; // the same grid, for CPU queries
+    // The drift potential uploaded to the coating, and what it was baked from.
+    const map_grid::MapGrid* drift_grid = nullptr;
+    int drift_direction = -1; // wind direction, whole degrees
+    int drift_strength = -1;  // wind shaping, hundredths
     bool failed = false; // shader or resource creation failed for this device
     GpuProfiler profiler;
 };
 std::unique_ptr<Gpu> gGpu;
+
+// The drift potential is baked at half the grid's resolution (44 u cells on Midtown): it
+// says where and how much, the shader draws every edge from depth and noise.
+constexpr uint32_t kDriftCells = 512;
+// Wind speed (u/s) at which the wind's shaping of the drifts is full.
+constexpr float kDriftFullWind = 400.0f;
+
+// Rebakes the drift potential when the map or the steady wind changes. It depends only on
+// the grid and the shot's settings, so every replay time and export sees the same drifts.
+void ensure_drift(Gpu& gpu, const weather::Settings& settings) {
+    if (!gpu.grid_cpu)
+        return;
+    float direction = std::fmod(settings.wind_direction, 360.0f);
+    if (direction < 0.0f)
+        direction += 360.0f;
+    const int degrees = int(std::lround(direction)) % 360;
+    const int strength =
+        int(std::lround(std::clamp(settings.wind_speed / kDriftFullWind, 0.0f, 1.0f) * 100.0f));
+    if (gpu.drift_grid == gpu.grid_cpu.get() && gpu.drift_direction == degrees &&
+        gpu.drift_strength == strength)
+        return;
+    gpu.drift_grid = gpu.grid_cpu.get();
+    gpu.drift_direction = degrees;
+    gpu.drift_strength = strength;
+    constexpr float kDegToRad = 3.14159265358979f / 180.0f;
+    const auto drift = map_grid::bake_drift_potential(
+        *gpu.grid_cpu, std::cos(float(degrees) * kDegToRad), std::sin(float(degrees) * kDegToRad),
+        float(strength) / 100.0f, kDriftCells);
+    if (drift.empty() || !gpu.env.set_drift_map(kDriftCells, drift.data()))
+        gpu.env.set_drift_map(0, nullptr); // even cover rather than a stale map
+}
+
 
 // ---- map grid bake (background thread -> Present) ----
 struct Bake {
@@ -601,7 +638,8 @@ bool wants_heroes() noexcept {
     if (!block)
         return false;
     const auto settings = weather::decode(*block);
-    return settings && settings->enabled() && settings->hero_wakes;
+    // Wakes push the wind around heroes; the coating keeps heroes clean.
+    return settings && settings->enabled() && (settings->hero_wakes || settings->coating > 0.0f);
 }
 
 bool wants_scene_depth() noexcept {
@@ -719,6 +757,20 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
                 }
             }
         }
+        // The coating leaves the same heroes clean, wakes on or off.
+        {
+            std::lock_guard<std::mutex> lock(gHeroesMutex);
+            if (gHeroes.time == time) {
+                const uint32_t n = std::min<uint32_t>(gHeroes.count,
+                                                      env::EnvRenderParams::kMaxCoatingHeroes);
+                for (uint32_t i = 0; i < n; ++i)
+                    std::memcpy(resolved.render.heroes[i], gHeroes.origin[i],
+                                sizeof(resolved.render.heroes[i]));
+                resolved.render.hero_count = n;
+            }
+        }
+        if (resolved.render.enable_coating)
+            ensure_drift(gpu, *settings);
         static uint32_t logged_heroes = ~0u;
         if (body_count != logged_heroes) {
             logged_heroes = body_count;

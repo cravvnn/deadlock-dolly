@@ -721,6 +721,8 @@ bool editor_enqueue(EditorAction action, double value = 0,
                     const CameraPose* pose_override = nullptr) noexcept;
 bool editor_panel_visible() noexcept;
 void editor_set_owner(EditorOwner owner) noexcept;
+// Who owns input and the camera now (F7 flight, panel, F9 game UI, console...).
+EditorOwner editor_owner() noexcept;
 void editor_overlay_available(bool available) noexcept;
 void editor_text_input_active(bool active) noexcept;
 bool editor_install_input_hooks() noexcept;

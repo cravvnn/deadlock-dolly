@@ -2456,6 +2456,101 @@ float cover_above(const MapGrid& g, float x, float y, float z) noexcept {
     return (c[0] * (1 - fx) + c[1] * fx) * (1 - fy) + (c[2] * (1 - fx) + c[3] * fx) * fy;
 }
 
+std::vector<float> bake_drift_potential(const MapGrid& g, float wind_x, float wind_y,
+                                        float wind_strength, uint32_t out_n) {
+    std::vector<float> out;
+    if (!g.valid() || out_n < 8 || out_n > 4096)
+        return out;
+    const uint32_t n = out_n;
+    const float cell = g.span_units / float(n); // world units per output cell
+    const float wind_len = std::sqrt(wind_x * wind_x + wind_y * wind_y);
+    const float strength = wind_len > 1e-3f ? std::clamp(wind_strength, 0.0f, 1.0f) : 0.0f;
+    // Upwind: where the shelter comes from.
+    const float ux = strength > 0.0f ? -wind_x / wind_len : 0.0f;
+    const float uy = strength > 0.0f ? -wind_y / wind_len : 0.0f;
+
+    auto grid_index = [&](float wx, float wy, std::size_t& index) {
+        const float gx = (wx - g.origin_x) / g.cell_units;
+        const float gy = (wy - g.origin_y) / g.cell_units;
+        if (!(gx >= 0.0f && gy >= 0.0f && gx < float(g.width) && gy < float(g.height)))
+            return false;
+        index = std::size_t(gy) * g.width + std::size_t(gx);
+        return true;
+    };
+
+    // Solid cells (street-deck walls and building cores) on the output grid.
+    std::vector<uint8_t> solid(std::size_t(n) * n, 0);
+    for (uint32_t y = 0; y < n; ++y)
+        for (uint32_t x = 0; x < n; ++x) {
+            std::size_t gi;
+            if (grid_index(g.origin_x + (x + 0.5f) * cell, g.origin_y + (y + 0.5f) * cell, gi))
+                solid[std::size_t(y) * n + x] = g.air_map[gi] > 127u ? 1 : 0;
+        }
+
+    // Shelter is measured in world units, so the march reaches the same distance at any
+    // output size: lee zones run several times an obstacle's height downwind.
+    constexpr int kSteps = 14;
+    const float step = std::max(cell, 24.0f);
+    constexpr int kBankReach = 2; // output cells
+    std::vector<float> raw(std::size_t(n) * n, 1.0f);
+    for (uint32_t y = 0; y < n; ++y) {
+        for (uint32_t x = 0; x < n; ++x) {
+            const std::size_t oi = std::size_t(y) * n + x;
+            if (solid[oi])
+                continue; // roofs and wall tops coat like open ground
+            const float wx = g.origin_x + (x + 0.5f) * cell;
+            const float wy = g.origin_y + (y + 0.5f) * cell;
+            std::size_t here;
+            if (!grid_index(wx, wy, here))
+                continue;
+            const float street = g.street_z[here];
+            float lee = 0.0f;
+            if (strength > 0.0f) {
+                for (int k = 1; k <= kSteps; ++k) {
+                    const float dist = step * float(k);
+                    std::size_t gi;
+                    if (!grid_index(wx + ux * dist, wy + uy * dist, gi))
+                        break;
+                    if (g.air_map[gi] <= 127u)
+                        continue;
+                    const float h = std::clamp(g.tops[gi] - street, 0.0f, 600.0f);
+                    lee = std::max(lee, std::clamp(h / (dist * 0.6f) - 0.15f, 0.0f, 1.0f));
+                }
+            }
+            // Banks against any nearby wall, strongest right at its foot.
+            float bank = 0.0f;
+            for (int dy = -kBankReach; dy <= kBankReach; ++dy)
+                for (int dx = -kBankReach; dx <= kBankReach; ++dx) {
+                    const int sx = int(x) + dx, sy = int(y) + dy;
+                    if (sx < 0 || sy < 0 || sx >= int(n) || sy >= int(n) ||
+                        !solid[std::size_t(sy) * n + std::size_t(sx)])
+                        continue;
+                    const float d = std::sqrt(float(dx * dx + dy * dy));
+                    bank = std::max(bank, 1.0f - d / (kBankReach + 0.5f));
+                }
+            const float shaped = 0.9f * lee - 0.55f * (1.0f - lee);
+            raw[oi] = std::clamp(1.0f + strength * shaped + 0.35f * bank, 0.0f, 2.0f);
+        }
+    }
+
+    // A 3 x 3 box blur so cell steps never read as edges (the shader adds the detail).
+    out.assign(std::size_t(n) * n, 1.0f);
+    for (uint32_t y = 0; y < n; ++y)
+        for (uint32_t x = 0; x < n; ++x) {
+            float sum = 0.0f;
+            int count = 0;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const int sx = std::clamp(int(x) + dx, 0, int(n) - 1);
+                    const int sy = std::clamp(int(y) + dy, 0, int(n) - 1);
+                    sum += raw[std::size_t(sy) * n + std::size_t(sx)];
+                    ++count;
+                }
+            out[std::size_t(y) * n + x] = sum / float(count);
+        }
+    return out;
+}
+
 bool write_png_rgba8(const std::filesystem::path& png_path, uint32_t width, uint32_t height,
                      const uint8_t* rgba, std::string* out_error) {
     if (!rgba || width == 0 || height == 0) {

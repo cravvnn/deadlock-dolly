@@ -1265,6 +1265,10 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
 bool editor_panel_visible() noexcept {
     return configured() && focused() && gOwner.load() == EditorOwner::Panel;
 }
+EditorOwner editor_owner() noexcept {
+    return gOwner.load();
+}
+
 void editor_set_owner(EditorOwner owner) noexcept {
     if (owner > EditorOwner::ReShade || owner == EditorOwner::Unfocused)
         return;

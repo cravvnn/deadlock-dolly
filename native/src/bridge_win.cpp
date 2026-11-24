@@ -766,8 +766,12 @@ struct DemoState {
 };
 // View thread: the replay clock for the weather pass, with the heroes' origins when the
 // shot wants hero wakes (a dozen guarded reads).
+// Set when this main view published the weather clock; reset at the start of each view.
+static bool gWeatherClockPublished = false;
+
 static void publish_weather_clock(const DemoState& demo, const confetti::Camera& camera,
                                   double shot_phase = -1.0) noexcept {
+    gWeatherClockPublished = true;
     // Lens rain reads the same clock and the camera this view rendered.
     const float origin[3]{camera.origin.x, camera.origin.y, camera.origin.z};
     const float angles[3]{camera.angles.pitch, camera.angles.yaw, camera.angles.roll};
@@ -917,6 +921,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // admitted main view (the confetti frame's thread), regardless of camera
     // mode. Idempotent and inert when no request is queued.
     prop_runtime::tick();
+    gWeatherClockPublished = false;
     auto view = reinterpret_cast<std::uintptr_t>(self) + 0x10;
     static std::uint32_t seen = 0;
     static double phase = 0, play_base = 0, anchor = 0, real_anchor = 0, last_game = 0,
@@ -936,6 +941,15 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     static unsigned first_fault_code = 0;
     static char first_fault_message[192]{};
     static std::uint32_t previous_mode = 0;
+    // The shot's classic particles from the last camera command, so they keep falling
+    // through the game's own camera while its replay UI (F9) owns the view.
+    struct Particles {
+        bool enabled = false, despawn = false;
+        float height = 0, intensity = 1;
+        int preset = 0;
+    };
+    static Particles last_particles{};
+    bool keep_particles = false; // this view drew them through the game's camera
     auto command = std::atomic_load_explicit(&gCommand, std::memory_order_acquire);
     if (!command)
         lens_pinned = false;
@@ -988,7 +1002,8 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     auto finish = [&](State state, unsigned error, const char* message) {
         if (state == State::Fault || state == State::Stopped || state == State::Unsupported) {
             lens_pinned = false;
-            confetti::disable();
+            if (!keep_particles)
+                confetti::disable();
         }
         // Keep the first specific fault message: the per-frame fallback on the
         // next view would otherwise replace it before the editor reads it.
@@ -1044,9 +1059,34 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             reported = confetti::status();
         std::snprintf(status.message, sizeof(status.message), "%s", reported);
         write_status(status);
+        // Without a Dolly camera (the game's own replay view, F9, or a camera still
+        // starting), weather and lens rain follow the replay through the game's camera,
+        // so they keep moving instead of holding the last published time.
+        if (!gWeatherClockPublished && demo_ok && demo.playing && view_ok) {
+            const confetti::Camera game{{original_xyz[0], original_xyz[1], original_xyz[2]},
+                                        {original_angles[0], original_angles[1],
+                                         original_angles[2]},
+                                        original_fov};
+            publish_weather_clock(demo, game);
+        }
+    };
+    // With the game's replay UI (F9) in charge, the classic particles follow its camera.
+    const auto game_ui_particles = [&]() noexcept {
+        if (editor_owner() != EditorOwner::GameUI || !last_particles.enabled || !demo_ok ||
+            !demo.playing || !view_ok)
+            return false;
+        confetti::Camera game{{original_xyz[0], original_xyz[1], original_xyz[2]},
+                              {original_angles[0], original_angles[1], original_angles[2]},
+                              original_fov};
+        confetti::on_frame(demo.time, demo.playing, demo.seeking, &game, true,
+                           last_particles.height, last_particles.despawn, last_particles.preset,
+                           last_particles.intensity);
+        return true;
     };
     if (!command) {
-        confetti::disable();
+        keep_particles = game_ui_particles();
+        if (!keep_particles)
+            confetti::disable();
         player_capture::set_hidden_handle(0, 2);
         finish(State::Probe, 0, "Native view hook ready; load a local replay to test a camera.");
         return;
@@ -1109,7 +1149,11 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // Zero means "not sent"; older editors keep the original 1.0x intensity.
     const float confetti_intensity =
         confetti_intensity_raw ? float(confetti_intensity_raw) / 20.0f : 1.0f;
+    if (c.mode != std::uint32_t(Mode::Release))
+        last_particles = {confetti_enabled, confetti_despawn, confetti_height,
+                          confetti_intensity, confetti_preset};
     if (c.mode == std::uint32_t(Mode::Release)) {
+        keep_particles = game_ui_particles();
         finish(State::Stopped, 0, "Native camera released; the game owns the view.");
         return;
     }
