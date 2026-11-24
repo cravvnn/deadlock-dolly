@@ -10826,7 +10826,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "d9ba75b827dd830a20af2311db82c2830f2ef21e4dffbcef251f81ed5eed5121",
+      "sha256": "f8149059e6f3f353267310438a7a0d3d6db0829ece81c338d5b33c65c32ccc6a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

@@ -64,19 +64,50 @@ void set_status(const char* text) noexcept;
 // Development-only: while <cache>/snap exists, write the back buffer as composited by the
 // weather pass (before ReShade, capture and the UI) 2 s after each new weather block, as a
 // BMP beside the status log. It shows exactly what the GPU produced, unlike desktop capture.
+// A test script can also ask for one frame by name: write a label (letters, digits, '-'
+// and '_') into <cache>/snap-now; the next weather frame is saved as snap-<label>.bmp and
+// the request file is removed, so frames can be taken at a paused replay tick on demand.
 struct Snapshot {
     uint32_t block = 0;
     ULONGLONG due = 0;
     int written = 0;
+    ULONGLONG polled = 0;
 };
 Snapshot gSnap;
+
+bool write_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer,
+                    const std::filesystem::path& path);
 
 void maybe_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer,
                     uint32_t block) noexcept {
     try {
+        const ULONGLONG now = GetTickCount64();
+        if (now - gSnap.polled >= 250) {
+            gSnap.polled = now;
+            const auto dir = cache_directory();
+            std::error_code ec;
+            const auto request = dir / L"snap-now";
+            if (!dir.empty() && std::filesystem::exists(request, ec)) {
+                std::string label;
+                if (FILE* f = _wfopen(request.c_str(), L"rb")) {
+                    char text[64]{};
+                    const size_t n = std::fread(text, 1, sizeof(text) - 1, f);
+                    std::fclose(f);
+                    for (size_t i = 0; i < n; ++i) {
+                        const char c = text[i];
+                        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                            (c >= '0' && c <= '9') || c == '-' || c == '_')
+                            label += c;
+                    }
+                }
+                if (label.empty())
+                    label = "now";
+                std::filesystem::remove(request, ec);
+                write_snapshot(device, ctx, back_buffer, dir / ("snap-" + label + ".bmp"));
+            }
+        }
         if (gSnap.written >= 8)
             return;
-        const ULONGLONG now = GetTickCount64();
         if (block != gSnap.block) {
             gSnap.block = block;
             gSnap.due = now + 2000;
@@ -89,6 +120,18 @@ void maybe_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Textur
         std::error_code ec;
         if (dir.empty() || !std::filesystem::exists(dir / L"snap", ec))
             return;
+        char name[64];
+        std::snprintf(name, sizeof(name), "snap-%d-block%u.bmp", gSnap.written, block);
+        if (write_snapshot(device, ctx, back_buffer, dir / name))
+            ++gSnap.written;
+    } catch (...) {
+    }
+}
+
+bool write_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D* back_buffer,
+                    const std::filesystem::path& path) {
+    bool ok = false;
+    try {
         D3D11_TEXTURE2D_DESC d{};
         back_buffer->GetDesc(&d);
         const bool bgra =
@@ -96,7 +139,7 @@ void maybe_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Textur
         const bool rgba =
             d.Format == DXGI_FORMAT_R8G8B8A8_UNORM || d.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         if (!bgra && !rgba)
-            return;
+            return false;
         D3D11_TEXTURE2D_DESC sd = d;
         sd.Usage = D3D11_USAGE_STAGING;
         sd.BindFlags = 0;
@@ -104,14 +147,12 @@ void maybe_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Textur
         sd.MiscFlags = 0;
         ComPtr<ID3D11Texture2D> staging;
         if (FAILED(device->CreateTexture2D(&sd, nullptr, &staging)))
-            return;
+            return false;
         ctx->CopyResource(staging.Get(), back_buffer);
         D3D11_MAPPED_SUBRESOURCE m{};
         if (FAILED(ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &m)))
-            return;
-        char name[64];
-        std::snprintf(name, sizeof(name), "snap-%d-block%u.bmp", gSnap.written, block);
-        if (FILE* f = _wfopen((dir / name).c_str(), L"wb")) {
+            return false;
+        if (FILE* f = _wfopen(path.c_str(), L"wb")) {
             const uint32_t row = d.Width * 4, image = row * d.Height;
             unsigned char header[54]{};
             header[0] = 'B';
@@ -141,11 +182,12 @@ void maybe_snapshot(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Textur
                 std::fwrite(line.data(), 1, row, f);
             }
             std::fclose(f);
+            ok = true;
         }
         ctx->Unmap(staging.Get(), 0);
-        ++gSnap.written;
     } catch (...) {
     }
+    return ok;
 }
 
 class GpuProfiler {
