@@ -394,22 +394,33 @@ float RoundSpeck(float3 p, float cell, float density, float footprint, float see
 // How boxed in by walls a point is: 0 in the open; at a wall's foot about 3/8 beside a
 // straight wall and 5/8 in an inside corner (28 u out: about 1/8 and 3/8), where drifts
 // pile highest. Eight map taps 36 u around the point.
-float Enclosure(float2 xy) {
+// `away` points from the walls toward open ground; it turns smoothly around a pillar's
+// corners, where per-face normals jump.
+float EnclosureDir(float2 xy, out float2 away) {
     float s = 0.0;
+    away = float2(0.0, 0.0);
     [unroll] for (int k = 0; k < 8; ++k) {
         float a = k * 0.7853982;
-        float2 uv = MapUV(xy + float2(cos(a), sin(a)) * 36.0);
-        if (OnMap(uv)) s += smoothstep(0.45, 0.75, airMap.SampleLevel(linearClamp, uv, 0));
+        float2 dir = float2(cos(a), sin(a));
+        float2 uv = MapUV(xy + dir * 36.0);
+        float solid = OnMap(uv) ? smoothstep(0.45, 0.75, airMap.SampleLevel(linearClamp, uv, 0)) : 0.0;
+        s += solid;
+        away -= dir * solid;
     }
     return s * 0.125;
 }
 
+float Enclosure(float2 xy) {
+    float2 away;
+    return EnclosureDir(xy, away);
+}
+
 // How high a drift banks against a wall at full cover, in world units.
 float BankHeight(int preset) {
-    if (preset == 6) return 24.0; // snow
-    if (preset == 1) return 15.0; // sandstorm sand
-    if (preset == 2) return 9.0;  // dust
-    if (preset == 4) return 8.0;  // ash
+    if (preset == 6) return 16.0; // snow
+    if (preset == 1) return 10.0; // sandstorm sand
+    if (preset == 2) return 6.0;  // dust
+    if (preset == 4) return 5.5;  // ash
     return 0.0;
 }
 
@@ -487,16 +498,21 @@ float PuddleAmount(float3 p, float3 n, float coat, float open, float cavity) {
     float flat = smoothstep(0.93, 0.99, n.z);
     if (flat * open <= 0.001) return 0.0;
     float2 uv = MapUV(p.xy);
+    // Gutters: the street map blends up toward the curb over about a cell, so how far a
+    // point lies below it peaks right at the curb. Its upper part is a narrow strip of
+    // water running along the curb, filling in as the rain goes on.
     float gutter = 0.0;
     if (OnMap(uv)) {
         float below = streetZMap.SampleLevel(linearClamp, uv, 0) - p.z;
-        gutter = saturate((below - 1.0) / 6.0) * (1.0 - step(48.0, below));
+        float along = lerp(0.75, 1.0, ValueNoise3(float3(p.xy * 0.03, 4.0)));
+        gutter = smoothstep(2.0, 4.5, below) * (1.0 - smoothstep(20.0, 30.0, below)) *
+                 smoothstep(0.08, 0.45, coat) * along;
     }
     float hollow = Fbm3(float3(p.xy * 0.0035, 7.3));
-    float field = hollow + 0.3 * gutter;
     // About an eighth of open flat ground at the storm's default cover, half at full.
     float threshold = 0.95 - 0.45 * coat;
-    return smoothstep(threshold, threshold + 0.05, field) * flat * open;
+    float pool = smoothstep(threshold, threshold + 0.09, hollow);
+    return max(pool, gutter * 0.9) * flat * open;
 }
 
 // Raindrop rings on standing water: the surface slope (xy) from a few hashed drops per
@@ -547,7 +563,7 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
     // The light this pixel already has dims the sun's glint in shadow.
     float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
     float lit = lerp(0.35, 1.0, saturate(luma / 0.25));
-    float3 water = baseColor * 0.42;
+    float3 water = baseColor * 0.5;
     float3 pool = lerp(water, mirror.rgb * lerp(lit, 1.0, mirror.a), fresnel);
     return lerp(color, pool, puddle);
 }
@@ -588,18 +604,17 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
 
     // Top cover. Nothing here reads depth differences (creases): the game's depth bands
     // with distance, and anything built on it drew rings around the camera.
+    // Light cover is an even dusting the ground shows through; it closes into a full sheet
+    // as cover rises. Only gentle, soft variation: bare holes read as dark stains in haze.
     float noise = Fbm3(surfPos * 0.0085);
-    float threshold = 1.0 - 1.25 * amount;
-    float soft = 0.22 + saturate(footprint / 48.0) * 0.3;
-    float top = smoothstep(threshold, threshold + soft, noise) *
-                saturate(amount * 4.0) * upMask * open;
-    // Fine breakup along the cover's edge, only where a pixel can resolve it.
+    float top = saturate(amount * 1.45) * lerp(0.82, 1.12, noise) * upMask * open;
+    // Fine grain in the dusting, only where a pixel can resolve it.
     float fine = 1.0 - saturate(footprint / 4.0);
-    top = saturate(top + (Fbm3(float3(surfPos.xy * 0.07, 3.1)) - 0.5) * 1.6 * fine * top *
-                             (1.0 - top));
-    // Blown cover never lies as one even sheet: broad thin patches let the ground show.
-    float patchy = (preset == 6) ? 0.12 : 0.4;
-    top *= 1.0 - patchy * smoothstep(0.35, 0.7, ValueNoise3(float3(surfPos.xy * 0.0045, 11.0)));
+    top *= 1.0 + (Fbm3(float3(surfPos.xy * 0.07, 3.1)) - 0.5) * 0.5 * fine * (1.0 - top);
+    // Blown sand thins in broad, faint streaks along the wind.
+    if (preset == 1 || preset == 2)
+        top *= 1.0 - 0.15 * smoothstep(0.35, 0.7, ValueNoise3(float3(surfPos.xy * 0.0045, 11.0)));
+    top = saturate(top);
 
     // Wall foot: a steep surface low above its floor is buried by a bank whose height
     // follows the drift just out from the wall, where the sky is open. The floor height
@@ -608,19 +623,31 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float wall = 0.0;
     float steep = 1.0 - smoothstep(0.2, 0.5, surfNormal.z);
     if (bankMax > 0.0 && steep > 0.001) {
-        float2 outXY = surfPos.xy + normalize(surfNormal.xy + 1e-5) * 28.0;
+        // Everything here is read from map position alone (never the face's own normal),
+        // so the bank runs on unbroken around a pillar's corners.
+        float2 away;
+        float enclosedHere = EnclosureDir(surfPos.xy, away);
+        float2 outDir = dot(away, away) > 1e-4 ? normalize(away)
+                                               : normalize(surfNormal.xy + 1e-5);
+        float2 outXY = surfPos.xy + outDir * 28.0;
         float2 outUV = MapUV(outXY);
         float outOpen = SkyOpenAt(outUV, surfPos.z);
         float floorZ = SampleFloorBelowSmooth(float3(outXY, surfPos.z));
         float above = surfPos.z - floorZ;
         float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
+        // About 3/8 enclosed beside a straight wall, 5/8 in an inside corner (drifts pile
+        // up to twice as high there), 1/4 round an outside corner (the wind scours it).
+        float shape = lerp(0.7, 1.0, smoothstep(0.22, 0.36, enclosedHere)) +
+                      1.0 * smoothstep(0.4, 0.62, enclosedHere);
         float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.3) *
-                     (1.0 + 1.3 * smoothstep(0.2, 0.4, Enclosure(outXY)));
-        float bankLine = bank * (0.75 + 0.5 * ValueNoise3(float3(surfPos.xy * 0.018, 5.0)));
-        // Full at the foot, thinning over the bank's upper part to a soft top.
-        float edge = 1.5 + footprint * 1.5;
-        wall = steep * outOpen * smoothstep(-10.0, -4.0, above) *
-               (1.0 - smoothstep(bankLine * 0.55, bankLine + edge, above));
+                     shape;
+        float bankLine = bank * (0.8 + 0.4 * ValueNoise3(float3(surfPos.xy * 0.012, 5.0)));
+        // A drift meets a wall as a curved fillet: solid at the foot, thinning over most
+        // of its height, so its top is a soft rise rather than a painted line.
+        float edge = 2.0 + footprint * 1.5;
+        float h = saturate(above / max(bankLine + edge, 1.0));
+        wall = steep * outOpen * smoothstep(-10.0, -4.0, above) * (1.0 - h * h * (3.0 - 2.0 * h));
+        wall = wall * wall * (3.0 - 2.0 * wall) * saturate(bank / 2.0);
     }
 
     float cov = max(top, wall) * (1.0 - heroMask);
