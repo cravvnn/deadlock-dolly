@@ -1065,6 +1065,50 @@ int main(int argc, char** argv) {
         if (!out_dir.empty())
             CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_rain_shelter.png", vw, vh,
                                                    rained.data(), &err));
+        // Raindrop rings move with the replay time and repeat exactly at the same time. Checked
+        // on this known flat ground from low over the open half, close enough for a pixel to
+        // resolve the rings (the city's per-cell steps are no stand-in for a street).
+        {
+            const auto low =
+                build_camera({600.0f, 0.0f, 90.0f}, {600.0f, 1.0f, 0.0f}, 68.0f, vw, vh);
+            std::vector<float> near_ground(frame_px);
+            for (uint32_t y = 0; y < vh; ++y)
+                for (uint32_t x = 0; x < vw; ++x) {
+                    const float* M = low.inv_view_proj;
+                    const float nx = (x + 0.5f) / vw * 2.0f - 1.0f,
+                                ny = 1.0f - (y + 0.5f) / vh * 2.0f;
+                    const float fw = M[12] * nx + M[13] * ny + M[14] * 1e-4f + M[15];
+                    const Vec3 far_pt = {(M[0] * nx + M[1] * ny + M[2] * 1e-4f + M[3]) / fw,
+                                         (M[4] * nx + M[5] * ny + M[6] * 1e-4f + M[7]) / fw,
+                                         (M[8] * nx + M[9] * ny + M[10] * 1e-4f + M[11]) / fw};
+                    const Vec3 eye = {low.position[0], low.position[1], low.position[2]};
+                    const Vec3 rd = norm3(sub3(far_pt, eye));
+                    const Vec3 hit = add3(eye, mul3(rd, -eye[2] / rd[2]));
+                    const float* V = low.view_proj;
+                    const float cz = V[8] * hit[0] + V[9] * hit[1] + V[10] * hit[2] + V[11];
+                    const float cw = V[12] * hit[0] + V[13] * hit[1] + V[14] * hit[2] + V[15];
+                    near_ground[static_cast<size_t>(y) * vw + x] = cz / cw;
+                }
+            D3D11_SUBRESOURCE_DATA ninit{near_ground.data(), vw * sizeof(float), 0};
+            ComPtr<ID3D11Texture2D> near_tex;
+            ComPtr<ID3D11ShaderResourceView> near_srv;
+            CHECK(SUCCEEDED(device->CreateTexture2D(&ddesc, &ninit, &near_tex)));
+            CHECK(SUCCEEDED(device->CreateShaderResourceView(near_tex.Get(), nullptr, &near_srv)));
+            coat_only.sim_time = 3.0f;
+            CHECK(renderer.render(ctx.Get(), grey_srv.Get(), near_srv.Get(), out_rtv.Get(), low,
+                                  coat_only, calm, nullptr, 0));
+            const auto rings = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            CHECK(renderer.render(ctx.Get(), grey_srv.Get(), near_srv.Get(), out_rtv.Get(), low,
+                                  coat_only, calm, nullptr, 0));
+            CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == rings);
+            coat_only.sim_time = 3.5f;
+            CHECK(renderer.render(ctx.Get(), grey_srv.Get(), near_srv.Get(), out_rtv.Get(), low,
+                                  coat_only, calm, nullptr, 0));
+            const size_t rippled = changed_pixels(
+                rings, readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh));
+            std::printf("WARP rain ripples: %zu pixels change over half a second\n", rippled);
+            CHECK(rippled > 0);
+        }
         calm.shutdown();
     }
 
@@ -1306,18 +1350,11 @@ int main(int argc, char** argv) {
         CHECK(frames[0] == dry);
         CHECK(wet[1] > frame_px / 200 && darkened[2] > darkened[1] && darkened[1] > 0.0);
 
-        // The same replay time draws the same rings; half a second later they have moved.
+        // The same replay time draws the same frame (ripple motion is checked on the flat
+        // shelter plane above).
         CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
                               res.render, solver, emitters, 0));
         CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == frames[2]);
-        res.render.sim_time = 11.1f;
-        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
-                              res.render, solver, emitters, 0));
-        const auto later = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
-        const size_t rippled = changed_pixels(frames[2], later);
-        std::printf("WARP rain ripples: %zu pixels change over half a second\n", rippled);
-        CHECK(rippled > 0);
-        res.render.sim_time = 10.6f;
 
         // Puddles mirror the frame only where reflections are allowed (the Color plate);
         // without them they mirror the sky alone, and the pools themselves stay put.

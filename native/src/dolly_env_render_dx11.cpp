@@ -293,19 +293,26 @@ float PhaseHG(float cosTheta, float g) {
 float4 GatherTops(float2 uv, out float2 f) {
     uint w, h;
     topsMap.GetDimensions(w, h);
-    f = frac(uv * float2(w, h) - 0.5);
-    return topsMap.GatherRed(linearClamp, uv);
+    float2 g = uv * float2(w, h) - 0.5;
+    float2 b = floor(g);
+    f = g - b;
+    // Gather at the corner the four cells share, so the cells always match `f` (gathering
+    // at uv itself can pick a neighbouring quad a sub-texel off and draw dashed lines).
+    return topsMap.GatherRed(linearClamp, (b + 1.0) / float2(w, h));
 }
 
 float BlendCells(float4 v, float2 f) {
     return lerp(lerp(v.w, v.z, f.x), lerp(v.x, v.y, f.x), f.y);
 }
 
+// Soft in height as well as across cells: a hard roof test against this pixel's own z
+// flipped cell by cell along height contours and drew straight-edged panels on ramps.
 float SkyOpenAt(float2 uv, float z) {
     if (!OnMap(uv)) return 1.0;
     float2 f;
     float4 tops = GatherTops(uv, f);
-    return BlendCells(step(tops, z + 24.0), f);
+    f = f * f * (3.0 - 2.0 * f);
+    return BlendCells(1.0 - smoothstep(14.0, 34.0, tops - z), f); // centred on 24 u as before
 }
 
 // Shadow under roofs, blended per cell so a tall roof's height never bleeds across the
@@ -341,40 +348,50 @@ float HeroMask(float3 p) {
     return m;
 }
 
-// The highest floor of map cell q at or below zLim, or fallback when it has none.
-float FloorBelowCell(int2 q, float zLim, float fallback) {
+// The highest floor of map cell q at or below zLim; false when it has none.
+bool FloorBelowCell(int2 q, float zLim, out float h) {
+    h = 0.0;
     float4 codes = floorZMap.Load(int3(q, 0)) * 65535.0;
     [unroll] for (int i = 0; i < 4; ++i) {
         if (codes[i] < 0.5) continue;
-        float h = floorDecode.x + (codes[i] - 1.0) / 65534.0 * floorDecode.y;
-        if (h <= zLim) return h;
+        h = floorDecode.x + (codes[i] - 1.0) / 65534.0 * floorDecode.y;
+        if (h <= zLim) return true;
     }
-    return fallback;
+    return false;
 }
 
 // The floor below p blended between the four nearest cells (those within a curb's step of
 // this cell's floor), so heights read from the map have no per-cell stairs.
+// Every weight is continuous in position: a cell with no floor (under a pillar) weighs
+// nothing instead of borrowing a neighbour's floor, and a cell can only claim to be the
+// highest floor as its own weight fades in. Either cut drew teeth and hard edges.
 float SampleFloorBelowSmooth(float3 p) {
-    bool hasFloor;
-    float ref = SampleFloorBelow(p, hasFloor);
     float2 uv = MapUV(p.xy);
-    if (!OnMap(uv)) return ref;
+    if (!OnMap(uv)) return p.z - 64.0;
+    float street = streetZMap.SampleLevel(linearClamp, uv, 0);
     uint mw, mh;
     floorZMap.GetDimensions(mw, mh);
     float2 g = uv * float2(mw, mh) - 0.5;
     int2 b = int2(floor(g));
     float2 f = g - float2(b);
-    float sum = 0.0, wsum = 0.0;
+    f = f * f * (3.0 - 2.0 * f); // no creases at cell centres
+    float hs[4], ws[4];
+    float top = -1e9;
     [unroll] for (int k = 0; k < 4; ++k) {
         int2 o = int2(k & 1, k >> 1);
         int2 q = clamp(b + o, int2(0, 0), int2(mw - 1, mh - 1));
-        float h = FloorBelowCell(q, p.z + 16.0, ref);
-        float w = (o.x ? f.x : 1.0 - f.x) * (o.y ? f.y : 1.0 - f.y);
-        w *= step(abs(h - ref), 24.0);
-        sum += h * w;
+        bool valid = FloorBelowCell(q, p.z + 16.0, hs[k]);
+        ws[k] = valid ? (o.x ? f.x : 1.0 - f.x) * (o.y ? f.y : 1.0 - f.y) : 0.0;
+        top = max(top, hs[k] - (1.0 - saturate(ws[k] * 4.0)) * 28.0);
+    }
+    float sum = 0.0, wsum = 0.0;
+    [unroll] for (int j = 0; j < 4; ++j) {
+        // Keep floors near the highest one (a curb's step blends; a ledge's drop does not).
+        float w = ws[j] * (1.0 - smoothstep(10.0, 28.0, top - hs[j]));
+        sum += hs[j] * w;
         wsum += w;
     }
-    return wsum > 1e-4 ? sum / wsum : ref;
+    return lerp(street, sum / max(wsum, 1e-4), saturate(wsum * 4.0));
 }
 
 // Round specks (glints, flecks) fixed on the ground: `density` of the cell x cell squares
@@ -396,18 +413,21 @@ float RoundSpeck(float3 p, float cell, float density, float footprint, float see
 // pile highest. Eight map taps 36 u around the point.
 // `away` points from the walls toward open ground; it turns smoothly around a pillar's
 // corners, where per-face normals jump.
+// Two staggered rings (36 u and 60 u) of the blended solid map, unsharpened: a single
+// sharpened ring stepped cell by cell along a wall and scalloped the bank's top.
 float EnclosureDir(float2 xy, out float2 away) {
     float s = 0.0;
     away = float2(0.0, 0.0);
-    [unroll] for (int k = 0; k < 8; ++k) {
-        float a = k * 0.7853982;
+    [unroll] for (int k = 0; k < 16; ++k) {
+        float a = k * 0.3926991;
         float2 dir = float2(cos(a), sin(a));
-        float2 uv = MapUV(xy + dir * 36.0);
-        float solid = OnMap(uv) ? smoothstep(0.45, 0.75, airMap.SampleLevel(linearClamp, uv, 0)) : 0.0;
+        float2 uv = MapUV(xy + dir * ((k & 1) ? 60.0 : 36.0));
+        // airMap holds sky openness in 0..0.5 and walls as 1: only the part above 0.5 is wall.
+        float solid = OnMap(uv) ? saturate((airMap.SampleLevel(linearClamp, uv, 0) - 0.5) * 2.0) : 0.0;
         s += solid;
         away -= dir * solid;
     }
-    return s * 0.125;
+    return s * 0.0625;
 }
 
 float Enclosure(float2 xy) {
@@ -460,13 +480,20 @@ bool ReflectProbe(float3 q, out float behind, out float2 uv) {
 float4 PuddleReflection(float3 p, float3 r, float footprint) {
     float3 sky = SkyReflection(r);
     if (denseColor.w < 0.5) return float4(sky, 0.0);
-    float prevT = 0.0, t = 4.0, dt = 10.0;
+    // A ripple-tilted ray at a low view can point under the ground and "hit" it at once,
+    // darkening half of each ring into a crescent.
+    r.z = max(r.z, 0.03);
+    r = normalize(r);
+    // A start fixed per world point (deterministic) keeps hit/miss boundaries from lining
+    // up into contours that follow whatever is reflected.
+    float prevT = 0.0, t = 4.0 + 6.0 * Hash3(float3(p.xy, 3.0)), dt = 10.0;
     [loop] for (int i = 0; i < 12; ++i) {
         float behind;
         float2 uv;
         if (!ReflectProbe(p + r * t, behind, uv)) break;
         float thickness = max(24.0, dt * 1.5);
         if (behind > 0.0 && behind < thickness) {
+            float depthIn = behind;
             float a = prevT, b = t;
             [unroll] for (int k = 0; k < 4; ++k) {
                 float m = 0.5 * (a + b);
@@ -481,7 +508,8 @@ float4 PuddleReflection(float3 p, float3 r, float footprint) {
             }
             float2 border = min(uv, 1.0 - uv);
             float conf = smoothstep(0.0, 0.06, min(border.x, border.y)) *
-                         (1.0 - smoothstep(380.0, 600.0, b));
+                         (1.0 - smoothstep(380.0, 600.0, b)) *
+                         (1.0 - smoothstep(0.5, 1.0, depthIn / thickness));
             float3 hit = sceneColor.SampleLevel(linearClamp, uv, 0).rgb;
             return float4(lerp(sky, hit, conf), conf);
         }
@@ -495,24 +523,20 @@ float4 PuddleReflection(float3 p, float3 r, float footprint) {
 // How much of a point is standing water: flat, open ground fills first in broad hollows,
 // creases and the gutters below the street deck, and the pools spread as the rain goes on.
 float PuddleAmount(float3 p, float3 n, float coat, float open, float cavity) {
-    float flat = smoothstep(0.93, 0.99, n.z);
+    // Ground normals come from the map's own slope on known floors, so this thins water
+    // smoothly on ramps instead of cutting it at a fixed angle.
+    float flat = smoothstep(0.9, 0.985, n.z);
     if (flat * open <= 0.001) return 0.0;
-    float2 uv = MapUV(p.xy);
-    // Gutters: the street map blends up toward the curb over about a cell, so how far a
-    // point lies below it peaks right at the curb. Its upper part is a narrow strip of
-    // water running along the curb, filling in as the rain goes on.
-    float gutter = 0.0;
-    if (OnMap(uv)) {
-        float below = streetZMap.SampleLevel(linearClamp, uv, 0) - p.z;
-        float along = lerp(0.75, 1.0, ValueNoise3(float3(p.xy * 0.03, 4.0)));
-        gutter = smoothstep(2.0, 4.5, below) * (1.0 - smoothstep(20.0, 30.0, below)) *
-                 smoothstep(0.08, 0.45, coat) * along;
-    }
-    float hollow = Fbm3(float3(p.xy * 0.0035, 7.3));
+    // No gutter water: the map's 22 u cells cannot place a curb, and water guessed from
+    // them drew arcs across the road that followed no curb.
+    // Broad hollows with a broken outline (a lone noise blob is round, and a curb clips it
+    // into a half circle), deepening gradually from their edge.
+    float hollow = Fbm3(float3(p.xy * 0.0035, 7.3)) +
+                   (Fbm3(float3(p.xy * 0.021, 2.9)) - 0.5) * 0.12;
     // About an eighth of open flat ground at the storm's default cover, half at full.
     float threshold = 0.95 - 0.45 * coat;
-    float pool = smoothstep(threshold, threshold + 0.09, hollow);
-    return max(pool, gutter * 0.9) * flat * open;
+    float depth = saturate((hollow - threshold) / 0.22);
+    return smoothstep(0.0, 0.3, depth) * flat * open;
 }
 
 // Raindrop rings on standing water: the surface slope (xy) from a few hashed drops per
@@ -563,7 +587,8 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
     // The light this pixel already has dims the sun's glint in shadow.
     float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
     float lit = lerp(0.35, 1.0, saturate(luma / 0.25));
-    float3 water = baseColor * 0.5;
+    // Shallow at the pool's edge, so it never reads as a dark stain with a hard outline.
+    float3 water = baseColor * lerp(0.62, 0.5, puddle);
     float3 pool = lerp(water, mirror.rgb * lerp(lit, 1.0, mirror.a), fresnel);
     return lerp(color, pool, puddle);
 }
@@ -623,22 +648,33 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float wall = 0.0;
     float steep = 1.0 - smoothstep(0.2, 0.5, surfNormal.z);
     if (bankMax > 0.0 && steep > 0.001) {
-        // Everything here is read from map position alone (never the face's own normal),
-        // so the bank runs on unbroken around a pillar's corners.
+        // Out from the wall: the face's normal blended continuously with the map's own
+        // direction away from walls (which turns smoothly round a pillar's corners). A hard
+        // choice between the two made the reach jump about half a cell.
         float2 away;
         float enclosedHere = EnclosureDir(surfPos.xy, away);
-        float2 outDir = dot(away, away) > 1e-4 ? normalize(away)
-                                               : normalize(surfNormal.xy + 1e-5);
+        float2 nxy = surfNormal.xy / max(length(surfNormal.xy), 1e-3);
+        float2 outDir = normalize(nxy + away * 0.5 + 1e-5);
         float2 outXY = surfPos.xy + outDir * 28.0;
         float2 outUV = MapUV(outXY);
-        float outOpen = SkyOpenAt(outUV, surfPos.z);
+        // Floor first; the sky is then tested at the bank's foot, so nothing changes up the
+        // face, and over two reaches, so one tap always clears the roof map's wall fringe.
         float floorZ = SampleFloorBelowSmooth(float3(outXY, surfPos.z));
-        float above = surfPos.z - floorZ;
+        float outOpen = max(SkyOpenAt(outUV, floorZ + 8.0),
+                            SkyOpenAt(MapUV(surfPos.xy + outDir * 52.0), floorZ + 8.0));
+        // Steps and curbs are finer than the map, which blends a staircase into a ramp. Read
+        // just out from the face, that ramp sits about halfway up each riser, so sand fills
+        // every step's inner corner the same way instead of baring some risers and burying
+        // others (measured only 28 u out, the floor lay steps below and banks ended abruptly).
+        float floorNear = SampleFloorBelowSmooth(float3(surfPos.xy + outDir * 6.0, surfPos.z));
+        float above = surfPos.z - max(floorZ, min(floorNear, floorZ + 16.0));
         float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
-        // About 3/8 enclosed beside a straight wall, 5/8 in an inside corner (drifts pile
-        // up to twice as high there), 1/4 round an outside corner (the wind scours it).
-        float shape = lerp(0.7, 1.0, smoothstep(0.22, 0.36, enclosedHere)) +
-                      1.0 * smoothstep(0.4, 0.62, enclosedHere);
+        // About half enclosed at a straight wall's face, three quarters in an inside corner
+        // (drifts pile up to about twice as high there), less round an outside corner (the
+        // wind scours it). Gentle ramps only: a tight curve here turned the map's cell
+        // creases into teeth.
+        float shape = 0.7 + 0.3 * saturate((enclosedHere - 0.2) / 0.3) +
+                      0.9 * saturate((enclosedHere - 0.5) / 0.3);
         float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.3) *
                      shape;
         float bankLine = bank * (0.8 + 0.4 * ValueNoise3(float3(surfPos.xy * 0.012, 5.0)));
@@ -646,8 +682,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         // of its height, so its top is a soft rise rather than a painted line.
         float edge = 2.0 + footprint * 1.5;
         float h = saturate(above / max(bankLine + edge, 1.0));
-        wall = steep * outOpen * smoothstep(-10.0, -4.0, above) * (1.0 - h * h * (3.0 - 2.0 * h));
-        wall = wall * wall * (3.0 - 2.0 * wall) * saturate(bank / 2.0);
+        wall = steep * outOpen * smoothstep(-10.0, -4.0, above) *
+               (1.0 - h * h * (3.0 - 2.0 * h)) * saturate(bank / 2.0);
     }
 
     float cov = max(top, wall) * (1.0 - heroMask);
@@ -676,22 +712,24 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float shadeMul = 1.0;
     float3 add = float3(0.0, 0.0, 0.0);
     if (preset == 6) {
-        // Snow: soft undulation, cool shade in low light, and a few tiny world-fixed glints
-        // that catch the light as the camera moves.
+        // Snow: soft undulation and a cool shade in low light. (No sparkle specks: they read
+        // as white dots stuck to the ground.)
         shadeMul = 0.95 + 0.1 * ValueNoise3(float3(surfPos.xy * 0.02, 1.0));
         lightTint *= lerp(float3(0.86, 0.92, 1.06), float3(1.0, 1.0, 1.0), saturate(light));
-        float glint = RoundSpeck(surfPos, 4.0, 0.06, footprint, 17.0);
-        float facing = Hash3(float3(floor(surfPos.xy / 4.0), 0.0) + floor(viewDir * 5.0) * 17.0);
-        add += sunColor.rgb * glint * step(0.5, facing) * upMask * 0.7 * light;
     } else if (preset == 1 || preset == 2) {
         // Sand: low ripples across the wind, lit on their sun-facing side, uneven in
         // strength and gone before they would shimmer.
+        // Two crossing, skewed trains at short wavelengths: one even cosine read as
+        // corrugated steps up close.
         float warp = Fbm3(float3(surfPos.xy * 0.008, 2.0)) * 9.0;
-        float phase = dot(surfPos.xy, wdir) / 9.0 + warp;
+        float p1 = dot(surfPos.xy, wdir) / 5.5 + warp;
+        float p2 = dot(surfPos.xy, normalize(wdir + perp * 0.35)) / 7.3 + warp * 0.6;
+        float wave = 0.6 * sin(6.2831853 * p1 + 0.5 * sin(6.2831853 * p1)) +
+                     0.4 * sin(6.2831853 * p2);
         float sunAlong = dot(normalize(sunDir.xy + 1e-4), wdir);
-        float ripple = (1.0 - saturate((footprint - 0.2) / 0.6)) *
+        float ripple = (1.0 - saturate((footprint - 0.15) / 0.45)) *
                        smoothstep(0.3, 0.65, Fbm3(float3(surfPos.xy * 0.006, 9.0)));
-        shadeMul = 1.0 + 0.07 * cos(phase * 6.2831853) * sunAlong * ripple * upMask +
+        shadeMul = 1.0 + 0.04 * wave * sunAlong * ripple * upMask +
                    0.1 * (Fbm3(float3(surfPos.xy * 0.015, 4.0)) - 0.5);
     } else if (preset == 4) {
         // Ash: soft dark flecks over a blotchy layer.
@@ -719,6 +757,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     return lerp(baseColor, coated, saturate(cov * 0.9));
 }
 
+)HLSL"
+                                  R"HLSL(
 // Evaluates volumetric extinction and local scatter tint at world point q.
 float SampleVolumeAt(float3 q, float floorZ, bool noisy, out float3 outTint, out float outLoad) {
     outTint = thinColor.rgb;
@@ -1063,13 +1103,22 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
              (OnMap(suv) && surfPos.z - streetZMap.SampleLevel(linearClamp, suv, 0) < 64.0))) {
             float cavity;
             float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir, cavity);
-            // On a floor the map knows, the ground faces up: depth-built normals tilt on the
-            // rows where the game's depth steps, which drew arcs around the camera.
-            bool hasFloor;
-            float onFloor = 1.0 - smoothstep(2.0, 8.0,
-                                             abs(surfPos.z - SampleFloorBelow(surfPos, hasFloor)));
-            surfNormal = normalize(lerp(surfNormal, float3(0.0, 0.0, 1.0),
-                                        onFloor * smoothstep(0.5, 0.8, surfNormal.z)));
+            // On a floor the map knows, the ground takes the map's own smooth slope:
+            // depth-built normals tilt on the rows where the game's depth steps (arcs round
+            // the camera), and snapping to straight up against one height per cell switched
+            // on and off in cell-sized bands across ramps.
+            float fz = SampleFloorBelowSmooth(surfPos);
+            float fx = SampleFloorBelowSmooth(surfPos + float3(22.0, 0.0, 0.0));
+            float fy = SampleFloorBelowSmooth(surfPos + float3(0.0, 22.0, 0.0));
+            // A ramp's gentle slope is trusted; a ledge or curb drop within a cell is not a
+            // slope, so there the ground stays level.
+            float relief = abs(fz - fx) + abs(fz - fy);
+            float trust = 1.0 - smoothstep(8.0, 16.0, relief);
+            float3 mapN = normalize(float3((fz - fx) * trust, (fz - fy) * trust, 22.0));
+            float onFloor = 1.0 - smoothstep(3.0 + relief * trust, 9.0 + 2.0 * relief * trust,
+                                             abs(surfPos.z - fz));
+            surfNormal = normalize(lerp(surfNormal, mapN,
+                                        onFloor * smoothstep(0.3, 0.6, surfNormal.z)));
             // The light on the ground, read from the frame over a 16 px neighbourhood: wide
             // enough that paving, grout and painted lines do not print through the cover.
             float3 around = float3(0.0, 0.0, 0.0);
