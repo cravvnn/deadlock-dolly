@@ -2,6 +2,20 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from .weather import WEATHER_IDS, preset_label as weather_label
+from .particles import (PARTICLE_IDS, PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN,
+                        PARTICLE_LABELS)
+
+# Scene drawer actions and the WeatherSettings field each one sets.
+WEATHER_FIELDS = {
+    "set_weather_preset": "preset", "set_weather_intensity": "intensity",
+    "set_weather_build_up": "build_up", "set_wind_direction": "wind_direction",
+    "set_wind_speed": "wind_speed", "set_wind_gusts": "gusts",
+    "set_weather_hero_wakes": "hero_wakes", "set_flake_size": "flake_size",
+    "set_precipitation_density": "density", "set_weather_coating": "coating",
+    "set_weather_height_ceiling": "height_ceiling",
+    "set_weather_include_effects": "include_in_effects",
+}
 import copy
 import logging
 import math
@@ -389,6 +403,55 @@ def _dispatch(app, event, bridge, *, publish):
              + ("despawns on ground." if app.project.confetti_despawn_on_ground
                 else "remains on the ground."))
             if app.project.confetti_enabled else "Confetti rain disabled for this shot.")
+        publish()
+    elif action in ("set_particle_preset", "set_particle_intensity"):
+        value = event["value"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError("Particle values must be numbers.")
+        if action == "set_particle_preset":
+            index = int(value)
+            if index != value or not 0 <= index < len(PARTICLE_IDS):
+                raise ValueError("Choose a particle preset from the library.")
+            changes = {"particles_preset": PARTICLE_IDS[index]}
+        else:
+            if not PARTICLE_INTENSITY_MIN <= value <= PARTICLE_INTENSITY_MAX:
+                raise ValueError("Particle intensity is out of range.")
+            changes = {"particles_intensity": float(value)}
+        app.project = replace(app.project, **changes)
+        if hasattr(app, "particles_preset"):
+            app.particles_preset.set(PARTICLE_LABELS[app.project.particles_preset])
+            app.particles_intensity.set(f"{app.project.particles_intensity:g}")
+        app._mark_dirty()
+        app.controller.set_native_particles(
+            app.project.confetti_enabled, app.project.confetti_spawn_height,
+            app.project.confetti_despawn_on_ground, app.project.particles_preset,
+            app.project.particles_intensity)
+        app.status_text.set(f"Particles: {PARTICLE_LABELS[app.project.particles_preset]}.")
+        publish()
+    elif action in WEATHER_FIELDS:
+        value = event["value"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError("Weather values must be numbers.")
+        current = app.project.weather
+        field = WEATHER_FIELDS[action]
+        if field == "preset":
+            index = int(value)
+            if index != value or not 0 <= index < len(WEATHER_IDS):
+                raise ValueError("Choose a weather preset from the library.")
+            settings = current.with_preset(WEATHER_IDS[index])
+        elif field in ("hero_wakes", "include_in_effects"):
+            if value not in (0, 1):
+                raise ValueError("Weather switches must be on or off.")
+            settings = replace(current, **{field: bool(value)})
+        else:
+            settings = replace(current, **{field: float(value)})
+        settings.validate()
+        app.project = replace(app.project, weather=settings)
+        if hasattr(app, "_refresh_weather"):
+            app._refresh_weather()   # the desktop Scene page follows the drawer
+        app._mark_dirty()
+        app.controller.set_native_weather(settings, app.project.start_tick)
+        app.status_text.set(f"Weather: {weather_label(settings.preset)}.")
         publish()
     elif action == "set_replay_hud":
         if event['value'] not in (0, 1):

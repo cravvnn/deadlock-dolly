@@ -9,6 +9,7 @@
 // writes game memory. A missing target, moved pointer or unreadable pose fails
 // closed with a static message instead of rendering a guessed camera.
 
+#include <algorithm>
 #include <cmath>
 
 namespace attach_runtime {
@@ -1096,9 +1097,24 @@ inline void publish_bones(unsigned char* mapping, const Cache* cache) noexcept {
     attach_runtime::publish_seqlocked(mapping + kEditorBonesOffset, bones);
 }
 
+// A validated player scene node, for per-frame origin reads (weather hero wakes).
+struct HeroNode {
+    std::uint32_t entity_index = 0;
+    std::uintptr_t pawn = 0, node = 0;
+};
+struct HeroNodes {
+    std::uint32_t count = 0, origin = 0, owner = 0; // origin/owner: scene node offsets
+    HeroNode heroes[kEditorRosterPlayers]{};
+};
+
 // Worker thread: publish the live player roster for the editor target picker.
 // The seqlock mirrors the status writer: odd while writing, even when done.
-inline void publish_roster(unsigned char* mapping, HMODULE client) noexcept {
+// `heroes`, when given, receives the same players' scene nodes sorted by entity index
+// (empty when the reviewed offsets are unavailable).
+inline void publish_roster(unsigned char* mapping, HMODULE client,
+                           HeroNodes* heroes = nullptr) noexcept {
+    if (heroes)
+        *heroes = HeroNodes{};
     if (!mapping)
         return;
     EditorRoster roster{};
@@ -1121,6 +1137,14 @@ inline void publish_roster(unsigned char* mapping, HMODULE client) noexcept {
                 EditorRosterEntry entry{};
                 entry.handle = player.handle;
                 entry.entity_index = player.handle & 0x7fffu;
+                if (heroes && heroes->count < kEditorRosterPlayers) {
+                    heroes->origin = offsets.origin;
+                    heroes->owner = offsets.owner;
+                    HeroNode& hero = heroes->heroes[heroes->count++];
+                    hero.entity_index = entry.entity_index;
+                    hero.pawn = player.instance;
+                    hero.node = node;
+                }
                 std::uint32_t name_offset = 0;
                 std::uintptr_t name_pointer = 0;
                 std::uint64_t token = 0;
@@ -1134,6 +1158,11 @@ inline void publish_roster(unsigned char* mapping, HMODULE client) noexcept {
         }
     }
     attach_runtime::publish_seqlocked(mapping + kEditorRosterOffset, roster);
+    if (heroes)
+        // A stable order: the wake shader blends heroes in sequence.
+        std::sort(
+            heroes->heroes, heroes->heroes + heroes->count,
+            [](const HeroNode& a, const HeroNode& b) { return a.entity_index < b.entity_index; });
 }
 
 } // namespace attach_runtime

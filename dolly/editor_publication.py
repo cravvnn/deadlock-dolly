@@ -183,6 +183,14 @@ def configure(app):
             publish_cameras(app.project, history.revision, first,
                             can_undo=history.can_undo, can_redo=history.can_redo)
             app._native_cameras_bridge, app._native_cameras_cache = bridge, camera_values
+    # The in-game Scene drawer shows the shot's weather from the published block.
+    publish_weather = getattr(bridge, "set_weather", None)
+    if callable(publish_weather):
+        signature = (app.project.weather, app.project.start_tick)
+        if (getattr(app, "_native_weather_cache", None) != signature
+                or getattr(app, "_native_weather_bridge", None) is not bridge):
+            publish_weather(app.project.weather, app.project.start_tick)
+            app._native_weather_cache, app._native_weather_bridge = signature, bridge
     publish_lite = getattr(bridge, "configure_lite_replay", None)
     if callable(publish_lite) and history is not None:
         signature = (history.revision, app._native_camera_page, app.project.start_tick,

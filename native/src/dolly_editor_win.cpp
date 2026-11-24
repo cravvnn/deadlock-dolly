@@ -1,5 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include "dolly_confetti.hpp"
+#include "dolly_weather_state.hpp"
+#include "dolly_weather_runtime.hpp"
 #include <windows.h>
 #include <atomic>
 #include <algorithm>
@@ -644,6 +647,11 @@ EditorSnapshot editor_snapshot() noexcept {
         result.confetti_despawn_on_ground = (confetti & (1u << 17)) != 0;
         if (confetti_height >= 100 && confetti_height <= 1500)
             result.confetti_spawn_height = double(confetti_height);
+        // Bits 18..21: particle preset; 22..27: intensity x 20 (0 = not published).
+        result.confetti_preset = int((confetti >> 18) & 0xfu);
+        const auto intensity = (confetti >> 22) & 0x3fu;
+        if (intensity >= 2)
+            result.confetti_intensity = intensity / 20.0;
         if (std::isfinite(c->video_speed) && c->video_speed >= .05f && c->video_speed <= 4.0f)
             result.video_speed = c->video_speed;
     }
@@ -1147,6 +1155,16 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if (action == EditorAction::SetConfettiSpawnHeight && (value < 100 || value > 1500))
         return false;
+    if (action == EditorAction::SetParticlePreset &&
+        (value != std::floor(value) || value < 0 || value >= confetti::kPresetCount))
+        return false;
+    if (action == EditorAction::SetParticleIntensity && (value < .25 || value > 3))
+        return false;
+    if (std::uint32_t(action) >= std::uint32_t(EditorAction::SetWeatherPreset) &&
+        std::uint32_t(action) <= std::uint32_t(EditorAction::SetWeatherIncludeEffects) &&
+        !weather::valid_panel_value(unsigned(action) - unsigned(EditorAction::SetWeatherPreset),
+                                    value))
+        return false;
     if (action == EditorAction::SetAttachBone) {
         EditorBones bones{};
         if (!pose_override || !editor_bones_snapshot(bones) || value != std::floor(value) ||
@@ -1550,6 +1568,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
         accepted = owner_sequence = ~0u;
     static double configured_speed = -1;
     if (memory && connected) {
+        weather_runtime::poll_editor_block(memory);
         accept_seqlocked(memory + kEditorDofOffset, gDofConfig, [](const EditorDofConfig& dof) {
             bool valid = std::memcmp(dof.magic, "DLYDOF01", 8) == 0 && dof.abi == 1 &&
                          dof.enabled <= 1 && dof.reserved == 0;

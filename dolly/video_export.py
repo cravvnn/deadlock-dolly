@@ -321,8 +321,13 @@ class VideoOptions:
     camera_only: bool = False
     # Auto's encoder, resolved once by validated() and reused for the take.
     auto_codec: str = ""
+    # The plate this pass records: "color", "world", "players", "effects_black",
+    # "effects_white" or "depth". Native passes such as weather follow it.
+    plate: str = "color"
 
     def validated(self) -> VideoOptions:
+        if self.plate not in ("color", "world", "players", "effects_black", "effects_white", "depth"):
+            raise ValueError("Unknown recording plate.")
         if type(self.camera_only) is not bool:
             raise ValueError("Camera-only capture must be on or off.")
         if self.camera_only:
@@ -416,7 +421,7 @@ class VideoOptions:
                               ffmpeg, self.fixed_step, speed, self.depth, self.depth_exr,
                               self.layers, self.white_clear, self.shot_only,
                               self.full_resolution or self.depth, self.bundle_audio, self.max_frames, scratch, self.camera_track,
-                              container=container)
+                              container=container, plate=self.plate)
         if ffmpeg is not None:
             # Reject an encoder the configured FFmpeg does not provide before
             # the replay is reloaded and the native recorder is armed. The
@@ -764,6 +769,8 @@ class VideoExport:
                 limited["camera_track"] = True
             if options.camera_only:
                 limited["camera_only"] = True
+            if options.plate != "color":  # the color take keeps the original request
+                limited["plate"] = options.plate
             bridge.start_video(str(color_path), fps=options.fps, bitrate=options.bitrate,
                                encoder=encoder, codec=codec_id, quality=options.quality,
                                preset=options.preset,

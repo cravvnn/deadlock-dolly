@@ -3,7 +3,7 @@
 [Documentation](README.md) · [User guide](USER_GUIDE.md)
 
 The default interface uses Kara's top rail: **Camera**, **Follow**, **Bone
-Picker**, **Look** and **Export** open drawers, with **Campaths** on the right
+Picker**, **Look**, **Scene** and **Export** open drawers, with **Campaths** on the right
 and the replay/shot/curve transport below. See the [redesigned interface
 guide](UI_REDESIGN.md) for placement, Escape behavior and the classic fallback.
 
@@ -240,7 +240,9 @@ and editing history.
 
 ## Desktop controls
 
-The desktop always shows Replay, Camera, Look, Export, Controls and Settings.
+The desktop always shows Replay, Camera, Look, Scene, Export, Controls and Settings.
+Scene edits the shot's weather with the same sections as the in-game Scene drawer
+(Weather, Precipitation, Wind, Ground and Haze); both edit the same shot.
 The sidebar has a **Controls** page for shortcuts, camera look sensitivity
 and movement speed. Search for an action or its current shortcut, then click the
 shortcut button and press its replacement. Review it before choosing **Save shortcut**.

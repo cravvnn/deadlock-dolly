@@ -62,7 +62,7 @@ public:
     bool rail_enabled() const noexcept { return rail_enabled_; }
     bool rail_drawers_open() const noexcept { return rail_selected_ >= 0 || rail_paths_open_; }
     void close_rail_drawers() noexcept { rail_selected_ = -1; rail_paths_open_ = false; }
-    ImVec4 rail_tab_rect(unsigned tab) const noexcept { return tab < 6 ? rail_tab_rects_[tab] : ImVec4(); }
+    ImVec4 rail_tab_rect(unsigned tab) const noexcept { return tab < 7 ? rail_tab_rects_[tab] : ImVec4(); }
     ImVec4 main_tab_rect(unsigned page) const noexcept { return page<5 ? main_tab_rects_[page] : ImVec4(); }
     ImVec4 main_card_heights(unsigned index) const noexcept {
         return index<4 ? ImVec4(section_heights_[lite_page_][index],section_draw_heights_[index],
@@ -120,8 +120,8 @@ public:
 private:
     bool rail_enabled_ = true, rail_drawing_ = false, rail_paths_open_ = false, rail_picker_mode_ = false;
     int rail_selected_ = -1;
-    float rail_body_height_[6]{654,390,314,536,399,480};
-    ImVec4 rail_tab_rects_[6]{};
+    float rail_body_height_[7]{654,390,314,536,399,480,520};
+    ImVec4 rail_tab_rects_[7]{};
     ImVec2 rail_paths_position_{}, rail_paths_size_{};
     ImVec2 rail_bar_offset_{};
     ImVec4 rail_track_rect_{};

@@ -89,6 +89,12 @@ const RailIcon kRail[(int)Rail::Count] = {
     {1.85f, 5.5f,
      "M 0 0 L 11.5 0 M 0 0 L 0 12 M 0 0 L 19.299999237060547 6 M 11.5 0 L 11.5 12 M 11.5 0 L 19.299999237060547 6 "
      "M 11.5 12 L 0 12 M 11.5 12 L 19.299999237060547 6 M 0 12 L 19.299999237060547 6"},
+    // Scene: cloud with three wind-blown streaks (stroke icon in the 23x23 frame)
+    {0.0f, 0.0f,
+     "M 6.4 12.2 C 4.2 12.2 2.6 10.8 2.6 8.9 C 2.6 7.1 4 5.7 5.8 5.7 "
+     "C 6.4 3.4 8.4 1.9 10.9 1.9 C 13.7 1.9 15.9 3.9 16.2 6.5 "
+     "C 18.3 6.6 20 8.1 20 10 C 20 11.2 19.1 12.2 17.8 12.2 Z "
+     "M 7.6 15.2 L 6.2 19.4 M 12 15.2 L 10.6 19.4 M 16.4 15.2 L 15 19.4"},
 };
 
 std::vector<Sub> Parse(const char* s, ImVec2 origin, float scale) {

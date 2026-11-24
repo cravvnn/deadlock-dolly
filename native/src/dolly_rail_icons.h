@@ -4,7 +4,9 @@
 
 namespace dolly::rail_icons {
 
-enum class Rail { Camera, Follow, Bone, Look, Export, Campaths, Count };
+// Scene is drawn between Look and Export; its index is appended so saved layouts and
+// tab-index checks for Export and Campaths stay valid.
+enum class Rail { Camera, Follow, Bone, Look, Export, Campaths, Scene, Count };
 
 // Rail icon in its 23x23 Figma box, centred at `center` (screen px), stroke 1.4 x scale.
 void DrawRail(ImDrawList* dl, Rail id, ImVec2 center, float scale, ImU32 col);

@@ -163,6 +163,42 @@ def build_look(app):
     app._playback_hosts[str(app.cvar_tab)] = view.playback_host
 
 
+def build_scene(app):
+    """The Scene page: the shot's weather, mirroring the in-game Scene drawer section by section."""
+    from . import weather as w
+    from .ui.scene_page import BUILD_UP_INFO, Control, SceneActions, ScenePage, SceneState
+
+    controls = {
+        "Weather": (
+            Control("intensity", "Intensity", w.INTENSITY_MIN, w.INTENSITY_MAX, "{:.2f}", widest="0.00"),
+            Control("build_up", "Build-up", w.BUILD_UP_MIN, w.BUILD_UP_MAX, "{:.0f}", " s", widest="000",
+                    info=BUILD_UP_INFO),
+            Control("gusts", "Gusts", w.GUSTS_MIN, w.GUSTS_MAX, "{:.2f}", widest="0.00")),
+        "Precipitation": (
+            Control("flake_size", "Size", w.FLAKE_SIZE_MIN, w.FLAKE_SIZE_MAX, "{:.2f}", "x", widest="0.00"),
+            Control("density", "Density", w.DENSITY_MIN, w.DENSITY_MAX, "{:.2f}", "x", widest="0.00")),
+        "Wind": (
+            Control("wind_direction", "Direction", 0.0, 360.0, "{:.0f}", "°", widest="000"),
+            Control("wind_speed", "Speed", w.WIND_SPEED_MIN, w.WIND_SPEED_MAX, "{:.0f}", " u/s", widest="000")),
+        "Ground and Haze": (
+            Control("coating", "Coating", w.COATING_MIN, w.COATING_MAX, "{:.2f}", widest="0.00"),
+            Control("height_ceiling", "Ceiling", w.HEIGHT_CEILING_MIN, w.HEIGHT_CEILING_MAX, "{:.0f}", " u",
+                    widest="000")),
+    }
+    state = SceneState(
+        preset=app.weather_preset,
+        values=app.weather_values,
+        include_in_effects=app.weather_include_effects,
+        hero_wakes=app.weather_hero_wakes,
+        preset_labels=tuple(w.WEATHER_LABELS[preset] for preset in w.WEATHER_IDS),
+        controls=controls,
+    )
+    view = ScenePage(app.scene_tab, state, SceneActions(weather_changed=app._weather_changed))
+    app.scene_view = view
+    app.scene_page = view.scene_page
+    app._playback_hosts[str(app.scene_tab)] = view.playback_host
+
+
 def build_playback(app, parent):
     """Shot Playback (PLAN-5 3.1.1): one frame in the stage workspace, adopted by Camera or Look."""
     from .ui.playback_card import PlaybackActions, PlaybackCard, PlaybackState

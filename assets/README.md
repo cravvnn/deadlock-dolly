@@ -62,8 +62,9 @@ match and falls back to flat colours.
   the sidebar (alpha only, 6/255 at most), which Dolly composites into the
   sidebar's opaque gradient. The 1x file has Figma's pixels; the larger ones
   are bilinear enlargements of it.
-* `nav_icons@1x.png`, `@1.5x`, `@2x`: the six navigation icons rasterised from
-  their Figma strokes, one row per text colour token (`muted`, `text`).
+* `nav_icons@1x.png`, `@1.5x`, `@2x`: the seven navigation icons rasterised from
+  their Figma strokes (Scene's stroke is built into `tools/build_ui_art.py` until
+  the Figma export has `nav_scene_default.svg`), one row per text colour token (`muted`, `text`).
 
 Rebuild after a change to the Figma exports or to the `muted`/`text` tokens:
 

@@ -69,6 +69,14 @@ EXTRA_ACTIONS += ("set_video_ae_camera",)
 EXTRA_ACTIONS += ("set_video_usd_camera",)
 EXTRA_ACTIONS += ("set_attach_vertical_aim_lock",)
 EXTRA_ACTIONS += ("export_renderlock", "cancel_renderlock")  # IDs 123, 124
+# Scene drawer weather controls, IDs 125-136 (dolly_editor.hpp SetWeatherPreset..).
+WEATHER_ACTIONS = ("set_weather_preset", "set_weather_intensity", "set_weather_build_up",
+                   "set_wind_direction", "set_wind_speed", "set_wind_gusts",
+                   "set_weather_hero_wakes", "set_flake_size", "set_precipitation_density",
+                   "set_weather_coating", "set_weather_height_ceiling",
+                   "set_weather_include_effects")
+EXTRA_ACTIONS += WEATHER_ACTIONS
+EXTRA_ACTIONS += ("set_particle_preset", "set_particle_intensity")  # IDs 137, 138
 
 # Optional completion signal in the unused mapping tail; existing offsets stay fixed.
 CINEMATIC_OFFSET = 2 * 1024 * 1024 + 60000
@@ -497,8 +505,13 @@ def pack_config(sequence, owner_sequence, ack_event, values):
         raise ValueError("Confetti switches must be booleans")
     confetti_height = round(_finite(values.get("confetti_spawn_height", 250.0),
                                     100, 1500, "confetti spawn height"))
+    preset = values.get("confetti_preset", 0)
+    if isinstance(preset, bool) or not isinstance(preset, int) or not 0 <= preset <= 15:
+        raise ValueError("Particle preset must be a preset index")
+    intensity = round(_finite(values.get("confetti_intensity", 1.0), .25, 3, "particle intensity") * 20)
+    # Bits 0..15 spawn height, 16 enabled, 17 despawn, 18..21 preset, 22..27 intensity x 20.
     confetti = (confetti_height | int(confetti_enabled) << 16 |
-                int(confetti_despawn) << 17)
+                int(confetti_despawn) << 17 | preset << 18 | min(intensity, 63) << 22)
     return CONFIG.pack(
         CONFIG_MAGIC, _uint(sequence, "sequence"), EDITOR_ABI, int(enabled), OWNERS.index(owner),
         _uint(owner_sequence, "owner sequence"), selected, count, _uint(ack_event, "event acknowledgement"),

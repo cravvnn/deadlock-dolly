@@ -36,6 +36,18 @@ enum class Codec : std::uint32_t {
     hevc_amf = 9,
     lossless = 10
 };
+// Which plate a recording pass produces. Native passes that differ per plate (weather,
+// lens effects, effects-take filtering) read it through current_plate(). Values follow
+// dolly/media_wire.py PLATES; Unspecified is an older editor or no recording.
+enum class Plate : std::uint8_t {
+    Unspecified = 0,
+    Color = 1,
+    World = 2,
+    Players = 3,
+    EffectsBlack = 4,
+    EffectsWhite = 5,
+    Depth = 6,
+};
 struct Options {
     const wchar_t* path = nullptr;   // absolute .mp4/.mkv destination
     const wchar_t* ffmpeg = nullptr; // absolute ffmpeg.exe when encoder==ffmpeg
@@ -52,6 +64,8 @@ struct Options {
     // The host is expected to run the engine at a fixed frame rate (set by the
     // caller) so each captured frame is a distinct simulation step.
     bool fixed_step = false;
+    // The plate this pass records.
+    Plate plate = Plate::Unspecified;
     // Paired numerical depth master. Off by default. The caller must supply a
     // verified scene sample and exact replay time. The master is a ProRes 4444
     // depth.mov inside the recording's depth layer folder; depth_exr adds the
@@ -105,6 +119,11 @@ bool wants_white_clear() noexcept;
 // takes learn the matte scene target during their black passes so a later
 // sparse pass (particles-only effects) can reuse it.
 bool wants_shot_only() noexcept;
+// Whether the active recording is a fixed-step export (one frame per rendered Present).
+// The weather pass renders at its highest quality for those takes.
+bool wants_fixed_step() noexcept;
+// The plate of the active recording; Unspecified when idle or from an older editor.
+Plate current_plate() noexcept;
 
 // Call once for the game swapchain before Dolly's UI/guide rendering, under
 // the same serialization as ResizeBuffers/reset_resources. Real-time capture

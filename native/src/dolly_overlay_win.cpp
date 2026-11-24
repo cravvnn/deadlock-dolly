@@ -14,6 +14,7 @@
 #include "dolly_player_capture.hpp"
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
+#include "dolly_weather_runtime.hpp"
 #include "dolly_retry_backoff.hpp"
 #include "MinHook.h"
 #include <d3d11_1.h>
@@ -280,6 +281,7 @@ void release_device() noexcept {
     reset_depth_lifecycle();
     video::reset_resources();
     reshade_release_device();
+    weather_runtime::release();
     if (device || imgui)
         diagnostic_releases.fetch_add(1, std::memory_order_relaxed);
     editor_overlay_available(false);
@@ -647,9 +649,9 @@ void render_overlay(IDXGISwapChain* chain) {
         // A requested take may start while desktop controls own focus. The
         // validated game swapchain supplies frames independently of input focus;
         // do not block initialization while the controller waits for recording.
-        if (media_session_active() &&
-            (snapshot.state == video::State::starting ||
-             snapshot.state == video::State::recording || editor.focused)) {
+        if (media_session_active() && (snapshot.state == video::State::starting ||
+                                       snapshot.state == video::State::recording ||
+                                       editor.focused || weather_runtime::wants_scene_depth())) {
             // The recorder reports the size only once a take exists. ReShade
             // also needs depth while merely editing, so fall back to the
             // current backbuffer dimensions.
@@ -672,7 +674,9 @@ void render_overlay(IDXGISwapChain* chain) {
                 // Depth observation also feeds ReShade's DEPTH semantic while
                 // its runtime is active, so depth-dependent effects work
                 // without ReShade's disabled automatic graphics hooks.
-                depth_live.request(video::wants_depth() || reshade_available());
+                // Weather reconstructs world positions from the same depth.
+                depth_live.request(video::wants_depth() || reshade_available() ||
+                                   weather_runtime::wants_scene_depth());
                 depth::set_white_clear(video::wants_white_clear());
                 const bool matte_hooks =
                     (video::wants_white_clear() || video::wants_shot_only()) && !depth_live.hooks();
@@ -728,6 +732,11 @@ void render_overlay(IDXGISwapChain* chain) {
         video::capture(capture_chain, capture_device, capture_context, sample, replay_time,
                        native_clock);
     };
+    // Weather draws first so ReShade grades it and capture records it.
+    if (weather_runtime::wants_scene_depth()) {
+        DeviceStateScope weather_scope;
+        weather_runtime::render(device, immediate, chain, target, scene_sample);
+    }
     auto* frame_user = const_cast<depth::SceneFrame*>(scene_sample);
     bool effects_handled = false;
     if (reshade_enabled() || reshade_overlay_pending()) {

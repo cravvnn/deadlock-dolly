@@ -126,6 +126,7 @@ struct Session {
     Codec codec = Codec::auto_select;
     std::uint32_t quality = 0, preset = 0;
     bool fixed_step = false;
+    Plate plate = Plate::Unspecified;
     bool depth_enabled = false;
     bool depth_exr = false;
     bool shot_only = false;
@@ -242,6 +243,8 @@ struct CachedStatus {
     std::atomic<bool> depth{false};
     std::atomic<bool> white_clear{false};
     std::atomic<bool> shot_only{false};
+    std::atomic<bool> fixed_step{false};
+    std::atomic<std::uint8_t> plate{0};
 } cached;
 // The take whose error text the cached snapshot reports. Holding it keeps a
 // composed error_buffer alive for lock-free readers after start() replaces it.
@@ -1715,6 +1718,7 @@ bool start(const Options& options) noexcept {
         next->quality = options.quality;
         next->preset = options.preset;
         next->fixed_step = options.fixed_step;
+        next->plate = options.plate;
         next->depth_enabled = options.depth;
         next->depth_exr = options.depth_exr;
         next->shot_only = options.shot_only;
@@ -1858,6 +1862,24 @@ bool wants_shot_only() noexcept {
         return wanted;
     }
     return cached.shot_only.load(std::memory_order_acquire);
+}
+bool wants_fixed_step() noexcept {
+    std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
+    if (lock.owns_lock()) {
+        const bool wanted = current && current->fixed_step;
+        cached.fixed_step.store(wanted, std::memory_order_release);
+        return wanted;
+    }
+    return cached.fixed_step.load(std::memory_order_acquire);
+}
+Plate current_plate() noexcept {
+    std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
+    if (lock.owns_lock()) {
+        const auto plate = current ? current->plate : Plate::Unspecified;
+        cached.plate.store(static_cast<std::uint8_t>(plate), std::memory_order_release);
+        return plate;
+    }
+    return static_cast<Plate>(cached.plate.load(std::memory_order_acquire));
 }
 void publish_path_replay_time(bool playing, double phase, bool completed,
                               const CameraSample* camera) noexcept {

@@ -20,6 +20,7 @@ from typing import Any, Iterable
 from .particles import (PARTICLE_DEFAULT, PARTICLE_IDS, PARTICLE_INTENSITY_DEFAULT,
                         PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN)
 from .object_model import PlacedObject, validate_objects
+from .weather import WEATHER_OFF, WeatherSettings
 from .file_ops import replace_retrying
 
 
@@ -33,7 +34,8 @@ SPLINE_FORMAT_VERSION = 10
 OBJECTS_FORMAT_VERSION = 11
 TANGENTS_FORMAT_VERSION = 12
 RIGID_ATTACH_FORMAT_VERSION = 13
-LATEST_FORMAT_VERSION = RIGID_ATTACH_FORMAT_VERSION
+WEATHER_FORMAT_VERSION = 14
+LATEST_FORMAT_VERSION = WEATHER_FORMAT_VERSION
 MAX_OBJECTS = 64
 CONFETTI_SPAWN_HEIGHT_DEFAULT = 250.0
 CONFETTI_SPAWN_HEIGHT_MIN = 100.0
@@ -600,6 +602,7 @@ class Project:
     particles_preset: str = PARTICLE_DEFAULT
     particles_intensity: float = PARTICLE_INTENSITY_DEFAULT
     objects: list[PlacedObject] = field(default_factory=list)
+    weather: WeatherSettings = WEATHER_OFF
 
     def validate(self) -> None:
         if not isinstance(self.name, str) or len(self.name) > PROJECT_NAME_LIMIT:
@@ -628,6 +631,9 @@ class Project:
             raise ValueError(
                 f"Particle intensity must be between {PARTICLE_INTENSITY_MIN:g} "
                 f"and {PARTICLE_INTENSITY_MAX:g}")
+        if not isinstance(self.weather, WeatherSettings):
+            raise ValueError("Weather settings are invalid")
+        self.weather.validate()
         standard_aspect = _finite(self.standard_aspect, "Standard aspect ratio")
         if not ASPECT_MIN <= standard_aspect <= ASPECT_MAX:
             raise ValueError(f"Standard aspect ratio must be between {ASPECT_MIN:g} and {ASPECT_MAX:g}")
@@ -941,6 +947,12 @@ class Project:
                for key in self.keyframes):
             version = RIGID_ATTACH_FORMAT_VERSION
             particles_used = True
+        # Weather is written only when a preset is on, so a shot without it keeps
+        # the older format that earlier editors can still open.
+        weather_used = self.weather.enabled
+        if weather_used:
+            version = WEATHER_FORMAT_VERSION
+            particles_used = True
         return {
             "format": FORMAT_NAME,
             "version": version,
@@ -956,6 +968,7 @@ class Project:
                 "particles_intensity": self.particles_intensity}
                if particles_used else {}),
             **({"objects": [obj.to_dict() for obj in self.objects]} if self.objects else {}),
+            **({"weather": self.weather.to_dict()} if weather_used else {}),
             "start_tick": self.start_tick,
             "tick_rate": self.tick_rate,
             "setup_values": {name: _json_cvar_value(value) for name, value in self.setup_values.items()},
@@ -997,6 +1010,8 @@ class Project:
                     raise ValueError(f"Project version {version} is missing required field: {required}")
         if version >= OBJECTS_FORMAT_VERSION:
             allowed += ("objects",)
+        if version >= WEATHER_FORMAT_VERSION:
+            allowed += ("weather",)
         _members(obj, allowed, "project")
         keyframes: list[Keyframe] = []
         for i, raw in enumerate(_array(obj.get("keyframes", []), "Camera keyframes")):
@@ -1103,7 +1118,9 @@ class Project:
                       confetti_despawn_on_ground=obj.get("confetti_despawn_on_ground", False),
                       particles_preset=obj.get("particles_preset", PARTICLE_DEFAULT),
                       particles_intensity=obj.get("particles_intensity",
-                                                  PARTICLE_INTENSITY_DEFAULT))
+                                                  PARTICLE_INTENSITY_DEFAULT),
+                      weather=(WeatherSettings.from_dict(obj["weather"])
+                               if "weather" in obj else WEATHER_OFF))
         project.validate()
         if version < VECTOR_FORMAT_VERSION and (
                 any(name in CVAR_COMPONENTS for name in project.setup_values)
