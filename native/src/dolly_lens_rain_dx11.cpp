@@ -12,21 +12,26 @@ namespace {
 
 template <typename T> using Ptr = Microsoft::WRL::ComPtr<T>;
 
-// One capsule of water per instance: a segment (u0, v0)-(u1, v1) with a radius. Drops
-// have round ends (a disc when the segment is a point, a teardrop while running).
-// Runoff streaks are a channel about as wide as the drop: a thin, nearly flat film
-// between two edges where the water's meniscus bends the view (a dark line with a
-// bright one just inside). Streak pieces reach a little past their ends so bends
-// leave no gaps; their slope is purely sideways, so the overlap does not show.
+// One shape of water per instance, along a segment (u0, v0)-(u1, v1):
+//   kind 0, a resting drop: a disc of radius R around (u1, v1).
+//   kind 1, a runoff streak: a channel of half-width R, a thin, nearly flat film
+//     between two edges where the meniscus bends the view (a dark line with a bright
+//     one just inside). Pieces reach a little past their ends so bends leave no gaps;
+//     their slope is purely sideways, so the overlap does not show.
+//   kind 2, a running drop: one body of water, the drop's head (radius R at u1, v1)
+//     smoothly joined to the channel it is laying down (half-width W from u0, v0), so
+//     the outline flows from the streak round the head. Thick and domed at the head,
+//     a thin film with outlined edges along the channel, matching kind 1 there.
 const char kWaterShaders[] = R"(
 cbuffer Params : register(b0) { float4 a; float4 b; float4 c; };
-struct Water { float4 ends; float4 look; }; // ends: u0 v0 u1 v1; look: radius, water, flat
+struct Water { float4 ends; float4 look; }; // ends: u0 v0 u1 v1; look: R, water, kind, W
 StructuredBuffer<Water> drops : register(t0);
 struct V {
     float4 pos : SV_Position;
-    float2 local : TEXCOORD0;   // along the segment, across it (picture heights)
-    float4 shape : TEXCOORD1;   // length, radius, water, flat
+    float2 local : TEXCOORD0;   // along the segment from (u0, v0), across it
+    float4 shape : TEXCOORD1;   // length, R, water, kind
     float4 frame : TEXCOORD2;   // segment direction (xy) and its perpendicular (zw)
+    float extra : TEXCOORD3;    // W (running drops)
 };
 V vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     const float2 corners[6] = { float2(0,-1), float2(0,1), float2(1,1),
@@ -39,46 +44,85 @@ V vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float len = length(axis);
     float2 dir = len > 1e-6 ? axis / len : float2(1.0, 0.0);
     float2 perp = float2(-dir.y, dir.x);
-    float r = w.look.x;
-    float pad = w.look.z > 0.5 ? 0.4 * r : r;  // streak pieces overlap their neighbours
-    float along = lerp(-pad, len + pad, k.x);
+    float r = w.look.x, kind = w.look.z;
+    float before = kind == 1.0 ? 0.4 * r : (kind == 2.0 ? 0.4 * w.look.w : r);
+    float after = kind == 1.0 ? 0.4 * r : r;
+    float along = lerp(-before, len + after, k.x);
     float across = k.y * r;
     float2 p = p0 + dir * along + perp * across;
     V o;
     o.pos = float4(p.x / aspect * 2.0 - 1.0, 1.0 - 2.0 * p.y, 0.0, 1.0);
     o.local = float2(along, across);
-    o.shape = float4(len, r, w.look.y, w.look.z);
+    o.shape = float4(len, r, w.look.y, kind);
     o.frame = float4(dir, perp);
+    o.extra = w.look.w;
     return o;
 }
+// The channel's sideways slope at x = distance from its centre line / half-width:
+// a thin film inside and a meniscus at the edge (dark line, bright line inside).
+float channel_slope(float x, float e, out float rim) {
+    float m = saturate((x - (1.0 - e)) / e);
+    float u = saturate((x - (1.0 - 2.0 * e)) / e);
+    rim = m;
+    return m * m * (3.0 - 2.0 * m) - 0.4 * 4.0 * u * (1.0 - u) * (1.0 - m);
+}
+float smooth_min(float a, float b, float k) {
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return lerp(b, a, h) - k * h * (1.0 - h);
+}
+// rg: slope weighted by thickness, b: thickness, a: coverage. Drops weigh 4x so they
+// win the slope average where they sit on a streak.
 float4 ps_main(V i) : SV_Target {
-    float len = i.shape.x, r = i.shape.y, water = i.shape.z;
-    float along = i.local.x;
-    if (i.shape.w > 0.5) {
+    float len = i.shape.x, r = i.shape.y, water = i.shape.z, kind = i.shape.w;
+    float along = i.local.x, across = i.local.y;
+    if (kind == 1.0) {
         // Streak: water is the fraction of its life left (it dries at constant width).
         if (along < -0.4 * r || along > len + 0.4 * r) discard;
-        float x = abs(i.local.y) / r;
+        float x = abs(across) / r;
         if (x >= 1.0) discard;
-        float e = max(0.22, 2.0 * fwidth(x));        // rim at least ~2 water texels wide
-        float m = saturate((x - (1.0 - e)) / e);      // outer contact slope
-        float u = saturate((x - (1.0 - 2.0 * e)) / e); // inner side of the ridge
-        float s = m * m * (3.0 - 2.0 * m) - 0.4 * 4.0 * u * (1.0 - u) * (1.0 - m);
-        s *= sqrt(water);
-        float2 slope = sign(i.local.y) * s * i.frame.zw;
-        float t = water * (0.15 + 0.85 * m);           // thin film, heavy rim
+        float rim;
+        float s = channel_slope(x, max(0.22, 2.0 * fwidth(x)), rim) * sqrt(water);
+        float2 slope = sign(across) * s * i.frame.zw;
+        float t = water * (0.15 + 0.85 * rim);           // thin film, heavy rim
         float cover = saturate((1.0 - x) / (1.5 * max(fwidth(x), 1e-4))) *
                       smoothstep(0.0, 0.25, water);
         return float4(slope * t, t, cover);
     }
-    float2 d = float2(along - clamp(along, 0.0, len), i.local.y) / r;
+    if (kind == 2.0) {
+        // Running drop: head and channel as one signed-distance shape.
+        float wc = i.extra;
+        float2 head = float2(along - len, across);
+        float head_sd = length(head) - r;
+        float channel_sd = along < -0.4 * wc ? 1e3 : abs(across) - wc;
+        if (along > len)
+            channel_sd = length(head) - wc;
+        float sd = smooth_min(head_sd, channel_sd, 0.5 * r);
+        // Screen derivatives give the outward direction in picture axes (v down);
+        // taken before any discard so neighbouring pixels still contribute.
+        float2 grad = float2(ddx(sd), ddy(sd));
+        float e = -sd;                                // depth inside the outline
+        float fw = max(fwidth(e), 1e-6);
+        if (sd >= 0.0) discard;
+        float grad_len = length(grad);
+        float2 outward = grad_len > 1e-12 ? grad / grad_len : float2(0.0, 0.0);
+        // 1 at the head, fading out over about a radius up the channel.
+        float near = saturate(1.0 - (length(head) - 0.6 * r) / (1.2 * r));
+        float rim;
+        float channel = channel_slope(1.0 - saturate(e / wc), max(0.22, 2.0 * fw / wc), rim);
+        float dome = 1.0 - saturate(e / r);          // like a resting drop: steep at the rim
+        float s = lerp(channel, dome, near);
+        float t = lerp(0.15 + 0.85 * rim, 4.0 * sqrt(saturate(1.0 - dome * dome)), near) * water;
+        float cover = saturate(e / (1.5 * fw)) * water;
+        return float4(outward * s * t, t, cover);
+    }
+    // Resting drop: a disc.
+    float2 d = float2(along - len, across) / r;
     float q = dot(d, d);
     if (q >= 1.0) discard;
     float h = sqrt(1.0 - q);                    // height of the water's rounded surface
     float t = water * h;
     float edge = saturate((1.0 - q) * 6.0);
     float2 slope = d.x * i.frame.xy + d.y * i.frame.zw;  // back to picture axes (v down)
-    // rg: slope weighted by thickness, b: thickness, a: coverage. Drops weigh 4x so
-    // they win the slope average where they sit on a streak.
     return float4(slope * t * 4.0, t * 4.0, water * edge);
 }
 )";
@@ -429,27 +473,11 @@ bool Renderer::render(ID3D11Device* device, ID3D11DeviceContext* context,
         const float water = (std::min)((std::max)(d.water, 0.0f), 1.0f);
         if (!(water > 0.0f && d.radius > 0.0f))
             continue;
-        float tail_u = d.u, tail_v = d.v;
-        if (d.sliding) {
-            // The streak still being laid down, from its start to where it meets the
-            // drop's edge (a 0.85R channel meets the circle about 0.53R behind its centre).
-            const float du = d.u - d.tu, dv = d.v - d.tv;
-            const float length = std::sqrt(du * du + dv * dv);
-            const float stop = 0.53f * d.radius;
-            if (length > stop) {
-                const float end = (length - stop) / length;
-                data.insert(data.end(), {d.tu, d.tv, d.tu + du * end, d.tv + dv * end,
-                                         d.radius * kTrailWidth, 1.0f, 1.0f, 0.0f});
-            }
-            // A running drop stretches into a teardrop along its path.
-            const float speed = std::sqrt(d.vu * d.vu + d.vv * d.vv);
-            if (speed > 1e-5f) {
-                const float tail = (std::min)(speed * 0.06f, d.radius * 1.2f);
-                tail_u = d.u - d.vu / speed * tail;
-                tail_v = d.v - d.vv / speed * tail;
-            }
-        }
-        data.insert(data.end(), {tail_u, tail_v, d.u, d.v, d.radius, water, 0.0f, 0.0f});
+        if (d.sliding) // one body: the head and the channel it is laying down
+            data.insert(data.end(),
+                        {d.tu, d.tv, d.u, d.v, d.radius, water, 2.0f, d.radius * kTrailWidth});
+        else
+            data.insert(data.end(), {d.u, d.v, d.u, d.v, d.radius, water, 0.0f, 0.0f});
     }
     const auto count = static_cast<std::uint32_t>(data.size() / kFloatsPerWater);
     if (count == 0)

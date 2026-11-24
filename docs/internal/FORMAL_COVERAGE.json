@@ -9465,7 +9465,7 @@
     },
     {
       "path": "native/src/dolly_lens_rain_dx11.cpp",
-      "sha256": "b0b1ef25faff47af52e6ec259b00f940676a836d2e1b17a0be3c476c5491135b",
+      "sha256": "90657e7275e5842ab11c6131f41543aa0757fc5aca3459c8e7085b76a16834d9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
