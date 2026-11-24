@@ -304,6 +304,7 @@ dolly/ui/export_page.py
 dolly/ui/layer_pipeline.py
 dolly/ui/library_page.py
 dolly/ui/operations.py
+dolly/ui/scene_page.py
 dolly/ui/settings_page.py
 dolly/ui/shot_commands.py
 dolly/ui/update_notice.py
@@ -319,6 +320,7 @@ dolly/ManifestScan.mutants.json
 dolly/video_export.py
 dolly/visualization_preview_wire.py
 dolly/visualization_wire.py
+dolly/weather.py
 examples/demo_shot.dolly.json
 native/CMakeLists.txt
 native/assets/confetti/pak01_dir.vpk
@@ -343,6 +345,7 @@ native/include/dolly_follow_anchor.hpp
 native/include/dolly_hero_portrait.hpp
 native/include/dolly_hide.hpp
 native/include/dolly_lite.hpp
+native/include/dolly_map_grid.hpp
 native/include/dolly_media.hpp
 native/include/dolly_minimap_guard.hpp
 native/include/dolly_module_residency.hpp
@@ -363,6 +366,7 @@ native/include/dolly_player_scratch.hpp
 native/include/dolly_player_sequence_writer.hpp
 native/include/dolly_player_snapshot.hpp
 native/include/dolly_player_vertex_guard.hpp
+native/include/dolly_precip_dx11.hpp
 native/include/dolly_prop_runtime.hpp
 native/include/dolly_protocol.hpp
 native/include/dolly_render_class.hpp
@@ -375,9 +379,14 @@ native/include/dolly_sound_capture.hpp
 native/include/dolly_sound_compat.hpp
 native/include/dolly_video.hpp
 native/include/dolly_encoder_error.hpp
+native/include/dolly_env_render_dx11.hpp
 native/include/dolly_video_math.hpp
 native/include/dolly_visualization.hpp
 native/include/dolly_visualization_runtime.hpp
+native/include/dolly_weather_runtime.hpp
+native/include/dolly_weather_state.hpp
+native/include/dolly_weather_view_dx11.hpp
+native/include/dolly_wind_fluid_dx11.hpp
 native/profiles/deadlock-2026-09-09-complete.json
 native/profiles/deadlock-2026-09-11-complete.json
 native/profiles/deadlock-2026-09-11b-complete.json
@@ -469,10 +478,12 @@ native/src/dolly_depth_scene_win.cpp
 native/src/dolly_depth_sequence_win.cpp
 native/src/dolly_editor_win.cpp
 native/src/dolly_effects.cpp
+native/src/dolly_env_render_dx11.cpp
 native/src/dolly_follow_anchor_generated.hpp
 native/src/dolly_game_audio.cpp
 native/src/dolly_hero_portrait.cpp
 native/src/dolly_lite_panel.cpp
+native/src/dolly_map_grid.cpp
 native/src/dolly_media_win.cpp
 native/src/dolly_object_picker.cpp
 native/src/dolly_object_picker_ui.cpp
@@ -482,6 +493,7 @@ native/src/dolly_overlay_panel.hpp
 native/src/dolly_overlay_win.cpp
 native/src/dolly_path.cpp
 native/src/dolly_player_capture.cpp
+native/src/dolly_precip_dx11.cpp
 native/src/dolly_prop_runtime.cpp
 native/src/dolly_remote_definitions.hpp
 native/src/dolly_render_class_win.cpp
@@ -496,6 +508,11 @@ native/src/dolly_ui_tokens_generated.hpp
 native/src/dolly_video_win.cpp
 native/src/dolly_visualization.cpp
 native/src/dolly_visualization_runtime_win.cpp
+native/src/dolly_weather_runtime_win.cpp
+native/src/dolly_weather_state.cpp
+native/src/dolly_weather_view_dx11.cpp
+native/src/dolly_wind_fluid_dx11.cpp
+native/src/dolly_zstd_lz4.hpp
 native/src/native_camera_view.hpp
 native/src/native_effects_win.hpp
 native/src/native_feature_status_win.hpp
@@ -520,6 +537,7 @@ native/tests/flight_tests.cpp
 native/tests/follow_anchor_tests.cpp
 native/tests/hero_portrait_tests.cpp
 native/tests/lite_policy_tests.cpp
+native/tests/map_grid_cli.cpp
 native/tests/module_residency_fixture.cpp
 native/tests/module_residency_tests.cpp
 native/tests/object_picker_tests.cpp
@@ -540,6 +558,8 @@ native/tests/video_late_fault_smoke.cpp
 native/tests/video_math_tests.cpp
 native/tests/video_smoke.cpp
 native/tests/visualization_tests.cpp
+native/tests/weather_state_tests.cpp
+native/tests/wind_fluid_warp_tests.cpp
 native/ui_override/panorama/layout/citadel_prewarm_assets_status.xml
 native/ui_override/panorama/layout/hud_hideout.xml
 native/ui_override/panorama/styles/citadel_client_status.css
@@ -595,6 +615,7 @@ tests/native_helpers.py
 tests/test_core_install.py
 tests/test_graphics_session_profiles.py
 tests/test_recovery_updater_boundaries.py
+tests/test_weather.py
 tests/test_core_native.py
 tests/test_core_workflows.py
 tests/video_workflow.py

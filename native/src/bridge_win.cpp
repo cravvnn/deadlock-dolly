@@ -2,6 +2,7 @@
 // gate every hook. Runs only in the -dev -insecure process started by Dolly.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include "dolly_weather_runtime.hpp"
 #include <windows.h>
 #include <shellapi.h>
 #include <bcrypt.h>
@@ -750,6 +751,11 @@ static void publish_attach_result(const AttachPreview& preview,
 }
 CompatResolution gCompat;
 
+// Player scene nodes for weather hero wakes: found by the worker with the roster (every
+// 2 s), read by the view thread each frame. A node is re-checked against its pawn before
+// each read, so one freed since the last walk is skipped.
+std::shared_ptr<const attach_runtime::HeroNodes> gHeroNodes;
+
 struct DemoState {
     bool playing = false, paused = false, seeking = false;
     int tick = 0;
@@ -757,6 +763,27 @@ struct DemoState {
     double interval = 0;
     char name[512]{};
 };
+// View thread: the replay clock for the weather pass, with the heroes' origins when the
+// shot wants hero wakes (a dozen guarded reads).
+static void publish_weather_clock(const DemoState& demo) noexcept {
+    float origins[kEditorRosterPlayers][3];
+    std::uint32_t count = 0;
+    if (weather_runtime::wants_heroes()) {
+        if (const auto nodes = std::atomic_load(&gHeroNodes)) {
+            for (std::uint32_t i = 0; i < nodes->count; ++i) {
+                const auto& hero = nodes->heroes[i];
+                std::uintptr_t owner = 0;
+                if (!read_value(hero.node + nodes->owner, owner) || owner != hero.pawn ||
+                    !read_memory(hero.node + nodes->origin, origins[count], sizeof(origins[0])))
+                    continue;
+                ++count;
+            }
+        }
+    }
+    weather_runtime::publish_clock(demo.time, demo.interval, demo.playing, demo.seeking, origins,
+                                   count);
+}
+
 static bool read_demo(DemoState& result) noexcept {
     std::uintptr_t demo = 0, table = 0, engine_client = 0, engine_table = 0, globals = 0;
     if (!read_value(gEngine + gEngineLayout.demo_global, demo) || !read_value(demo, table) ||
@@ -1367,6 +1394,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         status.applied_fov = fov;
         confetti::Camera confetti_camera{
             {xyz[0], xyz[1], xyz[2]}, {angles[0], angles[1], angles[2]}, float(fov)};
+        publish_weather_clock(demo);
         confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera,
                            confetti_enabled, confetti_height, confetti_despawn, confetti_preset,
                            confetti_intensity);
@@ -1422,6 +1450,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         confetti::Camera camera{{original_xyz[0], original_xyz[1], original_xyz[2]},
                                 {original_angles[0], original_angles[1], original_angles[2]},
                                 original_fov};
+        publish_weather_clock(demo);
         confetti::on_frame(demo.time, demo.playing, demo.seeking, &camera, confetti_enabled,
                            confetti_height, confetti_despawn, confetti_preset, confetti_intensity);
         player_capture::set_hidden_handles(0, 0, 5);
@@ -1586,6 +1615,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     status.applied_fov = fov;
     confetti::Camera confetti_camera{
         {xyz[0], xyz[1], xyz[2]}, {angles[0], angles[1], angles[2]}, float(fov)};
+    publish_weather_clock(demo);
     confetti::on_frame(demo.time, demo.playing, demo.seeking, &confetti_camera, confetti_enabled,
                        confetti_height, confetti_despawn, confetti_preset, confetti_intensity);
     if (c.mode == std::uint32_t(Mode::Play)) {
@@ -1994,7 +2024,11 @@ static DWORD WINAPI worker(void*) {
             const double roster_now = now_seconds();
             if (gMemory && roster_now - last_roster_publish >= 2.0) {
                 last_roster_publish = roster_now;
-                attach_runtime::publish_roster(gMemory, reinterpret_cast<HMODULE>(gClient));
+                auto heroes = std::make_shared<attach_runtime::HeroNodes>();
+                attach_runtime::publish_roster(gMemory, reinterpret_cast<HMODULE>(gClient),
+                                               heroes.get());
+                std::atomic_store(&gHeroNodes,
+                                  std::shared_ptr<const attach_runtime::HeroNodes>(heroes));
             }
             // Resolve the selected attach target whenever the editor publishes
             // a different selection; used by both preview and snap.

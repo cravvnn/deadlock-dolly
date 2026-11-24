@@ -27,6 +27,7 @@ from .path import (CONFETTI_SPAWN_HEIGHT_DEFAULT, CONFETTI_SPAWN_HEIGHT_MAX,
 from .particles import (PARTICLE_DEFAULT, PARTICLE_IDS, PARTICLE_INTENSITY_DEFAULT,
                         PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN)
 from .runtime import resource_root
+from .weather import WEATHER_OFF, WIRE_OFFSET as WEATHER_OFFSET, WeatherSettings
 from .media_transport import MediaTransport
 
 ABI = 4
@@ -239,6 +240,10 @@ class NativeBridge(MediaTransport):
         self._confetti_despawn_on_ground = False
         self._particles_preset = PARTICLE_DEFAULT
         self._particles_intensity = PARTICLE_INTENSITY_DEFAULT
+        self._weather = WEATHER_OFF
+        self._weather_map = ""
+        self._weather_start = 0
+        self._weather_sequence = 0
         self._start = 0.0
         self._speed = 1.0
         self._demo = b""
@@ -630,6 +635,10 @@ class NativeBridge(MediaTransport):
             self._confetti_despawn_on_ground = project.confetti_despawn_on_ground
             self._particles_preset = project.particles_preset
             self._particles_intensity = float(project.particles_intensity)
+            # Weather first, so the helper holds it before the shot starts.
+            self._weather = project.weather
+            self._weather_start = int(project.start_tick)
+            self._publish_weather()
             self._flags = self._compose_flags()
             command = self._publish(1, payload)
             try:
@@ -692,6 +701,37 @@ class NativeBridge(MediaTransport):
                 self._particles_intensity = level
             self._flags = self._compose_flags()
             self._publish(self._mode, increment=False)
+
+    def _publish_weather(self):
+        self._publish_block(
+            WEATHER_OFFSET, "_weather_sequence",
+            lambda sequence: self._weather.pack_wire(sequence, self._weather_map,
+                                                     self._weather_start))
+
+    def set_weather(self, settings, start_tick=None):
+        """Apply the shot's weather immediately to the active native view."""
+        if not isinstance(settings, WeatherSettings):
+            raise ValueError("Weather settings are invalid")
+        settings.validate()
+        if start_tick is not None and (isinstance(start_tick, bool) or not isinstance(start_tick, int)
+                                       or start_tick < 0):
+            raise ValueError("Weather start tick must be a nonnegative integer")
+        with self._operations, self._lock:
+            self._check_open()
+            self._weather = settings
+            if start_tick is not None:
+                self._weather_start = start_tick
+            self._publish_weather()
+
+    def set_weather_map(self, map_name):
+        """The replay's map, whose collision grid the helper bakes for weather."""
+        name = map_name if isinstance(map_name, str) else ""
+        if name == self._weather_map:
+            return
+        with self._operations, self._lock:
+            self._check_open()
+            self._weather_map = name
+            self._publish_weather()
 
     def set_particles(self, enabled, spawn_height, despawn_on_ground, preset, intensity):
         """Preset-aware entry point used by the editor's Particles panel."""

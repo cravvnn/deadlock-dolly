@@ -3862,6 +3862,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             return True
         return False
 
+    def set_native_weather(self, settings, start_tick=None):
+        """Update the shot's weather without moving the camera."""
+        setter = getattr(self._native_bridge(), "set_weather", None)
+        if callable(setter):
+            setter(settings, start_tick)
+            return True
+        return False
+
     def set_native_confetti(self, enabled, spawn_height, despawn_on_ground):
         """Backward-compatible path used by the in-game particle card."""
         bridge = self._native_bridge()
@@ -5243,7 +5251,16 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise
 
     def _native_bridge(self):
-        return getattr(self._session, "native", None) if self._session is not None else None
+        bridge = getattr(self._session, "native", None) if self._session is not None else None
+        # The helper bakes the replay's map for weather; keep it told which map that is.
+        header = self._replay_header if isinstance(self._replay_header, dict) else {}
+        setter = getattr(bridge, "set_weather_map", None)
+        if callable(setter) and isinstance(header.get("map_name"), str):
+            try:
+                setter(header["map_name"])
+            except Exception:  # a closed bridge reports itself on the caller's own use
+                LOG.debug("Weather map update skipped", exc_info=True)
+        return bridge
 
     def set_seek_relief(self, enabled):
         """Enable or disable the native render relief applied while seeking."""

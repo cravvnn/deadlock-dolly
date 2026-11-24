@@ -1,25 +1,25 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 316,
+  "accounted_units": 333,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
-    "no independent lifecycle": 40,
-    "stateful partial/open": 124,
+    "no independent lifecycle": 41,
+    "stateful partial/open": 125,
     "generated data/schema": 10,
-    "native owner/delegated contract open": 111,
+    "native owner/delegated contract open": 126,
     "offline-tool scope": 26,
     "entrypoint delegated contract open": 4,
     "child-job contract open": 1
   },
   "families": {
-    "value": 40,
+    "value": 41,
     "L05": 21,
     "generated": 10,
-    "L01": 72,
+    "L01": 87,
     "L03": 29,
     "L02": 50,
-    "L04": 68,
+    "L04": 69,
     "L06": 26
   },
   "backlog": {
@@ -757,7 +757,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b",
+      "sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -934,7 +934,8 @@
       "reconciliation_20261120s13": "2026-11-20: connect continues when its Stop / restore fails only because the console is lost (a Game Follow rig restore needs it); the restore stays pending for the next Stop instead of making reconnection impossible.",
       "reconciliation_20261120": "2026-11-20: Diagnostics export picks previous sessions with game_logging.newest_sessions.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261122": "2026-11-22: connect re-raises a stop failure while the playback worker is still alive (only restore failures are swallowed while the console is down); console connection checks read self._console once via export_timing.console_connected. ConsoleReconnect bounds connect versus an unwinding worker."
+      "reconciliation_20261122": "2026-11-22: connect re-raises a stop failure while the playback worker is still alive (only restore failures are swallowed while the console is down); console connection checks read self._console once via export_timing.console_connected. ConsoleReconnect bounds connect versus an unwinding worker.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: _native_bridge keeps the bridge told the replay's map for weather; set_native_weather applies a shot's weather live."
     },
     {
       "path": "dolly/convar_response.py",
@@ -1731,7 +1732,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "18390d4bea9de12dafa07bbb20476a0cd5ddf64be77db896a91b7108cb064224",
+      "sha256": "34ca76d3e9ed3fc5c69895c2b47e7bd249ede615373b8814513db980f035b7a1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1796,7 +1797,8 @@
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
       "reconciliation_20261122": "2026-11-22: framing grid, pause-after-capture and movement speed save through DollyApp._commit_settings (owned fields over the latest settings) instead of a stale snapshot.",
-      "reconciliation_20261123": "2026-11-23: cinematic prepare cleanup keeps the original error"
+      "reconciliation_20261123": "2026-11-23: cinematic prepare cleanup keeps the original error",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Scene weather and Look particle preset/intensity actions update the shot, refresh the desktop Scene page and apply it live."
     },
     {
       "path": "dolly/editor_dof.py",
@@ -1833,7 +1835,7 @@
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "f8cd15be25ba83edc478c0e85073c0e39c7373c24fb481b67024655292a2fd40",
+      "sha256": "b9de89e588dd87f5b119b6cc712b1eac4a3fd321fe0bd87922e51aea0022406b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1882,7 +1884,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261120e": "2026-11-20: DOF blocks publish range-limited values, so an out-of-range saved effect value cannot stop the editor poll.",
-      "reconciliation_20261123": "2026-11-23: lost editor discards the picker locally; first picker sequence stored; no republish after close"
+      "reconciliation_20261123": "2026-11-23: lost editor discards the picker locally; first picker sequence stored; no republish after close",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: configure publishes the shot weather so the in-game Scene drawer shows it."
     },
     {
       "path": "dolly/editor_session.py",
@@ -1941,7 +1944,7 @@
     },
     {
       "path": "dolly/editor_view.py",
-      "sha256": "e60364674335078387d7de533fb9ccd1749a39fcfa3c8bd5992468ecce54b9a4",
+      "sha256": "cafef144ea617f59ae420947c107229fe095530d25861cc7b848a7a72e1053d2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -1973,11 +1976,12 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: editor_values publishes the particle preset and intensity for the Look drawer."
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "821fb6b48b1b6742e7e69bfa5456c34f0db4f138cc82518e8d3624a80127daa6",
+      "sha256": "d0db0a60bdbc191802e8fdcaa67cc5c57f4d8dc95ef10893fc796988573c164d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2024,7 +2028,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261118": "2026-11-18: Camera list publishes the effective roll.",
-      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: WEATHER_ACTIONS (IDs 125-136) and set_particle_preset/intensity (137-138); pack_config carries the particle preset and intensity."
     },
     {
       "path": "dolly/encoder_select.py",
@@ -2672,7 +2677,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560",
+      "sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2828,11 +2833,12 @@
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
       "reconciliation_20261122": "2026-11-22: every settings writer commits only its owned fields over the latest settings under _SETTINGS_COMMIT (_commit_settings); game-exit cleanup is marked done only on success and retried up to GAME_EXIT_CLEANUP_ATTEMPTS; Auto encoder prewarm on startup/codec/ffmpeg change; layer passes reuse auto_codec.",
-      "reconciliation_20261123": "2026-11-23: only close steps finish a close after a failure; busy close waits (_retry_close); idle work dropped during close; launch options set after save; snap correlation"
+      "reconciliation_20261123": "2026-11-23: only close steps finish a close after a failure; busy close waits (_retry_close); idle work dropped during close; launch options set after save; snap correlation",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: the Player POV project carries the shot weather; Scene page between Look and Export edits Project.weather (_weather_changed, _refresh_weather)."
     },
     {
       "path": "dolly/gui_layout.py",
-      "sha256": "299ffbbf4ffc699c9931b9069b7eb15f4eb034dde3490d1c32dffb3a3a53726f",
+      "sha256": "e512cd63b9e3e8f8358adf69f7977b86864acffe82a71a9a9e7919c65c3a1ffd",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2869,7 +2875,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes"
+      "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: build_scene wires the desktop Scene page."
     },
     {
       "path": "dolly/gui_theme.py",
@@ -3217,7 +3224,7 @@
     },
     {
       "path": "dolly/media_transport.py",
-      "sha256": "2643ff2a597b33e89dab64c7f041aa93d515ac4ad1b0d8dadd6b49e0f0fb6049",
+      "sha256": "3fc04ab31e6cbfc148622c2646973fdee212d91148d09bd6e0a49a120863af9d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -3261,11 +3268,12 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261118": "2026-11-18: Media command waits end when the game exits; finalize is skipped after exit and the mapping is still unmapped."
+      "reconciliation_20261118": "2026-11-18: Media command waits end when the game exits; finalize is skipped after exit and the mapping is still unmapped.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: start_video forwards the plate."
     },
     {
       "path": "dolly/media_wire.py",
-      "sha256": "cd3b2cb51e1e89dc85d01af5a3dc550132c89c399f03cae9daf4e385c3bdb7ba",
+      "sha256": "8072795cde66e6cbab150845e6fe9c05f683377551206881e82929c4f87e605d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -3291,7 +3299,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: PLATES: start_video carries the recorded plate in reserved bits 7-9."
     },
     {
       "path": "dolly/memory_watch.py",
@@ -3436,7 +3445,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be",
+      "sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3522,7 +3531,8 @@
       "reconciliation_20261114": "2026-11-14 process hardening: bind_game(pid, exited) stores the game's exit check; _wait and _wait_editor_input raise after a status read once the game has exited, so start_flight leaves _operations within one poll instead of up to 8 s + 8 s. GameExitClose (bounded, watcher/user close vs flight wait) added; existing BridgeClose/ReleaseJoin/HeartbeatUnmap/StatusSnapshot scopes unchanged (close's release(0.25) now also ends at once on a dead game).",
       "reconciliation_20261118": "2026-11-18: editor_roster raises NativeStatusBusy when busy (dead raise removed); _wait_editor_input keeps polling through a busy status.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261123": "2026-11-23: bone readers raise NativeStatusBusy; configure_editor_attach returns its sequence"
+      "reconciliation_20261123": "2026-11-23: bone readers raise NativeStatusBusy; configure_editor_attach returns its sequence",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: prepare publishes the shot weather block before arming; set_weather and set_weather_map republish it (seqlocked, 2 MiB + 24480)."
     },
     {
       "path": "dolly/native_capabilities.py",
@@ -3870,7 +3880,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "dc93f5d7b76e0f3bb13001f8bb3aa1b81c724367172be50de41ada3b4f3a4a1f",
+      "sha256": "02f58694b84ba00bdda034244c3b8cb5dc277e9b32de23381c17977c4f53efbc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3967,7 +3977,8 @@
       "reconciliation_20261118_save_retry": "2026-11-18: Project.save retries the final replace for about a second when Windows reports the shot briefly locked (PermissionError); other errors fail at once. SaveCleanup still abstracts the body.",
       "reconciliation_20261119n": "2026-11-19: PROJECT_NAME_LIMIT names the 256-character shot name limit for callers. Project.validate rejects a name with an unpaired surrogate (for example from hand-edited JSON), which loaded but could not be saved and exported to USD as ?.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261122": "2026-11-22: Project.save uses file_ops.replace_retrying; the local _replace_retrying_lock helper is removed."
+      "reconciliation_20261122": "2026-11-22: Project.save uses file_ops.replace_retrying; the local _replace_retrying_lock helper is removed.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Project.weather (default off) is validated and written as format version 14 only when a preset is on."
     },
     {
       "path": "dolly/paused_flight.py",
@@ -4710,7 +4721,7 @@
     },
     {
       "path": "dolly/screenshot.py",
-      "sha256": "a092923236754d6f95248d4e5c020d327709330f3b5571688fd5cd4260a3552f",
+      "sha256": "549a9fa6b96a8639a62412ac269285dd5f97d35342603954e2ed833642b717d6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -4779,7 +4790,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation_20261120": "2026-11-20: Still-frame FFmpeg runs go through ffmpeg_run.run_ffmpeg: UTF-8 error text, a bounded timeout message, no partial image left."
+      "reconciliation_20261120": "2026-11-20: Still-frame FFmpeg runs go through ffmpeg_run.run_ffmpeg: UTF-8 error text, a bounded timeout message, no partial image left.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: still_project carries the shot weather."
     },
     {
       "path": "dolly/screenshot_ui.py",
@@ -6378,6 +6390,39 @@
       "full_formal_signoff": false
     },
     {
+      "path": "dolly/ui/scene_page.py",
+      "sha256": "c4ec2ca1474871351c835fceac2e7ae02072b07bf6a8695f24f7654c25a24dc6",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L04",
+      "disposition": "stateful partial/open",
+      "reason": "Owns presentation/widget/input/cache/callback state or delegates through GUI. Existing scopes are narrow; full event/lifetime interface remains explicit L04 work.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "Scene page view: the shot's weather, the desktop twin of the in-game Scene drawer.",
+        "classes": [
+          "Control",
+          "SceneState",
+          "SceneActions",
+          "ScenePage"
+        ],
+        "functions": [],
+        "imports": [
+          "__future__",
+          "collections.abc",
+          "dataclasses",
+          "math",
+          "tkinter"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Desktop Scene page: the shot's weather in the in-game drawer's sections (Weather, Precipitation, Wind, Ground and Haze)."
+    },
+    {
       "path": "dolly/ui/settings_page.py",
       "sha256": "6b3b755e0db8a6fabfa33959146dad4ec3a8a7a1db7e2e89135fa3ea40bc86c3",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -6465,7 +6510,7 @@
     },
     {
       "path": "dolly/ui/sidebar.py",
-      "sha256": "68e8f26d99bf6318496caca80a1c6a7c8bd44d10d9b63a14166c6c61317cd08f",
+      "sha256": "b033b4e6c01e62a2831fe9d1a45b8401c645a497d66afffa5f0249d568125566",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6499,7 +6544,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: GLYPHS has a Scene fallback glyph."
     },
     {
       "path": "dolly/ui/stage_page.py",
@@ -7056,7 +7102,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af",
+      "sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -7164,7 +7210,8 @@
       "reconciliation_20261118_take_path": "2026-11-18: validated() refuses a take folder whose longest file or folder would exceed Windows MAX_PATH, naming the folder and how to shorten it.",
       "reconciliation_20261119n": "2026-11-19: safe_stem(): one filename-stem rule for shot names (Windows-forbidden and control characters and unpaired surrogates to _, trailing spaces/dots stripped, device names prefixed with _, empty to a fallback). default_video_path keeps its own rule; its Dolly_ prefix already avoids device names.",
       "reconciliation_20261120d4": "2026-11-20: LOST_FRAMES_ERROR names the start of the native lost-frames message for the desktop offer. No recorder behavior change.",
-      "reconciliation_20261122": "2026-11-22: Auto resolves its encoder once per take (VideoOptions.auto_codec); odd depth preview sizes are padded for yuv420p encoders; stop() waits past the native finalize cap by default; validated() refuses a name whose .partial take file exists and default_video_path skips it (partial_video_path)."
+      "reconciliation_20261122": "2026-11-22: Auto resolves its encoder once per take (VideoOptions.auto_codec); odd depth preview sizes are padded for yuv420p encoders; stop() waits past the native finalize cap by default; validated() refuses a name whose .partial take file exists and default_video_path skips it (partial_video_path).",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: VideoOptions.plate (default color) is validated and sent with each recording pass."
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -7221,6 +7268,42 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "dolly/weather.py",
+      "sha256": "c22821fa47f322543fc424b495c31b3edb09168659285df08461c7d20652ea55",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "value",
+      "disposition": "no independent lifecycle",
+      "reason": "Schema/value/compiler/parser/read-only or synchronous caller-owned transform; no independent pending worker/session/retry state. Validation and numerical/file-input behavior stay with owner tests.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "Weather settings: per-shot presets for the native wind-fluid weather pass.",
+        "classes": [
+          "WeatherSettings"
+        ],
+        "functions": [
+          "_number",
+          "preset_settings",
+          "legacy_particle_weather",
+          "preset_label"
+        ],
+        "imports": [
+          "__future__",
+          "dataclasses",
+          "math",
+          "re",
+          "struct",
+          "typing"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Weather settings model: per-shot presets, shot-file schema, legacy particle mapping and the native wire block."
     },
     {
       "path": "native/include/dolly_attach.hpp",
@@ -7451,7 +7534,7 @@
     },
     {
       "path": "native/include/dolly_editor.hpp",
-      "sha256": "ff3107ff6afa2dbeb5a2dc1112d270d0ea5737dd0caf951a376b560489ee9fde",
+      "sha256": "350b5ad83e6cc572c1c6b1d6651f902b9c3c5371f13c821941c78c5c03c091cb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -7481,7 +7564,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view"
+      "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: SetWeatherPreset..SetWeatherIncludeEffects (125-136) and SetParticlePreset/Intensity (137-138); snapshot carries the particle preset and intensity."
     },
     {
       "path": "native/include/dolly_effects.hpp",
@@ -7532,6 +7616,28 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/include/dolly_env_render_dx11.hpp",
+      "sha256": "f0b4265067cf9c0eae753e07fe252cfbc61269e3e1720f8d0389fb9bc85e4cbc",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_wind_fluid_dx11.hpp",
+          "cstdint",
+          "memory",
+          "string"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. DX11 volumetric atmosphere raymarch and surface coating."
     },
     {
       "path": "native/include/dolly_flight.hpp",
@@ -7643,6 +7749,29 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/include/dolly_map_grid.hpp",
+      "sha256": "a590c1de1c717b62f23ab410a14660bc27a74265682b18b797381d63da1e53ec",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "array",
+          "cstdint",
+          "filesystem",
+          "string",
+          "vector"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Map collision baker (VPK, KV3 physics, nav) and .dmapgrid cache; the weather runtime bakes the replay's map on a background thread."
     },
     {
       "path": "native/include/dolly_media.hpp",
@@ -8129,6 +8258,29 @@
       "full_formal_signoff": false
     },
     {
+      "path": "native/include/dolly_precip_dx11.hpp",
+      "sha256": "d0e884ea79878e4da3de1269a7138507445826ba1be0ef2dd0bf84cbfab1a6c7",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_env_render_dx11.hpp",
+          "dolly_wind_fluid_dx11.hpp",
+          "cstdint",
+          "memory",
+          "string"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Wind-driven DX11 precipitation; stateless per frame."
+    },
+    {
       "path": "native/include/dolly_prop_runtime.hpp",
       "sha256": "81a246d77f7b96e007f9d2ccca1c4984af308cccd2b1dc1f46e3cd093ed3489e",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -8359,7 +8511,7 @@
     },
     {
       "path": "native/include/dolly_video.hpp",
-      "sha256": "3f441570565575f69eeb625795c9c008d53ed74963f1b71fa6eb089289cf44a9",
+      "sha256": "0538e25331249319813f9ba7d2a35a23ef826cdbe031620022567a85ff03f51d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8379,7 +8531,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261119v": "2026-11-19: declares present_should_capture(state, focused), the overlay clean-frame capture gate (V2)."
+      "reconciliation_20261119v": "2026-11-19: declares present_should_capture(state, focused), the overlay clean-frame capture gate (V2).",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: wants_fixed_step and current_plate (Plate) report the active recording to native passes such as weather."
     },
     {
       "path": "native/include/dolly_video_math.hpp",
@@ -8455,6 +8608,101 @@
       "full_formal_signoff": false
     },
     {
+      "path": "native/include/dolly_weather_runtime.hpp",
+      "sha256": "270a85216e15ddc9a2f450338ebc2c06e3d1fe814479f5e58e2eae71e93e05fa",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_weather_state.hpp"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Live weather owner: editor block (worker), replay clock (view thread), background map bake, Present-thread pass; GPU resources released with the overlay device."
+    },
+    {
+      "path": "native/include/dolly_weather_state.hpp",
+      "sha256": "996b57e3f36f607d25f7f9e66ad8c00b3b29c7577148be27d91467133a709184",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_env_render_dx11.hpp",
+          "dolly_precip_dx11.hpp",
+          "dolly_wind_fluid_dx11.hpp",
+          "cstddef",
+          "cstdint",
+          "optional",
+          "string"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Weather presets, the editor wire block and resolution into fluid/render parameters; no lifecycle state."
+    },
+    {
+      "path": "native/include/dolly_weather_view_dx11.hpp",
+      "sha256": "5d2436a364ba3cb871bee4207002d5b11be6efbc7b15bf02ae74478cee0f182e",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "cstdint",
+          "memory",
+          "string"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. GPU selection of the frame's per-view constants into a camera for the weather passes."
+    },
+    {
+      "path": "native/include/dolly_wind_fluid_dx11.hpp",
+      "sha256": "980ec4f21116278fe254e5683852a0615d4dae4dac95c92724e3e46a25f452cb",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_map_grid.hpp",
+          "array",
+          "cstdint",
+          "memory",
+          "string",
+          "vector"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. DX11 compute wind-fluid solver, stepped from the replay clock."
+    },
+    {
       "path": "native/replay_index/Program.cs",
       "sha256": "dfc8156aa6e599f93473f2fd8d81874cd787e3da69c27a46c48b8a50e43e4b6b",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -8476,7 +8724,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "ac7b33d6c2e535f565993c5c68f8e19aae197b290e329e7f277a451cd7d6bd43",
+      "sha256": "711d352c3ec8850f241a70e9268f3d68093fab427f5c4228a10c6acf40c3455b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8568,7 +8816,8 @@
       "reconciliation_attach_aim": "2026-11-20: attach samples pass through the aim easing in preview and playback",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261121snapfail": "2026-11-21: 2026-11-21 Attach here reports why it could not keep the view",
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: the view thread publishes the replay clock, with the heroes' origins for hero wakes, to the weather runtime beside each confetti frame; the worker keeps the heroes' scene nodes with the roster."
     },
     {
       "path": "native/src/dolly_attach.cpp",
@@ -8605,7 +8854,7 @@
     },
     {
       "path": "native/src/dolly_attach_runtime.hpp",
-      "sha256": "d7694f031b9ac7fda19ebd67f0cf5961fd62409094fd4ca53095ca1ad5f7b360",
+      "sha256": "124c4671909a6d9a5a8eca054340311f9fbe7d55bc1d03710bf462e54e777155",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8624,7 +8873,8 @@
       "full_formal_signoff": false,
       "reconciliation_attach_retry": "2026-11-20: bone lookup looks again when the pose buffer is replaced mid-read",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: publish_roster can also return the players' scene nodes (HeroNodes) for weather hero wakes."
     },
     {
       "path": "native/src/dolly_bone_picker.cpp",
@@ -8931,7 +9181,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "1ce27a6ebadf5b7b9e0bcc7440c335f5a9802e02213431ad1a92d47cd8c9003e",
+      "sha256": "bef86e7a412ebebdf5277d8217771ef022d9f669e1f8328bf67a22075aa5c10e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -8971,7 +9221,8 @@
       "reconciliation_20261119v": "2026-11-19: editor_worker_tick re-arms accepted/owner_sequence on the disconnected->connected heartbeat edge so the unchanged published config and its owner are re-applied after a >2 s lapse disabled input (O1).",
       "reconciliation_20261120e": "2026-11-20: editor_enqueue waits up to 10 ms for the event ring instead of dropping the action when the worker holds it. A shot seek whose float slider value rounds just past the duration is clamped to the duration.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; Escape closes an open picker before drawers or the panel"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; Escape closes an open picker before drawers or the panel",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: editor_enqueue validates Scene weather values with weather::valid_panel_value."
     },
     {
       "path": "native/src/dolly_effects.cpp",
@@ -8998,6 +9249,32 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/src/dolly_env_render_dx11.cpp",
+      "sha256": "e0064d416d3af28335bed2cfe8fce42bc50f7b2343fb822550e89b3d891361a6",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_env_render_dx11.hpp",
+          "windows.h",
+          "d3d11.h",
+          "d3dcompiler.h",
+          "wrl/client.h",
+          "algorithm",
+          "cmath",
+          "cstring"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. DX11 volumetric atmosphere raymarch and surface coating."
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
@@ -9115,8 +9392,44 @@
       "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log; speed list offers 0.05x and 0.1x"
     },
     {
+      "path": "native/src/dolly_map_grid.cpp",
+      "sha256": "bc7fbe1393eef0a633ce6a7580a2115086e3924cb8d6540140f3506f62aafcca",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_map_grid.hpp",
+          "dolly_zstd_lz4.hpp",
+          "algorithm",
+          "array",
+          "chrono",
+          "cmath",
+          "cstdio",
+          "cstring",
+          "fstream",
+          "limits",
+          "numeric",
+          "stdexcept",
+          "string",
+          "unordered_map",
+          "utility",
+          "vector",
+          "windows.h",
+          "wincodec.h"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Map collision baker (VPK, KV3 physics, nav) and .dmapgrid cache; the weather runtime bakes the replay's map on a background thread."
+    },
+    {
       "path": "native/src/dolly_media_win.cpp",
-      "sha256": "ff90f61da0f311333e174b041def777b80e6c9dc647e9233dac6e398c2a3be64",
+      "sha256": "f4dc18ba2967a4152e477cb058c4fa80d355238e94d9552a9ceca9d9d3cf7fce",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9153,7 +9466,8 @@
         ]
       },
       "full_formal_signoff": false,
-      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff."
+      "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: start_video accepts and decodes the plate (reserved bits 7-9)."
     },
     {
       "path": "native/src/dolly_object_picker.cpp",
@@ -9322,7 +9636,7 @@
     },
     {
       "path": "native/src/dolly_overlay_panel.hpp",
-      "sha256": "4adad0285214abf3b86d4407705b80f73e99d89058519fc5f21890c3ac1ef9d7",
+      "sha256": "fbe87bb85bfc986e35de198b30531b8f02371c3a4f099592308367c8af160634",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9348,11 +9662,12 @@
       "full_formal_signoff": false,
       "reconciliation_20261119v": "2026-11-19: declares key_cap_label() for the classic key-cap chip text (O4). adds reset_path_confirm_, the deferred open request for the classic reset confirmation (O3).",
       "reconciliation_20261120e": "2026-11-20: Remembers the camera range the Shot timeline view was fitted to.",
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: rail tab arrays sized for seven tabs."
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",
-      "sha256": "8fa66c2cbdba962dc900f3c9e6a91cbcc102e7aed6cf3b0cb8619bad319825e5",
+      "sha256": "95db74cec9cca160b73894d6193434f44e0a4dedc5b227781977e9c3c8fae739",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9401,7 +9716,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261119v": "2026-11-19: clean_frame gates capture() through video::present_should_capture so finalizing takes keep draining (V2).",
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: weather requests scene depth and draws in its own device-state scope before ReShade and capture; released with the device."
     },
     {
       "path": "native/src/dolly_path.cpp",
@@ -9498,6 +9814,32 @@
       "reconciliation_20261120": "2026-11-20: A start marker refused at the module/layout gate is answered once and stamped with its request id."
     },
     {
+      "path": "native/src/dolly_precip_dx11.cpp",
+      "sha256": "6df1a1986adf15cf6c1c053fb114b216decd150f144b616f64dab92d45d70209",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_precip_dx11.hpp",
+          "windows.h",
+          "d3d11.h",
+          "d3dcompiler.h",
+          "wrl/client.h",
+          "algorithm",
+          "cmath",
+          "cstring"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Wind-driven DX11 precipitation; stateless per frame."
+    },
+    {
       "path": "native/src/dolly_prop_runtime.cpp",
       "sha256": "4a3f03d3f615f2f1ba9558a34e427142c5d60d3f1316a125190cb670ca247e2c",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -9524,7 +9866,7 @@
     },
     {
       "path": "native/src/dolly_rail_design.hpp",
-      "sha256": "bea287680e21167c538163033ffdc0b61aeb2db0aae99dcc47d0befa46b6b941",
+      "sha256": "4cf88de43c04cc58c5743a106dc17e836f29747322e509d57b90fc9f3bbef046",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9542,11 +9884,12 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: per-tab state sized for seven tabs."
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "475a8206dee36611814544e3d70ec08cdf4d6164991f76cfece1ebd45d484983",
+      "sha256": "9e0ebdc08fd4adc627c63dbcec4ea9fd49fb2dfcab50317fdfe53328eea653ad",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9571,7 +9914,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit. Campaths rows keep their gesture when the selected camera changes.",
-      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap"
+      "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Scene drawer (weather, wind with hero wakes, precipitation, ground and haze); classic particles stay on Look."
     },
     {
       "path": "native/src/dolly_rail_fields.cpp",
@@ -9640,7 +9984,7 @@
     },
     {
       "path": "native/src/dolly_rail_icons.cpp",
-      "sha256": "4c82401aae98a302cf38dfcd03e172d0132152d147e1a3b4f7a5288232aebe2c",
+      "sha256": "544735403d55c58bad18ffed5fcad1dba85718be5e7ffc84a44f482e4d79efd1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9657,11 +10001,12 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Scene icon: cloud with three wind-blown streaks."
     },
     {
       "path": "native/src/dolly_rail_icons.h",
-      "sha256": "60dbf5e2ae2a3d618b9739f81fd970f4ac0040dd444089d14271f76bfbc046a6",
+      "sha256": "dcfac6426a70dfe40903d7bb8b56ae1939873d4065bbb73e16f48886c6790331",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9675,7 +10020,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Rail::Scene appended."
     },
     {
       "path": "native/src/dolly_rail_kit.cpp",
@@ -9729,7 +10075,7 @@
     },
     {
       "path": "native/src/dolly_rail_panel.cpp",
-      "sha256": "c8ba1e04d7235ccc8ff2da36d2ea16c27fa29baa5d303d7a1dc34649bb03764c",
+      "sha256": "275d3282c63387f6f456806ff05c86216bd808c3b1e91c371f98c96d70d401a5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9753,7 +10099,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log"
+      "reconciliation_20261123": "2026-11-23: native hardening/simplification (2026-11-23 sweep); see commit log",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Scene tab (index 6) drawn between Look and Export; Scene leaves the legacy page alone."
     },
     {
       "path": "native/src/dolly_rail_theme.hpp",
@@ -10134,7 +10481,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "28df34e8282d34e99d42d9169711669eda654c495b42f6a6fc06c35cb71c2509",
+      "sha256": "8608234259a6c085eecb4eed815a5889cb02d0694092900f33f0144ebc8a1a1f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -10201,7 +10548,8 @@
       "reconciliation_20261113": "2026-11-13 native sweep: quiesce_producers() makes the ready/producer_active stop handshake seq_cst on the worker side for the FFmpeg, Media Foundation and camera-only workers (all barriers kept); capture ProducerScope and CameraProducer fetch_add and ready load seq_cst. decide_cancel() applies a deferred stop once and takes one cancel snapshot after the final barrier; terminate/drop accounting/reject_incomplete_take/depth/color delete/sidecars/camera-trace publication/state follow it. A cancel after that point completes the take; Python's own cancel check still refuses a .crav.",
       "reconciliation_20261114b": "2026-11-14 capture fault gap closed: capture() reads the backbuffer (GetBuffer) and checks resolution/swapchain only inside the producer gate after the ready check (one ProducerScope for video and camera-only); startup configuration before any output stays ungated. A late fault after the decision is no longer observed, so the kept take stays completed. video_late_fault_smoke (generated test copy with a post-decision hook) fails before and passes after. VideoCompleteness CaptureFault and CameraOnlyCapture outside-the-gate mutants added; RecorderApi GapFinish/AllowLateCaptureFault removed.",
       "reconciliation_20261119v": "2026-11-19: present_should_capture() also feeds Presents while finalizing so the copy submitted on the last recording Present is drained, not counted as dropped (V2); capture() still admits no new frame once stopping. VideoCompleteness/CameraOnlyCapture unchanged: Drain is already enabled before the stop barrier and the overlay gate is outside both models. start() resets the lock-free status cache to the new take under control_mutex, and the cached error text is read through the owning session (cached_owner) instead of a raw pointer into a possibly freed error_buffer (V1). No model change: status caching is outside VideoCompleteness/CameraOnlyCapture. .shot.json now goes through publish_sidecar (shared with the camera track): CREATE_NEW temporary, fflush/ferror/_commit checks, no-replace MoveFileEx, temporary removed on failure; write_shot_sidecar returns false when not published and never truncates a foreign sidecar (V5). Sidecars stay additive after the color decision; VideoCompleteness SidecarStep/OutcomeAgrees unchanged (a failed optional sidecar never was modeled as success).",
-      "reconciliation_20261122": "2026-11-22: FFmpeg children are kept in ChildRegistry and terminated on cancel or failure; a Finish whose pipe write makes no progress for 30 s while inputs are open fails and ends FFmpeg; finalize waits while FFmpeg progresses (30 s idle, 20 min cap, 120 s after editor close) and keeps the file on timeout; write/drain share one helper per backend. The colour file records under <stem>.partial<ext> (Session.staging) and publish_take renames it to the final name without replacing, only after a completed decision; a refused rename keeps the .partial file and fails the take, and an unfinished file is kept under the .partial name. VideoCompleteness stop handshake unchanged (a final-name output still exists only for a completed take)."
+      "reconciliation_20261122": "2026-11-22: FFmpeg children are kept in ChildRegistry and terminated on cancel or failure; a Finish whose pipe write makes no progress for 30 s while inputs are open fails and ends FFmpeg; finalize waits while FFmpeg progresses (30 s idle, 20 min cap, 120 s after editor close) and keeps the file on timeout; write/drain share one helper per backend. The colour file records under <stem>.partial<ext> (Session.staging) and publish_take renames it to the final name without replacing, only after a completed decision; a refused rename keeps the .partial file and fails the take, and an unfinished file is kept under the .partial name. VideoCompleteness stop handshake unchanged (a final-name output still exists only for a completed take).",
+      "reconciliation_20261123weather": "2026-11-23 weather branch: wants_fixed_step and current_plate (Plate) report the active recording to native passes such as weather."
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -10257,6 +10605,155 @@
         ]
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/src/dolly_weather_runtime_win.cpp",
+      "sha256": "8de80ee4637247dbccfd6491dcc7fc0a2bd1339d57421286822db1aabcafabfa",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_weather_runtime.hpp",
+          "dolly_depth_scene.hpp",
+          "dolly_env_render_dx11.hpp",
+          "dolly_map_grid.hpp",
+          "dolly_precip_dx11.hpp",
+          "dolly_seqlock_win.hpp",
+          "dolly_video.hpp",
+          "dolly_weather_state.hpp",
+          "dolly_weather_view_dx11.hpp",
+          "dolly_wind_fluid_dx11.hpp",
+          "d3d11.h",
+          "dxgi.h",
+          "wrl/client.h",
+          "array",
+          "atomic",
+          "chrono",
+          "cmath",
+          "cstdio",
+          "cstring",
+          "filesystem",
+          "future",
+          "memory",
+          "mutex",
+          "stdexcept",
+          "string",
+          "vector"
+        ],
+        "persistent_state_signals": [
+          "thread/lock"
+        ]
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Live weather owner: editor block (worker), replay clock (view thread), background map bake, Present-thread pass; GPU resources released with the overlay device."
+    },
+    {
+      "path": "native/src/dolly_weather_state.cpp",
+      "sha256": "2b893761adf472069ef13baf9235a2a431dcef93f21375b7e0ed22cefddc931f",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_weather_state.hpp",
+          "algorithm",
+          "cmath",
+          "cstring"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Weather presets, the editor wire block and resolution into fluid/render parameters; no lifecycle state."
+    },
+    {
+      "path": "native/src/dolly_weather_view_dx11.cpp",
+      "sha256": "e04c5ebf776e58237b798e01b530a649d4fbdf73296829f42be759bf5961c4a7",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_weather.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_weather_view_dx11.hpp",
+          "windows.h",
+          "d3d11.h",
+          "d3dcompiler.h",
+          "wrl/client.h",
+          "algorithm"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. GPU selection of the frame's per-view constants into a camera for the weather passes."
+    },
+    {
+      "path": "native/src/dolly_wind_fluid_dx11.cpp",
+      "sha256": "a80440b7eafa68ea9a3d03f32a9b4eac39d56e55f7f65e6bc641c2976e428f0d",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "dolly_wind_fluid_dx11.hpp",
+          "windows.h",
+          "d3d11.h",
+          "d3dcompiler.h",
+          "wrl/client.h",
+          "algorithm",
+          "cmath",
+          "cstring",
+          "vector"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. DX11 compute wind-fluid solver, stepped from the replay clock."
+    },
+    {
+      "path": "native/src/dolly_zstd_lz4.hpp",
+      "sha256": "a06e9ac334c0d3ae91dea1054735680ff50fe171cb317a825ae8723f155e9743",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "algorithm",
+          "array",
+          "cstdint",
+          "cstring",
+          "string",
+          "vector"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: added. Decompressors for VPK resource blocks used by the map baker."
     },
     {
       "path": "native/src/native_camera_view.hpp",
@@ -10589,7 +11086,7 @@
     },
     {
       "path": "tools/build_ui_art.py",
-      "sha256": "7ba76a51dfeb633fc004c07321b3dd5ca999d8d5aa2a2b08f1bab76d35cc326f",
+      "sha256": "3855e83887103222c02dce539a9f0f693d265eed55f4f52cbc91fd359b8c1a29",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -10651,7 +11148,8 @@
         ],
         "persistent_state_signals": []
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261123weather": "2026-11-23 weather branch: NAV_ORDER gains scene; BUILTIN_NAV_ICONS supplies its stroke until the Figma export has it."
     },
     {
       "path": "tools/build_ui_override.py",
@@ -11450,7 +11948,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -11527,7 +12025,7 @@
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
+      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -11536,7 +12034,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -11548,7 +12046,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -11556,7 +12054,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
+      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -11598,7 +12096,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560"
+      "owner_utf8_lf_sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -11620,7 +12118,7 @@
       "instances": [
         "ConsoleReconnectApi"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -11660,7 +12158,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560"
+      "owner_utf8_lf_sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -11677,7 +12175,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/EditorEventQueue.tla": {
       "path": "dolly/editor_session.py",
@@ -11729,7 +12227,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -11738,7 +12236,7 @@
         "dolly/GameExitClose.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
+      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
     },
     "dolly/GameFileCache.tla": {
       "path": "dolly/preload.py",
@@ -11778,7 +12276,7 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
+      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
     },
     "dolly/HelperWorkspace.tla": {
       "path": "dolly/source2viewer.py",
@@ -11821,7 +12319,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/LaunchRecovery.tla": {
       "path": "dolly/launcher.py",
@@ -11863,7 +12361,7 @@
       "instances": [
         "MediaAdmissionApi"
       ],
-      "owner_utf8_lf_sha256": "2643ff2a597b33e89dab64c7f041aa93d515ac4ad1b0d8dadd6b49e0f0fb6049"
+      "owner_utf8_lf_sha256": "3fc04ab31e6cbfc148622c2646973fdee212d91148d09bd6e0a49a120863af9d"
     },
     "dolly/MediaFinalize.tla": {
       "path": "dolly/media_transport.py",
@@ -11875,7 +12373,7 @@
         "MediaFinalizeApi",
         "MediaCloseApi"
       ],
-      "owner_utf8_lf_sha256": "2643ff2a597b33e89dab64c7f041aa93d515ac4ad1b0d8dadd6b49e0f0fb6049"
+      "owner_utf8_lf_sha256": "3fc04ab31e6cbfc148622c2646973fdee212d91148d09bd6e0a49a120863af9d"
     },
     "dolly/MemoryWatch.tla": {
       "path": "dolly/memory_watch.py",
@@ -11917,7 +12415,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -11928,7 +12426,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -11937,7 +12435,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
+      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -11946,7 +12444,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
+      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -11955,7 +12453,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
+      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -11968,7 +12466,7 @@
       "instances": [
         "PngStageApi"
       ],
-      "owner_utf8_lf_sha256": "a092923236754d6f95248d4e5c020d327709330f3b5571688fd5cd4260a3552f"
+      "owner_utf8_lf_sha256": "549a9fa6b96a8639a62412ac269285dd5f97d35342603954e2ed833642b717d6"
     },
     "dolly/PreparedShot.tla": {
       "path": "dolly/controller.py",
@@ -11976,7 +12474,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -12000,7 +12498,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "86cd7a88dc9c4ee2066b2c5ef5907e1ea1356f4e229b599d97f63cd49b4b6560"
+      "owner_utf8_lf_sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -12045,7 +12543,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
+      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -12053,7 +12551,7 @@
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be",
+      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf",
       "instances": [
         "CameraLeaseApi"
       ]
@@ -12089,7 +12587,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "dc93f5d7b76e0f3bb13001f8bb3aa1b81c724367172be50de41ada3b4f3a4a1f"
+      "owner_utf8_lf_sha256": "02f58694b84ba00bdda034244c3b8cb5dc277e9b32de23381c17977c4f53efbc"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",
@@ -12120,7 +12618,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "eefb777ff7d3f626c6b52ce5344100d87d086c2ffba1cf85148d7c50d7e97a8b"
+      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",
@@ -12176,7 +12674,7 @@
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "8f3d931d59ffcc618445c9353cce37866c8f945262cbfc9457de9ca41790b5be"
+      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
     },
     "dolly/StillCleanup.tla": {
       "path": "dolly/screenshot.py",
@@ -12187,7 +12685,7 @@
       "instances": [
         "StillCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "a092923236754d6f95248d4e5c020d327709330f3b5571688fd5cd4260a3552f"
+      "owner_utf8_lf_sha256": "549a9fa6b96a8639a62412ac269285dd5f97d35342603954e2ed833642b717d6"
     },
     "dolly/TimingSwitch.tla": {
       "path": "dolly/export_timing.py",
@@ -12234,7 +12732,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "1ac6a762c64e2955420426a977d9b9b58044b34afe83b16265cdf35f88baf0af"
+      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
@@ -12353,7 +12851,7 @@
         "native/src/BridgeCommandAdmission.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "ac7b33d6c2e535f565993c5c68f8e19aae197b290e329e7f277a451cd7d6bd43"
+      "owner_utf8_lf_sha256": "711d352c3ec8850f241a70e9268f3d68093fab427f5c4228a10c6acf40c3455b"
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -12364,7 +12862,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "28df34e8282d34e99d42d9169711669eda654c495b42f6a6fc06c35cb71c2509"
+      "owner_utf8_lf_sha256": "8608234259a6c085eecb4eed815a5889cb02d0694092900f33f0144ebc8a1a1f"
     },
     "native/src/CaptureFailure.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -12393,7 +12891,7 @@
       "instances": [
         "MediaDetachApi"
       ],
-      "owner_utf8_lf_sha256": "ff90f61da0f311333e174b041def777b80e6c9dc647e9233dac6e398c2a3be64"
+      "owner_utf8_lf_sha256": "f4dc18ba2967a4152e477cb058c4fa80d355238e94d9552a9ceca9d9d3cf7fce"
     },
     "native/src/NativeSnapshotClose.tla": {
       "path": "native/src/bridge_win.cpp",
@@ -12401,7 +12899,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "ac7b33d6c2e535f565993c5c68f8e19aae197b290e329e7f277a451cd7d6bd43"
+      "owner_utf8_lf_sha256": "711d352c3ec8850f241a70e9268f3d68093fab427f5c4228a10c6acf40c3455b"
     },
     "native/src/PickerGizmoSession.tla": {
       "path": "native/src/dolly_object_picker_ui.cpp",
@@ -12421,7 +12919,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "28df34e8282d34e99d42d9169711669eda654c495b42f6a6fc06c35cb71c2509"
+      "owner_utf8_lf_sha256": "8608234259a6c085eecb4eed815a5889cb02d0694092900f33f0144ebc8a1a1f"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",
@@ -16215,6 +16713,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/ui/scene_page.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/ui/settings_page.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16301,6 +16804,11 @@
     },
     {
       "path": "dolly/visualization_wire.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/weather.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -16430,6 +16938,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/include/dolly_env_render_dx11.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/include/dolly_flight.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16451,6 +16964,11 @@
     },
     {
       "path": "native/include/dolly_lite.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_map_grid.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -16555,6 +17073,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/include/dolly_precip_dx11.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/include/dolly_prop_runtime.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16626,6 +17149,26 @@
     },
     {
       "path": "native/include/dolly_visualization_runtime.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_weather_runtime.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_weather_state.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_weather_view_dx11.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_wind_fluid_dx11.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17331,6 +17874,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/src/dolly_env_render_dx11.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17347,6 +17895,11 @@
     },
     {
       "path": "native/src/dolly_lite_panel.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_map_grid.cpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17407,6 +17960,11 @@
     },
     {
       "path": "native/src/dolly_player_capture.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_precip_dx11.cpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17556,6 +18114,31 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/src/dolly_weather_runtime_win.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_weather_state.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_weather_view_dx11.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_wind_fluid_dx11.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_zstd_lz4.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/src/native_camera_view.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17672,6 +18255,11 @@
     },
     {
       "path": "native/tests/lite_policy_tests.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/tests/map_grid_cli.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17802,6 +18390,16 @@
     },
     {
       "path": "native/tests/visualization_tests.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/tests/weather_state_tests.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/tests/wind_fluid_warp_tests.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18303,6 +18901,11 @@
     },
     {
       "path": "tests/test_update_handoff_process.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_weather.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -19385,10 +19988,10 @@
   ],
   "export_categories": {
     "metadata/configuration/documentation input": 577,
-    "implementation/tool": 316,
+    "implementation/tool": 333,
     "asset/compiled helper input": 28,
     "formal spec/interface": 169,
-    "test/support input": 95,
+    "test/support input": 99,
     "external dependency/resource": 204
   },
   "unclassified": 0,

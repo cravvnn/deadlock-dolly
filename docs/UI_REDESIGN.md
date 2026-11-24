@@ -11,20 +11,23 @@ camera behavior.
   **Lock vertical aim** remains in Attach Camera. It affects Bone/Weapon aim;
   Eyes is unaffected. Detach before changing it, then Snap again to keep framing.
 - **Look:** edit depth of field, effect tracks and scene appearance.
+- **Scene:** edit the shot's weather (preset, wind, precipitation, ground and
+  haze), the same settings as the in-game Scene drawer.
 - **Export:** choose the camera source, destination format, encoder, output
   passes and still-image options. Current MP4, MOV and MKV handling, Players
   processing, audio and camera exports are retained.
 - **Settings:** graphics profiles, recovery, ReShade and updates remain
   available, along with Discord Rich Presence and replay mod preferences.
 
-In game, the Camera, Follow, Bone Picker, Look and Export buttons open one left
-drawer at a time. Campaths can stay open alongside it. The Replay / Campaths /
+In game, the Camera, Follow, Bone Picker, Look, Scene and Export buttons open one
+left drawer at a time. Campaths can stay open alongside it. The Replay / Campaths /
 Curves transport uses the live replay and camera path, including camera timing,
 bank edits, curve gestures and undo/redo. Dropdowns and shortcut hints use the
 current values and bindings.
 
 The rail uses Kara's component layouts: Camera and Follow use narrow drawers;
-Bone, Look and Export use two columns. Bone Picker uses the left-side joint
+Bone, Look, Scene and Export use two columns. Scene holds the shot's weather
+(preset, wind, precipitation, ground and haze) and the classic particles. Bone Picker uses the left-side joint
 panel and view tabs. Numeric fields retain exact entry, and Campaths bank edits
 retain live preview while waiting for the editor's acknowledgement.
 Scene joints use clickable blue circles with contrasting rings. Switch between

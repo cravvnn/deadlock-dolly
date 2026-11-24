@@ -52,7 +52,7 @@ VERSION_SEPARATOR = "  ·  "   # between the version and the driver in use (Figm
 
 # Segoe Fluent Icons / MDL2 glyphs, drawn only when the icon sheet is unavailable.
 GLYPHS = {"replay": "", "camera": "", "look": "", "export": "",
-          "controls": "", "settings": ""}
+          "controls": "", "settings": "", "scene": ""}
 
 
 LAST_STEP = tween.STEPS - 1   # hover ramp step of a hovered row (0: at rest)

@@ -35,10 +35,15 @@ def _path(value: str, required: bool = False) -> bytes:
     return encoded + b"\0\0"
 
 
+# Which plate a recording pass produces, for native passes that differ per plate
+# (weather, lens effects). Index = native video::Plate; 0 is an older editor.
+PLATES = ("unspecified", "color", "world", "players", "effects_black", "effects_white", "depth")
+
+
 def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=20000000,
                  encoder=0, codec=0, quality=0, preset=0, ffmpeg_path="", fixed_step=False,
                  depth=False, depth_exr=False, shot_only=False, white_clear=False, max_frames=0, camera_track=False,
-                 camera_only=False):
+                 camera_only=False, plate="unspecified"):
     if type(sequence) is not int or not 0 < sequence <= 0xfffffffe or sequence & 1:
         raise ValueError("Invalid media command sequence")
     if command not in COMMANDS:
@@ -89,9 +94,12 @@ def pack_command(sequence, command, *, path="", config_path="", fps=60, bitrate=
     # Older native builds reject an unsupported camera flag or nonzero limit.
     if type(camera_track) is not bool:
         raise ValueError("Camera track must be on or off")
+    if plate not in PLATES:
+        raise ValueError("Unknown recording plate")
+    # Bits 7..9: the plate this pass records (PLATES index).
     reserved = ((1 if fixed_step else 0) | (2 if depth else 0) | (4 if depth_exr else 0)
                 | (8 if shot_only else 0) | (16 if white_clear else 0) | (32 if camera_track else 0)
-                | (64 if camera_only else 0) | (max_frames << 16))
+                | (64 if camera_only else 0) | (PLATES.index(plate) << 7) | (max_frames << 16))
     return COMMAND.pack(b"DLYMED01", sequence, ABI, COMMANDS[command], fps, bitrate,
                         reserved,
                         encoder, codec, quality, preset,

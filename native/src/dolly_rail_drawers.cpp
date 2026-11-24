@@ -3,6 +3,7 @@
 #include "dolly_overlay_panel.hpp"
 #include "dolly_rail_design.hpp"
 #include "dolly_reshade.hpp"
+#include "dolly_weather_runtime.hpp"
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cmath>
@@ -534,17 +535,46 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 citadel();
                 split();
             }
-            k::SectionTitle("Particles",
-                            "Preset is chosen in Dolly; follows the rendered camera and game time.",
-                            "Native effect");
-            k::VGap(15);
-            check("Enable particles", s.confetti_enabled, EditorAction::SetConfettiEnabled);
-            k::VGap(10);
-            scalar("Spawn height", s.confetti_spawn_height, 100, 1500, "%.0f",
-                   EditorAction::SetConfettiSpawnHeight);
-            k::VGap(10);
-            check("Despawn on ground", s.confetti_despawn_on_ground,
-                  EditorAction::SetConfettiDespawnOnGround);
+            {
+                // Classic particle presets (dolly/particles.py ids); snow and rain moved to
+                // Scene weather.
+                struct Classic {
+                    const char* tab;
+                    const char* name;
+                    int id;
+                };
+                static const Classic classics[]{{"Confetti##particles", "Confetti", 0},
+                                                {"Frozen flakes##particles", "Frozen flakes", 5},
+                                                {"Crystals##particles", "Crystals", 7}};
+                const char* current = "Native effect";
+                for (const auto& c : classics)
+                    if (c.id == s.confetti_preset)
+                        current = c.name;
+                k::SectionTitle("Particles", "Follows the rendered camera and game time.",
+                                current);
+                k::VGap(15);
+                k::BeginRow(30, 4);
+                const float width = (k::Avail() - 2 * 4) / 3;
+                for (const auto& c : classics)
+                    if (k::Tab(c.tab, c.id == s.confetti_preset, width) &&
+                        c.id != s.confetti_preset)
+                        d.send(EditorAction::SetParticlePreset, c.id);
+                k::EndRow();
+                k::VGap(10);
+                check("Enable particles", s.confetti_enabled, EditorAction::SetConfettiEnabled);
+                k::VGap(10);
+                {
+                    f::Greyed off(!s.confetti_enabled);
+                    scalar("Height###particle-height", s.confetti_spawn_height, 100, 1500,
+                           "%.0f u", EditorAction::SetConfettiSpawnHeight, false);
+                    k::VGap(10);
+                    scalar("Intensity###particle-intensity", s.confetti_intensity, .25f, 3.f,
+                           "%.2fx", EditorAction::SetParticleIntensity, false, f::Resets(1));
+                    k::VGap(10);
+                    check("Despawn on ground", s.confetti_despawn_on_ground,
+                          EditorAction::SetConfettiDespawnOnGround);
+                }
+            }
             split();
             k::SectionTitle("Scene appearance");
             k::VGap(15);
@@ -577,6 +607,137 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 k::VGap(15);
                 k::Divider();
             }
+        }
+        k::VGap(15);
+        draw_kara_footer(s);
+    } else if (tab == 6) {
+        {
+            f::Greyed dim(!live);
+            weather::Settings w;
+            const bool published = weather_runtime::panel_settings(w);
+            const bool on = published && w.enabled();
+            static const char* const presets[]{"Off##weather",       "Light snow##weather",
+                                               "Blizzard##weather",  "Rain storm##weather",
+                                               "Sandstorm##weather", "Dust haze##weather",
+                                               "Ground fog##weather", "Ash##weather"};
+            static const char* const names[]{"Off",       "Light snow", "Blizzard",
+                                             "Rain storm", "Sandstorm",  "Dust haze",
+                                             "Ground fog", "Ash"};
+            const int preset = int(w.preset);
+            // Compact one-line rows (Follow's rig style); Intensity stays the full row.
+            auto line = [&](const char* label, double value, float low, float high, const char* fmt,
+                            EditorAction action, f::SliderOpts opt = f::SliderOpts{}) {
+                scalar(label, value, low, high, fmt, action, false, opt);
+            };
+            char wind_detail[48], flakes_detail[24], ground_detail[32];
+            std::snprintf(wind_detail, sizeof(wind_detail), "%.0f\xC2\xB0 \xC2\xB7 %.0f u/s",
+                          w.wind_direction, w.wind_speed);
+            const char* kinds[]{"None", "Snow", "Snow", "Rain", "Sand", "Sand", "None", "Ash"};
+            std::snprintf(flakes_detail, sizeof(flakes_detail), "%s",
+                          kinds[std::clamp(preset, 0, 7)]);
+            std::snprintf(ground_detail, sizeof(ground_detail), "%.0f%% coating",
+                          w.coating * 100.0);
+            k::BeginColumns(30);
+            k::SectionTitle("Weather",
+                            "Saved with the shot. Playback, scrubbing and export match exactly.",
+                            published ? names[std::clamp(preset, 0, 7)] : "Dolly weather");
+            k::VGap(15);
+            {
+                f::Greyed none(!published);
+                // All eight presets visible at once: two rows of four Kara tabs.
+                for (int row = 0; row < 2; ++row) {
+                    if (row)
+                        k::VGap(4);
+                    k::BeginRow(30, 4);
+                    const float width = (k::Avail() - 3 * 4) / 4;
+                    for (int i = row * 4; i < row * 4 + 4; ++i)
+                        if (k::Tab(presets[i], i == preset, width) && i != preset)
+                            d.send(EditorAction::SetWeatherPreset, i);
+                    k::EndRow();
+                }
+            }
+            if (published && !on) {
+                k::VGap(10);
+                k::Notice("Pick a preset to turn on wind, flakes and haze.", t::text_dim);
+            }
+            k::VGap(15);
+            {
+                f::Greyed off(!on);
+                scalar("Intensity###weather-intensity", w.intensity, weather::kIntensityMin,
+                       weather::kIntensityMax, "%.2f", EditorAction::SetWeatherIntensity, true,
+                       f::Resets(1));
+                k::VGap(10);
+                k::Disclosure("Timing and gusts", &d.weather_timing);
+                if (d.weather_timing) {
+                    k::VGap(10);
+                    auto build_up = f::Resets(0);
+                    build_up.map = f::Map::Log1p;
+                    line("Build-up###weather-build-up", w.build_up, weather::kBuildUpMin,
+                         weather::kBuildUpMax, "%.0f s", EditorAction::SetWeatherBuildUp,
+                         build_up);
+                    k::ItemTooltip("Seconds from the shot start for snow, sand or wetness to "
+                                   "settle. 0 starts settled.");
+                    k::VGap(10);
+                    line("Gusts###wind-gusts", w.gusts, weather::kGustsMin, weather::kGustsMax,
+                         "%.2f", EditorAction::SetWindGusts, f::Resets(1));
+                }
+            }
+            split();
+            k::SectionTitle("Wind", "Moves haze, flakes and drifts around the map.",
+                            on ? wind_detail : "Wind sim");
+            k::VGap(15);
+            {
+                f::Greyed off(!on);
+                line("Direction###wind-direction", w.wind_direction, 0, 360, "%.0f\xC2\xB0",
+                     EditorAction::SetWindDirection, f::Resets(weather::kWindDirectionDefault));
+                k::VGap(10);
+                line("Speed###wind-speed", w.wind_speed, weather::kWindSpeedMin,
+                     weather::kWindSpeedMax, "%.0f u/s", EditorAction::SetWindSpeed);
+                k::VGap(10);
+                check("Hero wakes", w.hero_wakes, EditorAction::SetWeatherHeroWakes);
+                k::ItemTooltip("Heroes part the wind, haze and flakes around them.");
+            }
+            k::VGap(15);
+            k::Divider();
+            k::NextColumn();
+            k::SectionTitle("Precipitation", "Snow, rain, sand and ash flakes.",
+                            on ? flakes_detail : "Flakes");
+            k::VGap(15);
+            {
+                f::Greyed off(!on);
+                line("Size###flake-size", w.flake_size, weather::kFlakeSizeMin,
+                     weather::kFlakeSizeMax, "%.2fx", EditorAction::SetFlakeSize, f::Resets(1));
+                k::VGap(10);
+                line("Density###flake-density", w.density, weather::kDensityMin,
+                     weather::kDensityMax, "%.2fx", EditorAction::SetPrecipitationDensity,
+                     f::Resets(1));
+            }
+            split();
+            k::SectionTitle("Ground and haze",
+                            "Coating settles where open sky is above; haze rises to the ceiling.",
+                            on ? ground_detail : "Surfaces");
+            k::VGap(15);
+            {
+                f::Greyed off(!on);
+                line("Coating###weather-coating", w.coating, weather::kCoatingMin,
+                     weather::kCoatingMax, "%.2f", EditorAction::SetWeatherCoating);
+                k::VGap(10);
+                k::Disclosure("Haze and layers", &d.weather_haze);
+                if (d.weather_haze) {
+                    k::VGap(10);
+                    line("Ceiling###weather-ceiling", w.height_ceiling,
+                         weather::kHeightCeilingMin, weather::kHeightCeilingMax, "%.0f u",
+                         EditorAction::SetWeatherHeightCeiling);
+                    k::VGap(10);
+                    check("Include in Effects layer", w.include_in_effects,
+                          EditorAction::SetWeatherIncludeEffects);
+                    k::ItemTooltip(
+                        "Weather is always in Color and World, never in Players or Depth.");
+                }
+            }
+            k::VGap(15);
+            k::Divider();
+            k::EndColumns();
         }
         k::VGap(15);
         draw_kara_footer(s);

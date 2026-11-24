@@ -104,7 +104,8 @@ def still_project(base: Project, key: Keyframe, tick: int) -> Project:
         lens_interpolation="step", confetti_enabled=base.confetti_enabled,
         confetti_spawn_height=base.confetti_spawn_height,
         confetti_despawn_on_ground=base.confetti_despawn_on_ground,
-        particles_preset=base.particles_preset, particles_intensity=base.particles_intensity)
+        particles_preset=base.particles_preset, particles_intensity=base.particles_intensity,
+        weather=base.weather)
     project.validate()
     return project
 

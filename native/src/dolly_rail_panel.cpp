@@ -106,15 +106,18 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
     style.Colors[ImGuiCol_PopupBg] = t::bg_surface;
     style.Colors[ImGuiCol_ModalWindowDimBg] =
         ImVec4(t::bg_window.x, t::bg_window.y, t::bg_window.z, .6f);
-    constexpr float widths[]{444, 444, 897, 897, 897, 444};
-    constexpr const char* names[]{"Camera", "Follow", "Bone Picker", "Look", "Export", "Campaths"};
+    // Indexed by tab; Scene (6) is appended but drawn between Look and Export.
+    constexpr float widths[]{444, 444, 897, 897, 897, 444, 897};
+    constexpr const char* names[]{"Camera", "Follow", "Bone Picker", "Look",
+                                  "Export", "Campaths", "Scene"};
+    constexpr unsigned order[]{0, 1, 2, 3, 6, 4, 5};
     const auto flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
                        ImGuiWindowFlags_NoScrollWithMouse;
     bool hovered_ui = false;
     float next_x = origin + 59 * s;
-    for (unsigned tab = 0; tab < 6; ++tab) {
-        if (rail_picker_mode_ && tab < 5)
+    for (unsigned tab : order) {
+        if (rail_picker_mode_ && tab != 5)
             continue;
         bool selected = tab == 5 ? rail_paths_open_ : rail_selected_ == int(tab);
         if (tab == 5 && !selected)
@@ -245,7 +248,8 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
                 d.clear = d.remove = false;
             } else {
                 rail_selected_ = selected ? -1 : int(tab);
-                lite_page_ = int(tab);
+                if (tab < 5) // the legacy pages stop at Export; Scene has none
+                    lite_page_ = int(tab);
             }
         }
         rail_tab_rects_[tab] = ImVec4(hit.Min.x, hit.Min.y, hit.Max.x, hit.Max.y);

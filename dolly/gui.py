@@ -23,6 +23,7 @@ from tkinter import filedialog, ttk
 
 from dolly import __version__, attach_camera, dialogs, dof_preflight, editor_session, gui_layout, player_layer, screenshot_ui, ui_theme
 from .ui import (art, camera_page, chrome, controls_page, export_page, fonts, library_page as replay_page, look_page,
+                 scene_page,
                  settings_page, shot_commands, widgets, window_bars, window_chrome)
 from .ui.action_proxy import ActionProxy
 from .ui.backdrop import Backdrop
@@ -44,6 +45,7 @@ from dolly.controller import (Controller, PreloadUnavailableError, StartupAcknow
 from dolly.clip_audio import ClipAudioCapture
 from dolly.curve import POSITION_CHANNELS, POSITION_LIMIT
 from dolly.display import focus_window
+from dolly import weather as weather_model
 from dolly import encoder_select
 from dolly.ffmpeg_color import REC709_FRAME_TAGS, REC709_OUTPUT_ARGS, REC709_SCALE
 from dolly.ffmpeg_run import last_line, remove_partial, run_ffmpeg, scaled_timeout
@@ -206,6 +208,11 @@ def _session_tone(text):
         return "error"
     return "muted"
 
+
+
+# Scene page sliders: the WeatherSettings field and the decimals it keeps (as the drawer shows them).
+WEATHER_SLIDERS = {"intensity": 2, "build_up": 0, "gusts": 2, "wind_direction": 0, "wind_speed": 0,
+                   "flake_size": 2, "density": 2, "coating": 2, "height_ceiling": 0}
 
 
 def _number(value: object) -> str:
@@ -491,6 +498,12 @@ class DollyApp:
         self.confetti_despawn_on_ground = tk.BooleanVar(value=False)
         self.particles_preset = tk.StringVar(value=PARTICLE_LABELS[PARTICLE_DEFAULT])
         self.particles_intensity = tk.StringVar(value=_number(PARTICLE_INTENSITY_DEFAULT))
+        # Scene page: the shot's weather (Project.weather), shown and edited as plain values.
+        self.weather_preset = tk.StringVar(value=weather_model.WEATHER_LABELS[weather_model.WEATHER_DEFAULT])
+        self.weather_values = {name: tk.DoubleVar(value=getattr(weather_model.WEATHER_OFF, name))
+                               for name in WEATHER_SLIDERS}
+        self.weather_include_effects = tk.BooleanVar(value=weather_model.WEATHER_OFF.include_in_effects)
+        self.weather_hero_wakes = tk.BooleanVar(value=weather_model.WEATHER_OFF.hero_wakes)
         self.selected_text = tk.StringVar(value="No camera selected")
         self.path_summary = tk.StringVar(value="0 cameras · 0.00 s")
         self.coordinates_dialog = None
@@ -810,6 +823,7 @@ class DollyApp:
         self.setup_tab = ttk.Frame(self.notebook)
         self.camera_tab = ttk.Frame(self.notebook)
         self.cvar_tab = ttk.Frame(self.notebook)
+        self.scene_tab = ttk.Frame(self.notebook)
         self.settings_tab = ttk.Frame(self.notebook)
         self.controls_tab = ttk.Frame(self.notebook)
         self.export_tab = ttk.Frame(self.notebook)
@@ -818,7 +832,8 @@ class DollyApp:
         self._playback_hosts = {}
         self.navigation = {}
         for title, icon, tab in (("Replay", "replay", self.setup_tab), ("Camera", "camera", self.camera_tab),
-                                 ("Look", "look", self.cvar_tab), ("Export", "export", self.export_tab),
+                                 ("Look", "look", self.cvar_tab), ("Scene", "scene", self.scene_tab),
+                                 ("Export", "export", self.export_tab),
                                  ("Controls", "controls", self.controls_tab),
                                  ("Settings", "settings", self.settings_tab)):
             self.notebook.add(tab, text=title)
@@ -830,6 +845,8 @@ class DollyApp:
         gui_layout.build_camera(self)
         self._build_fixed_dialog()
         gui_layout.build_look(self)
+        gui_layout.build_scene(self)
+        self._refresh_weather()
         self._refresh_citadel_dof()
         self._build_export()
         self._apply_editor_mode()
@@ -875,7 +892,8 @@ class DollyApp:
         self.stage.register_page(str(self.setup_tab), title=replay_page.TITLE, subtitle=replay_page.SUBTITLE,
                                  primary=self.play_replay_button)
         # START stays Replay's; the other pages take their header copy from their modules.
-        for tab, page in ((self.camera_tab, camera_page), (self.cvar_tab, look_page), (self.export_tab, export_page),
+        for tab, page in ((self.camera_tab, camera_page), (self.cvar_tab, look_page),
+                          (self.scene_tab, scene_page), (self.export_tab, export_page),
                           (self.controls_tab, controls_page), (self.settings_tab, settings_page)):
             self.stage.register_page(str(tab), title=page.TITLE, subtitle=page.SUBTITLE)
         # The kit pages' rail sits in a gutter right of the page column (PLAN-5 N8).
@@ -920,7 +938,7 @@ class DollyApp:
     def _apply_editor_mode(self):
         # Old saved full_editor=False values must not hide desktop tools.
         self.full_editor.set(True)
-        for tab in (self.camera_tab, self.cvar_tab):
+        for tab in (self.camera_tab, self.cvar_tab, self.scene_tab):
             self.notebook.tab(tab, state="normal")
         self._tab_changed()
 
@@ -955,8 +973,8 @@ class DollyApp:
         self.notebook.select(tab)
 
     def _tall_page(self, tab):
-        """The kit page of ``tab`` when it is Camera or Look (shown in a taller window), else None."""
-        for name, page in (("camera_tab", "camera_page"), ("cvar_tab", "look_page")):
+        """The kit page of ``tab`` when it is Camera, Look or Scene (shown in a taller window), else None."""
+        for name, page in (("camera_tab", "camera_page"), ("cvar_tab", "look_page"), ("scene_tab", "scene_page")):
             if hasattr(self, name) and str(tab) == str(getattr(self, name)):
                 return getattr(self, page, None)
         return None
@@ -967,7 +985,8 @@ class DollyApp:
         USER-ADDITIONS UPDATE 19: Camera opens as tall as Look (Look shows every card), and
         Camera's bento scrolls inside that height.
         """
-        if hasattr(self, "camera_tab") and str(tab) == str(self.camera_tab):
+        # Scene opens as tall as Look too, so switching between the three never resizes the window.
+        if any(hasattr(self, name) and str(tab) == str(getattr(self, name)) for name in ("camera_tab", "scene_tab")):
             return getattr(self, "look_page", None) or self._tall_page(tab)
         return self._tall_page(tab)
 
@@ -1524,6 +1543,7 @@ class DollyApp:
                     confetti_despawn_on_ground=self.project.confetti_despawn_on_ground,
                     particles_preset=self.project.particles_preset,
                     particles_intensity=self.project.particles_intensity,
+                    weather=self.project.weather,
                     tick_rate=self.project.tick_rate,
                     keyframes=[Keyframe(0, 0, 0, 0, 0, 0, 0), Keyframe(duration, 0, 0, 0, 0, 0, 0)])
             codec_key = CODEC_LABEL_TO_KEY.get(self.video_codec.get(), DEFAULT_CODEC_KEY)
@@ -1945,23 +1965,26 @@ class DollyApp:
             # The black pass created the layer folder; this pass writes the
             # white matte beside it and skips frames like every layer take.
             target = folder / layer / (layer + "_white" + suffix)
-            options = self._pass_options(base, target, white_clear=True, shot_only=True)
+            options = self._pass_options(base, target, white_clear=True, shot_only=True,
+                                         plate=layer + "_white" if layer == "effects" else layer)
         else:
             # The layer selection gives the take its own subfolder; the native
             # recorder captures the filtered color into it.
             target = folder / (layer + suffix)
-            options = self._pass_options(base, target, layers=(layer,))
+            options = self._pass_options(base, target, layers=(layer,),
+                                         plate="effects_black" if layer == "effects" else layer)
         return self._start_pass(layer, pass_name, options, configure_layer)
 
     @staticmethod
-    def _pass_options(base, target, *, layers=(), white_clear=False, shot_only=False):
+    def _pass_options(base, target, *, layers=(), white_clear=False, shot_only=False,
+                      plate="color"):
         """A layer run's extra pass, recorded like the color take ``base``."""
         return VideoOptions(target, fps=base.fps, bitrate=base.bitrate, codec=base.codec,
                             quality=base.quality, preset=base.preset, ffmpeg_path=base.ffmpeg_path,
                             fixed_step=True, speed=base.speed, layers=layers,
                             white_clear=white_clear, shot_only=shot_only,
                             full_resolution=base.full_resolution, container=base.container,
-                            auto_codec=base.auto_codec).validated()
+                            auto_codec=base.auto_codec, plate=plate).validated()
 
     def _start_pass(self, layer, pass_name, options, before_record, **start_options):
         self._active_layer_take = (layer, pass_name)
@@ -2028,7 +2051,7 @@ class DollyApp:
         # Match the color take's container: lossless FFV1 takes (stills) need .mkv.
         target = folder / layer / (layer + base.path.suffix)
         target.parent.mkdir(parents=True, exist_ok=True)
-        options = self._pass_options(base, target, shot_only=True)
+        options = self._pass_options(base, target, shot_only=True, plate="players")
         return self._start_pass(layer, "capture", options, arm_capture, capture_only=True)
 
     def _finish_player_capture(self, layer):
@@ -3534,6 +3557,52 @@ class DollyApp:
                             else ". Remains on the ground.")
             self.status_text.set(message)
         self._guard("Particles", operation)
+
+    def _refresh_weather(self):
+        """Show the shot's weather on the Scene page (after a load, undo or an edit in game)."""
+        if not hasattr(self, "weather_preset"):
+            return
+        settings = self.project.weather
+        self.weather_preset.set(weather_model.preset_label(settings.preset))
+        for name, variable in self.weather_values.items():
+            variable.set(getattr(settings, name))
+        self.weather_include_effects.set(settings.include_in_effects)
+        self.weather_hero_wakes.set(settings.hero_wakes)
+        view = getattr(self, "scene_view", None)
+        if view is not None:
+            view.set_enabled(settings.enabled)
+
+    def _weather_changed(self):
+        """Apply the Scene page's values to the shot and send them to the game."""
+        def operation():
+            current = self.project.weather
+            preset = weather_model.WEATHER_LABEL_TO_ID.get(self.weather_preset.get(), current.preset)
+            if preset != current.preset:
+                # A new preset fills its own wind, gusts, coating and ceiling, as in game.
+                settings = current.with_preset(preset)
+            else:
+                values = {}
+                for name, digits in WEATHER_SLIDERS.items():
+                    try:
+                        number = float(self.weather_values[name].get())
+                    except (tk.TclError, ValueError):
+                        number = getattr(current, name)
+                    # A value the slider did not move keeps its full precision (it may come from the game).
+                    if round(number, digits) != round(getattr(current, name), digits):
+                        values[name] = round(number, digits)
+                settings = replace(current, include_in_effects=bool(self.weather_include_effects.get()),
+                                   hero_wakes=bool(self.weather_hero_wakes.get()), **values)
+            settings.validate()
+            if settings == current:
+                return
+            self.project = replace(self.project, weather=settings)
+            self._mark_dirty()
+            self.controller.set_native_weather(settings, self.project.start_tick)
+            label = weather_model.preset_label(settings.preset)
+            self.status_text.set(f"Weather: {label}." if settings.enabled else "Weather off for this shot.")
+        self._guard("Weather", operation)
+        # Refused (busy or playing) or not: the page shows what the shot holds.
+        self._refresh_weather()
 
     def _show_fixed_values(self):
         self.fixed_dialog.deiconify()
@@ -5370,6 +5439,7 @@ class DollyApp:
             self.particles_preset.set(PARTICLE_LABELS.get(self.project.particles_preset,
                                                           self.project.particles_preset))
             self.particles_intensity.set(_number(self.project.particles_intensity))
+        self._refresh_weather()
         self.controller.standard_aspect = self.project.standard_aspect
         self._refresh_keys()
         self._refresh_tracks()

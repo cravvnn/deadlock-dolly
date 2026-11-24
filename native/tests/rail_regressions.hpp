@@ -1,3 +1,6 @@
+#include "dolly_weather_runtime.hpp"
+#include <cstring>
+#include <vector>
 // Real rail controls and WARP screenshots; synthetic data, no game access.
 #include "../src/dolly_overlay_assets.hpp"
 #include "../vendor/imgui/backends/imgui_impl_dx11.h"
@@ -242,9 +245,10 @@ static void rail_regressions(const char* output, bool motion = false) {
             settle();
         };
         constexpr const char* cards[] = {"##rail-tab0", "##rail-tab1", "##rail-tab2",
-                                         "##rail-tab3", "##rail-tab4", "##rail-tab5"};
+                                         "##rail-tab3", "##rail-tab4", "##rail-tab5",
+                                         "##rail-tab6"};
         observed_actions.clear();
-        for (unsigned tab = 0; tab < 6; ++tab) {
+        for (unsigned tab = 0; tab < 7; ++tab) {
             activate_tab(tab);
             require(panel.rail_drawers_open(), "Keyboard could not open a rail drawer");
             if (!find(cards[tab])) {
@@ -816,7 +820,7 @@ static void rail_regressions(const char* output, bool motion = false) {
                 io.DeltaTime = 1.f / 60;
                 settle();
             }
-            for (unsigned shot = 0; shot < (motion ? 180u : 13u); ++shot) {
+            for (unsigned shot = 0; shot < (motion ? 180u : 14u); ++shot) {
                 const unsigned tab = motion ? 0 : shot;
                 if (motion) {
                     const float scale = size.y / 1080;
@@ -840,6 +844,16 @@ static void rail_regressions(const char* output, bool motion = false) {
                     }
                 } else if (tab < 6)
                     activate_tab(tab);
+                else if (tab == 13) { // the Scene drawer, drawn between Look and Export
+                    // Publish a shot's weather the way the editor does, so the drawer shows it.
+                    static std::vector<unsigned char> mapping(dolly::weather::kWireOffset + 4096);
+                    const auto wire = dolly::weather::encode(
+                        dolly::weather::preset_settings(dolly::weather::Preset::Blizzard), 2u,
+                        "dl_midtown", 0);
+                    std::memcpy(mapping.data() + dolly::weather::kWireOffset, &wire, sizeof(wire));
+                    dolly::weather_runtime::poll_editor_block(mapping.data());
+                    activate_tab(6);
+                }
                 else if (tab == 6) {
                     panel.close_rail_drawers();
                     settle();

@@ -159,7 +159,23 @@ enum class EditorAction : std::uint32_t {
     SetAttachVerticalAimLock,
     // RenderLock .crav camera export from the in-game Export drawer.
     ExportRenderLock,
-    CancelRenderLock
+    CancelRenderLock,
+    // Scene drawer: the shot's weather (values follow dolly/weather.py ranges).
+    SetWeatherPreset,
+    SetWeatherIntensity,
+    SetWeatherBuildUp,
+    SetWindDirection,
+    SetWindSpeed,
+    SetWindGusts,
+    SetWeatherHeroWakes,
+    SetFlakeSize,
+    SetPrecipitationDensity,
+    SetWeatherCoating,
+    SetWeatherHeightCeiling,
+    SetWeatherIncludeEffects,
+    // Look drawer particles: preset id (dolly/particles.py order) and intensity.
+    SetParticlePreset,
+    SetParticleIntensity
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -187,9 +203,15 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetAttachVerticalAimLock)
 static_assert(static_cast<std::uint32_t>(EditorAction::ExportRenderLock) == 123 &&
                   static_cast<std::uint32_t>(EditorAction::CancelRenderLock) == 124,
               "Stable RenderLock camera export action IDs");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetWeatherPreset) == 125 &&
+                  static_cast<std::uint32_t>(EditorAction::SetWeatherIncludeEffects) == 136,
+              "Stable Scene weather action IDs");
 // The newest appended action; editor_enqueue rejects any ID above it.
-constexpr EditorAction kEditorActionLast = EditorAction::CancelRenderLock;
-static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 124, "Last editor action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetParticlePreset) == 137 &&
+                  static_cast<std::uint32_t>(EditorAction::SetParticleIntensity) == 138,
+              "Stable particle preset action IDs");
+constexpr EditorAction kEditorActionLast = EditorAction::SetParticleIntensity;
+static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 138, "Last editor action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&
@@ -633,6 +655,8 @@ struct EditorSnapshot {
     double citadel_dof_sensor = 1.0, citadel_dof_focus = 200.0;
     bool confetti_enabled = false, confetti_despawn_on_ground = false;
     double confetti_spawn_height = 250.0;
+    int confetti_preset = 0;        // dolly/particles.py order
+    double confetti_intensity = 1.0;
     bool follow_available = false, follow_active = false, follow_pending = false,
          replay_show_hud = false;
     double follow_distance = 135, follow_shoulder = 34, follow_height = 0;

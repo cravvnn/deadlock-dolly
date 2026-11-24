@@ -1,4 +1,5 @@
 """Pure native-editor value mapping; protocol IDs and defaults are unchanged."""
+from .particles import PARTICLE_IDS
 from dataclasses import dataclass
 import math
 from .editor_wire import ATTACH_NO_TARGET
@@ -181,5 +182,7 @@ def editor_values(*, active, settings, project, selected, count, playhead, statu
                   confetti_enabled=bool(project.confetti_enabled),
                   confetti_spawn_height=float(project.confetti_spawn_height),
                   confetti_despawn_on_ground=bool(project.confetti_despawn_on_ground),
+                  confetti_preset=PARTICLE_IDS.index(project.particles_preset),
+                  confetti_intensity=float(project.particles_intensity),
                   **{"video_layer_" + layer: bool(layers[layer])
                      for layer in ("world", "players", "effects")})

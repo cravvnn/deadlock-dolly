@@ -20,6 +20,15 @@ endif()
 add_library(dolly_depth STATIC src/dolly_depth.cpp)
 target_include_directories(dolly_depth PUBLIC include)
 
+add_library(dolly_map_grid STATIC src/dolly_map_grid.cpp)
+target_include_directories(dolly_map_grid PUBLIC include)
+if(WIN32)
+    target_link_libraries(dolly_map_grid PUBLIC windowscodecs ole32)
+endif()
+if(MSVC)
+    target_compile_options(dolly_map_grid PRIVATE /W4 /EHsc /permissive-)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(relief_cvar_tests tests/relief_cvar_tests.cpp)
@@ -194,7 +203,7 @@ if(WIN32)
     # Pinned, unmodified Dear ImGui core and official backends. No game assets,
     # online dependency fetches or third-party installer are needed to build.
     add_library(dolly_overlay STATIC
-        src/dolly_overlay_win.cpp
+        src/dolly_overlay_win.cpp src/dolly_weather_runtime_win.cpp
         src/dolly_rail_panel.cpp src/dolly_rail_icons.cpp src/dolly_overlay_assets.cpp
         src/dolly_rail_kit.cpp src/dolly_rail_fields.cpp src/dolly_rail_drawers.cpp src/dolly_rail_transport.cpp
         src/dolly_overlay_panel.cpp src/dolly_lite_panel.cpp src/dolly_curve_panel.cpp src/dolly_ui_layout.cpp src/dolly_ui_storage.cpp
@@ -215,7 +224,8 @@ if(WIN32)
     target_include_directories(dolly_overlay PRIVATE include vendor/imgui vendor/imgui/backends)
     target_compile_definitions(dolly_overlay PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
         IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
-    target_link_libraries(dolly_overlay PUBLIC dolly_path dolly_depth_scene minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32 shell32 bcrypt)
+    target_link_libraries(dolly_overlay PUBLIC dolly_path dolly_depth_scene minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32 shell32 bcrypt
+        dolly_env_dx11 dolly_weather)
 
     add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp
         src/dolly_confetti.cpp src/dolly_prop_runtime.cpp)
@@ -348,4 +358,49 @@ if(WIN32 AND BUILD_TESTING)
     target_include_directories(media_disconnect_tests PRIVATE include)
     add_test(NAME native_media_disconnect_tests COMMAND media_disconnect_tests)
     set_tests_properties(native_media_disconnect_tests PROPERTIES TIMEOUT 10)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(dolly_map_grid_cli tests/map_grid_cli.cpp)
+    target_link_libraries(dolly_map_grid_cli PRIVATE dolly_map_grid)
+    if(MSVC)
+        target_compile_options(dolly_map_grid_cli PRIVATE /W4 /EHsc /permissive-)
+    endif()
+    add_test(NAME native_map_grid_tests COMMAND dolly_map_grid_cli)
+    set_tests_properties(native_map_grid_tests PROPERTIES TIMEOUT 60)
+endif()
+
+# Weather settings model; uses only the parameter structs, so it needs no D3D link.
+add_library(dolly_weather STATIC src/dolly_weather_state.cpp)
+target_include_directories(dolly_weather PUBLIC include)
+if(MSVC)
+    target_compile_options(dolly_weather PRIVATE /W4 /EHsc /permissive-)
+endif()
+if(BUILD_TESTING)
+    add_executable(weather_state_tests tests/weather_state_tests.cpp)
+    target_link_libraries(weather_state_tests PRIVATE dolly_weather)
+    if(MSVC)
+        target_compile_options(weather_state_tests PRIVATE /W4 /EHsc /permissive-)
+    endif()
+    add_test(NAME native_weather_state_tests COMMAND weather_state_tests)
+    set_tests_properties(native_weather_state_tests PROPERTIES TIMEOUT 10)
+endif()
+
+if(WIN32)
+    add_library(dolly_env_dx11 STATIC src/dolly_wind_fluid_dx11.cpp src/dolly_env_render_dx11.cpp
+                               src/dolly_precip_dx11.cpp src/dolly_weather_view_dx11.cpp)
+    target_include_directories(dolly_env_dx11 PUBLIC include)
+    target_link_libraries(dolly_env_dx11 PUBLIC dolly_map_grid d3d11 d3dcompiler)
+    if(MSVC)
+        target_compile_options(dolly_env_dx11 PRIVATE /W4 /EHsc /permissive-)
+    endif()
+    if(BUILD_TESTING)
+        add_executable(wind_fluid_warp_tests tests/wind_fluid_warp_tests.cpp)
+        target_link_libraries(wind_fluid_warp_tests PRIVATE dolly_env_dx11 dolly_weather)
+        if(MSVC)
+            target_compile_options(wind_fluid_warp_tests PRIVATE /W4 /EHsc /permissive-)
+        endif()
+        add_test(NAME native_wind_fluid_warp_tests COMMAND wind_fluid_warp_tests)
+        set_tests_properties(native_wind_fluid_warp_tests PROPERTIES TIMEOUT 90)
+    endif()
 endif()

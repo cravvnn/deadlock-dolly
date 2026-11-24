@@ -335,7 +335,8 @@
    "look",
    "export",
    "controls",
-   "settings"
+   "settings",
+   "scene"
   ],
   "cell": 16,
   "rows": [
@@ -431,26 +432,26 @@
    ]
   },
   "nav_icons@1x.png": {
-   "sha256": "cd3902937d4375531bf733917546c818d28ebc1a2257bdc5a5cf95d4ce07d54d",
-   "bytes": 1680,
+   "sha256": "2c66d968772f6bd393d12017c54b30c2bd7ffea01f6a86252587522e87e4bc2f",
+   "bytes": 2146,
    "px": [
-    96,
+    112,
     32
    ]
   },
   "nav_icons@1.5x.png": {
-   "sha256": "23e70867f70c5c2745a7efe58c84c3f4d222d0a0ca466e3e9dc21ebec2c3a445",
-   "bytes": 3077,
+   "sha256": "06e424ba3d666035b998d8c8fbb21eaf63905b4d1cbdcc420f7ea1aff6600ffd",
+   "bytes": 4021,
    "px": [
-    144,
+    168,
     48
    ]
   },
   "nav_icons@2x.png": {
-   "sha256": "2f5cd29baac1f9c4da8606532e59ad43e4cd8b54e7744c5d3c7e5595253a69aa",
-   "bytes": 3696,
+   "sha256": "02a7dc74e17f074cebf57a6daf5bf9631853f9d6beeadc14e00a02043c43e314",
+   "bytes": 4823,
    "px": [
-    192,
+    224,
     64
    ]
   },

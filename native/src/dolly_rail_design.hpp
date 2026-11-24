@@ -14,6 +14,7 @@ struct RailDesignState {
     };
     std::map<ImGuiID, Number> numbers;
     bool rotation = false, visibility = false, overrides = false, encoder = false;
+    bool weather_timing = false, weather_haze = false; // Scene drawer disclosures
     bool reset = false, clear = false, remove = false;
     unsigned selected = ~0u;
     std::uint32_t revision = 0, confirm_revision = 0, confirm_selected = 0;
@@ -43,13 +44,13 @@ struct RailDesignState {
             phase = snap ? (forward ? 1.f : 0.f)
                          : std::clamp(phase + (forward ? dt : -dt) / duration, 0.f, 1.f);
         }
-    } open[6], hover[6];
-    float alpha[6]{};
-    bool measured[6]{};
+    } open[7], hover[7];
+    float alpha[7]{};
+    bool measured[7]{};
     struct Height {
         float from = 0, to = 0;
         double started = 0;
-    } heights[6];
+    } heights[7];
     bool send(EditorAction action, double value = 0, const CameraPose* pose = nullptr) const {
         return !measuring && !(GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) &&
                editor_enqueue(action, value, pose);

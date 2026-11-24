@@ -15,7 +15,7 @@ Outputs (the contract with :mod:`dolly.ui.art`, described in ``assets/ui/manifes
   shard is not baked in: :mod:`dolly.ui.backdrop` draws it as a canvas polygon, in eight
   hand-cut poses, so its small corner of the screen is all that moves.
 * ``sidebar_art@{1,1.5,2}x.png``: the masked statue art (alpha only, a few levels deep).
-* ``nav_icons@{1,1.5,2}x.png``: the six nav icons, one row per text colour token.
+* ``nav_icons@{1,1.5,2}x.png``: the seven nav icons, one row per text colour token.
 * ``playback_art@{1,1.5,2}x.png``: the Shot Playback card's background (component [design reference]):
   the card colour, Figma's halftone tile and its faint magic-circle drawing, composited
   opaque from ``<source>/playback-art`` and checked against Figma's own 2x render of the card.
@@ -70,7 +70,15 @@ POSE_SEED = 4242
 
 SIDEBAR_ART_RECT = (0, 260, 190, 550)
 BUCKETS = ("1", "1.5", "2")
-NAV_ORDER = ("replay", "camera", "look", "export", "controls", "settings")
+NAV_ORDER = ("replay", "camera", "look", "export", "controls", "settings", "scene")
+# Icons drawn here until Kara's export has them (same 16 px frame and stroke as the exports).
+# Scene: the in-game rail's cloud with three wind-blown streaks, scaled to the 16 px frame.
+BUILTIN_NAV_ICONS = {
+    "scene": ('<path d="M 4.5 8.5 C 3 8.5 1.9 7.5 1.9 6.2 C 1.9 4.9 2.9 4 4.1 4 '
+              'C 4.5 2.4 5.9 1.4 7.6 1.4 C 9.6 1.4 11.1 2.8 11.3 4.6 '
+              'C 12.8 4.6 14 5.7 14 7 C 14 7.9 13.3 8.5 12.4 8.5 Z '
+              'M 5.3 10.6 L 4.3 13.6 M 8.4 10.6 L 7.4 13.6 M 11.4 10.6 L 10.4 13.6"/>'),
+}
 NAV_ROWS = ("muted", "text")
 NAV_CELL = 16
 NAV_STROKE = 1.4
@@ -543,8 +551,13 @@ def stroke_coverage(lines, scale: float, size: int, pad: int = 0):
 
 def build_nav_icons(source: Path) -> dict[str, tuple[int, int, bytes]]:
     np = _np()
-    icons = {name: svg_polylines((source / "assets" / "icons" / f"nav_{name}_default.svg").read_text(encoding="utf-8"))
-             for name in NAV_ORDER}
+    icons = {}
+    for name in NAV_ORDER:
+        path = source / "assets" / "icons" / f"nav_{name}_default.svg"
+        if not path.is_file() and name in BUILTIN_NAV_ICONS:
+            icons[name] = svg_polylines(BUILTIN_NAV_ICONS[name])
+        else:
+            icons[name] = svg_polylines(path.read_text(encoding="utf-8"))
     colors = [np.array(ui_theme.rgb(ui_theme.TOKENS[token]), np.uint8) for token in NAV_ROWS]
     out = {}
     for bucket in BUCKETS:

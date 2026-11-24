@@ -1,0 +1,1194 @@
+// DX11 Screen-Space Volumetric Sandstorm / Ground-Fog Raymarch & Surface Coating Pass.
+//
+// Adapted from Wockstajit/SourceMVM under the MIT License:
+//   Copyright (c) 2021 advancedfx.org
+//   Copyright (c) 2026 Wockstajit (SOURCE:MVM)
+// Depth-based edge-preserving normal reconstruction follows Turanszki (2019) /
+// atyuwen (2021) as adapted in SourceMVM EnvironmentCoatingShaders.h.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+
+#include "dolly_env_render_dx11.hpp"
+
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <d3d11.h>
+#include <d3dcompiler.h>
+#include <wrl/client.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+
+namespace dolly::env {
+using Microsoft::WRL::ComPtr;
+
+namespace {
+
+constexpr char kEnvRenderHlsl[] = R"HLSL(
+#define EMITTERS 16
+static const float kNoFloor = -5.0e5;
+static const float kVolumeTop = 1.7; // global volume extent above the floor, in multiples of heightCeiling
+
+struct EmitterGPU {
+    float4 posRadius;        // xyz world position, w core radius (u)
+    float4 dirSpeed;         // xyz normalized aim direction, w jet speed (u/s)
+    float4 colorDensity;     // rgb tint, w density
+    float4 coneHeightActive; // x coneCos, y heightMin, z heightMax, w activeWeight
+};
+
+cbuffer EnvConstants : register(b0) {
+    row_major float4x4 invViewProj;
+    row_major float4x4 viewProj;
+    float4 cameraPos;     // xyz world position, w = 1 if reversed-Z
+    float4 screenInfo;    // x width, y height, z 1/width, w 1/height
+    float4 gridWindow;    // xy origin (world), zw 1/span (world)
+    float4 windTime;      // xy steady wind (u/s), z sim time (s), w max distance (u)
+    float4 styleA;        // x preset, y intensity, z heightCeiling, w densityScale
+    float4 styleB;        // x wispStrength, y coatingStrength, z marchSteps, w emitterCount
+    float4 sunDir;        // xyz normalized sun direction, w enableCoating
+    float4 sunColor;      // rgb sun light, w enableEmitterPlumes
+    float4 ambientColor;  // rgb sky/ambient, w nearClip
+    float4 thinColor;     // rgb thin scatter albedo, w farClip
+    float4 denseColor;    // rgb dense scatter albedo, w unused
+    float4 coatingInfo;   // x growth 0..1, y drift strength, z steady wind speed, w 1 = gpuView
+    float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w unused
+    float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
+    float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold
+    EmitterGPU emitters[EMITTERS];
+};
+
+Texture2D<float4> sceneColor : register(t0);
+Texture2D<float> sceneDepth : register(t1);
+Texture2D<float4> fluidState : register(t2); // xy velocity (u/s), z carried density, w solid
+Texture2D<float> airMap : register(t3);      // >0.5 solid, 0..0.498 openness
+Texture2D<float> topsMap : register(t4);     // highest solid Z
+Texture2D<float4> floorZMap : register(t5);  // 4 packed floor heights, highest first (UNORM16)
+Texture2D<float> streetZMap : register(t6);  // street-deck elevation
+Texture3D<float> gustNoise3D : register(t7); // 64^3 seamless Perlin-Worley volume
+struct ViewData {
+    row_major float4x4 viewProj;    // without TAA jitter, for drawing
+    row_major float4x4 invViewProj; // with the frame's jitter, matching its depth
+    float4 cameraPos;               // xyz world, w 1 when a valid view was found
+    float4 right;
+    float4 up;
+};
+StructuredBuffer<ViewData> gpuView : register(t8);
+// Sun optical depth through the volume, baked per frame by BakeSunCS: map X, map Y, and
+// height above the floor the ray is over, from -18 to the volume reach (volumeBounds.z).
+Texture3D<float> sunBake : register(t9);
+Texture2D<float4> halfMarch : register(t10); // safety net: half-resolution march
+RWTexture3D<float> sunBakeOut : register(u0);
+
+static float4x4 gInvViewProj;
+static float3 gCamPos;
+
+// The camera comes from the constant buffer, or (coatingInfo.w) from a view the GPU
+// built for this exact frame. Returns false when that frame had no valid view.
+bool LoadView() {
+    if (coatingInfo.w > 0.5) {
+        ViewData v = gpuView[0];
+        gInvViewProj = v.invViewProj;
+        gCamPos = v.cameraPos.xyz;
+        return v.cameraPos.w > 0.5;
+    }
+    gInvViewProj = invViewProj;
+    gCamPos = cameraPos.xyz;
+    return true;
+}
+
+SamplerState linearClamp : register(s0);
+SamplerState linearWrap : register(s1);
+
+struct FullscreenVSOut {
+    float4 pos : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+FullscreenVSOut FullscreenVS(uint id : SV_VertexID) {
+    FullscreenVSOut o;
+    o.uv = float2((id << 1) & 2, id & 2);
+    o.pos = float4(o.uv * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
+    return o;
+}
+
+bool IsSky(float d) {
+    return cameraPos.w > 0.5 ? (d <= 1e-6) : (d >= 1.0 - 1e-6);
+}
+
+// Depth may be rendered below the output size (upscaling); map output pixels onto it.
+float ReadDepthPx(float2 px) {
+    uint dw, dh;
+    sceneDepth.GetDimensions(dw, dh);
+    int2 q = clamp(int2((px + 0.5) * float2(dw, dh) * screenInfo.zw), int2(0, 0), int2(dw, dh) - 1);
+    return sceneDepth.Load(int3(q, 0));
+}
+
+float3 WorldFromPixelDepth(float2 px, float d) {
+    float2 uv = (px + 0.5) * screenInfo.zw;
+    float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    float4 clip = float4(ndc, d, 1.0);
+    float4 world = mul(gInvViewProj, clip);
+    return world.xyz / max(abs(world.w), 1e-6) * (world.w < 0.0 ? -1.0 : 1.0);
+}
+
+// Edge-preserving surface normal reconstruction from depth (Turanszki 2019 / atyuwen 2021).
+float3 CoatingBaseNormal(float2 pixel, float depth, float3 center, float3 fallback) {
+    // With depth rendered below the output size (upscaling), one output pixel steps would
+    // land on the same depth texel and flatten the normal; step whole depth texels instead.
+    uint dw, dh;
+    sceneDepth.GetDimensions(dw, dh);
+    float2 texel = max(float2(1.0, 1.0), ceil(screenInfo.xy / float2(dw, dh)));
+    float3 tangent[2];
+    [unroll] for (int a = 0; a < 2; ++a) {
+        float2 s = a ? float2(0.0, texel.y) : float2(texel.x, 0.0);
+        float2 l1 = pixel - s, l2 = pixel - 2.0 * s;
+        float2 r1 = pixel + s, r2 = pixel + 2.0 * s;
+        bool left = all(l2 >= 0.5) && all(l2 < screenInfo.xy - 0.5);
+        bool right = all(r2 >= 0.5) && all(r2 < screenInfo.xy - 0.5);
+        float dl1 = left ? ReadDepthPx(l1) : 0.0;
+        float dl2 = left ? ReadDepthPx(l2) : 0.0;
+        float dr1 = right ? ReadDepthPx(r1) : 0.0;
+        float dr2 = right ? ReadDepthPx(r2) : 0.0;
+        left = left && !IsSky(dl1) && !IsSky(dl2);
+        right = right && !IsSky(dr1) && !IsSky(dr2);
+        if (!left && !right) return fallback;
+        float el = left ? abs(2.0 * dl1 - dl2 - depth) : 1e30;
+        float er = right ? abs(2.0 * dr1 - dr2 - depth) : 1e30;
+        tangent[a] = (el < er) ? (center - WorldFromPixelDepth(l1, dl1))
+                               : (WorldFromPixelDepth(r1, dr1) - center);
+    }
+    float3 n = cross(tangent[0], tangent[1]);
+    if (dot(n, n) < 1e-12) return fallback;
+    n = normalize(n);
+    return dot(n, gCamPos - center) < 0.0 ? -n : n;
+}
+
+float Hash3(float3 p) {
+    p = frac(p * float3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return frac((p.x + p.y) * p.z);
+}
+
+float ValueNoise3(float3 p) {
+    float3 i = floor(p), f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = Hash3(i + float3(0, 0, 0));
+    float n100 = Hash3(i + float3(1, 0, 0));
+    float n010 = Hash3(i + float3(0, 1, 0));
+    float n110 = Hash3(i + float3(1, 1, 0));
+    float n001 = Hash3(i + float3(0, 0, 1));
+    float n101 = Hash3(i + float3(1, 0, 1));
+    float n011 = Hash3(i + float3(0, 1, 1));
+    float n111 = Hash3(i + float3(1, 1, 1));
+    return lerp(lerp(lerp(n000, n100, f.x), lerp(n010, n110, f.x), f.y),
+                lerp(lerp(n001, n101, f.x), lerp(n011, n111, f.x), f.y), f.z);
+}
+
+float Fbm3(float3 p) {
+    return ValueNoise3(p) * 0.55 + ValueNoise3(p * 2.13 + 7.1) * 0.30 +
+           ValueNoise3(p * 4.47 + 13.7) * 0.15;
+}
+
+float InterleavedGradient(float2 px) {
+    return frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+}
+
+float2 MapUV(float2 worldXY) {
+    return (worldXY - gridWindow.xy) * gridWindow.zw;
+}
+
+bool OnMap(float2 uv) {
+    return all(uv >= 0.0) && all(uv <= 1.0);
+}
+
+float SampleOpenness(float2 uv) {
+    if (!OnMap(uv)) return 1.0;
+    float m = airMap.SampleLevel(linearClamp, uv, 0);
+    return m > 0.5 ? 0.0 : saturate(m * 255.0 / 127.0);
+}
+
+// Selects the highest walkable floor layer <= z + 16u from the 4-layer map grid,
+// falling back to street_z when no nav/walkable floor layer is present.
+float SampleFloorBelow(float3 p, out bool hasFloor) {
+    float2 uv = MapUV(p.xy);
+    hasFloor = false;
+    if (!OnMap(uv)) return p.z - 64.0;
+    uint mw, mh;
+    floorZMap.GetDimensions(mw, mh);
+    int2 mq = clamp(int2(floor(uv * float2(mw, mh))), int2(0, 0), int2(mw - 1, mh - 1));
+    float4 codes = floorZMap.Load(int3(mq, 0)) * 65535.0;
+    float zLim = p.z + 16.0;
+    [unroll] for (int i = 0; i < 4; ++i) {
+        if (codes[i] < 0.5) continue; // no floor in this layer
+        float h = floorDecode.x + (codes[i] - 1.0) / 65534.0 * floorDecode.y;
+        if (h <= zLim) {
+            hasFloor = true;
+            return h;
+        }
+    }
+    hasFloor = true;
+    return streetZMap.SampleLevel(linearClamp, uv, 0);
+}
+
+float SampleGustNoise3D(float3 q, float2 airXY, float period, float cycle) {
+    float2 steady = windTime.xy;
+    float3 at = float3(q.xy - steady * windTime.z, q.z) / max(period, 32.0);
+    float t = windTime.z / max(cycle, 0.2);
+    float a = frac(t) - 0.5;
+    float b = frac(t + 0.5) - 0.5;
+    float w = abs(a * 2.0);
+    float2 relAir = clamp(airXY - steady, -450.0, 450.0);
+    float3 drag = float3(relAir * cycle, 0.0) / max(period, 32.0);
+    float na = gustNoise3D.SampleLevel(linearWrap, at - drag * a, 0);
+    float nb = gustNoise3D.SampleLevel(linearWrap, at - drag * b, 0);
+    return lerp(na, nb, w);
+}
+
+// Henyey-Greenstein forward scattering phase
+float PhaseHG(float cosTheta, float g) {
+    float g2 = g * g;
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(max(1.0 + g2 - 2.0 * g * cosTheta, 0.08), 1.5));
+}
+
+)HLSL"
+                                  R"HLSL(
+// 1 where open sky lies above a surface at height z, 0 under a roof, bridge deck or
+// overhang. Bilinear over the four nearest map cells gives a one-cell soft drip line.
+// The four map cells around uv (one Gather) and the bilinear weights between them.
+// Gather order: x = (0,1), y = (1,1), z = (1,0), w = (0,0).
+float4 GatherTops(float2 uv, out float2 f) {
+    uint w, h;
+    topsMap.GetDimensions(w, h);
+    f = frac(uv * float2(w, h) - 0.5);
+    return topsMap.GatherRed(linearClamp, uv);
+}
+
+float BlendCells(float4 v, float2 f) {
+    return lerp(lerp(v.w, v.z, f.x), lerp(v.x, v.y, f.x), f.y);
+}
+
+float SkyOpenAt(float2 uv, float z) {
+    if (!OnMap(uv)) return 1.0;
+    float2 f;
+    float4 tops = GatherTops(uv, f);
+    return BlendCells(step(tops, z + 24.0), f);
+}
+
+// Shadow under roofs, blended per cell so a tall roof's height never bleeds across the
+// wall below it (blending heights first did).
+float RoofShadowAt(float2 uv, float z) {
+    if (!OnMap(uv)) return 1.0;
+    float2 f;
+    float4 tops = GatherTops(uv, f);
+    float4 lit = 1.0 - smoothstep(24.0, 160.0, tops - z);
+    return lerp(0.38, 1.0, BlendCells(lit, f));
+}
+
+float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir) {
+    // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
+    float coat = styleB.y * coatingInfo.x;
+    if (sunDir.w < 0.5 || coat <= 0.001) return baseColor;
+
+    float2 uv = MapUV(surfPos.xy);
+    float upMask = smoothstep(0.28, 0.78, surfNormal.z);
+    float open = SkyOpenAt(uv, surfPos.z);
+    if (upMask * open <= 0.001) return baseColor;
+
+    // Snow, sand and ash drift into still air (the lee of walls) and are scoured
+    // where the wind runs fast; rain wetness ignores the wind.
+    int preset = int(styleA.x + 0.5);
+    float drift = 1.0;
+    if (preset != 5 && OnMap(uv)) {
+        float speed = length(fluidState.SampleLevel(linearClamp, uv, 0).xy);
+        float scour = saturate(speed / max(coatingInfo.z * 1.6, 96.0));
+        drift = lerp(1.0, lerp(1.3, 0.4, scour), coatingInfo.y);
+    }
+
+    float amount = coat * drift;
+    float noise = Fbm3(surfPos * 0.0085);
+    float threshold = 1.0 - 1.25 * amount;
+    float cov = smoothstep(threshold, threshold + 0.25, noise) * saturate(amount * 4.0) * upMask * open;
+    if (cov <= 0.001) return baseColor;
+
+    float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
+    float shade = lerp(0.45, 1.15, saturate(luma * 1.4));
+
+    if (preset == 5) {
+        // Rain wetness: darker porous albedo + crisp Fresnel specular sheen
+        float fresnel = pow(1.0 - saturate(dot(surfNormal, viewDir)), 4.0);
+        float3 wet = baseColor * lerp(1.0, 0.62, cov);
+        float3 spec = (ambientColor.rgb + sunColor.rgb * 0.4) * fresnel * cov * 0.55;
+        return wet + spec;
+    }
+
+    float3 coatAlbedo = thinColor.rgb;
+    if (preset == 1 || preset == 2) coatAlbedo = float3(0.76, 0.62, 0.42); // desert sand/dust
+    else if (preset == 6) coatAlbedo = float3(0.92, 0.94, 0.97);           // snow
+    else if (preset == 4) coatAlbedo = float3(0.28, 0.26, 0.25);           // ash
+    else if (preset == 3) coatAlbedo = baseColor * 0.85;                   // damp ground fog
+
+    float3 coated = coatAlbedo * shade;
+    return lerp(baseColor, coated, cov * 0.82);
+}
+
+// Evaluates volumetric extinction and local scatter tint at world point q.
+float SampleVolumeAt(float3 q, float floorZ, bool noisy, out float3 outTint, out float outLoad) {
+    outTint = thinColor.rgb;
+    outLoad = 0.0;
+
+    float2 uv = MapUV(q.xy);
+    if (!OnMap(uv)) return 0.0;
+
+    float4 air = fluidState.SampleLevel(linearClamp, uv, 0);
+    // Do not render fog/sand inside solid building interiors
+    if (air.w > 0.65) return 0.0;
+
+    int preset = int(styleA.x + 0.5);
+    float intensity = styleA.y;
+    float ceilH = max(styleA.z, 24.0);
+    float densScale = styleA.w;
+    float wisps = styleB.x;
+
+    float h = q.z - floorZ;
+    float sigma = 0.0;
+    float3 tintAccum = float3(0.0, 0.0, 0.0);
+    float tintWeight = 0.0;
+
+    // 1) Global wind-fluid volume (Sandstorm / DustHaze / GroundFog / Ash / Rain / Snow)
+    // Every profile below fades to zero by kVolumeTop * ceilH, so this cull never cuts visible density.
+    if (h >= -18.0 && h <= ceilH * kVolumeTop) {
+        float carried = max(air.z, 0.0);
+        float open = SampleOpenness(uv);
+        float roofAllow = lerp(0.18, 1.0, open);
+
+        if (preset == 3) {
+            // Ground Fog: dense floor-hugging undulating blanket parted by wakes/wind
+            float billow = noisy ? SampleGustNoise3D(q, air.xy, 420.0, 2.8) : 0.5;
+            float topH = ceilH * lerp(0.65, 1.25, lerp(0.5, billow, wisps));
+            float hNorm = saturate(h / max(topH, 8.0));
+            float profile = (1.0 - smoothstep(0.62, 1.0, hNorm)) * smoothstep(-16.0, 6.0, h);
+            float baseFog = saturate(0.45 + carried * 0.75);
+            float gSigma = baseFog * profile * intensity * densScale * 0.011 * lerp(0.45, 1.0, open);
+            if (gSigma > 1e-5) {
+                sigma += gSigma;
+                float3 col = lerp(thinColor.rgb, denseColor.rgb, saturate(baseFog * (1.0 - hNorm * 0.4)));
+                tintAccum += col * gSigma;
+                tintWeight += gSigma;
+                outLoad = max(outLoad, baseFog);
+            }
+        } else {
+            // Gust-driven sandstorm / dust / ash / snow / rain spray
+            float load = carried * 1.35;
+            if (load > 0.005) {
+                float d = min(load, 2.6);
+                float n = noisy ? SampleGustNoise3D(q, air.xy, 520.0, 2.0) : 0.5;
+                // Billow the top surface with the gust noise so it never reads as a flat slab.
+                float hb = h - (n - 0.5) * ceilH * 0.55 * wisps;
+                float lift = min(d, 1.5) * ceilH * 0.28;
+                float core = 1.0 - smoothstep(0.0, ceilH * 0.85, max(hb - lift, 0.0));
+                float back = pow(1.0 - saturate(hb / ceilH), 2.0) * min(d, 1.5);
+                float topFade = 1.0 - smoothstep(ceilH * 0.95, ceilH * (kVolumeTop - 0.05), h);
+                core *= topFade;
+                float erode = (1.0 - n) * 1.45 * wisps;
+                float shape = saturate(saturate(core - erode * core * 0.65) +
+                                       saturate(0.32 - (1.0 - n) * 0.55 * wisps) * back);
+                float baseExt = (preset == 1) ? 0.0085 :
+                                (preset == 2) ? 0.0038 :
+                                (preset == 4) ? 0.0068 :
+                                (preset == 6) ? 0.0072 : 0.0032;
+                float gSigma = shape * baseExt * intensity * densScale * roofAllow *
+                               smoothstep(-18.0, 4.0, h);
+                if (gSigma > 1e-5) {
+                    sigma += gSigma;
+                    float ramp = saturate(d * 0.55);
+                    float3 col = lerp(thinColor.rgb, denseColor.rgb, ramp);
+                    tintAccum += col * gSigma;
+                    tintWeight += gSigma;
+                    outLoad = max(outLoad, d);
+                }
+            }
+        }
+    }
+
+    // 2) First-class World-Placed 3D Directional Emitter Plumes (EMITTERS = 16)
+    if (sunColor.w > 0.5) {
+        int eCount = min(int(styleB.w + 0.5), EMITTERS);
+        [loop] for (int i = 0; i < eCount; ++i) {
+            float aw = emitters[i].coneHeightActive.w;
+            if (aw <= 0.001) continue;
+            float hMin = emitters[i].coneHeightActive.y;
+            float hMax = emitters[i].coneHeightActive.z;
+            if (h < hMin - 24.0 || h > hMax + 48.0) continue;
+
+            float3 rel = q - emitters[i].posRadius.xyz;
+            float r = max(emitters[i].posRadius.w, 24.0);
+            float dist = length(rel);
+            if (dist > r * 3.2) continue;
+
+            float3 eDir = emitters[i].dirSpeed.xyz;
+            float dLen = length(eDir);
+            eDir = dLen > 0.001 ? (eDir / dLen) : float3(1.0, 0.0, 0.0);
+
+            float along = dot(rel, eDir);
+            float coneCos = emitters[i].coneHeightActive.x;
+            float coneMask = 1.0;
+            if (coneCos > -0.95 && dist > 1.0) {
+                float align = along / dist;
+                coneMask = smoothstep(coneCos - 0.22, coneCos + 0.16, align);
+            }
+            float core = 1.0 - smoothstep(r * 0.18, r * 0.72, dist);
+            float plumeReach = exp(-(dist * dist) / (r * r * 2.4));
+            float vBand = smoothstep(hMin - 16.0, hMin + 16.0, h) *
+                          (1.0 - smoothstep(hMax - 24.0, hMax + 24.0, h));
+
+            float n3 = noisy ? SampleGustNoise3D(q - eDir * windTime.z * 90.0, air.xy, 310.0, 1.6) : 0.55;
+            float plume = max(core, plumeReach * coneMask) * vBand * lerp(0.55, 1.35, n3);
+            float eSigma = plume * emitters[i].colorDensity.w * aw * densScale * 0.014;
+            if (eSigma > 1e-5) {
+                sigma += eSigma;
+                tintAccum += emitters[i].colorDensity.rgb * eSigma;
+                tintWeight += eSigma;
+                outLoad = max(outLoad, plume * 1.8);
+            }
+        }
+    }
+
+    if (tintWeight > 1e-6) {
+        outTint = tintAccum / tintWeight;
+    }
+    return sigma;
+}
+
+static const uint kSunSlices = 32;
+
+float SunSliceCoord(float h) {
+    float u = saturate((h + 18.0) / (volumeBounds.z + 18.0));
+    return (u * (kSunSlices - 1) + 0.5) / kSunSlices;
+}
+
+float SunOpticalDepth(float2 uv, float h) {
+    if (!OnMap(uv) || h > volumeBounds.z) return 0.0;
+    return sunBake.SampleLevel(linearClamp, float3(uv, SunSliceCoord(h)), 0);
+}
+
+// One thread per (map cell, height slice): the same three sun taps the march used, for a
+// point at height h above a floor at Z = 0 (the taps only depend on height above that floor).
+[numthreads(8, 8, 1)]
+void BakeSunCS(uint3 id : SV_DispatchThreadID) {
+    uint w, h, d;
+    sunBakeOut.GetDimensions(w, h, d);
+    if (id.x >= w || id.y >= h || id.z >= d) return;
+    float2 uv = (float2(id.xy) + 0.5) / float2(w, h);
+    float2 xy = gridWindow.xy + uv / gridWindow.zw;
+    float height = lerp(-18.0, volumeBounds.z, float(id.z) / float(d - 1));
+    float3 q = float3(xy, height);
+    float3 sun = normalize(sunDir.xyz);
+    float dsSun = 24.0 / max(sun.z, 0.35);
+    float tau = 0.0;
+    [unroll] for (int k = 0; k < 3; ++k) {
+        float3 tint;
+        float load;
+        tau += SampleVolumeAt(q + sun * dsSun * (k + 0.5), 0.0, false, tint, load);
+    }
+    sunBakeOut[id] = tau;
+}
+
+)HLSL"
+                                  R"HLSL(
+// The volumetric march along one view ray: rgb in-scattered light, a transmittance.
+float4 MarchRay(float2 px, float3 rayDir, float hitDist) {
+    float maxDist = windTime.w;
+    // Volumetric raymarch front-to-back
+    int steps = clamp(int(styleB.z + 0.5), 16, 128);
+    float jitter = InterleavedGradient(px);
+    float3 sun = normalize(sunDir.xyz);
+    float phase = 0.45 + 0.55 * saturate(PhaseHG(dot(rayDir, sun), 0.52) * 3.2);
+    float reach = max(styleA.z, 32.0) * kVolumeTop;
+    float climb = max(abs(rayDir.z), 0.02);
+
+    float3 scatter = float3(0.0, 0.0, 0.0);
+    float trans = 1.0;
+    float t = 12.0;
+
+    // Clip the ray to where weather can exist: the map footprint and the height band from
+    // the lowest floor to the highest floor plus the volume reach. Density is zero outside,
+    // so ending (or starting) the march there changes nothing that can be seen.
+    float tEnd = hitDist;
+    float2 boxLo = gridWindow.xy;
+    float2 boxHi = gridWindow.xy + 1.0 / gridWindow.zw;
+    [unroll] for (int a = 0; a < 2; ++a) {
+        if (abs(rayDir[a]) > 1e-6) {
+            float tLo = (boxLo[a] - gCamPos[a]) / rayDir[a];
+            float tHi = (boxHi[a] - gCamPos[a]) / rayDir[a];
+            t = max(t, min(tLo, tHi));
+            tEnd = min(tEnd, max(tLo, tHi));
+        } else if (gCamPos[a] < boxLo[a] || gCamPos[a] > boxHi[a]) {
+            tEnd = -1.0;
+        }
+    }
+    if (abs(rayDir.z) > 1e-6) {
+        float tLo = (volumeBounds.x - gCamPos.z) / rayDir.z;
+        float tHi = (volumeBounds.y - gCamPos.z) / rayDir.z;
+        t = max(t, min(tLo, tHi));
+        tEnd = min(tEnd, max(tLo, tHi));
+    } else if (gCamPos.z < volumeBounds.x || gCamPos.z > volumeBounds.y) {
+        tEnd = -1.0;
+    }
+    t = max(t, 12.0);
+
+    // Step schedule: dt = 6 + g * t grows with distance (fine near the camera). g is solved
+    // per ray so the steps exactly cover the clipped span; short rays get g = 0 and stop early
+    // in fine steps. Without this, 64 steps ended near 950 u and distant haze cut off hard.
+    float growth = 0.0;
+    {
+        float span = tEnd - t;
+        float n = float(steps);
+        if (span > 6.0 * n) {
+            float lo = 0.0, hi = 0.35;
+            [unroll] for (int it = 0; it < 12; ++it) {
+                float g = 0.5 * (lo + hi);
+                float covered = (t + 6.0 / g) * (pow(1.0 + g, n) - 1.0);
+                if (covered < span) lo = g; else hi = g;
+            }
+            growth = hi;
+        }
+    }
+
+    [loop] for (int s = 0; s < steps && t < tEnd; ++s) {
+        float3 p = gCamPos + rayDir * t;
+        bool hasFloor;
+        float floorHere = SampleFloorBelow(p, hasFloor);
+        float over = p.z - floorHere;
+        float above = over - reach;
+
+        float dt = clamp(6.0 + t * growth, 6.0, 400.0);
+        if (over < reach * 2.0) {
+            dt = min(dt, max((max(above, 0.0) + reach * 0.12) / climb, 4.0));
+        }
+        if (above > 0.0 && rayDir.z < -0.02) {
+            dt = max(dt, min(above / max(-rayDir.z, 0.05) * 0.55, 200.0));
+        }
+        // Never fall short of the span: the floor refinement above may spend steps early.
+        dt = max(dt, (tEnd - t) / float(steps - s));
+        dt = min(dt, tEnd - t);
+        if (dt <= 0.25) break;
+
+        float3 q = gCamPos + rayDir * (t + dt * jitter);
+        t += dt;
+
+        float3 albedo;
+        float load;
+        float sigma = SampleVolumeAt(q, floorHere, true, albedo, load);
+        if (sigma <= 1e-5) continue;
+
+        // Soft distance fade over last 15% of maxDist
+        float distFade = 1.0 - smoothstep(maxDist * 0.85, maxDist, t);
+        sigma *= distFade;
+        if (sigma <= 1e-5) continue;
+
+        // Soft roof/building shadow from topsMap + 3-tap self-shadow toward sun
+        float2 quv = MapUV(q.xy);
+        float roofShadow = RoofShadowAt(quv, q.z);
+
+        // The three sun taps depend only on map position and height above this floor, so
+        // they come from the per-frame bake (BakeSunCS) in one fetch.
+        float dsSun = 24.0 / max(sun.z, 0.35);
+        float tauSun = SunOpticalDepth(quv, q.z - floorHere);
+        float sunTrans = exp(-tauSun * dsSun * 0.65);
+
+        float3 light = ambientColor.rgb * lerp(0.55, 1.0, roofShadow) +
+                       sunColor.rgb * phase * sunTrans * roofShadow;
+        float alpha = 1.0 - exp(-sigma * dt);
+        scatter += trans * alpha * albedo * light;
+        trans *= (1.0 - alpha);
+        if (trans < 0.015) break;
+    }
+
+    return float4(scatter, trans);
+}
+
+// Safety net above 4K: rebuild this pixel's march from the four nearest half-resolution
+// samples, weighted by distance and depth similarity. Returns false when a neighbour sits
+// across a depth edge (or sky boundary); the caller then marches the pixel at full
+// resolution, so silhouettes stay exact.
+bool UpsampleMarch(float2 px, float depth, out float4 result) {
+    result = float4(0.0, 0.0, 0.0, 1.0);
+    uint hw, hh;
+    halfMarch.GetDimensions(hw, hh);
+    float2 h = px * 0.5;
+    int2 h0 = int2(floor(h));
+    float2 f = h - float2(h0);
+    bool skyHere = IsSky(depth);
+    float4 acc = float4(0.0, 0.0, 0.0, 0.0);
+    float wsum = 0.0;
+    [unroll] for (int k = 0; k < 4; ++k) {
+        int2 o = int2(k & 1, k >> 1);
+        int2 q = clamp(h0 + o, int2(0, 0), int2(hw, hh) - 1);
+        float ds = ReadDepthPx(float2(q * 2));
+        if (IsSky(ds) != skyHere) return false;
+        float rel = skyHere ? 0.0 : abs(ds - depth) / max(depth, 1e-6);
+        if (rel > netInfo.y) return false;
+        float wb = (o.x ? f.x : 1.0 - f.x) * (o.y ? f.y : 1.0 - f.y) + 1e-4;
+        float w = wb * exp(-rel * 60.0);
+        acc += halfMarch.Load(int3(q, 0)) * w;
+        wsum += w;
+    }
+    if (wsum <= 0.0) return false;
+    result = acc / wsum;
+    return true;
+}
+
+float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
+    float2 px = floor(i.pos.xy);
+    int2 ipx = clamp(int2(px), int2(0, 0), int2(screenInfo.xy) - 1);
+    float3 baseColor = sceneColor.Load(int3(ipx, 0)).rgb;
+    if (!LoadView())
+        return float4(baseColor, 1.0);
+
+    int preset = int(styleA.x + 0.5);
+    if (preset == 0 || styleA.y <= 0.001) {
+        return float4(baseColor, 1.0);
+    }
+
+    float depth = ReadDepthPx(float2(ipx));
+    bool sky = IsSky(depth);
+
+    float farZ = cameraPos.w > 0.5 ? 1e-5 : (1.0 - 1e-5);
+    float3 farWorld = WorldFromPixelDepth(px, farZ);
+    float3 rayDir = normalize(farWorld - gCamPos);
+
+    float maxDist = windTime.w;
+    float hitDist = maxDist;
+    float3 surfPos = gCamPos + rayDir * maxDist;
+    if (!sky) {
+        surfPos = WorldFromPixelDepth(px, depth);
+        hitDist = min(length(surfPos - gCamPos), maxDist);
+        // The depth-normal reconstruction (8 depth loads) runs only where coating can show:
+        // coating on and grown, and open sky above the surface.
+        if (sunDir.w > 0.5 && styleB.y * coatingInfo.x > 0.001 &&
+            SkyOpenAt(MapUV(surfPos.xy), surfPos.z) > 0.001) {
+            float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir);
+            baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir);
+        }
+    }
+
+    float4 m;
+    if (netInfo.x < 1.5 || !UpsampleMarch(px, depth, m))
+        m = MarchRay(px, rayDir, hitDist);
+    return float4(baseColor * m.a + m.rgb, 1.0);
+}
+
+// Half-resolution march (safety net above 4K): one sample per 2x2 block, at its top-left
+// full-resolution pixel.
+float4 EnvHalfPS(FullscreenVSOut i) : SV_Target {
+    float2 px = floor(i.pos.xy) * 2.0;
+    if (!LoadView())
+        return float4(0.0, 0.0, 0.0, 1.0);
+    int preset = int(styleA.x + 0.5);
+    if (preset == 0 || styleA.y <= 0.001)
+        return float4(0.0, 0.0, 0.0, 1.0);
+    float depth = ReadDepthPx(px);
+    float farZ = cameraPos.w > 0.5 ? 1e-5 : (1.0 - 1e-5);
+    float3 rayDir = normalize(WorldFromPixelDepth(px, farZ) - gCamPos);
+    float maxDist = windTime.w;
+    float hitDist = IsSky(depth) ? maxDist
+                                 : min(length(WorldFromPixelDepth(px, depth) - gCamPos), maxDist);
+    return MarchRay(px, rayDir, hitDist);
+}
+)HLSL";
+
+struct EmitterGPU {
+    float pos_radius[4];
+    float dir_speed[4];
+    float color_density[4];
+    float cone_height_active[4];
+};
+
+struct EnvConstants {
+    float inv_view_proj[16];
+    float view_proj[16];
+    float camera_pos[4];
+    float screen_info[4];
+    float grid_window[4];
+    float wind_time[4];
+    float style_a[4];
+    float style_b[4];
+    float sun_dir[4];
+    float sun_color[4];
+    float ambient_color[4];
+    float thin_color[4];
+    float dense_color[4];
+    float coating_info[4];
+    float volume_bounds[4];
+    float floor_decode[4];
+    float net_info[4];
+    EmitterGPU emitters[kMaxFluidEmitters];
+};
+static_assert(sizeof(EnvConstants) % 16 == 0, "EnvConstants must be 16-byte aligned");
+
+void preset_colors(AtmospherePreset preset, float thin[3], float dense[3]) noexcept {
+    switch (preset) {
+    case AtmospherePreset::Sandstorm:
+        thin[0] = 0.78f;
+        thin[1] = 0.62f;
+        thin[2] = 0.40f;
+        dense[0] = 0.94f;
+        dense[1] = 0.79f;
+        dense[2] = 0.54f;
+        break;
+    case AtmospherePreset::DustHaze:
+        thin[0] = 0.70f;
+        thin[1] = 0.62f;
+        thin[2] = 0.48f;
+        dense[0] = 0.84f;
+        dense[1] = 0.75f;
+        dense[2] = 0.60f;
+        break;
+    case AtmospherePreset::GroundFog:
+        thin[0] = 0.74f;
+        thin[1] = 0.80f;
+        thin[2] = 0.86f;
+        dense[0] = 0.90f;
+        dense[1] = 0.93f;
+        dense[2] = 0.96f;
+        break;
+    case AtmospherePreset::AshEmbers:
+        thin[0] = 0.28f;
+        thin[1] = 0.26f;
+        thin[2] = 0.25f;
+        dense[0] = 0.56f;
+        dense[1] = 0.50f;
+        dense[2] = 0.45f;
+        break;
+    case AtmospherePreset::Rain:
+        thin[0] = 0.44f;
+        thin[1] = 0.47f;
+        thin[2] = 0.52f;
+        dense[0] = 0.82f;
+        dense[1] = 0.85f;
+        dense[2] = 0.90f;
+        break;
+    case AtmospherePreset::Snow:
+        thin[0] = 0.82f;
+        thin[1] = 0.84f;
+        thin[2] = 0.88f;
+        dense[0] = 0.97f;
+        dense[1] = 0.98f;
+        dense[2] = 0.99f;
+        break;
+    default:
+        thin[0] = thin[1] = thin[2] = 0.0f;
+        dense[0] = dense[1] = dense[2] = 0.0f;
+        break;
+    }
+}
+
+} // namespace
+
+struct EnvRendererDX11::Impl {
+    ComPtr<ID3D11Device> device;
+    ComPtr<ID3D11VertexShader> vs;
+    ComPtr<ID3D11PixelShader> ps;
+    ComPtr<ID3D11ComputeShader> bake_cs;
+    ComPtr<ID3D11PixelShader> half_ps;
+    ComPtr<ID3D11Texture2D> half_tex;
+    ComPtr<ID3D11RenderTargetView> half_rtv;
+    ComPtr<ID3D11ShaderResourceView> half_srv;
+    uint32_t half_w = 0, half_h = 0;
+    ComPtr<ID3D11Texture3D> sun_bake;
+    ComPtr<ID3D11ShaderResourceView> sun_bake_srv;
+    ComPtr<ID3D11UnorderedAccessView> sun_bake_uav;
+    ComPtr<ID3D11Buffer> constants;
+    ComPtr<ID3D11SamplerState> linear_clamp;
+    ComPtr<ID3D11SamplerState> linear_wrap;
+    ComPtr<ID3D11RasterizerState> rs_state;
+    ComPtr<ID3D11DepthStencilState> ds_state;
+    ComPtr<ID3D11BlendState> blend_state;
+    bool initialized = false;
+};
+
+EnvRendererDX11::EnvRendererDX11() : impl_(std::make_unique<Impl>()) {}
+EnvRendererDX11::~EnvRendererDX11() = default;
+
+bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
+    shutdown();
+    if (!device) {
+        if (out_error)
+            *out_error = "null D3D11 device";
+        return false;
+    }
+    impl_->device = device;
+
+    const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    ComPtr<ID3DBlob> vs_code, ps_code, err;
+    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                          nullptr, nullptr, "FullscreenVS", "vs_5_0", flags, 0, &vs_code, &err))) {
+        if (out_error)
+            *out_error = std::string("FullscreenVS compile failed: ") +
+                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+        shutdown();
+        return false;
+    }
+    err.Reset();
+    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                          nullptr, nullptr, "EnvCompositePS", "ps_5_0", flags, 0, &ps_code,
+                          &err))) {
+        if (out_error)
+            *out_error = std::string("EnvCompositePS compile failed: ") +
+                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+        shutdown();
+        return false;
+    }
+
+    ComPtr<ID3DBlob> half_code;
+    err.Reset();
+    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                          nullptr, nullptr, "EnvHalfPS", "ps_5_0", flags, 0, &half_code, &err)) ||
+        FAILED(device->CreatePixelShader(half_code->GetBufferPointer(), half_code->GetBufferSize(),
+                                         nullptr, &impl_->half_ps))) {
+        if (out_error)
+            *out_error = std::string("EnvHalfPS compile failed: ") +
+                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+        shutdown();
+        return false;
+    }
+    ComPtr<ID3DBlob> cs_code;
+    err.Reset();
+    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                          nullptr, nullptr, "BakeSunCS", "cs_5_0", flags, 0, &cs_code, &err)) ||
+        FAILED(device->CreateComputeShader(cs_code->GetBufferPointer(), cs_code->GetBufferSize(),
+                                           nullptr, &impl_->bake_cs))) {
+        if (out_error)
+            *out_error = std::string("BakeSunCS compile failed: ") +
+                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+        shutdown();
+        return false;
+    }
+    {
+        // 256 x 256 map cells (the wind resolution) x 32 height slices of R16F.
+        D3D11_TEXTURE3D_DESC td{};
+        td.Width = 256;
+        td.Height = 256;
+        td.Depth = 32;
+        td.MipLevels = 1;
+        td.Format = DXGI_FORMAT_R16_FLOAT;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+        if (FAILED(device->CreateTexture3D(&td, nullptr, &impl_->sun_bake)) ||
+            FAILED(device->CreateShaderResourceView(impl_->sun_bake.Get(), nullptr,
+                                                    &impl_->sun_bake_srv)) ||
+            FAILED(device->CreateUnorderedAccessView(impl_->sun_bake.Get(), nullptr,
+                                                     &impl_->sun_bake_uav))) {
+            if (out_error)
+                *out_error = "failed to create the sun bake volume";
+            shutdown();
+            return false;
+        }
+    }
+
+    if (FAILED(device->CreateVertexShader(vs_code->GetBufferPointer(), vs_code->GetBufferSize(),
+                                          nullptr, &impl_->vs)) ||
+        FAILED(device->CreatePixelShader(ps_code->GetBufferPointer(), ps_code->GetBufferSize(),
+                                         nullptr, &impl_->ps))) {
+        if (out_error)
+            *out_error = "CreateVertexShader/CreatePixelShader failed";
+        shutdown();
+        return false;
+    }
+
+    D3D11_BUFFER_DESC cb{};
+    cb.ByteWidth = sizeof(EnvConstants);
+    cb.Usage = D3D11_USAGE_DEFAULT;
+    cb.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    if (FAILED(device->CreateBuffer(&cb, nullptr, &impl_->constants))) {
+        if (out_error)
+            *out_error = "CreateBuffer failed for EnvConstants";
+        shutdown();
+        return false;
+    }
+
+    D3D11_SAMPLER_DESC sd{};
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+    if (FAILED(device->CreateSamplerState(&sd, &impl_->linear_clamp))) {
+        shutdown();
+        return false;
+    }
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+    if (FAILED(device->CreateSamplerState(&sd, &impl_->linear_wrap))) {
+        shutdown();
+        return false;
+    }
+
+    D3D11_RASTERIZER_DESC rd{};
+    rd.FillMode = D3D11_FILL_SOLID;
+    rd.CullMode = D3D11_CULL_NONE;
+    rd.DepthClipEnable = TRUE;
+    if (FAILED(device->CreateRasterizerState(&rd, &impl_->rs_state))) {
+        shutdown();
+        return false;
+    }
+
+    D3D11_DEPTH_STENCIL_DESC dd{};
+    dd.DepthEnable = FALSE;
+    dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    if (FAILED(device->CreateDepthStencilState(&dd, &impl_->ds_state))) {
+        shutdown();
+        return false;
+    }
+
+    D3D11_BLEND_DESC bd{};
+    bd.RenderTarget[0].BlendEnable = FALSE;
+    bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    if (FAILED(device->CreateBlendState(&bd, &impl_->blend_state))) {
+        shutdown();
+        return false;
+    }
+
+    impl_->initialized = true;
+    return true;
+}
+
+void EnvRendererDX11::shutdown() {
+    impl_ = std::make_unique<Impl>();
+}
+
+bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView* scene_color_srv,
+                             ID3D11ShaderResourceView* scene_depth_srv,
+                             ID3D11RenderTargetView* out_rtv, const EnvCamera& camera,
+                             const EnvRenderParams& params, const WindFluidSolverDX11& fluid,
+                             const DirectionalEmitter* emitters, uint32_t emitter_count) {
+    if (!ctx || !impl_->initialized || !scene_color_srv || !scene_depth_srv || !out_rtv ||
+        camera.width == 0 || camera.height == 0 || !fluid.has_grid() || !fluid.fluid_srv()) {
+        return false;
+    }
+
+    const FluidGridInfo mg = fluid.map_grid_info();
+    EnvConstants cb{};
+    std::memcpy(cb.inv_view_proj, camera.inv_view_proj, sizeof(cb.inv_view_proj));
+    std::memcpy(cb.view_proj, camera.view_proj, sizeof(cb.view_proj));
+    cb.camera_pos[0] = camera.position[0];
+    cb.camera_pos[1] = camera.position[1];
+    cb.camera_pos[2] = camera.position[2];
+    cb.camera_pos[3] = camera.reversed_z ? 1.0f : 0.0f;
+
+    cb.screen_info[0] = static_cast<float>(camera.width);
+    cb.screen_info[1] = static_cast<float>(camera.height);
+    cb.screen_info[2] = 1.0f / static_cast<float>(camera.width);
+    cb.screen_info[3] = 1.0f / static_cast<float>(camera.height);
+
+    cb.grid_window[0] = mg.origin_x;
+    cb.grid_window[1] = mg.origin_y;
+    cb.grid_window[2] = 1.0f / (static_cast<float>(mg.width) * mg.cell_units);
+    cb.grid_window[3] = 1.0f / (static_cast<float>(mg.height) * mg.cell_units);
+
+    cb.wind_time[0] = params.wind_xy[0];
+    cb.wind_time[1] = params.wind_xy[1];
+    cb.wind_time[2] = params.sim_time;
+    cb.wind_time[3] = std::max(params.max_distance, 256.0f);
+
+    cb.style_a[0] = static_cast<float>(static_cast<uint32_t>(params.preset));
+    cb.style_a[1] = std::max(0.0f, params.intensity);
+    cb.style_a[2] = std::max(24.0f, params.height_ceiling);
+    cb.style_a[3] = std::max(0.0f, params.density_scale);
+
+    const uint32_t clamped_emitters = (params.enable_emitter_plumes && emitters)
+                                          ? std::min(emitter_count, kMaxFluidEmitters)
+                                          : 0u;
+
+    cb.style_b[0] = std::clamp(params.wisp_strength, 0.0f, 2.0f);
+    cb.style_b[1] = std::clamp(params.coating_strength, 0.0f, 1.0f);
+    cb.style_b[2] = static_cast<float>(std::clamp(params.march_steps, 16, 128));
+    cb.style_b[3] = static_cast<float>(clamped_emitters);
+
+    cb.sun_dir[0] = params.sun_dir[0];
+    cb.sun_dir[1] = params.sun_dir[1];
+    cb.sun_dir[2] = params.sun_dir[2];
+    cb.sun_dir[3] = params.enable_coating ? 1.0f : 0.0f;
+
+    cb.sun_color[0] = params.sun_color[0];
+    cb.sun_color[1] = params.sun_color[1];
+    cb.sun_color[2] = params.sun_color[2];
+    cb.sun_color[3] = params.enable_emitter_plumes ? 1.0f : 0.0f;
+
+    cb.ambient_color[0] = params.ambient_color[0];
+    cb.ambient_color[1] = params.ambient_color[1];
+    cb.ambient_color[2] = params.ambient_color[2];
+    cb.ambient_color[3] = camera.near_clip;
+
+    float thin[3]{}, dense[3]{};
+    preset_colors(params.preset, thin, dense);
+    cb.thin_color[0] = thin[0];
+    cb.thin_color[1] = thin[1];
+    cb.thin_color[2] = thin[2];
+    cb.thin_color[3] = camera.far_clip;
+
+    cb.dense_color[0] = dense[0];
+    cb.dense_color[1] = dense[1];
+    cb.dense_color[2] = dense[2];
+    cb.dense_color[3] = 0.0f;
+
+    cb.coating_info[0] = std::clamp(params.coating_growth, 0.0f, 1.0f);
+    cb.coating_info[1] = std::clamp(params.coating_drift, 0.0f, 1.0f);
+    cb.coating_info[3] = camera.gpu_view ? 1.0f : 0.0f;
+    {
+        // Nothing can be lit outside [lowest floor - 18, highest floor + reach], where reach
+        // covers the global volume and every active emitter plume above its floor.
+        float reach = std::max(24.0f, params.height_ceiling) * 1.7f;
+        for (uint32_t i = 0; i < clamped_emitters; ++i)
+            if (emitters[i].active_weight > 0.001f)
+                reach = std::max(reach, emitters[i].height_max + 48.0f);
+        cb.volume_bounds[0] = mg.floor_min - 24.0f;
+        cb.volume_bounds[1] = mg.floor_max + reach + 24.0f;
+        cb.volume_bounds[2] = reach;
+        cb.floor_decode[0] = mg.floor_min;
+        cb.floor_decode[1] = mg.floor_max - mg.floor_min;
+    }
+    cb.coating_info[2] =
+        std::sqrt(params.wind_xy[0] * params.wind_xy[0] + params.wind_xy[1] * params.wind_xy[1]);
+
+    for (uint32_t i = 0; i < clamped_emitters; ++i) {
+        auto& dst = cb.emitters[i];
+        const auto& src = emitters[i];
+        dst.pos_radius[0] = src.world_pos[0];
+        dst.pos_radius[1] = src.world_pos[1];
+        dst.pos_radius[2] = src.world_pos[2];
+        dst.pos_radius[3] = src.radius;
+        dst.dir_speed[0] = src.dir_norm[0];
+        dst.dir_speed[1] = src.dir_norm[1];
+        dst.dir_speed[2] = src.dir_norm[2];
+        dst.dir_speed[3] = src.jet_speed;
+        dst.color_density[0] = src.color[0];
+        dst.color_density[1] = src.color[1];
+        dst.color_density[2] = src.color[2];
+        dst.color_density[3] = src.density;
+        dst.cone_height_active[0] = src.cone_cos;
+        dst.cone_height_active[1] = src.height_min;
+        dst.cone_height_active[2] = src.height_max;
+        dst.cone_height_active[3] = src.active_weight;
+    }
+
+    // Safety net: above the pixel threshold (and never in exports) march at half resolution
+    // and rebuild each pixel from it, re-marching depth edges at full resolution.
+    const bool net = params.allow_half_res &&
+                     uint64_t(camera.width) * camera.height > params.half_res_above_pixels;
+    if (net) {
+        const uint32_t hw = (camera.width + 1) / 2, hh = (camera.height + 1) / 2;
+        ComPtr<ID3D11Device> device;
+        ctx->GetDevice(&device);
+        if (!impl_->half_tex || impl_->half_w != hw || impl_->half_h != hh) {
+            impl_->half_tex.Reset();
+            impl_->half_rtv.Reset();
+            impl_->half_srv.Reset();
+            D3D11_TEXTURE2D_DESC hd{};
+            hd.Width = hw;
+            hd.Height = hh;
+            hd.MipLevels = 1;
+            hd.ArraySize = 1;
+            hd.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            hd.SampleDesc.Count = 1;
+            hd.Usage = D3D11_USAGE_DEFAULT;
+            hd.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+            if (FAILED(device->CreateTexture2D(&hd, nullptr, &impl_->half_tex)) ||
+                FAILED(device->CreateRenderTargetView(impl_->half_tex.Get(), nullptr,
+                                                      &impl_->half_rtv)) ||
+                FAILED(device->CreateShaderResourceView(impl_->half_tex.Get(), nullptr,
+                                                        &impl_->half_srv)))
+                return false;
+            impl_->half_w = hw;
+            impl_->half_h = hh;
+        }
+    }
+    cb.net_info[0] = net ? 2.0f : 0.0f;
+    cb.net_info[1] = 0.08f; // relative depth change that counts as an edge
+    ctx->UpdateSubresource(impl_->constants.Get(), 0, nullptr, &cb, 0, 0);
+
+    D3D11_VIEWPORT vp{
+        0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
+        0.0f, 1.0f};
+    ID3D11RenderTargetView* rtvs[1] = {out_rtv};
+    ID3D11ShaderResourceView* srvs[11] = {
+        scene_color_srv,
+        scene_depth_srv,
+        fluid.fluid_srv(),
+        fluid.air_map_srv(),
+        fluid.tops_srv(),
+        fluid.floor_z_srv(),
+        fluid.street_z_srv(),
+        fluid.noise_3d_srv(),
+        camera.gpu_view,
+        nullptr,
+        nullptr,
+    };
+    ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
+    ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
+
+    // Bake the sun optical depth for this frame's wind before the march reads it.
+    {
+        ctx->CSSetShader(impl_->bake_cs.Get(), nullptr, 0);
+        ctx->CSSetConstantBuffers(0, 1, cbs);
+        ctx->CSSetSamplers(0, 2, samps);
+        ctx->CSSetShaderResources(0, 9, srvs);
+        ID3D11UnorderedAccessView* uavs[1] = {impl_->sun_bake_uav.Get()};
+        ctx->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
+        ctx->Dispatch(256 / 8, 256 / 8, 32);
+        ID3D11UnorderedAccessView* null_uav[1] = {};
+        ID3D11ShaderResourceView* null_cs_srvs[9] = {};
+        ctx->CSSetUnorderedAccessViews(0, 1, null_uav, nullptr);
+        ctx->CSSetShaderResources(0, 9, null_cs_srvs);
+        ctx->CSSetShader(nullptr, nullptr, 0);
+    }
+    srvs[9] = impl_->sun_bake_srv.Get();
+
+    ctx->OMSetRenderTargets(1, rtvs, nullptr);
+    ctx->OMSetBlendState(impl_->blend_state.Get(), nullptr, 0xFFFFFFFFu);
+    ctx->OMSetDepthStencilState(impl_->ds_state.Get(), 0);
+    ctx->RSSetState(impl_->rs_state.Get());
+    ctx->RSSetViewports(1, &vp);
+    ctx->IASetInputLayout(nullptr);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    ctx->VSSetShader(impl_->vs.Get(), nullptr, 0);
+    ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
+    ctx->PSSetConstantBuffers(0, 1, cbs);
+    ctx->PSSetSamplers(0, 2, samps);
+    if (net) {
+        // Half-resolution march into its own target, then the full-resolution composite.
+        D3D11_VIEWPORT hvp{0.0f, 0.0f, float(impl_->half_w), float(impl_->half_h), 0.0f, 1.0f};
+        ID3D11RenderTargetView* half_rtvs[1] = {impl_->half_rtv.Get()};
+        ctx->OMSetRenderTargets(1, half_rtvs, nullptr);
+        ctx->RSSetViewports(1, &hvp);
+        ctx->PSSetShader(impl_->half_ps.Get(), nullptr, 0);
+        ctx->PSSetShaderResources(0, 10, srvs);
+        ctx->Draw(3, 0);
+        ctx->OMSetRenderTargets(1, rtvs, nullptr);
+        ctx->RSSetViewports(1, &vp);
+        ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
+        srvs[10] = impl_->half_srv.Get();
+    }
+    ctx->PSSetShaderResources(0, 11, srvs);
+
+    ctx->Draw(3, 0);
+
+    // Unbind SRVs/RTVs to prevent hazard warnings in callers
+    ID3D11ShaderResourceView* null_srvs[11] = {};
+    ID3D11RenderTargetView* null_rtvs[1] = {};
+    ctx->PSSetShaderResources(0, 11, null_srvs);
+    ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
+    return true;
+}
+
+bool EnvRendererDX11::ready() const noexcept {
+    return impl_->initialized;
+}
+
+} // namespace dolly::env
