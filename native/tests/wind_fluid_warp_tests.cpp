@@ -1200,6 +1200,8 @@ int main(int argc, char** argv) {
             const float now = res.render.sim_time;
             const float fog = res.render.density_scale;
             res.render.density_scale = 0.0f; // no haze: isolate the ground
+            const float build_up = res.render.coating_build_up;
+            res.render.coating_build_up = 0.0f; // settled cover (the settling case is below)
             CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
                                   res.render, solver, emitters, 0));
             const auto clear_cover = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
@@ -1231,6 +1233,29 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < trod.size(); i += 4)
                 darker += (int(trod[i]) + trod[i + 1] + trod[i + 2]) + 6 <
                           (int(clear_cover[i]) + clear_cover[i + 1] + clear_cover[i + 2]);
+            // Walked while the snow was still settling: the track pressed less, so it shows less.
+            {
+                auto early = res.render;
+                early.shot_start_time = now - 22.0f;
+                early.coating_build_up = 120.0f;
+                early.coating_growth = 1.0f;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, early, solver, emitters, 0));
+                const auto settling = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                early.hero_trails = false;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, early, solver, emitters, 0));
+                const auto settling_bare =
+                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                long full = 0, faint = 0;
+                for (size_t i = 0; i < trod.size(); i += 4)
+                    for (int c = 0; c < 3; ++c) {
+                        full += std::abs(int(trod[i + c]) - int(clear_cover[i + c]));
+                        faint += std::abs(int(settling[i + c]) - int(settling_bare[i + c]));
+                    }
+                std::printf("WARP hero trails while settling: %ld vs %ld settled\n", faint, full);
+                CHECK(faint > 0 && faint < full);
+            }
             // Later, the whole walk is down.
             res.render.sim_time = now + 25.0f;
             CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
@@ -1269,6 +1294,7 @@ int main(int argc, char** argv) {
                                   res.render, solver, emitters, 0));
             CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == clear_cover);
             res.render.density_scale = fog;
+            res.render.coating_build_up = build_up;
         }
         CHECK(!renderer.set_drift_map(0, nullptr)); // even cover again for the later checks
     }

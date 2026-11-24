@@ -7687,7 +7687,7 @@
     },
     {
       "path": "native/include/dolly_env_render_dx11.hpp",
-      "sha256": "06eb228dee10b1ff022b36a02526d0ac73b17fe614a51c630c9136fd1806df0b",
+      "sha256": "98cc185085f8835bb9c806bac96a91859a2bd7b7d5a8b338b0a554a561383817",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9412,7 +9412,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "e6b15f286aaf9bbc0360869cc671e5f7494444231815852b0611e3f549d87cb7",
+      "sha256": "a518035425cdac14666a74e090a5ccce26eacb9058856c2a9e4605c5c6e0bacf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10838,7 +10838,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "a0b315bdcccfee41f2b2993cc7845f4dc28156021433f26b92641a780891d586",
+      "sha256": "3d3f7e82fa5d17bd115e8e53ef1a6dce4a0504be0b040afdcc03c73bba6a8bb2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10886,7 +10886,7 @@
     },
     {
       "path": "native/src/dolly_weather_state.cpp",
-      "sha256": "1ed0ff325ba5e42595501472930fb1b0a0923879787bc199eb3d8c5b8fbb5070",
+      "sha256": "a1fb9edcda409b5a6b813e6f3ba31d03e5052b4465a0cabb4c0ba6805c505b5a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

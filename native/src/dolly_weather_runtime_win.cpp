@@ -944,6 +944,7 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
                                     0, start);
         profiler.mark(ctx);
         resolved.render.sim_time = static_cast<float>(time);
+        resolved.render.shot_start_time = static_cast<float>(start);
         resolved.render.coating_growth = weather::coating_growth(*settings, time - start);
         resolved.precipitation.time = time;
         // Fixed-step exports are not real time: march with twice the step budget.

@@ -80,6 +80,13 @@ struct EnvRenderParams {
     bool puddle_reflections = true;
     // Heroes leave trails in snow, sand and ash when paths have been set (set_hero_trails).
     bool hero_trails = true;
+    // Seconds for falling snow or blowing sand to fill a fresh track in (0: by preset and
+    // intensity). See weather::resolve.
+    float trail_fill_seconds = 0.0f;
+    // The shot's build-up (s; 0 = settled from the start) and its start on the sim_time
+    // clock: a track made before the cover had settled only pressed what lay there then.
+    float coating_build_up = 0.0f;
+    float shot_start_time = 0.0f;
     // Safety net: above this many output pixels, march at half resolution and rebuild each
     // pixel from it, re-marching depth edges at full resolution. Exports turn it off.
     bool allow_half_res = true;

@@ -176,6 +176,12 @@ Resolved resolve(const Settings& settings) noexcept {
 
     r.precipitation.kind = recipe.precipitation;
     r.precipitation.rate = recipe.precipitation_rate * settings.intensity * settings.density;
+    // Heavier snowfall or blowing sand fills tracks in faster: about two minutes for snow and
+    // one for sand at the presets' defaults.
+    const bool snow = recipe.atmosphere == dolly::env::AtmospherePreset::Snow;
+    r.render.trail_fill_seconds =
+        (snow ? 120.0f : 60.0f) / std::max(settings.intensity * settings.density, 0.2f);
+    r.render.coating_build_up = settings.build_up;
     r.precipitation.size_scale = settings.flake_size;
     r.precipitation.wind_xy[0] = wind_x;
     r.precipitation.wind_xy[1] = wind_y;
@@ -320,37 +326,55 @@ std::vector<dolly::env::TrailSegment> build_segments(std::vector<Sample> samples
             return a.time < b.time;
         return std::memcmp(a.pos, b.pos, sizeof(a.pos)) < 0;
     });
+    // Per hero: thin to the first sample in each 1/15 s slot of the replay clock (and the
+    // hero's last), so the result is the same whatever frame rate recorded it; split into runs
+    // where the hero vanished or jumped; round each run's corners; then chain segments.
     std::vector<dolly::env::TrailSegment> out;
-    const Sample* kept = nullptr;
-    for (std::size_t i = 0; i < samples.size(); ++i) {
-        const Sample& s = samples[i];
-        if (kept && kept->slot != s.slot)
-            kept = nullptr;
-        if (!kept) {
-            kept = &s;
-            continue;
+    std::vector<Sample> run;
+    const auto flush = [&out](std::vector<Sample>& points) {
+        // A light [1 2 1] smoothing of the interior points takes the corners off the path
+        // (the ends stay where the hero started and stopped).
+        if (points.size() >= 3) {
+            std::vector<Sample> smooth = points;
+            for (std::size_t i = 1; i + 1 < points.size(); ++i)
+                for (int c = 0; c < 3; ++c)
+                    smooth[i].pos[c] = 0.25f * points[i - 1].pos[c] + 0.5f * points[i].pos[c] +
+                                       0.25f * points[i + 1].pos[c];
+            points.swap(smooth);
         }
-        const double dt = s.time - kept->time;
-        const bool last = i + 1 == samples.size() || samples[i + 1].slot != s.slot;
-        // The first sample in each 1/15 s slot of the replay clock (and the hero's last), so
-        // the thinning is the same whatever frame rate recorded the samples.
-        if (std::floor(s.time / kStep) == std::floor(kept->time / kStep) && !last)
-            continue;
-        const float dx = s.pos[0] - kept->pos[0], dy = s.pos[1] - kept->pos[1];
-        const float dist = std::sqrt(dx * dx + dy * dy);
-        if (dt > 0.0 && dt <= kGap && dist <= kMaxSpeed * static_cast<float>(dt) + 8.0f) {
+        for (std::size_t i = 1; i < points.size(); ++i) {
+            if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
+                break;
             dolly::env::TrailSegment seg{};
-            std::memcpy(seg.a, kept->pos, sizeof(seg.a));
-            std::memcpy(seg.b, s.pos, sizeof(seg.b));
-            seg.time_a = static_cast<float>(kept->time);
-            seg.time_b = static_cast<float>(s.time);
+            std::memcpy(seg.a, points[i - 1].pos, sizeof(seg.a));
+            std::memcpy(seg.b, points[i].pos, sizeof(seg.b));
+            seg.time_a = static_cast<float>(points[i - 1].time);
+            seg.time_b = static_cast<float>(points[i].time);
             if (seg.time_b > seg.time_a)
                 out.push_back(seg);
         }
-        kept = &s;
-        if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
-            break;
+        points.clear();
+    };
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const Sample& s = samples[i];
+        if (!run.empty() && run.back().slot != s.slot)
+            flush(run);
+        if (run.empty()) {
+            run.push_back(s);
+            continue;
+        }
+        const Sample& kept = run.back();
+        const bool last = i + 1 == samples.size() || samples[i + 1].slot != s.slot;
+        if (std::floor(s.time / kStep) == std::floor(kept.time / kStep) && !last)
+            continue;
+        const double dt = s.time - kept.time;
+        const float dx = s.pos[0] - kept.pos[0], dy = s.pos[1] - kept.pos[1];
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        if (!(dt > 0.0 && dt <= kGap && dist <= kMaxSpeed * static_cast<float>(dt) + 8.0f))
+            flush(run); // vanished or jumped: start a new run here
+        run.push_back(s);
     }
+    flush(run);
     return out;
 }
 
