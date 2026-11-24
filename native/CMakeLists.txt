@@ -203,7 +203,7 @@ if(WIN32)
     # Pinned, unmodified Dear ImGui core and official backends. No game assets,
     # online dependency fetches or third-party installer are needed to build.
     add_library(dolly_overlay STATIC
-        src/dolly_overlay_win.cpp src/dolly_weather_runtime_win.cpp
+        src/dolly_overlay_win.cpp src/dolly_weather_runtime_win.cpp src/dolly_lens_rain_runtime_win.cpp
         src/dolly_rail_panel.cpp src/dolly_rail_icons.cpp src/dolly_overlay_assets.cpp
         src/dolly_rail_kit.cpp src/dolly_rail_fields.cpp src/dolly_rail_drawers.cpp src/dolly_rail_transport.cpp
         src/dolly_overlay_panel.cpp src/dolly_lite_panel.cpp src/dolly_curve_panel.cpp src/dolly_ui_layout.cpp src/dolly_ui_storage.cpp
@@ -225,7 +225,7 @@ if(WIN32)
     target_compile_definitions(dolly_overlay PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX
         IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
     target_link_libraries(dolly_overlay PUBLIC dolly_path dolly_depth_scene minhook d3d11 dxgi d3dcompiler dwmapi gdi32 mfuuid ole32 shell32 bcrypt
-        dolly_env_dx11 dolly_weather)
+        dolly_env_dx11 dolly_weather dolly_lens_rain_dx11)
 
     add_library(DollyNative SHARED src/bridge_win.cpp src/dolly_editor_win.cpp
         src/dolly_confetti.cpp src/dolly_prop_runtime.cpp)
@@ -386,6 +386,22 @@ if(BUILD_TESTING)
     set_tests_properties(native_weather_state_tests PROPERTIES TIMEOUT 10)
 endif()
 
+# Lens rain simulation and editor block; engine-free, so it builds and tests anywhere.
+add_library(dolly_lens_rain STATIC src/dolly_lens_rain.cpp)
+target_include_directories(dolly_lens_rain PUBLIC include)
+if(MSVC)
+    target_compile_options(dolly_lens_rain PRIVATE /W4 /EHsc /permissive-)
+endif()
+if(BUILD_TESTING)
+    add_executable(lens_rain_tests tests/lens_rain_tests.cpp)
+    target_link_libraries(lens_rain_tests PRIVATE dolly_lens_rain)
+    if(MSVC)
+        target_compile_options(lens_rain_tests PRIVATE /W4 /EHsc /permissive-)
+    endif()
+    add_test(NAME native_lens_rain_tests COMMAND lens_rain_tests)
+    set_tests_properties(native_lens_rain_tests PROPERTIES TIMEOUT 30)
+endif()
+
 if(WIN32)
     add_library(dolly_env_dx11 STATIC src/dolly_wind_fluid_dx11.cpp src/dolly_env_render_dx11.cpp
                                src/dolly_precip_dx11.cpp src/dolly_weather_view_dx11.cpp)
@@ -402,5 +418,21 @@ if(WIN32)
         endif()
         add_test(NAME native_wind_fluid_warp_tests COMMAND wind_fluid_warp_tests)
         set_tests_properties(native_wind_fluid_warp_tests PROPERTIES TIMEOUT 90)
+    endif()
+
+    add_library(dolly_lens_rain_dx11 STATIC src/dolly_lens_rain_dx11.cpp)
+    target_include_directories(dolly_lens_rain_dx11 PUBLIC include)
+    target_link_libraries(dolly_lens_rain_dx11 PUBLIC dolly_lens_rain d3d11 d3dcompiler)
+    if(MSVC)
+        target_compile_options(dolly_lens_rain_dx11 PRIVATE /W4 /EHsc /permissive-)
+    endif()
+    if(BUILD_TESTING)
+        add_executable(lens_rain_warp_tests tests/lens_rain_warp_tests.cpp)
+        target_link_libraries(lens_rain_warp_tests PRIVATE dolly_lens_rain_dx11)
+        if(MSVC)
+            target_compile_options(lens_rain_warp_tests PRIVATE /W4 /EHsc /permissive-)
+        endif()
+        add_test(NAME native_lens_rain_warp_tests COMMAND lens_rain_warp_tests)
+        set_tests_properties(native_lens_rain_warp_tests PROPERTIES TIMEOUT 60)
     endif()
 endif()

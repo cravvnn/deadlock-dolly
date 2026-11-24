@@ -222,9 +222,9 @@ class PlateSignal(unittest.TestCase):
 
 class DesktopScenePage(unittest.TestCase):
     def test_sliders_cover_every_numeric_drawer_setting(self):
-        from dolly.editor_dispatch import WEATHER_FIELDS
+        from dolly.editor_dispatch import WEATHER_FIELDS, WEATHER_SWITCHES
         from dolly.gui import WEATHER_SLIDERS
-        numeric = set(WEATHER_FIELDS.values()) - {"preset", "hero_wakes", "include_in_effects"}
+        numeric = set(WEATHER_FIELDS.values()) - {"preset"} - set(WEATHER_SWITCHES)
         self.assertEqual(set(WEATHER_SLIDERS), numeric)
 
     def test_both_switches_are_in_the_drawer_and_on_the_page(self):
@@ -253,6 +253,7 @@ class DesktopScenePage(unittest.TestCase):
             weather_values={name: tk.DoubleVar(root) for name in gui.WEATHER_SLIDERS},
             weather_include_effects=tk.BooleanVar(root),
             weather_hero_wakes=tk.BooleanVar(root),
+            weather_lens_rain=tk.BooleanVar(root),
             status_text=tk.StringVar(root),
             controller=SimpleNamespace(set_native_weather=lambda s, tick: sent.append((s, tick))),
             _mark_dirty=lambda: dirty.append(True),

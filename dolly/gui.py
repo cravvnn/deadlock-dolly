@@ -212,7 +212,9 @@ def _session_tone(text):
 
 # Scene page sliders: the WeatherSettings field and the decimals it keeps (as the drawer shows them).
 WEATHER_SLIDERS = {"intensity": 2, "build_up": 0, "gusts": 2, "wind_direction": 0, "wind_speed": 0,
-                   "flake_size": 2, "density": 2, "coating": 2, "height_ceiling": 0}
+                   "flake_size": 2, "density": 2, "coating": 2, "height_ceiling": 0,
+                   "lens_amount": 2, "lens_size": 2, "lens_slide": 2, "lens_trails": 2,
+                   "lens_refraction": 2, "lens_softness": 2}
 
 
 def _number(value: object) -> str:
@@ -504,6 +506,7 @@ class DollyApp:
                                for name in WEATHER_SLIDERS}
         self.weather_include_effects = tk.BooleanVar(value=weather_model.WEATHER_OFF.include_in_effects)
         self.weather_hero_wakes = tk.BooleanVar(value=weather_model.WEATHER_OFF.hero_wakes)
+        self.weather_lens_rain = tk.BooleanVar(value=weather_model.WEATHER_OFF.lens_rain)
         self.selected_text = tk.StringVar(value="No camera selected")
         self.path_summary = tk.StringVar(value="0 cameras · 0.00 s")
         self.coordinates_dialog = None
@@ -3568,6 +3571,7 @@ class DollyApp:
             variable.set(getattr(settings, name))
         self.weather_include_effects.set(settings.include_in_effects)
         self.weather_hero_wakes.set(settings.hero_wakes)
+        self.weather_lens_rain.set(settings.lens_rain)
         view = getattr(self, "scene_view", None)
         if view is not None:
             view.set_enabled(settings.enabled)
@@ -3591,7 +3595,8 @@ class DollyApp:
                     if round(number, digits) != round(getattr(current, name), digits):
                         values[name] = round(number, digits)
                 settings = replace(current, include_in_effects=bool(self.weather_include_effects.get()),
-                                   hero_wakes=bool(self.weather_hero_wakes.get()), **values)
+                                   hero_wakes=bool(self.weather_hero_wakes.get()),
+                                   lens_rain=bool(self.weather_lens_rain.get()), **values)
             settings.validate()
             if settings == current:
                 return

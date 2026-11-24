@@ -184,12 +184,22 @@ def build_scene(app):
             Control("coating", "Coating", w.COATING_MIN, w.COATING_MAX, "{:.2f}", widest="0.00"),
             Control("height_ceiling", "Ceiling", w.HEIGHT_CEILING_MIN, w.HEIGHT_CEILING_MAX, "{:.0f}", " u",
                     widest="000")),
+        "Lens": (
+            Control("lens_amount", "Amount", w.LENS_AMOUNT_MIN, w.LENS_AMOUNT_MAX, "{:.2f}", widest="0.00"),
+            Control("lens_size", "Drop size", w.LENS_SIZE_MIN, w.LENS_SIZE_MAX, "{:.2f}", "x", widest="0.00"),
+            Control("lens_slide", "Slide", w.LENS_SLIDE_MIN, w.LENS_SLIDE_MAX, "{:.2f}", widest="0.00"),
+            Control("lens_trails", "Trails", w.LENS_TRAILS_MIN, w.LENS_TRAILS_MAX, "{:.2f}", widest="0.00"),
+            Control("lens_refraction", "Refraction", w.LENS_REFRACTION_MIN, w.LENS_REFRACTION_MAX,
+                    "{:.2f}", widest="0.00"),
+            Control("lens_softness", "Softness", w.LENS_SOFTNESS_MIN, w.LENS_SOFTNESS_MAX, "{:.2f}",
+                    widest="0.00")),
     }
     state = SceneState(
         preset=app.weather_preset,
         values=app.weather_values,
         include_in_effects=app.weather_include_effects,
         hero_wakes=app.weather_hero_wakes,
+        lens_rain=app.weather_lens_rain,
         preset_labels=tuple(w.WEATHER_LABELS[preset] for preset in w.WEATHER_IDS),
         controls=controls,
     )

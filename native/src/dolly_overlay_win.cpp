@@ -15,6 +15,7 @@
 #include "dolly_media.hpp"
 #include "dolly_reshade.hpp"
 #include "dolly_weather_runtime.hpp"
+#include "dolly_lens_rain_runtime.hpp"
 #include "dolly_retry_backoff.hpp"
 #include "MinHook.h"
 #include <d3d11_1.h>
@@ -282,6 +283,7 @@ void release_device() noexcept {
     video::reset_resources();
     reshade_release_device();
     weather_runtime::release();
+    lens_rain_runtime::release();
     if (device || imgui)
         diagnostic_releases.fetch_add(1, std::memory_order_relaxed);
     editor_overlay_available(false);
@@ -736,6 +738,11 @@ void render_overlay(IDXGISwapChain* chain) {
     if (weather_runtime::wants_scene_depth()) {
         DeviceStateScope weather_scope;
         weather_runtime::render(device, immediate, chain, target, scene_sample);
+    }
+    // Lens rain sits on the glass, in front of the weather, before ReShade and capture.
+    if (lens_rain_runtime::wants_render()) {
+        DeviceStateScope lens_scope;
+        lens_rain_runtime::render(device, immediate, target);
     }
     auto* frame_user = const_cast<depth::SceneFrame*>(scene_sample);
     bool effects_handled = false;

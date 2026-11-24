@@ -4,6 +4,8 @@
 #include "dolly_rail_design.hpp"
 #include "dolly_reshade.hpp"
 #include "dolly_weather_runtime.hpp"
+#include "dolly_lens_rain_runtime.hpp"
+#include "dolly_lens_rain_wire.hpp"
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cmath>
@@ -733,6 +735,48 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                           EditorAction::SetWeatherIncludeEffects);
                     k::ItemTooltip(
                         "Weather is always in Color and World, never in Players or Depth.");
+                }
+            }
+            split();
+            lens_rain::Controls lens;
+            const bool lens_published = lens_rain_runtime::panel_settings(lens);
+            const bool raining = on && preset == int(weather::Preset::RainStorm);
+            k::SectionTitle("Lens", "Water on the camera lens while the shot rains.",
+                            lens_published && lens.enabled ? (raining ? "Rain on lens" : "Waiting for rain")
+                                                           : "Dry lens");
+            k::VGap(15);
+            {
+                f::Greyed off(!on || !lens_published);
+                check("Rain on the lens", lens.enabled, EditorAction::SetLensRain);
+                k::ItemTooltip("Drops land, run down and leave trails. Under a roof no new drops "
+                               "land. Drawn on Color and World only.");
+                k::VGap(10);
+                f::Greyed lens_off(!lens.enabled);
+                line("Amount###lens-amount", lens.look.amount, lens_rain::kRanges[0].low,
+                     lens_rain::kRanges[0].high, "%.2f", EditorAction::SetLensAmount,
+                     f::Resets(.35));
+                k::VGap(10);
+                line("Drop size###lens-size", lens.look.size, lens_rain::kRanges[1].low,
+                     lens_rain::kRanges[1].high, "%.2fx", EditorAction::SetLensSize, f::Resets(1));
+                k::VGap(10);
+                k::Disclosure("Runoff and glass", &d.lens_detail);
+                if (d.lens_detail) {
+                    k::VGap(10);
+                    line("Slide###lens-slide", lens.look.slide, lens_rain::kRanges[2].low,
+                         lens_rain::kRanges[2].high, "%.2f", EditorAction::SetLensSlide,
+                         f::Resets(1));
+                    k::VGap(10);
+                    line("Trails###lens-trails", lens.look.trails, lens_rain::kRanges[3].low,
+                         lens_rain::kRanges[3].high, "%.2f", EditorAction::SetLensTrails,
+                         f::Resets(.35));
+                    k::VGap(10);
+                    line("Refraction###lens-refraction", lens.look.refraction,
+                         lens_rain::kRanges[4].low, lens_rain::kRanges[4].high, "%.2f",
+                         EditorAction::SetLensRefraction, f::Resets(.75));
+                    k::VGap(10);
+                    line("Softness###lens-softness", lens.look.softness,
+                         lens_rain::kRanges[5].low, lens_rain::kRanges[5].high, "%.2f",
+                         EditorAction::SetLensSoftness, f::Resets(.5));
                 }
             }
             k::VGap(15);

@@ -27,7 +27,8 @@ from .path import (CONFETTI_SPAWN_HEIGHT_DEFAULT, CONFETTI_SPAWN_HEIGHT_MAX,
 from .particles import (PARTICLE_DEFAULT, PARTICLE_IDS, PARTICLE_INTENSITY_DEFAULT,
                         PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN)
 from .runtime import resource_root
-from .weather import WEATHER_OFF, WIRE_OFFSET as WEATHER_OFFSET, WeatherSettings
+from .weather import (LENS_WIRE_OFFSET, WEATHER_OFF, WIRE_OFFSET as WEATHER_OFFSET,
+                      WeatherSettings)
 from .media_transport import MediaTransport
 
 ABI = 4
@@ -244,6 +245,7 @@ class NativeBridge(MediaTransport):
         self._weather_map = ""
         self._weather_start = 0
         self._weather_sequence = 0
+        self._lens_sequence = 0
         self._start = 0.0
         self._speed = 1.0
         self._demo = b""
@@ -707,6 +709,10 @@ class NativeBridge(MediaTransport):
             WEATHER_OFFSET, "_weather_sequence",
             lambda sequence: self._weather.pack_wire(sequence, self._weather_map,
                                                      self._weather_start))
+        # Lens rain rides with the weather in its own block.
+        self._publish_block(
+            LENS_WIRE_OFFSET, "_lens_sequence",
+            lambda sequence: self._weather.pack_lens_wire(sequence, self._weather_start))
 
     def set_weather(self, settings, start_tick=None):
         """Apply the shot's weather immediately to the active native view."""

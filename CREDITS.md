@@ -29,6 +29,7 @@ diagnostics and helped check how Dolly behaves on different systems.
 | --- | --- |
 | [HLAE / advancedfx](https://github.com/advancedfx/advancedfx) | A major reference for the capture, edit and replay camera-path workflow, paused camera input, and research into Source 2 camera timing and recording. Dolly's Deadlock integration uses its own reviewed hooks; HLAE is credited here as a workflow and technical reference. |
 | Epic Games' [Curve Editor](https://dev.epicgames.com/documentation/en-us/unreal-engine/animation-curve-editor-in-unreal-engine) and [Cinematic Sequence](https://dev.epicgames.com/documentation/en-us/fortnite/using-cinematic-sequence-device-in-unreal-editor-for-fortnite) documentation | References for graph-editor organization and keeping shot authoring separate from playback. |
+| [SOURCE:MVM](https://github.com/Wockstajit/SourceMVM) (MIT) | A reference for Source 2 moviemaking features. Its lens rain and GPU environment weather inspired Dolly's lens rain and weather; Dolly reimplements them for Deadlock with its own code. |
 | [SteamDB's Deadlock tracking](https://github.com/SteamDatabase/GameTracking-Deadlock) | Publicly extracted command information used during console research. |
 | [Valve](https://www.valvesoftware.com/) | Deadlock, Source 2, and the game and replay formats Dolly works with. |
 

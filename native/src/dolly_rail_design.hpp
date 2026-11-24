@@ -14,7 +14,7 @@ struct RailDesignState {
     };
     std::map<ImGuiID, Number> numbers;
     bool rotation = false, visibility = false, overrides = false, encoder = false;
-    bool weather_timing = false, weather_haze = false; // Scene drawer disclosures
+    bool weather_timing = false, weather_haze = false, lens_detail = false; // Scene drawer disclosures
     bool reset = false, clear = false, remove = false;
     unsigned selected = ~0u;
     std::uint32_t revision = 0, confirm_revision = 0, confirm_selected = 0;

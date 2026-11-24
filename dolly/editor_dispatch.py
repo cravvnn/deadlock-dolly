@@ -15,7 +15,11 @@ WEATHER_FIELDS = {
     "set_precipitation_density": "density", "set_weather_coating": "coating",
     "set_weather_height_ceiling": "height_ceiling",
     "set_weather_include_effects": "include_in_effects",
+    "set_lens_rain": "lens_rain", "set_lens_amount": "lens_amount", "set_lens_size": "lens_size",
+    "set_lens_slide": "lens_slide", "set_lens_trails": "lens_trails",
+    "set_lens_refraction": "lens_refraction", "set_lens_softness": "lens_softness",
 }
+WEATHER_SWITCHES = ("hero_wakes", "include_in_effects", "lens_rain")
 import copy
 import logging
 import math
@@ -439,7 +443,7 @@ def _dispatch(app, event, bridge, *, publish):
             if index != value or not 0 <= index < len(WEATHER_IDS):
                 raise ValueError("Choose a weather preset from the library.")
             settings = current.with_preset(WEATHER_IDS[index])
-        elif field in ("hero_wakes", "include_in_effects"):
+        elif field in WEATHER_SWITCHES:
             if value not in (0, 1):
                 raise ValueError("Weather switches must be on or off.")
             settings = replace(current, **{field: bool(value)})

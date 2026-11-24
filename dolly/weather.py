@@ -81,6 +81,31 @@ WIRE_BYTES = struct.calcsize(WIRE_FORMAT)
 WIRE_FLAG_HERO_WAKES = 1
 WIRE_FLAG_INCLUDE_IN_EFFECTS = 2
 
+# Lens rain: water on the camera lens while the shot's weather rains. Its controls
+# ride with the weather (they only matter with rain) but use their own block, since
+# the weather block fills its slot. Mirrors native/include/dolly_lens_rain_runtime.hpp.
+LENS_AMOUNT_MIN, LENS_AMOUNT_MAX = 0.0, 1.0
+LENS_SIZE_MIN, LENS_SIZE_MAX = 0.3, 3.0
+LENS_SLIDE_MIN, LENS_SLIDE_MAX = 0.0, 2.0
+LENS_TRAILS_MIN, LENS_TRAILS_MAX = 0.0, 1.0
+LENS_REFRACTION_MIN, LENS_REFRACTION_MAX = 0.0, 2.0
+LENS_SOFTNESS_MIN, LENS_SOFTNESS_MAX = 0.0, 1.0
+# Field: (low, high, default).
+LENS_RANGES = {
+    "lens_amount": (LENS_AMOUNT_MIN, LENS_AMOUNT_MAX, 0.35),
+    "lens_size": (LENS_SIZE_MIN, LENS_SIZE_MAX, 1.0),
+    "lens_slide": (LENS_SLIDE_MIN, LENS_SLIDE_MAX, 1.0),
+    "lens_trails": (LENS_TRAILS_MIN, LENS_TRAILS_MAX, 0.35),
+    "lens_refraction": (LENS_REFRACTION_MIN, LENS_REFRACTION_MAX, 0.75),
+    "lens_softness": (LENS_SOFTNESS_MIN, LENS_SOFTNESS_MAX, 0.5),
+}
+LENS_WIRE_OFFSET = 2 * 1024 * 1024 + 59392
+LENS_WIRE_MAGIC = b"DLYLENS1"
+LENS_WIRE_ABI = 1
+LENS_WIRE_FORMAT = "<8sIIIi6f"
+LENS_WIRE_BYTES = struct.calcsize(LENS_WIRE_FORMAT)
+LENS_WIRE_FLAG_ENABLED = 1
+
 
 def _number(value: Any, name: str, low: float, high: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -105,6 +130,13 @@ class WeatherSettings:
     density: float = 1.0
     hero_wakes: bool = True
     include_in_effects: bool = True
+    lens_rain: bool = False
+    lens_amount: float = LENS_RANGES["lens_amount"][2]
+    lens_size: float = LENS_RANGES["lens_size"][2]
+    lens_slide: float = LENS_RANGES["lens_slide"][2]
+    lens_trails: float = LENS_RANGES["lens_trails"][2]
+    lens_refraction: float = LENS_RANGES["lens_refraction"][2]
+    lens_softness: float = LENS_RANGES["lens_softness"][2]
 
     @property
     def enabled(self) -> bool:
@@ -122,9 +154,11 @@ class WeatherSettings:
         _number(self.build_up, "build-up", BUILD_UP_MIN, BUILD_UP_MAX)
         _number(self.flake_size, "flake size", FLAKE_SIZE_MIN, FLAKE_SIZE_MAX)
         _number(self.density, "density", DENSITY_MIN, DENSITY_MAX)
-        for name in ("hero_wakes", "include_in_effects"):
+        for name in ("hero_wakes", "include_in_effects", "lens_rain"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"Weather {name.replace('_', ' ')} must be true or false")
+        for name, (low, high, _default) in LENS_RANGES.items():
+            _number(getattr(self, name), name.replace("_", " "), low, high)
 
     def with_preset(self, preset: str) -> "WeatherSettings":
         """The preset's defaults, keeping intensity, direction and the toggles."""
@@ -142,7 +176,9 @@ class WeatherSettings:
                 "height_ceiling": self.height_ceiling, "build_up": self.build_up,
                 "flake_size": self.flake_size, "density": self.density,
                 "hero_wakes": self.hero_wakes,
-                "include_in_effects": self.include_in_effects}
+                "include_in_effects": self.include_in_effects,
+                "lens_rain": self.lens_rain,
+                **{name: getattr(self, name) for name in LENS_RANGES}}
 
     @classmethod
     def from_dict(cls, value: Any) -> "WeatherSettings":
@@ -151,18 +187,22 @@ class WeatherSettings:
         fields = ("preset", "intensity", "wind_direction", "wind_speed", "gusts", "coating",
                   "height_ceiling", "build_up", "flake_size", "density", "hero_wakes",
                   "include_in_effects")
-        unknown = sorted(set(value) - set(fields))
+        # Lens rain came after the first weather shots, so its fields are optional.
+        optional = ("lens_rain",) + tuple(LENS_RANGES)
+        unknown = sorted(set(value) - set(fields) - set(optional))
         if unknown:
             raise ValueError(f"Unknown weather field: {unknown[0]}")
         missing = [name for name in fields if name not in value]
         if missing:
             raise ValueError(f"Weather is missing required field: {missing[0]}")
         numbers = {name: value[name] for name in fields[1:10]}
+        numbers.update({name: value[name] for name in LENS_RANGES if name in value})
         for name, number in numbers.items():
             if isinstance(number, bool) or not isinstance(number, (int, float)):
                 raise ValueError(f"Weather {name.replace('_', ' ')} must be a number")
+        switches = {"lens_rain": value["lens_rain"]} if "lens_rain" in value else {}
         settings = cls(preset=value["preset"], hero_wakes=value["hero_wakes"],
-                       include_in_effects=value["include_in_effects"],
+                       include_in_effects=value["include_in_effects"], **switches,
                        **{name: float(number) for name, number in numbers.items()})
         settings.validate()
         return settings
@@ -188,6 +228,16 @@ class WeatherSettings:
                            self.wind_direction, self.wind_speed, self.gusts, self.coating,
                            self.height_ceiling, self.build_up, name, start_tick,
                            self.flake_size, self.density)
+
+    def pack_lens_wire(self, sequence: int, start_tick: int = 0) -> bytes:
+        """The native lens rain block. ``start_tick`` seeds the shot's drops."""
+        self.validate()
+        if isinstance(start_tick, bool) or not isinstance(start_tick, int) \
+                or not 0 <= start_tick <= 0x7fffffff:
+            raise ValueError("Weather start tick must be a nonnegative integer")
+        flags = LENS_WIRE_FLAG_ENABLED if self.lens_rain else 0
+        return struct.pack(LENS_WIRE_FORMAT, LENS_WIRE_MAGIC, sequence & 0xffffffff, LENS_WIRE_ABI,
+                           flags, start_tick, *(getattr(self, name) for name in LENS_RANGES))
 
 
 WEATHER_OFF = WeatherSettings()

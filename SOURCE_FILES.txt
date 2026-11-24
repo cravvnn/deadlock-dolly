@@ -344,6 +344,10 @@ native/include/dolly_flight.hpp
 native/include/dolly_follow_anchor.hpp
 native/include/dolly_hero_portrait.hpp
 native/include/dolly_hide.hpp
+native/include/dolly_lens_rain.hpp
+native/include/dolly_lens_rain_dx11.hpp
+native/include/dolly_lens_rain_runtime.hpp
+native/include/dolly_lens_rain_wire.hpp
 native/include/dolly_lite.hpp
 native/include/dolly_map_grid.hpp
 native/include/dolly_media.hpp
@@ -482,6 +486,9 @@ native/src/dolly_env_render_dx11.cpp
 native/src/dolly_follow_anchor_generated.hpp
 native/src/dolly_game_audio.cpp
 native/src/dolly_hero_portrait.cpp
+native/src/dolly_lens_rain.cpp
+native/src/dolly_lens_rain_dx11.cpp
+native/src/dolly_lens_rain_runtime_win.cpp
 native/src/dolly_lite_panel.cpp
 native/src/dolly_map_grid.cpp
 native/src/dolly_media_win.cpp
@@ -536,6 +543,8 @@ native/tests/fixtures/attach-shot.bin
 native/tests/flight_tests.cpp
 native/tests/follow_anchor_tests.cpp
 native/tests/hero_portrait_tests.cpp
+native/tests/lens_rain_tests.cpp
+native/tests/lens_rain_warp_tests.cpp
 native/tests/lite_policy_tests.cpp
 native/tests/map_grid_cli.cpp
 native/tests/module_residency_fixture.cpp
@@ -1407,6 +1416,7 @@ native/src/dolly_seqlock_win.hpp
 tests/test_bone_picker_editor_loss.py
 tests/test_cinematic_prepare_failure.py
 tests/test_layer_modes.py
+tests/test_lens_rain.py
 tests/test_replay_warmup_cleanup.py
 docs/RELEASE_NOTES_0.7.52-beta.md
 native/profiles/deadlock-2026-11-23-6865-complete.json

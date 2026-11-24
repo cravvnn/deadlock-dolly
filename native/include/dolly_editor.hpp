@@ -175,7 +175,16 @@ enum class EditorAction : std::uint32_t {
     SetWeatherIncludeEffects,
     // Look drawer particles: preset id (dolly/particles.py order) and intensity.
     SetParticlePreset,
-    SetParticleIntensity
+    SetParticleIntensity,
+    // Scene drawer lens rain: the switch, then amount, drop size, slide, trails, refraction
+    // and softness (values follow dolly/weather.py LENS_RANGES).
+    SetLensRain,
+    SetLensAmount,
+    SetLensSize,
+    SetLensSlide,
+    SetLensTrails,
+    SetLensRefraction,
+    SetLensSoftness
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -210,8 +219,11 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetWeatherPreset) == 125 
 static_assert(static_cast<std::uint32_t>(EditorAction::SetParticlePreset) == 137 &&
                   static_cast<std::uint32_t>(EditorAction::SetParticleIntensity) == 138,
               "Stable particle preset action IDs");
-constexpr EditorAction kEditorActionLast = EditorAction::SetParticleIntensity;
-static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 138, "Last editor action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetLensRain) == 139 &&
+                  static_cast<std::uint32_t>(EditorAction::SetLensSoftness) == 145,
+              "Stable Scene lens rain action IDs");
+constexpr EditorAction kEditorActionLast = EditorAction::SetLensSoftness;
+static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 145, "Last editor action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&

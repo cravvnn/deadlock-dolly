@@ -77,6 +77,10 @@ WEATHER_ACTIONS = ("set_weather_preset", "set_weather_intensity", "set_weather_b
                    "set_weather_include_effects")
 EXTRA_ACTIONS += WEATHER_ACTIONS
 EXTRA_ACTIONS += ("set_particle_preset", "set_particle_intensity")  # IDs 137, 138
+# Scene drawer lens rain controls, IDs 139-145 (dolly_editor.hpp SetLensRain..).
+LENS_ACTIONS = ("set_lens_rain", "set_lens_amount", "set_lens_size", "set_lens_slide",
+                "set_lens_trails", "set_lens_refraction", "set_lens_softness")
+EXTRA_ACTIONS += LENS_ACTIONS
 
 # Optional completion signal in the unused mapping tail; existing offsets stay fixed.
 CINEMATIC_OFFSET = 2 * 1024 * 1024 + 60000

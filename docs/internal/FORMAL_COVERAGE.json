@@ -1,13 +1,13 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 333,
+  "accounted_units": 340,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
     "no independent lifecycle": 41,
     "stateful partial/open": 125,
     "generated data/schema": 10,
-    "native owner/delegated contract open": 126,
+    "native owner/delegated contract open": 133,
     "offline-tool scope": 26,
     "entrypoint delegated contract open": 4,
     "child-job contract open": 1
@@ -16,7 +16,7 @@
     "value": 41,
     "L05": 21,
     "generated": 10,
-    "L01": 87,
+    "L01": 94,
     "L03": 29,
     "L02": 50,
     "L04": 69,
@@ -1732,7 +1732,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "34ca76d3e9ed3fc5c69895c2b47e7bd249ede615373b8814513db980f035b7a1",
+      "sha256": "a59857f6b02c0ec989ef5b0bc079adefeabe960719e5177270c7a595fe150f8d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1981,7 +1981,7 @@
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "d0db0a60bdbc191802e8fdcaa67cc5c57f4d8dc95ef10893fc796988573c164d",
+      "sha256": "82f2dd0b379770fbaaba05823b174013fb65ad0353776ecc07996e44b9e2e54d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2677,7 +2677,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d",
+      "sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2838,7 +2838,7 @@
     },
     {
       "path": "dolly/gui_layout.py",
-      "sha256": "e512cd63b9e3e8f8358adf69f7977b86864acffe82a71a9a9e7919c65c3a1ffd",
+      "sha256": "40fa199a3b107c9e37f302367c572613bb595fc62c12fff334c5c50112f9d2c4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -3445,7 +3445,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf",
+      "sha256": "409b7775138ff1e67735f24802aadde1c0c5f3ab6538c024bee4297f1509d83c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -6391,7 +6391,7 @@
     },
     {
       "path": "dolly/ui/scene_page.py",
-      "sha256": "c4ec2ca1474871351c835fceac2e7ae02072b07bf6a8695f24f7654c25a24dc6",
+      "sha256": "4c57bdb7e36b0ea2b4b6da3e00e4cfb16ae81de063d3a9dc2e69bc23c7b5287e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -7271,7 +7271,7 @@
     },
     {
       "path": "dolly/weather.py",
-      "sha256": "c22821fa47f322543fc424b495c31b3edb09168659285df08461c7d20652ea55",
+      "sha256": "fc872562d446708ce1ee602ba6cc4ba6ddd911a05cb009900f28e692ba2794a6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -7534,7 +7534,7 @@
     },
     {
       "path": "native/include/dolly_editor.hpp",
-      "sha256": "350b5ad83e6cc572c1c6b1d6651f902b9c3c5371f13c821941c78c5c03c091cb",
+      "sha256": "04cbb913fadd749faf5223b5606dc1321f2f3ed7c49d0853597b7e11082f1cc8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -7726,6 +7726,90 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/include/dolly_lens_rain.hpp",
+      "sha256": "0f324098b252d9be6c1ce0e49813878e1447d4bdd11f1463e51b36d361a2fe83",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
+    },
+    {
+      "path": "native/include/dolly_lens_rain_dx11.hpp",
+      "sha256": "d9558990e1805d36125f3ff41375ea12e8f2962b5771de1e3b957530be70571c",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
+    },
+    {
+      "path": "native/include/dolly_lens_rain_runtime.hpp",
+      "sha256": "a7eee5e7b99155f4258dbf5c735512903102e20a655a728472ab52c61a6809c4",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
+    },
+    {
+      "path": "native/include/dolly_lens_rain_wire.hpp",
+      "sha256": "dd3adc3134d24fe31540b0ba1ba08aa29cb5b212520c71b0de5a92d5b3917913",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
     },
     {
       "path": "native/include/dolly_lite.hpp",
@@ -8724,7 +8808,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "711d352c3ec8850f241a70e9268f3d68093fab427f5c4228a10c6acf40c3455b",
+      "sha256": "a5dd3a6708f156d1859608ec9bb41c03bbdb2de73b1a062fbde874f488973fbf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9181,7 +9265,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "bef86e7a412ebebdf5277d8217771ef022d9f669e1f8328bf67a22075aa5c10e",
+      "sha256": "f870c885abb9ab7d49bad6fbecbaaf613fe1e9afe9e273b444a3c0dc9672b93d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9357,6 +9441,71 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/src/dolly_lens_rain.cpp",
+      "sha256": "20e620c384fe5a6f3e46f9a69af04a60370ae81a68692042ef8900e71d44c0fa",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
+    },
+    {
+      "path": "native/src/dolly_lens_rain_dx11.cpp",
+      "sha256": "91e318911aea49d3ead248e02ba2a9924b481edd2327bd9cf441c9c91cd50abb",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
+    },
+    {
+      "path": "native/src/dolly_lens_rain_runtime_win.cpp",
+      "sha256": "376026779419b70e8397cbbd97dca43fe419c95813caddaf4dd1118cffafa955",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Camera/session/native command ownership. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/lens_rain_tests.cpp",
+        "native/tests/lens_rain_warp_tests.cpp",
+        "tests/test_lens_rain.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": [
+          "thread/lock"
+        ]
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261124lensrain": "2026-11-24 lens rain: added. Lens rain owner: editor block (worker), rendered camera and replay clock (view thread), Present-thread simulation and pass after the weather; GPU resources released with the overlay device. Draws on the Color and World plates only."
     },
     {
       "path": "native/src/dolly_lite_panel.cpp",
@@ -9667,7 +9816,7 @@
     },
     {
       "path": "native/src/dolly_overlay_win.cpp",
-      "sha256": "95db74cec9cca160b73894d6193434f44e0a4dedc5b227781977e9c3c8fae739",
+      "sha256": "49fc1024fc43cdba4e49d291a704a22a7868c5b0552d05e0081d91ba18cf5c5b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9866,7 +10015,7 @@
     },
     {
       "path": "native/src/dolly_rail_design.hpp",
-      "sha256": "4cf88de43c04cc58c5743a106dc17e836f29747322e509d57b90fc9f3bbef046",
+      "sha256": "067743d9121e971d536303b6900a266fd9b38ba402f323ce4ad7b9481ed66709",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9889,7 +10038,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "9e0ebdc08fd4adc627c63dbcec4ea9fd49fb2dfcab50317fdfe53328eea653ad",
+      "sha256": "a8523bf3581e53ba3ab80a3a29f8f919fa855004c545dfeb56642ba0729e746b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -12025,7 +12174,7 @@
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
+      "owner_utf8_lf_sha256": "409b7775138ff1e67735f24802aadde1c0c5f3ab6538c024bee4297f1509d83c"
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -12096,7 +12245,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d"
+      "owner_utf8_lf_sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -12158,7 +12307,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d"
+      "owner_utf8_lf_sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -12236,7 +12385,7 @@
         "dolly/GameExitClose.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
+      "owner_utf8_lf_sha256": "409b7775138ff1e67735f24802aadde1c0c5f3ab6538c024bee4297f1509d83c"
     },
     "dolly/GameFileCache.tla": {
       "path": "dolly/preload.py",
@@ -12276,7 +12425,7 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
+      "owner_utf8_lf_sha256": "409b7775138ff1e67735f24802aadde1c0c5f3ab6538c024bee4297f1509d83c"
     },
     "dolly/HelperWorkspace.tla": {
       "path": "dolly/source2viewer.py",
@@ -12498,7 +12647,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "4f2d90b66941058219dab3fce03437b344459a3c046c09d1cafd78151c974d8d"
+      "owner_utf8_lf_sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -12551,7 +12700,7 @@
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf",
+      "owner_utf8_lf_sha256": "409b7775138ff1e67735f24802aadde1c0c5f3ab6538c024bee4297f1509d83c",
       "instances": [
         "CameraLeaseApi"
       ]
@@ -12674,7 +12823,7 @@
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "7fb51388ac3c98b50637ed4efceda4c649d4bcbfa17bb59ce78922a435b658cf"
+      "owner_utf8_lf_sha256": "409b7775138ff1e67735f24802aadde1c0c5f3ab6538c024bee4297f1509d83c"
     },
     "dolly/StillCleanup.tla": {
       "path": "dolly/screenshot.py",
@@ -12851,7 +13000,7 @@
         "native/src/BridgeCommandAdmission.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "711d352c3ec8850f241a70e9268f3d68093fab427f5c4228a10c6acf40c3455b"
+      "owner_utf8_lf_sha256": "a5dd3a6708f156d1859608ec9bb41c03bbdb2de73b1a062fbde874f488973fbf"
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -12899,7 +13048,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "711d352c3ec8850f241a70e9268f3d68093fab427f5c4228a10c6acf40c3455b"
+      "owner_utf8_lf_sha256": "a5dd3a6708f156d1859608ec9bb41c03bbdb2de73b1a062fbde874f488973fbf"
     },
     "native/src/PickerGizmoSession.tla": {
       "path": "native/src/dolly_object_picker_ui.cpp",
@@ -16963,6 +17112,26 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/include/dolly_lens_rain.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_lens_rain_dx11.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_lens_rain_runtime.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_lens_rain_wire.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/include/dolly_lite.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17894,6 +18063,21 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/src/dolly_lens_rain.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_lens_rain_dx11.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/src/dolly_lens_rain_runtime_win.cpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/src/dolly_lite_panel.cpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18250,6 +18434,16 @@
     },
     {
       "path": "native/tests/hero_portrait_tests.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/tests/lens_rain_tests.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/tests/lens_rain_warp_tests.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18796,6 +18990,11 @@
     },
     {
       "path": "tests/test_layer_modes.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_lens_rain.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -19988,10 +20187,10 @@
   ],
   "export_categories": {
     "metadata/configuration/documentation input": 577,
-    "implementation/tool": 333,
+    "implementation/tool": 340,
     "asset/compiled helper input": 28,
     "formal spec/interface": 169,
-    "test/support input": 99,
+    "test/support input": 102,
     "external dependency/resource": 204
   },
   "unclassified": 0,

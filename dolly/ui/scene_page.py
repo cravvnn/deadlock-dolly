@@ -5,7 +5,7 @@ gutters, with the shared Shot Playback card pinned at the bottom. The cards foll
 in-game drawer's sections one to one, so a setting has the same name and place in both:
 Weather (preset, intensity, build-up and gusts) beside Precipitation (flake size and
 density), then Wind (direction, speed and hero wakes) beside Ground and Haze (coating, height ceiling
-and the Effects layer toggle).
+and the Effects layer toggle), then Lens (water on the camera lens while it rains).
 
 Each slider shows its value in its caption, reports while it moves and commits on release
 (or on a key), like the Citadel DOF sliders on Look. While the preset is Off the controls
@@ -41,6 +41,8 @@ GROUND_INFO = "Coating settles where open sky is above; haze rises to the ceilin
 BUILD_UP_INFO = "Seconds from the shot start for snow, sand or wetness to settle. 0 starts settled."
 HERO_INFO = "Heroes part the wind, haze and flakes around them."
 EFFECTS_INFO = "Weather is always in Color and World, never in Players or Depth."
+LENS_INFO = ("Water drops land on the lens while the shot rains, run down and leave trails. "
+             "Under a roof no new drops land. Drawn on Color and World only.")
 OFF_NOTICE = "Pick a preset to turn on wind, flakes and haze."
 ON_NOTICE = "Also in game: F8 → Scene. Both edit the same shot."
 
@@ -64,6 +66,7 @@ class SceneState:
     values: dict        # Control.key -> tk.DoubleVar
     include_in_effects: tk.Variable
     hero_wakes: tk.Variable
+    lens_rain: tk.Variable
     preset_labels: tuple
     controls: dict      # card title -> tuple[Control, ...]
 
@@ -139,7 +142,14 @@ class ScenePage:
         row.gap(5)
         row.info(EFFECTS_INFO)
 
-        page.bento([((weather,), (precip,)), ((wind,), (ground,))])
+        lens = self.lens_card = main.add_card("Lens", info=LENS_INFO)
+        row = lens.row(height=18)
+        self.lens_checkbox = row.widget(
+            ttk.Checkbutton(row.host, text="Rain on the lens", variable=state.lens_rain,
+                            command=commands.weather_changed, style="Kit.TCheckbutton"))
+        sliders(lens, state.controls["Lens"], first_top=10)
+
+        page.bento([((weather,), (precip,)), ((wind, lens), (ground,))])
         self.playback_host = page.host_card("Shot Playback", where="dock", art=art.playback_art)
         page.watch_focus()
 
@@ -151,14 +161,25 @@ class ScenePage:
             return control.low
 
     @staticmethod
+    def _safe_flag(variable) -> bool:
+        try:
+            return bool(variable.get())
+        except (tk.TclError, ValueError):
+            return False
+
+    @staticmethod
     def _caption(control: Control, value) -> str:
         text = value if isinstance(value, str) else control.fmt.format(float(value))
         return f"{control.label} · {text}{control.unit}"
 
     def set_enabled(self, enabled: bool) -> None:
         """Grey every control below the preset while the weather is Off (the drawer does the same)."""
-        for slider in self.sliders.values():
-            slider.configure(state="normal" if enabled else "disabled")
-        for box in (self.hero_checkbox, self.effects_checkbox):
+        # The lens sliders also wait for their own switch, as the drawer greys them.
+        lens_on = enabled and self._safe_flag(self._state.lens_rain)
+        lens_keys = {control.key for control in self._state.controls.get("Lens", ())}
+        for key, slider in self.sliders.items():
+            on = lens_on if key in lens_keys else enabled
+            slider.configure(state="normal" if on else "disabled")
+        for box in (self.hero_checkbox, self.effects_checkbox, self.lens_checkbox):
             box.state(["!disabled"] if enabled else ["disabled"])
         self.notice.set(ON_NOTICE if enabled else OFF_NOTICE)

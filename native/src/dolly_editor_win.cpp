@@ -3,6 +3,8 @@
 #include "dolly_confetti.hpp"
 #include "dolly_weather_state.hpp"
 #include "dolly_weather_runtime.hpp"
+#include "dolly_lens_rain_runtime.hpp"
+#include "dolly_lens_rain_wire.hpp"
 #include <windows.h>
 #include <atomic>
 #include <algorithm>
@@ -1165,6 +1167,11 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         !weather::valid_panel_value(unsigned(action) - unsigned(EditorAction::SetWeatherPreset),
                                     value))
         return false;
+    if (std::uint32_t(action) >= std::uint32_t(EditorAction::SetLensRain) &&
+        std::uint32_t(action) <= std::uint32_t(EditorAction::SetLensSoftness) &&
+        !lens_rain::valid_panel_value(unsigned(action) - unsigned(EditorAction::SetLensRain),
+                                      value))
+        return false;
     if (action == EditorAction::SetAttachBone) {
         EditorBones bones{};
         if (!pose_override || !editor_bones_snapshot(bones) || value != std::floor(value) ||
@@ -1569,6 +1576,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     static double configured_speed = -1;
     if (memory && connected) {
         weather_runtime::poll_editor_block(memory);
+        lens_rain_runtime::poll_editor_block(memory);
         accept_seqlocked(memory + kEditorDofOffset, gDofConfig, [](const EditorDofConfig& dof) {
             bool valid = std::memcmp(dof.magic, "DLYDOF01", 8) == 0 && dof.abi == 1 &&
                          dof.enabled <= 1 && dof.reserved == 0;
