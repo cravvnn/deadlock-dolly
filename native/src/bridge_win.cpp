@@ -787,6 +787,7 @@ static void publish_weather_clock(const DemoState& demo, const confetti::Camera&
     const float angles[3]{camera.angles.pitch, camera.angles.yaw, camera.angles.roll};
     lens_rain_runtime::publish_view(demo.time, demo.seeking, origin, angles, shot_phase);
     float origins[kEditorRosterPlayers][3];
+    std::uint32_t slots[kEditorRosterPlayers];
     std::uint32_t count = 0;
     if (weather_runtime::wants_heroes()) {
         if (const auto nodes = std::atomic_load(&gHeroNodes)) {
@@ -796,12 +797,13 @@ static void publish_weather_clock(const DemoState& demo, const confetti::Camera&
                 if (!read_value(hero.node + nodes->owner, owner) || owner != hero.pawn ||
                     !read_memory(hero.node + nodes->origin, origins[count], sizeof(origins[0])))
                     continue;
+                slots[count] = hero.entity_index; // stable per hero, for recorded paths
                 ++count;
             }
         }
     }
     weather_runtime::publish_clock(demo.time, demo.interval, demo.playing, demo.seeking, origins,
-                                   count);
+                                   count, slots);
 }
 
 static bool read_demo(DemoState& result) noexcept {

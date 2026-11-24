@@ -43,6 +43,15 @@ struct EnvCamera {
     ID3D11ShaderResourceView* gpu_view = nullptr;
 };
 
+// One straight piece of a hero's recorded path (feet, world units), with the shot time at
+// each end.
+struct TrailSegment {
+    float a[3];
+    float time_a;
+    float b[3];
+    float time_b;
+};
+
 struct EnvRenderParams {
     AtmospherePreset preset = AtmospherePreset::Sandstorm;
     float intensity = 1.0f;
@@ -69,6 +78,8 @@ struct EnvRenderParams {
     // Rain puddles mirror the frame itself (screen-space reflections) only when this is
     // set; otherwise they mirror the sky alone. Off for layer plates other than Color.
     bool puddle_reflections = true;
+    // Heroes leave trails in snow, sand and ash when paths have been set (set_hero_trails).
+    bool hero_trails = true;
     // Safety net: above this many output pixels, march at half resolution and rebuild each
     // pixel from it, re-marching depth edges at full resolution. Exports turn it off.
     bool allow_half_res = true;
@@ -97,6 +108,12 @@ public:
     // The drift potential over the map window (see map_grid::bake_drift_potential), n x n
     // values in 0..2. Until one is set (or after an empty one) the coating is even.
     bool set_drift_map(uint32_t n, const float* values);
+
+    // The recorded hero paths as straight segments, each with the shot time (s, the
+    // renderer's sim_time clock) at its two ends. Each frame stamps those reached by its
+    // time; an empty set (or none) means no trails. At most kMaxTrailSegments.
+    static constexpr uint32_t kMaxTrailSegments = 1u << 17;
+    bool set_hero_trails(const TrailSegment* segments, uint32_t count);
 
 private:
     struct Impl;

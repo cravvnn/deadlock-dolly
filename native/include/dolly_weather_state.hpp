@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace dolly::weather {
 
@@ -150,5 +151,67 @@ Resolved resolve(const Settings& settings) noexcept;
 // build_up is 0, otherwise an ease-out reaching 1 at build_up seconds. Pure in time, so
 // scrubbing and seeking reproduce it. The caller assigns it to render.coating_growth.
 float coating_growth(const Settings& settings, double seconds_since_start) noexcept;
+
+// ---- Hero trails ----
+// The editor asks the game to record the heroes' paths while it plays a shot through (the
+// prepare pass), and names the recorded file whose trails the weather draws. The paths
+// are recorded once and saved, so live view and every export draw the same trails.
+namespace trails {
+
+constexpr char kWireMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'L', 'S', '1'};
+constexpr std::uint32_t kWireAbi = 1;
+constexpr std::uint32_t kFlagRecord = 1; // record hero paths from playback into record_path
+constexpr std::uint32_t kFlagShow = 2;   // draw trails from show_path
+constexpr std::size_t kPathBytes = 240;
+// Seqlocked (magic at 0, sequence at 8, ABI at 12), after the lens rain block and before
+// the cinematic status.
+constexpr std::size_t kWireOffset = 2 * 1024 * 1024 + 59456;
+#pragma pack(push, 1)
+struct Wire {
+    char magic[8];
+    std::uint32_t sequence;
+    std::uint32_t abi;
+    std::uint32_t flags;
+    // A new id starts a new recording; the recording is saved when the record flag clears
+    // or the id changes.
+    std::uint32_t recording_id;
+    char record_path[kPathBytes]; // UTF-8, NUL-terminated
+    char show_path[kPathBytes];
+};
+#pragma pack(pop)
+static_assert(sizeof(Wire) == 504, "Python hero trails wire layout must match");
+static_assert(offsetof(Wire, sequence) == 8, "Seqlocked block layout");
+static_assert(kWireOffset + sizeof(Wire) <= 2 * 1024 * 1024 + 60000,
+              "Hero trails block fits before the cinematic status");
+
+struct Controls {
+    bool record = false;
+    std::uint32_t recording_id = 0;
+    std::string record_path;
+    bool show = false;
+    std::string show_path;
+};
+// Rejects a wrong magic or ABI, unknown flags, or a path that is not NUL-terminated, and a
+// flag whose path is empty.
+std::optional<Controls> decode(const Wire& wire);
+
+// One observed hero position: replay time (s), the hero's roster slot, feet (world).
+struct Sample {
+    double time = 0.0;
+    std::uint32_t slot = 0;
+    float pos[3] = {};
+};
+// Recorded file: "DLYTRK01", sample count (u32), reserved (u32), then the samples packed as
+// time (f64), slot (u32), x, y, z (f32).
+bool write_samples(const std::string& utf8_path, const std::vector<Sample>& samples,
+                   std::string* error = nullptr);
+bool read_samples(const std::string& utf8_path, std::vector<Sample>& samples,
+                  std::string* error = nullptr);
+// The trail segments of recorded samples: per hero in time order, thinned to 15 per second,
+// broken where the hero vanished for over half a second or moved faster than a hero can
+// (death, respawn, teleport). Same samples in any order give the same segments.
+std::vector<dolly::env::TrailSegment> build_segments(std::vector<Sample> samples);
+
+} // namespace trails
 
 } // namespace dolly::weather

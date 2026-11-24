@@ -65,6 +65,7 @@ cbuffer EnvConstants : register(b0) {
     float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
     float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold,
                           // z 1 = driftMap holds a drift potential, w hero count
+    float4 trailInfo;     // x 1 = hero trails, y fill-in time (s), z segment count, w unused
     EmitterGPU emitters[EMITTERS];
     float4 heroes[12];    // xyz feet position of a hero the coating leaves clean
 };
@@ -90,6 +91,13 @@ StructuredBuffer<ViewData> gpuView : register(t8);
 Texture3D<float> sunBake : register(t9);
 Texture2D<float4> halfMarch : register(t10); // safety net: half-resolution march
 Texture2D<float> driftMap : register(t11);   // drift potential 0..2, stored halved (UNORM16)
+// Hero trails: the recorded path segments, and the map they are stamped into each frame.
+struct TrailSeg {
+    float4 a; // xyz start (world), w its shot time (s)
+    float4 b; // xyz end, w its shot time
+};
+StructuredBuffer<TrailSeg> trailSegs : register(t12);
+Texture2D<float> trailMap : register(t13); // latest shot time a hero trod each texel
 RWTexture3D<float> sunBakeOut : register(u0);
 
 static float4x4 gInvViewProj;
@@ -125,6 +133,93 @@ FullscreenVSOut FullscreenVS(uint id : SV_VertexID) {
     o.uv = float2((id << 1) & 2, id & 2);
     o.pos = float4(o.uv * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
     return o;
+}
+
+// ---- Hero trails ----
+// Every frame the trails are stamped afresh from the recorded paths up to this frame's shot
+// time into a square window that follows the camera (snapped to whole texels), keeping per
+// texel the latest time a hero trod it. MAX blending makes the result independent of draw
+// order, so a frame depends only on the paths and its own time and camera.
+static const float kTrailSpan = 2048.0;  // world units across the window
+static const float kTrailTexels = 1024.0;
+static const float kTrailCore = 13.0;    // half width of a trodden track (two feet)
+static const float kTrailFeather = 7.0;  // soft shoulder outside it
+static const float kTrailNever = -1.0e9;
+
+float2 TrailOrigin(float3 cam) {
+    float texel = kTrailSpan / kTrailTexels;
+    return floor(cam.xy / texel) * texel - 0.5 * kTrailSpan;
+}
+
+struct TrailVSOut {
+    float4 pos : SV_Position;
+    float2 world : TEXCOORD0;
+    nointerpolation float4 seg : TEXCOORD1;  // xy start, zw end (world)
+    nointerpolation float2 times : TEXCOORD2; // shot times at start and end
+};
+
+TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
+    TrailVSOut o;
+    o.pos = float4(2.0, 2.0, 0.0, 1.0); // off screen unless this segment is drawn
+    o.world = float2(0.0, 0.0);
+    o.seg = float4(0.0, 0.0, 0.0, 0.0);
+    o.times = float2(kTrailNever, kTrailNever);
+    LoadView();
+    TrailSeg s = trailSegs[iid];
+    float now = windTime.z;
+    if (s.a.w > now || s.b.w <= s.a.w)
+        return o;
+    // A segment still being walked ends where the hero is at this frame's time.
+    float f = saturate((now - s.a.w) / (s.b.w - s.a.w));
+    float2 a = s.a.xy;
+    float2 b = lerp(s.a.xy, s.b.xy, f);
+    float tb = lerp(s.a.w, s.b.w, f);
+    float2 dir = b - a;
+    float len = length(dir);
+    dir = len > 1e-3 ? dir / len : float2(1.0, 0.0);
+    float2 side = float2(-dir.y, dir.x);
+    float r = kTrailCore + kTrailFeather;
+    // Two triangles covering the capsule's bounding box.
+    // (0,1,2) = (-,-) (+,-) (-,+); (3,4,5) = (+,-) (+,+) (-,+)
+    float2 corner = float2((vid == 1 || vid == 3 || vid == 4) ? 1.0 : -1.0,
+                           (vid == 2 || vid == 4 || vid == 5) ? 1.0 : -1.0);
+    float2 w = (corner.x < 0.0 ? a - dir * r : b + dir * r) + side * r * corner.y;
+    float2 origin = TrailOrigin(gCamPos);
+    float2 uv = (w - origin) / kTrailSpan;
+    o.pos = float4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, 0.0, 1.0);
+    o.world = w;
+    o.seg = float4(a, b);
+    o.times = float2(s.a.w, tb);
+    return o;
+}
+
+float TrailStampPS(TrailVSOut i) : SV_Target {
+    float2 a = i.seg.xy, b = i.seg.zw;
+    float2 ab = b - a;
+    float k = saturate(dot(i.world - a, ab) / max(dot(ab, ab), 1e-6));
+    float d = length(i.world - (a + ab * k));
+    if (d > kTrailCore + kTrailFeather)
+        discard;
+    float t = lerp(i.times.x, i.times.y, k);
+    // The shoulder reads as older (shallower) track, so the edge softens as it fills in.
+    float shoulder = saturate((d - kTrailCore) / kTrailFeather);
+    return t - shoulder * shoulder * trailInfo.y;
+}
+
+// How freshly trodden the ground at p is: 1 on a track walked just now, fading as falling
+// snow or blown sand fills it in; 0 where no hero walked (or trails are off).
+float TrailAt(float3 p) {
+    if (trailInfo.x < 0.5)
+        return 0.0;
+    float2 uv = (p.xy - TrailOrigin(gCamPos)) / kTrailSpan;
+    if (any(uv <= 0.0) || any(uv >= 1.0))
+        return 0.0;
+    float t = trailMap.SampleLevel(linearClamp, float2(uv.x, 1.0 - uv.y), 0);
+    float age = windTime.z - t;
+    if (t < -1.0e8 || age < 0.0)
+        return 0.0;
+    float edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
+    return exp(-age / max(trailInfo.y, 1.0)) * smoothstep(0.0, 0.08, edge);
 }
 
 bool IsSky(float d) {
@@ -687,6 +782,9 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     }
 
     float cov = max(top, wall) * (1.0 - heroMask);
+    // Where heroes walked, the cover is pressed thin and darker until it fills back in.
+    float tread = TrailAt(surfPos) * upMask;
+    cov *= 1.0 - 0.6 * tread;
     if (cov <= 0.001) return baseColor;
 
     if (preset == 3) // damp ground fog
@@ -754,6 +852,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     }
 
     float3 coated = coatAlbedo * light * lightTint * shadeMul + add;
+    // Packed snow and churned sand scatter less light than a fresh, loose surface.
+    coated *= lerp(1.0, (preset == 6) ? 0.72 : 0.82, tread);
     return lerp(baseColor, coated, saturate(cov * 0.9));
 }
 
@@ -1183,6 +1283,7 @@ struct EnvConstants {
     float volume_bounds[4];
     float floor_decode[4];
     float net_info[4];
+    float trail_info[4];
     EmitterGPU emitters[kMaxFluidEmitters];
     float heroes[EnvRenderParams::kMaxCoatingHeroes][4];
 };
@@ -1268,8 +1369,23 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11BlendState> blend_state;
     ComPtr<ID3D11Texture2D> drift_tex;
     ComPtr<ID3D11ShaderResourceView> drift_srv;
+    // Hero trails: the recorded segments and the per-frame trail map they are stamped into.
+    ComPtr<ID3D11VertexShader> trail_vs;
+    ComPtr<ID3D11PixelShader> trail_ps;
+    ComPtr<ID3D11BlendState> trail_blend;
+    ComPtr<ID3D11Texture2D> trail_tex;
+    ComPtr<ID3D11RenderTargetView> trail_rtv;
+    ComPtr<ID3D11ShaderResourceView> trail_srv;
+    ComPtr<ID3D11Buffer> trail_buf;
+    ComPtr<ID3D11ShaderResourceView> trail_buf_srv;
+    uint32_t trail_count = 0;
     bool initialized = false;
 };
+
+namespace {
+constexpr UINT kTrailTexels = 1024; // matches kTrailTexels in the shader
+constexpr float kTrailNever = -1.0e9f;
+} // namespace
 
 EnvRendererDX11::EnvRendererDX11() : impl_(std::make_unique<Impl>()) {}
 EnvRendererDX11::~EnvRendererDX11() = default;
@@ -1408,6 +1524,61 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
     if (FAILED(device->CreateBlendState(&bd, &impl_->blend_state))) {
         shutdown();
         return false;
+    }
+
+    // Hero trails: stamp shaders, a MAX blend (order-independent, so deterministic), and
+    // the trail map (latest trodden shot time per texel).
+    {
+        ComPtr<ID3DBlob> tvs, tps;
+        err.Reset();
+        if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                              nullptr, nullptr, "TrailStampVS", "vs_5_0", flags, 0, &tvs, &err)) ||
+            FAILED(device->CreateVertexShader(tvs->GetBufferPointer(), tvs->GetBufferSize(),
+                                              nullptr, &impl_->trail_vs))) {
+            if (out_error)
+                *out_error = std::string("TrailStampVS compile failed: ") +
+                             (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            shutdown();
+            return false;
+        }
+        err.Reset();
+        if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                              nullptr, nullptr, "TrailStampPS", "ps_5_0", flags, 0, &tps, &err)) ||
+            FAILED(device->CreatePixelShader(tps->GetBufferPointer(), tps->GetBufferSize(),
+                                             nullptr, &impl_->trail_ps))) {
+            if (out_error)
+                *out_error = std::string("TrailStampPS compile failed: ") +
+                             (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            shutdown();
+            return false;
+        }
+        D3D11_BLEND_DESC tb{};
+        auto& rt = tb.RenderTarget[0];
+        rt.BlendEnable = TRUE;
+        rt.SrcBlend = rt.DestBlend = D3D11_BLEND_ONE;
+        rt.BlendOp = D3D11_BLEND_OP_MAX;
+        rt.SrcBlendAlpha = rt.DestBlendAlpha = D3D11_BLEND_ONE;
+        rt.BlendOpAlpha = D3D11_BLEND_OP_MAX;
+        rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_TEXTURE2D_DESC td{};
+        td.Width = td.Height = kTrailTexels;
+        td.MipLevels = 1;
+        td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_R32_FLOAT;
+        td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        if (FAILED(device->CreateBlendState(&tb, &impl_->trail_blend)) ||
+            FAILED(device->CreateTexture2D(&td, nullptr, &impl_->trail_tex)) ||
+            FAILED(device->CreateRenderTargetView(impl_->trail_tex.Get(), nullptr,
+                                                  &impl_->trail_rtv)) ||
+            FAILED(device->CreateShaderResourceView(impl_->trail_tex.Get(), nullptr,
+                                                    &impl_->trail_srv))) {
+            if (out_error)
+                *out_error = "failed to create the hero trail map";
+            shutdown();
+            return false;
+        }
     }
 
     impl_->initialized = true;
@@ -1574,13 +1745,53 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         cb.heroes[i][2] = params.heroes[i][2];
     }
     cb.net_info[3] = static_cast<float>(heroes);
+    // Trails show in snow, sand, dust and ash. Falling snow fills a track in over about two
+    // minutes in a steady fall (faster when heavy); blowing sand over about a minute.
+    const bool covers = params.preset == AtmospherePreset::Snow ||
+                        params.preset == AtmospherePreset::Sandstorm ||
+                        params.preset == AtmospherePreset::DustHaze ||
+                        params.preset == AtmospherePreset::AshEmbers;
+    const bool trails = params.hero_trails && params.enable_coating && covers &&
+                        impl_->trail_count > 0 && impl_->trail_buf_srv;
+    const float fill_base = params.preset == AtmospherePreset::Snow ? 120.0f : 60.0f;
+    cb.trail_info[0] = trails ? 1.0f : 0.0f;
+    cb.trail_info[1] = fill_base / std::max(params.intensity, 0.25f);
+    cb.trail_info[2] = static_cast<float>(impl_->trail_count);
     ctx->UpdateSubresource(impl_->constants.Get(), 0, nullptr, &cb, 0, 0);
+    ID3D11Buffer* stamp_cbs[1] = {impl_->constants.Get()};
+    if (trails) {
+        // Stamp every segment reached by this frame's time into the trail map, afresh.
+        const float never[4] = {kTrailNever, kTrailNever, kTrailNever, kTrailNever};
+        ID3D11RenderTargetView* trtv[1] = {impl_->trail_rtv.Get()};
+        ctx->ClearRenderTargetView(impl_->trail_rtv.Get(), never);
+        ctx->OMSetRenderTargets(1, trtv, nullptr);
+        ctx->OMSetBlendState(impl_->trail_blend.Get(), nullptr, 0xFFFFFFFFu);
+        ctx->OMSetDepthStencilState(impl_->ds_state.Get(), 0);
+        ctx->RSSetState(impl_->rs_state.Get());
+        D3D11_VIEWPORT tvp{0.0f, 0.0f, float(kTrailTexels), float(kTrailTexels), 0.0f, 1.0f};
+        ctx->RSSetViewports(1, &tvp);
+        ctx->IASetInputLayout(nullptr);
+        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->VSSetShader(impl_->trail_vs.Get(), nullptr, 0);
+        ctx->VSSetConstantBuffers(0, 1, stamp_cbs);
+        ID3D11ShaderResourceView* vsrvs[13] = {};
+        vsrvs[8] = camera.gpu_view;
+        vsrvs[12] = impl_->trail_buf_srv.Get();
+        ctx->VSSetShaderResources(0, 13, vsrvs);
+        ctx->PSSetShader(impl_->trail_ps.Get(), nullptr, 0);
+        ctx->PSSetConstantBuffers(0, 1, stamp_cbs);
+        ctx->DrawInstanced(6, impl_->trail_count, 0, 0);
+        ID3D11ShaderResourceView* null_vsrvs[13] = {};
+        ctx->VSSetShaderResources(0, 13, null_vsrvs);
+        ID3D11RenderTargetView* null_rtv[1] = {};
+        ctx->OMSetRenderTargets(1, null_rtv, nullptr);
+    }
 
     D3D11_VIEWPORT vp{
         0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
         0.0f, 1.0f};
     ID3D11RenderTargetView* rtvs[1] = {out_rtv};
-    ID3D11ShaderResourceView* srvs[12] = {
+    ID3D11ShaderResourceView* srvs[14] = {
         scene_color_srv,
         scene_depth_srv,
         fluid.fluid_srv(),
@@ -1593,6 +1804,8 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         nullptr,
         nullptr,
         impl_->drift_srv.Get(),
+        nullptr,
+        trails ? impl_->trail_srv.Get() : nullptr,
     };
     ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
     ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
@@ -1639,20 +1852,51 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
         srvs[10] = impl_->half_srv.Get();
     }
-    ctx->PSSetShaderResources(0, 12, srvs);
+    ctx->PSSetShaderResources(0, 14, srvs);
 
     ctx->Draw(3, 0);
 
     // Unbind SRVs/RTVs to prevent hazard warnings in callers
-    ID3D11ShaderResourceView* null_srvs[12] = {};
+    ID3D11ShaderResourceView* null_srvs[14] = {};
     ID3D11RenderTargetView* null_rtvs[1] = {};
-    ctx->PSSetShaderResources(0, 12, null_srvs);
+    ctx->PSSetShaderResources(0, 14, null_srvs);
     ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
     return true;
 }
 
 bool EnvRendererDX11::ready() const noexcept {
     return impl_->initialized;
+}
+
+bool EnvRendererDX11::set_hero_trails(const TrailSegment* segments, uint32_t count) {
+    impl_->trail_buf.Reset();
+    impl_->trail_buf_srv.Reset();
+    impl_->trail_count = 0;
+    if (!impl_->initialized || !impl_->device || !segments || count == 0)
+        return count == 0;
+    if (count > kMaxTrailSegments)
+        return false;
+    static_assert(sizeof(TrailSegment) == 32, "TrailSeg layout in the shader");
+    D3D11_BUFFER_DESC bd{};
+    bd.ByteWidth = count * UINT(sizeof(TrailSegment));
+    bd.Usage = D3D11_USAGE_IMMUTABLE;
+    bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    bd.StructureByteStride = sizeof(TrailSegment);
+    D3D11_SUBRESOURCE_DATA init{segments, 0, 0};
+    D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
+    sv.Format = DXGI_FORMAT_UNKNOWN;
+    sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    sv.Buffer.NumElements = count;
+    if (FAILED(impl_->device->CreateBuffer(&bd, &init, &impl_->trail_buf)) ||
+        FAILED(impl_->device->CreateShaderResourceView(impl_->trail_buf.Get(), &sv,
+                                                        &impl_->trail_buf_srv))) {
+        impl_->trail_buf.Reset();
+        impl_->trail_buf_srv.Reset();
+        return false;
+    }
+    impl_->trail_count = count;
+    return true;
 }
 
 bool EnvRendererDX11::set_drift_map(uint32_t n, const float* values) {

@@ -4,7 +4,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <limits>
+#include <string>
+#include <vector>
 
 #define CHECK(expr)                                                                                \
     do {                                                                                           \
@@ -143,6 +146,85 @@ void test_coating_growth() {
     CHECK(coating_growth(s, 30.0) == b); // pure in time
 }
 
+trails::Wire trails_wire(std::uint32_t flags, const char* record, const char* show) {
+    trails::Wire w{};
+    std::memcpy(w.magic, trails::kWireMagic, sizeof(w.magic));
+    w.abi = trails::kWireAbi;
+    w.flags = flags;
+    w.recording_id = 7;
+    std::strncpy(w.record_path, record, sizeof(w.record_path) - 1);
+    std::strncpy(w.show_path, show, sizeof(w.show_path) - 1);
+    return w;
+}
+
+void test_trails_wire() {
+    auto c = trails::decode(trails_wire(trails::kFlagRecord | trails::kFlagShow, "a.trk", "b.trk"));
+    CHECK(c && c->record && c->show && c->recording_id == 7 && c->record_path == "a.trk" &&
+          c->show_path == "b.trk");
+    CHECK(trails::decode(trails_wire(0, "", "")).has_value()); // idle
+    CHECK(!trails::decode(trails_wire(trails::kFlagRecord, "", "")));  // record needs a path
+    CHECK(!trails::decode(trails_wire(trails::kFlagShow, "", "")));    // show needs a path
+    CHECK(!trails::decode(trails_wire(8, "a", "b")));                  // unknown flag
+    auto bad = trails_wire(0, "", "");
+    bad.abi = 2;
+    CHECK(!trails::decode(bad));
+    auto open = trails_wire(0, "", "");
+    std::memset(open.show_path, 'x', sizeof(open.show_path)); // not terminated
+    CHECK(!trails::decode(open));
+    CHECK(!trails::decode(trails::Wire{})); // nothing published yet
+}
+
+trails::Sample sample(double t, std::uint32_t slot, float x, float y) {
+    trails::Sample s;
+    s.time = t;
+    s.slot = slot;
+    s.pos[0] = x;
+    s.pos[1] = y;
+    s.pos[2] = 256.0f;
+    return s;
+}
+
+void test_trail_segments() {
+    // Hero 3 walks +x at 300 u/s sampled at 60 fps for 2 s; hero 5 stands, then teleports.
+    std::vector<trails::Sample> samples;
+    for (int i = 0; i <= 120; ++i)
+        samples.push_back(sample(100.0 + i / 60.0, 3, 5.0f * i, 0.0f));
+    samples.push_back(sample(100.0, 5, 0.0f, 0.0f));
+    samples.push_back(sample(100.2, 5, 10.0f, 0.0f));
+    samples.push_back(sample(100.4, 5, 3000.0f, 0.0f)); // too fast: a teleport, no segment
+    samples.push_back(sample(101.5, 5, 3010.0f, 0.0f)); // after a gap: no segment
+    const auto segs = trails::build_segments(samples);
+    std::size_t hero3 = 0;
+    for (const auto& s : segs) {
+        CHECK(s.time_b > s.time_a);
+        if (s.a[1] == 0.0f && s.time_a >= 100.0f && s.a[0] >= 0.0f && s.b[0] <= 600.0f &&
+            s.b[0] - s.a[0] >= 0.0f)
+            ++hero3;
+    }
+    // 2 s at 15 per second, plus hero 5's one short walk.
+    CHECK(segs.size() == 31);
+    CHECK(hero3 == 31);
+    // Thinned steps are about 1/15 s; segments chain end to start per hero.
+    CHECK(near(segs[1].a[0], segs[0].b[0]) && near(segs[1].time_a, segs[0].time_b));
+    // Any order of the same samples gives the same segments.
+    std::vector<trails::Sample> shuffled(samples.rbegin(), samples.rend());
+    const auto again = trails::build_segments(shuffled);
+    CHECK(again.size() == segs.size() &&
+          std::memcmp(again.data(), segs.data(), segs.size() * sizeof(segs[0])) == 0);
+    // Saved and read back exactly.
+    const auto file = std::filesystem::temp_directory_path() / "dolly_trails_test.trk";
+    std::string error;
+    CHECK(trails::write_samples(file.u8string(), samples, &error));
+    std::vector<trails::Sample> read;
+    CHECK(trails::read_samples(file.u8string(), read, &error));
+    CHECK(read.size() == samples.size());
+    for (std::size_t i = 0; i < read.size(); ++i)
+        CHECK(read[i].time == samples[i].time && read[i].slot == samples[i].slot &&
+              std::memcmp(read[i].pos, samples[i].pos, sizeof(read[i].pos)) == 0);
+    std::filesystem::remove(file);
+    CHECK(!trails::read_samples(file.u8string(), read, &error) && read.empty());
+}
+
 } // namespace
 
 int main() {
@@ -152,6 +234,8 @@ int main() {
     test_resolve_maps_presets_and_wind();
     test_coating_growth();
     test_map_name();
+    test_trails_wire();
+    test_trail_segments();
     std::printf("All weather state checks passed.\n");
     return 0;
 }

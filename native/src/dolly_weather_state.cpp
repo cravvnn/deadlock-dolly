@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 
 namespace dolly::weather {
 namespace {
@@ -196,5 +198,162 @@ float coating_growth(const Settings& settings, double seconds_since_start) noexc
         (1.0 - std::exp(-kRate * age / settings.build_up)) / (1.0 - std::exp(-kRate));
     return static_cast<float>(std::min(grown, 1.0));
 }
+
+namespace trails {
+namespace {
+
+bool terminated(const char (&text)[kPathBytes]) noexcept {
+    return std::memchr(text, 0, kPathBytes) != nullptr;
+}
+
+constexpr char kFileMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '1'};
+constexpr std::size_t kSampleBytes = 8 + 4 + 12;
+// More samples than any shot needs (12 heroes at 240 fps for over half an hour).
+constexpr std::uint32_t kMaxSamples = 8u * 1024u * 1024u;
+// Thinned to 15 per second; broken over gaps longer than half a second or speeds above
+// what a hero reaches (dashes included).
+constexpr double kStep = 1.0 / 15.0;
+constexpr double kGap = 0.5;
+constexpr float kMaxSpeed = 1200.0f;
+
+} // namespace
+
+std::optional<Controls> decode(const Wire& wire) {
+    if (std::memcmp(wire.magic, kWireMagic, sizeof(kWireMagic)) != 0 || wire.abi != kWireAbi ||
+        (wire.flags & ~(kFlagRecord | kFlagShow)) != 0 || !terminated(wire.record_path) ||
+        !terminated(wire.show_path))
+        return std::nullopt;
+    Controls c;
+    c.record = (wire.flags & kFlagRecord) != 0;
+    c.show = (wire.flags & kFlagShow) != 0;
+    c.recording_id = wire.recording_id;
+    c.record_path = wire.record_path;
+    c.show_path = wire.show_path;
+    if ((c.record && c.record_path.empty()) || (c.show && c.show_path.empty()))
+        return std::nullopt;
+    return c;
+}
+
+bool write_samples(const std::string& utf8_path, const std::vector<Sample>& samples,
+                   std::string* error) {
+    try {
+        if (samples.size() > kMaxSamples) {
+            if (error)
+                *error = "too many hero path samples";
+            return false;
+        }
+        const auto path = std::filesystem::u8path(utf8_path);
+        auto partial = path;
+        partial += ".partial";
+        {
+            std::ofstream out(partial, std::ios::binary | std::ios::trunc);
+            const std::uint32_t head[2] = {static_cast<std::uint32_t>(samples.size()), 0u};
+            out.write(kFileMagic, sizeof(kFileMagic));
+            out.write(reinterpret_cast<const char*>(head), sizeof(head));
+            for (const Sample& s : samples) {
+                out.write(reinterpret_cast<const char*>(&s.time), 8);
+                out.write(reinterpret_cast<const char*>(&s.slot), 4);
+                out.write(reinterpret_cast<const char*>(s.pos), 12);
+            }
+            out.flush();
+            if (!out) {
+                if (error)
+                    *error = "could not write the hero path file";
+                return false;
+            }
+        }
+        std::filesystem::rename(partial, path);
+        return true;
+    } catch (const std::exception& exc) {
+        if (error)
+            *error = exc.what();
+        return false;
+    }
+}
+
+bool read_samples(const std::string& utf8_path, std::vector<Sample>& samples, std::string* error) {
+    samples.clear();
+    try {
+        std::ifstream in(std::filesystem::u8path(utf8_path), std::ios::binary);
+        char magic[8]{};
+        std::uint32_t head[2]{};
+        in.read(magic, sizeof(magic));
+        in.read(reinterpret_cast<char*>(head), sizeof(head));
+        if (!in || std::memcmp(magic, kFileMagic, sizeof(magic)) != 0 || head[0] > kMaxSamples) {
+            if (error)
+                *error = "not a hero path file";
+            return false;
+        }
+        samples.resize(head[0]);
+        for (Sample& s : samples) {
+            in.read(reinterpret_cast<char*>(&s.time), 8);
+            in.read(reinterpret_cast<char*>(&s.slot), 4);
+            in.read(reinterpret_cast<char*>(s.pos), 12);
+        }
+        if (!in) {
+            samples.clear();
+            if (error)
+                *error = "the hero path file is truncated";
+            return false;
+        }
+        return true;
+    } catch (const std::exception& exc) {
+        samples.clear();
+        if (error)
+            *error = exc.what();
+        return false;
+    }
+}
+
+std::vector<dolly::env::TrailSegment> build_segments(std::vector<Sample> samples) {
+    samples.erase(std::remove_if(samples.begin(), samples.end(),
+                                 [](const Sample& s) {
+                                     return !std::isfinite(s.time) || !std::isfinite(s.pos[0]) ||
+                                            !std::isfinite(s.pos[1]) || !std::isfinite(s.pos[2]);
+                                 }),
+                  samples.end());
+    // A total order, so samples recorded in any order give the same segments.
+    std::sort(samples.begin(), samples.end(), [](const Sample& a, const Sample& b) {
+        if (a.slot != b.slot)
+            return a.slot < b.slot;
+        if (a.time != b.time)
+            return a.time < b.time;
+        return std::memcmp(a.pos, b.pos, sizeof(a.pos)) < 0;
+    });
+    std::vector<dolly::env::TrailSegment> out;
+    const Sample* kept = nullptr;
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const Sample& s = samples[i];
+        if (kept && kept->slot != s.slot)
+            kept = nullptr;
+        if (!kept) {
+            kept = &s;
+            continue;
+        }
+        const double dt = s.time - kept->time;
+        const bool last = i + 1 == samples.size() || samples[i + 1].slot != s.slot;
+        // The first sample in each 1/15 s slot of the replay clock (and the hero's last), so
+        // the thinning is the same whatever frame rate recorded the samples.
+        if (std::floor(s.time / kStep) == std::floor(kept->time / kStep) && !last)
+            continue;
+        const float dx = s.pos[0] - kept->pos[0], dy = s.pos[1] - kept->pos[1];
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        if (dt > 0.0 && dt <= kGap && dist <= kMaxSpeed * static_cast<float>(dt) + 8.0f) {
+            dolly::env::TrailSegment seg{};
+            std::memcpy(seg.a, kept->pos, sizeof(seg.a));
+            std::memcpy(seg.b, s.pos, sizeof(seg.b));
+            seg.time_a = static_cast<float>(kept->time);
+            seg.time_b = static_cast<float>(s.time);
+            if (seg.time_b > seg.time_a)
+                out.push_back(seg);
+        }
+        kept = &s;
+        if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
+            break;
+    }
+    return out;
+}
+
+} // namespace trails
 
 } // namespace dolly::weather

@@ -14,10 +14,13 @@ toward, in degrees, with 0 along world +X and 90 along world +Y.
 """
 from __future__ import annotations
 
+import hashlib
 import math
+import os
 import re
 import struct
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 WEATHER_PRESETS = (
@@ -105,6 +108,19 @@ LENS_WIRE_ABI = 1
 LENS_WIRE_FORMAT = "<8sIIIi6f"
 LENS_WIRE_BYTES = struct.calcsize(LENS_WIRE_FORMAT)
 LENS_WIRE_FLAG_ENABLED = 1
+
+# Hero trails: the editor asks the game to record the heroes' paths while it plays a shot
+# through, and names the recorded file whose trails the weather draws.
+TRAILS_WIRE_OFFSET = 2 * 1024 * 1024 + 59456
+TRAILS_WIRE_MAGIC = b"DLYTRLS1"
+TRAILS_WIRE_ABI = 1
+TRAILS_PATH_BYTES = 240
+TRAILS_WIRE_FORMAT = f"<8sIIII{TRAILS_PATH_BYTES}s{TRAILS_PATH_BYTES}s"
+TRAILS_WIRE_BYTES = struct.calcsize(TRAILS_WIRE_FORMAT)
+TRAILS_FLAG_RECORD = 1
+TRAILS_FLAG_SHOW = 2
+HERO_PATHS_MAGIC = b"DLYTRK01"
+HERO_PATH_SAMPLE_FORMAT = "<dI3f"
 
 
 def _number(value: Any, name: str, low: float, high: float) -> float:
@@ -259,3 +275,52 @@ def legacy_particle_weather(particle_preset: str, intensity: float) -> WeatherSe
 
 def preset_label(preset: str) -> str:
     return WEATHER_LABELS.get(preset, preset)
+
+
+def _trails_path_bytes(path: str, name: str) -> bytes:
+    data = path.encode("utf-8") if path else b""
+    if len(data) >= TRAILS_PATH_BYTES or 0 in data:
+        raise ValueError(f"The hero path {name} is too long for the game to open")
+    return data
+
+
+def pack_trails_wire(sequence: int, *, record_path: str = "", recording_id: int = 0,
+                     show_path: str = "") -> bytes:
+    """The native hero trails block.
+
+    A ``record_path`` makes the game record the heroes' paths while the replay plays, saved
+    to that file when the recording stops (the path is cleared or ``recording_id``
+    changes). A ``show_path`` names the recorded file whose trails the weather draws.
+    """
+    if isinstance(recording_id, bool) or not isinstance(recording_id, int)             or not 0 <= recording_id <= 0xffffffff:
+        raise ValueError("The hero path recording id must be a 32-bit count")
+    record = _trails_path_bytes(record_path, "recording")
+    show = _trails_path_bytes(show_path, "file")
+    flags = (TRAILS_FLAG_RECORD if record else 0) | (TRAILS_FLAG_SHOW if show else 0)
+    return struct.pack(TRAILS_WIRE_FORMAT, TRAILS_WIRE_MAGIC, sequence & 0xffffffff,
+                       TRAILS_WIRE_ABI, flags, recording_id, record, show)
+
+
+def hero_paths_directory() -> Path:
+    """Where recorded hero paths are kept, beside the game's map grids."""
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "DeadlockDolly" / "hero-paths"
+
+
+def hero_paths_file(replay: str, start_tick: int, end_tick: int) -> Path:
+    """The recorded hero paths of one shot: its replay and its tick range."""
+    digest = hashlib.sha256(str(replay).encode("utf-8")).hexdigest()[:16]
+    return hero_paths_directory() / f"{digest}-{int(start_tick)}-{int(end_tick)}.trk"
+
+
+def read_hero_paths(path: Path) -> list[tuple[float, int, float, float, float]]:
+    """The samples of a recorded hero path file: time, hero slot, x, y, z."""
+    data = Path(path).read_bytes()
+    if len(data) < 16 or data[:8] != HERO_PATHS_MAGIC:
+        raise ValueError("Not a hero path file")
+    count = struct.unpack_from("<I", data, 8)[0]
+    size = struct.calcsize(HERO_PATH_SAMPLE_FORMAT)
+    if len(data) != 16 + count * size:
+        raise ValueError("The hero path file is truncated")
+    return [struct.unpack_from(HERO_PATH_SAMPLE_FORMAT, data, 16 + i * size)
+            for i in range(count)]

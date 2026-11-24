@@ -3664,6 +3664,60 @@ class DollyApp:
         view = getattr(self, "scene_view", None)
         if view is not None:
             view.set_enabled(settings.enabled)
+            self._show_trails_status()
+
+    def _hero_paths_target(self):
+        """Where this shot's recorded hero paths live (its replay and tick range), or None."""
+        replay = self.demo_path.get() if hasattr(self, "demo_path") else ""
+        if not replay:
+            return None
+        project = self.project
+        end = project.start_tick + math.ceil(max(project.duration, 0.0) * project.tick_rate)
+        return weather_model.hero_paths_file(replay, project.start_tick, end)
+
+    def _show_trails_status(self):
+        view = getattr(self, "scene_view", None)
+        if view is None:
+            return
+        target = self._hero_paths_target()
+        if target is not None and target.is_file():
+            view.trails_status.set("Hero trails: recorded for this shot.")
+        else:
+            view.trails_status.set(scene_page.TRAILS_NONE)
+
+    def _record_hero_paths(self):
+        """Scene page: the prepare pass for hero trails. Plays the shot through at 4x while
+        the game records where the heroes walk, then shows their trails."""
+        if self.busy or self.playing:
+            self.status_text.set("Stop path playback and finish the current operation first.")
+            return
+        target = self._hero_paths_target()
+        if target is None:
+            self.status_text.set("Open a replay before recording hero paths.")
+            return
+        project = self.project
+        view = getattr(self, "scene_view", None)
+
+        def progress(fraction):
+            self.after(0, lambda: self.busy_text.set(
+                f"Recording hero paths… {int(fraction * 100)}%"))
+
+        def work():
+            self._recording_hero_paths = True
+            try:
+                return self.controller.record_hero_paths(project, target, progress=progress)
+            finally:
+                self._recording_hero_paths = False
+
+        def done(result):
+            self._native_trails_cache = None  # republish what the shot now has
+            self._show_trails_status()
+            if not isinstance(result, Exception):
+                self.status_text.set("Hero paths recorded; trails show in snow, sand and ash.")
+
+        if view is not None:
+            view.trails_status.set("Hero trails: recording at 4x…")
+        self._submit("Recording hero paths", work, done)
 
     def _weather_changed(self):
         """Apply the Scene page's values to the shot and send them to the game."""

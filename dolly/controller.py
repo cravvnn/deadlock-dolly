@@ -3888,6 +3888,68 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             return True
         return False
 
+    def show_hero_trails(self, path):
+        """Draw the trails recorded in ``path`` (None or empty: no trails)."""
+        setter = getattr(self._native_bridge(), "set_hero_trails", None)
+        if not callable(setter):
+            return False
+        setter(show_path=str(path) if path else "")
+        self._hero_trails_shown = str(path) if path else ""
+        return True
+
+    def record_hero_paths(self, project, path, *, speed=4.0, cancelled=None, progress=None):
+        """The prepare pass for hero trails: play the shot through at ``speed`` while the
+        game records the heroes' paths into ``path``. Returns ``path`` once saved.
+
+        Plays the shot like Play does (so the view moves through it), then stops. Trails of
+        the recorded file are shown afterwards.
+        """
+        setter = getattr(self._native_bridge(), "set_hero_trails", None)
+        if not callable(setter):
+            raise RuntimeError("Hero trails need the native camera of a matching Dolly build.")
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.unlink(missing_ok=True)
+        self._hero_trails_recording = (getattr(self, "_hero_trails_recording", 0) + 1) & 0xffffffff
+        recording = self._hero_trails_recording
+        shown = getattr(self, "_hero_trails_shown", "")
+        length = max(float(project.duration), 0.0)
+        setter(record_path=str(target), recording_id=recording, show_path=shown)
+        try:
+            self.play(project, speed=speed)
+            started = time.monotonic()
+            deadline = started + length / max(speed, 0.25) + 30.0
+            time.sleep(0.5)
+            while self.status().get("playing") and time.monotonic() < deadline:
+                if cancelled is not None and cancelled():
+                    raise RuntimeError("Recording hero paths was cancelled.")
+                if progress is not None and length > 0:
+                    progress(min((time.monotonic() - started) * speed / length, 1.0))
+                time.sleep(0.2)
+        except BaseException:
+            # An unfinished recording is never kept: the game saves it when told to stop,
+            # so wait for that and remove it.
+            try:
+                self.stop()
+            finally:
+                setter(record_path="", recording_id=recording, show_path=shown)
+                waited = time.monotonic() + 10.0
+                while not target.is_file() and time.monotonic() < waited:
+                    time.sleep(0.1)
+                target.unlink(missing_ok=True)
+            raise
+        try:
+            self.stop()
+        finally:
+            setter(record_path="", recording_id=recording, show_path=shown)
+        waited = time.monotonic() + 10.0
+        while not target.is_file() and time.monotonic() < waited:
+            time.sleep(0.1)
+        if not target.is_file():
+            raise RuntimeError("The game did not save the recorded hero paths.")
+        self.show_hero_trails(target)
+        return target
+
     def set_native_confetti(self, enabled, spawn_height, despawn_on_ground):
         """Backward-compatible path used by the in-game particle card."""
         bridge = self._native_bridge()

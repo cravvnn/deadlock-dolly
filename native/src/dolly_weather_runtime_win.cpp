@@ -36,6 +36,18 @@ namespace {
 
 // ---- editor block (worker -> Present) ----
 std::shared_ptr<const weather::Wire> gBlock;
+// ---- hero trails (bridge worker + view thread -> Present) ----
+std::shared_ptr<const weather::trails::Wire> gTrailsBlock;
+// A recording of the heroes' paths, taken while the editor plays the shot through.
+struct TrailRecording {
+    bool active = false;
+    std::uint32_t id = 0;
+    std::string path;
+    std::vector<weather::trails::Sample> samples;
+};
+std::mutex gTrailsMutex;
+TrailRecording gTrailRecording;
+std::atomic<bool> gTrailsRecording{false};
 
 // ---- replay clock (view thread -> Present) ----
 std::atomic<double> gReplayTime{-1.0};
@@ -330,6 +342,7 @@ struct Gpu {
     ComPtr<ID3D11Texture2D> depth;
     ComPtr<ID3D11ShaderResourceView> depth_srv;
     D3D11_TEXTURE2D_DESC depth_desc{};
+    std::string trails_path; // the hero path file whose trails are uploaded (empty: none)
     std::string grid_map;                              // map whose grid is uploaded to the solver
     std::shared_ptr<const map_grid::MapGrid> grid_cpu; // the same grid, for CPU queries
     // The drift potential uploaded to the coating, and what it was baked from.
@@ -614,9 +627,53 @@ bool copy_inputs(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D
 
 } // namespace
 
+// Starts, continues or saves the hero path recording as the editor's trails block asks.
+void update_trail_recording() noexcept {
+    try {
+        const auto block = std::atomic_load(&gTrailsBlock);
+        const auto controls = block ? weather::trails::decode(*block) : std::nullopt;
+        TrailRecording finished;
+        {
+            std::lock_guard<std::mutex> lock(gTrailsMutex);
+            TrailRecording& rec = gTrailRecording;
+            const bool want = controls && controls->record;
+            if (rec.active && (!want || controls->recording_id != rec.id ||
+                               controls->record_path != rec.path)) {
+                finished = std::move(rec);
+                rec = TrailRecording{};
+            }
+            if (want && !rec.active) {
+                rec.active = true;
+                rec.id = controls->recording_id;
+                rec.path = controls->record_path;
+                rec.samples.clear();
+            }
+            gTrailsRecording.store(rec.active, std::memory_order_relaxed);
+        }
+        if (finished.active) {
+            std::string error;
+            char text[160];
+            if (weather::trails::write_samples(finished.path, finished.samples, &error))
+                std::snprintf(text, sizeof(text), "weather: saved %zu hero path samples",
+                              finished.samples.size());
+            else
+                std::snprintf(text, sizeof(text), "weather: hero paths not saved (%s)",
+                              error.c_str());
+            set_status(text);
+        }
+    } catch (...) {
+        set_status("weather: hero path recording failed");
+    }
+}
+
 void poll_editor_block(const unsigned char* memory) noexcept {
     if (!memory)
         return;
+    accept_seqlocked(memory + weather::trails::kWireOffset, gTrailsBlock,
+                     [](const weather::trails::Wire& w) {
+                         return weather::trails::decode(w).has_value();
+                     });
+    update_trail_recording();
     weather::Wire wire{};
     if (accept_seqlocked(
             memory + weather::kWireOffset, gBlock,
@@ -629,7 +686,27 @@ void poll_editor_block(const unsigned char* memory) noexcept {
 }
 
 void publish_clock(double replay_time, double tick_interval, bool playing, bool seeking,
-                   const float (*heroes)[3], uint32_t hero_count) noexcept {
+                   const float (*heroes)[3], uint32_t hero_count, const uint32_t* slots) noexcept {
+    // Recording hero paths: every hero seen while the replay plays (never while seeking).
+    if (gTrailsRecording.load(std::memory_order_relaxed) && playing && !seeking && heroes &&
+        slots && std::isfinite(replay_time)) {
+        try {
+            std::lock_guard<std::mutex> lock(gTrailsMutex);
+            if (gTrailRecording.active) {
+                for (uint32_t i = 0; i < hero_count; ++i) {
+                    const float* o = heroes[i];
+                    if (!std::isfinite(o[0]) || !std::isfinite(o[1]) || !std::isfinite(o[2]))
+                        continue;
+                    weather::trails::Sample sample;
+                    sample.time = replay_time;
+                    sample.slot = slots[i];
+                    std::memcpy(sample.pos, o, sizeof(sample.pos));
+                    gTrailRecording.samples.push_back(sample);
+                }
+            }
+        } catch (...) {
+        }
+    }
     if (std::isfinite(replay_time)) {
         Heroes next;
         next.time = replay_time;
@@ -685,6 +762,8 @@ bool panel_settings(weather::Settings& out) noexcept {
 }
 
 bool wants_heroes() noexcept {
+    if (gTrailsRecording.load(std::memory_order_relaxed))
+        return true;
     const auto block = std::atomic_load(&gBlock);
     if (!block)
         return false;
@@ -700,6 +779,37 @@ bool wants_scene_depth() noexcept {
     const auto settings = weather::decode(*block);
     return settings && settings->enabled();
 }
+
+namespace {
+// Uploads the trails of the hero path file the editor names (once per file), or none.
+void ensure_trails(Gpu& gpu) {
+    const auto block = std::atomic_load(&gTrailsBlock);
+    const auto controls = block ? weather::trails::decode(*block) : std::nullopt;
+    const std::string want = controls && controls->show ? controls->show_path : std::string();
+    if (want == gpu.trails_path)
+        return;
+    gpu.trails_path = want;
+    if (want.empty()) {
+        gpu.env.set_hero_trails(nullptr, 0);
+        return;
+    }
+    std::vector<weather::trails::Sample> samples;
+    std::string error;
+    char text[160];
+    if (!weather::trails::read_samples(want, samples, &error)) {
+        gpu.env.set_hero_trails(nullptr, 0);
+        std::snprintf(text, sizeof(text), "weather: no hero trails (%s)", error.c_str());
+        set_status(text);
+        return;
+    }
+    const auto segments = weather::trails::build_segments(std::move(samples));
+    const bool ok = gpu.env.set_hero_trails(segments.data(),
+                                            static_cast<uint32_t>(segments.size()));
+    std::snprintf(text, sizeof(text), "weather: hero trails %s (%zu segments)",
+                  ok ? "loaded" : "failed", segments.size());
+    set_status(text);
+}
+} // namespace
 
 void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chain,
             ID3D11RenderTargetView* target, const depth::SceneFrame* frame) noexcept {
@@ -822,6 +932,7 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
         }
         if (resolved.render.enable_coating)
             ensure_drift(gpu, *settings);
+        ensure_trails(gpu);
         static uint32_t logged_heroes = ~0u;
         if (body_count != logged_heroes) {
             logged_heroes = body_count;

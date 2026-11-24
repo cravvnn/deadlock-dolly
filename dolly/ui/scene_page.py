@@ -43,6 +43,9 @@ HERO_INFO = "Heroes part the wind, haze and flakes around them."
 EFFECTS_INFO = "Weather is always in Color and World, never in Players or Depth."
 LENS_INFO = ("Water drops land on the lens while the shot rains, run down and leave trails. "
              "Under a roof no new drops land. Drawn on Color and World only.")
+TRAILS_INFO = ("Heroes leave tracks in snow, sand and ash. Recording plays the shot through at 4x "
+               "once to learn where they walk; the paths are saved with this shot's range.")
+TRAILS_NONE = "Hero trails: not recorded for this shot."
 OFF_NOTICE = "Pick a preset to turn on wind, flakes and haze."
 ON_NOTICE = "Also in game: F8 → Scene. Both edit the same shot."
 
@@ -74,6 +77,7 @@ class SceneState:
 @dataclass(frozen=True)
 class SceneActions:
     weather_changed: Callable[..., object]
+    record_hero_paths: Callable[..., object] = lambda: None
 
 
 class ScenePage:
@@ -141,6 +145,12 @@ class ScenePage:
                             command=commands.weather_changed, style="Kit.TCheckbutton"))
         row.gap(5)
         row.info(EFFECTS_INFO)
+        row = ground.row(top=10)
+        self.trails_button = row.button("Record hero paths", commands.record_hero_paths)
+        row.gap(5)
+        row.info(TRAILS_INFO)
+        self.trails_status = tk.StringVar(page, TRAILS_NONE)
+        ground.row(top=5, height=18).label(textvariable=self.trails_status, tone="dim")
 
         lens = self.lens_card = main.add_card("Lens", info=LENS_INFO)
         row = lens.row(height=18)
@@ -182,4 +192,5 @@ class ScenePage:
             slider.configure(state="normal" if on else "disabled")
         for box in (self.hero_checkbox, self.effects_checkbox, self.lens_checkbox):
             box.state(["!disabled"] if enabled else ["disabled"])
+        self.trails_button.configure(state="normal" if enabled else "disabled")
         self.notice.set(ON_NOTICE if enabled else OFF_NOTICE)

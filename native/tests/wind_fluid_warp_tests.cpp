@@ -1191,6 +1191,85 @@ int main(int argc, char** argv) {
                     hero_cleaned);
         CHECK(hero_cleaned > 0 &&
               changed_pixels(uncoated, masked) < changed_pixels(uncoated, drifted));
+        res.render.hero_count = 0;
+
+        // Hero trails: a path walked across the scene's hero spot over 40 s of shot time.
+        // Only the part reached by a frame's time shows; the same time draws the same frame;
+        // before the walk, or with trails off, the cover is untouched.
+        {
+            const float now = res.render.sim_time;
+            const float fog = res.render.density_scale;
+            res.render.density_scale = 0.0f; // no haze: isolate the ground
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto clear_cover = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            std::vector<dolly::env::TrailSegment> path;
+            // Open street in the foreground, walked across the view.
+            const Vec3 walk = find_open_street_point(map_grid, lane_anchor[0] - 110.0f,
+                                                     lane_anchor[1] - 260.0f);
+            for (int k = 0; k < 8; ++k) {
+                dolly::env::TrailSegment s{};
+                s.a[0] = walk[0] + 37.5f * (k - 4);
+                s.a[1] = walk[1] - 14.0f * (k - 4);
+                s.a[2] = walk[2];
+                s.time_a = now - 20.0f + 5.0f * k;
+                s.b[0] = s.a[0] + 37.5f;
+                s.b[1] = s.a[1] - 14.0f;
+                s.b[2] = walk[2];
+                s.time_b = s.time_a + 5.0f;
+                path.push_back(s);
+            }
+            CHECK(renderer.set_hero_trails(path.data(), static_cast<uint32_t>(path.size())));
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto trod = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == trod);
+            const size_t trail_px = changed_pixels(clear_cover, trod);
+            size_t darker = 0;
+            for (size_t i = 0; i < trod.size(); i += 4)
+                darker += (int(trod[i]) + trod[i + 1] + trod[i + 2]) + 6 <
+                          (int(clear_cover[i]) + clear_cover[i + 1] + clear_cover[i + 2]);
+            // Later, the whole walk is down.
+            res.render.sim_time = now + 25.0f;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto walked = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            res.render.hero_trails = false;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto later_bare = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            res.render.hero_trails = true;
+            const size_t walked_px = changed_pixels(later_bare, walked);
+            // Before the walk began, nothing.
+            res.render.sim_time = now - 30.0f;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto before = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            res.render.hero_trails = false;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto before_bare = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            res.render.hero_trails = true;
+            res.render.sim_time = now;
+            std::printf("WARP hero trails: %zu pixels trodden (%zu darker) halfway, %zu once "
+                        "walked\n",
+                        trail_px, darker, walked_px);
+            if (!out_dir.empty()) {
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_trails_half.png", vw, vh,
+                                                       trod.data(), &err));
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_trails_walked.png", vw,
+                                                       vh, walked.data(), &err));
+            }
+            CHECK(trail_px > 0 && darker > trail_px / 2 && walked_px > trail_px);
+            CHECK(before == before_bare);
+            CHECK(renderer.set_hero_trails(nullptr, 0));
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == clear_cover);
+            res.render.density_scale = fog;
+        }
         CHECK(!renderer.set_drift_map(0, nullptr)); // even cover again for the later checks
     }
 
