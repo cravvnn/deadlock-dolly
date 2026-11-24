@@ -381,7 +381,9 @@ float SampleFloorBelowSmooth(float3 p) {
 // hold one. A speck spreads over at least a pixel and dims to keep its energy, so far
 // away specks fade into the average instead of flickering as squares.
 float RoundSpeck(float3 p, float cell, float density, float footprint, float seed) {
-    float3 c = float3(floor(p.xy / cell), floor(p.z / 64.0));
+    // Cells by map position only: the street lies right on z = 256, so height in the cell
+    // flipped specks on and off along every height contour.
+    float3 c = float3(floor(p.xy / cell), 0.0);
     if (Hash3(c + seed) > density) return 0.0;
     float2 center = (c.xy + 0.2 + 0.6 * float2(Hash3(c + seed + 1.7), Hash3(c + seed + 3.1))) * cell;
     float r = max(0.3, footprint * 0.7);
@@ -389,12 +391,25 @@ float RoundSpeck(float3 p, float cell, float density, float footprint, float see
     return (1.0 - smoothstep(r * 0.4, r, d)) * saturate(0.09 / (r * r));
 }
 
+// How boxed in by walls a point is: 0 in the open; at a wall's foot about 3/8 beside a
+// straight wall and 5/8 in an inside corner (28 u out: about 1/8 and 3/8), where drifts
+// pile highest. Eight map taps 36 u around the point.
+float Enclosure(float2 xy) {
+    float s = 0.0;
+    [unroll] for (int k = 0; k < 8; ++k) {
+        float a = k * 0.7853982;
+        float2 uv = MapUV(xy + float2(cos(a), sin(a)) * 36.0);
+        if (OnMap(uv)) s += smoothstep(0.45, 0.75, airMap.SampleLevel(linearClamp, uv, 0));
+    }
+    return s * 0.125;
+}
+
 // How high a drift banks against a wall at full cover, in world units.
 float BankHeight(int preset) {
-    if (preset == 6) return 18.0; // snow
-    if (preset == 1) return 12.0; // sandstorm sand
-    if (preset == 2) return 7.0;  // dust
-    if (preset == 4) return 6.0;  // ash
+    if (preset == 6) return 24.0; // snow
+    if (preset == 1) return 15.0; // sandstorm sand
+    if (preset == 2) return 9.0;  // dust
+    if (preset == 4) return 8.0;  // ash
     return 0.0;
 }
 
@@ -543,7 +558,7 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
 // it repeats exactly at every replay time; every visible edge comes from this pixel's
 // depth and world-fixed noise. Detail finer than a pixel fades instead of crawling.
 float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
-                           float cavity, float hitDist, float lumaAround) {
+                           float cavity, float hitDist, float3 colorAround) {
     // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
     float coat = styleB.y * coatingInfo.x;
     if (sunDir.w < 0.5 || coat <= 0.001) return baseColor;
@@ -563,6 +578,13 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float upMask = smoothstep(0.28, 0.78, surfNormal.z);
 
     float amount = coat * lerp(1.0, DriftAt(uv), coatingInfo.y);
+    // Cover runs thicker along wall feet and thickest in inside corners.
+    float bankMax = BankHeight(preset);
+    if (bankMax > 0.0) {
+        float enclosed = Enclosure(surfPos.xy);
+        amount *= 1.0 + 0.35 * smoothstep(0.15, 0.4, enclosed) +
+                  0.6 * smoothstep(0.38, 0.62, enclosed);
+    }
 
     // Top cover. Nothing here reads depth differences (creases): the game's depth bands
     // with distance, and anything built on it drew rings around the camera.
@@ -584,7 +606,6 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // is blended between cells and the bank's top line varies only along the wall, so the
     // bank stays one smooth line.
     float wall = 0.0;
-    float bankMax = BankHeight(preset);
     float steep = 1.0 - smoothstep(0.2, 0.5, surfNormal.z);
     if (bankMax > 0.0 && steep > 0.001) {
         float2 outXY = surfPos.xy + normalize(surfNormal.xy + 1e-5) * 28.0;
@@ -593,7 +614,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         float floorZ = SampleFloorBelowSmooth(float3(outXY, surfPos.z));
         float above = surfPos.z - floorZ;
         float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
-        float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.3);
+        float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.3) *
+                     (1.0 + 1.3 * smoothstep(0.2, 0.4, Enclosure(outXY)));
         float bankLine = bank * (0.75 + 0.5 * ValueNoise3(float3(surfPos.xy * 0.018, 5.0)));
         // Full at the foot, thinning over the bank's upper part to a soft top.
         float edge = 1.5 + footprint * 1.5;
@@ -617,9 +639,9 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // light's colour carries over too.
     // lumaAround averages a few pixels, so the ground's own fine texture and painted
     // markings do not print through the cover; broad shadows and lamps still do.
-    float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
+    float lumaAround = dot(colorAround, float3(0.2126, 0.7152, 0.0722));
     float light = lerp(0.3, 1.08, saturate(pow(saturate(lumaAround / 0.32), 0.65)));
-    float3 chroma = clamp(baseColor / max(luma, 1e-3), 0.0, 2.0);
+    float3 chroma = clamp(colorAround / max(lumaAround, 1e-3), 0.0, 2.0);
     float3 lightTint = lerp(float3(1.0, 1.0, 1.0), chroma, 0.3);
 
     float2 wdir = coatingInfo.z > 1.0 ? windTime.xy / coatingInfo.z : float2(1.0, 0.0);
@@ -632,7 +654,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         shadeMul = 0.95 + 0.1 * ValueNoise3(float3(surfPos.xy * 0.02, 1.0));
         lightTint *= lerp(float3(0.86, 0.92, 1.06), float3(1.0, 1.0, 1.0), saturate(light));
         float glint = RoundSpeck(surfPos, 4.0, 0.06, footprint, 17.0);
-        float facing = Hash3(floor(surfPos / 4.0) + floor(viewDir * 5.0) * 17.0);
+        float facing = Hash3(float3(floor(surfPos.xy / 4.0), 0.0) + floor(viewDir * 5.0) * 17.0);
         add += sunColor.rgb * glint * step(0.5, facing) * upMask * 0.7 * light;
     } else if (preset == 1 || preset == 2) {
         // Sand: low ripples across the wind, lit on their sun-facing side, uneven in
@@ -655,7 +677,11 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         float speed = length(fluidState.SampleLevel(linearClamp, uv, 0).xy);
         float gust = saturate((speed - 120.0) / 380.0);
         if (gust > 0.01) {
-            float3 q = float3((dot(surfPos.xy, wdir) - windTime.z * speed * 0.9) * 0.006,
+            // The streaks travel with the steady wind; the local speed only sets their
+            // strength. Advecting by the local speed (time x speed is ~1e5 u minutes into a
+            // replay) squeezed the noise into hair-thin lines along the speed contours.
+            float travel = windTime.z * coatingInfo.z * 0.9 * 0.006; // ~4e3 at 30 min: fine
+            float3 q = float3(dot(surfPos.xy, wdir) * 0.006 - travel,
                               dot(surfPos.xy, perp) * 0.02, windTime.z * 0.4);
             float streak = smoothstep(0.5, 0.8, Fbm3(q));
             add += coatAlbedo * light * streak * gust * 0.22 * upMask;
@@ -835,7 +861,10 @@ float4 MarchRay(float2 px, float3 rayDir, float hitDist) {
     float maxDist = windTime.w;
     // Volumetric raymarch front-to-back
     int steps = clamp(int(styleB.z + 0.5), 16, 128);
-    float jitter = InterleavedGradient(px);
+    // Per-pixel white noise breaks the step bands into fine grain. Interleaved-gradient
+    // noise lined up with the per-cell step schedule and drew contour lines over bright
+    // ground cover.
+    float jitter = Hash3(float3(px, 91.7));
     float3 sun = normalize(sunDir.xyz);
     float phase = 0.45 + 0.55 * saturate(PhaseHG(dot(rayDir, sun), 0.52) * 3.2);
     float reach = max(styleA.z, 32.0) * kVolumeTop;
@@ -1014,15 +1043,17 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
                                              abs(surfPos.z - SampleFloorBelow(surfPos, hasFloor)));
             surfNormal = normalize(lerp(surfNormal, float3(0.0, 0.0, 1.0),
                                         onFloor * smoothstep(0.5, 0.8, surfNormal.z)));
-            float3 around = baseColor;
-            int2 lim = int2(screenInfo.xy) - 1;
-            around += sceneColor.Load(int3(clamp(ipx + int2(-4, -4), int2(0, 0), lim), 0)).rgb;
-            around += sceneColor.Load(int3(clamp(ipx + int2(4, -4), int2(0, 0), lim), 0)).rgb;
-            around += sceneColor.Load(int3(clamp(ipx + int2(-4, 4), int2(0, 0), lim), 0)).rgb;
-            around += sceneColor.Load(int3(clamp(ipx + int2(4, 4), int2(0, 0), lim), 0)).rgb;
-            float lumaAround = dot(around * 0.2, float3(0.2126, 0.7152, 0.0722));
+            // The light on the ground, read from the frame over a 16 px neighbourhood: wide
+            // enough that paving, grout and painted lines do not print through the cover.
+            float3 around = float3(0.0, 0.0, 0.0);
+            [unroll] for (int k = 0; k < 12; ++k) {
+                float a = k * 0.5235988 + (k & 1) * 0.26;
+                float r = (k & 1) ? 16.0 : 8.0;
+                float2 uv = (px + 0.5 + float2(cos(a), sin(a)) * r) * screenInfo.zw;
+                around += sceneColor.SampleLevel(linearClamp, uv, 0).rgb;
+            }
             baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir, cavity,
-                                            hitDist, lumaAround);
+                                            hitDist, around / 12.0);
         }
     }
 
