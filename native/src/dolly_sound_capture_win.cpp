@@ -500,7 +500,6 @@ bool sound_capture_available() noexcept { return installed.load(); }
 // authored replay window. No TGA frames are produced because the recorded
 // command asks for the `wav` format only.
 namespace {
-constexpr std::uintptr_t kMovieGetFramerateRva = 0xfc7c0;
 constexpr std::uintptr_t kMovieFramerateOffset = 0xf4;
 
 using ConVarFloatFn = float(__fastcall*)(void*);
@@ -520,7 +519,10 @@ bool read_movie_audio(std::uintptr_t base, MovieAudioSample& sample) noexcept {
                                base + movie_audio_layout(false, true).host_cvar;
         const bool build6864 = reinterpret_cast<std::uintptr_t>(host_framerate_cvar) ==
                                base + movie_audio_layout(false, false, true).host_cvar;
-        const auto p = reinterpret_cast<const char*>(base + movie_audio_layout(season2, build6861, build6864).recorder);
+        const bool build6866 = reinterpret_cast<std::uintptr_t>(host_framerate_cvar) ==
+                               base + movie_audio_layout(false, false, false, true).host_cvar;
+        const auto p = reinterpret_cast<const char*>(
+            base + movie_audio_layout(season2, build6861, build6864, build6866).recorder);
         if ((*reinterpret_cast<const unsigned short*>(p + 0xec) & 2) == 0 ||
             *reinterpret_cast<const unsigned*>(p + 0x108) <= 1)
             return false;
@@ -573,7 +575,7 @@ float __fastcall movie_get_framerate_hook(void* self) noexcept {
 } // namespace
 
 bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm_pair, bool season2, bool build6861,
-                         bool build6864) noexcept {
+                         bool build6864, bool build6866) noexcept {
     // A second call only adds the sample map: soundsystem.dll can load after
     // the accessor was redirected, and the map needs the reviewed pair.
     const bool installed_before = movie_installed.load(std::memory_order_acquire);
@@ -584,14 +586,15 @@ bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm
     if (!engine_module)
         return false;
     const auto base = reinterpret_cast<std::uintptr_t>(engine_module);
-    const auto layout = movie_audio_layout(season2, build6861, build6864);
+    const auto layout = movie_audio_layout(season2, build6861, build6864, build6866);
+    const auto framerate_rva = movie_framerate_getter_rva(build6866);
     const auto slot = reinterpret_cast<void**>(base + layout.table + 0x38);
-    const auto target = reinterpret_cast<void*>(base + kMovieGetFramerateRva);
+    const auto target = reinterpret_cast<void*>(base + framerate_rva);
     // Exact reviewed accessor: movss xmm0, [rcx+0xf4]; ret.
     constexpr unsigned char expected[] = {0xF3, 0x0F, 0x10, 0x81, 0xF4, 0x00, 0x00, 0x00, 0xC3};
     if (!installed_before) {
         if (*slot != target ||
-            std::memcmp(reinterpret_cast<const void*>(base + kMovieGetFramerateRva), expected,
+            std::memcmp(reinterpret_cast<const void*>(base + framerate_rva), expected,
                         sizeof(expected))) {
             return false;
         }

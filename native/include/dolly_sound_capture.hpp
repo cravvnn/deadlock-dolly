@@ -22,15 +22,20 @@ bool sound_capture_available() noexcept;
 // independently; their relative order can change between builds.
 struct MovieAudioLayout { std::uintptr_t table, host_cvar, recorder, audio_table, float_accessor; };
 inline constexpr MovieAudioLayout movie_audio_layout(bool season2, bool build6861 = false,
-                                                     bool build6864 = false) noexcept {
+                                                     bool build6864 = false, bool build6866 = false) noexcept {
+    if (build6866) return {0x4f7978, 0x8b4f48, 0x5ba740, 0x4f7a08, 0x3bb30};
     if (build6864) return {0x4f68f8, 0x8b3f58, 0x5b9740, 0x4f6988, 0x3bb30};
     if (build6861) return {0x4f6950, 0x8b3f18, 0x5b9740, 0x4f6900, 0x3bb30};
     return season2 ? MovieAudioLayout{0x4f6950, 0x8b4f18, 0x5ba740, 0x4f6900, 0x3bb60}
                    : MovieAudioLayout{0x4f6890, 0x8b4dd8, 0x5ba5c0, 0x4f6920, 0x3bb60};
 }
+// The recorder's reviewed framerate accessor (movss xmm0,[rcx+0xf4]; ret) moved in build 6866.
+inline constexpr std::uintptr_t movie_framerate_getter_rva(bool build6866 = false) noexcept {
+    return build6866 ? 0xfcab0 : 0xfc7c0;
+}
 bool movie_audio_install(void* engine_module, void* sound_module = nullptr,
                          bool exact_pcm_pair = false, bool season2 = false, bool build6861 = false,
-                         bool build6864 = false) noexcept;
+                         bool build6864 = false, bool build6866 = false) noexcept;
 bool movie_audio_available() noexcept;
 // The movie audio-stream clock is output-frame/fps, independent of replay
 // speed. PCM writes are chunked; these sample windows intentionally are not.
