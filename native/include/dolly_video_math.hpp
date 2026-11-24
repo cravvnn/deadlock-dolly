@@ -70,6 +70,27 @@ struct WriteStallWatch {
         return now - since >= kWriteStallLimitMs;
     }
 };
+// Fixed-step export holds the render thread until the encoder frees a queue
+// slot. A slow disk or a busy software encoder can take seconds for one frame
+// and still finish every frame, so the wait ends only when the writer makes no
+// progress (no frame consumed, no pipe chunk written) for the stall limit.
+// Stop, cancel and failure end the wait without this watch. The limit stays
+// below the desktop's 15 s fixed-step rendered-view guard so a wedged writer is
+// reported as the recording failure rather than as a lost camera.
+constexpr std::uint64_t kQueueRoomStallLimitMs = 10 * 1000;
+struct QueueRoomWatch {
+    std::uint64_t since = 0, progress = 0;
+    QueueRoomWatch(std::uint64_t now, std::uint64_t counters) noexcept
+        : since(now), progress(counters) {}
+    bool stalled(std::uint64_t now, std::uint64_t counters) noexcept {
+        if (counters != progress) {
+            progress = counters;
+            since = now;
+            return false;
+        }
+        return now - since >= kQueueRoomStallLimitMs;
+    }
+};
 // Encoder children another thread may terminate, so a write blocked on an
 // FFmpeg that stopped reading returns. The owner holds one lock around every
 // call. A handle leaves the registry before its owner closes it, so stop()

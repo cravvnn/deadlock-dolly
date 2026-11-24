@@ -24,6 +24,7 @@
 #include <vector>
 #include "dolly_video.hpp"
 #include "dolly_video_math.hpp"
+#include "dolly_capture_estimate.hpp"
 #include "dolly_encoder_error.hpp"
 #include "dolly_capture_timing.hpp"
 #include "dolly_depth_scene.hpp"
@@ -274,6 +275,23 @@ std::uint64_t now_qpc() noexcept {
 void terminate_children(Session& s) noexcept {
     std::lock_guard<std::mutex> lock(s.child_mutex);
     s.children.stop([](HANDLE process) { TerminateProcess(process, 1); });
+}
+// Measured capture speed of this session's completed fixed-step takes, one per
+// take kind; read by the Export drawer's estimate from the overlay thread.
+std::atomic<double> learned_rates[estimate::kRateKinds]{};
+void remember_capture_rate(const Session& s) noexcept {
+    // Only the export's color take: layer passes (world, players, effects)
+    // cost differently per frame and would mislead the next estimate.
+    if (!s.fixed_step || s.camera_only ||
+        (s.plate != Plate::Unspecified && s.plate != Plate::Color))
+        return;
+    const double rate = estimate::capture_rate(
+        s.written.load(std::memory_order_acquire),
+        estimate::elapsed(s.first_qpc.load(std::memory_order_acquire),
+                          s.stop_qpc.load(std::memory_order_acquire), s.frequency));
+    if (rate > 0)
+        learned_rates[estimate::rate_kind(s.depth_enabled, s.depth_exr)].store(
+            rate, std::memory_order_relaxed);
 }
 void request_stop(Session& s, bool cancel) noexcept {
     if (cancel) {
@@ -1371,6 +1389,8 @@ void encode_ffmpeg(std::shared_ptr<Session> s) noexcept {
             write_shot_sidecar(*s);
         write_camera_sidecar(*s);
     }
+    if (created && finalized && !cancelled && SUCCEEDED(s->error.load()))
+        remember_capture_rate(*s);
     s->state.store(FAILED(s->error.load())  ? State::failed
                    : (cancelled || !created) ? State::cancelled
                                              : State::completed,
@@ -1579,6 +1599,8 @@ void encode(std::shared_ptr<Session> s) noexcept {
             write_shot_sidecar(*s);
         write_camera_sidecar(*s);
     }
+    if (created && finalized && !cancelled && SUCCEEDED(s->error.load()))
+        remember_capture_rate(*s);
     s->state.store(FAILED(s->error.load())  ? State::failed
                    : (cancelled || !created) ? State::cancelled
                                              : State::completed,
@@ -1863,6 +1885,9 @@ bool wants_shot_only() noexcept {
     }
     return cached.shot_only.load(std::memory_order_acquire);
 }
+double learned_capture_rate(bool depth, bool depth_exr) noexcept {
+    return learned_rates[estimate::rate_kind(depth, depth_exr)].load(std::memory_order_relaxed);
+}
 bool wants_fixed_step() noexcept {
     std::unique_lock<std::mutex> lock(control_mutex, std::try_to_lock);
     if (lock.owns_lock()) {
@@ -2080,11 +2105,16 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
         if (write - s.consumed.load(std::memory_order_acquire) >= kSlots) {
             if (!fixed_backpressure)
                 break;
-            // Hold the simulation until the encoder frees queue space. The wait
-            // is bounded (under the desktop "not responding" threshold) so a
-            // wedged encoder, stop, or teardown can never pin the render thread;
-            // after the budget we degrade to the real-time drop path.
-            const auto deadline = GetTickCount64() + 3000;
+            // Hold the simulation until the encoder frees queue space. Stop,
+            // cancel (which ends the FFmpeg children), failure and teardown end
+            // the wait at once. Otherwise a slow but progressing writer keeps
+            // the take alive; only a writer that makes no progress for
+            // kQueueRoomStallLimitMs fails it (QueueRoomWatch).
+            const auto writer_progress = [&s] {
+                return s.consumed.load(std::memory_order_acquire) +
+                       s.pipe_writes.load(std::memory_order_acquire);
+            };
+            QueueRoomWatch watch(GetTickCount64(), writer_progress());
             bool healthy = true;
             while (s.produced.load(std::memory_order_relaxed) -
                        s.consumed.load(std::memory_order_acquire) >=
@@ -2092,7 +2122,7 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                 if (s.stopping.load(std::memory_order_acquire) ||
                     !s.ready.load(std::memory_order_acquire) ||
                     FAILED(s.error.load(std::memory_order_relaxed)) ||
-                    GetTickCount64() >= deadline) {
+                    watch.stalled(GetTickCount64(), writer_progress())) {
                     healthy = false;
                     break;
                 }
@@ -2106,8 +2136,9 @@ void capture(IDXGISwapChain* swapchain, ID3D11Device* device, ID3D11DeviceContex
                     s.ready.load(std::memory_order_acquire) &&
                     !FAILED(s.error.load(std::memory_order_relaxed))) {
                     fail(s, HRESULT_FROM_WIN32(ERROR_TIMEOUT),
-                         L"Frame-accurate export writer exceeded the capture wait budget. "
-                         L"Recording stopped without skipping the frame.");
+                         L"The video writer stopped making progress for 10 seconds. "
+                         L"Recording stopped without skipping a frame. Check that the "
+                         L"export drive has space and is not busy.");
                 }
                 return;
             }

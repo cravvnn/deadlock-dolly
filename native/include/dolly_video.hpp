@@ -122,6 +122,10 @@ bool wants_shot_only() noexcept;
 // Whether the active recording is a fixed-step export (one frame per rendered Present).
 // The weather pass renders at its highest quality for those takes.
 bool wants_fixed_step() noexcept;
+// Frames per wall-clock second of this game session's last completed
+// fixed-step take of the same kind (see dolly_capture_estimate.hpp); 0 when no
+// such take has finished. The Export drawer's estimate uses it for the time.
+double learned_capture_rate(bool depth, bool depth_exr) noexcept;
 // The plate of the active recording; Unspecified when idle or from an older editor.
 Plate current_plate() noexcept;
 

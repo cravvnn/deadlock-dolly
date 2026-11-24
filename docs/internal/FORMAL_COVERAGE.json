@@ -1,13 +1,13 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 340,
+  "accounted_units": 342,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
-    "no independent lifecycle": 41,
+    "no independent lifecycle": 42,
     "stateful partial/open": 125,
     "generated data/schema": 10,
-    "native owner/delegated contract open": 133,
+    "native owner/delegated contract open": 134,
     "offline-tool scope": 26,
     "entrypoint delegated contract open": 4,
     "child-job contract open": 1
@@ -572,6 +572,44 @@
       "reconciliation_20261122": "2026-11-22: no-overwrite publish now calls file_ops.publish_new (same rename/link semantics, cleanup kept in the caller). ExportCleanup scope unchanged."
     },
     {
+      "path": "dolly/capture_estimate.py",
+      "sha256": "c5bd9a52d071d6eb40f882349055367dc25cbd8faf86b5615934d583dd8b457b",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "value",
+      "disposition": "no independent lifecycle",
+      "reason": "Schema/value/compiler/parser/read-only or synchronous caller-owned transform; no independent pending worker/session/retry state. Validation and numerical/file-input behavior stay with owner tests.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_capture_estimate.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "Take-size estimate and recording progress text shared by the desktop; mirrors native/include/dolly_capture_estimate.hpp.",
+        "classes": [
+          "RateMemory",
+          "TakeProgress"
+        ],
+        "functions": [
+          "take_frames",
+          "video_seconds",
+          "format_duration",
+          "estimate_line",
+          "progress_line",
+          "capture_rate",
+          "seconds_left",
+          "elapsed_since"
+        ],
+        "imports": [
+          "__future__",
+          "math",
+          "time"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123capwait": "2026-11-23: new; Export estimate (frames, video length, learned time) and recording progress text, shared cases mirrored in native capture_estimate_tests."
+    },
+    {
       "path": "dolly/clip_audio.py",
       "sha256": "1d750a9aa3297a579a0836bfda8aef922d059e542874b1c3d5d5d0a8ed358140",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -757,7 +795,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a",
+      "sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -935,7 +973,8 @@
       "reconciliation_20261120": "2026-11-20: Diagnostics export picks previous sessions with game_logging.newest_sessions.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261122": "2026-11-22: connect re-raises a stop failure while the playback worker is still alive (only restore failures are swallowed while the console is down); console connection checks read self._console once via export_timing.console_connected. ConsoleReconnect bounds connect versus an unwinding worker.",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: _native_bridge keeps the bridge told the replay's map for weather; set_native_weather applies a shot's weather live."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: _native_bridge keeps the bridge told the replay's map for weather; set_native_weather applies a shot's weather live.",
+      "reconciliation_20261123capwait": "2026-11-23: fixed-step native playback does not spend the console-identity miss budget while its own recorder reports recording (writer backpressure); the 15 s rendered-view guard stays the hang limit"
     },
     {
       "path": "dolly/convar_response.py",
@@ -2677,7 +2716,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a",
+      "sha256": "d09fc3e4111b058cb45d97790dc47f0d3210d31b7f3f863634e99b69dc7db4d2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2834,7 +2873,8 @@
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
       "reconciliation_20261122": "2026-11-22: every settings writer commits only its owned fields over the latest settings under _SETTINGS_COMMIT (_commit_settings); game-exit cleanup is marked done only on success and retried up to GAME_EXIT_CLEANUP_ATTEMPTS; Auto encoder prewarm on startup/codec/ffmpeg change; layer passes reuse auto_codec.",
       "reconciliation_20261123": "2026-11-23: only close steps finish a close after a failure; busy close waits (_retry_close); idle work dropped during close; launch options set after save; snap correlation",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: the Player POV project carries the shot weather; Scene page between Look and Export edits Project.weather (_weather_changed, _refresh_weather)."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: the Player POV project carries the shot weather; Scene page between Look and Export edits Project.weather (_weather_changed, _refresh_weather).",
+      "reconciliation_20261123capwait": "2026-11-23: Export estimate on the Recording card and recording progress on the card and action bar (routine footer text only); layer passes do not teach the capture rate"
     },
     {
       "path": "dolly/gui_layout.py",
@@ -7102,7 +7142,7 @@
     },
     {
       "path": "dolly/video_export.py",
-      "sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22",
+      "sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "stateful partial/open",
@@ -7211,7 +7251,8 @@
       "reconciliation_20261119n": "2026-11-19: safe_stem(): one filename-stem rule for shot names (Windows-forbidden and control characters and unpaired surrogates to _, trailing spaces/dots stripped, device names prefixed with _, empty to a fallback). default_video_path keeps its own rule; its Dolly_ prefix already avoids device names.",
       "reconciliation_20261120d4": "2026-11-20: LOST_FRAMES_ERROR names the start of the native lost-frames message for the desktop offer. No recorder behavior change.",
       "reconciliation_20261122": "2026-11-22: Auto resolves its encoder once per take (VideoOptions.auto_codec); odd depth preview sizes are padded for yuv420p encoders; stop() waits past the native finalize cap by default; validated() refuses a name whose .partial take file exists and default_video_path skips it (partial_video_path).",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: VideoOptions.plate (default color) is validated and sent with each recording pass."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: VideoOptions.plate (default color) is validated and sent with each recording pass.",
+      "reconciliation_20261123capwait": "2026-11-23: a newly failed or cancelled recorder state is logged once with its reason"
     },
     {
       "path": "dolly/visualization_preview_wire.py",
@@ -7385,6 +7426,30 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "native/include/dolly_capture_estimate.hpp",
+      "sha256": "26563427c50fdf86e00dabf1e2278851acc661119d96e4123a065eedaeea7a8d",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L02",
+      "disposition": "native owner/delegated contract open",
+      "reason": "Native header/implementation participates in Capture/media/native completion. Declarations/value layouts delegate to implementation owners; inline atomics, callbacks and resource owners are not assumed stateless. Exact platform/native tests remain separate from TLA coverage.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "native/tests/capture_estimate_tests.cpp"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [
+          "cmath",
+          "cstdint",
+          "cstdio",
+          "string"
+        ],
+        "persistent_state_signals": []
+      },
+      "full_formal_signoff": false,
+      "reconciliation_20261123capwait": "2026-11-23: new; pure estimate/progress text for the in-game Export drawer, mirroring dolly/capture_estimate.py."
     },
     {
       "path": "native/include/dolly_capture_timing.hpp",
@@ -8595,7 +8660,7 @@
     },
     {
       "path": "native/include/dolly_video.hpp",
-      "sha256": "0538e25331249319813f9ba7d2a35a23ef826cdbe031620022567a85ff03f51d",
+      "sha256": "706edabd57570a479bf77edb2fee1fe7570fa8ec9e3548dc28bbd6f559e45e6f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8616,11 +8681,12 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261119v": "2026-11-19: declares present_should_capture(state, focused), the overlay clean-frame capture gate (V2).",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: wants_fixed_step and current_plate (Plate) report the active recording to native passes such as weather."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: wants_fixed_step and current_plate (Plate) report the active recording to native passes such as weather.",
+      "reconciliation_20261123capwait": "2026-11-23: adds learned_capture_rate for the Export drawer estimate"
     },
     {
       "path": "native/include/dolly_video_math.hpp",
-      "sha256": "30a7162a3fa588564af91305afcd5a396e6fde280e885f31038a0dadc41ac65c",
+      "sha256": "a89df91a196709bc7c6ec965a0a7f85a77f783a2a6b6d23b4860f199193c3f81",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -8641,7 +8707,8 @@
         "persistent_state_signals": []
       },
       "full_formal_signoff": false,
-      "reconciliation_20261122": "2026-11-22: pure FinalizeWatch, write-stall and ChildRegistry rules and partial_path naming, owner-tested in video_math_tests."
+      "reconciliation_20261122": "2026-11-22: pure FinalizeWatch, write-stall and ChildRegistry rules and partial_path naming, owner-tested in video_math_tests.",
+      "reconciliation_20261123capwait": "2026-11-23: adds QueueRoomWatch no-progress watch for the fixed-step queue-room wait"
     },
     {
       "path": "native/include/dolly_visualization.hpp",
@@ -10038,7 +10105,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "a8523bf3581e53ba3ab80a3a29f8f919fa855004c545dfeb56642ba0729e746b",
+      "sha256": "1bda1a3b4cd0d6f8c834cc23f33c1227cd98b619200d391205b4dc7e27d8e7f7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10064,7 +10131,8 @@
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261120e": "2026-11-20: Typed attach position offsets are clamped to the supported limit. Campaths rows keep their gesture when the selected camera changes.",
       "reconciliation_20261121attach": "2026-11-21: 2026-11-21 Attach here keeps the view and replaces Snap",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: Scene drawer (weather, wind with hero wakes, precipitation, ground and haze); classic particles stay on Look."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: Scene drawer (weather, wind with hero wakes, precipitation, ground and haze); classic particles stay on Look.",
+      "reconciliation_20261123capwait": "2026-11-23: Export drawer shows the take estimate under Export speed and frames/time-left progress while recording, two-line reserved height"
     },
     {
       "path": "native/src/dolly_rail_fields.cpp",
@@ -10630,7 +10698,7 @@
     },
     {
       "path": "native/src/dolly_video_win.cpp",
-      "sha256": "8608234259a6c085eecb4eed815a5889cb02d0694092900f33f0144ebc8a1a1f",
+      "sha256": "ce0ed3e63be85b23da1cb3eaaa981b92cfbfe3e03849427441316787f5008b86",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -10698,7 +10766,8 @@
       "reconciliation_20261114b": "2026-11-14 capture fault gap closed: capture() reads the backbuffer (GetBuffer) and checks resolution/swapchain only inside the producer gate after the ready check (one ProducerScope for video and camera-only); startup configuration before any output stays ungated. A late fault after the decision is no longer observed, so the kept take stays completed. video_late_fault_smoke (generated test copy with a post-decision hook) fails before and passes after. VideoCompleteness CaptureFault and CameraOnlyCapture outside-the-gate mutants added; RecorderApi GapFinish/AllowLateCaptureFault removed.",
       "reconciliation_20261119v": "2026-11-19: present_should_capture() also feeds Presents while finalizing so the copy submitted on the last recording Present is drained, not counted as dropped (V2); capture() still admits no new frame once stopping. VideoCompleteness/CameraOnlyCapture unchanged: Drain is already enabled before the stop barrier and the overlay gate is outside both models. start() resets the lock-free status cache to the new take under control_mutex, and the cached error text is read through the owning session (cached_owner) instead of a raw pointer into a possibly freed error_buffer (V1). No model change: status caching is outside VideoCompleteness/CameraOnlyCapture. .shot.json now goes through publish_sidecar (shared with the camera track): CREATE_NEW temporary, fflush/ferror/_commit checks, no-replace MoveFileEx, temporary removed on failure; write_shot_sidecar returns false when not published and never truncates a foreign sidecar (V5). Sidecars stay additive after the color decision; VideoCompleteness SidecarStep/OutcomeAgrees unchanged (a failed optional sidecar never was modeled as success).",
       "reconciliation_20261122": "2026-11-22: FFmpeg children are kept in ChildRegistry and terminated on cancel or failure; a Finish whose pipe write makes no progress for 30 s while inputs are open fails and ends FFmpeg; finalize waits while FFmpeg progresses (30 s idle, 20 min cap, 120 s after editor close) and keeps the file on timeout; write/drain share one helper per backend. The colour file records under <stem>.partial<ext> (Session.staging) and publish_take renames it to the final name without replacing, only after a completed decision; a refused rename keeps the .partial file and fails the take, and an unfinished file is kept under the .partial name. VideoCompleteness stop handshake unchanged (a final-name output still exists only for a completed take).",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: wants_fixed_step and current_plate (Plate) report the active recording to native passes such as weather."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: wants_fixed_step and current_plate (Plate) report the active recording to native passes such as weather.",
+      "reconciliation_20261123capwait": "2026-11-23: fixed-step queue-room wait ends on 10 s without writer progress (QueueRoomWatch); completed color takes remember their capture rate"
     },
     {
       "path": "native/src/dolly_visualization.cpp",
@@ -12097,7 +12166,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -12183,7 +12252,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -12195,7 +12264,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -12203,7 +12272,7 @@
       "configs": [
         "dolly/CaptureRestoreJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
+      "owner_utf8_lf_sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b"
     },
     "dolly/CleanupMarker.tla": {
       "path": "dolly/session_cleanup.py",
@@ -12245,7 +12314,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a"
+      "owner_utf8_lf_sha256": "d09fc3e4111b058cb45d97790dc47f0d3210d31b7f3f863634e99b69dc7db4d2"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -12267,7 +12336,7 @@
       "instances": [
         "ConsoleReconnectApi"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -12307,7 +12376,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a"
+      "owner_utf8_lf_sha256": "d09fc3e4111b058cb45d97790dc47f0d3210d31b7f3f863634e99b69dc7db4d2"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -12324,7 +12393,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/EditorEventQueue.tla": {
       "path": "dolly/editor_session.py",
@@ -12376,7 +12445,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -12468,7 +12537,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/LaunchRecovery.tla": {
       "path": "dolly/launcher.py",
@@ -12564,7 +12633,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -12575,7 +12644,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -12584,7 +12653,7 @@
         "dolly/PlayerFailure.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
+      "owner_utf8_lf_sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b"
     },
     "dolly/PlayersRecovery.tla": {
       "path": "dolly/video_export.py",
@@ -12593,7 +12662,7 @@
         "dolly/PlayersRecovery.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
+      "owner_utf8_lf_sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b"
     },
     "dolly/PlayersRestoreRetry.tla": {
       "path": "dolly/video_export.py",
@@ -12602,7 +12671,7 @@
         "dolly/PlayersRestoreRetry.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
+      "owner_utf8_lf_sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b"
     },
     "dolly/PngStage.tla": {
       "path": "dolly/screenshot.py",
@@ -12623,7 +12692,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -12647,7 +12716,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "95031aa6589a653a5ffb590447c4155d0d7a70973bbe1619946710d062006f3a"
+      "owner_utf8_lf_sha256": "d09fc3e4111b058cb45d97790dc47f0d3210d31b7f3f863634e99b69dc7db4d2"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -12692,7 +12761,7 @@
       "instances": [
         "RecorderReadUncertaintyApi"
       ],
-      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
+      "owner_utf8_lf_sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b"
     },
     "dolly/ReleaseJoin.tla": {
       "path": "dolly/native_bridge.py",
@@ -12767,7 +12836,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "574c9dcf1604291484605a4c538d02304c969cc326d47370db5e69e9313f9c3a"
+      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",
@@ -12881,7 +12950,7 @@
       "instances": [
         "VideoStopOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "9feaa4fd20781c8c21d483da9e3ff5d8e1848b28cfa587e5ddfccf0a2b96be22"
+      "owner_utf8_lf_sha256": "7eee335b12454e7b519457fc08561fc17d95f77c5f471b810ba952d6d19a2b9b"
     },
     "dolly/WorkspaceCleanup.tla": {
       "path": "dolly/update_worker.py",
@@ -13011,7 +13080,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "8608234259a6c085eecb4eed815a5889cb02d0694092900f33f0144ebc8a1a1f"
+      "owner_utf8_lf_sha256": "ce0ed3e63be85b23da1cb3eaaa981b92cfbfe3e03849427441316787f5008b86"
     },
     "native/src/CaptureFailure.tla": {
       "path": "native/src/dolly_player_capture.cpp",
@@ -13068,7 +13137,7 @@
       "instances": [
         "RecorderApi"
       ],
-      "owner_utf8_lf_sha256": "8608234259a6c085eecb4eed815a5889cb02d0694092900f33f0144ebc8a1a1f"
+      "owner_utf8_lf_sha256": "ce0ed3e63be85b23da1cb3eaaa981b92cfbfe3e03849427441316787f5008b86"
     },
     "tools/AssetEnvironment.tla": {
       "path": "tools/export_captured_audio.py",
@@ -16052,6 +16121,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/capture_estimate.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/clip_audio.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17038,6 +17112,11 @@
     },
     {
       "path": "native/include/dolly_capabilities.hpp",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/include/dolly_capture_estimate.hpp",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18383,6 +18462,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "native/tests/capture_estimate_tests.cpp",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/tests/compat_locator_tests.cpp",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18926,6 +19010,11 @@
     },
     {
       "path": "tests/test_capture_completion.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_capture_estimate.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -20192,10 +20281,10 @@
   ],
   "export_categories": {
     "metadata/configuration/documentation input": 578,
-    "implementation/tool": 340,
+    "implementation/tool": 342,
     "asset/compiled helper input": 28,
     "formal spec/interface": 169,
-    "test/support input": 102,
+    "test/support input": 104,
     "external dependency/resource": 204
   },
   "unclassified": 0,

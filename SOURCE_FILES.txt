@@ -191,6 +191,7 @@ dolly/branding.py
 dolly/camera_bundle.py
 dolly/camera_commands.py
 dolly/camera_export.py
+dolly/capture_estimate.py
 dolly/clip_audio.py
 dolly/compatibility.py
 dolly/console.py
@@ -332,6 +333,7 @@ native/include/dolly_attach.hpp
 native/include/dolly_bone_picker.hpp
 native/include/dolly_capabilities.hpp
 native/include/dolly_capture_timing.hpp
+native/include/dolly_capture_estimate.hpp
 native/include/dolly_confetti.hpp
 native/include/dolly_depth.hpp
 native/include/dolly_depth_live.hpp
@@ -531,6 +533,7 @@ native/tests/attach_tests.cpp
 native/tests/bone_picker_tests.cpp
 native/tests/bridge_smoke.cpp
 native/tests/capability_tests.cpp
+native/tests/capture_estimate_tests.cpp
 native/tests/compat_locator_tests.cpp
 native/tests/definitions_tests.cpp
 native/tests/depth_live_tests.cpp
@@ -1423,3 +1426,4 @@ native/profiles/deadlock-2026-11-23-6865-complete.json
 third_party/cvar_unlocker/unlocker-build-6865.patch
 docs/RELEASE_NOTES_0.7.53-beta.md
 docs/RELEASE_NOTES_0.7.54-beta.md
+tests/test_capture_estimate.py

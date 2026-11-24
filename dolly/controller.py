@@ -1935,6 +1935,24 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         )
         return [label for label, retained in pending if retained]
 
+    def _fixed_step_writer_backpressure(self):
+        """True while a fixed-step take's own native recorder is recording.
+
+        Frame-accurate export holds the game until the writer frees a slot, so
+        console replies can miss their deadline without any hang. Unreadable
+        recorder state counts as no backpressure.
+        """
+        if getattr(self, "_export_timing", None) is None:
+            return False
+        read = getattr(self._native_bridge(), "video_status", None)
+        if not callable(read):
+            return False
+        try:
+            status = read()
+        except Exception:
+            return False
+        return isinstance(status, dict) and status.get("state") == "recording"
+
     def _recorder_active(self):
         if self._recording_pending:
             return True
@@ -5551,7 +5569,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                         # Backpressure can begin after the pre-query check.
                         # Re-read owned, fresh progress after the blocked query;
                         # only unpaced misses consume the identity failure budget.
-                        if not self._player_capture_pacing_active(time.perf_counter()):
+                        # A fixed-step take whose native recorder is still
+                        # recording is waiting on its own writer (a slow disk
+                        # or encoder); the 15 s rendered-view guard above stays
+                        # the hang limit for that case.
+                        if (not self._player_capture_pacing_active(time.perf_counter())
+                                and not self._fixed_step_writer_backpressure()):
                             identity_misses += 1
                             if identity_misses > 1:
                                 raise

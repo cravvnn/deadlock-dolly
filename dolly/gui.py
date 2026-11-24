@@ -66,6 +66,7 @@ from dolly.particles import (LABEL_TO_ID, PARTICLE_DEFAULT, PARTICLE_INTENSITY_D
                              PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN, PARTICLE_LABELS)
 from dolly.smoothing import smoothing_window
 from dolly.source2viewer import HELP_SIZE_MB, find_viewer
+from dolly import capture_estimate
 from dolly.video_export import (ACTIVE_STATES, BITRATE_PRESETS, CODEC_BY_KEY, CODEC_CHOICES,
                                 CODEC_LABEL_TO_KEY, CONTAINER_CHOICES, CONTAINER_LABEL_TO_KEY,
                                 DEFAULT_CODEC_KEY, DEFAULT_CONTAINER, LOST_FRAMES_ERROR, VideoExport, VideoOptions,
@@ -127,6 +128,73 @@ def _note_movie_stop_failure(app, audio) -> int:
     attempts = previous[1] + 1 if previous is not None and previous[0] is audio else 1
     app._movie_stop_failures = (audio, attempts)
     return attempts
+
+
+def recording_progress_text(app, status):
+    """'Recording · 1,810 / 15,720 frames · about 21 min left', or None.
+
+    Players capture-only takes keep their own waiting/scratch wording.
+    """
+    tracker = getattr(app, "_take_progress", None)
+    if tracker is None:
+        return None
+    line = tracker.update(status)
+    # A free-camera take has no known length; it keeps the usual status.
+    if (line is None or tracker.total is None or status.get("capture_waiting")
+            or getattr(getattr(app, "video_export", None), "_capture_only", False) is True):
+        return None
+    dropped = max(0, int(status.get("frames_dropped") or 0))
+    return "Recording · " + line + (f" · {dropped:,} missed frames" if dropped else "")
+
+
+def follow_progress_in_footer(app, progress):
+    """The action bar's status line follows the take, like the Recording card.
+
+    It replaces only routine text (empty, the controller's latest status such
+    as "Playing native camera path...", or its own earlier progress), so a
+    message written there during the take stays; when the take stops
+    recording, the line hands over to the card's text (finalizing, saved...).
+    """
+    status_text = getattr(app, "status_text", None)
+    if status_text is None:
+        return
+    current = status_text.get()
+    shown = getattr(app, "_footer_progress", None)
+    if progress is not None:
+        if (not current or current == shown
+                or current == getattr(app, "_last_controller_message", None)):
+            _set_var(app.status_text, progress)
+            app._footer_progress = progress
+    elif shown is not None:
+        if current == shown:
+            _set_var(app.status_text, app.video_status_text.get())
+        app._footer_progress = None
+
+
+def take_estimate_text(app):
+    """Size of the next take from the current Export settings, or None."""
+    try:
+        keys = app.project.keyframes
+        pov = getattr(app, "video_source", None) is not None and app.video_source.get() == "Player POV"
+        if pov or (len(keys) == 1 and keys[0].source == "attach"):
+            duration = float(app.video_pov_duration.get())
+        elif len(keys) >= 2:
+            duration = app.project.duration
+        else:
+            return None
+        fixed = bool(app.video_fixed_step.get())
+        speed = float(app.video_export_speed.get())
+        frames = capture_estimate.take_frames(duration, int(app.video_fps.get()), speed, fixed)
+        if frames is None:
+            return None
+        depth = bool(app.video_depth.get())
+        rate = app._take_rates.rate(depth, bool(app.video_depth_exr.get())) if fixed else None
+        layered = any(getattr(app, name, None) is not None and getattr(app, name).get()
+                      for name in ("video_layer_world", "video_layer_players", "video_layer_effects"))
+        return capture_estimate.estimate_line(
+            frames, capture_estimate.video_seconds(duration, speed, fixed), rate, per_pass=layered)
+    except (AttributeError, ValueError, TypeError, tk.TclError):
+        return None
 
 
 def movie_stop_held(app) -> bool:
@@ -560,6 +628,9 @@ class DollyApp:
         _bundled_ffmpeg = bundled_ffmpeg_path()
         self.ffmpeg_path = tk.StringVar(value=self.app_settings.ffmpeg_path or (str(_bundled_ffmpeg) if _bundled_ffmpeg else ""))
         self.video_status_text = tk.StringVar(value="Launch a replay to record video.")
+        # Measured capture speed of this session's finished takes (the estimate's time).
+        self._take_rates = capture_estimate.RateMemory()
+        self._take_progress = capture_estimate.TakeProgress(self._take_rates)
         self.video_game_audio = tk.BooleanVar(value=False)
         self.video_reconstructed_audio = tk.BooleanVar(value=False)
         self.video_ae_camera = tk.BooleanVar(value=False)
@@ -1612,6 +1683,13 @@ class DollyApp:
         # Export speed only applies to fixed-step takes.
         speed = options.speed if options.fixed_step else 1.0
         self._take_play_speed = speed
+        tracker = getattr(self, "_take_progress", None)
+        if tracker is not None:
+            tracker.begin(
+                capture_estimate.take_frames(project.duration, options.fps, options.speed,
+                                             options.fixed_step) if project is not None else None,
+                depth=getattr(options, "depth", False), depth_exr=getattr(options, "depth_exr", False),
+                fixed_step=options.fixed_step)
         camera_project = project or Project.from_dict(self.project.to_dict())
         camera_take = (camera_project, options.fps, speed, pov)
         for attribute, variable in (("_ae_camera_take", "video_ae_camera"),
@@ -1991,6 +2069,8 @@ class DollyApp:
 
     def _start_pass(self, layer, pass_name, options, before_record, **start_options):
         self._active_layer_take = (layer, pass_name)
+        if getattr(self, "_take_progress", None) is not None:
+            self._take_progress.layer_pass()
         self._pending_auto_play = True
         self._auto_finish_layered = True
         self._take_playing_seen = False
@@ -2318,9 +2398,18 @@ class DollyApp:
             # that line before this poll runs while Dolly is idle.
             self._auto_finish_layered = False
             self._stop_video_recording()
-        _set_var(self.video_status_text,
-                 "Launch a replay to record video." if state == "idle" and not ready
-                 else format_video_status(status))
+        progress = recording_progress_text(self, status)
+        if progress is not None:
+            _set_var(self.video_status_text, progress)
+        elif state == "idle" and ready:
+            estimate = take_estimate_text(self)
+            _set_var(self.video_status_text, "Ready to record · " + estimate if estimate
+                     else format_video_status(status))
+        else:
+            _set_var(self.video_status_text,
+                     "Launch a replay to record video." if state == "idle" and not ready
+                     else format_video_status(status))
+        follow_progress_in_footer(self, progress)
         _set_widget_state(self.video_start_button,
                           "normal" if ready and not active and not self.busy else "disabled")
         screenshot_ui.refresh(self, ready and not active and not self.busy)

@@ -451,6 +451,67 @@ class NativeWorkflows(unittest.TestCase):
             case.run_shot()
         self.assertIn('unverified wait', case.controller.status()['playback_error'])
 
+    def test_p06b_fixed_step_writer_backpressure_tolerates_console_timeouts(self):
+        # A frame-accurate take whose own recorder is still recording holds the
+        # game on a slow writer; repeated console misses are not a hang. A
+        # recorder that is not recording leaves the two-miss limit in force.
+        for recorder, fails in (('recording', False), ('failed', True), ('idle', True)):
+            with self.subTest(recorder=recorder):
+                case = self.fresh()
+                case.start()
+                case.controller._export_timing = {'fps': 600, 'speed': .25}
+                case.bridge.video_status.return_value = {'state': recorder}
+                self.assertEqual(case.controller._fixed_step_writer_backpressure(), not fails)
+                request_console = case.console.request
+                misses = []
+                def timeout(command, **kwargs):
+                    if command == 'demo_goto' and len(misses) < 3:
+                        misses.append(True)
+                        case.clock.advance(3)
+                        raise ConsoleTimeout('writer backpressure')
+                    return request_console(command, **kwargs)
+                get_status = case.bridge.status
+                def elapsed_status():
+                    case.clock.advance(.6)
+                    return get_status()
+                with ExitStack() as stack:
+                    stack.enter_context(patch.object(case.console, 'request', side_effect=timeout))
+                    stack.enter_context(patch.object(case.bridge, 'status', side_effect=elapsed_status))
+                    if fails:
+                        stack.enter_context(self.assertLogs('dolly', level='ERROR'))
+                    case.run_shot()
+                error = case.controller.status()['playback_error']
+                if fails:
+                    self.assertIn('writer backpressure', error)
+                else:
+                    self.assertIsNone(error)
+                    self.assertEqual(len(misses), 3)
+        # Without fixed-step timing, or with unreadable recorder state, there is
+        # no writer backpressure to excuse a console miss.
+        case = self.fresh()
+        case.bridge.video_status.return_value = {'state': 'recording'}
+        self.assertFalse(case.controller._fixed_step_writer_backpressure())
+        case.controller._export_timing = {'fps': 600, 'speed': 1}
+        case.bridge.video_status.side_effect = OSError('mapping closed')
+        self.assertFalse(case.controller._fixed_step_writer_backpressure())
+
+    def test_p06c_recorder_failure_reason_is_logged_once(self):
+        # A failed take's reason must reach Dolly.log; the popup alone left the
+        # diagnostics export unable to say why a take ended.
+        export = VideoExport(self.controller)
+        export._bridge = self.bridge
+        export._last = {'state': 'recording'}
+        reason = 'The video writer stopped making progress for 10 seconds.'
+        self.bridge.video_status.return_value = {'state': 'failed', 'error': reason,
+                                                 'frames_written': 1810}
+        with self.assertLogs('dolly.video_export', level='WARNING') as logs:
+            self.assertEqual(export.status()['state'], 'failed')
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn(reason, logs.output[0])
+        self.assertIn('1810', logs.output[0])
+        with self.assertNoLogs('dolly.video_export', level='WARNING'):
+            export.status()
+
     def test_p08_native_seek_and_replay_clock(self):
         self.console.values['r_aspectratio'] = 1.5
         settled = self.controller.seek_replay_tick(125)

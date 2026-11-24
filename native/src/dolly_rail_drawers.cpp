@@ -6,6 +6,7 @@
 #include "dolly_weather_runtime.hpp"
 #include "dolly_lens_rain_runtime.hpp"
 #include "dolly_lens_rain_wire.hpp"
+#include "dolly_capture_estimate.hpp"
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,30 @@ namespace k = rail_kit;
 namespace f = rail_fields;
 namespace t = rail_theme;
 namespace {
+// Frames of the take the current Export settings would record; 0 when its
+// length is unknown (a free-camera take). Same rule as the desktop estimate.
+std::uint64_t export_take_frames(const EditorSnapshot& s) noexcept {
+    double seconds = 0;
+    if (s.video_pov || (s.camera_count == 1 && s.attach_selected))
+        seconds = s.pov_duration;
+    else if (s.camera_count >= 2)
+        seconds = s.duration;
+    return estimate::take_frames(seconds, s.video_fps, s.video_speed, s.video_fixed_step);
+}
+// Estimate and progress lines keep two lines of height, so the divider and the
+// controls below do not jump when the text wraps or its numbers grow.
+void two_line_text(const std::string& text, const ImVec4& color) {
+    const float top = k::CursorY();
+    f::Wrapped(text.c_str(), color);
+    const float used = k::CursorY() - top;
+    if (used < 32)
+        k::VGap(32 - used);
+}
+double export_take_seconds(const EditorSnapshot& s) noexcept {
+    const double seconds =
+        s.video_pov || (s.camera_count == 1 && s.attach_selected) ? s.pov_duration : s.duration;
+    return estimate::video_seconds(seconds, s.video_speed, s.video_fixed_step);
+}
 constexpr double speeds[]{.05, .1, .25, .5, 1, 2, 4};
 const char* speed_labels[]{"0.05x", "0.1x", "0.25x", "0.5x", "1x", "2x", "4x"};
 int nearest(double v, const double* items, int count) {
@@ -802,10 +827,24 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             k::VGap(10);
             if (recording) {
                 char line[80];
-                std::snprintf(line, sizeof(line), "%.1f s  |  %llu frames",
-                              rec.duration_100ns / 1e7,
-                              static_cast<unsigned long long>(rec.frames_written));
-                k::Text(line);
+                if (const auto total = export_take_frames(s)) {
+                    // "1,810 / 15,720 frames · about 21 min left" from this take's own rate.
+                    LARGE_INTEGER now{};
+                    QueryPerformanceCounter(&now);
+                    const double rate = estimate::capture_rate(
+                        rec.frames_written,
+                        estimate::elapsed(rec.first_qpc, std::uint64_t(now.QuadPart),
+                                          rec.qpc_frequency));
+                    two_line_text(estimate::progress_line(
+                                      rec.frames_written, total,
+                                      estimate::seconds_left(rec.frames_written, total, rate)),
+                                  t::text_primary);
+                } else {
+                    std::snprintf(line, sizeof(line), "%.1f s  |  %llu frames",
+                                  rec.duration_100ns / 1e7,
+                                  static_cast<unsigned long long>(rec.frames_written));
+                    k::Text(line);
+                }
                 if (rec.frames_dropped) {
                     std::snprintf(line, sizeof(line), "Missed capture slots: %llu",
                                   static_cast<unsigned long long>(rec.frames_dropped));
@@ -859,6 +898,21 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 int speed = nearest(s.video_speed, speeds, 7);
                 if (row_dropdown("Export speed", "##speed", &speed, speed_labels, 7))
                     d.send(EditorAction::SetVideoSpeed, speeds[speed]);
+                if (const auto frames = export_take_frames(s)) {
+                    // "15,720 frames · 26.2 s of video · about 24 min to record"; the
+                    // time appears once a fixed-step color take of this kind has
+                    // finished. Layered exports give the per-pass size only.
+                    k::VGap(10);
+                    const bool layered =
+                        s.video_layer_world || s.video_layer_players || s.video_layer_effects;
+                    two_line_text(estimate::estimate_line(
+                                      frames, export_take_seconds(s),
+                                      s.video_fixed_step ? video::learned_capture_rate(
+                                                               s.video_depth, s.video_depth_exr)
+                                                         : 0,
+                                      layered),
+                                  t::text_muted);
+                }
             }
             k::VGap(15);
             k::Divider();

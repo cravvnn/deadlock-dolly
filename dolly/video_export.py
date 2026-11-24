@@ -611,8 +611,15 @@ class VideoExport:
                         current[key] = self._finished_status[key]
             if last.get("codec"):
                 current.setdefault("codec", last["codec"])
+            newly_failed = (current.get("state") in ("failed", "cancelled")
+                            and last.get("state") != current.get("state"))
             self._last = current
             pending = self._start_pending
+        if newly_failed:
+            # The popup is the only other record; diagnostics need the reason.
+            LOG.warning("Recording %s after %s frames: %s", current.get("state"),
+                        current.get("frames_written", "?"),
+                        current.get("error") or current.get("message") or "no reason reported")
         if not pending and current.get("state") in TERMINAL_STATES:
             mark = getattr(self.controller, "mark_recording_pending", None)
             if callable(mark):

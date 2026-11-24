@@ -99,6 +99,16 @@ main panel's footer and remains available on every tab while recording. Use it
 to stop early, then wait for **Finalizing video...** to finish saving. Camera
 edits, including **Clear All**, become available again afterward.
 
+Under **Export speed**, the Export drawer shows the size of the next take:
+frames and video length, for example "15,720 frames · 26.2 s of video". A
+fixed-step take renders FPS ÷ speed frames per replay second, so 600 FPS at
+0.25x is 2,400 frames per second of the shot. After a fixed-step take of the
+same kind (depth on or off, EXR on or off) finishes, the line also says how long
+the next one should take on this PC. A layered export shows the size of each
+pass instead. While a take records, the drawer, the desktop Recording card and
+the status line at the bottom of the desktop window show
+"1,810 / 15,720 frames · about 21 min left".
+
 **Stop / restore** controls playback and restoration. Use **Finish recording**
 to close and save the video take.
 

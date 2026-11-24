@@ -214,6 +214,18 @@ int main() {
     require(!stall.stalled(1000 + kWriteStallLimitMs - 1, true, 4));
     require(!stall.stalled(1000 + 2 * kWriteStallLimitMs - 2, true, 4));
     require(stall.stalled(1000 + 2 * kWriteStallLimitMs - 1, true, 4));
+    // Fixed-step queue room: a slow writer that keeps consuming frames or
+    // writing pipe chunks never times out, however long one frame takes in
+    // total; only kQueueRoomStallLimitMs without any progress fails the take.
+    QueueRoomWatch room(1000, 5);
+    require(!room.stalled(1000 + kQueueRoomStallLimitMs - 1, 5));
+    require(!room.stalled(1000 + kQueueRoomStallLimitMs - 1, 6));
+    require(!room.stalled(1000 + 2 * kQueueRoomStallLimitMs - 2, 6));
+    require(room.stalled(1000 + 2 * kQueueRoomStallLimitMs - 1, 6));
+    QueueRoomWatch slow(0, 0);
+    for (std::uint64_t step = 1; step <= 40; ++step)
+        require(!slow.stalled(step * (kQueueRoomStallLimitMs - 1), step));
+    require(kQueueRoomStallLimitMs > 3000 && kQueueRoomStallLimitMs < 15000);
     // FFmpeg child ownership: a stop terminates only registered handles, a
     // closed handle is never touched, and a child added after the stop is
     // terminated immediately instead of escaping cancellation.
