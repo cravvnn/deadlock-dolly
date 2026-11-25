@@ -333,6 +333,8 @@ float3 TrailAt(float3 p) {
     return float3(tread, churn, rim) * openHere;
 }
 
+)HLSL"
+                                  R"HLSL(
 bool IsSky(float d) {
     return cameraPos.w > 0.5 ? (d <= 1e-6) : (d >= 1.0 - 1e-6);
 }
@@ -355,9 +357,13 @@ float3 WorldFromPixelDepth(float2 px, float d) {
 
 // Edge-preserving surface normal reconstruction from depth (Turanszki 2019 / atyuwen 2021).
 // cavity > 0 in a crease or corner (the neighbours rise above the surface), < 0 on an edge.
+// depthPlane: how the stored depth changes per output pixel along x and y on this pixel's own
+// surface (stored depth is exactly linear across the screen on a flat surface), and in z the
+// slack that reading depth below the output size adds. Zero where no normal could be built.
 float3 CoatingBaseNormal(float2 pixel, float depth, float3 center, float3 fallback,
-                         out float cavity) {
+                         out float cavity, out float3 depthPlane) {
     cavity = 0.0;
+    depthPlane = float3(0.0, 0.0, 0.0);
     float3 bend[2];
     float bendSpan[2];
     bool both[2];
@@ -379,12 +385,18 @@ float3 CoatingBaseNormal(float2 pixel, float depth, float3 center, float3 fallba
         float dr2 = right ? ReadDepthPx(r2) : 0.0;
         left = left && !IsSky(dl1) && !IsSky(dl2);
         right = right && !IsSky(dr1) && !IsSky(dr2);
-        if (!left && !right) return fallback;
+        if (!left && !right) {
+            depthPlane = float3(0.0, 0.0, 0.0);
+            return fallback;
+        }
         float el = left ? abs(2.0 * dl1 - dl2 - depth) : 1e30;
         float er = right ? abs(2.0 * dr1 - dr2 - depth) : 1e30;
         float3 wl = left ? WorldFromPixelDepth(l1, dl1) : center;
         float3 wr = right ? WorldFromPixelDepth(r1, dr1) : center;
         tangent[a] = (el < er) ? (center - wl) : (wr - center);
+        float slope = ((el < er) ? (depth - dl1) : (dr1 - depth)) / texel[a];
+        depthPlane[a] = slope;
+        depthPlane.z += abs(slope) * (texel[a] - 1.0);
         both[a] = left && right;
         bend[a] = 0.5 * (wl + wr) - center;
         bendSpan[a] = max(0.5 * length(wr - wl), 1e-3);
@@ -935,7 +947,7 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
 // depth and world-fixed noise. Detail finer than a pixel fades instead of crawling.
 float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
                            float cavity, float hitDist, float2 px, float slopeTaper,
-                           float onFloor) {
+                           float onFloor, float depth, float3 depthPlane) {
     // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
     float coat = styleB.y * coatingInfo.x;
     if (sunDir.w < 0.5 || coat <= 0.001) return baseColor;
@@ -1182,14 +1194,32 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // The light on the ground, read from the frame over a 16 px neighbourhood: wide enough
     // that paving, grout and painted lines do not print through the cover. Read only here,
     // after every early return, so uncoated pixels never pay for it.
-    float3 colorAround = float3(0.0, 0.0, 0.0);
+    // Only neighbours on this pixel's own surface count: each tap's depth is checked against
+    // the depth this surface would have there (depthPlane), so a hero, a trooper or a prop
+    // standing in front of or behind the ground never lends it light. Read blind, every
+    // silhouette drew two pale rings (8 and 16 px out) on the cover around it. A pixel whose
+    // neighbours all lie elsewhere falls back to its own colour.
+    float linRef = max(cameraPos.w > 0.5 ? depth : 1.0 - depth, 1e-7);
+    float3 colorAround = baseColor * 0.5;
+    float aroundW = 0.5;
     [unroll] for (int k = 0; k < 12; ++k) {
         float ang = k * 0.5235988 + (k & 1) * 0.26;
         float rad = (k & 1) ? 16.0 : 8.0;
-        float2 auv = (px + 0.5 + float2(cos(ang), sin(ang)) * rad) * screenInfo.zw;
-        colorAround += sceneColor.SampleLevel(linearClamp, auv, 0).rgb;
+        float2 off = float2(cos(ang), sin(ang)) * rad;
+        // Depth and colour are both read at the nearest whole pixel, where the surface's
+        // depth is predicted: a filtered colour tap beside an outline would blend the
+        // object's colour in while its depth still read as ground.
+        float2 offPx = floor(off + 0.5);
+        float dTap = ReadDepthPx(px + offPx);
+        // The miss is relative (about the fraction of the distance the tap lies off this
+        // surface), less what 24-bit depth steps can add over 16 px (2.5e-6).
+        float miss = max(abs(dTap - (depth + dot(offPx, depthPlane.xy))) - depthPlane.z - 2.5e-6,
+                         0.0) / linRef;
+        float w = IsSky(dTap) ? 0.0 : 1.0 - smoothstep(0.002, 0.006, miss);
+        colorAround += sceneColor.SampleLevel(linearClamp, (px + 0.5 + offPx) * screenInfo.zw, 0).rgb * w;
+        aroundW += w;
     }
-    colorAround /= 12.0;
+    colorAround /= aroundW;
     float lumaAround = dot(colorAround, float3(0.2126, 0.7152, 0.0722));
     float light = lerp(0.3, 1.08, saturate(pow(saturate(lumaAround / 0.32), 0.65)));
     float3 chroma = clamp(colorAround / max(lumaAround, 1e-3), 0.0, 2.0);
@@ -1691,7 +1721,8 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
             (SkyOpenAt(suv, surfPos.z) > 0.001 ||
              (OnMap(suv) && surfPos.z - streetZMap.SampleLevel(linearClamp, suv, 0) < 64.0))) {
             float cavity;
-            float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir, cavity);
+            float3 depthPlane;
+            float3 surfNormal = CoatingBaseNormal(px, depth, surfPos, -rayDir, cavity, depthPlane);
             // On a floor the map knows, the ground takes the map's own smooth slope:
             // depth-built normals tilt on the rows where the game's depth steps (arcs round
             // the camera), and snapping to straight up against one height per cell switched
@@ -1724,7 +1755,7 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
             surfNormal = normalize(lerp(surfNormal, mapN,
                                         onFloor * smoothstep(0.3, 0.6, surfNormal.z)));
             baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir, cavity,
-                                            hitDist, px, slopeTaper, onFloor);
+                                            hitDist, px, slopeTaper, onFloor, depth, depthPlane);
         }
     }
 
