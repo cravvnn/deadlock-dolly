@@ -22,15 +22,15 @@ namespace dolly::weather_runtime {
 void poll_editor_block(const unsigned char* memory) noexcept;
 
 // View thread: the replay clock for this view (seconds, tick interval), whether the
-// replay is playing or seeking, and the heroes' world origins seen at that time (for
-// hero wakes; at most 12 are used, in the order given), with each hero's stable slot
-// (entity index) when known, for recording hero paths.
-void publish_clock(double replay_time, double tick_interval, bool playing, bool seeking,
-                   const float (*heroes)[3] = nullptr, uint32_t hero_count = 0,
+// replay is playing (a loaded demo), paused or seeking, and the heroes' world origins seen
+// at that time (for hero wakes; at most 12 are used, in the order given), with each hero's
+// stable slot (entity index) when known, for the replay's hero tracks.
+void publish_clock(double replay_time, double tick_interval, bool playing, bool paused,
+                   bool seeking, const float (*heroes)[3] = nullptr, uint32_t hero_count = 0,
                    const uint32_t* slots = nullptr) noexcept;
 
-// View thread: whether the shot wants hero positions (weather on with hero wakes or
-// coating, or hero paths being recorded).
+// View thread: whether hero positions are wanted (a replay's track store is open, or the
+// weather is on with hero wakes or coating).
 bool wants_heroes() noexcept;
 
 // Present thread: whether the weather pass needs this frame's scene depth.
@@ -39,6 +39,10 @@ bool wants_scene_depth() noexcept;
 // The shot's weather as last published by the editor, for the in-game Scene drawer.
 // False before the editor has published any weather.
 bool panel_settings(weather::Settings& out) noexcept;
+
+// How much of the shot's window the replay's hero track store has seen (0..1), or -1 when
+// no replay's store is open. For the Scene drawer's tracks line.
+double hero_track_coverage() noexcept;
 
 // Read-only weather facts for other screen passes (lens rain). Present thread only.
 struct LensInputs {

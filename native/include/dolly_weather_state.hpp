@@ -12,8 +12,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace dolly::weather {
@@ -75,6 +77,7 @@ struct Settings {
     float density = 1.0f;
     bool hero_wakes = true;
     bool include_in_effects = true;
+    bool hero_tracks = true; // footprint tracks in snow, sand, dust and ash
 
     bool enabled() const noexcept { return preset != Preset::Off; }
 };
@@ -86,6 +89,9 @@ constexpr char kWireMagic[8] = {'D', 'L', 'Y', 'W', 'T', 'H', 'R', '1'};
 constexpr std::uint32_t kWireAbi = 1;
 constexpr std::uint32_t kWireFlagHeroWakes = 1;
 constexpr std::uint32_t kWireFlagIncludeInEffects = 2;
+constexpr std::uint32_t kWireFlagHeroTracks = 4;
+// Presets whose ground cover takes hero tracks (snow, sand, dust and ash).
+bool takes_tracks(Preset preset) noexcept;
 // The editor publishes this block in the shared mapping (seqlocked: magic at 0,
 // sequence at 8, ABI at 12) whenever the shot's weather or replay changes.
 constexpr std::size_t kWireOffset = 2 * 1024 * 1024 + 24480;
@@ -158,10 +164,12 @@ float coating_growth(const Settings& settings, double seconds_since_start) noexc
 // are recorded once and saved, so live view and every export draw the same trails.
 namespace trails {
 
-constexpr char kWireMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'L', 'S', '1'};
-constexpr std::uint32_t kWireAbi = 1;
-constexpr std::uint32_t kFlagRecord = 1; // record hero paths from playback into record_path
-constexpr std::uint32_t kFlagShow = 2;   // draw trails from show_path
+// The editor names the replay's hero track store and the shot's time window. The game fills
+// the store while the replay plays (never while paused or seeking) and draws the window's
+// tracks from it; the store is a file beside Dolly's map grids, never the replay itself.
+constexpr char kWireMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'L', 'S', '2'};
+constexpr std::uint32_t kWireAbi = 2;
+constexpr std::uint32_t kFlagStore = 1; // store_path names this replay's track store
 constexpr std::size_t kPathBytes = 240;
 // Seqlocked (magic at 0, sequence at 8, ABI at 12), after the lens rain block and before
 // the cinematic status.
@@ -172,45 +180,77 @@ struct Wire {
     std::uint32_t sequence;
     std::uint32_t abi;
     std::uint32_t flags;
-    // A new id starts a new recording; the recording is saved when the record flag clears
-    // or the id changes.
-    std::uint32_t recording_id;
-    char record_path[kPathBytes]; // UTF-8, NUL-terminated
-    char show_path[kPathBytes];
+    std::uint32_t reserved;
+    double window_start; // the shot's replay time range (s): tracks are drawn from here on
+    double window_end;
+    char store_path[kPathBytes]; // UTF-8, NUL-terminated
 };
 #pragma pack(pop)
-static_assert(sizeof(Wire) == 504, "Python hero trails wire layout must match");
+static_assert(sizeof(Wire) == 280, "Python hero trails wire layout must match");
 static_assert(offsetof(Wire, sequence) == 8, "Seqlocked block layout");
 static_assert(kWireOffset + sizeof(Wire) <= 2 * 1024 * 1024 + 60000,
               "Hero trails block fits before the cinematic status");
 
 struct Controls {
-    bool record = false;
-    std::uint32_t recording_id = 0;
-    std::string record_path;
-    bool show = false;
-    std::string show_path;
+    std::string store_path; // empty: no store (no replay open)
+    double window_start = 0.0;
+    double window_end = 0.0;
 };
-// Rejects a wrong magic or ABI, unknown flags, or a path that is not NUL-terminated, and a
-// flag whose path is empty.
+// Rejects a wrong magic or ABI, unknown flags, a path that is not NUL-terminated, the store
+// flag without a path, and a window that is not finite or runs backwards.
 std::optional<Controls> decode(const Wire& wire);
 
-// One observed hero position: replay time (s), the hero's roster slot, feet (world).
-struct Sample {
-    double time = 0.0;
+// Hero positions on a fixed grid of 1/15 s replay-time cells, per hero (its entity index):
+// each cell is written once (whoever fills it first: live playback or the replay reader) and
+// never changed, so every frame drawn from the store depends only on its time.
+constexpr double kStep = 1.0 / 15.0;
+struct Cell {
+    std::int32_t grid = 0; // replay time = grid * kStep
     std::uint32_t slot = 0;
     float pos[3] = {};
 };
-// Recorded file: "DLYTRK01", sample count (u32), reserved (u32), then the samples packed as
-// time (f64), slot (u32), x, y, z (f32).
-bool write_samples(const std::string& utf8_path, const std::vector<Sample>& samples,
-                   std::string* error = nullptr);
-bool read_samples(const std::string& utf8_path, std::vector<Sample>& samples,
-                  std::string* error = nullptr);
-// The trail segments of recorded samples: per hero in time order, thinned to 15 per second,
-// broken where the hero vanished for over half a second or moved faster than a hero can
-// (death, respawn, teleport). Same samples in any order give the same segments.
-std::vector<dolly::env::TrailSegment> build_segments(std::vector<Sample> samples);
+
+class Store {
+public:
+    // Writes a cell unless that hero already has one there. Returns true when written.
+    bool add(std::uint32_t slot, std::int32_t grid, const float pos[3]);
+    // Marks [t0, t1] as seen (played or read): merged with the ranges already seen.
+    void add_seen(double t0, double t1);
+    // A hero across one forward playback step from (t0, a) to (t1, b): fills the cells whose
+    // times lie in (t0, t1], each from the line between the two frames. Returns how many
+    // cells were written (their grids appended to `written` when given).
+    std::size_t add_step(double t0, double t1, std::uint32_t slot, const float a[3],
+                         const float b[3], std::vector<std::int32_t>* written = nullptr);
+    const std::vector<std::pair<double, double>>& seen() const { return seen_; }
+    std::size_t size() const { return cells_; }
+    void clear();
+
+    // Trail segments of the cells inside [start, end]: per hero, consecutive cells joined
+    // unless the hero vanished (over half a second without a cell) or moved faster than a
+    // hero can (death, respawn, teleport).
+    std::vector<dolly::env::TrailSegment> segments(double start, double end) const;
+    // The segment that joins `slot`'s cell at `grid` to its previous cell, when the two join
+    // and both lie inside [start, end].
+    bool segment_to(std::uint32_t slot, std::int32_t grid, double start, double end,
+                    dolly::env::TrailSegment& out) const;
+    // True when `slot` has a cell after `grid` (a cell filled in behind others).
+    bool has_after(std::uint32_t slot, std::int32_t grid) const;
+
+    // File "DLYTRK02": cell count, seen-range count (u32 each), the ranges (f64 pairs), then
+    // the cells as grid (i32), slot (u32), x, y, z (f32). Saved through a temporary file.
+    bool save(const std::string& utf8_path, std::string* error = nullptr) const;
+    // Loads a store file; a missing file is an empty store.
+    bool load(const std::string& utf8_path, std::string* error = nullptr);
+
+private:
+    struct Hero {
+        std::vector<std::pair<std::int32_t, std::array<float, 3>>> cells; // sorted by grid
+    };
+    std::vector<std::pair<std::uint32_t, Hero>> heroes_; // sorted by slot
+    std::vector<std::pair<double, double>> seen_;          // sorted, disjoint
+    std::size_t cells_ = 0;
+    const Hero* find(std::uint32_t slot) const;
+};
 
 } // namespace trails
 

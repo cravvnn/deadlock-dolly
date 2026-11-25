@@ -1167,6 +1167,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         !weather::valid_panel_value(unsigned(action) - unsigned(EditorAction::SetWeatherPreset),
                                     value))
         return false;
+    if (action == EditorAction::SetWeatherHeroTracks && value != 0.0 && value != 1.0)
+        return false;
     if (std::uint32_t(action) >= std::uint32_t(EditorAction::SetLensRain) &&
         std::uint32_t(action) <= std::uint32_t(EditorAction::SetLensSoftness) &&
         !lens_rain::valid_panel_value(unsigned(action) - unsigned(EditorAction::SetLensRain),

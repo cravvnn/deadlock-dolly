@@ -55,7 +55,8 @@ Wire encode(const Settings& settings, std::uint32_t sequence, const char* map_na
     w.sequence = sequence;
     w.preset = static_cast<std::uint32_t>(settings.preset);
     w.flags = (settings.hero_wakes ? kWireFlagHeroWakes : 0u) |
-              (settings.include_in_effects ? kWireFlagIncludeInEffects : 0u);
+              (settings.include_in_effects ? kWireFlagIncludeInEffects : 0u) |
+              (settings.hero_tracks ? kWireFlagHeroTracks : 0u);
     w.intensity = settings.intensity;
     w.wind_direction = settings.wind_direction;
     w.wind_speed = settings.wind_speed;
@@ -75,7 +76,8 @@ Wire encode(const Settings& settings, std::uint32_t sequence, const char* map_na
 std::optional<Settings> decode(const Wire& wire) noexcept {
     if (std::memcmp(wire.magic, kWireMagic, sizeof(wire.magic)) != 0 || wire.abi != kWireAbi ||
         wire.preset >= kPresetCount ||
-        (wire.flags & ~(kWireFlagHeroWakes | kWireFlagIncludeInEffects)) != 0 ||
+        (wire.flags & ~(kWireFlagHeroWakes | kWireFlagIncludeInEffects | kWireFlagHeroTracks)) !=
+            0 ||
         !in_range(wire.flake_size, kFlakeSizeMin, kFlakeSizeMax) ||
         !in_range(wire.density, kDensityMin, kDensityMax))
         return std::nullopt;
@@ -100,7 +102,13 @@ std::optional<Settings> decode(const Wire& wire) noexcept {
     s.density = wire.density;
     s.hero_wakes = (wire.flags & kWireFlagHeroWakes) != 0;
     s.include_in_effects = (wire.flags & kWireFlagIncludeInEffects) != 0;
+    s.hero_tracks = (wire.flags & kWireFlagHeroTracks) != 0;
     return s;
+}
+
+bool takes_tracks(Preset preset) noexcept {
+    return preset == Preset::LightSnow || preset == Preset::Blizzard ||
+           preset == Preset::Sandstorm || preset == Preset::DustHaze || preset == Preset::Ash;
 }
 
 bool valid_panel_value(unsigned index, double value) noexcept {
@@ -182,6 +190,7 @@ Resolved resolve(const Settings& settings) noexcept {
     r.render.trail_fill_seconds =
         (snow ? 120.0f : 60.0f) / std::max(settings.intensity * settings.density, 0.2f);
     r.render.coating_build_up = settings.build_up;
+    r.render.hero_trails = settings.hero_tracks;
     r.precipitation.size_scale = settings.flake_size;
     r.precipitation.wind_xy[0] = wind_x;
     r.precipitation.wind_xy[1] = wind_y;
@@ -212,59 +221,210 @@ bool terminated(const char (&text)[kPathBytes]) noexcept {
     return std::memchr(text, 0, kPathBytes) != nullptr;
 }
 
-constexpr char kFileMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '1'};
-constexpr std::size_t kSampleBytes = 8 + 4 + 12;
-// More samples than any shot needs (12 heroes at 240 fps for over half an hour).
-constexpr std::uint32_t kMaxSamples = 8u * 1024u * 1024u;
-// Thinned to 15 per second; broken over gaps longer than half a second or speeds above
-// what a hero reaches (dashes included).
-constexpr double kStep = 1.0 / 15.0;
-constexpr double kGap = 0.5;
+constexpr char kFileMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '2'};
+// More than any replay needs (12 heroes, 15 cells a second, for over three hours).
+constexpr std::uint32_t kMaxCells = 2u * 1024u * 1024u;
+constexpr std::uint32_t kMaxRanges = 1u << 20;
+// Broken over gaps longer than half a second or speeds above what a hero reaches (dashes
+// included).
+constexpr std::int32_t kGapCells = 7; // 7/15 s
 constexpr float kMaxSpeed = 1200.0f;
+// Cells cover replay times up to about two years; far beyond any replay.
+constexpr double kMaxTime = 0x3fffffff * kStep;
+
+bool joins(std::int32_t ga, const float a[3], std::int32_t gb, const float b[3]) {
+    if (gb <= ga || gb - ga > kGapCells)
+        return false;
+    const float dx = b[0] - a[0], dy = b[1] - a[1];
+    const float dt = static_cast<float>((gb - ga) * kStep);
+    return std::sqrt(dx * dx + dy * dy) <= kMaxSpeed * dt + 8.0f;
+}
+
+dolly::env::TrailSegment make_segment(std::int32_t ga, const float a[3], std::int32_t gb,
+                                      const float b[3]) {
+    dolly::env::TrailSegment seg{};
+    std::memcpy(seg.a, a, sizeof(seg.a));
+    std::memcpy(seg.b, b, sizeof(seg.b));
+    seg.time_a = static_cast<float>(ga * kStep);
+    seg.time_b = static_cast<float>(gb * kStep);
+    return seg;
+}
+
+// Grid cells whose times lie inside [start, end].
+std::pair<std::int64_t, std::int64_t> grid_range(double start, double end) {
+    return {static_cast<std::int64_t>(std::ceil(start / kStep - 1e-6)),
+            static_cast<std::int64_t>(std::floor(end / kStep + 1e-6))};
+}
 
 } // namespace
 
 std::optional<Controls> decode(const Wire& wire) {
     if (std::memcmp(wire.magic, kWireMagic, sizeof(kWireMagic)) != 0 || wire.abi != kWireAbi ||
-        (wire.flags & ~(kFlagRecord | kFlagShow)) != 0 || !terminated(wire.record_path) ||
-        !terminated(wire.show_path))
+        (wire.flags & ~kFlagStore) != 0 || !terminated(wire.store_path) ||
+        !std::isfinite(wire.window_start) || !std::isfinite(wire.window_end) ||
+        wire.window_end < wire.window_start)
         return std::nullopt;
     Controls c;
-    c.record = (wire.flags & kFlagRecord) != 0;
-    c.show = (wire.flags & kFlagShow) != 0;
-    c.recording_id = wire.recording_id;
-    c.record_path = wire.record_path;
-    c.show_path = wire.show_path;
-    if ((c.record && c.record_path.empty()) || (c.show && c.show_path.empty()))
-        return std::nullopt;
+    if (wire.flags & kFlagStore) {
+        c.store_path = wire.store_path;
+        if (c.store_path.empty())
+            return std::nullopt;
+    }
+    c.window_start = wire.window_start;
+    c.window_end = wire.window_end;
     return c;
 }
 
-bool write_samples(const std::string& utf8_path, const std::vector<Sample>& samples,
-                   std::string* error) {
-    try {
-        if (samples.size() > kMaxSamples) {
-            if (error)
-                *error = "too many hero path samples";
-            return false;
+const Store::Hero* Store::find(std::uint32_t slot) const {
+    const auto it = std::lower_bound(heroes_.begin(), heroes_.end(), slot,
+                                     [](const auto& h, std::uint32_t s) { return h.first < s; });
+    return it != heroes_.end() && it->first == slot ? &it->second : nullptr;
+}
+
+bool Store::add(std::uint32_t slot, std::int32_t grid, const float pos[3]) {
+    if (!std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2]) ||
+        std::abs(pos[0]) > 1e6f || std::abs(pos[1]) > 1e6f || std::abs(pos[2]) > 1e6f ||
+        grid < 0 || cells_ >= kMaxCells)
+        return false;
+    auto hit = std::lower_bound(heroes_.begin(), heroes_.end(), slot,
+                                [](const auto& h, std::uint32_t s) { return h.first < s; });
+    if (hit == heroes_.end() || hit->first != slot)
+        hit = heroes_.insert(hit, {slot, Hero{}});
+    auto& cells = hit->second.cells;
+    const std::array<float, 3> p{pos[0], pos[1], pos[2]};
+    if (cells.empty() || cells.back().first < grid) { // live playback: always at the end
+        cells.emplace_back(grid, p);
+        ++cells_;
+        return true;
+    }
+    const auto it = std::lower_bound(cells.begin(), cells.end(), grid,
+                                     [](const auto& c, std::int32_t g) { return c.first < g; });
+    if (it != cells.end() && it->first == grid)
+        return false; // written once, never changed
+    cells.insert(it, {grid, p});
+    ++cells_;
+    return true;
+}
+
+void Store::add_seen(double t0, double t1) {
+    if (!std::isfinite(t0) || !std::isfinite(t1) || t1 < t0 || t0 < 0.0 || t1 > kMaxTime)
+        return;
+    // Ranges closer than half a cell are one range.
+    const double join = 0.5 * kStep;
+    if (!seen_.empty() && seen_.back().first <= t0 && t0 <= seen_.back().second + join) {
+        seen_.back().second = std::max(seen_.back().second, t1); // the common case
+        return;
+    }
+    if (seen_.size() >= kMaxRanges)
+        return;
+    seen_.emplace_back(t0, t1);
+    std::sort(seen_.begin(), seen_.end());
+    std::vector<std::pair<double, double>> merged;
+    for (const auto& r : seen_) {
+        if (!merged.empty() && r.first <= merged.back().second + join)
+            merged.back().second = std::max(merged.back().second, r.second);
+        else
+            merged.push_back(r);
+    }
+    seen_.swap(merged);
+}
+
+std::size_t Store::add_step(double t0, double t1, std::uint32_t slot, const float a[3],
+                            const float b[3], std::vector<std::int32_t>* written) {
+    if (!std::isfinite(t0) || !std::isfinite(t1) || !(t1 > t0) || t0 < 0.0 || t1 > kMaxTime)
+        return 0;
+    std::size_t n = 0;
+    const auto first = static_cast<std::int64_t>(std::floor(t0 / kStep)) + 1;
+    const auto last = static_cast<std::int64_t>(std::floor(t1 / kStep));
+    for (std::int64_t g = first; g <= last; ++g) {
+        const float f = static_cast<float>((g * kStep - t0) / (t1 - t0));
+        const float p[3] = {a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f,
+                            a[2] + (b[2] - a[2]) * f};
+        if (add(slot, static_cast<std::int32_t>(g), p)) {
+            ++n;
+            if (written)
+                written->push_back(static_cast<std::int32_t>(g));
         }
+    }
+    return n;
+}
+
+void Store::clear() {
+    heroes_.clear();
+    seen_.clear();
+    cells_ = 0;
+}
+
+std::vector<dolly::env::TrailSegment> Store::segments(double start, double end) const {
+    std::vector<dolly::env::TrailSegment> out;
+    const auto [lo, hi] = grid_range(start, end);
+    for (const auto& h : heroes_) {
+        const auto& cells = h.second.cells;
+        auto it = std::lower_bound(cells.begin(), cells.end(), lo,
+                                   [](const auto& c, std::int64_t g) { return c.first < g; });
+        for (; it != cells.end() && it + 1 != cells.end() && (it + 1)->first <= hi; ++it) {
+            const auto& a = *it;
+            const auto& b = *(it + 1);
+            if (!joins(a.first, a.second.data(), b.first, b.second.data()))
+                continue;
+            if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
+                return out;
+            out.push_back(make_segment(a.first, a.second.data(), b.first, b.second.data()));
+        }
+    }
+    return out;
+}
+
+bool Store::segment_to(std::uint32_t slot, std::int32_t grid, double start, double end,
+                       dolly::env::TrailSegment& out) const {
+    const Hero* h = find(slot);
+    if (!h)
+        return false;
+    const auto [lo, hi] = grid_range(start, end);
+    const auto& cells = h->cells;
+    const auto it = std::lower_bound(cells.begin(), cells.end(), grid,
+                                     [](const auto& c, std::int32_t g) { return c.first < g; });
+    if (it == cells.end() || it->first != grid || it == cells.begin())
+        return false;
+    const auto& a = *(it - 1);
+    if (a.first < lo || grid > hi || !joins(a.first, a.second.data(), grid, it->second.data()))
+        return false;
+    out = make_segment(a.first, a.second.data(), grid, it->second.data());
+    return true;
+}
+
+bool Store::has_after(std::uint32_t slot, std::int32_t grid) const {
+    const Hero* h = find(slot);
+    return h && !h->cells.empty() && h->cells.back().first > grid;
+}
+
+bool Store::save(const std::string& utf8_path, std::string* error) const {
+    try {
         const auto path = std::filesystem::u8path(utf8_path);
+        if (path.has_parent_path())
+            std::filesystem::create_directories(path.parent_path());
         auto partial = path;
         partial += ".partial";
         {
             std::ofstream out(partial, std::ios::binary | std::ios::trunc);
-            const std::uint32_t head[2] = {static_cast<std::uint32_t>(samples.size()), 0u};
+            const std::uint32_t head[2] = {static_cast<std::uint32_t>(cells_),
+                                           static_cast<std::uint32_t>(seen_.size())};
             out.write(kFileMagic, sizeof(kFileMagic));
             out.write(reinterpret_cast<const char*>(head), sizeof(head));
-            for (const Sample& s : samples) {
-                out.write(reinterpret_cast<const char*>(&s.time), 8);
-                out.write(reinterpret_cast<const char*>(&s.slot), 4);
-                out.write(reinterpret_cast<const char*>(s.pos), 12);
+            for (const auto& r : seen_) {
+                out.write(reinterpret_cast<const char*>(&r.first), 8);
+                out.write(reinterpret_cast<const char*>(&r.second), 8);
             }
+            for (const auto& h : heroes_)
+                for (const auto& c : h.second.cells) {
+                    out.write(reinterpret_cast<const char*>(&c.first), 4);
+                    out.write(reinterpret_cast<const char*>(&h.first), 4);
+                    out.write(reinterpret_cast<const char*>(c.second.data()), 12);
+                }
             out.flush();
             if (!out) {
                 if (error)
-                    *error = "could not write the hero path file";
+                    *error = "could not write the hero track store";
                 return false;
             }
         }
@@ -277,105 +437,53 @@ bool write_samples(const std::string& utf8_path, const std::vector<Sample>& samp
     }
 }
 
-bool read_samples(const std::string& utf8_path, std::vector<Sample>& samples, std::string* error) {
-    samples.clear();
+bool Store::load(const std::string& utf8_path, std::string* error) {
+    clear();
     try {
-        std::ifstream in(std::filesystem::u8path(utf8_path), std::ios::binary);
+        const auto path = std::filesystem::u8path(utf8_path);
+        if (!std::filesystem::exists(path))
+            return true; // nothing seen yet
+        std::ifstream in(path, std::ios::binary);
         char magic[8]{};
         std::uint32_t head[2]{};
         in.read(magic, sizeof(magic));
         in.read(reinterpret_cast<char*>(head), sizeof(head));
-        if (!in || std::memcmp(magic, kFileMagic, sizeof(magic)) != 0 || head[0] > kMaxSamples) {
+        if (!in || std::memcmp(magic, kFileMagic, sizeof(magic)) != 0 || head[0] > kMaxCells ||
+            head[1] > kMaxRanges) {
             if (error)
-                *error = "not a hero path file";
+                *error = "not a hero track store";
             return false;
         }
-        samples.resize(head[0]);
-        for (Sample& s : samples) {
-            in.read(reinterpret_cast<char*>(&s.time), 8);
-            in.read(reinterpret_cast<char*>(&s.slot), 4);
-            in.read(reinterpret_cast<char*>(s.pos), 12);
+        std::vector<std::pair<double, double>> ranges(head[1]);
+        for (auto& r : ranges) {
+            in.read(reinterpret_cast<char*>(&r.first), 8);
+            in.read(reinterpret_cast<char*>(&r.second), 8);
+        }
+        for (std::uint32_t i = 0; i < head[0] && in; ++i) {
+            std::int32_t grid = 0;
+            std::uint32_t slot = 0;
+            float pos[3]{};
+            in.read(reinterpret_cast<char*>(&grid), 4);
+            in.read(reinterpret_cast<char*>(&slot), 4);
+            in.read(reinterpret_cast<char*>(pos), 12);
+            if (in)
+                add(slot, grid, pos);
         }
         if (!in) {
-            samples.clear();
+            clear();
             if (error)
-                *error = "the hero path file is truncated";
+                *error = "the hero track store is truncated";
             return false;
         }
+        for (const auto& r : ranges)
+            add_seen(r.first, r.second);
         return true;
     } catch (const std::exception& exc) {
-        samples.clear();
+        clear();
         if (error)
             *error = exc.what();
         return false;
     }
-}
-
-std::vector<dolly::env::TrailSegment> build_segments(std::vector<Sample> samples) {
-    samples.erase(std::remove_if(samples.begin(), samples.end(),
-                                 [](const Sample& s) {
-                                     return !std::isfinite(s.time) || !std::isfinite(s.pos[0]) ||
-                                            !std::isfinite(s.pos[1]) || !std::isfinite(s.pos[2]);
-                                 }),
-                  samples.end());
-    // A total order, so samples recorded in any order give the same segments.
-    std::sort(samples.begin(), samples.end(), [](const Sample& a, const Sample& b) {
-        if (a.slot != b.slot)
-            return a.slot < b.slot;
-        if (a.time != b.time)
-            return a.time < b.time;
-        return std::memcmp(a.pos, b.pos, sizeof(a.pos)) < 0;
-    });
-    // Per hero: thin to the first sample in each 1/15 s slot of the replay clock (and the
-    // hero's last), so the result is the same whatever frame rate recorded it; split into runs
-    // where the hero vanished or jumped; round each run's corners; then chain segments.
-    std::vector<dolly::env::TrailSegment> out;
-    std::vector<Sample> run;
-    const auto flush = [&out](std::vector<Sample>& points) {
-        // A light [1 2 1] smoothing of the interior points takes the corners off the path
-        // (the ends stay where the hero started and stopped).
-        if (points.size() >= 3) {
-            std::vector<Sample> smooth = points;
-            for (std::size_t i = 1; i + 1 < points.size(); ++i)
-                for (int c = 0; c < 3; ++c)
-                    smooth[i].pos[c] = 0.25f * points[i - 1].pos[c] + 0.5f * points[i].pos[c] +
-                                       0.25f * points[i + 1].pos[c];
-            points.swap(smooth);
-        }
-        for (std::size_t i = 1; i < points.size(); ++i) {
-            if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
-                break;
-            dolly::env::TrailSegment seg{};
-            std::memcpy(seg.a, points[i - 1].pos, sizeof(seg.a));
-            std::memcpy(seg.b, points[i].pos, sizeof(seg.b));
-            seg.time_a = static_cast<float>(points[i - 1].time);
-            seg.time_b = static_cast<float>(points[i].time);
-            if (seg.time_b > seg.time_a)
-                out.push_back(seg);
-        }
-        points.clear();
-    };
-    for (std::size_t i = 0; i < samples.size(); ++i) {
-        const Sample& s = samples[i];
-        if (!run.empty() && run.back().slot != s.slot)
-            flush(run);
-        if (run.empty()) {
-            run.push_back(s);
-            continue;
-        }
-        const Sample& kept = run.back();
-        const bool last = i + 1 == samples.size() || samples[i + 1].slot != s.slot;
-        if (std::floor(s.time / kStep) == std::floor(kept.time / kStep) && !last)
-            continue;
-        const double dt = s.time - kept.time;
-        const float dx = s.pos[0] - kept.pos[0], dy = s.pos[1] - kept.pos[1];
-        const float dist = std::sqrt(dx * dx + dy * dy);
-        if (!(dt > 0.0 && dt <= kGap && dist <= kMaxSpeed * static_cast<float>(dt) + 8.0f))
-            flush(run); // vanished or jumped: start a new run here
-        run.push_back(s);
-    }
-    flush(run);
-    return out;
 }
 
 } // namespace trails

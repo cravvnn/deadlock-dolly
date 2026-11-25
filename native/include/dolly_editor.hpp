@@ -184,7 +184,9 @@ enum class EditorAction : std::uint32_t {
     SetLensSlide,
     SetLensTrails,
     SetLensRefraction,
-    SetLensSoftness
+    SetLensSoftness,
+    // Scene drawer: footprint tracks in snow, sand, dust and ash (0 or 1).
+    SetWeatherHeroTracks
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -222,8 +224,10 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetParticlePreset) == 137
 static_assert(static_cast<std::uint32_t>(EditorAction::SetLensRain) == 139 &&
                   static_cast<std::uint32_t>(EditorAction::SetLensSoftness) == 145,
               "Stable Scene lens rain action IDs");
-constexpr EditorAction kEditorActionLast = EditorAction::SetLensSoftness;
-static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 145, "Last editor action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetWeatherHeroTracks) == 146,
+              "Stable Scene hero tracks action ID");
+constexpr EditorAction kEditorActionLast = EditorAction::SetWeatherHeroTracks;
+static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 146, "Last editor action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&

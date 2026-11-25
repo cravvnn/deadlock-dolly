@@ -247,7 +247,7 @@ class NativeBridge(MediaTransport):
         self._weather_sequence = 0
         self._lens_sequence = 0
         self._trails_sequence = 0
-        self._trails = ("", 0, "")  # record path, recording id, show path
+        self._trails = ("", 0.0, 0.0)  # track store, shot window start and end (s)
         self._start = 0.0
         self._speed = 1.0
         self._demo = b""
@@ -731,20 +731,19 @@ class NativeBridge(MediaTransport):
                 self._weather_start = start_tick
             self._publish_weather()
 
-    def set_hero_trails(self, record_path="", recording_id=0, show_path=""):
-        """Record the heroes' paths into ``record_path`` while the replay plays (saved when
-        the path is cleared or ``recording_id`` changes) and draw the trails recorded in
-        ``show_path``. Empty strings turn either off."""
-        record = str(record_path or "")
-        show = str(show_path or "")
-        pack_trails_wire(0, record_path=record, recording_id=recording_id, show_path=show)
+    def set_hero_trails(self, store_path="", window_start=0.0, window_end=0.0):
+        """Name the open replay's hero track store (the game fills it while the replay plays)
+        and the shot's replay time window whose tracks it draws. Empty: no replay open."""
+        store = str(store_path or "")
+        window = (float(window_start), float(window_end))
+        pack_trails_wire(0, store_path=store, window_start=window[0], window_end=window[1])
         with self._operations, self._lock:
             self._check_open()
-            self._trails = (record, recording_id, show)
+            self._trails = (store, *window)
             self._publish_block(
                 TRAILS_WIRE_OFFSET, "_trails_sequence",
-                lambda sequence: pack_trails_wire(sequence, record_path=record,
-                                                  recording_id=recording_id, show_path=show))
+                lambda sequence: pack_trails_wire(sequence, store_path=store,
+                                                  window_start=window[0], window_end=window[1]))
 
     def set_weather_map(self, map_name):
         """The replay's map, whose collision grid the helper bakes for weather."""

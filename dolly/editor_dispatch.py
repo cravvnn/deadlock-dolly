@@ -15,11 +15,12 @@ WEATHER_FIELDS = {
     "set_precipitation_density": "density", "set_weather_coating": "coating",
     "set_weather_height_ceiling": "height_ceiling",
     "set_weather_include_effects": "include_in_effects",
+    "set_weather_hero_tracks": "hero_tracks",
     "set_lens_rain": "lens_rain", "set_lens_amount": "lens_amount", "set_lens_size": "lens_size",
     "set_lens_slide": "lens_slide", "set_lens_trails": "lens_trails",
     "set_lens_refraction": "lens_refraction", "set_lens_softness": "lens_softness",
 }
-WEATHER_SWITCHES = ("hero_wakes", "include_in_effects", "lens_rain")
+WEATHER_SWITCHES = ("hero_wakes", "include_in_effects", "lens_rain", "hero_tracks")
 import copy
 import logging
 import math

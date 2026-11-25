@@ -128,11 +128,15 @@ public:
     // Without one (or after an empty one) every pixel searches.
     bool set_wall_reach(uint32_t width, uint32_t height, const uint8_t* mask);
 
-    // The recorded hero paths as straight segments, each with the shot time (s, the
-    // renderer's sim_time clock) at its two ends. Each frame stamps those reached by its
+    // The heroes' tracks as straight segments, each with the replay time (s, the renderer's
+    // sim_time clock) at its two ends. Each frame stamps those walked to their end by its
     // time; an empty set (or none) means no trails. At most kMaxTrailSegments.
     static constexpr uint32_t kMaxTrailSegments = 1u << 17;
     bool set_hero_trails(const TrailSegment* segments, uint32_t count);
+    // Adds segments after those set (the order does not matter to the stamp). False when the
+    // buffer has no room left: set them all again instead.
+    bool append_hero_trails(ID3D11DeviceContext* ctx, const TrailSegment* segments,
+                            uint32_t count);
 
 private:
     struct Impl;

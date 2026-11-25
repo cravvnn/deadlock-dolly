@@ -662,8 +662,13 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             const char* kinds[]{"None", "Snow", "Snow", "Rain", "Sand", "Sand", "None", "Ash"};
             std::snprintf(flakes_detail, sizeof(flakes_detail), "%s",
                           kinds[std::clamp(preset, 0, 7)]);
-            std::snprintf(ground_detail, sizeof(ground_detail), "%.0f%% coating",
-                          w.coating * 100.0);
+            // Tracks: ready over the whole shot, or filling in as it plays.
+            const bool tracks_here = w.hero_tracks && w.coating > 0.0f &&
+                                     weather::takes_tracks(static_cast<weather::Preset>(preset));
+            const double track_cover =
+                tracks_here ? weather_runtime::hero_track_coverage() : -1.0;
+            std::snprintf(ground_detail, sizeof(ground_detail), "%.0f%% coating%s",
+                          w.coating * 100.0, track_cover >= 1.0 ? " \xC2\xB7 tracks" : "");
             k::BeginColumns(30);
             k::SectionTitle("Weather",
                             "Saved with the shot. Playback, scrubbing and export match exactly.",
@@ -748,6 +753,24 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 f::Greyed off(!on);
                 line("Coating###weather-coating", w.coating, weather::kCoatingMin,
                      weather::kCoatingMax, "%.2f", EditorAction::SetWeatherCoating);
+                k::VGap(10);
+                {
+                    f::Greyed no_cover(!weather::takes_tracks(static_cast<weather::Preset>(preset)));
+                    check("Hero tracks", w.hero_tracks, EditorAction::SetWeatherHeroTracks);
+                    k::ItemTooltip("Heroes leave footprints in snow, sand, dust and ash. Dolly "
+                                   "keeps where they walk while the replay plays.");
+                }
+                if (on && tracks_here && track_cover >= 0.0 && track_cover < 1.0) {
+                    k::VGap(6);
+                    char note[64];
+                    if (track_cover > 0.0)
+                        std::snprintf(note, sizeof(note),
+                                      "Tracks ready for %.0f%% of the shot. Play it to fill in.",
+                                      std::floor(track_cover * 100.0));
+                    else
+                        std::snprintf(note, sizeof(note), "Tracks appear as the shot plays.");
+                    k::Notice(note, t::text_dim);
+                }
                 k::VGap(10);
                 k::Disclosure("Haze and layers", &d.weather_haze);
                 if (d.weather_haze) {

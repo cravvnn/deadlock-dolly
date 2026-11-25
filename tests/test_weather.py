@@ -16,6 +16,7 @@ from dolly.weather import (WEATHER_IDS, WEATHER_OFF, WeatherSettings, legacy_par
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = ROOT / "native" / "include" / "dolly_weather_state.hpp"
+SOURCE = ROOT / "native" / "src" / "dolly_weather_state.cpp"
 
 
 def _shot(**changes):
@@ -179,7 +180,7 @@ class NativeParity(unittest.TestCase):
         self.assertEqual((name.rstrip(b"\0"), tick, r0, r1), (b"dl_midtown", 1234, 1.5, 2.0))
         self.assertEqual((magic, abi, seq, preset, flags),
                          (weather.WIRE_MAGIC, weather.WIRE_ABI, 9, WEATHER_IDS.index("rain_storm"),
-                          weather.WIRE_FLAG_INCLUDE_IN_EFFECTS))
+                          weather.WIRE_FLAG_INCLUDE_IN_EFFECTS | weather.WIRE_FLAG_HERO_TRACKS))
         expected = [2.0, 45.0, settings.wind_speed, settings.gusts, settings.coating,
                     settings.height_ceiling, 30.0]
         as_float32 = [struct.unpack("<f", struct.pack("<f", v))[0] for v in expected]
@@ -207,45 +208,74 @@ class HeroTrails(unittest.TestCase):
         self.assertEqual(2 * 1024 * 1024 + offset, weather.TRAILS_WIRE_OFFSET)
         self.assertEqual(int(re.search(r"sizeof\(Wire\) == (\d+)", h).group(1)),
                          weather.TRAILS_WIRE_BYTES)
-        self.assertEqual(int(re.search(r"kFlagRecord = (\d+);", h).group(1)), weather.TRAILS_FLAG_RECORD)
-        self.assertEqual(int(re.search(r"kFlagShow = (\d+);", h).group(1)), weather.TRAILS_FLAG_SHOW)
+        self.assertEqual(int(re.search(r"kFlagStore = (\d+);", h).group(1)), weather.TRAILS_FLAG_STORE)
+        self.assertEqual("".join(re.search(r"kFileMagic\[8\] = \{(.*?)\};",
+                                           SOURCE.read_text(encoding="utf-8")).group(1)
+                                 .replace("'", "").replace(" ", "").split(",")).encode(),
+                         weather.TRACK_STORE_MAGIC)
+        self.assertAlmostEqual(eval(re.search(r"kStep = (.*?);", h).group(1)), weather.TRACK_STEP)
         # It sits after the lens rain block and before the cinematic status.
         self.assertGreaterEqual(weather.TRAILS_WIRE_OFFSET,
                                 weather.LENS_WIRE_OFFSET + weather.LENS_WIRE_BYTES)
         self.assertLessEqual(weather.TRAILS_WIRE_OFFSET + weather.TRAILS_WIRE_BYTES,
                              2 * 1024 * 1024 + 60000)
 
-    def test_block_records_and_shows(self):
-        block = weather.pack_trails_wire(5, record_path="C:/a/b.trk", recording_id=3,
-                                         show_path="C:/a/c.trk")
-        magic, seq, abi, flags, rid, record, show = struct.unpack(weather.TRAILS_WIRE_FORMAT, block)
-        self.assertEqual((magic, seq, abi, rid), (weather.TRAILS_WIRE_MAGIC, 5, 1, 3))
-        self.assertEqual(flags, weather.TRAILS_FLAG_RECORD | weather.TRAILS_FLAG_SHOW)
-        self.assertEqual((record.rstrip(b"\0"), show.rstrip(b"\0")), (b"C:/a/b.trk", b"C:/a/c.trk"))
+    def test_block_names_the_store_and_window(self):
+        block = weather.pack_trails_wire(5, store_path="C:/a/b.tracks", window_start=12.5,
+                                         window_end=40.0)
+        magic, seq, abi, flags, _reserved, start, end, store = struct.unpack(
+            weather.TRAILS_WIRE_FORMAT, block)
+        self.assertEqual((magic, seq, abi), (weather.TRAILS_WIRE_MAGIC, 5, 2))
+        self.assertEqual((flags, start, end), (weather.TRAILS_FLAG_STORE, 12.5, 40.0))
+        self.assertEqual(store.rstrip(b"\0"), b"C:/a/b.tracks")
         idle = struct.unpack(weather.TRAILS_WIRE_FORMAT, weather.pack_trails_wire(6))
         self.assertEqual(idle[3], 0)
         with self.assertRaises(ValueError):
-            weather.pack_trails_wire(1, show_path="x" * weather.TRAILS_PATH_BYTES)
+            weather.pack_trails_wire(1, store_path="x" * weather.TRAILS_PATH_BYTES)
         with self.assertRaises(ValueError):
-            weather.pack_trails_wire(1, recording_id=-1)
+            weather.pack_trails_wire(1, store_path="a", window_start=5.0, window_end=1.0)
 
-    def test_paths_file_is_per_shot_range(self):
-        a = weather.hero_paths_file("B:/replays/1.dem", 100, 900)
-        self.assertEqual(a, weather.hero_paths_file("B:/replays/1.dem", 100, 900))
-        self.assertNotEqual(a, weather.hero_paths_file("B:/replays/1.dem", 100, 901))
-        self.assertNotEqual(a, weather.hero_paths_file("B:/replays/2.dem", 100, 900))
-        self.assertEqual(a.suffix, ".trk")
+    def test_store_is_per_replay_and_beside_the_map_data(self):
+        a = weather.hero_track_store("B:/replays/1.dem")
+        self.assertEqual(a, weather.hero_track_store("B:/replays/1.dem"))
+        self.assertNotEqual(a, weather.hero_track_store("B:/replays/2.dem"))
+        self.assertEqual(a.parent, weather.hero_paths_directory())
+        self.assertNotEqual(a.suffix, ".dem")  # a file of Dolly's own; the replay is untouched
 
-    def test_recorded_file_reads_back(self):
-        samples = [(10.5, 3, 1.0, 2.0, 256.0), (10.75, 4, -5.0, 6.5, 300.0)]
-        body = b"".join(struct.pack(weather.HERO_PATH_SAMPLE_FORMAT, *row) for row in samples)
+    def test_store_reads_back_with_coverage(self):
+        ranges = [(10.0, 20.0), (30.0, 35.0)]
+        cells = [(150, 3, 1.0, 2.0, 256.0), (151, 3, 5.0, 2.0, 256.0)]
+        body = (b"".join(struct.pack("<dd", *r) for r in ranges) +
+                b"".join(struct.pack(weather.TRACK_CELL_FORMAT, *c) for c in cells))
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "paths.trk"
-            path.write_bytes(weather.HERO_PATHS_MAGIC + struct.pack("<II", 2, 0) + body)
-            self.assertEqual(weather.read_hero_paths(path), samples)
-            path.write_bytes(weather.HERO_PATHS_MAGIC + struct.pack("<II", 3, 0) + body)
+            path = Path(folder) / "x.tracks"
+            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body)
+            seen, read = weather.read_track_store(path)
+            self.assertEqual((seen, read), (ranges, cells))
+            self.assertEqual(weather.track_ranges(path), ranges)
+            self.assertEqual(weather.track_coverage(ranges, 10.0, 20.0), 1.0)
+            self.assertAlmostEqual(weather.track_coverage(ranges, 10.0, 30.0), 0.5)
+            self.assertEqual(weather.track_coverage([], 10.0, 30.0), 0.0)
+            self.assertEqual(weather.track_covered_until(ranges, 10.0), 20.0)
+            self.assertEqual(weather.track_covered_until(ranges, 25.0), 25.0)
+            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 3, 2) + body)
             with self.assertRaises(ValueError):
-                weather.read_hero_paths(path)
+                weather.read_track_store(path)
+            self.assertEqual(weather.track_ranges(Path(folder) / "missing.tracks"), [])
+
+    def test_hero_tracks_switch_round_trips_and_is_optional(self):
+        settings = weather.preset_settings("blizzard")
+        self.assertTrue(settings.hero_tracks and settings.tracks_shown)
+        off = weather.WeatherSettings.from_dict({**settings.to_dict(), "hero_tracks": False})
+        self.assertFalse(off.hero_tracks or off.tracks_shown)
+        older = settings.to_dict()
+        del older["hero_tracks"]
+        self.assertTrue(weather.WeatherSettings.from_dict(older).hero_tracks)
+        self.assertFalse(weather.preset_settings("rain_storm").tracks_shown)
+        flags = struct.unpack(weather.WIRE_FORMAT, settings.pack_wire(1))[4]
+        self.assertTrue(flags & weather.WIRE_FLAG_HERO_TRACKS)
+        flags = struct.unpack(weather.WIRE_FORMAT, off.pack_wire(1))[4]
+        self.assertFalse(flags & weather.WIRE_FLAG_HERO_TRACKS)
 
 
 class SceneDrawerActions(unittest.TestCase):
@@ -260,6 +290,12 @@ class SceneDrawerActions(unittest.TestCase):
         names = ACTION_ORDER + editor_wire.EXTRA_ACTIONS
         self.assertEqual(names.index("set_weather_preset"), 125)
         self.assertEqual(names.index("set_weather_include_effects"), 136)
+        # Hero tracks came later: appended as 146, flag 4 in the weather block.
+        self.assertEqual(names.index("set_weather_hero_tracks"), 146)
+        self.assertIn("SetWeatherHeroTracks) == 146", header)
+        self.assertEqual(int(re.search(r"kWireFlagHeroTracks = (\d+);",
+                                       HEADER.read_text(encoding="utf-8")).group(1)),
+                         weather.WIRE_FLAG_HERO_TRACKS)
 
 
 class PlateSignal(unittest.TestCase):
@@ -311,6 +347,7 @@ class DesktopScenePage(unittest.TestCase):
             weather_values={name: tk.DoubleVar(root) for name in gui.WEATHER_SLIDERS},
             weather_include_effects=tk.BooleanVar(root),
             weather_hero_wakes=tk.BooleanVar(root),
+            weather_hero_tracks=tk.BooleanVar(root),
             weather_lens_rain=tk.BooleanVar(root),
             status_text=tk.StringVar(root),
             controller=SimpleNamespace(set_native_weather=lambda s, tick: sent.append((s, tick))),

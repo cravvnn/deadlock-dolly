@@ -191,17 +191,17 @@ def configure(app):
                 or getattr(app, "_native_weather_bridge", None) is not bridge):
             publish_weather(app.project.weather, app.project.start_tick)
             app._native_weather_cache, app._native_weather_bridge = signature, bridge
-    # Hero trails: the shot's recorded paths, when it has them (the recording itself owns
-    # the block while the prepare pass runs).
+    # Hero tracks: the open replay's track store (the game fills it whenever the replay
+    # plays, whatever the weather) and the shot's time window it draws tracks for.
     publish_trails = getattr(bridge, "set_hero_trails", None)
-    target_of = getattr(app, "_hero_paths_target", None)
-    if callable(publish_trails) and callable(target_of)             and not getattr(app, "_recording_hero_paths", False):
-        target = target_of()
-        shown = str(target) if target is not None and target.is_file() else ""
-        if (getattr(app, "_native_trails_cache", None) != shown
+    window_of = getattr(app, "_hero_tracks_window", None)
+    if callable(publish_trails) and callable(window_of):
+        signature = window_of()
+        if (getattr(app, "_native_trails_cache", None) != signature
                 or getattr(app, "_native_trails_bridge", None) is not bridge):
-            publish_trails(show_path=shown)
-            app._native_trails_cache, app._native_trails_bridge = shown, bridge
+            store, start, end = signature
+            publish_trails(store_path=store, window_start=start, window_end=end)
+            app._native_trails_cache, app._native_trails_bridge = signature, bridge
     publish_lite = getattr(bridge, "configure_lite_replay", None)
     if callable(publish_lite) and history is not None:
         signature = (history.revision, app._native_camera_page, app.project.start_tick,

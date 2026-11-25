@@ -83,6 +83,9 @@ WIRE_FORMAT = "<8sIIII7f32si2f"
 WIRE_BYTES = struct.calcsize(WIRE_FORMAT)
 WIRE_FLAG_HERO_WAKES = 1
 WIRE_FLAG_INCLUDE_IN_EFFECTS = 2
+WIRE_FLAG_HERO_TRACKS = 4
+# Presets whose ground cover takes hero tracks (snow, sand, dust and ash).
+TRACK_PRESETS = ("light_snow", "blizzard", "sandstorm", "dust_haze", "ash")
 
 # Lens rain: water on the camera lens while the shot's weather rains. Its controls
 # ride with the weather (they only matter with rain) but use their own block, since
@@ -109,18 +112,20 @@ LENS_WIRE_FORMAT = "<8sIIIi6f"
 LENS_WIRE_BYTES = struct.calcsize(LENS_WIRE_FORMAT)
 LENS_WIRE_FLAG_ENABLED = 1
 
-# Hero trails: the editor asks the game to record the heroes' paths while it plays a shot
-# through, and names the recorded file whose trails the weather draws.
+# Hero tracks: the editor names the open replay's track store and the shot's time window.
+# The game fills the store whenever the replay plays and draws the window's tracks from it.
 TRAILS_WIRE_OFFSET = 2 * 1024 * 1024 + 59456
-TRAILS_WIRE_MAGIC = b"DLYTRLS1"
-TRAILS_WIRE_ABI = 1
+TRAILS_WIRE_MAGIC = b"DLYTRLS2"
+TRAILS_WIRE_ABI = 2
 TRAILS_PATH_BYTES = 240
-TRAILS_WIRE_FORMAT = f"<8sIIII{TRAILS_PATH_BYTES}s{TRAILS_PATH_BYTES}s"
+TRAILS_WIRE_FORMAT = f"<8sIIIIdd{TRAILS_PATH_BYTES}s"
 TRAILS_WIRE_BYTES = struct.calcsize(TRAILS_WIRE_FORMAT)
-TRAILS_FLAG_RECORD = 1
-TRAILS_FLAG_SHOW = 2
-HERO_PATHS_MAGIC = b"DLYTRK01"
-HERO_PATH_SAMPLE_FORMAT = "<dI3f"
+TRAILS_FLAG_STORE = 1
+# The store file (beside the map grids, never in the replay): seen time ranges, then hero
+# positions on a fixed 1/15 s grid of replay time.
+TRACK_STORE_MAGIC = b"DLYTRK02"
+TRACK_STEP = 1.0 / 15.0
+TRACK_CELL_FORMAT = "<iI3f"
 
 
 def _number(value: Any, name: str, low: float, high: float) -> float:
@@ -147,12 +152,18 @@ class WeatherSettings:
     hero_wakes: bool = True
     include_in_effects: bool = True
     lens_rain: bool = False
+    hero_tracks: bool = True
     lens_amount: float = LENS_RANGES["lens_amount"][2]
     lens_size: float = LENS_RANGES["lens_size"][2]
     lens_slide: float = LENS_RANGES["lens_slide"][2]
     lens_trails: float = LENS_RANGES["lens_trails"][2]
     lens_refraction: float = LENS_RANGES["lens_refraction"][2]
     lens_softness: float = LENS_RANGES["lens_softness"][2]
+
+    @property
+    def tracks_shown(self) -> bool:
+        """Whether this weather draws hero tracks (a ground-cover preset with coating)."""
+        return self.hero_tracks and self.preset in TRACK_PRESETS and self.coating > 0.0
 
     @property
     def enabled(self) -> bool:
@@ -170,7 +181,7 @@ class WeatherSettings:
         _number(self.build_up, "build-up", BUILD_UP_MIN, BUILD_UP_MAX)
         _number(self.flake_size, "flake size", FLAKE_SIZE_MIN, FLAKE_SIZE_MAX)
         _number(self.density, "density", DENSITY_MIN, DENSITY_MAX)
-        for name in ("hero_wakes", "include_in_effects", "lens_rain"):
+        for name in ("hero_wakes", "include_in_effects", "lens_rain", "hero_tracks"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"Weather {name.replace('_', ' ')} must be true or false")
         for name, (low, high, _default) in LENS_RANGES.items():
@@ -194,6 +205,7 @@ class WeatherSettings:
                 "hero_wakes": self.hero_wakes,
                 "include_in_effects": self.include_in_effects,
                 "lens_rain": self.lens_rain,
+                "hero_tracks": self.hero_tracks,
                 **{name: getattr(self, name) for name in LENS_RANGES}}
 
     @classmethod
@@ -203,8 +215,8 @@ class WeatherSettings:
         fields = ("preset", "intensity", "wind_direction", "wind_speed", "gusts", "coating",
                   "height_ceiling", "build_up", "flake_size", "density", "hero_wakes",
                   "include_in_effects")
-        # Lens rain came after the first weather shots, so its fields are optional.
-        optional = ("lens_rain",) + tuple(LENS_RANGES)
+        # Lens rain and hero tracks came after the first weather shots: optional.
+        optional = ("lens_rain", "hero_tracks") + tuple(LENS_RANGES)
         unknown = sorted(set(value) - set(fields) - set(optional))
         if unknown:
             raise ValueError(f"Unknown weather field: {unknown[0]}")
@@ -216,7 +228,7 @@ class WeatherSettings:
         for name, number in numbers.items():
             if isinstance(number, bool) or not isinstance(number, (int, float)):
                 raise ValueError(f"Weather {name.replace('_', ' ')} must be a number")
-        switches = {"lens_rain": value["lens_rain"]} if "lens_rain" in value else {}
+        switches = {name: value[name] for name in ("lens_rain", "hero_tracks") if name in value}
         settings = cls(preset=value["preset"], hero_wakes=value["hero_wakes"],
                        include_in_effects=value["include_in_effects"], **switches,
                        **{name: float(number) for name, number in numbers.items()})
@@ -232,7 +244,8 @@ class WeatherSettings:
         """
         self.validate()
         flags = ((WIRE_FLAG_HERO_WAKES if self.hero_wakes else 0) |
-                 (WIRE_FLAG_INCLUDE_IN_EFFECTS if self.include_in_effects else 0))
+                 (WIRE_FLAG_INCLUDE_IN_EFFECTS if self.include_in_effects else 0) |
+                 (WIRE_FLAG_HERO_TRACKS if self.hero_tracks else 0))
         name = map_name.encode("ascii") if map_name else b""
         if len(name) > 31 or not re.fullmatch(rb"[a-z0-9_]*", name):
             name = b""  # the helper ignores a name it cannot use
@@ -277,67 +290,80 @@ def preset_label(preset: str) -> str:
     return WEATHER_LABELS.get(preset, preset)
 
 
-def _trails_path_bytes(path: str, name: str) -> bytes:
-    data = path.encode("utf-8") if path else b""
+def pack_trails_wire(sequence: int, *, store_path: str = "", window_start: float = 0.0,
+                     window_end: float = 0.0) -> bytes:
+    """The native hero tracks block: the open replay's track store (empty: none) and the
+    shot's replay time window [window_start, window_end] in seconds."""
+    data = str(store_path).encode("utf-8") if store_path else b""
     if len(data) >= TRAILS_PATH_BYTES or 0 in data:
-        raise ValueError(f"The hero path {name} is too long for the game to open")
-    return data
-
-
-def pack_trails_wire(sequence: int, *, record_path: str = "", recording_id: int = 0,
-                     show_path: str = "") -> bytes:
-    """The native hero trails block.
-
-    A ``record_path`` makes the game record the heroes' paths while the replay plays, saved
-    to that file when the recording stops (the path is cleared or ``recording_id``
-    changes). A ``show_path`` names the recorded file whose trails the weather draws.
-    """
-    if isinstance(recording_id, bool) or not isinstance(recording_id, int)             or not 0 <= recording_id <= 0xffffffff:
-        raise ValueError("The hero path recording id must be a 32-bit count")
-    record = _trails_path_bytes(record_path, "recording")
-    show = _trails_path_bytes(show_path, "file")
-    flags = (TRAILS_FLAG_RECORD if record else 0) | (TRAILS_FLAG_SHOW if show else 0)
+        raise ValueError("The hero track store path is too long for the game to open")
+    start, end = float(window_start), float(window_end)
+    if not (math.isfinite(start) and math.isfinite(end)) or end < start:
+        raise ValueError("The hero track window must run forwards")
+    flags = TRAILS_FLAG_STORE if data else 0
     return struct.pack(TRAILS_WIRE_FORMAT, TRAILS_WIRE_MAGIC, sequence & 0xffffffff,
-                       TRAILS_WIRE_ABI, flags, recording_id, record, show)
+                       TRAILS_WIRE_ABI, flags, 0, start, end, data)
 
 
 def hero_paths_directory() -> Path:
-    """Where recorded hero paths are kept, beside the game's map grids."""
+    """Where hero track stores are kept, beside the game's map grids."""
     base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
     return Path(base) / "DeadlockDolly" / "hero-paths"
 
 
-def hero_paths_file(replay: str, start_tick: int, end_tick: int) -> Path:
-    """The recorded hero paths of one shot: its replay and its tick range."""
+def hero_track_store(replay: str) -> Path:
+    """The track store of one replay (a separate file; the replay is never changed)."""
     digest = hashlib.sha256(str(replay).encode("utf-8")).hexdigest()[:16]
-    return hero_paths_directory() / f"{digest}-{int(start_tick)}-{int(end_tick)}.trk"
+    return hero_paths_directory() / f"{digest}.tracks"
 
 
-def write_hero_paths(path: Path, samples) -> None:
-    """Save hero path samples (time, hero slot, x, y, z) in the game's recorded format."""
-    body = b"".join(struct.pack(HERO_PATH_SAMPLE_FORMAT, *row) for row in samples)
-    target = Path(path)
-    partial = target.with_name(target.name + ".partial")
-    partial.write_bytes(HERO_PATHS_MAGIC + struct.pack("<II", len(samples), 0) + body)
-    partial.replace(target)
-
-
-def trim_hero_paths(path: Path, start: float, end: float) -> int:
-    """Keep only the samples inside the shot's replay time range [start, end]; the game also
-    sees the heroes while playback gets going. Returns how many samples were kept."""
-    kept = [row for row in read_hero_paths(path) if start <= row[0] <= end]
-    write_hero_paths(path, kept)
-    return len(kept)
-
-
-def read_hero_paths(path: Path) -> list[tuple[float, int, float, float, float]]:
-    """The samples of a recorded hero path file: time, hero slot, x, y, z."""
+def read_track_store(path: Path) -> tuple[list[tuple[float, float]],
+                                          list[tuple[int, int, float, float, float]]]:
+    """A track store's seen time ranges and its cells (grid, hero slot, x, y, z)."""
     data = Path(path).read_bytes()
-    if len(data) < 16 or data[:8] != HERO_PATHS_MAGIC:
-        raise ValueError("Not a hero path file")
-    count = struct.unpack_from("<I", data, 8)[0]
-    size = struct.calcsize(HERO_PATH_SAMPLE_FORMAT)
-    if len(data) != 16 + count * size:
-        raise ValueError("The hero path file is truncated")
-    return [struct.unpack_from(HERO_PATH_SAMPLE_FORMAT, data, 16 + i * size)
-            for i in range(count)]
+    if len(data) < 16 or data[:8] != TRACK_STORE_MAGIC:
+        raise ValueError("Not a hero track store")
+    cells, ranges = struct.unpack_from("<II", data, 8)
+    size = struct.calcsize(TRACK_CELL_FORMAT)
+    if len(data) != 16 + ranges * 16 + cells * size:
+        raise ValueError("The hero track store is truncated")
+    seen = [struct.unpack_from("<dd", data, 16 + i * 16) for i in range(ranges)]
+    base = 16 + ranges * 16
+    return seen, [struct.unpack_from(TRACK_CELL_FORMAT, data, base + i * size)
+                  for i in range(cells)]
+
+
+def track_ranges(path: Path) -> list[tuple[float, float]]:
+    """Only the seen time ranges of a track store (none for a missing or bad file)."""
+    try:
+        with open(path, "rb") as stream:
+            head = stream.read(16)
+            if len(head) < 16 or head[:8] != TRACK_STORE_MAGIC:
+                return []
+            ranges = struct.unpack_from("<I", head, 12)[0]
+            body = stream.read(ranges * 16)
+        if len(body) != ranges * 16:
+            return []
+        return [struct.unpack_from("<dd", body, i * 16) for i in range(ranges)]
+    except OSError:
+        return []
+
+
+def track_coverage(ranges, start: float, end: float) -> float:
+    """How much of [start, end] the seen ranges cover (0..1); within half a second counts as
+    all (playback stops just short of a shot's end)."""
+    if end <= start:
+        return 1.0
+    covered = sum(max(0.0, min(b, end) - max(a, start)) for a, b in ranges)
+    return 1.0 if covered >= (end - start) - 0.5 else covered / (end - start)
+
+
+def track_covered_until(ranges, start: float) -> float:
+    """The end of the seen range running on from ``start`` (``start`` when none does)."""
+    until = start
+    for a, b in sorted(ranges):
+        if a <= until + TRACK_STEP and b > until:
+            until = b
+    return until
+
+

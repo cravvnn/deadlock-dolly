@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <string>
 #include <vector>
@@ -77,7 +78,7 @@ void test_decode_rejects_bad_blocks() {
     w.preset = kPresetCount;
     CHECK(!decode(w).has_value());
     w = good;
-    w.flags |= 4u;
+    w.flags |= 8u; // 1, 2 and 4 are known (hero tracks is 4)
     CHECK(!decode(w).has_value());
 
     float Wire::*fields[] = {&Wire::intensity, &Wire::wind_direction, &Wire::wind_speed,
@@ -146,83 +147,127 @@ void test_coating_growth() {
     CHECK(coating_growth(s, 30.0) == b); // pure in time
 }
 
-trails::Wire trails_wire(std::uint32_t flags, const char* record, const char* show) {
+trails::Wire trails_wire(std::uint32_t flags, const char* store, double start, double end) {
     trails::Wire w{};
     std::memcpy(w.magic, trails::kWireMagic, sizeof(w.magic));
     w.abi = trails::kWireAbi;
     w.flags = flags;
-    w.recording_id = 7;
-    std::strncpy(w.record_path, record, sizeof(w.record_path) - 1);
-    std::strncpy(w.show_path, show, sizeof(w.show_path) - 1);
+    w.window_start = start;
+    w.window_end = end;
+    std::strncpy(w.store_path, store, sizeof(w.store_path) - 1);
     return w;
 }
 
 void test_trails_wire() {
-    auto c = trails::decode(trails_wire(trails::kFlagRecord | trails::kFlagShow, "a.trk", "b.trk"));
-    CHECK(c && c->record && c->show && c->recording_id == 7 && c->record_path == "a.trk" &&
-          c->show_path == "b.trk");
-    CHECK(trails::decode(trails_wire(0, "", "")).has_value()); // idle
-    CHECK(!trails::decode(trails_wire(trails::kFlagRecord, "", "")));  // record needs a path
-    CHECK(!trails::decode(trails_wire(trails::kFlagShow, "", "")));    // show needs a path
-    CHECK(!trails::decode(trails_wire(8, "a", "b")));                  // unknown flag
-    auto bad = trails_wire(0, "", "");
-    bad.abi = 2;
+    auto c = trails::decode(trails_wire(trails::kFlagStore, "a.trk", 10.0, 40.0));
+    CHECK(c && c->store_path == "a.trk" && c->window_start == 10.0 && c->window_end == 40.0);
+    c = trails::decode(trails_wire(0, "", 0.0, 0.0)); // no replay open
+    CHECK(c && c->store_path.empty());
+    CHECK(!trails::decode(trails_wire(trails::kFlagStore, "", 0.0, 1.0))); // store needs a path
+    CHECK(!trails::decode(trails_wire(8, "a", 0.0, 1.0)));                 // unknown flag
+    CHECK(!trails::decode(trails_wire(trails::kFlagStore, "a", 5.0, 1.0))); // backwards window
+    CHECK(!trails::decode(trails_wire(trails::kFlagStore, "a", 0.0, std::nan(""))));
+    auto bad = trails_wire(0, "", 0.0, 0.0);
+    bad.abi = 1;
     CHECK(!trails::decode(bad));
-    auto open = trails_wire(0, "", "");
-    std::memset(open.show_path, 'x', sizeof(open.show_path)); // not terminated
+    auto open = trails_wire(0, "", 0.0, 0.0);
+    std::memset(open.store_path, 'x', sizeof(open.store_path)); // not terminated
     CHECK(!trails::decode(open));
     CHECK(!trails::decode(trails::Wire{})); // nothing published yet
 }
 
-trails::Sample sample(double t, std::uint32_t slot, float x, float y) {
-    trails::Sample s;
-    s.time = t;
-    s.slot = slot;
-    s.pos[0] = x;
-    s.pos[1] = y;
-    s.pos[2] = 256.0f;
-    return s;
+// Hero 3 walks +x at 300 u/s from t = 100 s; hero 5 stands, then teleports, then vanishes.
+void walk(trails::Store& store, double fps, double from, double to) {
+    const double dt = 1.0 / fps;
+    for (double t = from; t + dt <= to + 1e-9; t += dt) {
+        const float a[3] = {static_cast<float>(300.0 * (t - 100.0)), 0.0f, 256.0f};
+        const float b[3] = {static_cast<float>(300.0 * (t + dt - 100.0)), 0.0f, 256.0f};
+        store.add_step(t, t + dt, 3, a, b);
+        store.add_seen(t, t + dt);
+    }
 }
 
-void test_trail_segments() {
-    // Hero 3 walks +x at 300 u/s sampled at 60 fps for 2 s; hero 5 stands, then teleports.
-    std::vector<trails::Sample> samples;
-    for (int i = 0; i <= 120; ++i)
-        samples.push_back(sample(100.0 + i / 60.0, 3, 5.0f * i, 0.0f));
-    samples.push_back(sample(100.0, 5, 0.0f, 0.0f));
-    samples.push_back(sample(100.2, 5, 10.0f, 0.0f));
-    samples.push_back(sample(100.4, 5, 3000.0f, 0.0f)); // too fast: a teleport, no segment
-    samples.push_back(sample(101.5, 5, 3010.0f, 0.0f)); // after a gap: no segment
-    const auto segs = trails::build_segments(samples);
-    std::size_t hero3 = 0;
-    for (const auto& s : segs) {
-        CHECK(s.time_b > s.time_a);
-        if (s.a[1] == 0.0f && s.time_a >= 100.0f && s.a[0] >= 0.0f && s.b[0] <= 600.0f &&
-            s.b[0] - s.a[0] >= 0.0f)
-            ++hero3;
+bool same_segments(std::vector<dolly::env::TrailSegment> a,
+                   std::vector<dolly::env::TrailSegment> b) {
+    const auto order = [](const auto& x, const auto& y) {
+        return std::memcmp(&x, &y, sizeof(x)) < 0;
+    };
+    std::sort(a.begin(), a.end(), order);
+    std::sort(b.begin(), b.end(), order);
+    return a.size() == b.size() &&
+           (a.empty() || std::memcmp(a.data(), b.data(), a.size() * sizeof(a[0])) == 0);
+}
+
+void test_track_store() {
+    // Cells sit on the 1/15 s grid whatever the frame rate: 60 fps and 144 fps agree to well
+    // under a unit, and the walk's 30 cells in (100, 102] give 29 joined segments.
+    trails::Store a, b;
+    walk(a, 60.0, 100.0, 102.05);
+    walk(b, 144.0, 100.0, 102.05);
+    const auto sa = a.segments(100.0, 102.0), sb = b.segments(100.0, 102.0);
+    CHECK(sa.size() == 29 && sb.size() == 29);
+    for (std::size_t i = 0; i < sa.size() && i < sb.size(); ++i)
+        CHECK(std::abs(sa[i].a[0] - sb[i].a[0]) < 0.01f && sa[i].time_a == sb[i].time_a);
+    for (const auto& s : sa)
+        CHECK(near(s.time_b - s.time_a, static_cast<float>(trails::kStep)));
+    // Written once: playing the same time again (at another rate) changes nothing.
+    trails::Store again = a;
+    walk(again, 30.0, 100.0, 102.05);
+    CHECK(same_segments(again.segments(100.0, 102.0), sa) && again.size() == a.size());
+    // Seen ranges merge; the window clips segments to the shot.
+    CHECK(a.seen().size() == 1 && near(static_cast<float>(a.seen()[0].first), 100.0f) &&
+          std::abs(a.seen()[0].second - 102.05) < 0.02);
+    a.add_seen(105.0, 106.0);
+    a.add_seen(101.0, 105.0);
+    CHECK(a.seen().size() == 1 && a.seen()[0].second == 106.0);
+    CHECK(a.segments(101.0, 101.5).size() == 7); // cells 1515..1522
+    // The live path (each new cell's segment as it arrives) equals the whole build at every
+    // moment: a frame drawn while filling matches one drawn from the finished store.
+    trails::Store live;
+    std::vector<dolly::env::TrailSegment> streamed;
+    const double dt = 1.0 / 60.0;
+    for (double t = 100.0; t + dt <= 102.05 + 1e-9; t += dt) {
+        const float p0[3] = {static_cast<float>(300.0 * (t - 100.0)), 0.0f, 256.0f};
+        const float p1[3] = {static_cast<float>(300.0 * (t + dt - 100.0)), 0.0f, 256.0f};
+        std::vector<std::int32_t> written;
+        live.add_step(t, t + dt, 3, p0, p1, &written);
+        for (const auto g : written) {
+            CHECK(!live.has_after(3, g));
+            dolly::env::TrailSegment seg{};
+            if (live.segment_to(3, g, 100.0, 102.0, seg))
+                streamed.push_back(seg);
+        }
+        CHECK(same_segments(streamed, live.segments(100.0, 102.0)));
     }
-    // 2 s at 15 per second, plus hero 5's one short walk.
-    CHECK(segs.size() == 31);
-    CHECK(hero3 == 31);
-    // Thinned steps are about 1/15 s; segments chain end to start per hero.
-    CHECK(near(segs[1].a[0], segs[0].b[0]) && near(segs[1].time_a, segs[0].time_b));
-    // Any order of the same samples gives the same segments.
-    std::vector<trails::Sample> shuffled(samples.rbegin(), samples.rend());
-    const auto again = trails::build_segments(shuffled);
-    CHECK(again.size() == segs.size() &&
-          std::memcmp(again.data(), segs.data(), segs.size() * sizeof(segs[0])) == 0);
-    // Saved and read back exactly.
-    const auto file = std::filesystem::temp_directory_path() / "dolly_trails_test.trk";
+    CHECK(same_segments(streamed, sa));
+    // Breaks: a teleport (too fast) and a vanishing (a gap over half a second) join nothing.
+    trails::Store jumps;
+    const float p0[3] = {0, 0, 0}, p1[3] = {10, 0, 0}, far[3] = {3000, 0, 0},
+                p3[3] = {3010, 0, 0};
+    jumps.add(5, 1500, p0);
+    jumps.add(5, 1503, p1);  // 0.2 s later: joined
+    jumps.add(5, 1506, far); // 2990 u in 0.2 s: a teleport
+    jumps.add(5, 1530, p3);  // 1.6 s later: vanished
+    CHECK(jumps.segments(0.0, 200.0).size() == 1);
+    CHECK(!jumps.add(5, 1503, far) && jumps.size() == 4); // never rewritten
+    // Filled in behind: has_after says the whole set must be rebuilt.
+    CHECK(jumps.has_after(5, 1501));
+    // Saved and read back exactly; a missing file is an empty store; a bad one is refused.
+    const auto file = std::filesystem::temp_directory_path() / "dolly_tracks_test.trk";
     std::string error;
-    CHECK(trails::write_samples(file.u8string(), samples, &error));
-    std::vector<trails::Sample> read;
-    CHECK(trails::read_samples(file.u8string(), read, &error));
-    CHECK(read.size() == samples.size());
-    for (std::size_t i = 0; i < read.size(); ++i)
-        CHECK(read[i].time == samples[i].time && read[i].slot == samples[i].slot &&
-              std::memcmp(read[i].pos, samples[i].pos, sizeof(read[i].pos)) == 0);
+    CHECK(a.save(file.u8string(), &error));
+    trails::Store read;
+    CHECK(read.load(file.u8string(), &error));
+    CHECK(read.size() == a.size() && read.seen() == a.seen());
+    CHECK(same_segments(read.segments(0.0, 1000.0), a.segments(0.0, 1000.0)));
     std::filesystem::remove(file);
-    CHECK(!trails::read_samples(file.u8string(), read, &error) && read.empty());
+    CHECK(read.load(file.u8string(), &error) && read.size() == 0);
+    {
+        std::ofstream junk(file, std::ios::binary);
+        junk << "DLYTRK01 not a store";
+    }
+    CHECK(!read.load(file.u8string(), &error) && read.size() == 0);
+    std::filesystem::remove(file);
 }
 
 } // namespace
@@ -235,7 +280,7 @@ int main() {
     test_coating_growth();
     test_map_name();
     test_trails_wire();
-    test_trail_segments();
+    test_track_store();
     std::printf("All weather state checks passed.\n");
     return 0;
 }

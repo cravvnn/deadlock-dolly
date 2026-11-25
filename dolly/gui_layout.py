@@ -200,11 +200,11 @@ def build_scene(app):
         include_in_effects=app.weather_include_effects,
         hero_wakes=app.weather_hero_wakes,
         lens_rain=app.weather_lens_rain,
+        hero_tracks=app.weather_hero_tracks,
         preset_labels=tuple(w.WEATHER_LABELS[preset] for preset in w.WEATHER_IDS),
         controls=controls,
     )
-    view = ScenePage(app.scene_tab, state, SceneActions(weather_changed=app._weather_changed,
-                                                          record_hero_paths=app._record_hero_paths))
+    view = ScenePage(app.scene_tab, state, SceneActions(weather_changed=app._weather_changed))
     app.scene_view = view
     app.scene_page = view.scene_page
     app._playback_hosts[str(app.scene_tab)] = view.playback_host

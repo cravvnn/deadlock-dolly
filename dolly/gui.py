@@ -574,6 +574,7 @@ class DollyApp:
                                for name in WEATHER_SLIDERS}
         self.weather_include_effects = tk.BooleanVar(value=weather_model.WEATHER_OFF.include_in_effects)
         self.weather_hero_wakes = tk.BooleanVar(value=weather_model.WEATHER_OFF.hero_wakes)
+        self.weather_hero_tracks = tk.BooleanVar(value=weather_model.WEATHER_OFF.hero_tracks)
         self.weather_lens_rain = tk.BooleanVar(value=weather_model.WEATHER_OFF.lens_rain)
         self.selected_text = tk.StringVar(value="No camera selected")
         self.path_summary = tk.StringVar(value="0 cameras · 0.00 s")
@@ -715,6 +716,7 @@ class DollyApp:
         self.root.bind("<Control-y>", lambda event: self._history_shortcut(event, True))
         self.root.bind("<Control-Shift-Z>", lambda event: self._history_shortcut(event, True))
         self.root.after(80, self._poll)
+        self.root.after(1500, self._tick_tracks_status)
         self._submit("Looking for Deadlock", _startup_scan, self._startup_scanned)
 
     def _px(self, value):
@@ -1680,6 +1682,8 @@ class DollyApp:
         self._bone_take_project = copy.deepcopy(bone_project)
         project = self._pov_project or bone_project or (Project.from_dict(self.project.to_dict()) if len(self.project.keyframes) >= 2 else None)
         frozen = False if pov else self.frozen.get()
+        if frozen and project is not None:
+            self._warn_frozen_tracks()
         # Export speed only applies to fixed-step takes.
         speed = options.speed if options.fixed_step else 1.0
         self._take_play_speed = speed
@@ -3660,64 +3664,76 @@ class DollyApp:
             variable.set(getattr(settings, name))
         self.weather_include_effects.set(settings.include_in_effects)
         self.weather_hero_wakes.set(settings.hero_wakes)
+        self.weather_hero_tracks.set(settings.hero_tracks)
         self.weather_lens_rain.set(settings.lens_rain)
         view = getattr(self, "scene_view", None)
         if view is not None:
             view.set_enabled(settings.enabled)
             self._show_trails_status()
 
-    def _hero_paths_target(self):
-        """Where this shot's recorded hero paths live (its replay and tick range), or None."""
-        replay = self.demo_path.get() if hasattr(self, "demo_path") else ""
-        if not replay:
-            return None
+    def _hero_tracks_window(self):
+        """The open replay's hero track store and the shot's replay time window (s): what the
+        game fills while the replay plays and draws tracks for. No replay: an empty path."""
+        replay = self.demo_path.get().strip() if hasattr(self, "demo_path") else ""
         project = self.project
-        end = project.start_tick + math.ceil(max(project.duration, 0.0) * project.tick_rate)
-        return weather_model.hero_paths_file(replay, project.start_tick, end)
+        start = project.start_tick / project.tick_rate
+        end = start + max(float(project.duration), 0.0)
+        if not replay:
+            return ("", start, end)
+        return (str(weather_model.hero_track_store(replay)), start, end)
 
     def _show_trails_status(self):
+        """The Scene page's tracks line: how much of the shot the replay's store has seen."""
         view = getattr(self, "scene_view", None)
         if view is None:
             return
-        target = self._hero_paths_target()
-        if target is not None and target.is_file():
-            view.trails_status.set("Hero trails: recorded for this shot.")
+        settings = self.project.weather
+        store, start, end = self._hero_tracks_window()
+        if not settings.hero_tracks:
+            text = "Hero tracks: off for this shot."
+        elif settings.preset not in weather_model.TRACK_PRESETS:
+            text = "Hero tracks: shown in snow, sand, dust and ash."
+        elif not store:
+            text = "Hero tracks: open a replay to see them."
         else:
-            view.trails_status.set(scene_page.TRAILS_NONE)
+            ranges = weather_model.track_ranges(store)
+            cover = weather_model.track_coverage(ranges, start, end)
+            if cover >= 1.0:
+                text = "Hero tracks: ready for this shot."
+            elif cover <= 0.0:
+                text = scene_page.TRAILS_NONE
+            else:
+                until = weather_model.track_covered_until(ranges, start) - start
+                total = end - start
+                if until > 0.05:
+                    text = (f"Hero tracks: ready to {_clock(until)} of {_clock(total)}. "
+                            "They fill in as the shot plays.")
+                else:
+                    text = (f"Hero tracks: ready for {int(cover * 100)}% of the shot. "
+                            "They fill in as it plays.")
+        if view.trails_status.get() != text:
+            view.trails_status.set(text)
 
-    def _record_hero_paths(self):
-        """Scene page: the prepare pass for hero trails. Plays the shot through at 4x while
-        the game records where the heroes walk, then shows their trails."""
-        if self.busy or self.playing:
-            self.status_text.set("Stop path playback and finish the current operation first.")
+    def _warn_frozen_tracks(self):
+        """A frozen take records one replay moment without playing the shot, so its tracks are
+        those already kept for the replay. Say so when the shot has not been played through."""
+        settings = self.project.weather
+        store, start, end = self._hero_tracks_window()
+        if not store or not settings.enabled or not settings.tracks_shown:
             return
-        target = self._hero_paths_target()
-        if target is None:
-            self.status_text.set("Open a replay before recording hero paths.")
+        if weather_model.track_coverage(weather_model.track_ranges(store), start, end) < 1.0:
+            self._log("Hero tracks: this shot has not been played through yet, so a frozen take "
+                      "shows only the tracks walked so far. Play the shot once for all of them.")
+
+    def _tick_tracks_status(self):
+        """Refresh the tracks line while Dolly runs (the game fills the store as it plays)."""
+        if getattr(self, "closed", False):
             return
-        project = self.project
-        view = getattr(self, "scene_view", None)
-
-        def progress(fraction):
-            self.after(0, lambda: self.busy_text.set(
-                f"Recording hero paths… {int(fraction * 100)}%"))
-
-        def work():
-            self._recording_hero_paths = True
-            try:
-                return self.controller.record_hero_paths(project, target, progress=progress)
-            finally:
-                self._recording_hero_paths = False
-
-        def done(result):
-            self._native_trails_cache = None  # republish what the shot now has
+        try:
             self._show_trails_status()
-            if not isinstance(result, Exception):
-                self.status_text.set("Hero paths recorded; trails show in snow, sand and ash.")
-
-        if view is not None:
-            view.trails_status.set("Hero trails: recording at 4x…")
-        self._submit("Recording hero paths", work, done)
+        except Exception:  # a status line never stops the editor
+            LOG.debug("Hero tracks status failed", exc_info=True)
+        self.root.after(1500, self._tick_tracks_status)
 
     def _weather_changed(self):
         """Apply the Scene page's values to the shot and send them to the game."""
@@ -3739,6 +3755,7 @@ class DollyApp:
                         values[name] = round(number, digits)
                 settings = replace(current, include_in_effects=bool(self.weather_include_effects.get()),
                                    hero_wakes=bool(self.weather_hero_wakes.get()),
+                                   hero_tracks=bool(self.weather_hero_tracks.get()),
                                    lens_rain=bool(self.weather_lens_rain.get()), **values)
             settings.validate()
             if settings == current:
@@ -5963,6 +5980,12 @@ class DollyApp:
                     pass
                 setattr(self, name, None)
         self.root.destroy()
+
+
+def _clock(seconds):
+    """m:ss for a span of the shot."""
+    whole = max(int(round(seconds)), 0)
+    return f"{whole // 60}:{whole % 60:02d}"
 
 
 def main():

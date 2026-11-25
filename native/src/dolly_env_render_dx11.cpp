@@ -201,11 +201,12 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
-    // Not yet walked, or long filled in (nothing of it can show any more).
-    if (s.a.w > now || s.b.w <= s.a.w || s.b.w < now - kTrailFade * trailInfo.y)
+    // Not yet walked to its end, or long filled in (nothing of it can show any more). Only
+    // whole segments: a live store has a hero's cell only once its time has passed, so the
+    // same frame draws the same from a store being filled and from one filled long ago.
+    if (s.b.w > now || s.b.w <= s.a.w || s.b.w < now - kTrailFade * trailInfo.y)
         return o;
-    // A segment still being walked ends where the hero is at this frame's time.
-    float f = saturate((now - s.a.w) / (s.b.w - s.a.w));
+    float f = 1.0;
     float2 a = s.a.xy;
     float2 b = lerp(s.a.xy, s.b.xy, f);
     float tb = lerp(s.a.w, s.b.w, f);
@@ -1881,6 +1882,7 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11Buffer> trail_buf;
     ComPtr<ID3D11ShaderResourceView> trail_buf_srv;
     uint32_t trail_count = 0;
+    uint32_t trail_capacity = 0; // segments the buffer holds; trail_count are in use
     bool initialized = false;
 };
 
@@ -2419,22 +2421,27 @@ bool EnvRendererDX11::set_hero_trails(const TrailSegment* segments, uint32_t cou
     impl_->trail_buf.Reset();
     impl_->trail_buf_srv.Reset();
     impl_->trail_count = 0;
-    if (!impl_->initialized || !impl_->device || !segments || count == 0)
+    impl_->trail_capacity = 0;
+    if (!impl_->initialized || !impl_->device || count > kMaxTrailSegments)
         return count == 0;
-    if (count > kMaxTrailSegments)
-        return false;
     static_assert(sizeof(TrailSegment) == 32, "TrailSeg layout in the shader");
+    // Room to grow while the replay plays (new segments are appended).
+    const uint32_t capacity =
+        std::min(kMaxTrailSegments, std::max(4096u, count + count / 2 + 1024u));
+    std::vector<TrailSegment> init_data(capacity);
+    if (count > 0 && segments)
+        std::copy(segments, segments + count, init_data.begin());
     D3D11_BUFFER_DESC bd{};
-    bd.ByteWidth = count * UINT(sizeof(TrailSegment));
-    bd.Usage = D3D11_USAGE_IMMUTABLE;
+    bd.ByteWidth = capacity * UINT(sizeof(TrailSegment));
+    bd.Usage = D3D11_USAGE_DEFAULT;
     bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     bd.StructureByteStride = sizeof(TrailSegment);
-    D3D11_SUBRESOURCE_DATA init{segments, 0, 0};
+    D3D11_SUBRESOURCE_DATA init{init_data.data(), 0, 0};
     D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
     sv.Format = DXGI_FORMAT_UNKNOWN;
     sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-    sv.Buffer.NumElements = count;
+    sv.Buffer.NumElements = capacity;
     if (FAILED(impl_->device->CreateBuffer(&bd, &init, &impl_->trail_buf)) ||
         FAILED(impl_->device->CreateShaderResourceView(impl_->trail_buf.Get(), &sv,
                                                         &impl_->trail_buf_srv))) {
@@ -2442,7 +2449,24 @@ bool EnvRendererDX11::set_hero_trails(const TrailSegment* segments, uint32_t cou
         impl_->trail_buf_srv.Reset();
         return false;
     }
-    impl_->trail_count = count;
+    impl_->trail_count = segments ? count : 0;
+    impl_->trail_capacity = capacity;
+    return true;
+}
+
+bool EnvRendererDX11::append_hero_trails(ID3D11DeviceContext* ctx, const TrailSegment* segments,
+                                         uint32_t count) {
+    if (count == 0)
+        return true;
+    if (!ctx || !segments || !impl_->trail_buf || impl_->trail_count + count > impl_->trail_capacity)
+        return false;
+    D3D11_BOX box{};
+    box.left = impl_->trail_count * UINT(sizeof(TrailSegment));
+    box.right = box.left + count * UINT(sizeof(TrailSegment));
+    box.bottom = 1;
+    box.back = 1;
+    ctx->UpdateSubresource(impl_->trail_buf.Get(), 0, &box, segments, 0, 0);
+    impl_->trail_count += count;
     return true;
 }
 
