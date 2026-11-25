@@ -1109,6 +1109,35 @@ int main(int argc, char** argv) {
             std::printf("WARP rain ripples: %zu pixels change over half a second\n", rippled);
             CHECK(rippled > 0);
         }
+        // Cover creeps in under the roof from its open edge on the upwind side, and only
+        // about 110 u in; in still air it stays out entirely (checked above).
+        {
+            auto windy = coat_only;
+            windy.preset = dolly::env::AtmospherePreset::Snow;
+            windy.wind_xy[0] = -320.0f; // blowing toward the roofed half (open side upwind)
+            windy.wind_xy[1] = 0.0f;
+            CHECK(renderer.render(ctx.Get(), grey_srv.Get(), ground_srv.Get(), out_rtv.Get(), top,
+                                  windy, calm, nullptr, 0));
+            const auto crept = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            if (!out_dir.empty())
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_shelter_creep.png", vw, vh, crept.data(), &err));
+            size_t near_edge = 0, deep = 0;
+            for (uint32_t y = 0; y < vh; ++y)
+                for (uint32_t x = 0; x < vw / 2; ++x) {
+                    const uint8_t* q = crept.data() + (static_cast<size_t>(y) * vw + x) * 4;
+                    const bool changed = std::abs(int(q[0]) - 96) + std::abs(int(q[1]) - 96) +
+                                             std::abs(int(q[2]) - 96) > 6;
+                    // About 1.27 u per pixel at this height: 150 u is about 118 pixels.
+                    if (x + 118 >= vw / 2)
+                        near_edge += changed;
+                    else
+                        deep += changed;
+                }
+            std::printf("WARP shelter creep: %zu covered pixels near the roof's edge, %zu deeper "
+                        "in\n",
+                        near_edge, deep);
+            CHECK(near_edge > 0 && deep == 0);
+        }
         calm.shutdown();
     }
 
@@ -1172,6 +1201,26 @@ int main(int argc, char** argv) {
         std::printf("WARP coating drift: %.2f%% of pixels differ with the drift potential\n",
                     100.0 * drift_moved / frame_px);
         CHECK(drift_moved > frame_px / 1000);
+        // Living drifts: the wind's shaping grows over the shot, so a minute in the cover lies
+        // differently from at the start (and differently again from no shaping at all).
+        {
+            auto early = res.render;
+            early.shot_start_time = early.sim_time;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  early, solver, emitters, 0));
+            const auto at_start = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            auto later = early;
+            later.shot_start_time = early.sim_time - 60.0f;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  later, solver, emitters, 0));
+            const auto a_minute_in =
+                readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            const size_t grew = changed_pixels(at_start, a_minute_in);
+            std::printf("WARP living drifts: %.2f%% of pixels change from the shot start to a "
+                        "minute in\n",
+                        100.0 * grew / frame_px);
+            CHECK(grew > 0);
+        }
         // The wall-reach map only skips wall searches that cannot find a wall: same frame.
         {
             const auto reach = dolly::map_grid::wall_reach_mask(map_grid, 60.0f);

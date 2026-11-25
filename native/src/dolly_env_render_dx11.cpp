@@ -549,6 +549,36 @@ float HeroFootprint(float3 p, out float soleZ) {
 // How much open sky lies over a cover point, softened across about a cell and a half: blown
 // snow and sand reach in a little under an overhang and thin out, and the one-cell blend of
 // the roof map no longer draws a scallop for every cell along a diagonal roof edge.
+// Cover blown in under a shelter (a bridge, a doorway) from its open edges, mostly from the
+// side the wind comes from: strongest at the edge, gone about 110 u in, and never through a
+// wall. 0 where no open sky lies upwind within reach (or in still air).
+float ShelterCreep(float3 p) {
+    float wind = coatingInfo.z;
+    if (wind < 1.0)
+        return 0.0;
+    float2 up = -windTime.xy / wind;
+    float creep = 0.0;
+    float clear = 1.0;
+    float reach[4] = {20.0, 45.0, 75.0, 110.0};
+    [unroll] for (int k = 0; k < 4; ++k) {
+        float2 quv = MapUV(p.xy + up * reach[k]);
+        if (!OnMap(quv))
+            break;
+        clear *= 1.0 - saturate((airMap.SampleLevel(linearClamp, quv, 0) - 0.5) * 2.0);
+        float far = reach[k] / 130.0;
+        creep = max(creep, SkyOpenAt(quv, p.z) * clear * (1.0 - far * far));
+    }
+    return creep * smoothstep(40.0, 200.0, wind);
+}
+
+// The wind's shaping of the drifts, growing over the shot: about a third set at the start,
+// the rest building over the first half minute or so, so cover visibly piles up against walls
+// and thins on wind-swept ground as a shot plays. A function of the shot time alone.
+float DriftShaping() {
+    float age = max(windTime.z - trailInfo.z, 0.0);
+    return coatingInfo.y * (0.35 + 0.65 * (1.0 - exp(-age / 25.0)));
+}
+
 float CoverOpenAt(float3 p) {
     float sum = SkyOpenAt(MapUV(p.xy), p.z) * 2.0;
     [unroll] for (int k = 0; k < 6; ++k) {
@@ -890,7 +920,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     if (heroMask >= 0.999) return baseColor;
 
     float2 uv = MapUV(surfPos.xy);
-    float open = (preset == 5) ? SkyOpenAt(uv, surfPos.z) : CoverOpenAt(surfPos);
+    float open = (preset == 5) ? SkyOpenAt(uv, surfPos.z)
+                               : max(CoverOpenAt(surfPos), 0.75 * ShelterCreep(surfPos));
     // World size of one pixel at this distance (about a 90 degree view).
     float footprint = hitDist * 2.0 * screenInfo.w;
     if (preset == 5)
@@ -900,7 +931,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
 
     float upMask = smoothstep(0.28, 0.78, surfNormal.z);
 
-    float amount = coat * lerp(1.0, DriftAt(uv), coatingInfo.y);
+    float amount = coat * lerp(1.0, DriftAt(uv), DriftShaping());
     // Cover runs thicker along wall feet and thickest in inside corners.
     float bankMax = BankHeight(preset);
     // One enclosure read per pixel, shared with the wall bank below.
@@ -961,7 +992,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         float floorNear = SampleFloorBelowSmooth(float3(surfPos.xy + outDir * 6.0, surfPos.z));
         float above = surfPos.z - max(floorZ, min(floorNear, floorZ + 16.0));
         aboveFloor = above;
-        float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
+        float bankDrift = lerp(1.0, DriftAt(outUV), DriftShaping());
         // About half enclosed at a straight wall's face, three quarters in an inside corner
         // (drifts pile up to about twice as high there), less round an outside corner (the
         // wind scours it). Gentle ramps only: a tight curve here turned the map's cell
