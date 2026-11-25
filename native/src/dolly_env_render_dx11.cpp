@@ -150,6 +150,8 @@ FullscreenVSOut FullscreenVS(uint id : SV_VertexID) {
 )HLSL"
                                   R"HLSL(
 // ---- Hero trails ----
+float2 MapUV(float2 worldXY);          // defined with the map helpers below
+float SkyOpenAt(float2 uv, float z);
 // Every frame the trails are stamped afresh from the recorded paths up to this frame's shot
 // time into a square window that follows the camera (snapped to whole texels), keeping per
 // texel the latest time a hero trod it. MAX blending makes the result independent of draw
@@ -178,6 +180,7 @@ struct TrailVSOut {
     nointerpolation float4 seg : TEXCOORD1;  // xy start, zw end (world)
     nointerpolation float2 times : TEXCOORD2; // shot times at start and end
     nointerpolation float speed : TEXCOORD3;  // the hero's ground speed on this piece (u/s)
+    nointerpolation float2 heights : TEXCOORD4; // foot heights at its start and end
 };
 
 struct TrailStampOut {
@@ -192,6 +195,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.seg = float4(0.0, 0.0, 0.0, 0.0);
     o.times = float2(kTrailNever, kTrailNever);
     o.speed = 0.0;
+    o.heights = float2(0.0, 0.0);
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
@@ -220,6 +224,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.seg = float4(a, b);
     o.times = float2(s.a.w, tb);
     o.speed = length(s.b.xy - s.a.xy) / max(s.b.w - s.a.w, 1e-3);
+    o.heights = float2(s.a.z, lerp(s.a.z, s.b.z, f));
     return o;
 }
 
@@ -233,16 +238,22 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     float t = lerp(i.times.x, i.times.y, k);
     // The shoulder reads as older (shallower) track, fading out to untouched at its edge.
     float shoulder = smoothstep(0.0, 1.0, saturate((d - kTrailCore) / kTrailFeather));
-    float te = t - shoulder * kTrailFade * trailInfo.y;
+    // Cover only lies where the sky is open, and at most one surface at a spot is open to it:
+    // a hero walking under a deck or roof leaves no track (the deck above stays clean), and
+    // a track on a deck is the deck's (the street below is not open to the sky).
+    float footZ = lerp(i.heights.x, i.heights.y, k);
+    float underRoof = 1.0 - smoothstep(0.15, 0.45, SkyOpenAt(MapUV(i.world), footZ));
+    float te = t - max(shoulder, underRoof) * kTrailFade * trailInfo.y;
     // Minus the distance, so MAX blending keeps the nearest piece: the distance to the whole
     // path, smooth through every joint (a rim shaped per piece ringed each joint).
     TrailStampOut o;
-    o.trail = float4(te, -te, -d, t);
+    float tw = t - underRoof * kTrailFade * trailInfo.y;
+    o.trail = float4(te, -te, lerp(-d, -kTrailReach, underRoof), tw);
     // A footfall kicks cover up where the hero ran: strongest under the feet and for a
     // running hero, weaker toward the track's edge and for one walking (read as older).
     float run = saturate((i.speed - 140.0) / 220.0);
     float edgeK = saturate(d / (kTrailCore + kTrailFeather));
-    o.kick = t - edgeK * edgeK * 1.2 - (1.0 - run) * 1.5;
+    o.kick = t - edgeK * edgeK * 1.2 - (1.0 - run) * 1.5 - underRoof * 10.0;
     return o;
 }
 
@@ -304,7 +315,10 @@ float3 TrailAt(float3 p) {
     float rimFresh = (exp(-max(rimAge, 0.0) / max(trailInfo.y, 1.0)) - floorFresh) /
                      (1.0 - floorFresh);
     float rim = rimShape * saturate(rimFresh) * smoothstep(0.0, 0.08, edge) * pressed;
-    return float3(tread, churn, rim);
+    // Only on ground open to the sky (where the cover itself lies): never on a street under a
+    // deck someone walked on.
+    float openHere = smoothstep(0.15, 0.45, SkyOpenAt(MapUV(p.xy), p.z));
+    return float3(tread, churn, rim) * openHere;
 }
 
 bool IsSky(float d) {
@@ -2289,9 +2303,16 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->VSSetShaderResources(0, 13, vsrvs);
         ctx->PSSetShader(impl_->trail_ps.Get(), nullptr, 0);
         ctx->PSSetConstantBuffers(0, 1, stamp_cbs);
+        // The roof map, for open sky over each footfall.
+        ID3D11ShaderResourceView* ptops[1] = {fluid.tops_srv()};
+        ctx->PSSetShaderResources(4, 1, ptops);
+        ID3D11SamplerState* psamps[1] = {impl_->linear_clamp.Get()};
+        ctx->PSSetSamplers(0, 1, psamps);
         ctx->DrawInstanced(6, impl_->trail_count, 0, 0);
         ID3D11ShaderResourceView* null_vsrvs[13] = {};
         ctx->VSSetShaderResources(0, 13, null_vsrvs);
+        ID3D11ShaderResourceView* null_ptops[1] = {};
+        ctx->PSSetShaderResources(4, 1, null_ptops);
         ID3D11RenderTargetView* null_rtv[2] = {};
         ctx->OMSetRenderTargets(2, null_rtv, nullptr);
     }
