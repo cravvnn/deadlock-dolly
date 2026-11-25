@@ -484,6 +484,39 @@ float HeroMask(float3 p) {
     return m;
 }
 
+// The hero whose footprint holds p (feet to head, a little wider than the body): returns how
+// fully p lies in it (0..1) and that hero's soles height.
+float HeroFootprint(float3 p, out float soleZ) {
+    float m = 0.0;
+    soleZ = p.z;
+    int count = int(netInfo.w + 0.5);
+    [loop] for (int i = 0; i < 12; ++i) {
+        if (i >= count) break;
+        float3 d = p - heroes[i].xyz;
+        float across = 1.0 - smoothstep(30.0, 42.0, length(d.xy));
+        float along = step(-12.0, d.z) * (1.0 - smoothstep(104.0, 118.0, d.z));
+        if (across * along > m) {
+            m = across * along;
+            soleZ = heroes[i].z;
+        }
+    }
+    return m;
+}
+
+// How deep a full blanket lies, in world units: ankle-deep snow, a shallow layer of sand.
+float BlanketMax(int preset) {
+    if (preset == 6) return 8.0; // snow
+    if (preset == 1) return 4.0; // sandstorm sand
+    if (preset == 2 || preset == 4) return 2.0; // dust, ash
+    return 0.0;
+}
+
+// The blanket's depth for a cover amount: none while it is still a dusting, full once the
+// sheet has closed.
+float BlanketDepth(int preset, float amount) {
+    return BlanketMax(preset) * saturate((amount * 1.45 - 0.6) / 0.9);
+}
+
 // The highest floor of map cell q at or below zLim; false when it has none.
 bool FloorBelowCell(int2 q, float zLim, out float h) {
     h = 0.0;
@@ -735,14 +768,16 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
 // it repeats exactly at every replay time; every visible edge comes from this pixel's
 // depth and world-fixed noise. Detail finer than a pixel fades instead of crawling.
 float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
-                           float cavity, float hitDist, float3 colorAround) {
+                           float cavity, float hitDist, float3 colorAround, float slopeTaper,
+                           float onFloor) {
     // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
     float coat = styleB.y * coatingInfo.x;
     if (sunDir.w < 0.5 || coat <= 0.001) return baseColor;
-    float heroMask = HeroMask(surfPos);
+    int preset = int(styleA.x + 0.5);
+    // Rain keeps heroes dry outright; snow and sand bury their feet instead (below).
+    float heroMask = (preset == 5) ? HeroMask(surfPos) : 0.0;
     if (heroMask >= 0.999) return baseColor;
 
-    int preset = int(styleA.x + 0.5);
     float2 uv = MapUV(surfPos.xy);
     float open = SkyOpenAt(uv, surfPos.z);
     // World size of one pixel at this distance (about a 90 degree view).
@@ -814,23 +849,63 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         float bank = bankMax * saturate(coat * bankDrift * 1.4 - 0.1) * min(bankDrift, 1.3) *
                      shape;
         float bankLine = bank * (0.8 + 0.4 * ValueNoise3(float3(surfPos.xy * 0.012, 5.0)));
+        // The bank rises from the top of the blanket lying at the wall's foot, and the face
+        // stays solid up to a little above that top, so the blanket and the bank meet
+        // without a see-through band.
+        float footDepth = BlanketDepth(preset, coat * bankDrift) * outOpen;
+        float aboveTop = above - footDepth;
         // A drift meets a wall as a curved fillet: solid at the foot, thinning over most
         // of its height, so its top is a soft rise rather than a painted line.
         float edge = 2.0 + footprint * 1.5;
-        float h = saturate(above / max(bankLine + edge, 1.0));
+        float h = saturate(aboveTop / max(bankLine + edge, 1.0));
         wall = steep * outOpen * smoothstep(-10.0, -4.0, above) *
                (1.0 - h * h * (3.0 - 2.0 * h)) * saturate(bank / 2.0);
+        wall = max(wall, steep * outOpen * smoothstep(-10.0, -4.0, above) *
+                             (1.0 - smoothstep(footDepth + 1.0, footDepth + 3.0 + edge, above)) *
+                             smoothstep(0.5, 2.0, footDepth));
     }
 
-    float cov = max(top, wall) * (1.0 - heroMask);
     // Where heroes walked, the cover is pressed thin and darker until it fills back in.
-    float2 trail = TrailAt(surfPos) * upMask;
+    float2 trailHere = TrailAt(surfPos);
+    float2 trail = trailHere * upMask;
     float tread = trail.x;
     // Churned snow is broken into lumps with the ground showing between them.
     float lumps = Fbm3(float3(surfPos.xy * 0.09, 21.0));
     float churn = trail.y;
-    cov *= 1.0 - 0.25 * tread - 0.35 * churn * smoothstep(0.35, 0.65, 1.0 - lumps);
-    if (cov <= 0.001) return baseColor;
+    float churnGaps = 1.0 - 0.35 * churn * smoothstep(0.35, 0.65, 1.0 - lumps);
+
+    // The blanket lying on this ground (thinned toward curbs and stairs, none off the map's
+    // floors) and how opaque it is: thick cover hides the ground entirely.
+    // Opacity ignores the taper and the on-floor test: the game's ground and the map's
+    // 22 u floors disagree by a few units, and opacity built on that drew scalloped
+    // see-through contours across open ground. Those two only shape the thickness.
+    float depthHere = BlanketDepth(preset, amount) * upMask * open * (1.0 - 0.6 * tread);
+    float solid = smoothstep(0.5, 2.0, depthHere) * churnGaps;
+
+    // Heroes stand in it: inside a hero's footprint, whatever lies below the blanket's top
+    // at the hero's soles is snow (the boots sink in); above it the hero stays clean. A hero
+    // well above the floor (jumping) has none on the boots.
+    float soleZ;
+    float inHero = HeroFootprint(surfPos, soleZ);
+    float buried = 0.0;
+    if (inHero > 0.001) {
+        float3 soles = float3(surfPos.xy, soleZ);
+        float grounded = 1.0 - smoothstep(6.0, 20.0, soleZ - SampleFloorBelowSmooth(soles));
+        float feetDepth = BlanketDepth(preset, amount) * SkyOpenAt(uv, soleZ) * grounded *
+                          (1.0 - 0.6 * trailHere.x);
+        float a = surfPos.z - soleZ;
+        float w = max(1.0, 1.5 * footprint);
+        buried = (1.0 - smoothstep(feetDepth - w, feetDepth + w, a)) *
+                 smoothstep(0.5, 2.0, feetDepth);
+    }
+    // Inside a footprint: the buried part of the hero, plus ordinary cover on the ground at
+    // the soles; never cover on the hero's body or a bank up its legs.
+    float groundAtSoles = 1.0 - smoothstep(1.5, 4.0, surfPos.z - soleZ);
+    float covOut = max(top, wall);
+    float covIn = max(buried, top * groundAtSoles);
+    float cov = lerp(covOut, covIn, inHero) * (1.0 - 0.25 * tread) * churnGaps;
+    solid = max(lerp(solid, buried, inHero), 0.0);
+    if (max(cov, solid) <= 0.001) return baseColor;
 
     if (preset == 3) // damp ground fog
         return lerp(baseColor, baseColor * 0.85, cov * 0.82);
@@ -902,7 +977,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float rim = saturate(tread * (1.0 - tread) * 4.0) * (1.0 - tread);
     coated *= lerp(1.0, (preset == 6) ? 0.9 : 0.92, tread) * (1.0 + 0.08 * rim) *
               (1.0 + churn * (lumps - 0.5) * 0.25);
-    return lerp(baseColor, coated, saturate(cov * 0.9));
+    return lerp(baseColor, coated, saturate(max(cov * 0.9, solid)));
 }
 
 )HLSL"
@@ -1255,14 +1330,22 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
             // depth-built normals tilt on the rows where the game's depth steps (arcs round
             // the camera), and snapping to straight up against one height per cell switched
             // on and off in cell-sized bands across ramps.
+            // Two-sided differences 11 u either way: a one-sided one shifted every slope and
+            // taper half a cell toward +x and +y.
             float fz = SampleFloorBelowSmooth(surfPos);
-            float fx = SampleFloorBelowSmooth(surfPos + float3(22.0, 0.0, 0.0));
-            float fy = SampleFloorBelowSmooth(surfPos + float3(0.0, 22.0, 0.0));
+            float fxp = SampleFloorBelowSmooth(surfPos + float3(11.0, 0.0, 0.0));
+            float fxm = SampleFloorBelowSmooth(surfPos - float3(11.0, 0.0, 0.0));
+            float fyp = SampleFloorBelowSmooth(surfPos + float3(0.0, 11.0, 0.0));
+            float fym = SampleFloorBelowSmooth(surfPos - float3(0.0, 11.0, 0.0));
             // A ramp's gentle slope is trusted; a ledge or curb drop within a cell is not a
             // slope, so there the ground stays level.
-            float relief = abs(fz - fx) + abs(fz - fy);
+            float relief = abs(fxp - fxm) + abs(fyp - fym);
             float trust = 1.0 - smoothstep(8.0, 16.0, relief);
-            float3 mapN = normalize(float3((fz - fx) * trust, (fz - fy) * trust, 22.0));
+            float3 mapN = normalize(float3((fxm - fxp) * trust, (fym - fyp) * trust, 22.0));
+            // The blanket thins where the floor changes fast (curbs, stairs, ledges), so their
+            // edges stay readable as rounded, snowed-over shapes.
+            float slopeTaper =
+                1.0 - smoothstep(0.10, 0.40, length(float2(fxp - fxm, fyp - fym)) / 22.0);
             float onFloor = 1.0 - smoothstep(3.0 + relief * trust, 9.0 + 2.0 * relief * trust,
                                              abs(surfPos.z - fz));
             surfNormal = normalize(lerp(surfNormal, mapN,
@@ -1277,7 +1360,7 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
                 around += sceneColor.SampleLevel(linearClamp, uv, 0).rgb;
             }
             baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir, cavity,
-                                            hitDist, around / 12.0);
+                                            hitDist, around / 12.0, slopeTaper, onFloor);
         }
     }
 

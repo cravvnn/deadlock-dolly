@@ -1191,6 +1191,55 @@ int main(int argc, char** argv) {
                     hero_cleaned);
         CHECK(hero_cleaned > 0 &&
               changed_pixels(uncoated, masked) < changed_pixels(uncoated, drifted));
+
+        // Heroes stand in the blanket: on the hero itself, what lies within a couple of units
+        // of the soles turns to snow (the boots sink in) and its body well above stays clean.
+        {
+            auto full = res.render;
+            full.coating_strength = 1.0f;
+            full.coating_growth = 1.0f;
+            full.density_scale = 0.0f; // no haze: isolate the ground
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  full, solver, emitters, 0));
+            const auto deep = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            full.enable_coating = false;
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  full, solver, emitters, 0));
+            const auto bare = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            size_t boots = 0, boots_covered = 0, body = 0, body_covered = 0;
+            for (uint32_t y = 0; y < vh; ++y)
+                for (uint32_t x = 0; x < vw; ++x) {
+                    const size_t idx = static_cast<size_t>(y) * vw + x;
+                    const float* M = cam.inv_view_proj;
+                    const float nx = (x + 0.5f) / vw * 2.0f - 1.0f,
+                                ny = 1.0f - (y + 0.5f) / vh * 2.0f, d = scene_depth[idx];
+                    const float w = M[12] * nx + M[13] * ny + M[14] * d + M[15];
+                    if (std::abs(w) < 1e-6f)
+                        continue;
+                    const Vec3 p = {(M[0] * nx + M[1] * ny + M[2] * d + M[3]) / w,
+                                    (M[4] * nx + M[5] * ny + M[6] * d + M[7]) / w,
+                                    (M[8] * nx + M[9] * ny + M[10] * d + M[11]) / w};
+                    const float across = std::hypot(p[0] - hero_pos[0], p[1] - hero_pos[1]);
+                    const float up = p[2] - hero_pos[2];
+                    if (across > 26.0f)
+                        continue;
+                    const bool changed = std::abs(int(deep[idx * 4]) - int(bare[idx * 4])) +
+                                             std::abs(int(deep[idx * 4 + 1]) -
+                                                      int(bare[idx * 4 + 1])) >
+                                         12;
+                    if (up > 0.5f && up < 2.5f) {
+                        ++boots;
+                        boots_covered += changed;
+                    } else if (up > 30.0f && up < 90.0f) {
+                        ++body;
+                        body_covered += changed;
+                    }
+                }
+            std::printf("WARP heroes in the snow: %zu of %zu boot pixels buried, %zu of %zu body "
+                        "pixels covered\n",
+                        boots_covered, boots, body_covered, body);
+            CHECK(boots > 0 && boots_covered * 2 > boots && body > 0 && body_covered == 0);
+        }
         res.render.hero_count = 0;
 
         // Hero trails: a path walked across the scene's hero spot over 40 s of shot time.

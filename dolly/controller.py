@@ -3947,6 +3947,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             time.sleep(0.1)
         if not target.is_file():
             raise RuntimeError("The game did not save the recorded hero paths.")
+        # Only the shot's own time range: the game also saw the heroes while playback started.
+        start = project.start_tick / project.tick_rate
+        from .weather import trim_hero_paths
+        trim_hero_paths(target, start - 0.25, start + length + 0.25)
         self.show_hero_trails(target)
         return target
 

@@ -313,6 +313,23 @@ def hero_paths_file(replay: str, start_tick: int, end_tick: int) -> Path:
     return hero_paths_directory() / f"{digest}-{int(start_tick)}-{int(end_tick)}.trk"
 
 
+def write_hero_paths(path: Path, samples) -> None:
+    """Save hero path samples (time, hero slot, x, y, z) in the game's recorded format."""
+    body = b"".join(struct.pack(HERO_PATH_SAMPLE_FORMAT, *row) for row in samples)
+    target = Path(path)
+    partial = target.with_name(target.name + ".partial")
+    partial.write_bytes(HERO_PATHS_MAGIC + struct.pack("<II", len(samples), 0) + body)
+    partial.replace(target)
+
+
+def trim_hero_paths(path: Path, start: float, end: float) -> int:
+    """Keep only the samples inside the shot's replay time range [start, end]; the game also
+    sees the heroes while playback gets going. Returns how many samples were kept."""
+    kept = [row for row in read_hero_paths(path) if start <= row[0] <= end]
+    write_hero_paths(path, kept)
+    return len(kept)
+
+
 def read_hero_paths(path: Path) -> list[tuple[float, int, float, float, float]]:
     """The samples of a recorded hero path file: time, hero slot, x, y, z."""
     data = Path(path).read_bytes()
