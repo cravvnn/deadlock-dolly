@@ -536,6 +536,13 @@ float BlanketMax(int preset) {
     return 0.0;
 }
 
+// The blanket's top above its ground at xy (world units) for a blanket `depth` deep:
+// pressed down along tracks, raised a little along their rims.
+float BlanketTopAt(float2 xy, float z, float depth) {
+    float3 tr = TrailAt(float3(xy, z));
+    return depth * (1.0 - 0.6 * tr.x + 0.25 * tr.z);
+}
+
 // The blanket's depth for a cover amount: none while it is still a dusting, full once the
 // sheet has closed.
 float BlanketDepth(int preset, float amount) {
@@ -929,7 +936,61 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     }
 
     // Where heroes walked, the cover is pressed thin and darker until it fills back in.
-    float3 trailHere = TrailAt(surfPos);
+)HLSL"
+                                  R"HLSL(
+    // Near the camera the blanket has real thickness along tracks: trace the view ray back
+    // from the ground point through the last few units to where it meets the blanket's top,
+    // and read the tracks there (so they cut into the snow as the view moves), then look
+    // toward the sun from that point for a rim standing in the way. Faded with distance and
+    // at grazing views; nothing to do away from tracks (the top is then flat and parallel).
+    float3 trailPos = surfPos;
+    float rimOcc = 0.0;
+    {
+        float fade = (1.0 - smoothstep(1200.0, 1600.0, hitDist)) * smoothstep(0.12, 0.35, viewDir.z);
+        float depth = BlanketDepth(preset, amount) * upMask * open * fade;
+        if (depth > 0.5 && trailInfo.x > 0.5 && HeroFootprint(surfPos, trailPos.z) <= 0.0) {
+            trailPos.z = surfPos.z;
+            // Height gained over the ground per unit walked back toward the camera, and the
+            // reach: the blanket's full height, at most 32 u across the ground.
+            float rise = dot(viewDir, surfNormal) / max(surfNormal.z, 0.3);
+            float across = max(length(viewDir.xy), 1e-3);
+            float sMax = min(depth * 1.35 / max(rise, 0.05), 32.0 / across);
+            float3 far3 = TrailAt(surfPos + viewDir * sMax);
+            float3 here3 = TrailAt(surfPos);
+            if (max(max(far3.x, far3.z), max(here3.x, here3.z)) > 0.001) {
+                float sPrev = sMax;
+                float ePrev = sMax * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sMax,
+                                                         surfPos.z, depth);
+                float sHit = 0.0;
+                [loop] for (int st = 1; st <= 8; ++st) {
+                    float sNow = sMax * (1.0 - st / 8.0);
+                    float eNow = sNow * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sNow,
+                                                            surfPos.z, depth);
+                    if (eNow <= 0.0) {
+                        sHit = lerp(sNow, sPrev, saturate(eNow / min(eNow - ePrev, -1e-4)));
+                        break;
+                    }
+                    sPrev = sNow;
+                    ePrev = eNow;
+                }
+                trailPos = float3(surfPos.xy + viewDir.xy * sHit, surfPos.z);
+                // Rim shadow: the horizon toward the sun over the next 16 u.
+                float3 sun = normalize(sunDir.xyz);
+                float sunAcross = length(sun.xy);
+                if (sun.z > 0.02 && sunAcross > 1e-3) {
+                    float2 toSun = sun.xy / sunAcross;
+                    float slope = sun.z / sunAcross;
+                    float hHit = sHit * rise;
+                    float steps[4] = {2.0, 4.5, 8.5, 14.0};
+                    [unroll] for (int k2 = 0; k2 < 4; ++k2) {
+                        float hq = BlanketTopAt(trailPos.xy + toSun * steps[k2], surfPos.z, depth);
+                        rimOcc = max(rimOcc, hq - (hHit + steps[k2] * slope));
+                    }
+                }
+            }
+        }
+    }
+    float3 trailHere = TrailAt(trailPos);
     float3 trail = trailHere * upMask;
     float tread = trail.x;
     // Churned snow is broken into lumps with the ground showing between them.
@@ -1045,25 +1106,31 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         }
     }
 
+)HLSL"
+                                  R"HLSL(
     // Tracks have height: pressed down in the middle, a low rim at the shoulders. Its slope
     // lights the rims facing the sun and darkens the hollows' far sides, as much as the
     // game's own light here says the spot is sunlit (never inventing sun in a shadow).
     float blanket = BlanketDepth(preset, amount) * upMask * open;
     if (blanket > 0.3 && (trail.x > 0.001 || trail.z > 0.001)) {
         float e = max(1.5, footprint);
-        float3 hxp = TrailAt(surfPos + float3(e, 0.0, 0.0));
-        float3 hxm = TrailAt(surfPos - float3(e, 0.0, 0.0));
-        float3 hyp = TrailAt(surfPos + float3(0.0, e, 0.0));
-        float3 hym = TrailAt(surfPos - float3(0.0, e, 0.0));
+        float3 hxp = TrailAt(trailPos + float3(e, 0.0, 0.0));
+        float3 hxm = TrailAt(trailPos - float3(e, 0.0, 0.0));
+        float3 hyp = TrailAt(trailPos + float3(0.0, e, 0.0));
+        float3 hym = TrailAt(trailPos - float3(0.0, e, 0.0));
         // Height relative to untouched cover, in world units.
-        float hx = ((-0.6 * hxp.x + 0.3 * hxp.z) - (-0.6 * hxm.x + 0.3 * hxm.z)) * blanket;
-        float hy = ((-0.6 * hyp.x + 0.3 * hyp.z) - (-0.6 * hym.x + 0.3 * hym.z)) * blanket;
+        float hx = ((-0.6 * hxp.x + 0.25 * hxp.z) - (-0.6 * hxm.x + 0.25 * hxm.z)) * blanket;
+        float hy = ((-0.6 * hyp.x + 0.25 * hyp.z) - (-0.6 * hym.x + 0.25 * hym.z)) * blanket;
         float3 n = normalize(surfNormal + float3(-hx, -hy, 0.0) / (2.0 * e));
         float3 sun = normalize(sunDir.xyz);
         float flatLit = max(dot(surfNormal, sun), 0.15);
         float sunFrac = smoothstep(0.45, 0.9, light);
         float relief = clamp(saturate(dot(n, sun)) / flatLit, 0.35, 1.6);
         shadeMul *= lerp(1.0, relief, 0.8 * sunFrac);
+        // A rim between this point and the sun shades it, a little cooler (sky-lit).
+        float shadowed = smoothstep(0.0, 1.5, rimOcc) * sunFrac;
+        shadeMul *= lerp(1.0, 0.62, shadowed);
+        lightTint *= lerp(float3(1.0, 1.0, 1.0), float3(0.9, 0.95, 1.06), shadowed);
     }
     float3 coated = coatAlbedo * light * lightTint * shadeMul + add;
     // Packed snow and churned sand scatter less light than a fresh, loose surface.
