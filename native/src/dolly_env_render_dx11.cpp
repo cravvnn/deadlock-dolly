@@ -1223,7 +1223,11 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
             float3 q = float3(dot(surfPos.xy, wdir) * 0.006 - travel,
                               dot(surfPos.xy, perp) * 0.02, windTime.z * 0.4);
             float streak = smoothstep(0.5, 0.8, Fbm3(q));
-            add += coatAlbedo * light * streak * gust * 0.22 * upMask;
+            // Stronger over lee drifts (the crests the wind lifts snow off), a little fainter
+            // elsewhere: spindrift kept on the cover itself, never a sheet over the ground.
+            float lee = smoothstep(1.3, 1.8, lerp(1.0, DriftAt(MapUV(surfPos.xy - wdir * 25.0)),
+                                                    DriftShaping()));
+            add += coatAlbedo * light * streak * gust * (0.18 + 0.14 * lee) * upMask;
         }
     }
 
