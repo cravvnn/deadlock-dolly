@@ -103,7 +103,10 @@ struct TrailSeg {
 };
 StructuredBuffer<TrailSeg> trailSegs : register(t12);
 // Per texel: x the latest shot time a hero trod it, y minus the earliest (both MAX-blended).
-Texture2D<float2> trailMap : register(t13);
+// z minus the distance to the nearest path (MAX-blended, so the whole path's distance field,
+// from which the rim pushed aside at a track's shoulders is shaped), w the latest shot time a
+// hero passed within reach (no shoulder offset), so the rim fades with the track's own age.
+Texture2D<float4> trailMap : register(t13);
 RWTexture3D<float> sunBakeOut : register(u0);
 
 static float4x4 gInvViewProj;
@@ -157,6 +160,9 @@ static const float kTrailNever = -1.0e9;
 // and a shoulder fades smoothly out to it, so a track's edge blends into the snow around it
 // instead of switching on and off one texel at a time.
 static const float kTrailFade = 6.0;
+// Pieces are drawn this far past the track's edge so the distance field runs smoothly out to
+// where the map's clear value (the same distance) takes over.
+static const float kTrailReach = kTrailCore + kTrailFeather + 6.0;
 
 float2 TrailOrigin(float3 cam) {
     float texel = kTrailSpan / kTrailTexels;
@@ -190,7 +196,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float len = length(dir);
     dir = len > 1e-3 ? dir / len : float2(1.0, 0.0);
     float2 side = float2(-dir.y, dir.x);
-    float r = kTrailCore + kTrailFeather;
+    float r = kTrailReach;
     // Two triangles covering the capsule's bounding box.
     // (0,1,2) = (-,-) (+,-) (-,+); (3,4,5) = (+,-) (+,+) (-,+)
     float2 corner = float2((vid == 1 || vid == 3 || vid == 4) ? 1.0 : -1.0,
@@ -205,18 +211,20 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     return o;
 }
 
-float2 TrailStampPS(TrailVSOut i) : SV_Target {
+float4 TrailStampPS(TrailVSOut i) : SV_Target {
     float2 a = i.seg.xy, b = i.seg.zw;
     float2 ab = b - a;
     float k = saturate(dot(i.world - a, ab) / max(dot(ab, ab), 1e-6));
     float d = length(i.world - (a + ab * k));
-    if (d > kTrailCore + kTrailFeather)
+    if (d > kTrailReach)
         discard;
     float t = lerp(i.times.x, i.times.y, k);
     // The shoulder reads as older (shallower) track, fading out to untouched at its edge.
     float shoulder = smoothstep(0.0, 1.0, saturate((d - kTrailCore) / kTrailFeather));
     float te = t - shoulder * kTrailFade * trailInfo.y;
-    return float2(te, -te);
+    // Minus the distance, so MAX blending keeps the nearest piece: the distance to the whole
+    // path, smooth through every joint (a rim shaped per piece ringed each joint).
+    return float4(te, -te, -d, t);
 }
 
 // Fraction of the cover settled by shot time x (weather::coating_growth, kRate 3).
@@ -228,14 +236,15 @@ float CoverGrown(float x) {
 }
 
 // How freshly trodden the ground at p is (x: 1 on a track walked just now, fading as falling
-// snow or blown sand fills it in; 0 where no hero walked) and how churned (y: trodden again
-// and again, or stood on for a while). Zero where trails are off.
-float2 TrailAt(float3 p) {
+// snow or blown sand fills it in; 0 where no hero walked), how churned (y: trodden again and
+// again, or stood on for a while) and how high the rim pushed aside there stands (z, 0..1,
+// fading with the track). Zero where trails are off.
+float3 TrailAt(float3 p) {
     if (trailInfo.x < 0.5)
-        return float2(0.0, 0.0);
+        return float3(0.0, 0.0, 0.0);
     float2 uv = (p.xy - TrailOrigin(gCamPos)) / kTrailSpan;
     if (any(uv <= 0.0) || any(uv >= 1.0))
-        return float2(0.0, 0.0);
+        return float3(0.0, 0.0, 0.0);
     // Cubic B-spline filter from four bilinear taps: no texel diamonds up close.
     float2 g = float2(uv.x, 1.0 - uv.y) * kTrailTexels - 0.5;
     float2 f = frac(g), base = floor(g);
@@ -246,14 +255,14 @@ float2 TrailAt(float3 p) {
     float2 s0 = w0 + w1, s1 = w2 + w3;
     float2 c0 = (base - 0.5 + w1 / s0) / kTrailTexels;
     float2 c1 = (base + 1.5 + w3 / s1) / kTrailTexels;
-    float2 m = s0.y * (s0.x * trailMap.SampleLevel(linearClamp, float2(c0.x, c0.y), 0) +
+    float4 m = s0.y * (s0.x * trailMap.SampleLevel(linearClamp, float2(c0.x, c0.y), 0) +
                        s1.x * trailMap.SampleLevel(linearClamp, float2(c1.x, c0.y), 0)) +
                s1.y * (s0.x * trailMap.SampleLevel(linearClamp, float2(c0.x, c1.y), 0) +
                        s1.x * trailMap.SampleLevel(linearClamp, float2(c1.x, c1.y), 0));
     float t = m.x;
     float age = windTime.z - t;
     if (age < 0.0)
-        return float2(0.0, 0.0);
+        return float3(0.0, 0.0, 0.0);
     float edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
     // Rescaled so untrodden snow (filled in kTrailFade times over) is exactly untouched.
     float floorFresh = exp(-kTrailFade);
@@ -265,7 +274,18 @@ float2 TrailAt(float3 p) {
     float tread = saturate(fresh) * smoothstep(0.0, 0.08, edge) * pressed;
     // Trodden over a long span of time: walked again and again, or stood on.
     float churn = smoothstep(2.0, 20.0, t + m.y) * smoothstep(0.05, 0.35, tread);
-    return float2(tread, churn);
+    // The snow a foot pushes aside heaps into a low rim around the shoulders, none in the
+    // middle (so a track never turns into a ridge as it fills in). It fades as the track it
+    // belongs to fills in.
+    float dist = -m.z;
+    float rimShape = smoothstep(kTrailCore * 0.55, kTrailCore + kTrailFeather * 0.35, dist) *
+                     (1.0 - smoothstep(kTrailCore + kTrailFeather * 0.35,
+                                       kTrailCore + kTrailFeather, dist));
+    float rimAge = windTime.z - m.w;
+    float rimFresh = (exp(-max(rimAge, 0.0) / max(trailInfo.y, 1.0)) - floorFresh) /
+                     (1.0 - floorFresh);
+    float rim = rimShape * saturate(rimFresh) * smoothstep(0.0, 0.08, edge) * pressed;
+    return float3(tread, churn, rim);
 }
 
 bool IsSky(float d) {
@@ -909,8 +929,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     }
 
     // Where heroes walked, the cover is pressed thin and darker until it fills back in.
-    float2 trailHere = TrailAt(surfPos);
-    float2 trail = trailHere * upMask;
+    float3 trailHere = TrailAt(surfPos);
+    float3 trail = trailHere * upMask;
     float tread = trail.x;
     // Churned snow is broken into lumps with the ground showing between them.
     float lumps = (trail.y > 0.0) ? Fbm3(float3(surfPos.xy * 0.09, 21.0)) : 0.5;
@@ -1025,6 +1045,26 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         }
     }
 
+    // Tracks have height: pressed down in the middle, a low rim at the shoulders. Its slope
+    // lights the rims facing the sun and darkens the hollows' far sides, as much as the
+    // game's own light here says the spot is sunlit (never inventing sun in a shadow).
+    float blanket = BlanketDepth(preset, amount) * upMask * open;
+    if (blanket > 0.3 && (trail.x > 0.001 || trail.z > 0.001)) {
+        float e = max(1.5, footprint);
+        float3 hxp = TrailAt(surfPos + float3(e, 0.0, 0.0));
+        float3 hxm = TrailAt(surfPos - float3(e, 0.0, 0.0));
+        float3 hyp = TrailAt(surfPos + float3(0.0, e, 0.0));
+        float3 hym = TrailAt(surfPos - float3(0.0, e, 0.0));
+        // Height relative to untouched cover, in world units.
+        float hx = ((-0.6 * hxp.x + 0.3 * hxp.z) - (-0.6 * hxm.x + 0.3 * hxm.z)) * blanket;
+        float hy = ((-0.6 * hyp.x + 0.3 * hyp.z) - (-0.6 * hym.x + 0.3 * hym.z)) * blanket;
+        float3 n = normalize(surfNormal + float3(-hx, -hy, 0.0) / (2.0 * e));
+        float3 sun = normalize(sunDir.xyz);
+        float flatLit = max(dot(surfNormal, sun), 0.15);
+        float sunFrac = smoothstep(0.45, 0.9, light);
+        float relief = clamp(saturate(dot(n, sun)) / flatLit, 0.35, 1.6);
+        shadeMul *= lerp(1.0, relief, 0.8 * sunFrac);
+    }
     float3 coated = coatAlbedo * light * lightTint * shadeMul + add;
     // Packed snow and churned sand scatter less light than a fresh, loose surface.
     // A faint raised rim where the shoulder was pushed aside catches a little more light.
@@ -1764,7 +1804,7 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
         td.Width = td.Height = kTrailTexels;
         td.MipLevels = 1;
         td.ArraySize = 1;
-        td.Format = DXGI_FORMAT_R32G32_FLOAT;
+        td.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
         td.SampleDesc.Count = 1;
         td.Usage = D3D11_USAGE_DEFAULT;
         td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
@@ -1967,7 +2007,8 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         // Stamp every segment reached by this frame's time into the trail map, afresh.
         // Untrodden: a time long filled in (matches kTrailFade in the shader).
         const float filled = params.sim_time - 6.0f * cb.trail_info[1];
-        const float never[4] = {filled, -filled, 0.0f, 0.0f};
+        // Far from every path (kTrailReach in the shader), so the distance field meets it.
+        const float never[4] = {filled, -filled, -(7.0f + 9.0f + 6.0f), filled};
         ID3D11RenderTargetView* trtv[1] = {impl_->trail_rtv.Get()};
         ctx->ClearRenderTargetView(impl_->trail_rtv.Get(), never);
         ctx->OMSetRenderTargets(1, trtv, nullptr);

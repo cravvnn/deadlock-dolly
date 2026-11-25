@@ -1299,6 +1299,29 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < trod.size(); i += 4)
                 darker += (int(trod[i]) + trod[i + 1] + trod[i + 2]) + 6 <
                           (int(clear_cover[i]) + clear_cover[i + 1] + clear_cover[i + 2]);
+            // Tracks have height: turning the sun around relights their rims and hollows, so
+            // the trodden frames differ by more than the untouched ones do.
+            {
+                auto turned = res.render;
+                turned.sun_dir[0] = -turned.sun_dir[0];
+                turned.sun_dir[1] = -turned.sun_dir[1];
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, turned, solver, emitters, 0));
+                const auto trod_turned =
+                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                turned.hero_trails = false;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, turned, solver, emitters, 0));
+                const auto bare_turned =
+                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                long relit = 0;
+                for (size_t i = 0; i < trod.size(); i += 4)
+                    for (int c = 0; c < 3; ++c)
+                        relit += std::abs((int(trod[i + c]) - int(clear_cover[i + c])) -
+                                          (int(trod_turned[i + c]) - int(bare_turned[i + c])));
+                std::printf("WARP hero trails relief: %ld relit by turning the sun\n", relit);
+                CHECK(relit > 0);
+            }
             // Walked while the snow was still settling: the track pressed less, so it shows less.
             {
                 auto early = res.render;
