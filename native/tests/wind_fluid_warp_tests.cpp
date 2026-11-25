@@ -1728,8 +1728,11 @@ int main(int argc, char** argv) {
         still.gust_strength = 0.0f;
         calm.reset_and_prewarm(ctx.Get(), 0.0, still, nullptr, 0, 4, 0.2f);
 
-        const auto view = build_camera({-150.0f, 20.0f, 120.0f}, {0.0f, 0.0f, 30.0f}, 68.0f, vw, vh);
-        const Vec3 eye = {view.position[0], view.position[1], view.position[2]};
+        // (The kick-up check below moves the camera and repaints the scene.)
+        auto view = build_camera({-150.0f, 20.0f, 120.0f}, {0.0f, 0.0f, 30.0f}, 68.0f, vw, vh);
+        Vec3 eye = {view.position[0], view.position[1], view.position[2]};
+        // Dark paving; a bright orange box (so snow on it shows in the blue).
+        uint8_t ground_rgb[3] = {30, 30, 32}, box_rgb[3] = {240, 150, 40};
         // Colour, depth and a mask of the box's pixels (0 ground, 1 side, 2 top) for a box
         // whose base is `base` above the ground (negative: no box).
         const auto scene = [&](float base, std::vector<uint8_t>& rgba, std::vector<float>& depth,
@@ -1778,10 +1781,8 @@ int main(int argc, char** argv) {
                     const float cw = V[12] * hit[0] + V[13] * hit[1] + V[14] * hit[2] + V[15];
                     depth[i] = cz / cw;
                     mask[i] = kind;
-                    // Dark paving; a bright orange box (so snow on it shows in the blue).
-                    const uint8_t ground[3] = {30, 30, 32}, side[3] = {240, 150, 40};
                     for (int c = 0; c < 3; ++c)
-                        rgba[i * 4 + c] = kind ? side[c] : ground[c];
+                        rgba[i * 4 + c] = kind ? box_rgb[c] : ground_rgb[c];
                 }
         };
         const auto coat = [&](const std::vector<uint8_t>& rgba, const std::vector<float>& depth) {
@@ -1871,6 +1872,123 @@ int main(int argc, char** argv) {
         CHECK(over.mean < 0.05 && over.worst <= 2);                         // no rim at all
         CHECK(on.ring_px > 2000 && on.mean < 0.6 && on.visible < on.ring_px / 25);
         CHECK(on.top_px > 200 && on.top_snowed > on.top_px * 8 / 10); // snow still lands on it
+
+        // 7l) Kick-up behind a running hero, seen from a low camera in dust haze with a post
+        //     standing behind the run: a soft, translucent puff. Its coverage is measured
+        //     by drawing the same frame over a dark and over a light scene (what shows
+        //     through changes, the puff does not). It must never be opaque, have no edges
+        //     or terraces over open ground, and read the same against the post as against
+        //     the ground beside it (the puff lies in front of both).
+        {
+            view = build_camera({-230.0f, 0.0f, 42.0f}, {0.0f, 0.0f, 10.0f}, 68.0f, vw, vh);
+            eye = {view.position[0], view.position[1], view.position[2]};
+            const float now = 20.0f;
+            std::vector<dolly::env::TrailSegment> run;
+            for (int k = 0; k < 12; ++k) { // 300 u/s along y, 60 u in front of the post
+                dolly::env::TrailSegment s{};
+                s.a[0] = s.b[0] = -60.0f;
+                s.a[1] = -180.0f + 30.0f * k;
+                s.b[1] = s.a[1] + 30.0f;
+                s.time_a = now - 1.2f + 0.1f * k;
+                s.time_b = s.time_a + 0.1f;
+                run.push_back(s);
+            }
+            CHECK(renderer.set_hero_trails(run.data(), static_cast<uint32_t>(run.size())));
+            std::vector<uint8_t> mask;
+            const auto shot = [&](uint8_t level, bool kick) {
+                for (int c = 0; c < 3; ++c)
+                    ground_rgb[c] = box_rgb[c] = level;
+                scene(0.0f, rgba, depth, mask);
+                D3D11_SUBRESOURCE_DATA ci{rgba.data(), vw * 4, 0};
+                D3D11_SUBRESOURCE_DATA di{depth.data(), vw * sizeof(float), 0};
+                ComPtr<ID3D11Texture2D> ct, dt;
+                ComPtr<ID3D11ShaderResourceView> cs, ds;
+                CHECK(SUCCEEDED(device->CreateTexture2D(&cdesc, &ci, &ct)));
+                CHECK(SUCCEEDED(device->CreateShaderResourceView(ct.Get(), nullptr, &cs)));
+                CHECK(SUCCEEDED(device->CreateTexture2D(&ddesc, &di, &dt)));
+                CHECK(SUCCEEDED(device->CreateShaderResourceView(dt.Get(), nullptr, &ds)));
+                dolly::env::EnvRenderParams p;
+                p.preset = dolly::env::AtmospherePreset::DustHaze;
+                p.density_scale = 0.0f; // no haze: isolate the cover and the puffs
+                p.coating_strength = 0.6f;
+                p.coating_drift = 0.0f;
+                p.enable_emitter_plumes = false;
+                p.wind_xy[0] = p.wind_xy[1] = 0.0f;
+                p.sim_time = now;
+                p.hero_kickup = kick;
+                CHECK(renderer.render(ctx.Get(), cs.Get(), ds.Get(), out_rtv.Get(), view, p, calm,
+                                      nullptr, 0));
+                return readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            };
+            const auto on_dark = shot(30, true), off_dark = shot(30, false);
+            const auto on_light = shot(200, true), off_light = shot(200, false);
+            CHECK(shot(200, true) == on_light); // the same time draws the same puffs
+            CHECK(renderer.set_hero_trails(nullptr, 0));
+            // Coverage per pixel, where the two scenes differ enough to measure it.
+            std::vector<float> cover(frame_px, -1.0f);
+            for (size_t i = 0; i < frame_px; ++i) {
+                const int span = int(off_light[i * 4 + 1]) - int(off_dark[i * 4 + 1]);
+                if (depth[i] > 0.0f && span >= 40)
+                    cover[i] = 1.0f - float(int(on_light[i * 4 + 1]) - int(on_dark[i * 4 + 1])) /
+                                          float(span);
+            }
+            float peak = 0.0f, step_open = 0.0f, step_post = 0.0f;
+            size_t puff_px = 0, post_pairs = 0;
+            const auto near_box = [&](int x, int y) {
+                for (int dy = -3; dy <= 3; ++dy)
+                    for (int dx = -3; dx <= 3; ++dx) {
+                        const int qx = x + dx, qy = y + dy;
+                        if (qx >= 0 && qy >= 0 && qx < int(vw) && qy < int(vh) &&
+                            mask[static_cast<size_t>(qy) * vw + qx] != 0)
+                            return true;
+                    }
+                return false;
+            };
+            for (int y = 0; y + 1 < int(vh); ++y)
+                for (int x = 0; x + 1 < int(vw); ++x) {
+                    const size_t i = static_cast<size_t>(y) * vw + x;
+                    const float a = cover[i], right = cover[i + 1], below = cover[i + vw];
+                    if (a < 0.0f)
+                        continue;
+                    peak = std::max(peak, a);
+                    puff_px += a > 0.05f;
+                    if (right >= 0.0f && (mask[i] == 1) != (mask[i + 1] == 1) && mask[i] != 2 &&
+                        mask[i + 1] != 2) {
+                        // The post's side against the ground beside it.
+                        step_post = std::max(step_post, std::abs(right - a));
+                        post_pairs += std::max(a, right) > 0.05f;
+                    }
+                    if (mask[i] != 0 || near_box(x, y))
+                        continue;
+                    if (right >= 0.0f)
+                        step_open = std::max(step_open, std::abs(right - a));
+                    if (below >= 0.0f)
+                        step_open = std::max(step_open, std::abs(below - a));
+                }
+            std::printf("WARP kick-up puff: %zu pixels, peak coverage %.2f, largest step between "
+                        "neighbours %.3f on open ground, %.3f across the post's outline (%zu "
+                        "pairs in the puff)\n",
+                        puff_px, peak, step_open, step_post, post_pairs);
+            if (!out_dir.empty()) {
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_kick_puff_dark.png", vw, vh,
+                                                       on_dark.data(), &err));
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_kick_puff_light.png", vw,
+                                                       vh, on_light.data(), &err));
+                std::vector<uint8_t> cover_px(frame_px * 4, 255u);
+                for (size_t i = 0; i < frame_px; ++i) {
+                    const uint8_t v = cover[i] < 0.0f
+                                          ? 0u
+                                          : static_cast<uint8_t>(std::clamp(cover[i], 0.0f, 1.0f) * 255.0f);
+                    cover_px[i * 4] = cover_px[i * 4 + 1] = v;
+                    cover_px[i * 4 + 2] = cover[i] < 0.0f ? 60u : v;
+                }
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_kick_puff_cover.png", vw, vh,
+                                                       cover_px.data(), &err));
+            }
+            CHECK(puff_px > 1500 && peak > 0.2f && peak < 0.9f); // there, and never opaque
+            CHECK(step_open < 0.30f);                            // no edge, no terrace
+            CHECK(post_pairs > 10 && step_post < 0.15f);         // not cut by the post behind
+        }
     }
 
     // 8) Optionally export visual verification PNGs

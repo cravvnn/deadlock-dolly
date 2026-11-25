@@ -100,6 +100,11 @@ Texture2D<float> wallReach : register(t14);  // 1 where a wall is within the enc
 // Kick-up: per texel the latest shot time a running hero passed, made older at the edge of
 // the footfall and for slower heroes (MAX-blended with the trail map).
 Texture2D<float> kickMap : register(t15);
+// The latest kick within a coarse cell (32 u) of each coarse cell (KickPoolPS), so a view
+// ray can tell which stretch of it has a fresh kick near.
+Texture2D<float> kickNear : register(t16);
+// The same over 256 u cells (KickFarPS), so most rays find in a read or two that none is near.
+Texture2D<float> kickFar : register(t17);
 // Hero trails: the recorded path segments, and the map they are stamped into each frame.
 struct TrailSeg {
     float4 a; // xyz start (world), w its shot time (s)
@@ -263,9 +268,11 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     o.trail = float4(te, -te, lerp(-d, -kTrailReach, underRoof), tw);
     // A footfall kicks cover up where the hero ran: strongest under the feet and for a
     // running hero, weaker toward the track's edge and for one walking (read as older).
+    // At the shoulder's edge the kick is older than a puff lives (2 s), so the puffs' footprint
+    // fades out there: stopping at 1.2 s left a hard outline the shape of the stamp.
     float run = saturate((i.speed - 140.0) / 220.0);
     float edgeK = saturate(d / (kTrailCore + kTrailFeather));
-    o.kick = t - edgeK * edgeK * 1.2 - (1.0 - run) * 1.5 - underRoof * 10.0;
+    o.kick = t - edgeK * edgeK * 2.2 - (1.0 - run) * 1.5 - underRoof * 10.0;
     return o;
 }
 
@@ -1480,9 +1487,17 @@ void BakeSunCS(uint3 id : SV_DispatchThreadID) {
 )HLSL"
                                   R"HLSL(
 // Kick-up: snow, sand or dust thrown up behind running heroes rises over about a second,
-// drifts with the wind and settles within two. Read from the kick map, so it is the same at
-// every replay time. A short march through the low layer of air above the ground, near the
-// camera only: rgb puff light (premultiplied), a its coverage.
+// leans with the wind and settles within two. Read from the kick map, so it is the same at
+// every replay time. A march through the low layer of air over the floor the puffs lie on:
+// rgb puff light (premultiplied), a its coverage.
+static const float kKickLife = 2.0;  // seconds a puff lives
+static const float kKickTop = 44.0;  // how high the oldest puffs stand over their floor
+static const int kKickCells = 64;    // the near map: cells of 32 u
+static const int kKickFarCells = 8;  // the far map: cells of 256 u
+// Steps over the ground on each map: under a cell, less the kick map's filter reach.
+static const float kKickStride = 28.0;
+static const float kKickFarStride = 220.0;
+
 float KickAge(float2 xy) {
     float2 uv = (xy - TrailOrigin(gCamPos)) / kTrailSpan;
     if (any(uv <= 0.0) || any(uv >= 1.0))
@@ -1490,49 +1505,176 @@ float KickAge(float2 xy) {
     return windTime.z - kickMap.SampleLevel(linearClamp, float2(uv.x, 1.0 - uv.y), 0);
 }
 
-float4 KickUp(float3 rayDir, float hitDist, float3 surfPos, int preset) {
+// The age of the latest kick anywhere within a cell of xy on the near map (32 u) or the
+// far map (256 u): no kick fresher than this lies within that distance.
+float KickNearAge(float2 xy, bool wide) {
+    float2 uv = (xy - TrailOrigin(gCamPos)) / kTrailSpan;
+    if (any(uv <= 0.0) || any(uv >= 1.0))
+        return 1e9;
+    int cells = wide ? kKickFarCells : kKickCells;
+    int3 c = int3(clamp(int2(float2(uv.x, 1.0 - uv.y) * cells), 0, cells - 1), 0);
+    return windTime.z - (wide ? kickFar.Load(c) : kickNear.Load(c));
+}
+
+// The near map: per 32 u cell the latest kick in the 3 x 3 cells around it.
+float KickPoolPS(FullscreenVSOut i) : SV_Target {
+    int cell = int(kTrailTexels) / kKickCells;
+    int2 first = int2(i.pos.xy) * cell - cell;
+    float latest = -1.0e30;
+    [loop] for (int y = 0; y < 3 * cell; y += 2) {
+        [loop] for (int x = 0; x < 3 * cell; x += 2) {
+            // One Gather reads the 2 x 2 texels sharing this corner.
+            float4 g = kickMap.GatherRed(linearClamp, (float2(first + int2(x, y)) + 1.0) / kTrailTexels);
+            latest = max(latest, max(max(g.x, g.y), max(g.z, g.w)));
+        }
+    }
+    return latest;
+}
+
+// The far map: per 256 u cell the latest kick in the 3 x 3 cells around it, from the near
+// map (whose own reach only widens it).
+float KickFarPS(FullscreenVSOut i) : SV_Target {
+    int cell = kKickCells / kKickFarCells;
+    int2 first = int2(i.pos.xy) * cell - cell;
+    float latest = -1.0e30;
+    [loop] for (int y = 0; y < 3 * cell; ++y) {
+        [loop] for (int x = 0; x < 3 * cell; ++x)
+            latest = max(latest, kickNear.Load(int3(clamp(first + int2(x, y), 0, kKickCells - 1), 0)));
+    }
+    return latest;
+}
+
+float4 KickUp(float3 rayDir, float hitDist, bool sky, int preset, float2 px) {
     float4 none = float4(0.0, 0.0, 0.0, 0.0);
-    if (trailInfo.x < 1.5 || !(preset == 6 || preset == 1 || preset == 2) || hitDist > 1500.0)
+    float coat = styleB.y * coatingInfo.x;
+    if (trailInfo.x < 1.5 || !(preset == 6 || preset == 1 || preset == 2) || coat <= 0.001)
         return none;
-    const float kLife = 2.0, kTop = 44.0;
-    // The ground under the view: the pixel's own floor (a hero's pixel uses the map floor).
-    float ground = min(surfPos.z, SampleFloorBelowSmooth(surfPos) + 2.0);
-    float3 hit = gCamPos + rayDir * hitDist;
-    // Where the view ray lies within kTop of that ground, toward the camera from the hit.
-    float down = -rayDir.z;
-    float tStart = hitDist;
-    if (down > 0.02)
-        tStart = max(hitDist - (hit.z + kTop - ground) / down, 0.0);
-    else
-        tStart = max(hitDist - 180.0, 0.0);
-    float span = hitDist - tStart;
-    if (span < 1.0)
-        return none;
-    // Nothing to do unless a kick is fresh near this view (checked at both ends).
-    // Near the ground the air runs at about half the steady wind.
+    // A puff leans downwind as it ages, at most 60 u over its life: followed at the full
+    // wind, a puff showed only where the place it was looked up happened to lie on the track
+    // (thin upright streaks, and one detached blob in a storm).
     float2 wind = windTime.xy * 0.5;
+    wind *= min(1.0, 30.0 / max(length(wind), 1e-3));
     float2 drift = wind * 0.6;
-    if (min(KickAge(hit.xy - drift), KickAge((gCamPos + rayDir * tStart).xy - drift)) > kLife &&
-        KickAge(hit.xy) > kLife)
+    // Is a fresh kick anywhere near this view ray? Steps over the far map, each no longer
+    // than the reach the map vouches for. Most rays end here, after a read or two of an
+    // 8 x 8 map.
+    float across = max(length(rayDir.xy), 0.02);
+    float tEnd = min(hitDist, 1500.0);
+    float farStep = kKickFarStride / across;
+    bool anyNear = false;
+    [loop] for (int f = 0; f < 8; ++f) {
+        float t = min(f * farStep, tEnd);
+        if (KickNearAge((gCamPos + rayDir * t).xy - drift, true) < kKickLife) {
+            anyNear = true;
+            break;
+        }
+        if (t >= tEnd)
+            break;
+    }
+    if (!anyNear)
         return none;
+    // The layer of air puffs can be in: from the floor under the air just in front of what
+    // the view hits (never the hit surface's own floor: a stair, a table or a post behind a
+    // puff then cut the puff to its own outline) to the puffs' top above it, with room for a
+    // curb's step either way. The view ray is followed wherever it lies in that layer, so a
+    // puff reads the same against the ground, a wall, a hero or the sky behind it.
+    float3 pRef = gCamPos + rayDir * (sky ? 48.0 : max(hitDist - 8.0, 0.0));
+    float floorRef = SampleFloorBelowSmooth(pRef);
+    float zLo = floorRef - 8.0, zHi = floorRef + kKickTop + 8.0;
+    float t0 = 0.0, t1 = tEnd;
+    if (abs(rayDir.z) > 1e-4) {
+        float ta = (zLo - gCamPos.z) / rayDir.z, tb = (zHi - gCamPos.z) / rayDir.z;
+        t0 = max(t0, min(ta, tb));
+        t1 = min(t1, max(ta, tb));
+    } else if (gCamPos.z < zLo || gCamPos.z > zHi) {
+        return none;
+    }
+    if (t1 - t0 < 0.5)
+        return none;
+    // Which stretch of it has a fresh kick near: steps over the near map where the far map
+    // says one may be (asked again every fourth step), long steps where it says none is.
+    float stride = kKickStride / across;
+    float tA = 1e9, tB = -1e9;
+    float tWalk = t0;
+    bool maybe = false;
+    int since = 4;
+    [loop] for (int j = 0; j < 40; ++j) {
+        float2 at = (gCamPos + rayDir * tWalk).xy - drift;
+        bool last = tWalk >= t1;
+        if (since >= 4 || !maybe) {
+            maybe = KickNearAge(at, true) < kKickLife;
+            since = 0;
+        }
+        if (!maybe) {
+            tWalk += farStep;
+        } else {
+            if (KickNearAge(at, false) < kKickLife) {
+                tA = min(tA, tWalk);
+                tB = max(tB, tWalk);
+            }
+            tWalk += stride;
+            ++since;
+        }
+        if (last)
+            break;
+        tWalk = min(tWalk, t1);
+    }
+    if (tB < tA)
+        return none;
+    tA = max(tA - stride, t0);
+    tB = min(tB + stride, t1);
+    if (tB - tA < 0.5)
+        return none;
+)HLSL"
+                                  R"HLSL(
     float3 albedo = (preset == 6) ? float3(0.95, 0.96, 0.98) : float3(0.78, 0.65, 0.46);
-    float3 lightCol = ambientColor.rgb * 1.25 + sunColor.rgb * 0.55;
+    // Lit as the air is, darker under a roof (read once, at the middle of the stretch).
+    float3 pMid = gCamPos + rayDir * (0.5 * (tA + tB));
+    float3 lightCol = (ambientColor.rgb * 1.25 + sunColor.rgb * 0.55) *
+                      RoofShadowAt(MapUV(pMid.xy), pMid.z);
+    // The floor under the puffs, read at the two ends of the stretch and taken as straight
+    // between them (a stretch is a few steps long; over stairs it is their ramp).
+    float floorA = SampleFloorBelowSmooth(gCamPos + rayDir * tA);
+    float floorB = SampleFloorBelowSmooth(gCamPos + rayDir * tB);
+    // A thin dusting throws up thin puffs: full strength from a third of full cover.
+    float strength = 0.11 * styleA.y * saturate(coat * 3.0);
     float trans = 1.0;
     float3 light = float3(0.0, 0.0, 0.0);
-    const int kSteps = styleB.z > 100.0 ? 20 : 10; // exports march twice the steps
-    float dt = span / kSteps;
-    [loop] for (int k = 0; k < kSteps; ++k) {
-        float3 q = gCamPos + rayDir * (tStart + (k + 0.5) * dt);
-        float h = q.z - ground;
-        // A puff born at age a has drifted a * wind; look back along the wind for its source.
-        float age = KickAge(q.xy - drift);
-        age = KickAge(q.xy - wind * clamp(age, 0.0, kLife));
-        if (age < 0.0 || age > kLife)
+    // Steps of 4 u, longer where the stretch is long; on a grid fixed along the ray and
+    // shifted per pixel (as the haze march is), so what a step misses shows as fine grain
+    // instead of terraces. Exports take twice as many, half as long.
+    bool fine = styleB.z > 100.0;
+    int kMax = fine ? 48 : 24;
+    float dt = max(fine ? 2.0 : 4.0, (tB - tA) / kMax);
+    float tGrid = (floor(tA / dt) + Hash3(float3(px, 47.3))) * dt;
+    [loop] for (int k = 0; k <= kMax; ++k) {
+        float t = tGrid + k * dt;
+        if (t >= tB)
+            break;
+        float3 q = gCamPos + rayDir * t;
+        // A puff born at age a has leant a * wind; look back along the wind for its source.
+        float guess = KickAge(q.xy - drift);
+        if (guess < 0.0 || guess >= kKickLife)
             continue;
-        float top = 6.0 + kTop * sqrt(age / kLife);
+        float age = KickAge(q.xy - wind * guess);
+        if (age < 0.0 || age >= kKickLife)
+            continue;
+        // Height over the floor under the puff itself.
+        float h = q.z - lerp(floorA, floorB, saturate((t - tA) / (tB - tA)));
+        float top = 6.0 + kKickTop * sqrt(age / kKickLife);
         float shape = smoothstep(-2.0, 3.0, h) * (1.0 - smoothstep(top * 0.45, top, h));
-        float n = gustNoise3D.SampleLevel(linearWrap, float3(q.xy / 38.0, q.z / 30.0 + windTime.z * 0.9), 0);
-        float dens = shape * exp(-age * 1.6) * smoothstep(0.15, 0.6, n) * 0.22 * styleA.y;
+        if (shape <= 0.0)
+            continue;
+        // Billows: thinner and thicker, never holes (cut to nothing, the noise's cells showed
+        // as a row of dark dots along the run).
+        float n = gustNoise3D.SampleLevel(linearWrap, float3(q.xy / 72.0, q.z / 44.0 + windTime.z * 0.6), 0);
+        float billow = lerp(0.3, 1.0, smoothstep(0.2, 0.7, n));
+        // Fading out over the last part of its life (and of the source's reach), and with
+        // distance, so nothing about a puff ends at an edge.
+        float fade = (1.0 - smoothstep(0.7 * kKickLife, kKickLife, age)) *
+                     (1.0 - smoothstep(0.7 * kKickLife, kKickLife, guess)) *
+                     (1.0 - smoothstep(1100.0, 1500.0, t));
+        float dens = shape * exp(-age * 1.1) * fade * billow * strength;
         float a = 1.0 - exp(-dens * dt);
         light += trans * a * albedo * lightCol;
         trans *= 1.0 - a;
@@ -1759,8 +1901,8 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
         }
     }
 
-    if (!sky && sunDir.w > 0.5) {
-        float4 kick = KickUp(rayDir, hitDist, surfPos, preset);
+    if (sunDir.w > 0.5) {
+        float4 kick = KickUp(rayDir, hitDist, sky, preset, px);
         baseColor = baseColor * (1.0 - kick.a) + kick.rgb;
     }
 
@@ -1912,6 +2054,12 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11Texture2D> kick_tex;
     ComPtr<ID3D11RenderTargetView> kick_rtv;
     ComPtr<ID3D11ShaderResourceView> kick_srv;
+    // The coarse kick maps (the latest kick near each 32 u and each 256 u cell) and the
+    // passes that build them from the kick map.
+    ComPtr<ID3D11PixelShader> kick_pool_ps, kick_far_ps;
+    ComPtr<ID3D11Texture2D> kick_near_tex, kick_far_tex;
+    ComPtr<ID3D11RenderTargetView> kick_near_rtv, kick_far_rtv;
+    ComPtr<ID3D11ShaderResourceView> kick_near_srv, kick_far_srv;
     ComPtr<ID3D11Buffer> trail_buf;
     ComPtr<ID3D11ShaderResourceView> trail_buf_srv;
     uint32_t trail_count = 0;
@@ -1921,14 +2069,27 @@ struct EnvRendererDX11::Impl {
 
 namespace {
 constexpr UINT kTrailTexels = 1024; // matches kTrailTexels in the shader
+constexpr UINT kKickCells = 64;     // matches kKickCells in the shader
+constexpr UINT kKickFarCells = 8;   // matches kKickFarCells in the shader
 
 // The shaders are compiled once per process (several seconds at full optimisation) and
 // kept; precompile() lets the runtime do that on a worker thread before weather is first
 // drawn, so the game's render thread never waits for it.
-enum EnvShader { kFullscreenVS, kCompositePS, kHalfPS, kBakeSunCS, kTrailVS, kTrailPS, kEnvShaders };
+enum EnvShader {
+    kFullscreenVS,
+    kCompositePS,
+    kHalfPS,
+    kBakeSunCS,
+    kTrailVS,
+    kTrailPS,
+    kKickPoolPS,
+    kKickFarPS,
+    kEnvShaders
+};
 const char* const kEnvShaderEntry[kEnvShaders][2] = {
     {"FullscreenVS", "vs_5_0"}, {"EnvCompositePS", "ps_5_0"}, {"EnvHalfPS", "ps_5_0"},
-    {"BakeSunCS", "cs_5_0"},    {"TrailStampVS", "vs_5_0"},   {"TrailStampPS", "ps_5_0"}};
+    {"BakeSunCS", "cs_5_0"},    {"TrailStampVS", "vs_5_0"},   {"TrailStampPS", "ps_5_0"},
+    {"KickPoolPS", "ps_5_0"},   {"KickFarPS", "ps_5_0"}};
 struct EnvBlobs {
     ComPtr<ID3DBlob> code[kEnvShaders];
     std::string error;
@@ -2139,6 +2300,31 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
                                                     &impl_->kick_srv))) {
             if (out_error)
                 *out_error = "failed to create the kick-up map";
+            shutdown();
+            return false;
+        }
+        ID3DBlob* pool = blobs->code[kKickPoolPS].Get();
+        ID3DBlob* far_pool = blobs->code[kKickFarPS].Get();
+        D3D11_TEXTURE2D_DESC fd = td;
+        td.Width = td.Height = kKickCells;
+        fd.Width = fd.Height = kKickFarCells;
+        if (FAILED(device->CreatePixelShader(pool->GetBufferPointer(), pool->GetBufferSize(),
+                                             nullptr, &impl_->kick_pool_ps)) ||
+            FAILED(device->CreatePixelShader(far_pool->GetBufferPointer(),
+                                             far_pool->GetBufferSize(), nullptr,
+                                             &impl_->kick_far_ps)) ||
+            FAILED(device->CreateTexture2D(&td, nullptr, &impl_->kick_near_tex)) ||
+            FAILED(device->CreateRenderTargetView(impl_->kick_near_tex.Get(), nullptr,
+                                                  &impl_->kick_near_rtv)) ||
+            FAILED(device->CreateShaderResourceView(impl_->kick_near_tex.Get(), nullptr,
+                                                    &impl_->kick_near_srv)) ||
+            FAILED(device->CreateTexture2D(&fd, nullptr, &impl_->kick_far_tex)) ||
+            FAILED(device->CreateRenderTargetView(impl_->kick_far_tex.Get(), nullptr,
+                                                  &impl_->kick_far_rtv)) ||
+            FAILED(device->CreateShaderResourceView(impl_->kick_far_tex.Get(), nullptr,
+                                                    &impl_->kick_far_srv))) {
+            if (out_error)
+                *out_error = "failed to create the coarse kick-up maps";
             shutdown();
             return false;
         }
@@ -2367,13 +2553,41 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShaderResources(4, 1, null_ptops);
         ID3D11RenderTargetView* null_rtv[2] = {};
         ctx->OMSetRenderTargets(2, null_rtv, nullptr);
+        if (params.hero_kickup) {
+            // The coarse kick maps: the near map from the kick map just stamped, the far
+            // map from the near map.
+            ID3D11ShaderResourceView* null_kick[2] = {};
+            ctx->OMSetBlendState(impl_->blend_state.Get(), nullptr, 0xFFFFFFFFu);
+            ctx->VSSetShader(impl_->vs.Get(), nullptr, 0);
+            ID3D11RenderTargetView* near_rtv[1] = {impl_->kick_near_rtv.Get()};
+            ctx->OMSetRenderTargets(1, near_rtv, nullptr);
+            D3D11_VIEWPORT kvp{0.0f, 0.0f, float(kKickCells), float(kKickCells), 0.0f, 1.0f};
+            ctx->RSSetViewports(1, &kvp);
+            ctx->PSSetShader(impl_->kick_pool_ps.Get(), nullptr, 0);
+            ID3D11ShaderResourceView* kick_in[2] = {impl_->kick_srv.Get(), nullptr};
+            ctx->PSSetShaderResources(15, 2, kick_in);
+            ctx->Draw(3, 0);
+            ctx->PSSetShaderResources(15, 2, null_kick);
+            ID3D11RenderTargetView* far_rtv[1] = {impl_->kick_far_rtv.Get()};
+            ctx->OMSetRenderTargets(1, far_rtv, nullptr);
+            D3D11_VIEWPORT fvp{0.0f,           0.0f, float(kKickFarCells), float(kKickFarCells),
+                               0.0f, 1.0f};
+            ctx->RSSetViewports(1, &fvp);
+            ctx->PSSetShader(impl_->kick_far_ps.Get(), nullptr, 0);
+            ID3D11ShaderResourceView* near_in[2] = {nullptr, impl_->kick_near_srv.Get()};
+            ctx->PSSetShaderResources(15, 2, near_in);
+            ctx->Draw(3, 0);
+            ctx->PSSetShaderResources(15, 2, null_kick);
+            ctx->OMSetRenderTargets(2, null_rtv, nullptr);
+        }
     }
 
     D3D11_VIEWPORT vp{
         0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
         0.0f, 1.0f};
     ID3D11RenderTargetView* rtvs[1] = {out_rtv};
-    ID3D11ShaderResourceView* srvs[16] = {
+    const bool kicks = trails && params.hero_kickup;
+    ID3D11ShaderResourceView* srvs[18] = {
         scene_color_srv,
         scene_depth_srv,
         fluid.fluid_srv(),
@@ -2390,6 +2604,8 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         trails ? impl_->trail_srv.Get() : nullptr,
         impl_->reach_srv.Get(),
         trails ? impl_->kick_srv.Get() : nullptr,
+        kicks ? impl_->kick_near_srv.Get() : nullptr,
+        kicks ? impl_->kick_far_srv.Get() : nullptr,
     };
     ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
     ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
@@ -2436,14 +2652,14 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
         srvs[10] = impl_->half_srv.Get();
     }
-    ctx->PSSetShaderResources(0, 16, srvs);
+    ctx->PSSetShaderResources(0, 18, srvs);
 
     ctx->Draw(3, 0);
 
     // Unbind SRVs/RTVs to prevent hazard warnings in callers
-    ID3D11ShaderResourceView* null_srvs[16] = {};
+    ID3D11ShaderResourceView* null_srvs[18] = {};
     ID3D11RenderTargetView* null_rtvs[1] = {};
-    ctx->PSSetShaderResources(0, 16, null_srvs);
+    ctx->PSSetShaderResources(0, 18, null_srvs);
     ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
     return true;
 }
