@@ -152,6 +152,8 @@ FullscreenVSOut FullscreenVS(uint id : SV_VertexID) {
 // ---- Hero trails ----
 float2 MapUV(float2 worldXY);          // defined with the map helpers below
 float SkyOpenAt(float2 uv, float z);
+float4 GatherTops(float2 uv, out float2 f);
+float BlendCells(float4 v, float2 f);
 // Every frame the trails are stamped afresh from the recorded paths up to this frame's shot
 // time into a square window that follows the camera (snapped to whole texels), keeping per
 // texel the latest time a hero trod it. MAX blending makes the result independent of draw
@@ -243,6 +245,13 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     // a track on a deck is the deck's (the street below is not open to the sky).
     float footZ = lerp(i.heights.x, i.heights.y, k);
     float underRoof = 1.0 - smoothstep(0.15, 0.45, SkyOpenAt(MapUV(i.world), footZ));
+    // Feet off the ground leave no print: the track thins as a hero rises (from 20 u up, gone
+    // by 60 u) and comes back as they land, so take-off and landing fade along the path. The
+    // ground is the map's top surface here, blended between cells (C0).
+    float2 tf;
+    float4 tops4 = GatherTops(MapUV(i.world), tf);
+    float airborne = smoothstep(20.0, 60.0, footZ - BlendCells(tops4, tf));
+    underRoof = max(underRoof, airborne);
     float te = t - max(shoulder, underRoof) * kTrailFade * trailInfo.y;
     // Minus the distance, so MAX blending keeps the nearest piece: the distance to the whole
     // path, smooth through every joint (a rim shaped per piece ringed each joint).
@@ -1067,8 +1076,10 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
                 float ePrev = sMax * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sMax,
                                                          surfPos.z, depth);
                 float sHit = 0.0;
-                [loop] for (int st = 1; st <= 12; ++st) {
-                    float sNow = sMax * (1.0 - st / 12.0);
+                // Exports take twice the steps (styleB.z is 128 there).
+                int traceSteps = styleB.z > 100.0 ? 24 : 12;
+                [loop] for (int st = 1; st <= traceSteps; ++st) {
+                    float sNow = sMax * (1.0 - float(st) / float(traceSteps));
                     float eNow = sNow * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sNow,
                                                             surfPos.z, depth);
                     if (eNow <= 0.0) {
@@ -1475,7 +1486,7 @@ float4 KickUp(float3 rayDir, float hitDist, float3 surfPos, int preset) {
     float3 lightCol = ambientColor.rgb * 1.25 + sunColor.rgb * 0.55;
     float trans = 1.0;
     float3 light = float3(0.0, 0.0, 0.0);
-    const int kSteps = 10;
+    const int kSteps = styleB.z > 100.0 ? 20 : 10; // exports march twice the steps
     float dt = span / kSteps;
     [loop] for (int k = 0; k < kSteps; ++k) {
         float3 q = gCamPos + rayDir * (tStart + (k + 0.5) * dt);

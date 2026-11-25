@@ -1427,6 +1427,26 @@ int main(int argc, char** argv) {
             }
             CHECK(trail_px > 0 && darker > trail_px / 2 && walked_px > trail_px);
             CHECK(before == before_bare);
+            // In the air (feet 80 u up, mid-jump): no print on the ground below.
+            {
+                std::vector<dolly::env::TrailSegment> jump = path;
+                for (auto& s : jump) {
+                    s.a[2] += 80.0f;
+                    s.b[2] += 80.0f;
+                }
+                CHECK(renderer.set_hero_trails(jump.data(), static_cast<uint32_t>(jump.size())));
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, res.render, solver, emitters, 0));
+                const auto mid_air = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                auto plain = res.render;
+                plain.hero_trails = false;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, plain, solver, emitters, 0));
+                const size_t marked = changed_pixels(
+                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh), mid_air);
+                std::printf("WARP hero trails in the air: %zu ground pixels marked\n", marked);
+                CHECK(marked == 0);
+            }
             // Kick-up: a hero running past (300 u/s) leaves puffs that are there just after
             // and gone a few seconds later; the same time draws the same puffs.
             {
