@@ -772,7 +772,7 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
 // it repeats exactly at every replay time; every visible edge comes from this pixel's
 // depth and world-fixed noise. Detail finer than a pixel fades instead of crawling.
 float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
-                           float cavity, float hitDist, float3 colorAround, float slopeTaper,
+                           float cavity, float hitDist, float2 px, float slopeTaper,
                            float onFloor) {
     // Coating settles over time (coatingInfo.x grows 0..1 from the shot start).
     float coat = styleB.y * coatingInfo.x;
@@ -796,21 +796,32 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float amount = coat * lerp(1.0, DriftAt(uv), coatingInfo.y);
     // Cover runs thicker along wall feet and thickest in inside corners.
     float bankMax = BankHeight(preset);
+    // One enclosure read per pixel, shared with the wall bank below.
+    float2 away = float2(0.0, 0.0);
+    float enclosedHere = 0.0;
     if (bankMax > 0.0) {
-        float enclosed = Enclosure(surfPos.xy);
-        amount *= 1.0 + 0.35 * smoothstep(0.15, 0.4, enclosed) +
-                  0.6 * smoothstep(0.38, 0.62, enclosed);
+        enclosedHere = EnclosureDir(surfPos.xy, away);
+        amount *= 1.0 + 0.35 * smoothstep(0.15, 0.4, enclosedHere) +
+                  0.6 * smoothstep(0.38, 0.62, enclosedHere);
     }
 
     // Top cover. Nothing here reads depth differences (creases): the game's depth bands
     // with distance, and anything built on it drew rings around the camera.
     // Light cover is an even dusting the ground shows through; it closes into a full sheet
     // as cover rises. Only gentle, soft variation: bare holes read as dark stains in haze.
-    float noise = Fbm3(surfPos * 0.0085);
-    float top = saturate(amount * 1.45) * lerp(0.82, 1.12, noise) * upMask * open;
-    // Fine grain in the dusting, only where a pixel can resolve it.
+    // (Noise is evaluated only where it can change the result; skipping it elsewhere is
+    // exact.)
+    float top = 0.0;
+    if (upMask * open > 0.0) {
+        float noise = Fbm3(surfPos * 0.0085);
+        top = saturate(amount * 1.45) * lerp(0.82, 1.12, noise) * upMask * open;
+    }
+    // Fine grain in the dusting, only where a pixel can resolve it. At top >= 1 it cannot
+    // matter (the saturate below hides it) except for sand, whose streaks can pull it back.
     float fine = 1.0 - saturate(footprint / 4.0);
-    top *= 1.0 + (Fbm3(float3(surfPos.xy * 0.07, 3.1)) - 0.5) * 0.5 * fine * (1.0 - top);
+    bool sandy = (preset == 1 || preset == 2);
+    if (fine > 0.0 && top > 0.0 && (sandy || top < 1.0))
+        top *= 1.0 + (Fbm3(float3(surfPos.xy * 0.07, 3.1)) - 0.5) * 0.5 * fine * (1.0 - top);
     // Blown sand thins in broad, faint streaks along the wind.
     if (preset == 1 || preset == 2)
         top *= 1.0 - 0.15 * smoothstep(0.35, 0.7, ValueNoise3(float3(surfPos.xy * 0.0045, 11.0)));
@@ -826,8 +837,6 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         // Out from the wall: the face's normal blended continuously with the map's own
         // direction away from walls (which turns smoothly round a pillar's corners). A hard
         // choice between the two made the reach jump about half a cell.
-        float2 away;
-        float enclosedHere = EnclosureDir(surfPos.xy, away);
         float2 nxy = surfNormal.xy / max(length(surfNormal.xy), 1e-3);
         float2 outDir = normalize(nxy + away * 0.5 + 1e-5);
         float2 outXY = surfPos.xy + outDir * 28.0;
@@ -874,7 +883,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float2 trail = trailHere * upMask;
     float tread = trail.x;
     // Churned snow is broken into lumps with the ground showing between them.
-    float lumps = Fbm3(float3(surfPos.xy * 0.09, 21.0));
+    float lumps = (trail.y > 0.0) ? Fbm3(float3(surfPos.xy * 0.09, 21.0)) : 0.5;
     float churn = trail.y;
     float churnGaps = 1.0 - 0.35 * churn * smoothstep(0.35, 0.65, 1.0 - lumps);
 
@@ -924,6 +933,17 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // light's colour carries over too.
     // lumaAround averages a few pixels, so the ground's own fine texture and painted
     // markings do not print through the cover; broad shadows and lamps still do.
+    // The light on the ground, read from the frame over a 16 px neighbourhood: wide enough
+    // that paving, grout and painted lines do not print through the cover. Read only here,
+    // after every early return, so uncoated pixels never pay for it.
+    float3 colorAround = float3(0.0, 0.0, 0.0);
+    [unroll] for (int k = 0; k < 12; ++k) {
+        float ang = k * 0.5235988 + (k & 1) * 0.26;
+        float rad = (k & 1) ? 16.0 : 8.0;
+        float2 auv = (px + 0.5 + float2(cos(ang), sin(ang)) * rad) * screenInfo.zw;
+        colorAround += sceneColor.SampleLevel(linearClamp, auv, 0).rgb;
+    }
+    colorAround /= 12.0;
     float lumaAround = dot(colorAround, float3(0.2126, 0.7152, 0.0722));
     float light = lerp(0.3, 1.08, saturate(pow(saturate(lumaAround / 0.32), 0.65)));
     float3 chroma = clamp(colorAround / max(lumaAround, 1e-3), 0.0, 2.0);
@@ -960,7 +980,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     }
 
     // Spindrift: where the wind runs fast, soft bands of snow or sand skim over the cover.
-    if ((preset == 6 || preset == 1 || preset == 2) && OnMap(uv)) {
+    if ((preset == 6 || preset == 1 || preset == 2) && upMask > 0.0 && OnMap(uv)) {
         float speed = length(fluidState.SampleLevel(linearClamp, uv, 0).xy);
         float gust = saturate((speed - 120.0) / 380.0);
         if (gust > 0.01) {
@@ -1336,11 +1356,17 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
             // on and off in cell-sized bands across ramps.
             // Two-sided differences 11 u either way: a one-sided one shifted every slope and
             // taper half a cell toward +x and +y.
-            float fz = SampleFloorBelowSmooth(surfPos);
-            float fxp = SampleFloorBelowSmooth(surfPos + float3(11.0, 0.0, 0.0));
-            float fxm = SampleFloorBelowSmooth(surfPos - float3(11.0, 0.0, 0.0));
-            float fyp = SampleFloorBelowSmooth(surfPos + float3(0.0, 11.0, 0.0));
-            float fym = SampleFloorBelowSmooth(surfPos - float3(0.0, 11.0, 0.0));
+            float fz = surfPos.z, fxp = fz, fxm = fz, fyp = fz, fym = fz;
+            [branch] if (surfNormal.z > 0.28) {
+                fz = SampleFloorBelowSmooth(surfPos);
+                fxp = fxm = fyp = fym = fz;
+                [branch] if (abs(surfPos.z - fz) < 27.0) {
+                    fxp = SampleFloorBelowSmooth(surfPos + float3(11.0, 0.0, 0.0));
+                    fxm = SampleFloorBelowSmooth(surfPos - float3(11.0, 0.0, 0.0));
+                    fyp = SampleFloorBelowSmooth(surfPos + float3(0.0, 11.0, 0.0));
+                    fym = SampleFloorBelowSmooth(surfPos - float3(0.0, 11.0, 0.0));
+                }
+            }
             // A ramp's gentle slope is trusted; a ledge or curb drop within a cell is not a
             // slope, so there the ground stays level.
             float relief = abs(fxp - fxm) + abs(fyp - fym);
@@ -1354,17 +1380,8 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
                                              abs(surfPos.z - fz));
             surfNormal = normalize(lerp(surfNormal, mapN,
                                         onFloor * smoothstep(0.3, 0.6, surfNormal.z)));
-            // The light on the ground, read from the frame over a 16 px neighbourhood: wide
-            // enough that paving, grout and painted lines do not print through the cover.
-            float3 around = float3(0.0, 0.0, 0.0);
-            [unroll] for (int k = 0; k < 12; ++k) {
-                float a = k * 0.5235988 + (k & 1) * 0.26;
-                float r = (k & 1) ? 16.0 : 8.0;
-                float2 uv = (px + 0.5 + float2(cos(a), sin(a)) * r) * screenInfo.zw;
-                around += sceneColor.SampleLevel(linearClamp, uv, 0).rgb;
-            }
             baseColor = ApplySurfaceCoating(baseColor, surfPos, surfNormal, -rayDir, cavity,
-                                            hitDist, around / 12.0, slopeTaper, onFloor);
+                                            hitDist, px, slopeTaper, onFloor);
         }
     }
 
