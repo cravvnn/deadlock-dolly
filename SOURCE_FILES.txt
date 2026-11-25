@@ -280,6 +280,7 @@ dolly/replay_event_wire.py
 dolly/replay_events.py
 dolly/replay_player_focus.py
 dolly/replay_repair.py
+dolly/replay_tracks.py
 dolly/replay_warmup.py
 dolly/replays.py
 dolly/reshade_setup.py
@@ -328,6 +329,7 @@ native/assets/confetti/pak01_dir.vpk
 native/assets/ui/pak02_dir.vpk
 native/bin/win64/DollyNative.dll
 native/bin/win64/DollyReplayIndex.exe
+native/bin/win64/DollyReplayTracks.exe
 native/build_info.json
 native/include/dolly_attach.hpp
 native/include/dolly_bone_picker.hpp
@@ -468,6 +470,10 @@ native/replay_index/DollyReplayIndex.csproj
 native/replay_index/Program.cs
 native/replay_index/THIRD_PARTY_NOTICES.txt
 native/replay_index/packages.lock.json
+native/replay_tracks/THIRD_PARTY_NOTICES.txt
+native/replay_tracks/go.mod
+native/replay_tracks/go.sum
+native/replay_tracks/main.go
 native/src/bridge_win.cpp
 native/src/dolly_attach.cpp
 native/src/dolly_attach_runtime.hpp
@@ -742,6 +748,7 @@ third_party/reshade_shaders/prod80-LICENSE.txt
 tools/build_native.py
 tools/build_desktop.py
 tools/build_replay_index.py
+tools/build_replay_tracks.py
 tools/build_ui_override.py
 tools/build_windows.py
 tools/check_game_update.py
@@ -963,6 +970,7 @@ dolly/ScratchStatus.tla
 dolly/ScratchStatusApi.tla
 tests/test_player_scratch.py
 tests/test_replay_repair.py
+tests/test_replay_tracks.py
 tests/test_source2viewer.py
 tests/test_update_handoff_process.py
 docs/RELEASE_NOTES_0.7.9-beta.md
@@ -1433,3 +1441,4 @@ native/profiles/scenesystem-2026-11-24-6866.json
 native/profiles/soundsystem-2026-11-24-6866.json
 third_party/cvar_unlocker/unlocker-build-6866.patch
 docs/RELEASE_NOTES_0.7.56-beta.md
+docs/RELEASE_NOTES_0.7.57-beta.md

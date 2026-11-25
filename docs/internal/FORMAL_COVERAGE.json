@@ -1,6 +1,6 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 342,
+  "accounted_units": 345,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
@@ -8,19 +8,19 @@
     "stateful partial/open": 125,
     "generated data/schema": 10,
     "native owner/delegated contract open": 134,
-    "offline-tool scope": 26,
+    "offline-tool scope": 27,
     "entrypoint delegated contract open": 4,
-    "child-job contract open": 1
+    "child-job contract open": 3
   },
   "families": {
     "value": 41,
-    "L05": 21,
+    "L05": 23,
     "generated": 10,
     "L01": 94,
     "L03": 29,
     "L02": 50,
     "L04": 69,
-    "L06": 26
+    "L06": 27
   },
   "backlog": {
     "L01": {
@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "914df2a240340a9514e2aceb705301e461308b26ef54f2f708bdcdaefbc5b626",
+      "sha256": "41d17a9c9d32f6baaa8e44ed23f1d73713d408f241b1859e004ff87e75b2007d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -4597,6 +4597,26 @@
       "reconciliation_20261122": "2026-11-22: no-overwrite publish now calls file_ops.publish_new."
     },
     {
+      "path": "dolly/replay_tracks.py",
+      "sha256": "67c0a536cc203bc5f6abade7f17a80e5aa1d60bd5116d385bc8fbea11e5e26f6",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "child-job contract open",
+      "reason": "Runs the bundled replay track reader once per replay in the background at below-normal priority and records its identity beside the output. The reader's own parsing and the native store's adoption of its cells are not modeled.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_replay_tracks.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "Read hero tracks from a replay with the bundled s2replay helper, in the background.",
+        "persistent_state_signals": [
+          "file/process"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
       "path": "dolly/replay_warmup.py",
       "sha256": "753d04ee0da56e423a3602ac4aa45e7c46740a67a2244f351fce7f6600682e4d",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -8880,6 +8900,26 @@
       "full_formal_signoff": false
     },
     {
+      "path": "native/replay_tracks/main.go",
+      "sha256": "ef32533d28a05c217cecdaafe2bd9eb7563ca7bb1208e13a070f99035d829937",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "child-job contract open",
+      "reason": "One scoped Go replay reader job (s2replay) writing hero track cells to one output file, or a failure exit. Python ReplayTracksReader owns process admission and identity; parser resource behavior remains open.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_replay_tracks.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": [
+          "explicit first-party entrypoint/helper/tool scope"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
       "path": "native/src/bridge_win.cpp",
       "sha256": "a2ae9e492133b1f36cdae545aec7fb66442eea2c831cb62ecfe3c60cbd907d7b",
       "digest_kind": "utf8-bom-stripped-lf",
@@ -11310,6 +11350,24 @@
         "imports": [
           "pathlib"
         ],
+        "persistent_state_signals": [
+          "file/process"
+        ]
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "tools/build_replay_tracks.py",
+      "sha256": "cee98c12e9a5a5f9efca1c7f102c0cd1939c32dd436fed1479322cf5cca4eacf",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L06",
+      "disposition": "offline-tool scope",
+      "reason": "Invoked as a local tool/job; generated files/processes are checked by build/release owners. No claim of formal tool crash/network correctness.",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "Build the replay track reader (requires Go).",
         "persistent_state_signals": [
           "file/process"
         ]
@@ -14405,6 +14463,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.57-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.6-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -16611,6 +16674,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/replay_tracks.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/replay_warmup.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17097,6 +17165,11 @@
     },
     {
       "path": "native/bin/win64/DollyReplayIndex.exe",
+      "category": "asset/compiled helper input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/bin/win64/DollyReplayTracks.exe",
       "category": "asset/compiled helper input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -17962,6 +18035,26 @@
     {
       "path": "native/replay_index/packages.lock.json",
       "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/replay_tracks/THIRD_PARTY_NOTICES.txt",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/replay_tracks/go.mod",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/replay_tracks/go.sum",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/replay_tracks/main.go",
+      "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
@@ -19178,6 +19271,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_replay_tracks.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_replay_warmup_cleanup.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20189,6 +20287,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tools/build_replay_tracks.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tools/build_ui_art.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20325,11 +20428,11 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 583,
-    "implementation/tool": 342,
-    "asset/compiled helper input": 28,
+    "metadata/configuration/documentation input": 587,
+    "implementation/tool": 345,
+    "asset/compiled helper input": 29,
     "formal spec/interface": 169,
-    "test/support input": 104,
+    "test/support input": 105,
     "external dependency/resource": 205
   },
   "unclassified": 0,
