@@ -69,7 +69,7 @@ cbuffer EnvConstants : register(b0) {
     float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
     float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold,
                           // z 1 = driftMap holds a drift potential, w hero count
-    float4 trailInfo;     // x 1 = hero trails, y fill-in time (s), z shot start (s), w build-up (s)
+    float4 trailInfo;     // x 1 = hero trails (2 = and kick-up), y fill-in time (s), z shot start (s), w build-up (s)
     EmitterGPU emitters[EMITTERS];
     float4 heroes[12];    // xyz feet position of a hero the coating leaves clean
 };
@@ -96,6 +96,9 @@ Texture3D<float> sunBake : register(t9);
 Texture2D<float4> halfMarch : register(t10); // safety net: half-resolution march
 Texture2D<float> driftMap : register(t11);   // drift potential 0..2, stored halved (UNORM16)
 Texture2D<float> wallReach : register(t14);  // 1 where a wall is within the enclosure's reach
+// Kick-up: per texel the latest shot time a running hero passed, made older at the edge of
+// the footfall and for slower heroes (MAX-blended with the trail map).
+Texture2D<float> kickMap : register(t15);
 // Hero trails: the recorded path segments, and the map they are stamped into each frame.
 struct TrailSeg {
     float4 a; // xyz start (world), w its shot time (s)
@@ -174,6 +177,12 @@ struct TrailVSOut {
     float2 world : TEXCOORD0;
     nointerpolation float4 seg : TEXCOORD1;  // xy start, zw end (world)
     nointerpolation float2 times : TEXCOORD2; // shot times at start and end
+    nointerpolation float speed : TEXCOORD3;  // the hero's ground speed on this piece (u/s)
+};
+
+struct TrailStampOut {
+    float4 trail : SV_Target0;
+    float kick : SV_Target1;
 };
 
 TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
@@ -182,6 +191,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.world = float2(0.0, 0.0);
     o.seg = float4(0.0, 0.0, 0.0, 0.0);
     o.times = float2(kTrailNever, kTrailNever);
+    o.speed = 0.0;
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
@@ -208,10 +218,11 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.world = w;
     o.seg = float4(a, b);
     o.times = float2(s.a.w, tb);
+    o.speed = length(s.b.xy - s.a.xy) / max(s.b.w - s.a.w, 1e-3);
     return o;
 }
 
-float4 TrailStampPS(TrailVSOut i) : SV_Target {
+TrailStampOut TrailStampPS(TrailVSOut i) {
     float2 a = i.seg.xy, b = i.seg.zw;
     float2 ab = b - a;
     float k = saturate(dot(i.world - a, ab) / max(dot(ab, ab), 1e-6));
@@ -224,7 +235,14 @@ float4 TrailStampPS(TrailVSOut i) : SV_Target {
     float te = t - shoulder * kTrailFade * trailInfo.y;
     // Minus the distance, so MAX blending keeps the nearest piece: the distance to the whole
     // path, smooth through every joint (a rim shaped per piece ringed each joint).
-    return float4(te, -te, -d, t);
+    TrailStampOut o;
+    o.trail = float4(te, -te, -d, t);
+    // A footfall kicks cover up where the hero ran: strongest under the feet and for a
+    // running hero, weaker toward the track's edge and for one walking (read as older).
+    float run = saturate((i.speed - 140.0) / 220.0);
+    float edgeK = saturate(d / (kTrailCore + kTrailFeather));
+    o.kick = t - edgeK * edgeK * 1.2 - (1.0 - run) * 1.5;
+    return o;
 }
 
 // Fraction of the cover settled by shot time x (weather::coating_growth, kRate 3).
@@ -526,6 +544,18 @@ float HeroFootprint(float3 p, out float soleZ) {
         }
     }
     return m;
+}
+
+// How much open sky lies over a cover point, softened across about a cell and a half: blown
+// snow and sand reach in a little under an overhang and thin out, and the one-cell blend of
+// the roof map no longer draws a scallop for every cell along a diagonal roof edge.
+float CoverOpenAt(float3 p) {
+    float sum = SkyOpenAt(MapUV(p.xy), p.z) * 2.0;
+    [unroll] for (int k = 0; k < 6; ++k) {
+        float a = k * 1.0471976 + 0.35;
+        sum += SkyOpenAt(MapUV(p.xy + float2(cos(a), sin(a)) * 18.0), p.z);
+    }
+    return sum / 8.0;
 }
 
 // How deep a full blanket lies, in world units: ankle-deep snow, a shallow layer of sand.
@@ -860,7 +890,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     if (heroMask >= 0.999) return baseColor;
 
     float2 uv = MapUV(surfPos.xy);
-    float open = SkyOpenAt(uv, surfPos.z);
+    float open = (preset == 5) ? SkyOpenAt(uv, surfPos.z) : CoverOpenAt(surfPos);
     // World size of one pixel at this distance (about a 90 degree view).
     float footprint = hitDist * 2.0 * screenInfo.w;
     if (preset == 5)
@@ -1023,8 +1053,8 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
                 float ePrev = sMax * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sMax,
                                                          surfPos.z, depth);
                 float sHit = 0.0;
-                [loop] for (int st = 1; st <= 8; ++st) {
-                    float sNow = sMax * (1.0 - st / 8.0);
+                [loop] for (int st = 1; st <= 12; ++st) {
+                    float sNow = sMax * (1.0 - st / 12.0);
                     float eNow = sNow * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sNow,
                                                             surfPos.z, depth);
                     if (eNow <= 0.0) {
@@ -1105,7 +1135,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float covOut = max(top, wall);
     float covIn = max(buried, top * groundAtSoles);
     float cov = lerp(covOut, covIn, inHero) * (1.0 - 0.25 * tread) * churnGaps;
-    solid = max(lerp(solid, buried, inHero), 0.0);
+    solid = max(lerp(solid, max(buried, solid * groundAtSoles), inHero), 0.0);
     if (max(cov, solid) <= 0.001) return baseColor;
 
     if (preset == 3) // damp ground fog
@@ -1387,6 +1417,69 @@ void BakeSunCS(uint3 id : SV_DispatchThreadID) {
 
 )HLSL"
                                   R"HLSL(
+// Kick-up: snow, sand or dust thrown up behind running heroes rises over about a second,
+// drifts with the wind and settles within two. Read from the kick map, so it is the same at
+// every replay time. A short march through the low layer of air above the ground, near the
+// camera only: rgb puff light (premultiplied), a its coverage.
+float KickAge(float2 xy) {
+    float2 uv = (xy - TrailOrigin(gCamPos)) / kTrailSpan;
+    if (any(uv <= 0.0) || any(uv >= 1.0))
+        return 1e9;
+    return windTime.z - kickMap.SampleLevel(linearClamp, float2(uv.x, 1.0 - uv.y), 0);
+}
+
+float4 KickUp(float3 rayDir, float hitDist, float3 surfPos, int preset) {
+    float4 none = float4(0.0, 0.0, 0.0, 0.0);
+    if (trailInfo.x < 1.5 || !(preset == 6 || preset == 1 || preset == 2) || hitDist > 1500.0)
+        return none;
+    const float kLife = 2.0, kTop = 44.0;
+    // The ground under the view: the pixel's own floor (a hero's pixel uses the map floor).
+    float ground = min(surfPos.z, SampleFloorBelowSmooth(surfPos) + 2.0);
+    float3 hit = gCamPos + rayDir * hitDist;
+    // Where the view ray lies within kTop of that ground, toward the camera from the hit.
+    float down = -rayDir.z;
+    float tStart = hitDist;
+    if (down > 0.02)
+        tStart = max(hitDist - (hit.z + kTop - ground) / down, 0.0);
+    else
+        tStart = max(hitDist - 180.0, 0.0);
+    float span = hitDist - tStart;
+    if (span < 1.0)
+        return none;
+    // Nothing to do unless a kick is fresh near this view (checked at both ends).
+    // Near the ground the air runs at about half the steady wind.
+    float2 wind = windTime.xy * 0.5;
+    float2 drift = wind * 0.6;
+    if (min(KickAge(hit.xy - drift), KickAge((gCamPos + rayDir * tStart).xy - drift)) > kLife &&
+        KickAge(hit.xy) > kLife)
+        return none;
+    float3 albedo = (preset == 6) ? float3(0.95, 0.96, 0.98) : float3(0.78, 0.65, 0.46);
+    float3 lightCol = ambientColor.rgb * 1.25 + sunColor.rgb * 0.55;
+    float trans = 1.0;
+    float3 light = float3(0.0, 0.0, 0.0);
+    const int kSteps = 10;
+    float dt = span / kSteps;
+    [loop] for (int k = 0; k < kSteps; ++k) {
+        float3 q = gCamPos + rayDir * (tStart + (k + 0.5) * dt);
+        float h = q.z - ground;
+        // A puff born at age a has drifted a * wind; look back along the wind for its source.
+        float age = KickAge(q.xy - drift);
+        age = KickAge(q.xy - wind * clamp(age, 0.0, kLife));
+        if (age < 0.0 || age > kLife)
+            continue;
+        float top = 6.0 + kTop * sqrt(age / kLife);
+        float shape = smoothstep(-2.0, 3.0, h) * (1.0 - smoothstep(top * 0.45, top, h));
+        float n = gustNoise3D.SampleLevel(linearWrap, float3(q.xy / 38.0, q.z / 30.0 + windTime.z * 0.9), 0);
+        float dens = shape * exp(-age * 1.6) * smoothstep(0.15, 0.6, n) * 0.22 * styleA.y;
+        float a = 1.0 - exp(-dens * dt);
+        light += trans * a * albedo * lightCol;
+        trans *= 1.0 - a;
+        if (trans < 0.02)
+            break;
+    }
+    return float4(light, 1.0 - trans);
+}
+
 // The volumetric march along one view ray: rgb in-scattered light, a transmittance.
 float4 MarchRay(float2 px, float3 rayDir, float hitDist) {
     float maxDist = windTime.w;
@@ -1603,6 +1696,11 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
         }
     }
 
+    if (!sky && sunDir.w > 0.5) {
+        float4 kick = KickUp(rayDir, hitDist, surfPos, preset);
+        baseColor = baseColor * (1.0 - kick.a) + kick.rgb;
+    }
+
     float4 m;
     if (netInfo.x < 1.5 || !UpsampleMarch(px, depth, m))
         m = MarchRay(px, rayDir, hitDist);
@@ -1748,6 +1846,9 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11Texture2D> trail_tex;
     ComPtr<ID3D11RenderTargetView> trail_rtv;
     ComPtr<ID3D11ShaderResourceView> trail_srv;
+    ComPtr<ID3D11Texture2D> kick_tex;
+    ComPtr<ID3D11RenderTargetView> kick_rtv;
+    ComPtr<ID3D11ShaderResourceView> kick_srv;
     ComPtr<ID3D11Buffer> trail_buf;
     ComPtr<ID3D11ShaderResourceView> trail_buf_srv;
     uint32_t trail_count = 0;
@@ -1966,6 +2067,17 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
             shutdown();
             return false;
         }
+        td.Format = DXGI_FORMAT_R32_FLOAT;
+        if (FAILED(device->CreateTexture2D(&td, nullptr, &impl_->kick_tex)) ||
+            FAILED(device->CreateRenderTargetView(impl_->kick_tex.Get(), nullptr,
+                                                  &impl_->kick_rtv)) ||
+            FAILED(device->CreateShaderResourceView(impl_->kick_tex.Get(), nullptr,
+                                                    &impl_->kick_srv))) {
+            if (out_error)
+                *out_error = "failed to create the kick-up map";
+            shutdown();
+            return false;
+        }
     }
 
     impl_->initialized = true;
@@ -2142,7 +2254,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
     const bool trails = params.hero_trails && params.enable_coating && covers &&
                         impl_->trail_count > 0 && impl_->trail_buf_srv;
     const float fill_base = params.preset == AtmospherePreset::Snow ? 120.0f : 60.0f;
-    cb.trail_info[0] = trails ? 1.0f : 0.0f;
+    cb.trail_info[0] = trails ? (params.hero_kickup ? 2.0f : 1.0f) : 0.0f;
     cb.trail_info[1] = params.trail_fill_seconds > 0.0f
                            ? params.trail_fill_seconds
                            : fill_base / std::max(params.intensity, 0.25f);
@@ -2156,9 +2268,12 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         const float filled = params.sim_time - 6.0f * cb.trail_info[1];
         // Far from every path (kTrailReach in the shader), so the distance field meets it.
         const float never[4] = {filled, -filled, -(7.0f + 9.0f + 6.0f), filled};
-        ID3D11RenderTargetView* trtv[1] = {impl_->trail_rtv.Get()};
+        // No kick for a long while.
+        const float settled[4] = {params.sim_time - 100.0f, 0.0f, 0.0f, 0.0f};
+        ID3D11RenderTargetView* trtv[2] = {impl_->trail_rtv.Get(), impl_->kick_rtv.Get()};
         ctx->ClearRenderTargetView(impl_->trail_rtv.Get(), never);
-        ctx->OMSetRenderTargets(1, trtv, nullptr);
+        ctx->ClearRenderTargetView(impl_->kick_rtv.Get(), settled);
+        ctx->OMSetRenderTargets(2, trtv, nullptr);
         ctx->OMSetBlendState(impl_->trail_blend.Get(), nullptr, 0xFFFFFFFFu);
         ctx->OMSetDepthStencilState(impl_->ds_state.Get(), 0);
         ctx->RSSetState(impl_->rs_state.Get());
@@ -2177,15 +2292,15 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->DrawInstanced(6, impl_->trail_count, 0, 0);
         ID3D11ShaderResourceView* null_vsrvs[13] = {};
         ctx->VSSetShaderResources(0, 13, null_vsrvs);
-        ID3D11RenderTargetView* null_rtv[1] = {};
-        ctx->OMSetRenderTargets(1, null_rtv, nullptr);
+        ID3D11RenderTargetView* null_rtv[2] = {};
+        ctx->OMSetRenderTargets(2, null_rtv, nullptr);
     }
 
     D3D11_VIEWPORT vp{
         0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
         0.0f, 1.0f};
     ID3D11RenderTargetView* rtvs[1] = {out_rtv};
-    ID3D11ShaderResourceView* srvs[15] = {
+    ID3D11ShaderResourceView* srvs[16] = {
         scene_color_srv,
         scene_depth_srv,
         fluid.fluid_srv(),
@@ -2201,6 +2316,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         nullptr,
         trails ? impl_->trail_srv.Get() : nullptr,
         impl_->reach_srv.Get(),
+        trails ? impl_->kick_srv.Get() : nullptr,
     };
     ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
     ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
@@ -2247,14 +2363,14 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
         srvs[10] = impl_->half_srv.Get();
     }
-    ctx->PSSetShaderResources(0, 15, srvs);
+    ctx->PSSetShaderResources(0, 16, srvs);
 
     ctx->Draw(3, 0);
 
     // Unbind SRVs/RTVs to prevent hazard warnings in callers
-    ID3D11ShaderResourceView* null_srvs[15] = {};
+    ID3D11ShaderResourceView* null_srvs[16] = {};
     ID3D11RenderTargetView* null_rtvs[1] = {};
-    ctx->PSSetShaderResources(0, 15, null_srvs);
+    ctx->PSSetShaderResources(0, 16, null_srvs);
     ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
     return true;
 }

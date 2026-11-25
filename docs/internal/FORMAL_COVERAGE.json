@@ -7687,7 +7687,7 @@
     },
     {
       "path": "native/include/dolly_env_render_dx11.hpp",
-      "sha256": "7d380947382bf588a2b4b7176a0c573bced163182df62a3145e8fd26bfb7dc6d",
+      "sha256": "bf56e7757550f0dd537bde43be35aaf84c94c0061d5024920f27df286dcf7b87",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9412,7 +9412,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "7004e5d8e73144a0501332040bc7b7d9552fdb3e51cca6152aa7c7e2e1ef2423",
+      "sha256": "daf4c377821247e33003e258f917ca9c90562372bccdd07840830288ba3756a5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

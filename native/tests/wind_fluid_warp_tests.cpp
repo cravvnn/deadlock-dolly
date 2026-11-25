@@ -1378,6 +1378,56 @@ int main(int argc, char** argv) {
             }
             CHECK(trail_px > 0 && darker > trail_px / 2 && walked_px > trail_px);
             CHECK(before == before_bare);
+            // Kick-up: a hero running past (300 u/s) leaves puffs that are there just after
+            // and gone a few seconds later; the same time draws the same puffs.
+            {
+                std::vector<dolly::env::TrailSegment> run;
+                for (int k = 0; k < 6; ++k) {
+                    dolly::env::TrailSegment s{};
+                    s.a[0] = walk[0] - 90.0f + 30.0f * k;
+                    s.a[1] = walk[1] + 40.0f;
+                    s.a[2] = walk[2];
+                    s.time_a = now - 0.6f + 0.1f * k;
+                    s.b[0] = s.a[0] + 30.0f;
+                    s.b[1] = s.a[1];
+                    s.b[2] = walk[2];
+                    s.time_b = s.time_a + 0.1f;
+                    run.push_back(s);
+                }
+                CHECK(renderer.set_hero_trails(run.data(), static_cast<uint32_t>(run.size())));
+                auto fresh = res.render;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, fresh, solver, emitters, 0));
+                const auto puffed = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, fresh, solver, emitters, 0));
+                CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == puffed);
+                // The same moment without kick-up: the puffs are the only difference. Long
+                // after, they have settled and kick-up changes nothing.
+                auto no_kick = fresh;
+                no_kick.hero_kickup = false;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, no_kick, solver, emitters, 0));
+                const auto unpuffed = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                const size_t puff_px = changed_pixels(unpuffed, puffed);
+                if (!out_dir.empty()) {
+                    CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_kickup_on.png", vw, vh, puffed.data(), &err));
+                    CHECK(dolly::map_grid::write_png_rgba8(out_dir / "warp_kickup_off.png", vw, vh, unpuffed.data(), &err));
+                }
+                auto settled = fresh;
+                settled.sim_time = now + 5.0f;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, settled, solver, emitters, 0));
+                const auto later = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                settled.hero_kickup = false;
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, settled, solver, emitters, 0));
+                const size_t late_px = changed_pixels(
+                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh), later);
+                std::printf("WARP kick-up: %zu pixels of fresh puffs, %zu once settled\n",
+                            puff_px, late_px);
+                CHECK(puff_px > 0 && late_px == 0);
+            }
             CHECK(renderer.set_hero_trails(nullptr, 0));
             CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
                                   res.render, solver, emitters, 0));

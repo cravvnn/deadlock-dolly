@@ -80,6 +80,8 @@ struct EnvRenderParams {
     bool puddle_reflections = true;
     // Heroes leave trails in snow, sand and ash when paths have been set (set_hero_trails).
     bool hero_trails = true;
+    // Running heroes kick up puffs of snow, sand or dust (with hero_trails).
+    bool hero_kickup = true;
     // Seconds for falling snow or blowing sand to fill a fresh track in (0: by preset and
     // intensity). See weather::resolve.
     float trail_fill_seconds = 0.0f;
