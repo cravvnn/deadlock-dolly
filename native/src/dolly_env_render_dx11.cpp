@@ -552,6 +552,7 @@ float HeroFootprint(float3 p, out float soleZ) {
 // Cover blown in under a shelter (a bridge, a doorway) from its open edges, mostly from the
 // side the wind comes from: strongest at the edge, gone about 110 u in, and never through a
 // wall. 0 where no open sky lies upwind within reach (or in still air).
+float Enclosure(float2 xy); // defined with the wall banks below
 float ShelterCreep(float3 p) {
     float wind = coatingInfo.z;
     if (wind < 1.0)
@@ -568,6 +569,10 @@ float ShelterCreep(float3 p) {
         float far = reach[k] / 130.0;
         creep = max(creep, SkyOpenAt(quv, p.z) * clear * (1.0 - far * far));
     }
+    // Not into rooms: a spot closed in by walls on most sides (a building through its door)
+    // stays bare; under a bridge, open at the sides, the cover blows in.
+    if (creep > 0.0)
+        creep *= 1.0 - smoothstep(0.3, 0.5, Enclosure(p.xy));
     return creep * smoothstep(40.0, 200.0, wind);
 }
 
@@ -1023,7 +1028,9 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // pixel, find how far below the top edge it lies (the view passes over the top there),
     // and cover the band under the edge.
     float lipMax = (preset == 6) ? 3.0 : (preset == 1) ? 1.25 : (preset == 2 || preset == 4) ? 0.9 : 0.0;
-    float lipFade = 1.0 - smoothstep(1200.0, 1600.0, hitDist);
+    // Lips are off for now: on low raised objects (a barrel rack's platform) the edge search
+    // drew ragged, torn edges. To be redone after review.
+    float lipFade = 0.0 * (1.0 - smoothstep(1200.0, 1600.0, hitDist));
     if (lipMax > 0.0 && steep > 0.001 && lipFade > 0.0) {
         float lipLen = lipMax * saturate(coat * 1.6) *
                        (0.55 + 0.9 * ValueNoise3(float3(surfPos.xy * 0.12, 7.0)));
