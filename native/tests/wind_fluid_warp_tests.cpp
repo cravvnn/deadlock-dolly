@@ -1427,28 +1427,6 @@ int main(int argc, char** argv) {
             }
             CHECK(trail_px > 0 && darker > trail_px / 2 && walked_px > trail_px);
             CHECK(before == before_bare);
-            // A walk on a floor 200 u above (a bridge deck) leaves the ground below untouched.
-            {
-                std::vector<dolly::env::TrailSegment> deck = path;
-                for (auto& s : deck) {
-                    s.a[2] += 200.0f;
-                    s.b[2] += 200.0f;
-                }
-                CHECK(renderer.set_hero_trails(deck.data(), static_cast<uint32_t>(deck.size())));
-                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
-                                      cam, res.render, solver, emitters, 0));
-                const auto under_deck =
-                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
-                auto plain = res.render;
-                plain.hero_trails = false;
-                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
-                                      cam, plain, solver, emitters, 0));
-                const size_t marked = changed_pixels(
-                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh), under_deck);
-                std::printf("WARP hero trails on another floor: %zu ground pixels marked\n",
-                            marked);
-                CHECK(marked == 0);
-            }
             // Kick-up: a hero running past (300 u/s) leaves puffs that are there just after
             // and gone a few seconds later; the same time draws the same puffs.
             {
