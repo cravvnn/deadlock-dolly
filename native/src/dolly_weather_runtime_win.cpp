@@ -57,6 +57,9 @@ struct TrackStore {
     double prev_time = -1.0;
     std::vector<std::pair<std::uint32_t, std::array<float, 3>>> prev;
     std::string replay;   // the replay the store belongs to (its file name, no extension)
+    // The replay reader's file beside the store (<store>.replay) and its write time when
+    // adopted (0: none yet).
+    std::filesystem::file_time_type adopted{};
     std::string playing;  // the replay the game has loaded, as last published
 };
 
@@ -693,6 +696,50 @@ bool copy_inputs(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D
 
 } // namespace
 
+// Adopts the replay reader's cells for the open store `path` when their file is newer than
+// the ones adopted (`always`: whenever the file exists, as when the store was just opened).
+void adopt_replay_cells(const std::string& path, bool always) {
+    try {
+        const auto seed = std::filesystem::u8path(path + ".replay");
+        std::error_code ec;
+        const auto when = std::filesystem::last_write_time(seed, ec);
+        if (ec)
+            return;
+        {
+            std::lock_guard<std::mutex> lock(gTrailsMutex);
+            if (gTracks.path != path || (!always && gTracks.adopted == when))
+                return;
+        }
+        weather::trails::Store read;
+        std::string error;
+        if (!read.load(path + ".replay", &error) || read.seen().empty()) {
+            char text[200];
+            std::snprintf(text, sizeof(text), "weather: replay hero tracks not read (%s)",
+                          error.c_str());
+            set_status(text);
+            std::lock_guard<std::mutex> lock(gTrailsMutex);
+            if (gTracks.path == path)
+                gTracks.adopted = when; // not again until it changes
+            return;
+        }
+        std::lock_guard<std::mutex> lock(gTrailsMutex);
+        if (gTracks.path != path)
+            return;
+        gTracks.store.adopt(read);
+        gTracks.adopted = when;
+        ++gTracks.generation;
+        gTracks.journal.clear();
+        gTracks.dirty = true;
+        gTracks.changed = std::chrono::steady_clock::time_point{}; // save soon
+        char text[120];
+        std::snprintf(text, sizeof(text), "weather: hero tracks from the replay (%zu cells)",
+                      read.size());
+        set_status(text);
+    } catch (...) {
+        set_status("weather: replay hero tracks failed");
+    }
+}
+
 // Opens the replay's track store the editor names (saving the previous one), and saves the
 // open store while it has unsaved cells: every few seconds while playing, at once on a pause.
 void update_trail_recording() noexcept {
@@ -719,6 +766,15 @@ void update_trail_recording() noexcept {
                 save_path = gTracks.path;
                 gTracks.dirty = false;
                 last_save = now;
+            }
+        }
+        // The replay reader's cells, when its file is new or newer than the one adopted (it is
+        // written once, in the background, after Dolly opens the replay).
+        if (!reopen && !want.empty()) {
+            static auto last_look = std::chrono::steady_clock::time_point{};
+            if (now - last_look > std::chrono::seconds(2)) {
+                last_look = now;
+                adopt_replay_cells(want, false);
             }
         }
         if (to_save) {
@@ -754,8 +810,11 @@ void update_trail_recording() noexcept {
             gTracks.dirty = false;
             gTracks.prev_time = -1.0;
             gTracks.prev.clear();
+            gTracks.adopted = {};
             gTracksOn.store(!want.empty(), std::memory_order_relaxed);
         }
+        if (reopen && !want.empty())
+            adopt_replay_cells(want, true);
     } catch (...) {
         set_status("weather: hero tracks failed");
     }

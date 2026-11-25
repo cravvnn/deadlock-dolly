@@ -3697,10 +3697,15 @@ class DollyApp:
         elif not store:
             text = "Hero tracks: open a replay to see them."
         else:
-            ranges = weather_model.track_ranges(store)
+            from .replay_tracks import READER, replay_cells_file
+            ranges = (weather_model.track_ranges(store) +
+                      weather_model.track_ranges(replay_cells_file(_replay)))
             cover = weather_model.track_coverage(ranges, start, end)
+            reading = READER.state(_replay).state == "reading"
             if cover >= 1.0:
                 text = "Hero tracks: ready for this shot."
+            elif reading:
+                text = "Hero tracks: reading them from the replay…"
             elif cover <= 0.0:
                 text = scene_page.TRAILS_NONE
             else:
@@ -3722,7 +3727,10 @@ class DollyApp:
         store, start, end, _replay = self._hero_tracks_window()
         if not store or not settings.enabled or not settings.tracks_shown:
             return
-        if weather_model.track_coverage(weather_model.track_ranges(store), start, end) < 1.0:
+        from .replay_tracks import replay_cells_file
+        ranges = (weather_model.track_ranges(store) +
+                  weather_model.track_ranges(replay_cells_file(_replay)))
+        if weather_model.track_coverage(ranges, start, end) < 1.0:
             self._log("Hero tracks: this shot has not been played through yet, so a frozen take "
                       "shows only the tracks walked so far. Play the shot once for all of them.")
 

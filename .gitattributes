@@ -39,3 +39,6 @@ third_party/reshade_shaders/Shaders/shared/cLens.fxh -text -whitespace
 third_party/reshade_shaders/Shaders/shared/cBlend.fxh -text -whitespace
 third_party/reshade_shaders/Shaders/Droste.fx -text -whitespace
 third_party/reshade_shaders/Shaders/CobraUtility.fxh -text -whitespace
+native/replay_tracks/*.go text eol=lf
+native/replay_tracks/go.mod text eol=lf
+native/replay_tracks/go.sum text eol=lf

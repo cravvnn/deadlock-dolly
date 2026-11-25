@@ -12,6 +12,7 @@ venv/
 /DOLLY_DEFINITIONS.json
 *.exe
 !native/bin/win64/DollyGameAudio.exe
+!native/bin/win64/DollyReplayTracks.exe
 *.zip
 *.dem
 *.mp4

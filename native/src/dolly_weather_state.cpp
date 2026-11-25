@@ -335,10 +335,68 @@ bool Store::add_seen(double t0, double t1) {
     return seen_ != before;
 }
 
+bool Store::fixed_at(double t) const {
+    for (const auto& r : fixed_)
+        if (t >= r.first && t <= r.second)
+            return true;
+    return false;
+}
+
+void Store::adopt(const Store& from_replay) {
+    if (from_replay.seen_.empty())
+        return;
+    const auto inside = [&from_replay](std::int32_t grid) {
+        const double t = grid * kStep;
+        for (const auto& r : from_replay.seen_)
+            if (t >= r.first - 1e-9 && t <= r.second + 1e-9)
+                return true;
+        return false;
+    };
+    std::vector<std::pair<std::uint32_t, Hero>> merged;
+    std::size_t count = 0;
+    auto mine = heroes_.begin();
+    auto theirs = from_replay.heroes_.begin();
+    while (mine != heroes_.end() || theirs != from_replay.heroes_.end()) {
+        const bool take_mine = theirs == from_replay.heroes_.end() ||
+                               (mine != heroes_.end() && mine->first <= theirs->first);
+        const bool take_theirs = mine == heroes_.end() ||
+                                 (theirs != from_replay.heroes_.end() && theirs->first <= mine->first);
+        Hero hero;
+        const std::uint32_t slot = take_mine ? mine->first : theirs->first;
+        // Kept cells outside the replay's time, then the replay's cells, in grid order.
+        std::vector<std::pair<std::int32_t, std::array<float, 3>>> kept;
+        if (take_mine)
+            for (const auto& c : mine->second.cells)
+                if (!inside(c.first))
+                    kept.push_back(c);
+        static const std::vector<std::pair<std::int32_t, std::array<float, 3>>> none;
+        const auto& read = take_theirs ? theirs->second.cells : none;
+        hero.cells.reserve(kept.size() + read.size());
+        std::merge(kept.begin(), kept.end(), read.begin(), read.end(),
+                   std::back_inserter(hero.cells),
+                   [](const auto& a, const auto& b) { return a.first < b.first; });
+        count += hero.cells.size();
+        if (!hero.cells.empty())
+            merged.emplace_back(slot, std::move(hero));
+        if (take_mine)
+            ++mine;
+        if (take_theirs)
+            ++theirs;
+    }
+    heroes_.swap(merged);
+    cells_ = count;
+    for (const auto& r : from_replay.seen_) {
+        add_seen(r.first, r.second);
+        fixed_.push_back(r);
+    }
+}
+
 std::size_t Store::add_step(double t0, double t1, std::uint32_t slot, const float a[3],
                             const float b[3], std::vector<std::int32_t>* written) {
     if (!std::isfinite(t0) || !std::isfinite(t1) || !(t1 > t0) || t0 < 0.0 || t1 > kMaxTime)
         return 0;
+    if (fixed_at(t0) && fixed_at(t1))
+        return 0; // the replay file already gave this time
     std::size_t n = 0;
     const auto first = static_cast<std::int64_t>(std::floor(t0 / kStep)) + 1;
     const auto last = static_cast<std::int64_t>(std::floor(t1 / kStep));
@@ -346,6 +404,8 @@ std::size_t Store::add_step(double t0, double t1, std::uint32_t slot, const floa
         const float f = static_cast<float>((g * kStep - t0) / (t1 - t0));
         const float p[3] = {a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f,
                             a[2] + (b[2] - a[2]) * f};
+        if (fixed_at(g * kStep))
+            continue;
         if (add(slot, static_cast<std::int32_t>(g), p)) {
             ++n;
             if (written)
@@ -358,6 +418,7 @@ std::size_t Store::add_step(double t0, double t1, std::uint32_t slot, const floa
 void Store::clear() {
     heroes_.clear();
     seen_.clear();
+    fixed_.clear();
     cells_ = 0;
 }
 

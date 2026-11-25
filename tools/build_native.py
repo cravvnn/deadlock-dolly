@@ -22,6 +22,7 @@ BRIDGE_ABI = 4
 DLL_RELATIVE = Path("bin/win64/DollyNative.dll")
 AUDIO_RELATIVE = Path("bin/win64/DollyGameAudio.exe")
 REPLAY_INDEX_RELATIVE = Path("bin/win64/DollyReplayIndex.exe")
+REPLAY_TRACKS_RELATIVE = Path("bin/win64/DollyReplayTracks.exe")
 REQUIRED_EXPORTS = {
     "CreateInterface", "DollyNativeProtocolVersion",
     "DollyAtomicExchange32", "DollyAtomicExchange64", "DollyAtomicCompareExchange32",
@@ -106,6 +107,16 @@ def runtime_files(root: Path) -> tuple[list[tuple[Path, Path]], dict]:
         if not notice.is_file():
             raise ValueError('Replay reader license notice is missing')
         files.append((notice, Path('replay_index/THIRD_PARTY_NOTICES.txt')))
+    # Hero tracks read from the replay (s2replay): optional and append-only like the reader.
+    if info.get('replay_tracks_sha256'):
+        tracks = native / REPLAY_TRACKS_RELATIVE
+        if not tracks.is_file() or tracks.is_symlink() or sha256(tracks) != info['replay_tracks_sha256']:
+            raise ValueError('Replay track reader does not match its build metadata hash')
+        files.append((tracks, REPLAY_TRACKS_RELATIVE))
+        notice = native / 'replay_tracks/THIRD_PARTY_NOTICES.txt'
+        if not notice.is_file():
+            raise ValueError('Replay track reader license notice is missing')
+        files.append((notice, Path('replay_tracks/THIRD_PARTY_NOTICES.txt')))
     for profile in sorted((native / "profiles").glob("*.json")):
         if not profile.is_file() or profile.is_symlink():
             raise ValueError("Unsafe native build profile")
@@ -274,6 +285,9 @@ def build_native(root: Path = ROOT) -> dict:
     reader = native / REPLAY_INDEX_RELATIVE
     if reader.is_file():
         info['replay_index_sha256'] = sha256(reader)
+    tracks = native / REPLAY_TRACKS_RELATIVE
+    if tracks.is_file():
+        info['replay_tracks_sha256'] = sha256(tracks)
     metadata.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     return info
 

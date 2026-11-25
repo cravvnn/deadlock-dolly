@@ -202,6 +202,11 @@ def configure(app):
             store, start, end, replay = signature
             publish_trails(store_path=store, window_start=start, window_end=end, replay=replay)
             app._native_trails_cache, app._native_trails_bridge = signature, bridge
+        if signature[3]:
+            # The replay's own hero positions, read once in the background (the game adopts
+            # them into the store when they are ready).
+            from .replay_tracks import READER
+            READER.request(signature[3])
     publish_lite = getattr(bridge, "configure_lite_replay", None)
     if callable(publish_lite) and history is not None:
         signature = (history.revision, app._native_camera_page, app.project.start_tick,

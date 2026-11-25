@@ -257,13 +257,22 @@ public:
     // Loads a store file; a missing file is an empty store.
     bool load(const std::string& utf8_path, std::string* error = nullptr);
 
+    // Takes the cells read from the replay file itself (DollyReplayTracks: the same format):
+    // inside the time it covers they replace every cell kept while playing (the replay is
+    // exact where a playback frame can hitch, and leaves out heroes who are not alive), and
+    // playback adds nothing there afterwards (add_step skips that time).
+    void adopt(const Store& from_replay);
+    const std::vector<std::pair<double, double>>& from_replay() const { return fixed_; }
+
 private:
     struct Hero {
         std::vector<std::pair<std::int32_t, std::array<float, 3>>> cells; // sorted by grid
     };
     std::vector<std::pair<std::uint32_t, Hero>> heroes_; // sorted by slot
     std::vector<std::pair<double, double>> seen_;          // sorted, disjoint
+    std::vector<std::pair<double, double>> fixed_;         // read from the replay file
     std::size_t cells_ = 0;
+    bool fixed_at(double t) const;
     const Hero* find(std::uint32_t slot) const;
 };
 

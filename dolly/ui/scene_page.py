@@ -43,8 +43,9 @@ HERO_INFO = "Heroes part the wind, haze and flakes around them."
 EFFECTS_INFO = "Weather is always in Color and World, never in Players or Depth."
 LENS_INFO = ("Water drops land on the lens while the shot rains, run down and leave trails. "
              "Under a roof no new drops land. Drawn on Color and World only.")
-TRAILS_INFO = ("Heroes leave footprints in snow, sand, dust and ash. Dolly keeps where they walk "
-               "whenever the replay plays, in its own file beside the map data.")
+TRAILS_INFO = ("Heroes leave footprints in snow, sand, dust and ash. Dolly reads where they walk "
+               "from the replay when you open it, and keeps it in its own file beside the map "
+               "data. The replay itself is never changed.")
 TRAILS_NONE = "Hero tracks: appear as the shot plays."
 OFF_NOTICE = "Pick a preset to turn on wind, flakes and haze."
 ON_NOTICE = "Also in game: F8 → Scene. Both edit the same shot."

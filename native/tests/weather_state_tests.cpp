@@ -272,6 +272,27 @@ void test_track_store() {
     behind.add(1, 105, q1);
     CHECK(behind.insert_effect(1, 105).rejoin); // 101 and 108 were joined: rebuild
     CHECK(behind.insert_effect(1, 120).next == -1); // the newest cell
+    // The replay file's cells replace those kept while playing inside the time they cover
+    // (a dead hero's live cells go), playback adds nothing there afterwards, and cells
+    // outside it stay.
+    trails::Store kept, from_file;
+    const float live_pos[3] = {1, 1, 1}, file_pos[3] = {2, 2, 2};
+    kept.add(4, 10, live_pos);   // t 0.67: inside the file's time
+    kept.add(9, 11, live_pos);   // a hero the file has no cell for there (not alive)
+    kept.add(4, 900, live_pos);  // t 60: after it
+    kept.add_seen(0.5, 1.0);
+    from_file.add(4, 10, file_pos);
+    from_file.add(4, 12, file_pos);
+    from_file.add_seen(0.0, 30.0);
+    kept.adopt(from_file);
+    CHECK(kept.size() == 3 && kept.from_replay().size() == 1);
+    const auto segs = kept.segments(0.0, 1.0);
+    CHECK(segs.size() == 1 && segs[0].a[0] == 2.0f && segs[0].b[0] == 2.0f);
+    CHECK(kept.segments(0.0, 100.0).size() == 1); // 12 -> 900 is far too long a gap
+    const float step_a[3] = {0, 0, 0}, step_b[3] = {5, 0, 0};
+    CHECK(kept.add_step(1.0, 1.1, 9, step_a, step_b) == 0); // the file gave this time
+    CHECK(kept.add_step(40.0, 40.1, 9, step_a, step_b) == 1); // outside it: kept
+    CHECK(kept.seen().size() == 1 && kept.seen()[0].first == 0.0 && kept.seen()[0].second == 30.0);
     // Saved and read back exactly; a missing file is an empty store; a bad one is refused.
     const auto file = std::filesystem::temp_directory_path() / "dolly_tracks_test.trk";
     std::string error;
