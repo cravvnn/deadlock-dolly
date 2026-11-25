@@ -2137,6 +2137,135 @@ int main(int argc, char** argv) {
             CHECK(step_open < 0.30f);                            // no edge, no terrace
             CHECK(post_pairs > 10 && step_post < 0.15f);         // not cut by the post behind
         }
+
+        // 7m) The same puffs from a chase camera: low, on the track, behind the runner and
+        //     looking along the run, inside the trail of puffs. A view ray then lies in the
+        //     cloud for hundreds of units, so a soft edge across the track drew as a ruled
+        //     line from the hero's feet to the bottom of the frame, clear on one side and
+        //     full cloud on the other. Coverage (dark and light scene, as above) must have no
+        //     such step from one pixel column to the next, with the wind across the track
+        //     from either side and with none, and never fill in solid.
+        {
+            const float now = 20.0f;
+            std::vector<dolly::env::TrailSegment> run;
+            for (int k = 0; k < 20; ++k) { // 300 u/s along y for 2 s, ending 160 u ahead
+                dolly::env::TrailSegment s{};
+                s.a[0] = s.b[0] = -60.0f;
+                s.a[1] = -420.0f + 30.0f * k;
+                s.b[1] = s.a[1] + 30.0f;
+                s.time_a = now - 2.0f + 0.1f * k;
+                s.time_b = s.time_a + 0.1f;
+                run.push_back(s);
+            }
+            view = build_camera({-60.0f, 20.0f, 30.0f}, {-60.0f, 180.0f, 40.0f}, 70.0f, vw, vh);
+            eye = {view.position[0], view.position[1], view.position[2]};
+            std::vector<uint8_t> mask;
+            const auto chase = [&](uint8_t level, float wind_x, bool half_air, bool kick) {
+                for (int c = 0; c < 3; ++c)
+                    ground_rgb[c] = box_rgb[c] = level;
+                scene(0.0f, rgba, depth, mask);
+                D3D11_SUBRESOURCE_DATA ci{rgba.data(), vw * 4, 0};
+                D3D11_SUBRESOURCE_DATA di{depth.data(), vw * sizeof(float), 0};
+                ComPtr<ID3D11Texture2D> ct, dt;
+                ComPtr<ID3D11ShaderResourceView> cs, ds;
+                CHECK(SUCCEEDED(device->CreateTexture2D(&cdesc, &ci, &ct)));
+                CHECK(SUCCEEDED(device->CreateShaderResourceView(ct.Get(), nullptr, &cs)));
+                CHECK(SUCCEEDED(device->CreateTexture2D(&ddesc, &di, &dt)));
+                CHECK(SUCCEEDED(device->CreateShaderResourceView(dt.Get(), nullptr, &ds)));
+                dolly::env::EnvRenderParams p;
+                p.preset = dolly::env::AtmospherePreset::DustHaze;
+                p.density_scale = 0.0f; // no haze: isolate the cover and the puffs
+                p.coating_strength = 0.6f;
+                p.coating_drift = 0.0f;
+                p.enable_emitter_plumes = false;
+                p.wind_xy[0] = wind_x;
+                p.wind_xy[1] = wind_x * 0.5f;
+                p.sim_time = now;
+                p.hero_kickup = kick;
+                if (half_air)
+                    p.half_res_above_pixels = 0;
+                CHECK(renderer.render(ctx.Get(), cs.Get(), ds.Get(), out_rtv.Get(), view, p, calm,
+                                      nullptr, 0));
+                return readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            };
+            CHECK(renderer.set_hero_trails(run.data(), static_cast<uint32_t>(run.size())));
+            const auto off_dark = chase(30, 0.0f, false, false);
+            const auto off_light = chase(200, 0.0f, false, false);
+            int variant = 0;
+            for (const float wind_x : {0.0f, 120.0f, -120.0f}) {
+                for (const bool half_air : {false, true}) {
+                    const auto on_dark = chase(30, wind_x, half_air, true);
+                    const auto on_light = chase(200, wind_x, half_air, true);
+                    // Coverage where the ground shows and the two scenes differ enough.
+                    std::vector<float> cover(frame_px, -1.0f);
+                    for (size_t i = 0; i < frame_px; ++i) {
+                        const int span = int(off_light[i * 4 + 1]) - int(off_dark[i * 4 + 1]);
+                        if (depth[i] > 0.0f && span >= 40)
+                            cover[i] = 1.0f - float(int(on_light[i * 4 + 1]) - int(on_dark[i * 4 + 1])) /
+                                                  float(span);
+                    }
+                    // Averaged over 3 x 3 pixels first: the march's per-pixel grain is not an
+                    // edge, a step that survives the average is.
+                    std::vector<float> smooth(frame_px, -1.0f);
+                    for (int y = 1; y + 1 < int(vh); ++y)
+                        for (int x = 1; x + 1 < int(vw); ++x) {
+                            float sum = 0.0f;
+                            bool whole = true;
+                            for (int dy = -1; dy <= 1 && whole; ++dy)
+                                for (int dx = -1; dx <= 1; ++dx) {
+                                    const float c = cover[static_cast<size_t>(y + dy) * vw + x + dx];
+                                    if (c < 0.0f) {
+                                        whole = false;
+                                        break;
+                                    }
+                                    sum += c;
+                                }
+                            if (whole)
+                                smooth[static_cast<size_t>(y) * vw + x] = sum / 9.0f;
+                        }
+                    float peak = 0.0f, step = 0.0f;
+                    size_t puff_px = 0;
+                    int step_x = 0, step_y = 0;
+                    for (int y = 1; y + 1 < int(vh); ++y)
+                        for (int x = 1; x + 2 < int(vw); ++x) {
+                            const size_t i = static_cast<size_t>(y) * vw + x;
+                            const float a = smooth[i], right = smooth[i + 1];
+                            if (a < 0.0f || right < 0.0f)
+                                continue;
+                            peak = std::max(peak, a);
+                            puff_px += a > 0.05f;
+                            if (std::abs(right - a) > step) {
+                                step = std::abs(right - a);
+                                step_x = x;
+                                step_y = y;
+                            }
+                        }
+                    std::printf("WARP kick-up from a chase camera (wind %.0f, %s): %zu pixels, "
+                                "peak coverage %.2f, largest step between columns %.3f at %d,%d\n",
+                                wind_x, half_air ? "half resolution" : "full", puff_px, peak, step,
+                                step_x, step_y);
+                    if (!out_dir.empty()) {
+                        std::vector<uint8_t> cover_px(frame_px * 4, 255u);
+                        for (size_t i = 0; i < frame_px; ++i) {
+                            const uint8_t v = cover[i] < 0.0f
+                                                  ? 0u
+                                                  : static_cast<uint8_t>(std::clamp(cover[i], 0.0f, 1.0f) * 255.0f);
+                            cover_px[i * 4] = cover_px[i * 4 + 1] = v;
+                            cover_px[i * 4 + 2] = cover[i] < 0.0f ? 60u : v;
+                        }
+                        const std::string tag = std::to_string(variant);
+                        CHECK(dolly::map_grid::write_png_rgba8(out_dir / ("warp_kick_chase_cover" + tag + ".png"),
+                                                               vw, vh, cover_px.data(), &err));
+                        CHECK(dolly::map_grid::write_png_rgba8(out_dir / ("warp_kick_chase_light" + tag + ".png"),
+                                                               vw, vh, on_light.data(), &err));
+                    }
+                    ++variant;
+                    CHECK(puff_px > 1500 && peak > 0.1f && peak < 0.9f); // there, never solid
+                    CHECK(step < 0.11f); // no ruled edge (it measured 0.19 here, 3 x 3 average and all)
+                }
+            }
+            CHECK(renderer.set_hero_trails(nullptr, 0));
+        }
     }
 
     // 8) Optionally export visual verification PNGs

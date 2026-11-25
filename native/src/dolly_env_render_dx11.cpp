@@ -269,9 +269,11 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     // A footfall kicks cover up where the hero ran: strongest under the feet and for a
     // running hero, weaker toward the track's edge and for one walking (read as older).
     // At the shoulder's edge the kick is older than a puff lives (2 s), so the puffs' footprint
-    // fades out there: stopping at 1.2 s left a hard outline the shape of the stamp.
+    // fades out there: stopping at 1.2 s left a hard outline the shape of the stamp. The
+    // footprint is as wide as the stamp reaches (wider than the track), for the widest and
+    // so the softest sides the puffs can have.
     float run = saturate((i.speed - 140.0) / 220.0);
-    float edgeK = saturate(d / (kTrailCore + kTrailFeather));
+    float edgeK = saturate(d / kTrailReach);
     o.kick = t - edgeK * edgeK * 2.2 - (1.0 - run) * 1.5 - underRoof * 10.0;
     return o;
 }
@@ -1504,6 +1506,9 @@ void BakeSunCS(uint3 id : SV_DispatchThreadID) {
 // rgb puff light (premultiplied), a its coverage.
 static const float kKickLife = 2.0;  // seconds a puff lives
 static const float kKickTop = 44.0;  // how high the oldest puffs stand over their floor
+static const float kKickLean = 1.2;  // seconds of (capped) wind a puff's top leans downwind
+static const float kKickCover = 0.85; // the most a ray through any length of puffs is covered
+static const float kKickDepth = 36.0; // the most cloud along a ray that adds to its cover (u)
 static const int kKickCells = 64;    // the near map: cells of 32 u
 static const int kKickFarCells = 8;  // the far map: cells of 256 u
 // Steps over the ground on each map: under a cell, less the kick map's filter reach.
@@ -1561,12 +1566,13 @@ float4 KickUp(float3 rayDir, float hitDist, bool sky, int preset, float2 px) {
     float coat = styleB.y * coatingInfo.x;
     if (trailInfo.x < 1.5 || !(preset == 6 || preset == 1 || preset == 2) || coat <= 0.001)
         return none;
-    // A puff leans downwind as it ages, at most 60 u over its life: followed at the full
+    // A puff leans downwind with height, 36 u at its top (kKickLean): followed at the full
     // wind, a puff showed only where the place it was looked up happened to lie on the track
-    // (thin upright streaks, and one detached blob in a storm).
+    // (thin upright streaks, and one detached blob in a storm). `drift` is the middle of
+    // that lean, for the searches below.
     float2 wind = windTime.xy * 0.5;
     wind *= min(1.0, 30.0 / max(length(wind), 1e-3));
-    float2 drift = wind * 0.6;
+    float2 drift = wind * (0.5 * kKickLean);
     // Is a fresh kick anywhere near this view ray? Steps over the far map, each no longer
     // than the reach the map vouches for. Most rays end here, after a read or two of an
     // 8 x 8 map.
@@ -1650,8 +1656,7 @@ float4 KickUp(float3 rayDir, float hitDist, bool sky, int preset, float2 px) {
     float floorB = SampleFloorBelowSmooth(gCamPos + rayDir * tB);
     // A thin dusting throws up thin puffs: full strength from a third of full cover.
     float strength = 0.11 * styleA.y * saturate(coat * 3.0);
-    float trans = 1.0;
-    float3 light = float3(0.0, 0.0, 0.0);
+    float tau = 0.0, inside = 0.0;
     // Steps of 4 u, longer where the stretch is long; on a grid fixed along the ray and
     // shifted per pixel (as the haze march is), so what a step misses shows as fine grain
     // instead of terraces. Exports take twice as many, half as long.
@@ -1664,15 +1669,17 @@ float4 KickUp(float3 rayDir, float hitDist, bool sky, int preset, float2 px) {
         if (t >= tB)
             break;
         float3 q = gCamPos + rayDir * t;
-        // A puff born at age a has leant a * wind; look back along the wind for its source.
-        float guess = KickAge(q.xy - drift);
-        if (guess < 0.0 || guess >= kKickLife)
-            continue;
-        float age = KickAge(q.xy - wind * guess);
-        if (age < 0.0 || age >= kKickLife)
-            continue;
         // Height over the floor under the puff itself.
         float h = q.z - lerp(floorA, floorB, saturate((t - tA) / (tB - tA)));
+        // The kick this air came from: straight below at the ground, further upwind the
+        // higher it has risen. One read, so the cloud is the track's own soft footprint
+        // sheared over, as smooth across the track as the footprint is. (Looked up by a
+        // first guess of its age instead, the place read moved 30 u per second of that
+        // guess: the footprint's 16 u shoulder was squeezed into 2 u on the upwind side,
+        // and a camera looking along the run saw that as a ruled line down the frame.)
+        float age = KickAge(q.xy - wind * (kKickLean * saturate(h / (kKickTop + 6.0))));
+        if (age < 0.0 || age >= kKickLife)
+            continue;
         float top = 6.0 + kKickTop * sqrt(age / kKickLife);
         float shape = smoothstep(-2.0, 3.0, h) * (1.0 - smoothstep(top * 0.45, top, h));
         if (shape <= 0.0)
@@ -1681,19 +1688,23 @@ float4 KickUp(float3 rayDir, float hitDist, bool sky, int preset, float2 px) {
         // as a row of dark dots along the run).
         float n = gustNoise3D.SampleLevel(linearWrap, float3(q.xy / 72.0, q.z / 44.0 + windTime.z * 0.6), 0);
         float billow = lerp(0.3, 1.0, smoothstep(0.2, 0.7, n));
-        // Fading out over the last part of its life (and of the source's reach), and with
-        // distance, so nothing about a puff ends at an edge.
-        float fade = (1.0 - smoothstep(0.7 * kKickLife, kKickLife, age)) *
-                     (1.0 - smoothstep(0.7 * kKickLife, kKickLife, guess)) *
-                     (1.0 - smoothstep(1100.0, 1500.0, t));
-        float dens = shape * exp(-age * 1.1) * fade * billow * strength;
-        float a = 1.0 - exp(-dens * dt);
-        light += trans * a * albedo * lightCol;
-        trans *= 1.0 - a;
-        if (trans < 0.02)
-            break;
+        // Fading out over the last part of its life (and so toward the footprint's edge,
+        // which reads as older), with distance, and right in front of the lens (a camera
+        // following a runner sits inside the trail), so nothing about a puff ends at an edge.
+        float fade = (1.0 - smoothstep(0.25 * kKickLife, kKickLife, age)) *
+                     (1.0 - smoothstep(1100.0, 1500.0, t)) * smoothstep(16.0, 96.0, t);
+        tau += shape * exp(-age * 1.1) * fade * billow * strength * dt;
+        inside += shape * fade * dt;
     }
-    return float4(light, 1.0 - trans);
+    // A ray looking along a run lies in the trail for hundreds of units, where one across it
+    // passes through 30 or 40. Summed over all of that, the faintest fringe of the trail was
+    // already full cover, and the trail a solid slab with a firm edge. So a ray counts at
+    // most kKickDepth of cloud, at the mean density of all it passed through: along the run
+    // the trail then shows the same soft cross-section it has from the side. Coverage also
+    // levels off at kKickCover, so it is never solid.
+    tau *= kKickDepth / max(inside, kKickDepth);
+    float cover = kKickCover * (1.0 - exp(-tau / kKickCover));
+    return float4(albedo * lightCol * cover, cover);
 }
 
 // The volumetric march along one view ray: rgb in-scattered light, a transmittance.
