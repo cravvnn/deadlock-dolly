@@ -22,7 +22,7 @@ from .editor_actions import (
 from .file_ops import publish_new, replace_retrying, retry_locked
 from .replays import DEFAULT_REPLAY_SORT_ID, REPLAY_SORT_IDS, parse_launch_options
 
-SETTINGS_VERSION = 12
+SETTINGS_VERSION = 11
 DEFAULT_RESHADE_BINDING = EditorBinding("F11")
 MAX_SETTINGS_BYTES = 64 * 1024
 
@@ -50,7 +50,6 @@ class AppSettings:
     allow_mod_overrides: bool = False
     nvidia_dlss: bool = False
     discord_presence: bool = True
-    replay_sort: str = DEFAULT_REPLAY_SORT_ID
     migration_warnings: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -68,8 +67,6 @@ class AppSettings:
             raise ValueError("nvidia_dlss must be a boolean.")
         if type(self.discord_presence) is not bool:
             raise ValueError("discord_presence must be a boolean.")
-        if self.replay_sort not in REPLAY_SORT_IDS:
-            raise ValueError("replay_sort must be a known replay library sort.")
         if not isinstance(self.capture_binding, CaptureBinding):
             raise ValueError("capture_binding must be a CaptureBinding.")
         # Validate here as well as at the JSON boundary before saving anything.
@@ -143,6 +140,51 @@ def _migrate_reshade_binding(bindings, warnings):
     return binding
 
 
+def library_state_path() -> Path:
+    return settings_path().parent / "library.json"
+
+
+def load_replay_sort(path: str | os.PathLike[str] | None = None) -> str:
+    """Saved replay library sort; newest first when missing or unreadable.
+
+    Kept out of settings.json on purpose: older Dolly versions refuse a
+    settings file with fields they do not know.
+    """
+    target = Path(path) if path is not None else library_state_path()
+    try:
+        with target.open("rb") as handle:
+            raw = json.loads(handle.read(4097).decode("utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return DEFAULT_REPLAY_SORT_ID
+    value = raw.get("replay_sort") if isinstance(raw, dict) else None
+    return value if value in REPLAY_SORT_IDS else DEFAULT_REPLAY_SORT_ID
+
+
+def save_replay_sort(sort_id: str, path: str | os.PathLike[str] | None = None) -> None:
+    """Atomically save the replay library sort beside the settings file."""
+    if sort_id not in REPLAY_SORT_IDS:
+        raise ValueError("replay_sort must be a known replay library sort.")
+    target = Path(path) if path is not None else library_state_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = (json.dumps({"version": 1, "replay_sort": sort_id}, indent=2) + "\n").encode("utf-8")
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=target.parent, prefix=target.name + ".",
+                                         suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        replace_retrying(temporary, target)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def reshade_config_path() -> Path:
     return settings_path().parent / "ReShade" / "ReShade.ini"
 
@@ -172,7 +214,7 @@ def _decode_settings(data: bytes) -> AppSettings:
         raise ValueError("Dolly settings are not valid UTF-8 JSON.") from exc
     if not isinstance(raw, dict) or "version" not in raw:
         raise ValueError("Dolly settings must contain a version and preferences.")
-    if type(raw["version"]) is not int or raw["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SETTINGS_VERSION):
+    if type(raw["version"]) is not int or raw["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, SETTINGS_VERSION):
         raise ValueError(f"Unsupported Dolly settings version: {raw['version']!r}.")
     if raw["version"] == 1:
         if set(raw) != {"version", "capture_binding"}:
@@ -210,8 +252,6 @@ def _decode_settings(data: bytes) -> AppSettings:
         fields.add("discord_presence")
     if raw["version"] >= 11:
         fields.add("nvidia_dlss")
-    if raw["version"] >= 12:
-        fields.add("replay_sort")
     if set(raw) != fields | {"version"}:
         raise ValueError(f"Version {raw['version']} Dolly settings have missing or unknown preference fields.")
     values = {name: raw[name] for name in fields}
@@ -315,7 +355,6 @@ def save_settings(
         "allow_mod_overrides": settings.allow_mod_overrides,
         "discord_presence": settings.discord_presence,
         "nvidia_dlss": settings.nvidia_dlss,
-        "replay_sort": settings.replay_sort,
         "capture_binding": settings.capture_binding.to_dict(),
         "game_path": settings.game_path,
         "replay_folder": settings.replay_folder,

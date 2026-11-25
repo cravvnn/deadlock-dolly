@@ -749,18 +749,31 @@ set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_REL
 class ReplaySortSetting(unittest.TestCase):
     def test_library_sort_defaults_to_newest_and_is_remembered(self):
         from dolly.replays import replay_sort_id, replay_sort_label
-        self.assertEqual(AppSettings().replay_sort, "modified_desc")
+        from dolly.settings import load_replay_sort, save_replay_sort
         self.assertEqual(replay_sort_label("modified_desc"), "Modified \u2193")
         self.assertEqual(replay_sort_id(replay_sort_label("size_asc")), "size_asc")
         with tempfile.TemporaryDirectory() as temp:
+            library = Path(temp) / "library.json"
+            self.assertEqual(load_replay_sort(library), "modified_desc")
+            save_replay_sort("name_asc", library)
+            self.assertEqual(load_replay_sort(library), "name_asc")
+            library.write_text("{not json", encoding="utf-8")
+            self.assertEqual(load_replay_sort(library), "modified_desc")
+            with self.assertRaises(ValueError):
+                save_replay_sort("biggest", library)
+
+    def test_settings_file_stays_readable_by_older_dolly(self):
+        # Every Dolly shares one settings.json, and 0.7.57 and older refuse a
+        # newer version or any field they do not know. New preferences must
+        # live elsewhere (like library.json) unless an older-version plan exists.
+        with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "settings.json"
-            save_settings(AppSettings(replay_sort="name_asc"), path)
-            self.assertEqual(load_settings(path).replay_sort, "name_asc")
-            # Version 11 files have no saved sort and get the newest-first default.
+            save_settings(AppSettings(), path)
             raw = json.loads(path.read_text(encoding="utf-8"))
-            raw["version"] = 11
-            del raw["replay_sort"]
-            path.write_text(json.dumps(raw), encoding="utf-8")
-            self.assertEqual(load_settings(path).replay_sort, "modified_desc")
-        with self.assertRaises(ValueError):
-            AppSettings(replay_sort="biggest")
+        self.assertEqual(raw["version"], 11)
+        self.assertEqual(set(raw), {
+            "version", "full_editor", "ffmpeg_path", "export_folder", "auto_updates",
+            "framing_grid_enabled", "pause_after_capture", "allow_mod_overrides",
+            "discord_presence", "nvidia_dlss", "capture_binding", "game_path", "replay_folder",
+            "demo_path", "launch_options", "movement_speed", "mouse_sensitivity",
+            "action_bindings", "reshade_binding", "reshade_runtime_path"})

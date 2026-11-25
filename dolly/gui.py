@@ -662,7 +662,9 @@ class DollyApp:
         self.editor_sensitivity = tk.StringVar(value=_number(self.app_settings.mouse_sensitivity))
         self.replay_search = tk.StringVar()
         from dolly.replays import replay_sort_label
-        self.replay_sort = tk.StringVar(value=replay_sort_label(self.app_settings.replay_sort))
+        from dolly.settings import load_replay_sort
+        self._saved_replay_sort = load_replay_sort()
+        self.replay_sort = tk.StringVar(value=replay_sort_label(self._saved_replay_sort))
         self.replay_sort.trace_add("write", lambda *_: self._save_replay_sort())
         self.replay_summary = tk.StringVar(value="Choose your replay folder.")
         self.startup_progress = tk.StringVar(value="Ready when you are.")
@@ -1480,11 +1482,13 @@ class DollyApp:
 
     def _save_replay_sort(self):
         from dolly.replays import replay_sort_id
+        from dolly.settings import save_replay_sort
         sort_id = replay_sort_id(self.replay_sort.get())
-        if sort_id is None or sort_id == self.app_settings.replay_sort:
+        if sort_id is None or sort_id == self._saved_replay_sort:
             return
         try:
-            self._commit_settings(replay_sort=sort_id)
+            save_replay_sort(sort_id)
+            self._saved_replay_sort = sort_id
         except Exception as exc:
             # Sorting still works for this session; only remembering it failed.
             LOG.warning("Could not save the replay sort: %s", exc)
