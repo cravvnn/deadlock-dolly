@@ -199,8 +199,9 @@ def configure(app):
         signature = window_of()
         if (getattr(app, "_native_trails_cache", None) != signature
                 or getattr(app, "_native_trails_bridge", None) is not bridge):
-            store, start, end, replay = signature
-            publish_trails(store_path=store, window_start=start, window_end=end, replay=replay)
+            store, _start, _end, replay = signature
+            # Tracks anywhere in the replay: the game uploads what can show around the moment.
+            publish_trails(store_path=store, window_start=0.0, window_end=1e7, replay=replay)
             app._native_trails_cache, app._native_trails_bridge = signature, bridge
         if signature[3]:
             # The replay's own hero positions, read once in the background (the game adopts

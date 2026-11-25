@@ -1876,7 +1876,7 @@
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "995b2b0e4d729ffe6ba74ae2a9b3b83eb8553adba28b9e7a8dc0a60f37c5ada2",
+      "sha256": "cd978f50bc4fdbf24f6d807b47335e81b497c06e2aee0e67db4161fb0a366ca4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -6434,7 +6434,7 @@
     },
     {
       "path": "dolly/ui/scene_page.py",
-      "sha256": "c0de1caaf9737be12ce132391d78d6966d48ed38944a786b4d963ac68c866302",
+      "sha256": "4c431e203059ed4b5424b5d8fae7983fe65bde5ae3840d7dcdb21855b2d9bcea",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -7687,7 +7687,7 @@
     },
     {
       "path": "native/include/dolly_env_render_dx11.hpp",
-      "sha256": "d8e803fd26e3c59e585f7b7823fb52f65b80928cc9d42e87694a11a701fe8549",
+      "sha256": "94eeb6aa21393aa618162d65a516b38146c8acceba5278982973c541e3625ede",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8766,7 +8766,7 @@
     },
     {
       "path": "native/include/dolly_weather_runtime.hpp",
-      "sha256": "2d375115f8faf666788c8237d5479b78f2d75c177f2f21f743dd8db10d9e1af6",
+      "sha256": "9b3cff54e2e6bac644526eb99af1d8db7d1ad4e68aee4f3400fc0593114efc78",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10115,7 +10115,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "c98801bd2d228c84d55b42cf7bca7802ef6d875fa4f972480db7729057c7d47f",
+      "sha256": "f66dc5975da32a0a1a37d8b9146fdc9d03fc4d7b069967eebec891ea700791cf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10838,7 +10838,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "b82ffda62bb757a4dae90f16369f503c1950be95d3d58afd11641979a3c59ea5",
+      "sha256": "2cb9ea4624118f74713ebab7bc30ea4b22a675612e354cdcc192a05e1b7f924f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

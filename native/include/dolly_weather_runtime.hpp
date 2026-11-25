@@ -42,8 +42,8 @@ bool wants_scene_depth() noexcept;
 // False before the editor has published any weather.
 bool panel_settings(weather::Settings& out) noexcept;
 
-// How much of the shot's window the replay's hero track store has seen (0..1), or -1 when
-// no replay's store is open. For the Scene drawer's tracks line.
+// How much of the ten seconds up to the moment on screen the replay's hero track store has
+// seen (0..1), or -1 when no replay's store is open. For the Scene drawer's tracks line.
 double hero_track_coverage() noexcept;
 
 // Read-only weather facts for other screen passes (lens rain). Present thread only.

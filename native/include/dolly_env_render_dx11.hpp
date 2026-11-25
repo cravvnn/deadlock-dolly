@@ -135,7 +135,8 @@ public:
     // The heroes' tracks as straight segments, each with the replay time (s, the renderer's
     // sim_time clock) at its two ends. Each frame stamps those walked to their end by its
     // time; an empty set (or none) means no trails. At most kMaxTrailSegments.
-    static constexpr uint32_t kMaxTrailSegments = 1u << 17;
+    // Light snow keeps tracks for up to an hour of replay: room for 12 heroes over that.
+    static constexpr uint32_t kMaxTrailSegments = 1u << 20;
     bool set_hero_trails(const TrailSegment* segments, uint32_t count);
     // Adds segments after those set (the order does not matter to the stamp). False when the
     // buffer has no room left: set them all again instead.

@@ -669,6 +669,11 @@ bool copy_inputs(ID3D11Device* device, ID3D11DeviceContext* ctx, ID3D11Texture2D
         return false;
     if (!gpu.depth || dd.Width != gpu.depth_desc.Width || dd.Height != gpu.depth_desc.Height ||
         dd.Format != gpu.depth_desc.Format) {
+        char text[160];
+        std::snprintf(text, sizeof(text), "weather: scene depth %ux%u (format %d) for a %ux%u frame",
+                      dd.Width, dd.Height, int(dd.Format), gpu.color_desc.Width,
+                      gpu.color_desc.Height);
+        set_status(text);
         gpu.depth.Reset();
         gpu.depth_srv.Reset();
         D3D11_TEXTURE2D_DESC d = dd;
@@ -846,16 +851,15 @@ double hero_track_coverage() noexcept {
         const auto controls = block ? weather::trails::decode(*block) : std::nullopt;
         if (!controls || controls->store_path.empty())
             return -1.0;
-        const double start = controls->window_start, end = controls->window_end;
-        if (!(end > start))
-            return 1.0;
+        const double now = gReplayTime.load(std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(gTrailsMutex);
         if (gTracks.path != controls->store_path || !store_matches(gTracks))
             return -1.0; // still opening, or another replay is loaded
+        // The ten seconds up to the moment on screen (where fresh tracks show).
+        const double start = std::max(0.0, now - 10.0), end = std::max(now, start + 1e-3);
         double covered = 0.0;
         for (const auto& range : gTracks.store.seen())
             covered += std::max(0.0, std::min(range.second, end) - std::max(range.first, start));
-        // Within half a second counts as all of it (playback stops just short of the end).
         return covered >= (end - start) - 0.5 ? 1.0 : covered / (end - start);
     } catch (...) {
         return -1.0;
@@ -1015,19 +1019,29 @@ bool wants_scene_depth() noexcept {
 namespace {
 // Keeps the GPU's trail segments those of the store's cells inside the shot's window: new
 // cells at a hero's newest end are added as they arrive; anything else rebuilds them all.
-void ensure_trails(Gpu& gpu, ID3D11DeviceContext* ctx) {
+// Only the tracks that can show at `time` are uploaded: those walked in the last `reach`
+// seconds (a track is filled in after that), with half a minute to spare either side so a
+// playing replay rebuilds them about twice a minute. Anything outside the editor's window
+// never shows.
+void ensure_trails(Gpu& gpu, ID3D11DeviceContext* ctx, double time, double reach) {
     const auto block = std::atomic_load(&gTrailsBlock);
     const auto controls = block ? weather::trails::decode(*block) : std::nullopt;
-    const double start = controls ? controls->window_start : 0.0;
-    const double end = controls ? controls->window_end : 0.0;
+    const double window_start = controls ? controls->window_start : 0.0;
+    const double window_end = controls ? controls->window_end : 0.0;
+    const double need_start = std::max(window_start, time - reach);
+    const double need_end = std::min(window_end, time);
+    constexpr double kSpare = 30.0;
     std::vector<env::TrailSegment> segments;
     bool rebuild = false;
+    double start = gpu.trails_start, end = gpu.trails_end;
     {
         std::lock_guard<std::mutex> lock(gTrailsMutex);
         const bool same = gpu.trails_generation == gTracks.generation &&
-                          gpu.trails_path == gTracks.path && gpu.trails_start == start &&
-                          gpu.trails_end == end;
+                          gpu.trails_path == gTracks.path && need_start >= gpu.trails_start &&
+                          need_end <= gpu.trails_end;
         if (!same) {
+            start = std::max(window_start, time - reach - kSpare);
+            end = std::min(window_end, time + kSpare);
             rebuild = true;
             gpu.trails_generation = gTracks.generation;
             gpu.trails_path = gTracks.path;
@@ -1060,13 +1074,12 @@ void ensure_trails(Gpu& gpu, ID3D11DeviceContext* ctx) {
     }
     const bool ok = gpu.env.set_hero_trails(segments.data(),
                                             static_cast<uint32_t>(segments.size()));
-    // Logged when it fails or the store or window changes, not on every rebuild.
+    // Logged when it fails or the store changes, not on every rebuild.
     static std::string logged;
     char text[160];
     std::snprintf(text, sizeof(text), "weather: hero tracks %s (%zu segments)",
                   ok ? "loaded" : "failed", segments.size());
-    const std::string key = gpu.trails_path + "|" + std::to_string(start) + "|" +
-                            std::to_string(end);
+    const std::string key = gpu.trails_path;
     if (!ok || key != logged) {
         logged = key;
         set_status(text);
@@ -1216,7 +1229,8 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
                     gpu.env.set_wall_reach(0, 0, nullptr); // search everywhere instead
             }
         }
-        ensure_trails(gpu, ctx);
+        // A track is filled in six fill-in times after it was walked (kTrailFade).
+        ensure_trails(gpu, ctx, time, 6.0 * resolved.render.trail_fill_seconds + 1.0);
         static uint32_t logged_heroes = ~0u;
         if (body_count != logged_heroes) {
             logged_heroes = body_count;

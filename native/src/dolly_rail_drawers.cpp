@@ -763,12 +763,8 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 if (on && tracks_here && track_cover >= 0.0 && track_cover < 1.0) {
                     k::VGap(6);
                     char note[64];
-                    if (track_cover > 0.0)
-                        std::snprintf(note, sizeof(note),
-                                      "Tracks ready for %.0f%% of the shot. Play it to fill in.",
-                                      std::floor(track_cover * 100.0));
-                    else
-                        std::snprintf(note, sizeof(note), "Tracks appear as the shot plays.");
+                    std::snprintf(note, sizeof(note),
+                                  "Tracks here appear once the replay is read or played.");
                     k::Notice(note, t::text_dim);
                 }
                 k::VGap(10);
