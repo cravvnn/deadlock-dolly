@@ -24,7 +24,7 @@ namespace {
 // follows the camera, and alpha fades out toward the box faces.
 //
 // LOOK (a compile-time define, one shader pair per look) selects the particle look:
-//   0  the shipped look. Its code is everything outside the `#if LOOK >= 1` blocks and
+//   0  the first look. Its code is everything outside the `#if LOOK >= 1` blocks and
 //      must stay exactly as it is, so its frames never move.
 //   1  varied sizes (a few big flakes among many small), per-flake speed and opacity,
 //      streaks that dim as they lengthen and taper to a point, particles that dissolve

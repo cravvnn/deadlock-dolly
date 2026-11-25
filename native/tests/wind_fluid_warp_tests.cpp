@@ -920,7 +920,7 @@ int main(int argc, char** argv) {
     CHECK(render_weather(dolly::weather::Preset::Blizzard, 10.6, true) == blizzard_a);
     std::printf("WARP precipitation replay check passed: pause, advance and seek-back\n");
 
-    // 7d2) Particle looks (the hidden particle-look switch). Look 0 is the shipped look and
+    // 7d2) Particle looks (look 2 ships). Look 0, the first look,
     //      must not move: its frames are compared with hashes recorded before the other looks
     //      were written. Looks 1 and 2 must draw, differ from look 0 and replay exactly.
     //      The particles are drawn alone over flat grey, so only the precipitation pass and

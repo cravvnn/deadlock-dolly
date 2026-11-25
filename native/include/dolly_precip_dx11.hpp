@@ -24,9 +24,10 @@ namespace dolly::env {
 enum class PrecipitationKind : uint32_t { None = 0, Snow = 1, Rain = 2, Sand = 3, Ash = 4 };
 
 inline constexpr uint32_t kMaxPrecipitationFlakes = 131072;
-// Particle looks: 0 is the shipped look; 1 and 2 are alternatives kept for comparison
-// (see PrecipitationParams::look). They may draw more, finer particles.
+// Particle looks (see PrecipitationParams::look). Look 2 ships; 0 (the first look) and 1 are
+// kept for the offline tests. Looks 1 and 2 draw more, finer particles.
 inline constexpr uint32_t kPrecipitationLooks = 3;
+inline constexpr uint32_t kShippedPrecipitationLook = 2;
 inline constexpr uint32_t kMaxPrecipitationFlakesStyled = 262144;
 
 struct PrecipitationParams {
@@ -45,10 +46,10 @@ struct PrecipitationParams {
     float sun_color[3] = {1.05f, 0.92f, 0.72f};
     float ambient_color[3] = {0.32f, 0.34f, 0.42f};
     uint32_t seed = 0x2545F491u;
-    // 0: the shipped look. 1: varied sizes, streaks that dim and taper, particles that
+    // 0: the first look. 1: varied sizes, streaks that dim and taper, particles that
     // dissolve into the haze with distance. 2: look 1 as mostly fine specks with fewer big
     // flakes or grains. Larger values are treated as 2. Rain looks the same in all three.
-    uint32_t look = 0;
+    uint32_t look = kShippedPrecipitationLook;
 };
 
 // Flakes drawn for these parameters (0 when off), capped at kMaxPrecipitationFlakes.

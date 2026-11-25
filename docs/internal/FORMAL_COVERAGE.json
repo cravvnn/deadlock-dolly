@@ -8412,7 +8412,7 @@
     },
     {
       "path": "native/include/dolly_precip_dx11.hpp",
-      "sha256": "1e0b42f2c7ccbc2a33a37463509222792ccda0b7c0e0c57d6fdd57cf37524c2c",
+      "sha256": "735ad5d053e79899034eebb58a9a2020db291410878d6d8579e229d2a2b9599a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10041,7 +10041,7 @@
     },
     {
       "path": "native/src/dolly_precip_dx11.cpp",
-      "sha256": "d2c7e14f1a674836b213942ee93fd35113a58a10d150b48d968c0082594f7c4e",
+      "sha256": "21aec9ba5f896889ddb90768d094ca876cc9ffc7590cdcd8ce488e3dd76c694d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10838,7 +10838,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "cff3e4b7228500d07929ba754af4620bc8e338884d5b8c247dd33e0a912ca5c1",
+      "sha256": "4790332b4397a32a095935e8ee432228d7865933e864ba823c734e362ddfbcf9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
