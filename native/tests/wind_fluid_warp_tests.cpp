@@ -1172,6 +1172,23 @@ int main(int argc, char** argv) {
         std::printf("WARP coating drift: %.2f%% of pixels differ with the drift potential\n",
                     100.0 * drift_moved / frame_px);
         CHECK(drift_moved > frame_px / 1000);
+        // The wall-reach map only skips wall searches that cannot find a wall: same frame.
+        {
+            const auto reach = dolly::map_grid::wall_reach_mask(map_grid, 60.0f);
+            size_t near_walls = 0;
+            for (uint8_t v : reach)
+                near_walls += v;
+            CHECK(reach.size() == size_t(map_grid.width) * map_grid.height &&
+                  near_walls > 0 && near_walls < reach.size());
+            CHECK(renderer.set_wall_reach(map_grid.width, map_grid.height, reach.data()));
+            CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                                  res.render, solver, emitters, 0));
+            const auto skipped = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+            std::printf("WARP wall reach: %.1f%% of the map within reach, frame %s\n",
+                        100.0 * near_walls / reach.size(),
+                        skipped == drifted ? "identical" : "DIFFERS");
+            CHECK(skipped == drifted);
+        }
         res.render.coating_drift = 0.0f;
         CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
                               res.render, solver, emitters, 0));

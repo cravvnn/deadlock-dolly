@@ -65,7 +65,7 @@ cbuffer EnvConstants : register(b0) {
     float4 thinColor;     // rgb thin scatter albedo, w farClip
     float4 denseColor;    // rgb dense scatter albedo, w 1 = puddles reflect the frame
     float4 coatingInfo;   // x growth 0..1, y drift strength, z steady wind speed, w 1 = gpuView
-    float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w unused
+    float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w 1 = wallReach set
     float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
     float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold,
                           // z 1 = driftMap holds a drift potential, w hero count
@@ -95,6 +95,7 @@ StructuredBuffer<ViewData> gpuView : register(t8);
 Texture3D<float> sunBake : register(t9);
 Texture2D<float4> halfMarch : register(t10); // safety net: half-resolution march
 Texture2D<float> driftMap : register(t11);   // drift potential 0..2, stored halved (UNORM16)
+Texture2D<float> wallReach : register(t14);  // 1 where a wall is within the enclosure's reach
 // Hero trails: the recorded path segments, and the map they are stamped into each frame.
 struct TrailSeg {
     float4 a; // xyz start (world), w its shot time (s)
@@ -538,23 +539,25 @@ bool FloorBelowCell(int2 q, float zLim, out float h) {
 // Every weight is continuous in position: a cell with no floor (under a pillar) weighs
 // nothing instead of borrowing a neighbour's floor, and a cell can only claim to be the
 // highest floor as its own weight fades in. Either cut drew teeth and hard edges.
-float SampleFloorBelowSmooth(float3 p) {
-    float2 uv = MapUV(p.xy);
-    if (!OnMap(uv)) return p.z - 64.0;
-    float street = streetZMap.SampleLevel(linearClamp, uv, 0);
-    uint mw, mh;
-    floorZMap.GetDimensions(mw, mh);
-    float2 g = uv * float2(mw, mh) - 0.5;
-    int2 b = int2(floor(g));
-    float2 f = g - float2(b);
+// One map cell's floor below zLim (FloorBelowCell, with the edge clamp): x height, y 1 when
+// the cell has one.
+float2 FloorCellAt(int2 q, int2 dims, float zLim) {
+    float h;
+    bool valid = FloorBelowCell(clamp(q, int2(0, 0), dims - 1), zLim, h);
+    return float2(h, valid ? 1.0 : 0.0);
+}
+
+// The blend of a 2 x 2 block of cells (c0 = b, c1 = b + x, c2 = b + y, c3 = b + x + y) at
+// fraction g - b; see SampleFloorBelowSmooth.
+float BlendFloorCells(float2 c0, float2 c1, float2 c2, float2 c3, float2 f, float street) {
     f = f * f * (3.0 - 2.0 * f); // no creases at cell centres
+    float2 cells[4] = {c0, c1, c2, c3};
     float hs[4], ws[4];
     float top = -1e9;
     [unroll] for (int k = 0; k < 4; ++k) {
         int2 o = int2(k & 1, k >> 1);
-        int2 q = clamp(b + o, int2(0, 0), int2(mw - 1, mh - 1));
-        bool valid = FloorBelowCell(q, p.z + 16.0, hs[k]);
-        ws[k] = valid ? (o.x ? f.x : 1.0 - f.x) * (o.y ? f.y : 1.0 - f.y) : 0.0;
+        hs[k] = cells[k].x;
+        ws[k] = cells[k].y > 0.5 ? (o.x ? f.x : 1.0 - f.x) * (o.y ? f.y : 1.0 - f.y) : 0.0;
         top = max(top, hs[k] - (1.0 - saturate(ws[k] * 4.0)) * 28.0);
     }
     float sum = 0.0, wsum = 0.0;
@@ -565,6 +568,21 @@ float SampleFloorBelowSmooth(float3 p) {
         wsum += w;
     }
     return lerp(street, sum / max(wsum, 1e-4), saturate(wsum * 4.0));
+}
+
+float SampleFloorBelowSmooth(float3 p) {
+    float2 uv = MapUV(p.xy);
+    if (!OnMap(uv)) return p.z - 64.0;
+    float street = streetZMap.SampleLevel(linearClamp, uv, 0);
+    uint mw, mh;
+    floorZMap.GetDimensions(mw, mh);
+    int2 dims = int2(mw, mh);
+    float2 g = uv * float2(mw, mh) - 0.5;
+    int2 b = int2(floor(g));
+    float zLim = p.z + 16.0;
+    return BlendFloorCells(FloorCellAt(b, dims, zLim), FloorCellAt(b + int2(1, 0), dims, zLim),
+                           FloorCellAt(b + int2(0, 1), dims, zLim),
+                           FloorCellAt(b + int2(1, 1), dims, zLim), g - float2(b), street);
 }
 
 // Round specks (glints, flecks) fixed on the ground: `density` of the cell x cell squares
@@ -591,6 +609,18 @@ float RoundSpeck(float3 p, float cell, float density, float footprint, float see
 float EnclosureDir(float2 xy, out float2 away) {
     float s = 0.0;
     away = float2(0.0, 0.0);
+    // No wall within reach of any tap: every tap reads open ground, so the result is
+    // exactly 0 and the search can be skipped.
+    if (volumeBounds.w > 0.5) {
+        float2 ruv = MapUV(xy);
+        if (OnMap(ruv)) {
+            uint rw, rh;
+            wallReach.GetDimensions(rw, rh);
+            int2 rq = clamp(int2(floor(ruv * float2(rw, rh))), int2(0, 0), int2(rw, rh) - 1);
+            if (wallReach.Load(int3(rq, 0)) < 0.5)
+                return 0.0;
+        }
+    }
     [unroll] for (int k = 0; k < 16; ++k) {
         float a = k * 0.3926991;
         float2 dir = float2(cos(a), sin(a));
@@ -1360,6 +1390,7 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
             [branch] if (surfNormal.z > 0.28) {
                 fz = SampleFloorBelowSmooth(surfPos);
                 fxp = fxm = fyp = fym = fz;
+                // Off the map's floors the slope's lerp weight is exactly 0 (onFloor).
                 [branch] if (abs(surfPos.z - fz) < 27.0) {
                     fxp = SampleFloorBelowSmooth(surfPos + float3(11.0, 0.0, 0.0));
                     fxm = SampleFloorBelowSmooth(surfPos - float3(11.0, 0.0, 0.0));
@@ -1521,6 +1552,8 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11BlendState> blend_state;
     ComPtr<ID3D11Texture2D> drift_tex;
     ComPtr<ID3D11ShaderResourceView> drift_srv;
+    ComPtr<ID3D11Texture2D> reach_tex;
+    ComPtr<ID3D11ShaderResourceView> reach_srv;
     // Hero trails: the recorded segments and the per-frame trail map they are stamped into.
     ComPtr<ID3D11VertexShader> trail_vs;
     ComPtr<ID3D11PixelShader> trail_ps;
@@ -1844,6 +1877,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         cb.volume_bounds[0] = mg.floor_min - 24.0f;
         cb.volume_bounds[1] = mg.floor_max + reach + 24.0f;
         cb.volume_bounds[2] = reach;
+        cb.volume_bounds[3] = impl_->reach_srv ? 1.0f : 0.0f;
         cb.floor_decode[0] = mg.floor_min;
         cb.floor_decode[1] = mg.floor_max - mg.floor_min;
     }
@@ -1963,7 +1997,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
         0.0f, 1.0f};
     ID3D11RenderTargetView* rtvs[1] = {out_rtv};
-    ID3D11ShaderResourceView* srvs[14] = {
+    ID3D11ShaderResourceView* srvs[15] = {
         scene_color_srv,
         scene_depth_srv,
         fluid.fluid_srv(),
@@ -1978,6 +2012,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         impl_->drift_srv.Get(),
         nullptr,
         trails ? impl_->trail_srv.Get() : nullptr,
+        impl_->reach_srv.Get(),
     };
     ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
     ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
@@ -2024,14 +2059,14 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
         srvs[10] = impl_->half_srv.Get();
     }
-    ctx->PSSetShaderResources(0, 14, srvs);
+    ctx->PSSetShaderResources(0, 15, srvs);
 
     ctx->Draw(3, 0);
 
     // Unbind SRVs/RTVs to prevent hazard warnings in callers
-    ID3D11ShaderResourceView* null_srvs[14] = {};
+    ID3D11ShaderResourceView* null_srvs[15] = {};
     ID3D11RenderTargetView* null_rtvs[1] = {};
-    ctx->PSSetShaderResources(0, 14, null_srvs);
+    ctx->PSSetShaderResources(0, 15, null_srvs);
     ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
     return true;
 }
@@ -2068,6 +2103,35 @@ bool EnvRendererDX11::set_hero_trails(const TrailSegment* segments, uint32_t cou
         return false;
     }
     impl_->trail_count = count;
+    return true;
+}
+
+bool EnvRendererDX11::set_wall_reach(uint32_t width, uint32_t height, const uint8_t* mask) {
+    impl_->reach_tex.Reset();
+    impl_->reach_srv.Reset();
+    if (!impl_->initialized || !impl_->device || !mask || width < 8 || height < 8 ||
+        width > 8192 || height > 8192)
+        return false;
+    std::vector<uint8_t> texels(std::size_t(width) * height);
+    for (std::size_t i = 0; i < texels.size(); ++i)
+        texels[i] = mask[i] ? 255u : 0u;
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = width;
+    td.Height = height;
+    td.MipLevels = 1;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_R8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA init{texels.data(), width, 0};
+    if (FAILED(impl_->device->CreateTexture2D(&td, &init, &impl_->reach_tex)) ||
+        FAILED(impl_->device->CreateShaderResourceView(impl_->reach_tex.Get(), nullptr,
+                                                        &impl_->reach_srv))) {
+        impl_->reach_tex.Reset();
+        impl_->reach_srv.Reset();
+        return false;
+    }
     return true;
 }
 

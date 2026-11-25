@@ -121,6 +121,11 @@ public:
     // values in 0..2. Until one is set (or after an empty one) the coating is even.
     bool set_drift_map(uint32_t n, const float* values);
 
+    // Where a wall is within the wall search's reach (map_grid::wall_reach_mask, same size
+    // as the map grid): elsewhere the search is skipped, which changes nothing it returns.
+    // Without one (or after an empty one) every pixel searches.
+    bool set_wall_reach(uint32_t width, uint32_t height, const uint8_t* mask);
+
     // The recorded hero paths as straight segments, each with the shot time (s, the
     // renderer's sim_time clock) at its two ends. Each frame stamps those reached by its
     // time; an empty set (or none) means no trails. At most kMaxTrailSegments.

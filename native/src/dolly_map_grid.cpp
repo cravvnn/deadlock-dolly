@@ -2456,6 +2456,48 @@ float cover_above(const MapGrid& g, float x, float y, float z) noexcept {
     return (c[0] * (1 - fx) + c[1] * fx) * (1 - fy) + (c[2] * (1 - fx) + c[3] * fx) * fy;
 }
 
+std::vector<uint8_t> wall_reach_mask(const MapGrid& g, float reach_units) {
+    if (!g.valid())
+        return {};
+    const int w = static_cast<int>(g.width), h = static_cast<int>(g.height);
+    const int r = static_cast<int>(std::ceil(std::max(reach_units, 0.0f) / g.cell_units)) + 3;
+    // Separable square dilation of the solid cells (a square covers the circle of reach).
+    std::vector<uint8_t> rows(static_cast<size_t>(w) * h, 0), out(rows.size(), 0);
+    for (int y = 0; y < h; ++y) {
+        int last = -1000000; // last solid column seen, scanning right
+        for (int x = 0; x < w; ++x) {
+            if (g.air_map[static_cast<size_t>(y) * w + x] > 127u)
+                last = x;
+            if (x - last <= r)
+                rows[static_cast<size_t>(y) * w + x] = 1;
+        }
+        last = 1000000;
+        for (int x = w - 1; x >= 0; --x) {
+            if (g.air_map[static_cast<size_t>(y) * w + x] > 127u)
+                last = x;
+            if (last - x <= r)
+                rows[static_cast<size_t>(y) * w + x] = 1;
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        int last = -1000000;
+        for (int y = 0; y < h; ++y) {
+            if (rows[static_cast<size_t>(y) * w + x])
+                last = y;
+            if (y - last <= r)
+                out[static_cast<size_t>(y) * w + x] = 1;
+        }
+        last = 1000000;
+        for (int y = h - 1; y >= 0; --y) {
+            if (rows[static_cast<size_t>(y) * w + x])
+                last = y;
+            if (last - y <= r)
+                out[static_cast<size_t>(y) * w + x] = 1;
+        }
+    }
+    return out;
+}
+
 std::vector<float> bake_drift_potential(const MapGrid& g, float wind_x, float wind_y,
                                         float wind_strength, uint32_t out_n) {
     std::vector<float> out;

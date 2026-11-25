@@ -136,6 +136,11 @@ float cover_above(const MapGrid& grid, float x, float y, float z) noexcept;
 std::vector<float> bake_drift_potential(const MapGrid& grid, float wind_x, float wind_y,
                                         float wind_strength, uint32_t out_n);
 
+// 1 for every cell with a wall (solid cell) within `reach_units` of it, with a margin of a
+// few cells for bilinear lookups and the point's place inside its cell; 0 elsewhere.
+// Row-major like the grid. Lets a shader skip wall searches where none can find a wall.
+std::vector<uint8_t> wall_reach_mask(const MapGrid& grid, float reach_units);
+
 // Writes a 3-panel diagnostic PNG (tops heightmap, street obstacles/roofs/openness,
 // and stacked floor layers) for visual inspection.
 bool write_map_grid_diagnostic_png(const std::filesystem::path& png_path, const MapGrid& grid,

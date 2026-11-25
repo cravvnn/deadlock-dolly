@@ -348,6 +348,7 @@ struct Gpu {
     std::shared_ptr<const map_grid::MapGrid> grid_cpu; // the same grid, for CPU queries
     // The drift potential uploaded to the coating, and what it was baked from.
     const map_grid::MapGrid* drift_grid = nullptr;
+    const map_grid::MapGrid* reach_grid = nullptr; // the grid the wall-reach map is from
     int drift_direction = -1; // wind direction, whole degrees
     int drift_strength = -1;  // wind shaping, hundredths
     bool failed = false; // shader or resource creation failed for this device
@@ -967,8 +968,17 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
                 resolved.render.hero_count = n;
             }
         }
-        if (resolved.render.enable_coating)
+        if (resolved.render.enable_coating) {
             ensure_drift(gpu, *settings);
+            if (gpu.reach_grid != gpu.grid_cpu.get() && gpu.grid_cpu) {
+                // The enclosure's farthest tap is 60 u out (EnclosureDir).
+                gpu.reach_grid = gpu.grid_cpu.get();
+                const auto mask = map_grid::wall_reach_mask(*gpu.grid_cpu, 60.0f);
+                if (mask.empty() || !gpu.env.set_wall_reach(gpu.grid_cpu->width,
+                                                            gpu.grid_cpu->height, mask.data()))
+                    gpu.env.set_wall_reach(0, 0, nullptr); // search everywhere instead
+            }
+        }
         ensure_trails(gpu);
         static uint32_t logged_heroes = ~0u;
         if (body_count != logged_heroes) {
