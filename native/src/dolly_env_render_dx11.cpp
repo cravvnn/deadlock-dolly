@@ -948,8 +948,12 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     {
         float fade = (1.0 - smoothstep(1200.0, 1600.0, hitDist)) * smoothstep(0.12, 0.35, viewDir.z);
         float depth = BlanketDepth(preset, amount) * upMask * open * fade;
-        if (depth > 0.5 && trailInfo.x > 0.5 && HeroFootprint(surfPos, trailPos.z) <= 0.0) {
-            trailPos.z = surfPos.z;
+        // Only the hero's own body skips the trace (its boots are handled by the footprint
+        // below). The ground around the feet is traced like any other: skipping the whole
+        // footprint drew a round seam around every hero.
+        float soles;
+        float onHero = HeroFootprint(surfPos, soles) * smoothstep(1.0, 3.0, surfPos.z - soles);
+        if (depth > 0.5 && trailInfo.x > 0.5 && onHero <= 0.0) {
             // Height gained over the ground per unit walked back toward the camera, and the
             // reach: the blanket's full height, at most 32 u across the ground.
             float rise = dot(viewDir, surfNormal) / max(surfNormal.z, 0.3);
