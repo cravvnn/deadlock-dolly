@@ -703,6 +703,26 @@ bool ReflectProbe(float3 q, out float behind, out float2 uv) {
     return true;
 }
 
+// Whether the view toward q (a point just above `face`, on an object's side) passes over that
+// object's top: the frame there shows a surface lying beyond q, close by and no higher than q.
+// Then the object's top edge lies between `face` and q.
+bool OverTopAt(float3 q, float3 face) {
+    float4 clip = mul(gViewProj, float4(q, 1.0));
+    if (clip.w <= 1e-3)
+        return false;
+    float2 ndc = clip.xy / clip.w;
+    if (any(abs(ndc) > 1.0))
+        return false;
+    float2 px = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * screenInfo.xy - 0.5;
+    float d = ReadDepthPx(px);
+    if (IsSky(d))
+        return false;
+    float3 w = WorldFromPixelDepth(px, d);
+    float beyond = length(w - gCamPos) - length(q - gCamPos);
+    return beyond > 1.0 && w.z > face.z - 0.5 && w.z < q.z + 2.0 &&
+           length(w.xy - face.xy) < 24.0;
+}
+
 // What a puddle at p mirrors along r: rgb, and a = how much of it came from the frame
 // itself (0 = the sky only). With reflections allowed, the ray marches through the frame
 // (12 growing steps to about 600 u, then 4 halvings); anything it misses, leaves the
@@ -889,6 +909,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // is blended between cells and the bank's top line varies only along the wall, so the
     // bank stays one smooth line.
     float wall = 0.0;
+    float aboveFloor = 1.0e4; // a steep pixel's height above the map floor (bank block)
     float steep = 1.0 - smoothstep(0.2, 0.5, surfNormal.z);
     if (bankMax > 0.0 && steep > 0.001) {
         // Out from the wall: the face's normal blended continuously with the map's own
@@ -909,6 +930,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         // others (measured only 28 u out, the floor lay steps below and banks ended abruptly).
         float floorNear = SampleFloorBelowSmooth(float3(surfPos.xy + outDir * 6.0, surfPos.z));
         float above = surfPos.z - max(floorZ, min(floorNear, floorZ + 16.0));
+        aboveFloor = above;
         float bankDrift = lerp(1.0, DriftAt(outUV), coatingInfo.y);
         // About half enclosed at a straight wall's face, three quarters in an inside corner
         // (drifts pile up to about twice as high there), less round an outside corner (the
@@ -935,6 +957,38 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
                              smoothstep(0.5, 2.0, footDepth));
     }
 
+    // Lips: the cover on an object's top hangs a little over its edges, unevenly along them
+    // (a few units of snow, less sand). Near the camera only: from just above this side
+    // pixel, find how far below the top edge it lies (the view passes over the top there),
+    // and cover the band under the edge.
+    float lipMax = (preset == 6) ? 3.0 : (preset == 1) ? 1.25 : (preset == 2 || preset == 4) ? 0.9 : 0.0;
+    float lipFade = 1.0 - smoothstep(1200.0, 1600.0, hitDist);
+    if (lipMax > 0.0 && steep > 0.001 && lipFade > 0.0) {
+        float lipLen = lipMax * saturate(coat * 1.6) *
+                       (0.55 + 0.9 * ValueNoise3(float3(surfPos.xy * 0.12, 7.0)));
+        float3 lipTop = surfPos + float3(0.0, 0.0, lipLen);
+        if (lipLen > 0.25 && OverTopAt(lipTop, surfPos)) {
+            // The edge's height above this pixel, to a sixteenth of the lip.
+            float lo = 0.0, hi = lipLen;
+            [unroll] for (int lb = 0; lb < 4; ++lb) {
+                float mid = 0.5 * (lo + hi);
+                if (OverTopAt(surfPos + float3(0.0, 0.0, mid), surfPos))
+                    hi = mid;
+                else
+                    lo = mid;
+            }
+            float below = 0.5 * (lo + hi);
+            // Thinning over most of its length, so its lower edge is a soft fringe rather
+            // than a line that steps with the depth image's pixels.
+            // Not on curbs and steps (the banks cover those faces): on such low faces the
+            // edge search lands on the depth image's coarse pixels and draws teeth.
+            float lip = (1.0 - smoothstep(lipLen * 0.1, lipLen, below)) * steep * lipFade *
+                        smoothstep(10.0, 16.0, aboveFloor) *
+                        SkyOpenAt(MapUV(surfPos.xy), surfPos.z + lipLen + 8.0);
+            wall = max(wall, lip);
+        }
+    }
+
     // Where heroes walked, the cover is pressed thin and darker until it fills back in.
 )HLSL"
                                   R"HLSL(
@@ -946,8 +1000,11 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     float3 trailPos = surfPos;
     float rimOcc = 0.0;
     {
-        float fade = (1.0 - smoothstep(1200.0, 1600.0, hitDist)) * smoothstep(0.12, 0.35, viewDir.z);
-        float depth = BlanketDepth(preset, amount) * upMask * open * fade;
+        // Faded out by a 15 degree view (from 30): nearly edge-on, any trace steps show.
+        float fade = (1.0 - smoothstep(1200.0, 1600.0, hitDist)) * smoothstep(0.26, 0.5, viewDir.z);
+        // Thinned at curbs and steps (slopeTaper): the shift would otherwise jump where a
+        // track crosses a curb's face, which is not traced.
+        float depth = BlanketDepth(preset, amount) * upMask * open * fade * slopeTaper;
         // Only the hero's own body skips the trace (its boots are handled by the footprint
         // below). The ground around the feet is traced like any other: skipping the whole
         // footprint drew a round seam around every hero.
@@ -971,7 +1028,23 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
                     float eNow = sNow * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sNow,
                                                             surfPos.z, depth);
                     if (eNow <= 0.0) {
-                        sHit = lerp(sNow, sPrev, saturate(eNow / min(eNow - ePrev, -1e-4)));
+                        // Halve the crossing step four times, then one secant step: a single
+                        // secant step left the 8 steps visible as terraces along rim outlines
+                        // seen nearly edge-on.
+                        float sIn = sNow, sOut = sPrev, eIn = eNow, eOut = ePrev;
+                        [unroll] for (int hb = 0; hb < 4; ++hb) {
+                            float sMid = 0.5 * (sIn + sOut);
+                            float eMid = sMid * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sMid,
+                                                                    surfPos.z, depth);
+                            if (eMid <= 0.0) {
+                                sIn = sMid;
+                                eIn = eMid;
+                            } else {
+                                sOut = sMid;
+                                eOut = eMid;
+                            }
+                        }
+                        sHit = lerp(sIn, sOut, saturate(eIn / min(eIn - eOut, -1e-4)));
                         break;
                     }
                     sPrev = sNow;
@@ -1115,9 +1188,11 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // Tracks have height: pressed down in the middle, a low rim at the shoulders. Its slope
     // lights the rims facing the sun and darkens the hollows' far sides, as much as the
     // game's own light here says the spot is sunlit (never inventing sun in a shadow).
-    float blanket = BlanketDepth(preset, amount) * upMask * open;
+    float blanket = BlanketDepth(preset, amount) * upMask * open * slopeTaper;
     if (blanket > 0.3 && (trail.x > 0.001 || trail.z > 0.001)) {
-        float e = max(1.5, footprint);
+        // Slopes are measured over at least what a pixel covers on the ground, which
+        // stretches at grazing views; a narrower step drew thin flickering rim lines.
+        float e = max(1.5, footprint / max(viewDir.z, 0.15));
         float3 hxp = TrailAt(trailPos + float3(e, 0.0, 0.0));
         float3 hxm = TrailAt(trailPos - float3(e, 0.0, 0.0));
         float3 hyp = TrailAt(trailPos + float3(0.0, e, 0.0));
@@ -1130,9 +1205,10 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         float flatLit = max(dot(surfNormal, sun), 0.15);
         float sunFrac = smoothstep(0.45, 0.9, light);
         float relief = clamp(saturate(dot(n, sun)) / flatLit, 0.35, 1.6);
-        shadeMul *= lerp(1.0, relief, 0.8 * sunFrac);
+        float grazeEase = smoothstep(0.08, 0.3, viewDir.z);
+        shadeMul *= lerp(1.0, relief, 0.8 * sunFrac * grazeEase);
         // A rim between this point and the sun shades it, a little cooler (sky-lit).
-        float shadowed = smoothstep(0.0, 1.5, rimOcc) * sunFrac;
+        float shadowed = smoothstep(0.0, 1.5, rimOcc) * sunFrac * grazeEase;
         shadeMul *= lerp(1.0, 0.62, shadowed);
         lightTint *= lerp(float3(1.0, 1.0, 1.0), float3(0.9, 0.95, 1.06), shadowed);
     }
