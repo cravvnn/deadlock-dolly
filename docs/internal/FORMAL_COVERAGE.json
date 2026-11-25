@@ -9412,7 +9412,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "0a3daca5d09a8247d7204a8438a7b2147a45abe2e0eb769f343733a6664f498f",
+      "sha256": "0eacc5d5061baf8df8f4acb607312add32a01d6b24f5595986b8f3b6bb2e7531",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

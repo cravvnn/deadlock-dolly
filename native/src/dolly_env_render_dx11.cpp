@@ -99,6 +99,9 @@ Texture2D<float> wallReach : register(t14);  // 1 where a wall is within the enc
 // Kick-up: per texel the latest shot time a running hero passed, made older at the edge of
 // the footfall and for slower heroes (MAX-blended with the trail map).
 Texture2D<float> kickMap : register(t15);
+// The floors the paths over each texel were walked on: x the highest foot height, y minus the
+// lowest (MAX-blended), so a track on a bridge deck leaves the street below untouched.
+Texture2D<float2> trailZMap : register(t16);
 // Hero trails: the recorded path segments, and the map they are stamped into each frame.
 struct TrailSeg {
     float4 a; // xyz start (world), w its shot time (s)
@@ -178,11 +181,13 @@ struct TrailVSOut {
     nointerpolation float4 seg : TEXCOORD1;  // xy start, zw end (world)
     nointerpolation float2 times : TEXCOORD2; // shot times at start and end
     nointerpolation float speed : TEXCOORD3;  // the hero's ground speed on this piece (u/s)
+    nointerpolation float2 heights : TEXCOORD4; // foot heights at its start and end
 };
 
 struct TrailStampOut {
     float4 trail : SV_Target0;
     float kick : SV_Target1;
+    float2 floors : SV_Target2;
 };
 
 TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
@@ -192,6 +197,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.seg = float4(0.0, 0.0, 0.0, 0.0);
     o.times = float2(kTrailNever, kTrailNever);
     o.speed = 0.0;
+    o.heights = float2(0.0, 0.0);
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
@@ -219,6 +225,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.seg = float4(a, b);
     o.times = float2(s.a.w, tb);
     o.speed = length(s.b.xy - s.a.xy) / max(s.b.w - s.a.w, 1e-3);
+    o.heights = float2(s.a.z, lerp(s.a.z, s.b.z, f));
     return o;
 }
 
@@ -242,6 +249,8 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     float run = saturate((i.speed - 140.0) / 220.0);
     float edgeK = saturate(d / (kTrailCore + kTrailFeather));
     o.kick = t - edgeK * edgeK * 1.2 - (1.0 - run) * 1.5;
+    float footZ = lerp(i.heights.x, i.heights.y, k);
+    o.floors = float2(footZ, -footZ);
     return o;
 }
 
@@ -303,7 +312,13 @@ float3 TrailAt(float3 p) {
     float rimFresh = (exp(-max(rimAge, 0.0) / max(trailInfo.y, 1.0)) - floorFresh) /
                      (1.0 - floorFresh);
     float rim = rimShape * saturate(rimFresh) * smoothstep(0.0, 0.08, edge) * pressed;
-    return float3(tread, churn, rim);
+    // Only on a floor a path over here was walked on (the nearest texel: the height map is
+    // drawn wider than the track, so the track's soft edge never reads an empty texel).
+    int2 zq = clamp(int2(float2(uv.x, 1.0 - uv.y) * kTrailTexels), int2(0, 0),
+                    int2(kTrailTexels - 1.0, kTrailTexels - 1.0));
+    float2 floors = trailZMap.Load(int3(zq, 0));
+    float onWalked = smoothstep(-30.0, -18.0, p.z - floors.x) * smoothstep(-30.0, -18.0, -floors.y - p.z);
+    return float3(tread, churn, rim) * onWalked;
 }
 
 bool IsSky(float d) {
@@ -1084,8 +1099,10 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
                 float ePrev = sMax * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sMax,
                                                          surfPos.z, depth);
                 float sHit = 0.0;
-                [loop] for (int st = 1; st <= 12; ++st) {
-                    float sNow = sMax * (1.0 - st / 12.0);
+                // Exports take twice the steps (styleB.z is 128 there).
+                int traceSteps = styleB.z > 100.0 ? 24 : 12;
+                [loop] for (int st = 1; st <= traceSteps; ++st) {
+                    float sNow = sMax * (1.0 - float(st) / float(traceSteps));
                     float eNow = sNow * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sNow,
                                                             surfPos.z, depth);
                     if (eNow <= 0.0) {
@@ -1459,9 +1476,19 @@ float KickAge(float2 xy) {
     return windTime.z - kickMap.SampleLevel(linearClamp, float2(uv.x, 1.0 - uv.y), 0);
 }
 
+)HLSL"
+                                  R"HLSL(
 float4 KickUp(float3 rayDir, float hitDist, float3 surfPos, int preset) {
     float4 none = float4(0.0, 0.0, 0.0, 0.0);
-    if (trailInfo.x < 1.5 || !(preset == 6 || preset == 1 || preset == 2) || hitDist > 1500.0)
+    if (!(preset == 6 || preset == 1 || preset == 2) || hitDist > 1500.0)
+        return none;
+    // Kick-up behind running heroes (with trails), and spindrift: gusts lifting thin streaks
+    // off the crests of drifts banked in the lee of walls (where the drift map piles cover)
+    // and carrying them downwind. Both are read from the shot's maps and time alone.
+    bool kickOn = trailInfo.x >= 1.5;
+    float coat = styleB.y * coatingInfo.x;
+    bool spinOn = sunDir.w > 0.5 && coat > 0.05 && netInfo.z > 0.5 && coatingInfo.z > 150.0;
+    if (!kickOn && !spinOn)
         return none;
     const float kLife = 2.0, kTop = 44.0;
     // The ground under the view: the pixel's own floor (a hero's pixel uses the map floor).
@@ -1477,39 +1504,70 @@ float4 KickUp(float3 rayDir, float hitDist, float3 surfPos, int preset) {
     float span = hitDist - tStart;
     if (span < 1.0)
         return none;
-    // Nothing to do unless a kick is fresh near this view (checked at both ends).
+    float3 near3 = gCamPos + rayDir * tStart;
     // Near the ground the air runs at about half the steady wind.
     float2 wind = windTime.xy * 0.5;
     float2 drift = wind * 0.6;
-    if (min(KickAge(hit.xy - drift), KickAge((gCamPos + rayDir * tStart).xy - drift)) > kLife &&
-        KickAge(hit.xy) > kLife)
+    float2 wdir = windTime.xy / max(coatingInfo.z, 1.0);
+    // Nothing to do unless a kick is fresh, or a lee drift lies, near this view.
+    kickOn = kickOn && (min(KickAge(hit.xy - drift), KickAge(near3.xy - drift)) <= kLife ||
+                        KickAge(hit.xy) <= kLife);
+    // The drifts as shaped so far in the shot (none when the wind's shaping is off).
+    float shaping = DriftShaping();
+    spinOn = spinOn && lerp(1.0, max(DriftAt(MapUV(hit.xy - wdir * 40.0)),
+                                     DriftAt(MapUV(near3.xy - wdir * 40.0))), shaping) > 1.12;
+    if (!kickOn && !spinOn)
         return none;
     float3 albedo = (preset == 6) ? float3(0.95, 0.96, 0.98) : float3(0.78, 0.65, 0.46);
     float3 lightCol = ambientColor.rgb * 1.25 + sunColor.rgb * 0.55;
     float trans = 1.0;
     float3 light = float3(0.0, 0.0, 0.0);
-    const int kSteps = 10;
-    float dt = span / kSteps;
-    [loop] for (int k = 0; k < kSteps; ++k) {
+    // Exports march with twice the budget (styleB.z is 128 there).
+    int steps = styleB.z > 100.0 ? 20 : 10;
+    float dt = span / steps;
+    [loop] for (int k = 0; k < steps; ++k) {
         float3 q = gCamPos + rayDir * (tStart + (k + 0.5) * dt);
         float h = q.z - ground;
-        // A puff born at age a has drifted a * wind; look back along the wind for its source.
-        float age = KickAge(q.xy - drift);
-        age = KickAge(q.xy - wind * clamp(age, 0.0, kLife));
-        if (age < 0.0 || age > kLife)
+        float dens = 0.0;
+        if (kickOn) {
+            // A puff born at age a has drifted a * wind; look back along the wind for its
+            // source.
+            float age = KickAge(q.xy - drift);
+            age = KickAge(q.xy - wind * clamp(age, 0.0, kLife));
+            if (age >= 0.0 && age <= kLife) {
+                float top = 6.0 + kTop * sqrt(age / kLife);
+                float shape = smoothstep(-2.0, 3.0, h) * (1.0 - smoothstep(top * 0.45, top, h));
+                float n = gustNoise3D.SampleLevel(linearWrap,
+                                                  float3(q.xy / 38.0, q.z / 30.0 + windTime.z * 0.9), 0);
+                dens += shape * exp(-age * 1.6) * smoothstep(0.15, 0.6, n) * 0.22 * styleA.y;
+            }
+        }
+        if (spinOn && h < 26.0) {
+            // Streaks over a lee drift (its crest a little upwind), lifted by the local gusts,
+            // low and long along the wind, racing downwind.
+            float lee = smoothstep(1.12, 1.6, lerp(1.0, DriftAt(MapUV(q.xy - wdir * 25.0)), shaping));
+            if (lee > 0.0) {
+                float gustNow = saturate((length(fluidState.SampleLevel(linearClamp, MapUV(q.xy), 0).xy) -
+                                          150.0) / 350.0);
+                float along = dot(q.xy, wdir) - windTime.z * coatingInfo.z * 0.8;
+                float2 perp = float2(-wdir.y, wdir.x);
+                float n2 = gustNoise3D.SampleLevel(
+                    linearWrap, float3(along / 110.0, dot(q.xy, perp) / 16.0, h / 12.0), 0);
+                float sheet = smoothstep(-2.0, 2.0, h) * (1.0 - smoothstep(4.0, 6.0 + 16.0 * n2, h));
+                dens += lee * gustNow * sheet * smoothstep(0.45, 0.8, n2) * 0.1 * saturate(coat * 1.5);
+            }
+        }
+        if (dens <= 0.0)
             continue;
-        float top = 6.0 + kTop * sqrt(age / kLife);
-        float shape = smoothstep(-2.0, 3.0, h) * (1.0 - smoothstep(top * 0.45, top, h));
-        float n = gustNoise3D.SampleLevel(linearWrap, float3(q.xy / 38.0, q.z / 30.0 + windTime.z * 0.9), 0);
-        float dens = shape * exp(-age * 1.6) * smoothstep(0.15, 0.6, n) * 0.22 * styleA.y;
-        float a = 1.0 - exp(-dens * dt);
-        light += trans * a * albedo * lightCol;
-        trans *= 1.0 - a;
+        float a2 = 1.0 - exp(-dens * dt);
+        light += trans * a2 * albedo * lightCol;
+        trans *= 1.0 - a2;
         if (trans < 0.02)
             break;
     }
     return float4(light, 1.0 - trans);
 }
+
 
 // The volumetric march along one view ray: rgb in-scattered light, a transmittance.
 float4 MarchRay(float2 px, float3 rayDir, float hitDist) {
@@ -1880,6 +1938,9 @@ struct EnvRendererDX11::Impl {
     ComPtr<ID3D11Texture2D> kick_tex;
     ComPtr<ID3D11RenderTargetView> kick_rtv;
     ComPtr<ID3D11ShaderResourceView> kick_srv;
+    ComPtr<ID3D11Texture2D> trailz_tex;
+    ComPtr<ID3D11RenderTargetView> trailz_rtv;
+    ComPtr<ID3D11ShaderResourceView> trailz_srv;
     ComPtr<ID3D11Buffer> trail_buf;
     ComPtr<ID3D11ShaderResourceView> trail_buf_srv;
     uint32_t trail_count = 0;
@@ -2109,6 +2170,17 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
             shutdown();
             return false;
         }
+        td.Format = DXGI_FORMAT_R32G32_FLOAT;
+        if (FAILED(device->CreateTexture2D(&td, nullptr, &impl_->trailz_tex)) ||
+            FAILED(device->CreateRenderTargetView(impl_->trailz_tex.Get(), nullptr,
+                                                  &impl_->trailz_rtv)) ||
+            FAILED(device->CreateShaderResourceView(impl_->trailz_tex.Get(), nullptr,
+                                                    &impl_->trailz_srv))) {
+            if (out_error)
+                *out_error = "failed to create the trail floor map";
+            shutdown();
+            return false;
+        }
     }
 
     impl_->initialized = true;
@@ -2301,10 +2373,14 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         const float never[4] = {filled, -filled, -(7.0f + 9.0f + 6.0f), filled};
         // No kick for a long while.
         const float settled[4] = {params.sim_time - 100.0f, 0.0f, 0.0f, 0.0f};
-        ID3D11RenderTargetView* trtv[2] = {impl_->trail_rtv.Get(), impl_->kick_rtv.Get()};
+        // No floor walked: an empty height range.
+        const float no_floor[4] = {-1.0e6f, -1.0e6f, 0.0f, 0.0f};
+        ID3D11RenderTargetView* trtv[3] = {impl_->trail_rtv.Get(), impl_->kick_rtv.Get(),
+                                           impl_->trailz_rtv.Get()};
         ctx->ClearRenderTargetView(impl_->trail_rtv.Get(), never);
         ctx->ClearRenderTargetView(impl_->kick_rtv.Get(), settled);
-        ctx->OMSetRenderTargets(2, trtv, nullptr);
+        ctx->ClearRenderTargetView(impl_->trailz_rtv.Get(), no_floor);
+        ctx->OMSetRenderTargets(3, trtv, nullptr);
         ctx->OMSetBlendState(impl_->trail_blend.Get(), nullptr, 0xFFFFFFFFu);
         ctx->OMSetDepthStencilState(impl_->ds_state.Get(), 0);
         ctx->RSSetState(impl_->rs_state.Get());
@@ -2323,15 +2399,15 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->DrawInstanced(6, impl_->trail_count, 0, 0);
         ID3D11ShaderResourceView* null_vsrvs[13] = {};
         ctx->VSSetShaderResources(0, 13, null_vsrvs);
-        ID3D11RenderTargetView* null_rtv[2] = {};
-        ctx->OMSetRenderTargets(2, null_rtv, nullptr);
+        ID3D11RenderTargetView* null_rtv[3] = {};
+        ctx->OMSetRenderTargets(3, null_rtv, nullptr);
     }
 
     D3D11_VIEWPORT vp{
         0.0f, 0.0f, static_cast<float>(camera.width), static_cast<float>(camera.height),
         0.0f, 1.0f};
     ID3D11RenderTargetView* rtvs[1] = {out_rtv};
-    ID3D11ShaderResourceView* srvs[16] = {
+    ID3D11ShaderResourceView* srvs[17] = {
         scene_color_srv,
         scene_depth_srv,
         fluid.fluid_srv(),
@@ -2348,6 +2424,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         trails ? impl_->trail_srv.Get() : nullptr,
         impl_->reach_srv.Get(),
         trails ? impl_->kick_srv.Get() : nullptr,
+        trails ? impl_->trailz_srv.Get() : nullptr,
     };
     ID3D11SamplerState* samps[2] = {impl_->linear_clamp.Get(), impl_->linear_wrap.Get()};
     ID3D11Buffer* cbs[1] = {impl_->constants.Get()};
@@ -2394,14 +2471,14 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
         srvs[10] = impl_->half_srv.Get();
     }
-    ctx->PSSetShaderResources(0, 16, srvs);
+    ctx->PSSetShaderResources(0, 17, srvs);
 
     ctx->Draw(3, 0);
 
     // Unbind SRVs/RTVs to prevent hazard warnings in callers
-    ID3D11ShaderResourceView* null_srvs[16] = {};
+    ID3D11ShaderResourceView* null_srvs[17] = {};
     ID3D11RenderTargetView* null_rtvs[1] = {};
-    ctx->PSSetShaderResources(0, 16, null_srvs);
+    ctx->PSSetShaderResources(0, 17, null_srvs);
     ctx->OMSetRenderTargets(1, null_rtvs, nullptr);
     return true;
 }
