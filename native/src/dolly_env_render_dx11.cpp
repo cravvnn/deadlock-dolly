@@ -195,7 +195,8 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
-    if (s.a.w > now || s.b.w <= s.a.w)
+    // Not yet walked, or long filled in (nothing of it can show any more).
+    if (s.a.w > now || s.b.w <= s.a.w || s.b.w < now - kTrailFade * trailInfo.y)
         return o;
     // A segment still being walked ends where the hero is at this frame's time.
     float f = saturate((now - s.a.w) / (s.b.w - s.a.w));
@@ -552,29 +553,42 @@ float HeroFootprint(float3 p, out float soleZ) {
 // Cover blown in under a shelter (a bridge, a doorway) from its open edges, mostly from the
 // side the wind comes from: strongest at the edge, gone about 110 u in, and never through a
 // wall. 0 where no open sky lies upwind within reach (or in still air).
-float Enclosure(float2 xy); // defined with the wall banks below
-float ShelterCreep(float3 p) {
+// How much of a wall lies at uv: each of the four nearest cells classified as wall or not
+// before blending (a wall never blurs into the open cells beside it), C0 across cells.
+float WallAt(float2 uv) {
+    uint w, h;
+    airMap.GetDimensions(w, h);
+    float2 g = uv * float2(w, h) - 0.5;
+    float2 b = floor(g);
+    float2 f = g - b;
+    float4 m = airMap.GatherRed(linearClamp, (b + 1.0) / float2(w, h));
+    return BlendCells(step(0.501, m), f);
+}
+
+// Cover blown in under a shelter (a bridge, a doorway) from its open edges, mostly from the
+// side the wind comes from: strongest at the edge, gone about 100 u in, never through a wall
+// (taps at most 20 u apart, so even a one-cell wall stops it), and not into a spot closed in
+// by walls on most sides (a room through its door). `enclosedHere` is that spot's Enclosure.
+float ShelterCreep(float3 p, float enclosedHere) {
     float wind = coatingInfo.z;
     if (wind < 1.0)
         return 0.0;
     float2 up = -windTime.xy / wind;
     float creep = 0.0;
     float clear = 1.0;
-    float reach[4] = {20.0, 45.0, 75.0, 110.0};
-    [unroll] for (int k = 0; k < 4; ++k) {
+    float reach[5] = {16.0, 34.0, 54.0, 76.0, 98.0};
+    [unroll] for (int k = 0; k < 5; ++k) {
         float2 quv = MapUV(p.xy + up * reach[k]);
         if (!OnMap(quv))
             break;
-        clear *= 1.0 - saturate((airMap.SampleLevel(linearClamp, quv, 0) - 0.5) * 2.0);
-        float far = reach[k] / 130.0;
+        clear *= 1.0 - smoothstep(0.15, 0.55, WallAt(quv));
+        float far = reach[k] / 115.0;
         creep = max(creep, SkyOpenAt(quv, p.z) * clear * (1.0 - far * far));
     }
-    // Not into rooms: a spot closed in by walls on most sides (a building through its door)
-    // stays bare; under a bridge, open at the sides, the cover blows in.
-    if (creep > 0.0)
-        creep *= 1.0 - smoothstep(0.3, 0.5, Enclosure(p.xy));
+    creep *= 1.0 - smoothstep(0.3, 0.5, enclosedHere);
     return creep * smoothstep(40.0, 200.0, wind);
 }
+
 
 // The wind's shaping of the drifts, growing over the shot: about a third set at the start,
 // the rest building over the first half minute or so, so cover visibly piles up against walls
@@ -768,26 +782,6 @@ bool ReflectProbe(float3 q, out float behind, out float2 uv) {
     return true;
 }
 
-// Whether the view toward q (a point just above `face`, on an object's side) passes over that
-// object's top: the frame there shows a surface lying beyond q, close by and no higher than q.
-// Then the object's top edge lies between `face` and q.
-bool OverTopAt(float3 q, float3 face) {
-    float4 clip = mul(gViewProj, float4(q, 1.0));
-    if (clip.w <= 1e-3)
-        return false;
-    float2 ndc = clip.xy / clip.w;
-    if (any(abs(ndc) > 1.0))
-        return false;
-    float2 px = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * screenInfo.xy - 0.5;
-    float d = ReadDepthPx(px);
-    if (IsSky(d))
-        return false;
-    float3 w = WorldFromPixelDepth(px, d);
-    float beyond = length(w - gCamPos) - length(q - gCamPos);
-    return beyond > 1.0 && w.z > face.z - 0.5 && w.z < q.z + 2.0 &&
-           length(w.xy - face.xy) < 24.0;
-}
-
 // What a puddle at p mirrors along r: rgb, and a = how much of it came from the frame
 // itself (0 = the sky only). With reflections allowed, the ray marches through the frame
 // (12 growing steps to about 600 u, then 4 halvings); anything it misses, leaves the
@@ -925,8 +919,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     if (heroMask >= 0.999) return baseColor;
 
     float2 uv = MapUV(surfPos.xy);
-    float open = (preset == 5) ? SkyOpenAt(uv, surfPos.z)
-                               : max(CoverOpenAt(surfPos), 0.75 * ShelterCreep(surfPos));
+    float open = (preset == 5) ? SkyOpenAt(uv, surfPos.z) : CoverOpenAt(surfPos);
     // World size of one pixel at this distance (about a 90 degree view).
     float footprint = hitDist * 2.0 * screenInfo.w;
     if (preset == 5)
@@ -947,6 +940,10 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         amount *= 1.0 + 0.35 * smoothstep(0.15, 0.4, enclosedHere) +
                   0.6 * smoothstep(0.38, 0.62, enclosedHere);
     }
+    // Blown in under shelter (only matters where the sky is mostly closed: exact to skip).
+    if (open < 0.75)
+        open = max(open, 0.75 * ShelterCreep(surfPos, bankMax > 0.0 ? enclosedHere
+                                                                    : Enclosure(surfPos.xy)));
 
     // Top cover. Nothing here reads depth differences (creases): the game's depth bands
     // with distance, and anything built on it drew rings around the camera.
@@ -975,7 +972,6 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // is blended between cells and the bank's top line varies only along the wall, so the
     // bank stays one smooth line.
     float wall = 0.0;
-    float aboveFloor = 1.0e4; // a steep pixel's height above the map floor (bank block)
     float steep = 1.0 - smoothstep(0.2, 0.5, surfNormal.z);
     if (bankMax > 0.0 && steep > 0.001) {
         // Out from the wall: the face's normal blended continuously with the map's own
@@ -996,7 +992,6 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
         // others (measured only 28 u out, the floor lay steps below and banks ended abruptly).
         float floorNear = SampleFloorBelowSmooth(float3(surfPos.xy + outDir * 6.0, surfPos.z));
         float above = surfPos.z - max(floorZ, min(floorNear, floorZ + 16.0));
-        aboveFloor = above;
         float bankDrift = lerp(1.0, DriftAt(outUV), DriftShaping());
         // About half enclosed at a straight wall's face, three quarters in an inside corner
         // (drifts pile up to about twice as high there), less round an outside corner (the
@@ -1023,39 +1018,6 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
                              smoothstep(0.5, 2.0, footDepth));
     }
 
-    // Lips: the cover on an object's top hangs a little over its edges, unevenly along them
-    // (a few units of snow, less sand). Near the camera only: from just above this side
-    // pixel, find how far below the top edge it lies (the view passes over the top there),
-    // and cover the band under the edge.
-    float lipMax = (preset == 6) ? 3.0 : (preset == 1) ? 1.25 : (preset == 2 || preset == 4) ? 0.9 : 0.0;
-    // Lips are off for now: on low raised objects (a barrel rack's platform) the edge search
-    // drew ragged, torn edges. To be redone after review.
-    float lipFade = 0.0 * (1.0 - smoothstep(1200.0, 1600.0, hitDist));
-    if (lipMax > 0.0 && steep > 0.001 && lipFade > 0.0) {
-        float lipLen = lipMax * saturate(coat * 1.6) *
-                       (0.55 + 0.9 * ValueNoise3(float3(surfPos.xy * 0.12, 7.0)));
-        float3 lipTop = surfPos + float3(0.0, 0.0, lipLen);
-        if (lipLen > 0.25 && OverTopAt(lipTop, surfPos)) {
-            // The edge's height above this pixel, to a sixteenth of the lip.
-            float lo = 0.0, hi = lipLen;
-            [unroll] for (int lb = 0; lb < 4; ++lb) {
-                float mid = 0.5 * (lo + hi);
-                if (OverTopAt(surfPos + float3(0.0, 0.0, mid), surfPos))
-                    hi = mid;
-                else
-                    lo = mid;
-            }
-            float below = 0.5 * (lo + hi);
-            // Thinning over most of its length, so its lower edge is a soft fringe rather
-            // than a line that steps with the depth image's pixels.
-            // Not on curbs and steps (the banks cover those faces): on such low faces the
-            // edge search lands on the depth image's coarse pixels and draws teeth.
-            float lip = (1.0 - smoothstep(lipLen * 0.1, lipLen, below)) * steep * lipFade *
-                        smoothstep(10.0, 16.0, aboveFloor) *
-                        SkyOpenAt(MapUV(surfPos.xy), surfPos.z + lipLen + 8.0);
-            wall = max(wall, lip);
-        }
-    }
 
     // Where heroes walked, the cover is pressed thin and darker until it fills back in.
 )HLSL"
@@ -1084,7 +1046,7 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
             float rise = dot(viewDir, surfNormal) / max(surfNormal.z, 0.3);
             float across = max(length(viewDir.xy), 1e-3);
             float sMax = min(depth * 1.35 / max(rise, 0.05), 32.0 / across);
-            float3 far3 = TrailAt(surfPos + viewDir * sMax);
+            float3 far3 = TrailAt(float3(surfPos.xy + viewDir.xy * sMax, surfPos.z));
             float3 here3 = TrailAt(surfPos);
             if (max(max(far3.x, far3.z), max(here3.x, here3.z)) > 0.001) {
                 float sPrev = sMax;
