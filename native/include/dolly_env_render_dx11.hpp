@@ -104,6 +104,11 @@ public:
     bool initialize(ID3D11Device* device, std::string* out_error = nullptr);
     void shutdown();
 
+    // Compiles the shaders (once per process; several seconds). Safe on any thread: call it
+    // on a worker before the first initialize so the render thread never waits for it.
+    static void precompile() noexcept;
+    static bool precompiled() noexcept;
+
     bool render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView* scene_color_srv,
                 ID3D11ShaderResourceView* scene_depth_srv, ID3D11RenderTargetView* out_rtv,
                 const EnvCamera& camera, const EnvRenderParams& params,

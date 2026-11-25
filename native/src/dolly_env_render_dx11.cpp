@@ -25,8 +25,12 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <vector>
 
 namespace dolly::env {
@@ -1515,7 +1519,55 @@ struct EnvRendererDX11::Impl {
 
 namespace {
 constexpr UINT kTrailTexels = 1024; // matches kTrailTexels in the shader
+
+// The shaders are compiled once per process (several seconds at full optimisation) and
+// kept; precompile() lets the runtime do that on a worker thread before weather is first
+// drawn, so the game's render thread never waits for it.
+enum EnvShader { kFullscreenVS, kCompositePS, kHalfPS, kBakeSunCS, kTrailVS, kTrailPS, kEnvShaders };
+const char* const kEnvShaderEntry[kEnvShaders][2] = {
+    {"FullscreenVS", "vs_5_0"}, {"EnvCompositePS", "ps_5_0"}, {"EnvHalfPS", "ps_5_0"},
+    {"BakeSunCS", "cs_5_0"},    {"TrailStampVS", "vs_5_0"},   {"TrailStampPS", "ps_5_0"}};
+struct EnvBlobs {
+    ComPtr<ID3DBlob> code[kEnvShaders];
+    std::string error;
+};
+std::mutex gEnvBlobsMutex;
+std::shared_ptr<const EnvBlobs> gEnvBlobs;
+std::atomic<bool> gEnvBlobsReady{false};
+
+std::shared_ptr<const EnvBlobs> env_blobs() {
+    std::lock_guard<std::mutex> lock(gEnvBlobsMutex);
+    if (gEnvBlobs)
+        return gEnvBlobs;
+    auto blobs = std::make_shared<EnvBlobs>();
+    const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    for (int i = 0; i < kEnvShaders; ++i) {
+        ComPtr<ID3DBlob> err;
+        if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
+                              nullptr, nullptr, kEnvShaderEntry[i][0], kEnvShaderEntry[i][1], flags,
+                              0, &blobs->code[i], &err)) ||
+            !blobs->code[i]) {
+            blobs->error = std::string(kEnvShaderEntry[i][0]) + " compile failed: " +
+                           (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            break;
+        }
+    }
+    gEnvBlobs = blobs;
+    gEnvBlobsReady.store(true);
+    return blobs;
+}
 } // namespace
+
+void EnvRendererDX11::precompile() noexcept {
+    try {
+        env_blobs();
+    } catch (...) {
+    }
+}
+
+bool EnvRendererDX11::precompiled() noexcept {
+    return gEnvBlobsReady.load();
+}
 
 EnvRendererDX11::EnvRendererDX11() : impl_(std::make_unique<Impl>()) {}
 EnvRendererDX11::~EnvRendererDX11() = default;
@@ -1529,48 +1581,28 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
     }
     impl_->device = device;
 
-    const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
-    ComPtr<ID3DBlob> vs_code, ps_code, err;
-    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
-                          nullptr, nullptr, "FullscreenVS", "vs_5_0", flags, 0, &vs_code, &err))) {
+    const auto blobs = env_blobs();
+    if (!blobs->error.empty()) {
         if (out_error)
-            *out_error = std::string("FullscreenVS compile failed: ") +
-                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            *out_error = blobs->error;
         shutdown();
         return false;
     }
-    err.Reset();
-    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
-                          nullptr, nullptr, "EnvCompositePS", "ps_5_0", flags, 0, &ps_code,
-                          &err))) {
-        if (out_error)
-            *out_error = std::string("EnvCompositePS compile failed: ") +
-                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
-        shutdown();
-        return false;
-    }
-
-    ComPtr<ID3DBlob> half_code;
-    err.Reset();
-    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
-                          nullptr, nullptr, "EnvHalfPS", "ps_5_0", flags, 0, &half_code, &err)) ||
-        FAILED(device->CreatePixelShader(half_code->GetBufferPointer(), half_code->GetBufferSize(),
+    ID3DBlob* vs_code = blobs->code[kFullscreenVS].Get();
+    ID3DBlob* ps_code = blobs->code[kCompositePS].Get();
+    ID3DBlob* half_code = blobs->code[kHalfPS].Get();
+    ID3DBlob* cs_code = blobs->code[kBakeSunCS].Get();
+    if (FAILED(device->CreatePixelShader(half_code->GetBufferPointer(), half_code->GetBufferSize(),
                                          nullptr, &impl_->half_ps))) {
         if (out_error)
-            *out_error = std::string("EnvHalfPS compile failed: ") +
-                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            *out_error = "CreatePixelShader failed for EnvHalfPS";
         shutdown();
         return false;
     }
-    ComPtr<ID3DBlob> cs_code;
-    err.Reset();
-    if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
-                          nullptr, nullptr, "BakeSunCS", "cs_5_0", flags, 0, &cs_code, &err)) ||
-        FAILED(device->CreateComputeShader(cs_code->GetBufferPointer(), cs_code->GetBufferSize(),
+    if (FAILED(device->CreateComputeShader(cs_code->GetBufferPointer(), cs_code->GetBufferSize(),
                                            nullptr, &impl_->bake_cs))) {
         if (out_error)
-            *out_error = std::string("BakeSunCS compile failed: ") +
-                         (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            *out_error = "CreateComputeShader failed for BakeSunCS";
         shutdown();
         return false;
     }
@@ -1659,26 +1691,14 @@ bool EnvRendererDX11::initialize(ID3D11Device* device, std::string* out_error) {
     // Hero trails: stamp shaders, a MAX blend (order-independent, so deterministic), and
     // the trail map (latest trodden shot time per texel).
     {
-        ComPtr<ID3DBlob> tvs, tps;
-        err.Reset();
-        if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
-                              nullptr, nullptr, "TrailStampVS", "vs_5_0", flags, 0, &tvs, &err)) ||
-            FAILED(device->CreateVertexShader(tvs->GetBufferPointer(), tvs->GetBufferSize(),
-                                              nullptr, &impl_->trail_vs))) {
-            if (out_error)
-                *out_error = std::string("TrailStampVS compile failed: ") +
-                             (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
-            shutdown();
-            return false;
-        }
-        err.Reset();
-        if (FAILED(D3DCompile(kEnvRenderHlsl, sizeof(kEnvRenderHlsl) - 1, "dolly_env_render.hlsl",
-                              nullptr, nullptr, "TrailStampPS", "ps_5_0", flags, 0, &tps, &err)) ||
+        ID3DBlob* tvs = blobs->code[kTrailVS].Get();
+        ID3DBlob* tps = blobs->code[kTrailPS].Get();
+        if (FAILED(device->CreateVertexShader(tvs->GetBufferPointer(), tvs->GetBufferSize(),
+                                              nullptr, &impl_->trail_vs)) ||
             FAILED(device->CreatePixelShader(tps->GetBufferPointer(), tps->GetBufferSize(),
                                              nullptr, &impl_->trail_ps))) {
             if (out_error)
-                *out_error = std::string("TrailStampPS compile failed: ") +
-                             (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+                *out_error = "CreateVertexShader/CreatePixelShader failed for the trail stamp";
             shutdown();
             return false;
         }

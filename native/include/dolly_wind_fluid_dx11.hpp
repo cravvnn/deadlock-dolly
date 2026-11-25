@@ -118,6 +118,10 @@ public:
     bool initialize(ID3D11Device* device, std::string* out_error = nullptr);
     void shutdown();
 
+    // Compiles the shaders once per process; see EnvRendererDX11::precompile.
+    static void precompile() noexcept;
+    static bool precompiled() noexcept;
+
     // Uploads baked MapGrid textures (air_map, tops, street_z, floor_z[4]) and allocates
     // ping-pong fluid/pressure/scalar compute surfaces.
     // If sim_resolution > 0 and != grid.width, fluid simulation runs at sim_resolution while

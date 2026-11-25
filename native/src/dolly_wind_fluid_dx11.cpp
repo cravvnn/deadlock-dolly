@@ -25,8 +25,12 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <vector>
 
 namespace dolly::env {
@@ -804,6 +808,50 @@ struct WindFluidSolverDX11::Impl {
 WindFluidSolverDX11::WindFluidSolverDX11() : impl_(std::make_unique<Impl>()) {}
 WindFluidSolverDX11::~WindFluidSolverDX11() = default;
 
+namespace {
+// Compiled once per process (see EnvRendererDX11::precompile).
+struct FluidBlobs {
+    ComPtr<ID3DBlob> code[kEntryCount];
+    std::string error;
+};
+std::mutex gFluidBlobsMutex;
+std::shared_ptr<const FluidBlobs> gFluidBlobs;
+std::atomic<bool> gFluidBlobsReady{false};
+
+std::shared_ptr<const FluidBlobs> fluid_blobs() {
+    std::lock_guard<std::mutex> lock(gFluidBlobsMutex);
+    if (gFluidBlobs)
+        return gFluidBlobs;
+    auto blobs = std::make_shared<FluidBlobs>();
+    const UINT compile_flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    for (int i = 0; i < kEntryCount; ++i) {
+        ComPtr<ID3DBlob> err;
+        const HRESULT hr =
+            D3DCompile(kWindFluidHlsl, sizeof(kWindFluidHlsl) - 1, "dolly_wind_fluid.hlsl", nullptr,
+                       nullptr, kEntryNames[i], "cs_5_0", compile_flags, 0, &blobs->code[i], &err);
+        if (FAILED(hr) || !blobs->code[i]) {
+            blobs->error = std::string("failed compiling CS ") + kEntryNames[i] + ": " +
+                           (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
+            break;
+        }
+    }
+    gFluidBlobs = blobs;
+    gFluidBlobsReady.store(true);
+    return blobs;
+}
+} // namespace
+
+void WindFluidSolverDX11::precompile() noexcept {
+    try {
+        fluid_blobs();
+    } catch (...) {
+    }
+}
+
+bool WindFluidSolverDX11::precompiled() noexcept {
+    return gFluidBlobsReady.load();
+}
+
 bool WindFluidSolverDX11::initialize(ID3D11Device* device, std::string* out_error) {
     shutdown();
     if (!device) {
@@ -813,20 +861,15 @@ bool WindFluidSolverDX11::initialize(ID3D11Device* device, std::string* out_erro
     }
     impl_->device = device;
 
-    const UINT compile_flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    const auto blobs = fluid_blobs();
+    if (!blobs->error.empty()) {
+        if (out_error)
+            *out_error = blobs->error;
+        shutdown();
+        return false;
+    }
     for (int i = 0; i < kEntryCount; ++i) {
-        ComPtr<ID3DBlob> code, err;
-        const HRESULT hr =
-            D3DCompile(kWindFluidHlsl, sizeof(kWindFluidHlsl) - 1, "dolly_wind_fluid.hlsl", nullptr,
-                       nullptr, kEntryNames[i], "cs_5_0", compile_flags, 0, &code, &err);
-        if (FAILED(hr) || !code) {
-            if (out_error) {
-                *out_error = std::string("failed compiling CS ") + kEntryNames[i] + ": " +
-                             (err ? static_cast<const char*>(err->GetBufferPointer()) : "unknown");
-            }
-            shutdown();
-            return false;
-        }
+        ID3DBlob* code = blobs->code[i].Get();
         if (FAILED(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(),
                                                nullptr, &impl_->shaders[i]))) {
             if (out_error)

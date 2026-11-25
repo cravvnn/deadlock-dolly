@@ -27,6 +27,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace dolly::weather_runtime {
@@ -473,6 +474,29 @@ std::shared_ptr<map_grid::MapGrid> bake_grid(std::string map) {
     throw std::runtime_error(error.empty() ? "no map VPK found" : error);
 }
 
+// The weather shaders take several seconds to compile. They are compiled once, on a worker
+// thread started as soon as the editor sends weather, so the game's render thread never
+// stalls for them (a stall there ran past the replay warm-up's time limit on the first Play).
+std::once_flag gShaderPrep;
+std::thread gShaderThread;
+
+void start_shader_prep() noexcept {
+    try {
+        std::call_once(gShaderPrep, [] {
+            gShaderThread = std::thread([] {
+                env::EnvRendererDX11::precompile();
+                env::WindFluidSolverDX11::precompile();
+            });
+            gShaderThread.detach();
+        });
+    } catch (...) {
+    }
+}
+
+bool shaders_ready() noexcept {
+    return env::EnvRendererDX11::precompiled() && env::WindFluidSolverDX11::precompiled();
+}
+
 bool ensure_gpu(ID3D11Device* device) {
     if (gGpu && gGpu->device == device)
         return !gGpu->failed;
@@ -678,6 +702,7 @@ void poll_editor_block(const unsigned char* memory) noexcept {
     if (accept_seqlocked(
             memory + weather::kWireOffset, gBlock,
             [](const weather::Wire& w) { return weather::decode(w).has_value(); }, wire)) {
+        start_shader_prep(); // compile ahead of the first weather frame
         char text[96];
         std::snprintf(text, sizeof(text), "weather: block %u received (preset %u, map '%s')",
                       wire.sequence, wire.preset, weather::map_name(wire).c_str());
@@ -834,6 +859,18 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
         if (time < 0.0) {
             set_status("weather: waiting for the replay clock");
             return;
+        }
+        if (!shaders_ready()) {
+            // An export never skips a frame's weather: it waits for the shaders instead.
+            const auto state = video::status().state;
+            if (state == video::State::starting || state == video::State::recording) {
+                env::EnvRendererDX11::precompile();
+                env::WindFluidSolverDX11::precompile();
+            } else {
+                start_shader_prep();
+                set_status("weather: preparing shaders");
+                return;
+            }
         }
         if (!ensure_gpu(device) || !ensure_grid(weather::map_name(*block)))
             return;

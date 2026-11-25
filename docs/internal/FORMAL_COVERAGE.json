@@ -7687,7 +7687,7 @@
     },
     {
       "path": "native/include/dolly_env_render_dx11.hpp",
-      "sha256": "98cc185085f8835bb9c806bac96a91859a2bd7b7d5a8b338b0a554a561383817",
+      "sha256": "c5d0bde4ad740a92d26d4e4a4faf64430bd0b40e1aad11dc618bea2329829964",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8837,7 +8837,7 @@
     },
     {
       "path": "native/include/dolly_wind_fluid_dx11.hpp",
-      "sha256": "980ec4f21116278fe254e5683852a0615d4dae4dac95c92724e3e46a25f452cb",
+      "sha256": "2f5dbd2a9c570342f0d134b5ec6c5d9ef9e5be1f330b01c1167da281056ac579",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9412,7 +9412,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "a54275cfd3f9398b00c3ccd6f90d9faa617ca4ad8f7a0894990bce279586f103",
+      "sha256": "99e4b9e5789a1943315f40062e471e732055368333c03d34990b9bcd96904a05",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10838,7 +10838,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "3d3f7e82fa5d17bd115e8e53ef1a6dce4a0504be0b040afdcc03c73bba6a8bb2",
+      "sha256": "7b2c689d5344e30a706630ffaff43eed4ff4205e4e934fde00937f21b9843783",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10936,7 +10936,7 @@
     },
     {
       "path": "native/src/dolly_wind_fluid_dx11.cpp",
-      "sha256": "a80440b7eafa68ea9a3d03f32a9b4eac39d56e55f7f65e6bc641c2976e428f0d",
+      "sha256": "c183f82c650f97fdf9f7d3db678a40bbcf155d05fee3658ff64b64da92f59bfb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
