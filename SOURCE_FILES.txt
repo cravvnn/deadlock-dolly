@@ -1445,3 +1445,4 @@ third_party/cvar_unlocker/unlocker-build-6866.patch
 docs/RELEASE_NOTES_0.7.56-beta.md
 docs/RELEASE_NOTES_0.7.57-beta.md
 docs/RELEASE_NOTES_0.7.58-beta.md
+docs/RELEASE_NOTES_0.7.59-beta.md

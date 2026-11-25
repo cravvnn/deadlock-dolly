@@ -762,6 +762,36 @@ class ReplaySortSetting(unittest.TestCase):
             with self.assertRaises(ValueError):
                 save_replay_sort("biggest", library)
 
+    def test_settings_from_0758_are_rewritten_for_every_version(self):
+        # 0.7.58 saved the sort inside settings.json as version 12. Reading it
+        # keeps every preference; the first launch moves the sort to
+        # library.json and saves settings.json back as version 11.
+        from dolly.gui import DollyApp
+        from dolly.settings import load_replay_sort
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"APPDATA": temp}):
+            folder = Path(temp) / "DeadlockDolly"
+            folder.mkdir()
+            path = folder / "settings.json"
+            save_settings(AppSettings(game_path="B:/Deadlock/deadlock.exe", mouse_sensitivity=0.3), path)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw.update(version=12, replay_sort="size_desc")
+            path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+            loaded = load_settings(path)
+            self.assertEqual((loaded.legacy_replay_sort, loaded.game_path, loaded.mouse_sensitivity),
+                             ("size_desc", "B:/Deadlock/deadlock.exe", 0.3))
+            app = SimpleNamespace(_enqueue_log=Mock())
+            cleaned = DollyApp._downgrade_legacy_settings(app, loaded)
+            self.assertIsNone(cleaned.legacy_replay_sort)
+            self.assertEqual(load_replay_sort(folder / "library.json"), "size_desc")
+            again = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(again["version"], 11)
+            self.assertNotIn("replay_sort", again)
+            self.assertEqual(load_settings(path).game_path, "B:/Deadlock/deadlock.exe")
+            # A sort already saved in library.json is never overwritten.
+            path.write_text(json.dumps(raw, indent=2).replace('"size_desc"', '"name_asc"'), encoding="utf-8")
+            DollyApp._downgrade_legacy_settings(app, load_settings(path))
+            self.assertEqual(load_replay_sort(folder / "library.json"), "size_desc")
+
     def test_settings_file_stays_readable_by_older_dolly(self):
         # Every Dolly shares one settings.json, and 0.7.57 and older refuse a
         # newer version or any field they do not know. New preferences must

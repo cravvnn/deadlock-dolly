@@ -5043,6 +5043,8 @@ class DollyApp:
     def _load_app_settings(self):
         try:
             settings = load_settings()
+            if settings.legacy_replay_sort is not None:
+                settings = self._downgrade_legacy_settings(settings)
             for warning in settings.migration_warnings:
                 self._enqueue_log(warning)
             if settings.migration_warnings:
@@ -5055,6 +5057,24 @@ class DollyApp:
                 "Dolly preferences", "Dolly could not load your preferences, so this launch uses defaults (capture: Ctrl+Alt+K).\n"
                 "Open Controls to review and save your shortcuts.\n\n" + detail))
             return AppSettings()
+
+    def _downgrade_legacy_settings(self, settings):
+        """Move 0.7.58's replay sort to library.json; save settings.json as 11.
+
+        Every Dolly copy shares settings.json, and older ones refuse version 12.
+        A sort already saved in library.json wins. Failures only log: the
+        settings still load, and the next launch tries again.
+        """
+        from dolly.settings import library_state_path, save_replay_sort
+        cleaned = replace(settings, legacy_replay_sort=None)
+        try:
+            if not library_state_path().exists():
+                save_replay_sort(settings.legacy_replay_sort)
+            save_settings(cleaned)
+            self._enqueue_log("Saved preferences in the format every Dolly version can read.")
+        except (ValueError, OSError) as exc:
+            self._enqueue_log(f"Could not rewrite preferences for older Dolly versions: {exc}")
+        return cleaned
 
     def _capture_binding_label(self):
         if self.app_settings.action_bindings.get("capture") is None:
