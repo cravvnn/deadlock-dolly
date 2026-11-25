@@ -248,7 +248,7 @@ class CameraPage:
             on_tangent_change=commands.change_camera_tangent, on_preview=commands.preview_camera_curve,
             context=commands.curve_context, fixed_lane_height=LANE_HEIGHT, fill_lanes=True,
             tool_parent=False,   # Kara removed "Update original" and "Frame all" from this card
-            modes=(("Interpolation", state.interpolation, ("smooth", "spline", "linear"), commands.apply_options),
+            modes=(("Interpolation", state.interpolation, ("smooth", "spline", "linear", "track"), commands.apply_options),
                    ("Framing", state.lens_interpolation, ("smooth", "linear", "step"), commands.apply_options)),
             on_legend=lambda text: card.info.configure(text=text))
         # A slot of the workspace's own height (every graph at LANE_HEIGHT); the bento's spare

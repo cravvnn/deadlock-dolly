@@ -11,7 +11,9 @@ COUNTERS = ("raw_mouse_packets", "relative_mouse_packets", "accepted_motion_pack
 FLAGS = (("raw_registration_known", 1), ("raw_mouse_registered", 2),
          ("target_is_game_window", 4), ("ready", 8), ("manual_active", 16),
          ("focused", 32), ("flight_owner", 64), ("cursor_clipped", 128),
-         ("no_legacy", 256))
+         ("no_legacy", 256), ("game_menu", 512), ("game_menu_cursor_showing", 1024),
+         ("game_menu_cursor_seen", 2048), ("game_menu_game_clip", 4096),
+         ("game_menu_auto_returned", 8192))
 
 
 def unpack(data: bytes) -> dict | None:
@@ -21,7 +23,7 @@ def unpack(data: bytes) -> dict | None:
         return None  # Older ABI 3 helpers do not publish this optional block.
     values = WIRE.unpack(data)
     magic, sequence, abi, flags, registration_flags = values[:5]
-    if magic != MAGIC or sequence & 1 or abi != 1 or flags & ~511:
+    if magic != MAGIC or sequence & 1 or abi != 1 or flags & ~16383:
         raise ValueError("Unrecognized input diagnostic snapshot")
     result = dict(zip(COUNTERS, values[5:12]))
     result.update(sequence=sequence, abi=abi, flags=flags,

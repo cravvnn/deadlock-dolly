@@ -744,3 +744,23 @@ set_target_properties(native-path-runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_REL
             self.assertEqual(download.call_args.args[:2], (release, self.root))
             manager.poll()
             launch.assert_called_once()
+
+
+class ReplaySortSetting(unittest.TestCase):
+    def test_library_sort_defaults_to_newest_and_is_remembered(self):
+        from dolly.replays import replay_sort_id, replay_sort_label
+        self.assertEqual(AppSettings().replay_sort, "modified_desc")
+        self.assertEqual(replay_sort_label("modified_desc"), "Modified \u2193")
+        self.assertEqual(replay_sort_id(replay_sort_label("size_asc")), "size_asc")
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "settings.json"
+            save_settings(AppSettings(replay_sort="name_asc"), path)
+            self.assertEqual(load_settings(path).replay_sort, "name_asc")
+            # Version 11 files have no saved sort and get the newest-first default.
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["version"] = 11
+            del raw["replay_sort"]
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            self.assertEqual(load_settings(path).replay_sort, "modified_desc")
+        with self.assertRaises(ValueError):
+            AppSettings(replay_sort="biggest")

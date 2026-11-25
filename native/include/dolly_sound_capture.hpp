@@ -33,6 +33,12 @@ inline constexpr MovieAudioLayout movie_audio_layout(bool season2, bool build686
 inline constexpr std::uintptr_t movie_framerate_getter_rva(bool build6866 = false) noexcept {
     return build6866 ? 0xfcab0 : 0xfc7c0;
 }
+// Reviewed read-only movie clock accessors behind the fixed-step sample map:
+// the audio-stream time getter and the movie frame getter (mov rax,[rcx+0xd8]; ret).
+struct MovieReaderRvas { std::uintptr_t time, frame; };
+inline constexpr MovieReaderRvas movie_reader_rvas(bool build6866 = false) noexcept {
+    return build6866 ? MovieReaderRvas{0xfe8ac, 0xfcaa0} : MovieReaderRvas{0xfe5bc, 0xfc7b0};
+}
 bool movie_audio_install(void* engine_module, void* sound_module = nullptr,
                          bool exact_pcm_pair = false, bool season2 = false, bool build6861 = false,
                          bool build6864 = false, bool build6866 = false) noexcept;

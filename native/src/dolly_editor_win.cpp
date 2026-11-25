@@ -71,6 +71,12 @@ std::atomic<std::uint64_t> gLegacyMouseMoves{0}, gConsumedMotionFrames{0};
 std::atomic<std::uint64_t> gCursorSyncs{0}, gCursorFailures{0}, gCursorRefresh{1};
 std::atomic<DWORD> gLastCursorError{0};
 std::atomic<bool> gCursorClipped{false};
+// Deadlock's own Escape menu, opened from the no-UI camera. While it is open
+// the game owns input and the cursor; the camera holds still. gEscapePass
+// marks the current Escape press as handed to the game (down and up).
+std::atomic<bool> gGameMenu{false}, gEscapePass{false};
+std::atomic<bool> gGameMenuCursorShowing{false}, gGameMenuCursorSeen{false}, gGameMenuGameClip{false};
+std::atomic<std::uint64_t> gGameMenuAutoReturns{0};
 bool gRawRegistrationKnown = false, gRawMouseRegistered = false;
 DWORD gRawRegistrationFlags = 0;
 HWND gRawRegistrationTarget = nullptr;
@@ -107,6 +113,8 @@ bool configured() noexcept {
 }
 bool owns_input() noexcept {
     if (!configured() || !focused() || reshade_overlay_open())
+        return false;
+    if (gGameMenu.load())
         return false;
     auto owner = gOwner.load();
     return (owner == EditorOwner::Flight || owner == EditorOwner::Panel) && (gViewFlags.load() & 1);
@@ -147,7 +155,7 @@ bool cursor_mode(EditorOwner owner) noexcept {
     if (gClipCursor) {
         ++gCursorSyncs;
         if (window && focused() && configured() && owner == EditorOwner::Flight &&
-            (gViewFlags.load() & 1)) {
+            !gGameMenu.load() && (gViewFlags.load() & 1)) {
             RECT r{};
             POINT origin{};
             applied = GetClientRect(window, &r) && ClientToScreen(window, &origin);
@@ -336,6 +344,65 @@ void editor_request_level_view() noexcept {
         return;
     gLevelViewRequest.store(true, std::memory_order_release);
 }
+// Escape from the no-UI camera opens Deadlock's own menu: the press itself
+// reaches the game, which then owns input and the cursor until Escape again
+// (or the menu releasing the cursor) returns to the same camera.
+// Deadlock shows a free cursor while its menu is open and hides it again when
+// the menu closes, including a mouse click on Resume. Once the cursor has been
+// seen showing, a quarter second of hidden cursor returns to the camera.
+void watch_game_menu() noexcept {
+    static ULONGLONG hidden_since = 0;
+    if (!gGameMenu.load() || !focused()) {
+        hidden_since = 0;
+        return;
+    }
+    CURSORINFO info{};
+    info.cbSize = sizeof(info);
+    const bool showing = GetCursorInfo(&info) && (info.flags & CURSOR_SHOWING);
+    gGameMenuCursorShowing = showing;
+    if (showing) {
+        gGameMenuCursorSeen = true;
+        hidden_since = 0;
+        return;
+    }
+    if (!gGameMenuCursorSeen.load())
+        return;
+    const auto now = GetTickCount64();
+    if (!hidden_since) {
+        hidden_since = now;
+    } else if (now - hidden_since >= 250) {
+        hidden_since = 0;
+        if (gGameMenu.exchange(false)) {
+            ++gGameMenuAutoReturns;
+            editor_reset_motion();
+            ++gCursorRefresh;
+            cursor_mode(gOwner.load());
+        }
+    }
+}
+bool game_menu_allowed() noexcept {
+    if (gOwner.load() != EditorOwner::Flight || gTextInput.load() || reshade_overlay_open())
+        return false;
+    const auto state = editor_snapshot();
+    return state.ready && !state.playing && !state.busy &&
+           !editor_recording_locks_cameras(editor_recording_status().state);
+}
+void enter_game_menu() noexcept {
+    gGameMenuCursorSeen = false;
+    gGameMenuCursorShowing = false;
+    gGameMenuGameClip = false;
+    gGameMenu = true;
+    editor_reset_motion();
+    ++gCursorRefresh;
+    cursor_mode(gOwner.load());
+}
+void leave_game_menu() noexcept {
+    if (!gGameMenu.exchange(false))
+        return;
+    editor_reset_motion();
+    ++gCursorRefresh;
+    cursor_mode(gOwner.load());
+}
 void dispatch_key_press(unsigned vk) noexcept {
     // Raw-input and window-message callers check foreground ownership before
     // recording a key. Shortcuts run only on that key's fresh down edge, never
@@ -353,6 +420,28 @@ void dispatch_key_press(unsigned vk) noexcept {
             if (open)
                 editor_set_owner(EditorOwner::Console);
         }
+        return;
+    }
+    // Deadlock's menu is open: this Escape closes it in the game and returns to
+    // the camera. Only F8/F9 remain Dolly shortcuts while the menu is up.
+    if (gGameMenu.load()) {
+        if (vk == VK_ESCAPE) {
+            leave_game_menu();
+            return;
+        }
+        auto c = std::atomic_load(&gConfig);
+        if (!c)
+            return;
+        for (unsigned i : {9u, 10u})
+            if (c->bindings[i].vk == vk && binding_down(c->bindings[i])) {
+                leave_game_menu();
+                dispatch(static_cast<EditorAction>(i));
+                return;
+            }
+        return;
+    }
+    if (vk == VK_ESCAPE && game_menu_allowed()) {
+        enter_game_menu();
         return;
     }
     // Escape closes an open picker first, then rail drawers. With neither open
@@ -465,8 +554,20 @@ void key_event(unsigned vk, bool down) noexcept {
         gKeys[VK_MENU] = down || gKeys[vk == VK_LMENU ? VK_RMENU : VK_LMENU].load();
     if (vk == VK_LSHIFT || vk == VK_RSHIFT)
         gKeys[VK_SHIFT] = down || gKeys[vk == VK_LSHIFT ? VK_RSHIFT : VK_LSHIFT].load();
-    if (down && !was_down && !gBlocked[vk].load())
+    if (vk == VK_ESCAPE && down && !was_down)
+        gEscapePass = false;
+    if (down && !was_down && !gBlocked[vk].load()) {
+        const bool menu_before = gGameMenu.load();
         dispatch_key_press(vk);
+        // A press that opens or closes Deadlock's menu belongs to the game:
+        // its down and up messages (raw and legacy copies) pass through.
+        if (vk == VK_ESCAPE)
+            gEscapePass = menu_before || gGameMenu.load();
+    }
+}
+// True for every message of an Escape press handed to Deadlock's own menu.
+bool escape_for_game(unsigned vk) noexcept {
+    return vk == VK_ESCAPE && gEscapePass.load();
 }
 void framing_wheel(long units) noexcept {
     auto c = std::atomic_load(&gConfig);
@@ -490,7 +591,7 @@ void process_raw(RAWINPUT* raw, bool suppress) noexcept {
             ++gRawMousePackets;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE))
                 ++gRelativeMousePackets;
-            if (gOwner.load() == EditorOwner::Flight && !reshade_overlay_open() &&
+            if (gOwner.load() == EditorOwner::Flight && !gGameMenu.load() && !reshade_overlay_open() &&
                 !(m.usFlags & MOUSE_MOVE_ABSOLUTE) && (gViewFlags.load() & 4)) {
                 // Never accumulate motion while blocked by console/UI or stalled frames.
                 auto clamp = [](LONG value) { return std::clamp<LONG>(value, -2000, 2000); };
@@ -551,7 +652,7 @@ void process_raw(RAWINPUT* raw, bool suppress) noexcept {
                                 (k.Flags & RI_KEY_E0) != 0);
             key_event(k.VKey, !(k.Flags & RI_KEY_BREAK));
         }
-        if (suppress || reserved) {
+        if ((suppress || reserved) && !escape_for_game(k.VKey)) {
             k.MakeCode = 0;
             k.VKey = 0;
             k.Flags = RI_KEY_BREAK;
@@ -598,6 +699,8 @@ BOOL WINAPI set_cursor_pos_hook(int x, int y) {
 BOOL WINAPI clip_cursor_hook(const RECT* rect) {
     if (owns_input() && gOwner.load() == EditorOwner::Panel)
         return gClipCursor(nullptr);
+    if (rect && gGameMenu.load())
+        gGameMenuGameClip = true;  // diagnostic: the game recaptured the mouse
     return gClipCursor(rect);
 }
 } // namespace
@@ -1280,6 +1383,7 @@ void editor_set_owner(EditorOwner owner) noexcept {
         return;
     if (gOwner.exchange(owner) == owner)
         return;
+    gGameMenu = false;  // any owner change ends the game-menu handoff
     ++gCursorRefresh;
     editor_reset_motion();
     cursor_mode(owner);
@@ -1510,6 +1614,8 @@ bool editor_window_message(HWND window, UINT message, WPARAM wparam, LPARAM lpar
         bool reserved = reserved_input(unsigned(wparam));
         bool down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
         key_event(unsigned(wparam), down);
+        if (escape_for_game(unsigned(wparam)))
+            return false;
         if (reserved)
             return true;
         if (before)
@@ -1896,6 +2002,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
             reshade_request_overlay(false);
         gReShadeDeferred = 0;
     }
+    watch_game_menu();
     reconcile_cursor_mode();
     unblock_released();
     static ULONGLONG last_registration_check = 0;
@@ -1935,7 +2042,10 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                   (gRawMouseRegistered && gRawRegistrationTarget == gWindow.load() ? 4u : 0u) |
                   (state.ready ? 8u : 0u) | (state.manual_active ? 16u : 0u) |
                   (state.focused ? 32u : 0u) | (state.owner == EditorOwner::Flight ? 64u : 0u) |
-                  (gCursorClipped.load() ? 128u : 0u) | (gNoLegacyMouse.load() ? 256u : 0u);
+                  (gCursorClipped.load() ? 128u : 0u) | (gNoLegacyMouse.load() ? 256u : 0u) |
+                  (gGameMenu.load() ? 512u : 0u) | (gGameMenuCursorShowing.load() ? 1024u : 0u) |
+                  (gGameMenuCursorSeen.load() ? 2048u : 0u) | (gGameMenuGameClip.load() ? 4096u : 0u) |
+                  (gGameMenuAutoReturns.load() ? 8192u : 0u);
     input.registration_flags = gRawRegistrationFlags;
     input.raw_mouse_packets = gRawMousePackets.load();
     input.relative_mouse_packets = gRelativeMousePackets.load();

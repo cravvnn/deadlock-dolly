@@ -25,7 +25,24 @@ REPLAY_SORTS = {
     "Modified ↑": ("modified_ns", False),
     "Modified ↓": ("modified_ns", True),
 }
-DEFAULT_REPLAY_SORT = "Name ↑"
+# Stable names stored in settings; the labels above are display text only.
+REPLAY_SORT_IDS = {
+    "name_asc": "Name ↑", "name_desc": "Name ↓",
+    "size_asc": "Size ↑", "size_desc": "Size ↓",
+    "modified_asc": "Modified ↑", "modified_desc": "Modified ↓",
+}
+DEFAULT_REPLAY_SORT_ID = "modified_desc"
+DEFAULT_REPLAY_SORT = REPLAY_SORT_IDS[DEFAULT_REPLAY_SORT_ID]
+
+
+def replay_sort_label(sort_id):
+    """Display label for a saved sort name, or the default for unknown names."""
+    return REPLAY_SORT_IDS.get(sort_id, DEFAULT_REPLAY_SORT)
+
+
+def replay_sort_id(label):
+    """Saved name for a display label, or None for anything else."""
+    return next((key for key, value in REPLAY_SORT_IDS.items() if value == label), None)
 
 
 def sorted_replay_indices(entries, sort=DEFAULT_REPLAY_SORT):

@@ -237,18 +237,25 @@ int main(int argc, char** argv) {
         auto* image = static_cast<unsigned char*>(
             VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
         check(image != nullptr);
-        const auto layout = dolly::movie_audio_layout(false);
+        // Build 6866 moved both reader accessors; older builds keep the first pair.
+        check(dolly::movie_reader_rvas(false).time == 0xfe5bc &&
+              dolly::movie_reader_rvas(false).frame == 0xfc7b0);
+        check(dolly::movie_reader_rvas(true).time == 0xfe8ac &&
+              dolly::movie_reader_rvas(true).frame == 0xfcaa0);
+        const auto layout = dolly::movie_audio_layout(false, false, false, true);
+        const auto reader = dolly::movie_reader_rvas(true);
+        const auto framerate = dolly::movie_framerate_getter_rva(true);
         const unsigned char getter[] = {0xF3, 0x0F, 0x10, 0x81, 0xF4, 0x00, 0x00, 0x00, 0xC3};
         const unsigned char frame_getter[] = {0x48, 0x8b, 0x81, 0xd8, 0, 0, 0, 0xc3};
-        std::memcpy(image + 0xfc7c0, getter, sizeof(getter));
-        std::memcpy(image + 0xfc7b0, frame_getter, sizeof(frame_getter));
+        std::memcpy(image + framerate, getter, sizeof(getter));
+        std::memcpy(image + reader.frame, frame_getter, sizeof(frame_getter));
         const auto pointer = [&](std::size_t at, std::size_t to) {
             void* value = image + to;
             std::memcpy(image + at, &value, sizeof(value));
         };
-        pointer(layout.table + 0x38, 0xfc7c0);
-        pointer(layout.table + 6 * 8, 0xfc7b0);
-        pointer(layout.audio_table, 0xfe5bc);
+        pointer(layout.table + 0x38, framerate);
+        pointer(layout.table + 6 * 8, reader.frame);
+        pointer(layout.audio_table, reader.time);
         wchar_t temp[MAX_PATH]{};
         check(GetTempPathW(MAX_PATH, temp) != 0);
         const std::wstring marker = std::wstring(temp) + L"dolly_movie_audio_" +
@@ -257,10 +264,11 @@ int main(int argc, char** argv) {
             std::ifstream in(marker, std::ios::binary);
             return std::string(std::istreambuf_iterator<char>(in), {});
         };
-        check(dolly::movie_audio_install(image) && dolly::movie_audio_available());
+        check(dolly::movie_audio_install(image, nullptr, false, false, false, false, true) &&
+              dolly::movie_audio_available());
         check(marker_text().empty());
         int sound = 0;
-        const bool later = dolly::movie_audio_install(image, &sound, true);
+        const bool later = dolly::movie_audio_install(image, &sound, true, false, false, false, true);
         const auto text = marker_text();
         DeleteFileW(marker.c_str());
         if (text != "pcm-sample-map-v1")

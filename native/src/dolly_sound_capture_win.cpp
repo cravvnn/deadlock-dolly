@@ -607,9 +607,10 @@ bool movie_audio_install(void* engine_module, void* sound_module, bool exact_pcm
         const auto time_slot = reinterpret_cast<void**>(base + layout.audio_table);
         const auto frame_slot = reinterpret_cast<void**>(base + layout.table + 6 * 8);
         constexpr unsigned char frame_getter[] = {0x48, 0x8b, 0x81, 0xd8, 0, 0, 0, 0xc3};
-        if (*time_slot != reinterpret_cast<void*>(base + 0xfe5bc) ||
-            *frame_slot != reinterpret_cast<void*>(base + 0xfc7b0) ||
-            std::memcmp(reinterpret_cast<void*>(base + 0xfc7b0), frame_getter,
+        const auto reader = movie_reader_rvas(build6866);
+        if (*time_slot != reinterpret_cast<void*>(base + reader.time) ||
+            *frame_slot != reinterpret_cast<void*>(base + reader.frame) ||
+            std::memcmp(reinterpret_cast<void*>(base + reader.frame), frame_getter,
                         sizeof(frame_getter)))
             return installed_before;
         movie_reader_base.store(base, std::memory_order_release);

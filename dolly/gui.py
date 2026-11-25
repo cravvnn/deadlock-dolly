@@ -58,7 +58,7 @@ from dolly.launcher import discover_game, recover_pending
 from dolly.memory_watch import PausedMemoryWatch
 from dolly.navigation import CameraMotion
 from dolly.path import (AttachKey, CONFETTI_SPAWN_HEIGHT_DEFAULT, CURVE_CHANNELS,
-                        CvarTrack, Keyframe, PROJECT_NAME_LIMIT, Project, TrackKey,
+                        CvarTrack, Keyframe, NEW_SHOT_INTERPOLATION, PROJECT_NAME_LIMIT, Project, TrackKey,
                         parse_cvar_value, format_cvar_value, channel_value)
 from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.shot_history import ShotHistory
@@ -543,7 +543,7 @@ class DollyApp:
         self.dirty = False
         self.file_path: Path | None = None
         self.project = Project(name="Untitled shot", keyframes=[], tracks=[],
-                               interpolation="smooth")
+                               interpolation=NEW_SHOT_INTERPOLATION)
         self.shot_history = ShotHistory(self.project)
         self.controller = Controller(log_callback=self._enqueue_log)
         self.video_export = VideoExport(self.controller)
@@ -559,7 +559,7 @@ class DollyApp:
         self.busy_text = tk.StringVar(value="")
         self.start_tick = tk.StringVar(value="0")
         self.tick_rate = tk.StringVar(value="64")
-        self.interpolation = tk.StringVar(value="smooth")
+        self.interpolation = tk.StringVar(value=NEW_SHOT_INTERPOLATION)
         self.rotation = tk.StringVar(value="shortest")
         self.standard_aspect = tk.StringVar(value="16:9")
         self.lens_interpolation = tk.StringVar(value="smooth")
@@ -661,8 +661,9 @@ class DollyApp:
         self.editor_move_speed = tk.StringVar(value=_number(self.app_settings.movement_speed))
         self.editor_sensitivity = tk.StringVar(value=_number(self.app_settings.mouse_sensitivity))
         self.replay_search = tk.StringVar()
-        from dolly.replays import DEFAULT_REPLAY_SORT
-        self.replay_sort = tk.StringVar(value=DEFAULT_REPLAY_SORT)
+        from dolly.replays import replay_sort_label
+        self.replay_sort = tk.StringVar(value=replay_sort_label(self.app_settings.replay_sort))
+        self.replay_sort.trace_add("write", lambda *_: self._save_replay_sort())
         self.replay_summary = tk.StringVar(value="Choose your replay folder.")
         self.startup_progress = tk.StringVar(value="Ready when you are.")
         self.startup_cancel = None
@@ -1476,6 +1477,17 @@ class DollyApp:
             save_settings(settings)
             self.app_settings = settings
         return settings
+
+    def _save_replay_sort(self):
+        from dolly.replays import replay_sort_id
+        sort_id = replay_sort_id(self.replay_sort.get())
+        if sort_id is None or sort_id == self.app_settings.replay_sort:
+            return
+        try:
+            self._commit_settings(replay_sort=sort_id)
+        except Exception as exc:
+            # Sorting still works for this session; only remembering it failed.
+            LOG.warning("Could not save the replay sort: %s", exc)
 
     def _save_discord_preference(self):
         # Sharing controls remain available during playback and exports.
@@ -3565,7 +3577,7 @@ class DollyApp:
         ttk.Label(timing_card, text="Shot Timing & Movement", style="CardTitle.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=self._px((0, 15)))
         for index, (label, variable, values) in enumerate((("Start replay tick", self.start_tick, None), ("Ticks / second", self.tick_rate, None),
-                                                         ("Position curve", self.interpolation, ("smooth", "spline", "linear")),
+                                                         ("Position curve", self.interpolation, ("smooth", "spline", "linear", "track")),
                                                          ("Rotation", self.rotation, ("shortest", "unwrapped")))):
             cell = ttk.Frame(timing_card, style="Card.TFrame")
             cell.grid(row=1 + index // 2, column=index % 2, sticky="ew", padx=self._px((0, 20 if index % 2 == 0 else 0)), pady=self._px((0, 10)))

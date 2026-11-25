@@ -39,10 +39,11 @@ void change_number(std::vector<unsigned char>& data, std::size_t offset, double 
         data.at(offset + i) = encoded[i];
 }
 std::vector<unsigned char> packet(unsigned cameras = 3, unsigned samples = 2048,
-                                  unsigned markers = 64, bool step = false, bool lens = false) {
+                                  unsigned markers = 64, bool step = false, bool lens = false,
+                                  unsigned split = 1) {
     std::vector<unsigned char> blob{'D', 'L', 'Y', 'P', 'A', 'T', 'H', 0};
     u32(blob, lens ? 2 : 1);
-    u32(blob, cameras - 1);
+    u32(blob, (cameras - 1) * split);
     u32(blob, lens ? 8 : 7);
     u32(blob, 0);
     number(blob, cameras - 1);
@@ -59,14 +60,18 @@ std::vector<unsigned char> packet(unsigned cameras = 3, unsigned samples = 2048,
         number(blob, v);
     if (lens)
         number(blob, .9);
-    for (unsigned i = 0; i + 1 < cameras; ++i) {
-        number(blob, i);
-        number(blob, i + 1);
+    for (unsigned s = 0; s < (cameras - 1) * split; ++s) {
+        // Track-style paths split one camera interval into several segments.
+        const unsigned i = s / split, part = s % split;
+        const double a = double(part) / split, b = double(part + 1) / split;
+        number(blob, i + a);
+        number(blob, i + b);
         for (unsigned c = 0; c < 7; ++c) {
+            const double from = pose(i)[c], to = pose(i + 1)[c];
             u32(blob, step ? 0 : 1);
             u32(blob, c >= 3 ? 1 : 0);
-            number(blob, pose(i)[c]);
-            number(blob, pose(i + 1)[c]);
+            number(blob, step ? from : from + (to - from) * a);
+            number(blob, step ? (part + 1 == split ? to : from) : from + (to - from) * b);
             number(blob, 0);
             number(blob, 0);
         }
@@ -383,7 +388,32 @@ void test_world_camera_markers() {
                 "Zoom must scale world marker width and height equally");
     }
 }
+void test_split_camera_intervals() {
+    // Track interpolation emits several path segments per camera interval.
+    for (bool step : {false, true}) {
+        auto bytes = packet(3, 2048, 64, step, false, 3);
+        dolly::VisualizationPath path;
+        std::string error;
+        require(path.load(bytes.data(), bytes.size(), error), "Split-interval viewer packet rejected");
+        require(path.cameras().size() == 3 && path.cameras()[1].pose[0] == 110 &&
+                    path.points().front()[0] == 100 && path.points().back()[0] == 120,
+                "Split-interval cameras or guide changed");
+        require(bool(path.breaks()[32]) == step && bool(path.breaks()[64]) == step,
+                "Split-interval step continuity changed");
+    }
+    // A camera time that is not a segment boundary is still refused.
+    auto bytes = packet(3, 2048, 64, false, false, 3);
+    change_number(bytes, 64 + 8, .5);
+    dolly::VisualizationPath path;
+    std::string error;
+    require(!path.load(bytes.data(), bytes.size(), error), "Off-boundary camera time accepted");
+    // Fewer segments than camera intervals is refused.
+    auto short_bytes = packet(3);
+    change_u32(short_bytes, 64 + 3 * 8 + 12, 1);
+    require(!path.load(short_bytes.data(), short_bytes.size(), error), "Short path accepted");
+}
 void self_test() {
+    test_split_camera_intervals();
     test_projection();
     test_world_camera_markers();
     test_curve_contract();

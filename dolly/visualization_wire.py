@@ -81,7 +81,10 @@ def build_visualization(project: Project | None, *, sequence=2, enabled=True,
             tangent = project.camera_tangent(index, name)
             if tangent.mode == "auto":
                 channel = samples[name]
-                if channel.incoming_tangents is not None:
+                if channel.interpolation == "track":
+                    # Track tables use sub-knots; each key time is one of them.
+                    incoming = outgoing = channel.tangents[channel.times.index(float(key.time))]
+                elif channel.incoming_tangents is not None:
                     incoming, outgoing = channel.incoming_tangents[index], channel.outgoing_tangents[index]
                 elif channel.tangents is not None:
                     incoming = outgoing = channel.tangents[index]

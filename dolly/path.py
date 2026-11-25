@@ -20,11 +20,18 @@ from typing import Any, Iterable
 from .particles import (PARTICLE_DEFAULT, PARTICLE_IDS, PARTICLE_INTENSITY_DEFAULT,
                         PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN)
 from .object_model import PlacedObject, validate_objects
+from .track_path import build_track
 from .weather import WEATHER_OFF, WeatherSettings
 from .file_ops import replace_retrying
 
 
 FORMAT_NAME = "deadlock-dolly"
+# Camera position interpolation modes. "track" keeps the path shape independent
+# of key timing (see dolly/track_path.py).
+INTERPOLATIONS = ("linear", "smooth", "spline", "track")
+# Interpolation given to brand-new shots. Saved shots keep their own mode, and a
+# file without one still loads as "smooth".
+NEW_SHOT_INTERPOLATION = "smooth"
 FORMAT_VERSION = 2
 VECTOR_FORMAT_VERSION = 3
 CONFETTI_FORMAT_VERSION = 7
@@ -35,7 +42,8 @@ OBJECTS_FORMAT_VERSION = 11
 TANGENTS_FORMAT_VERSION = 12
 RIGID_ATTACH_FORMAT_VERSION = 13
 WEATHER_FORMAT_VERSION = 14
-LATEST_FORMAT_VERSION = WEATHER_FORMAT_VERSION
+TRACK_FORMAT_VERSION = 15
+LATEST_FORMAT_VERSION = TRACK_FORMAT_VERSION
 MAX_OBJECTS = 64
 CONFETTI_SPAWN_HEIGHT_DEFAULT = 250.0
 CONFETTI_SPAWN_HEIGHT_MIN = 100.0
@@ -612,7 +620,7 @@ class Project:
             # be opened but never saved again.
             raise ValueError("Project name contains an unpaired surrogate character; "
                              "retype the name without it")
-        _choice(self.interpolation, ("linear", "smooth", "spline"), "Camera interpolation")
+        _choice(self.interpolation, INTERPOLATIONS, "Camera interpolation")
         _choice(self.rotation_mode, ("shortest", "unwrapped"), "Rotation mode")
         _choice(self.lens_interpolation, ("linear", "smooth", "step"), "Zoom interpolation")
         if not isinstance(self.confetti_enabled, bool):
@@ -791,6 +799,17 @@ class Project:
         tangents = None
         authored = (interpolation == "smooth" and name in POSITION_CHANNELS
                     and any(name in _authored_tangents(key) for key in self.keyframes))
+        if interpolation == "track" and name in POSITION_CHANNELS and len(times) > 1:
+            table = build_track(times, *(tuple(branch_values(self, axis)) for axis in POSITION_CHANNELS))
+            if table is None:
+                return CameraChannelSamples(times, values, "linear", False)
+            axis = POSITION_CHANNELS.index(name)
+            return CameraChannelSamples(table.times, table.values[axis], "track", False,
+                                        table.derivatives[axis])
+        if interpolation == "track":
+            # Track only shapes the position of a multi-camera shot. Rotation,
+            # and a shot with one camera, use the bounded Smooth curves.
+            interpolation = "smooth"
         if interpolation not in ("step", "linear") and (len(times) > 2 or (authored and len(times) > 1)):
             derivatives = _auto_tangents(times, values, interpolation, monotone)
             if derivatives is None:
@@ -829,6 +848,10 @@ class Project:
         """
         self._camera_tangent_key(index, channel)
         samples = self.camera_channel_samples(channel)
+        if samples.interpolation == "track":
+            # Track samples use sub-knots; each key time is one of them.
+            knot = samples.times.index(float(self.keyframes[index].time))
+            return samples.tangents[knot], samples.tangents[knot]
         if samples.incoming_tangents is not None:
             return samples.incoming_tangents[index], samples.outgoing_tangents[index]
         if samples.tangents is not None:
@@ -952,6 +975,9 @@ class Project:
         weather_used = self.weather.enabled
         if weather_used:
             version = WEATHER_FORMAT_VERSION
+            particles_used = True
+        if self.interpolation == "track":
+            version = TRACK_FORMAT_VERSION
             particles_used = True
         return {
             "format": FORMAT_NAME,
@@ -1122,6 +1148,8 @@ class Project:
                       weather=(WeatherSettings.from_dict(obj["weather"])
                                if "weather" in obj else WEATHER_OFF))
         project.validate()
+        if version < TRACK_FORMAT_VERSION and project.interpolation == "track":
+            raise ValueError("Track interpolation requires project version 15")
         if version < VECTOR_FORMAT_VERSION and (
                 any(name in CVAR_COMPONENTS for name in project.setup_values)
                 or any(track.name in CVAR_COMPONENTS for track in project.tracks)):

@@ -1825,6 +1825,41 @@ void editor_input_checks() {
     dolly::key_event(VK_ESCAPE, false);
     dolly::gTextInput = false;
 
+    // Escape from the no-UI camera hands that press to Deadlock's own menu.
+    // Dolly shortcuts pause, and the next Escape (also the game's) returns to
+    // the same camera without any controller command.
+    {
+        CameraPose pose{1, 2, 3, 4, 5, 6, 16.0 / 9};
+        editor_update_view(true, true, true, pose);
+        editor_set_owner(EditorOwner::Flight);
+        const auto before_menu = event_count();
+        dolly::key_event(VK_ESCAPE, true);
+        require(dolly::gGameMenu.load() && dolly::escape_for_game(VK_ESCAPE),
+                "Escape from the camera did not hand its press to Deadlock's menu");
+        dolly::key_event(VK_ESCAPE, false);
+        require(dolly::escape_for_game(VK_ESCAPE), "The menu-opening Escape release was swallowed");
+        dolly::key_event('W', true);
+        dolly::key_event('W', false);
+        require(dolly::gGameMenu.load() && dolly::gOwner == EditorOwner::Flight &&
+                    event_count() == before_menu,
+                "Dolly acted on input while Deadlock's menu was open");
+        dolly::key_event(VK_ESCAPE, true);
+        require(!dolly::gGameMenu.load() && dolly::escape_for_game(VK_ESCAPE) &&
+                    dolly::gOwner == EditorOwner::Flight && event_count() == before_menu,
+                "Escape did not close Deadlock's menu back to the camera");
+        dolly::key_event(VK_ESCAPE, false);
+        // Any owner change ends the handoff, and the editor keeps its Escape.
+        dolly::key_event(VK_ESCAPE, true);
+        dolly::key_event(VK_ESCAPE, false);
+        require(dolly::gGameMenu.load(), "Escape did not reopen Deadlock's menu");
+        editor_set_owner(EditorOwner::Panel);
+        require(!dolly::gGameMenu.load(), "An owner change left the game-menu handoff on");
+        dolly::key_event(VK_ESCAPE, true);
+        require(!dolly::escape_for_game(VK_ESCAPE) && dolly::gOwner == EditorOwner::Flight,
+                "The editor's Escape leaked to the game");
+        dolly::key_event(VK_ESCAPE, false);
+    }
+
     editor_set_owner(EditorOwner::Flight);
     // A movement key physically held during this offline test must not
     // masquerade as a blocked post-transition press.

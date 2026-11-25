@@ -266,6 +266,7 @@ dolly/pacing.py
 dolly/panorama_assets.py
 dolly/particles.py
 dolly/path.py
+dolly/track_path.py
 dolly/paused_flight.py
 dolly/playback.py
 dolly/player_encode.py
@@ -633,6 +634,7 @@ tests/native_helpers.py
 tests/test_core_install.py
 tests/test_graphics_session_profiles.py
 tests/test_recovery_updater_boundaries.py
+tests/test_track_path.py
 tests/test_weather.py
 tests/test_core_native.py
 tests/test_core_workflows.py
@@ -1442,3 +1444,4 @@ native/profiles/soundsystem-2026-11-24-6866.json
 third_party/cvar_unlocker/unlocker-build-6866.patch
 docs/RELEASE_NOTES_0.7.56-beta.md
 docs/RELEASE_NOTES_0.7.57-beta.md
+docs/RELEASE_NOTES_0.7.58-beta.md

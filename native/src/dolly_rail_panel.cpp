@@ -309,7 +309,7 @@ void OverlayPanel::draw_rail(const EditorSnapshot& state, ImTextureID background
                  ImVec2(pa.x + (pill_width + 12) * s, a.y + 13.5f * s), 16, t::U32(t::text_muted));
     if (ImGui::IsWindowHovered()) {
         hovered_ui = true;
-        ImGui::SetTooltip("%s\n%s\nF7 Console | F8 Editor | Escape closes drawers, then flies",
+        ImGui::SetTooltip("%s\n%s\nF7 Console | F8 Editor | Escape closes drawers, flies, then opens Deadlock's menu",
                           state.shot_name[0] ? state.shot_name : "Untitled shot", state.message);
     }
     ImGui::End();

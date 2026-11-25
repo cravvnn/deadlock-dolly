@@ -80,7 +80,7 @@ class WeatherShotFile(unittest.TestCase):
             loaded, version = Project.load_versioned(path)
         self.assertEqual(version, WEATHER_FORMAT_VERSION)
         self.assertEqual(loaded.weather, settings)
-        self.assertEqual(LATEST_FORMAT_VERSION, WEATHER_FORMAT_VERSION)
+        self.assertLessEqual(WEATHER_FORMAT_VERSION, LATEST_FORMAT_VERSION)
 
     def test_weather_needs_the_weather_format_version(self):
         data = _shot(weather=preset_settings("ash")).to_dict()

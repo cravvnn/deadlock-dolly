@@ -5,7 +5,7 @@ The caller owns prompts, publication, UI refresh and controller capture.
 """
 import copy
 
-from ..path import TrackKey
+from ..path import NEW_SHOT_INTERPOLATION, TrackKey
 
 
 def commit_camera(project, keys):
@@ -74,7 +74,7 @@ def finish_capture(candidate, action, key, tick, selected=None):
         candidate.keyframes = [key]
         if tick is not None:
             candidate.start_tick = int(tick)
-        candidate.interpolation = "smooth"
+        candidate.interpolation = NEW_SHOT_INTERPOLATION
     elif action == "replace":
         # Recapturing the view changes its pose, not the user's saved movement
         # intent. New cameras still start with automatic handles.

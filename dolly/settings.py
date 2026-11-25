@@ -20,9 +20,9 @@ from .editor_actions import (
     default_action_bindings, validate_action_bindings,
 )
 from .file_ops import publish_new, replace_retrying, retry_locked
-from .replays import parse_launch_options
+from .replays import DEFAULT_REPLAY_SORT_ID, REPLAY_SORT_IDS, parse_launch_options
 
-SETTINGS_VERSION = 11
+SETTINGS_VERSION = 12
 DEFAULT_RESHADE_BINDING = EditorBinding("F11")
 MAX_SETTINGS_BYTES = 64 * 1024
 
@@ -50,6 +50,7 @@ class AppSettings:
     allow_mod_overrides: bool = False
     nvidia_dlss: bool = False
     discord_presence: bool = True
+    replay_sort: str = DEFAULT_REPLAY_SORT_ID
     migration_warnings: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -67,6 +68,8 @@ class AppSettings:
             raise ValueError("nvidia_dlss must be a boolean.")
         if type(self.discord_presence) is not bool:
             raise ValueError("discord_presence must be a boolean.")
+        if self.replay_sort not in REPLAY_SORT_IDS:
+            raise ValueError("replay_sort must be a known replay library sort.")
         if not isinstance(self.capture_binding, CaptureBinding):
             raise ValueError("capture_binding must be a CaptureBinding.")
         # Validate here as well as at the JSON boundary before saving anything.
@@ -169,7 +172,7 @@ def _decode_settings(data: bytes) -> AppSettings:
         raise ValueError("Dolly settings are not valid UTF-8 JSON.") from exc
     if not isinstance(raw, dict) or "version" not in raw:
         raise ValueError("Dolly settings must contain a version and preferences.")
-    if type(raw["version"]) is not int or raw["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, SETTINGS_VERSION):
+    if type(raw["version"]) is not int or raw["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SETTINGS_VERSION):
         raise ValueError(f"Unsupported Dolly settings version: {raw['version']!r}.")
     if raw["version"] == 1:
         if set(raw) != {"version", "capture_binding"}:
@@ -207,6 +210,8 @@ def _decode_settings(data: bytes) -> AppSettings:
         fields.add("discord_presence")
     if raw["version"] >= 11:
         fields.add("nvidia_dlss")
+    if raw["version"] >= 12:
+        fields.add("replay_sort")
     if set(raw) != fields | {"version"}:
         raise ValueError(f"Version {raw['version']} Dolly settings have missing or unknown preference fields.")
     values = {name: raw[name] for name in fields}
@@ -310,6 +315,7 @@ def save_settings(
         "allow_mod_overrides": settings.allow_mod_overrides,
         "discord_presence": settings.discord_presence,
         "nvidia_dlss": settings.nvidia_dlss,
+        "replay_sort": settings.replay_sort,
         "capture_binding": settings.capture_binding.to_dict(),
         "game_path": settings.game_path,
         "replay_folder": settings.replay_folder,

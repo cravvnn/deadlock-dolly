@@ -1,10 +1,10 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 345,
+  "accounted_units": 346,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
-    "no independent lifecycle": 42,
+    "no independent lifecycle": 43,
     "stateful partial/open": 125,
     "generated data/schema": 10,
     "native owner/delegated contract open": 134,
@@ -13,7 +13,7 @@
     "child-job contract open": 3
   },
   "families": {
-    "value": 41,
+    "value": 42,
     "L05": 23,
     "generated": 10,
     "L01": 94,
@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "41d17a9c9d32f6baaa8e44ed23f1d73713d408f241b1859e004ff87e75b2007d",
+      "sha256": "c6c9da96ade5260a1acd214b7b88ca4102b59cc95e25a4213fcc4e4137174412",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2719,7 +2719,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "acef4d73e9054823c8701bd014323a7e3b18b3fcd4600c8dbe2f5e5c6d795e1a",
+      "sha256": "2255077405b5169c27ce183ef26418418e29166d6371022cccf66f103685df18",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -3006,7 +3006,7 @@
     },
     {
       "path": "dolly/input_diagnostics.py",
-      "sha256": "e6e582b090834846bfb80d6e18a612288ba43f485b9fd8a21cb293a655c0b059",
+      "sha256": "90b7d9110888a6d9c14dee471e8dffc5d28ddcef96f01edf24c72755669c1bb8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -3658,7 +3658,7 @@
     },
     {
       "path": "dolly/native_path.py",
-      "sha256": "3489207c2617b51c8ef0768122d6bd8cbcd431792a94a2f625946846470af89a",
+      "sha256": "7e520b8208f4f3cb447d13bf6a3dd8fface183b4941b76b12cdf1df4e32c6c8e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -3672,10 +3672,13 @@
         "module_purpose": "Compile authored camera channels once for the native render-view bridge.",
         "classes": [],
         "functions": [
-          "compile_project"
+          "compile_project",
+          "_piece",
+          "_compile_track"
         ],
         "imports": [
           "__future__",
+          "bisect",
           "path"
         ],
         "persistent_state_signals": []
@@ -3923,7 +3926,7 @@
     },
     {
       "path": "dolly/path.py",
-      "sha256": "02f58694b84ba00bdda034244c3b8cb5dc277e9b32de23381c17977c4f53efbc",
+      "sha256": "690907c4c4040dc46d656a66f795e3efd8335495bb0d1bfd0ea968c9c6a3555b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -4648,7 +4651,7 @@
     },
     {
       "path": "dolly/replays.py",
-      "sha256": "c43cc27ae88bfee4852228066d0612f025fcac3528d1fabdd18f04b559479416",
+      "sha256": "cc3f0a066f406a687636c8e3675c1780d017b3d609198d79704fbc4815d0bc87",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -5032,7 +5035,7 @@
     },
     {
       "path": "dolly/settings.py",
-      "sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7",
+      "sha256": "78f76b5dfd7ed65a77df8cc620690dfd0fd2a6f50c88226f299ee67f79396814",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -5547,7 +5550,7 @@
     },
     {
       "path": "dolly/ui/camera_page.py",
-      "sha256": "d97742aec85e81e8dfcd364cc1dd4981b7607278f9b9dd3c11b432a7ef7932e0",
+      "sha256": "160e36aa558592b313b22858070064a08ef115aaed63ae88124f0238643c6d77",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6528,7 +6531,7 @@
     },
     {
       "path": "dolly/ui/shot_commands.py",
-      "sha256": "a1d9eb4ebf538e68c3a8cecf544ba752c67bdac109ac2589aee705d21668f6db",
+      "sha256": "ecf53fe5bb5ccbe8f888a853fee96bb86075ba973f96d300e8b8d7d6d85447f6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -7307,7 +7310,7 @@
     },
     {
       "path": "dolly/visualization_wire.py",
-      "sha256": "55f6853cf68faab8bfdb9d703448551a5e75d22643a9cbd9140c12b751dbc25c",
+      "sha256": "45f4b9941f21fe8844c57abc53a33329f23d19779e6e5edf63e8b107a4c964e2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -8622,7 +8625,7 @@
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
-      "sha256": "a93d30daf2f43e8f37061f9d2ee3c1093ce12fc3b5478981e7b97d446f6cb424",
+      "sha256": "8b16ae2618a05731866c7751fa2663c3c227bedde33810c6d54e5b8005155cb0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -9381,7 +9384,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "29a7f78e35a681e40c12ea984213711b5ed81bd7fa7ae6d0da69a3ee6929e50a",
+      "sha256": "382eadad7dd9e2254d266a7c57771956a9a76e0b401ab94808ebbfe945e96244",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10342,7 +10345,7 @@
     },
     {
       "path": "native/src/dolly_rail_panel.cpp",
-      "sha256": "275d3282c63387f6f456806ff05c86216bd808c3b1e91c371f98c96d70d401a5",
+      "sha256": "1bf6c5320a48a8241ed6c0589b0d01b0e522da64736dcf29f4010934bbc2eb6a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10594,7 +10597,7 @@
     },
     {
       "path": "native/src/dolly_sound_capture_win.cpp",
-      "sha256": "ee4a433b83cc3f08e52e8896d380da27dbab0a2282b187a7e3470d907caa183f",
+      "sha256": "2eb204266ae00f78981e4df8118b890d909650030692aeff3dc6f5d6d5e6cf3c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L02",
       "disposition": "native owner/delegated contract open",
@@ -10823,7 +10826,7 @@
     },
     {
       "path": "native/src/dolly_visualization.cpp",
-      "sha256": "d3618344b4749eb4d9e96dc749ed060bcc1a427fb19a8edd90e3284005d38049",
+      "sha256": "58b6499172b8065d98ef4819c853117cfaad9b92a198eaff254d8dca6d0cd079",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -12227,6 +12230,45 @@
       },
       "full_formal_signoff": false,
       "reconciliation_20261123": "2026-11-23: build/release tooling hardening (2026-11-23 sweep, group b); see commit log"
+    },
+    {
+      "path": "dolly/track_path.py",
+      "sha256": "36037ef74b4cdd63278dc225026c27b335fcc81490d891f19b6eeaadaad1fb83",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "value",
+      "disposition": "no independent lifecycle",
+      "reason": "Schema/value/compiler/parser/read-only or synchronous caller-owned transform; no independent pending worker/session/retry state. Validation and numerical/file-input behavior stay with owner tests.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_track_path.py"
+      ],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "module_purpose": "Track interpolation: rail shape independent of key timing plus a monotone push, sampled into Hermite sub-knots shared by the editor and native compiler.",
+        "classes": [
+          "TrackTable",
+          "_Rail"
+        ],
+        "functions": [
+          "_sub",
+          "_norm",
+          "_push_tangents",
+          "_hermite",
+          "build_track",
+          "_build"
+        ],
+        "imports": [
+          "__future__",
+          "bisect",
+          "dataclasses",
+          "functools",
+          "math"
+        ],
+        "persistent_state_signals": [
+          "lru_cache(build_track)"
+        ]
+      },
+      "full_formal_signoff": false
     }
   ],
   "models": {
@@ -12296,7 +12338,7 @@
       "instances": [
         "BackupPublishApi"
       ],
-      "owner_utf8_lf_sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7"
+      "owner_utf8_lf_sha256": "78f76b5dfd7ed65a77df8cc620690dfd0fd2a6f50c88226f299ee67f79396814"
     },
     "dolly/BonePickerTransaction.tla": {
       "path": "dolly/bone_picker.py",
@@ -12387,7 +12429,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "acef4d73e9054823c8701bd014323a7e3b18b3fcd4600c8dbe2f5e5c6d795e1a"
+      "owner_utf8_lf_sha256": "2255077405b5169c27ce183ef26418418e29166d6371022cccf66f103685df18"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -12449,7 +12491,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "acef4d73e9054823c8701bd014323a7e3b18b3fcd4600c8dbe2f5e5c6d795e1a"
+      "owner_utf8_lf_sha256": "2255077405b5169c27ce183ef26418418e29166d6371022cccf66f103685df18"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -12789,7 +12831,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "acef4d73e9054823c8701bd014323a7e3b18b3fcd4600c8dbe2f5e5c6d795e1a"
+      "owner_utf8_lf_sha256": "2255077405b5169c27ce183ef26418418e29166d6371022cccf66f103685df18"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -12878,7 +12920,7 @@
       "instances": [
         "SaveCleanupApi"
       ],
-      "owner_utf8_lf_sha256": "02f58694b84ba00bdda034244c3b8cb5dc277e9b32de23381c17977c4f53efbc"
+      "owner_utf8_lf_sha256": "690907c4c4040dc46d656a66f795e3efd8335495bb0d1bfd0ea968c9c6a3555b"
     },
     "dolly/SaveResult.tla": {
       "path": "dolly/settings.py",
@@ -12889,7 +12931,7 @@
       "instances": [
         "SaveResultApi"
       ],
-      "owner_utf8_lf_sha256": "e0b184bab46e82d18f4ed82cd02ce97dc820f771fe22318d8f5aee570e5f97e7"
+      "owner_utf8_lf_sha256": "78f76b5dfd7ed65a77df8cc620690dfd0fd2a6f50c88226f299ee67f79396814"
     },
     "dolly/SavedSnapshot.tla": {
       "path": "dolly/shot_history.py",
@@ -13067,7 +13109,7 @@
       "instances": [
         "CameraOwnershipApi"
       ],
-      "owner_utf8_lf_sha256": "a1d9eb4ebf538e68c3a8cecf544ba752c67bdac109ac2589aee705d21668f6db"
+      "owner_utf8_lf_sha256": "ecf53fe5bb5ccbe8f888a853fee96bb86075ba973f96d300e8b8d7d6d85447f6"
     },
     "dolly/ui/FadeSurface.tla": {
       "path": "dolly/ui/fade.py",
@@ -14464,6 +14506,11 @@
     },
     {
       "path": "docs/RELEASE_NOTES_0.7.57-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "docs/RELEASE_NOTES_0.7.58-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
@@ -20425,14 +20472,24 @@
       "path": "tools/update_game.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "dolly/track_path.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "tests/test_track_path.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 587,
-    "implementation/tool": 345,
+    "metadata/configuration/documentation input": 588,
+    "implementation/tool": 346,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
-    "test/support input": 105,
+    "test/support input": 106,
     "external dependency/resource": 205
   },
   "unclassified": 0,

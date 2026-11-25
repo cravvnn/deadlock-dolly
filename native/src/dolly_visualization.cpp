@@ -6,6 +6,7 @@
 #include <cstring>
 #include <exception>
 #include <utility>
+#include <vector>
 
 namespace dolly {
 namespace {
@@ -192,16 +193,36 @@ bool VisualizationPath::load(const void* data, std::size_t bytes, std::string& e
         captured_lens ? NativePath::lens_header_bytes : NativePath::header_bytes;
     const auto segment_bytes =
         captured_lens ? NativePath::lens_segment_bytes : NativePath::segment_bytes;
-    if (u32(blob + 12) + 1 != count)
+    // Track interpolation splits a camera interval into several segments, so a
+    // path may hold more segments than camera intervals. Every camera time must
+    // still begin a segment (or end the path), in order, and every segment must
+    // belong to exactly one camera interval.
+    const std::uint32_t path_segments = u32(blob + 12);
+    if (path_segments + 1 < count || (count == 1 && path_segments))
         return fail("Viewer timestamps do not match the camera path");
-    for (std::uint32_t i = 0; i < count; ++i) {
-        const double time = number(times + i * 8);
-        const double expected =
-            i + 1 == count ? number(blob + 40)
-                           : number(blob + (count == 1 ? 32 : header_bytes + i * segment_bytes));
-        if (!std::isfinite(time) || time < 0 || time != expected ||
-            (i && time <= number(times + (i - 1) * 8)))
-            return fail("Viewer timestamps are not the authored camera timestamps");
+    std::vector<std::uint32_t> first_segment(count, 0);
+    {
+        std::uint32_t segment = 0;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const double time = number(times + i * 8);
+            if (!std::isfinite(time) || time < 0 || (i && time <= number(times + (i - 1) * 8)))
+                return fail("Viewer timestamps are not the authored camera timestamps");
+            if (i + 1 == count) {
+                if (time != number(blob + 40))
+                    return fail("Viewer timestamps are not the authored camera timestamps");
+                first_segment[i] = path_segments;
+                break;
+            }
+            while (segment < path_segments &&
+                   number(blob + header_bytes + std::size_t(segment) * segment_bytes) < time)
+                ++segment;
+            if (segment >= path_segments ||
+                number(blob + header_bytes + std::size_t(segment) * segment_bytes) != time ||
+                (i == 0 && segment != 0))
+                return fail("Viewer timestamps are not the authored camera timestamps");
+            first_segment[i] = segment;
+            ++segment;
+        }
     }
     VisualizationPath candidate;
     candidate.enabled_ = true;
@@ -229,11 +250,13 @@ bool VisualizationPath::load(const void* data, std::size_t bytes, std::string& e
             const double begin = number(times + i * 8), end = number(times + (i + 1) * 8);
             const std::size_t steps = edges / segments + (i < edges % segments ? 1 : 0);
             std::uint8_t step_mask = 0;
-            for (std::size_t channel = 0; channel < 7; ++channel) {
-                const auto* record = blob + header_bytes + i * segment_bytes + 16 + 40 * channel;
-                if (u32(record) == 0 && number(record + 8) != number(record + 16))
-                    step_mask |= std::uint8_t(1u << channel);
-            }
+            for (std::uint32_t segment = first_segment[i]; segment < first_segment[i + 1]; ++segment)
+                for (std::size_t channel = 0; channel < 7; ++channel) {
+                    const auto* record =
+                        blob + header_bytes + std::size_t(segment) * segment_bytes + 16 + 40 * channel;
+                    if (u32(record) == 0 && number(record + 8) != number(record + 16))
+                        step_mask |= std::uint8_t(1u << channel);
+                }
             for (std::size_t j = 1; j <= steps; ++j) {
                 const double time =
                     j == steps ? end : begin + (end - begin) * (double(j) / double(steps));
