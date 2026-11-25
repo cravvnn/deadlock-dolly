@@ -920,6 +920,97 @@ int main(int argc, char** argv) {
     CHECK(render_weather(dolly::weather::Preset::Blizzard, 10.6, true) == blizzard_a);
     std::printf("WARP precipitation replay check passed: pause, advance and seek-back\n");
 
+    // 7d2) Particle looks (the hidden particle-look switch). Look 0 is the shipped look and
+    //      must not move: its frames are compared with hashes recorded before the other looks
+    //      were written. Looks 1 and 2 must draw, differ from look 0 and replay exactly.
+    //      The particles are drawn alone over flat grey, so only the precipitation pass and
+    //      the wind field feed these hashes. If the wind solver or the WARP rasteriser changes
+    //      on purpose, re-record them from the printed values.
+    {
+        const auto fnv = [](const std::vector<uint8_t>& px) {
+            uint64_t h = 1469598103934665603ull;
+            for (const uint8_t b : px) {
+                h ^= b;
+                h *= 1099511628211ull;
+            }
+            return h;
+        };
+        const auto particles_only = [&](dolly::weather::Preset preset, uint32_t look, double time) {
+            dolly::weather::Resolved res =
+                dolly::weather::resolve(dolly::weather::preset_settings(preset));
+            res.precipitation.time = time;
+            res.precipitation.look = look;
+            const float grey[4] = {0.30f, 0.32f, 0.36f, 1.0f};
+            ctx->ClearRenderTargetView(out_rtv.Get(), grey);
+            CHECK(precip.render(ctx.Get(), depth_srv.Get(), out_rtv.Get(), cam, res.precipitation,
+                                solver));
+            return readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+        };
+        struct LookShot {
+            dolly::weather::Preset preset;
+            const char* name;
+            uint64_t look0_hash;
+        };
+        const LookShot look_shots[] = {
+            {dolly::weather::Preset::LightSnow, "light_snow", 0xa378d44a191cd4e7ull},
+            {dolly::weather::Preset::Blizzard, "blizzard", 0xb5d982c31bbabfcaull},
+            {dolly::weather::Preset::RainStorm, "rain_storm", 0x79154be3c0929f12ull},
+            {dolly::weather::Preset::Sandstorm, "sandstorm", 0x3198165d0f55645aull},
+            {dolly::weather::Preset::DustHaze, "dust_haze", 0xfbfa27971e37762eull},
+            {dolly::weather::Preset::Ash, "ash", 0xcde6661232ccece8ull},
+        };
+        const auto bare = particles_only(dolly::weather::Preset::Off, 0, 10.6);
+        for (const LookShot& shot : look_shots) {
+            const auto look0 = particles_only(shot.preset, 0, 10.6);
+            const uint64_t h = fnv(look0);
+            std::printf("WARP particle look 0 %s: hash 0x%016llxull, %.2f%% of pixels drawn\n",
+                        shot.name, static_cast<unsigned long long>(h),
+                        100.0 * static_cast<double>(changed_pixels(bare, look0)) /
+                            static_cast<double>(frame_px));
+            CHECK(h == shot.look0_hash);
+            const bool rain = shot.preset == dolly::weather::Preset::RainStorm;
+            for (uint32_t look = 1; look < dolly::env::kPrecipitationLooks; ++look) {
+                const auto px = particles_only(shot.preset, look, 10.6);
+                const size_t drawn = changed_pixels(bare, px);
+                const size_t moved = changed_pixels(look0, px);
+                std::printf("WARP particle look %u %s: %u flakes, %.2f%% of pixels drawn, "
+                            "%.2f%% differ from look 0\n",
+                            look, shot.name,
+                            dolly::env::precipitation_flake_count([&] {
+                                auto p = dolly::weather::resolve(
+                                             dolly::weather::preset_settings(shot.preset))
+                                             .precipitation;
+                                p.look = look;
+                                return p;
+                            }()),
+                            100.0 * static_cast<double>(drawn) / static_cast<double>(frame_px),
+                            100.0 * static_cast<double>(moved) / static_cast<double>(frame_px));
+                if (rain) {
+                    CHECK(px == look0); // rain is the same in every look
+                    continue;
+                }
+                CHECK(drawn > frame_px / 500);
+                CHECK(moved > frame_px / 500);
+                // The same replay time draws the same frame; a later one moves the particles.
+                CHECK(particles_only(shot.preset, look, 10.6) == px);
+                CHECK(changed_pixels(px, particles_only(shot.preset, look, 10.65)) >
+                      frame_px / 1000);
+                if (!out_dir.empty()) {
+                    char file[64];
+                    std::snprintf(file, sizeof(file), "warp_look%u_%s.png", look, shot.name);
+                    CHECK(dolly::map_grid::write_png_rgba8(out_dir / file, vw, vh, px.data(),
+                                                           &err));
+                }
+            }
+            if (!out_dir.empty()) {
+                char file[64];
+                std::snprintf(file, sizeof(file), "warp_look0_%s.png", shot.name);
+                CHECK(dolly::map_grid::write_png_rgba8(out_dir / file, vw, vh, look0.data(),
+                                                       &err));
+            }
+        }
+    }
+
     // 7e) Shelter: snow never falls under a roof. Left half roofed, right half open, seen
     //     from straight above with no scene geometry in the way.
     {

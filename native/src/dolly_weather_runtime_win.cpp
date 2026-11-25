@@ -110,6 +110,44 @@ constexpr float kHeroWakeRadius = 56.0f;
 std::filesystem::path cache_directory();
 void set_status(const char* text) noexcept;
 
+// Hidden switch for comparing particle looks: a number in <cache>/particle-look (missing
+// or 0 = the shipped look, 1 and 2 = the alternatives in dolly_precip_dx11.cpp). Read every
+// 2 s like the profile flag; live view and exports both draw whatever it says.
+uint32_t particle_look() noexcept {
+    static ULONGLONG checked = 0;
+    static uint32_t look = 0;
+    const ULONGLONG now = GetTickCount64();
+    if (checked && now - checked < 2000)
+        return look;
+    checked = now;
+    uint32_t value = 0;
+    try {
+        const auto dir = cache_directory();
+        if (!dir.empty()) {
+            if (FILE* f = _wfopen((dir / L"particle-look").c_str(), L"rb")) {
+                char text[16]{};
+                const size_t n = std::fread(text, 1, sizeof(text) - 1, f);
+                std::fclose(f);
+                // The first digit found, whatever the editor's encoding put around it.
+                for (size_t i = 0; i < n; ++i)
+                    if (text[i] >= '0' && text[i] <= '9') {
+                        value = static_cast<uint32_t>(text[i] - '0');
+                        break;
+                    }
+            }
+        }
+    } catch (...) {
+    }
+    value = std::min(value, env::kPrecipitationLooks - 1);
+    if (value != look) {
+        look = value;
+        char text[64];
+        std::snprintf(text, sizeof(text), "weather: particle look %u", look);
+        set_status(text);
+    }
+    return look;
+}
+
 // GPU timing for the weather pass, for evidence-based tuning. Active only while
 // <cache>/profile exists (checked every 2 s). Queries are read a few frames later
 // without flushing or waiting, so profiling never stalls the game.
@@ -1247,6 +1285,7 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
             std::floor(time / weather::trails::kStep) * weather::trails::kStep);
         resolved.render.coating_growth = weather::coating_growth(*settings, time - start);
         resolved.precipitation.time = time;
+        resolved.precipitation.look = particle_look();
         // Fixed-step exports are not real time: march with twice the step budget.
         const auto recorder = video::status().state;
         const bool exporting =

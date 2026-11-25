@@ -22,6 +22,15 @@ namespace {
 // layer the flake drifts with the wind field from its spawn point, integrated
 // through the current fluid state. The shown copy is the one inside a box that
 // follows the camera, and alpha fades out toward the box faces.
+//
+// LOOK (a compile-time define, one shader pair per look) selects the particle look:
+//   0  the shipped look. Its code is everything outside the `#if LOOK >= 1` blocks and
+//      must stay exactly as it is, so its frames never move.
+//   1  varied sizes (a few big flakes among many small), per-flake speed and opacity,
+//      streaks that dim as they lengthen and taper to a point, particles that dissolve
+//      into the haze with distance, soft out-of-focus flakes near the lens.
+//   2  look 1 with most particles turned into fine near-round specks and fewer big ones.
+// Rain is drawn the same in every look.
 constexpr char kPrecipHlsl[] = R"HLSL(
 static const uint KIND_SNOW = 1, KIND_RAIN = 2, KIND_SAND = 3, KIND_ASH = 4;
 
@@ -41,6 +50,9 @@ cbuffer PrecipConstants : register(b0) {
     float4 sunDir;
     float4 sunColor;
     float4 ambientColor;
+    float4 lookA;        // x haze extinction (1/u), y exposure scale, z streak aspect cap, w fine share
+    float4 lookFog;      // rgb haze albedo far particles dissolve into, w fine size (of kindA.z)
+    float4 lookB;        // x fine opacity, y big opacity, z faintest streak, w opacity
 };
 
 Texture2D<float> sceneDepth : register(t0);
@@ -122,6 +134,9 @@ struct VSOut {
     float2 uv : TEXCOORD0;     // x along streak in flake radii, y across (-1..1)
     float3 shape : TEXCOORD1;  // x streak length in radii, y view distance, z alpha
     float3 color : COLOR0;
+#if LOOK >= 1
+    float2 fx : TEXCOORD2;     // x near-lens softness, y 1 for the styled (non-rain) shape
+#endif
 };
 
 VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
@@ -130,6 +145,9 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.uv = float2(0.0, 0.0);
     o.shape = float3(0.0, 0.0, 0.0);
     o.color = float3(0.0, 0.0, 0.0);
+#if LOOK >= 1
+    o.fx = float2(0.0, 0.0);
+#endif
     if (!LoadView())
         return o;
 
@@ -139,6 +157,31 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float t = timeWind.x;
     float r0 = Rand(iid, seed, 11u), r1 = Rand(iid, seed, 23u);
     float r2 = Rand(iid, seed, 37u), r3 = Rand(iid, seed, 53u);
+#if LOOK >= 1
+    bool styled = kind != KIND_RAIN;
+    float r4 = Rand(iid, seed, 71u), r5 = Rand(iid, seed, 89u);
+    float sizeMul = lerp(0.7, 1.3, r3), speedMul = 1.0, fallMul = 1.0, alphaMul = 1.0;
+    float sandVz = 0.0;
+    bool fine = false;
+    if (styled) {
+        // Sizes: the sum of three hashes is close to a bell curve, so its exponential is a
+        // log-normal spread: most flakes small, a few several times larger.
+        float g = clamp((r3 + r4 + Rand(iid, seed, 97u)) * 2.0 - 3.0, -2.0, 2.2);
+        sizeMul = exp2(0.75 * g - 0.25);
+        alphaMul = lookB.w * lerp(0.55, 1.0, Rand(iid, seed, 131u));
+#if LOOK >= 2
+        fine = Rand(iid, seed, 113u) < lookA.w;
+        if (fine) {
+            sizeMul = lookFog.w * lerp(0.7, 1.4, r4);
+            alphaMul *= lookB.x;
+        } else {
+            alphaMul *= lookB.y;
+        }
+#endif
+        speedMul = lerp(0.72, 1.28, r5);
+        fallMul = lerp(0.8, 1.25, saturate((sizeMul - 0.3) / 1.7)); // big flakes fall faster
+    }
+#endif
 
     float3 p;
     float age, lifeFrac, fall = 0.0;
@@ -152,6 +195,9 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
         p = float3(0.0, 0.0, -1.0e5); // below any roof: drift with the street-level fluid
     } else {
         fall = kindA.x * lerp(1.0 - kindA.y, 1.0 + kindA.y, r0);
+#if LOOK >= 1
+        fall *= fallMul;
+#endif
         float offset = r1 * H;
         float z = Wrap(r2 * H * 64.0 - t * fall, gCamPos.z, H);
         float layer = (z - offset) / H;
@@ -172,16 +218,33 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     [unroll] for (int s = 0; s < STEPS; ++s) {
         if (kind != KIND_SAND) p.z = sz + fall * (age - dt * (s + 0.5));
         vel = WindAt(p, carried) * kindB.x;
+#if LOOK >= 1
+        vel *= speedMul;
+#endif
         p.xy += vel * dt;
     }
     p.z = sz;
     float sway = kindB.y * sin(t * lerp(0.6, 1.4, r3) * 2.4 + r2 * 6.2831);
     p.xy += float2(sway, sway * 0.6 * (r0 - 0.5));
+#if LOOK >= 1
+    if (styled) {
+        // The streak follows the flutter too, so neighbours are not combed parallel.
+        float swayRate = lerp(0.6, 1.4, r3) * 2.4;
+        float swayVel = kindB.y * swayRate * cos(t * swayRate + r2 * 6.2831);
+        vel += float2(swayVel, swayVel * 0.6 * (r0 - 0.5)) * 0.75;
+    }
+#endif
     p.xy = float2(Wrap(p.x, gCamPos.x, B), Wrap(p.y, gCamPos.y, B));
 
     float alpha = kindB.z;
+#if LOOK >= 1
+    alpha *= alphaMul;
+#endif
     float2 uv = MapUV(p.xy);
     if (kind == KIND_SAND) {
+#if LOOK >= 1
+        sandVz = volume.z * 0.31 * cos(t * 3.1 + r3 * 6.2831); // the bob below, as a speed
+#endif
         float street = OnMap(uv) ? streetZMap.SampleLevel(linearClamp, uv, 0) : gCamPos.z - 64.0;
         p.z = street + 4.0 + volume.z * (r2 * r2 * 0.85 + 0.1 * sin(t * 3.1 + r3 * 6.2831) + 0.05);
         alpha *= sin(3.14159265 * lifeFrac) * saturate(0.2 + carried * 0.9);
@@ -199,11 +262,45 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     if (alpha <= 0.002) return o;
 
     // Motion-stretched capsule along the flake's velocity.
+#if LOOK >= 1
+    float3 v3 = float3(vel, kind == KIND_SAND ? sandVz : -fall);
+    float radius = kindA.z * sizeMul;
+    float fogT = 1.0, nearSoft = 0.0, exposure = kindA.w;
+    if (styled) {
+        float4 centre = mul(gViewProj, float4(p, 1.0));
+        if (centre.w <= 1.0) return o; // behind the lens
+        // Far particles dissolve into the haze; near the lens they go large, soft and faint.
+        fogT = exp(-dist * lookA.x);
+        nearSoft = 1.0 - smoothstep(albedo.w * 1.5, albedo.w * 5.0, dist);
+        radius *= 1.0 + 0.6 * nearSoft;
+        alpha *= fogT * lerp(1.0, 0.55, nearSoft);
+        // Never thinner than about a pixel and a half across: a smaller particle keeps that
+        // footprint and fades instead, so fine grain does not sparkle.
+        float pxPerUnit = abs(mul(gViewProj, float4(gUp, 0.0)).y) / centre.w * 0.5 * screenInfo.y;
+        float minRadius = 0.7 / max(pxPerUnit, 1e-4);
+        if (radius < minRadius) {
+            float q = radius / minRadius;
+            alpha *= q * q;
+            radius = minRadius;
+        }
+        exposure *= lookA.y * (fine ? 0.3 : 1.0);
+    }
+    float3 tail = -v3 * exposure;
+    float len = length(tail);
+    float3 axis = len > 1e-3 ? tail / len : -gUp;
+    if (styled) {
+        // A streak spreads the flake's light over its length: the longer, the fainter.
+        len = min(len, radius * lookA.z);
+        alpha *= max(sqrt(2.0 * radius / (len + 2.0 * radius)), lookB.z);
+        if (alpha <= 0.002) return o;
+    }
+#else
     float3 v3 = float3(vel, kind == KIND_SAND ? 0.0 : -fall);
     float radius = kindA.z * lerp(0.7, 1.3, r3);
     float3 tail = -v3 * kindA.w;
     float len = length(tail);
     float3 axis = len > 1e-3 ? tail / len : -gUp;
+#endif
     float3 toCam = normalize(gCamPos - p);
     float3 side = cross(axis, toCam);
     side = dot(side, side) > 1e-6 ? normalize(side) : gRight;
@@ -216,24 +313,52 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.pos = mul(gViewProj, float4(world, 1.0));
     o.uv = float2(c.x * extent / radius, c.y);
     o.shape = float3(len / radius, dist, alpha);
+#if LOOK >= 1
+    o.fx = float2(nearSoft, styled ? 1.0 : 0.0);
+#endif
 
     float3 sun = normalize(sunDir.xyz);
     float3 light = ambientColor.rgb + sunColor.rgb * (0.35 + 0.65 * saturate(sun.z));
     float3 col = albedo.rgb * light;
+#if LOOK >= 1
+    if (styled) {
+        float3 veil = lookFog.rgb * light;
+        col *= lerp(0.84, 1.08, r4); // grain-to-grain tone
+        if (fine) col = lerp(col, veil, 0.12);
+        col = lerp(col, veil, (1.0 - fogT) * 0.6);
+    }
+#endif
     if (kind == KIND_ASH && r1 > 1.0 - kindB.w) col = float3(1.6, 0.55, 0.16) * lerp(0.6, 1.2, r2);
     o.color = col;
     return o;
 }
 
+)HLSL"
+                              R"HLSL(
 float4 PrecipPS(VSOut i) : SV_Target {
     LoadView();
     // Distance to the streak's core segment, in flake radii.
     float x = i.uv.x - 1.0;
     float along = clamp(x, 0.0, i.shape.x);
     float d = length(float2(x - along, i.uv.y));
+#if LOOK >= 1
+    float a;
+    if (i.fx.y > 0.5) {
+        // A soft head and a tail that narrows and fades to nothing. Both terms are smooth as
+        // the streak shortens to a round flake.
+        float narrow = lerp(1.0, 0.45, saturate(along / max(i.shape.x, 0.5)));
+        float dd = length(float2(x - along, i.uv.y / narrow));
+        float fade = pow(saturate(1.0 - along / (i.shape.x + 0.75)), 1.5);
+        a = min(i.shape.z, 1.0) * (1.0 - smoothstep(lerp(0.3, 0.0, i.fx.x), 1.0, dd)) * fade;
+    } else {
+        a = i.shape.z * (1.0 - smoothstep(0.35, 1.0, d));
+        a *= lerp(1.0, 0.35, saturate(along / max(i.shape.x, 1e-3)));
+    }
+#else
     float a = i.shape.z * (1.0 - smoothstep(0.35, 1.0, d));
     // Thin the tail so long streaks read as motion, not as rods.
     a *= lerp(1.0, 0.35, saturate(along / max(i.shape.x, 1e-3)));
+#endif
 
     int2 px = clamp(int2(i.pos.xy), int2(0, 0), int2(screenInfo.xy) - 1);
     uint dw, dh;
@@ -269,6 +394,9 @@ struct PrecipConstants {
     float sun_dir[4];
     float sun_color[4];
     float ambient_color[4];
+    float look_a[4];
+    float look_fog[4];
+    float look_b[4];
 };
 static_assert(sizeof(PrecipConstants) % 16 == 0, "PrecipConstants must be 16-byte aligned");
 
@@ -348,11 +476,53 @@ KindStyle kind_style(PrecipitationKind kind) noexcept {
     }
 }
 
-bool compile(const char* entry, const char* target, ComPtr<ID3DBlob>& code,
+// What looks 1 and 2 change per kind. Look 0 reads none of it.
+struct LookStyle {
+    float count;      // flakes, times the look-0 count
+    float exposure;   // streak exposure, times the kind's
+    float aspect;     // longest streak, in flake radii
+    float extinction; // 1/u: how fast particles dissolve into the haze with distance
+    float fog[3];     // the haze albedo they dissolve into
+    float fine_share; // look 2: share of particles that are fine specks
+    float fine_size;  // their radius, times the kind's size
+    float fine_alpha, big_alpha;
+    float blur_floor; // a streak never dims below this share of its flake's opacity
+    float opacity;    // times the kind's opacity
+    float size;       // times the kind's size
+};
+
+LookStyle look_style(PrecipitationKind kind, uint32_t look, float rate) noexcept {
+    LookStyle s{1.0f, 1.0f, 64.0f, 0.0f, {0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    if (look == 0)
+        return s;
+    const bool two = look >= 2;
+    switch (kind) {
+    case PrecipitationKind::Snow:
+        // A heavier fall has a thicker veil behind it.
+        s = {two ? 3.4f : 1.8f, 0.9f, 5.6f, 0.00028f + 0.00014f * std::clamp(rate, 0.0f, 2.0f),
+             {0.80f, 0.84f, 0.90f}, 0.70f, 0.45f, 0.98f, 1.0f, 0.65f, 1.8f, 1.15f};
+        break;
+    case PrecipitationKind::Sand:
+        s = {two ? 5.0f : 2.4f, 0.8f, 7.0f, 0.00055f,
+             {0.76f, 0.62f, 0.42f}, 0.86f, 0.50f, 0.88f, 0.70f, 0.62f, 2.9f, 1.25f};
+        break;
+    case PrecipitationKind::Ash:
+        s = {two ? 3.1f : 1.7f, 0.9f, 4.0f, 0.00045f,
+             {0.36f, 0.35f, 0.36f}, 0.65f, 0.48f, 0.98f, 1.0f, 0.65f, 1.7f, 1.15f};
+        break;
+    default:
+        break;
+    }
+    return s;
+}
+
+bool compile(const char* entry, const char* target, uint32_t look, ComPtr<ID3DBlob>& code,
              std::string* out_error) {
     ComPtr<ID3DBlob> err;
     const UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
-    if (SUCCEEDED(D3DCompile(kPrecipHlsl, sizeof(kPrecipHlsl) - 1, "dolly_precip.hlsl", nullptr,
+    const char look_text[2] = {static_cast<char>('0' + look), '\0'};
+    const D3D_SHADER_MACRO macros[] = {{"LOOK", look_text}, {nullptr, nullptr}};
+    if (SUCCEEDED(D3DCompile(kPrecipHlsl, sizeof(kPrecipHlsl) - 1, "dolly_precip.hlsl", macros,
                              nullptr, entry, target, flags, 0, &code, &err)))
         return true;
     if (out_error)
@@ -384,12 +554,16 @@ uint32_t precipitation_flake_count(const PrecipitationParams& params) noexcept {
     if (params.kind == PrecipitationKind::None || !(params.rate > 0.0f))
         return 0;
     const double n = static_cast<double>(kind_style(params.kind).base_flakes) * params.rate;
-    return static_cast<uint32_t>(std::min<double>(n, kMaxPrecipitationFlakes));
+    const uint32_t look = std::min(params.look, kPrecipitationLooks - 1);
+    if (look == 0)
+        return static_cast<uint32_t>(std::min<double>(n, kMaxPrecipitationFlakes));
+    return static_cast<uint32_t>(std::min<double>(
+        n * look_style(params.kind, look, params.rate).count, kMaxPrecipitationFlakesStyled));
 }
 
 struct PrecipitationRendererDX11::Impl {
-    ComPtr<ID3D11VertexShader> vs;
-    ComPtr<ID3D11PixelShader> ps;
+    ComPtr<ID3D11VertexShader> vs[kPrecipitationLooks];
+    ComPtr<ID3D11PixelShader> ps[kPrecipitationLooks];
     ComPtr<ID3D11Buffer> constants;
     ComPtr<ID3D11SamplerState> linear_clamp;
     ComPtr<ID3D11RasterizerState> rs_state;
@@ -408,14 +582,20 @@ bool PrecipitationRendererDX11::initialize(ID3D11Device* device, std::string* ou
             *out_error = "null D3D11 device";
         return false;
     }
-    ComPtr<ID3DBlob> vs_code, ps_code;
-    if (!compile("PrecipVS", "vs_5_0", vs_code, out_error) ||
-        !compile("PrecipPS", "ps_5_0", ps_code, out_error))
-        return false;
-    bool ok = SUCCEEDED(device->CreateVertexShader(
-                  vs_code->GetBufferPointer(), vs_code->GetBufferSize(), nullptr, &impl_->vs)) &&
-              SUCCEEDED(device->CreatePixelShader(ps_code->GetBufferPointer(),
-                                                  ps_code->GetBufferSize(), nullptr, &impl_->ps));
+    bool ok = true;
+    for (uint32_t look = 0; look < kPrecipitationLooks; ++look) {
+        ComPtr<ID3DBlob> vs_code, ps_code;
+        if (!compile("PrecipVS", "vs_5_0", look, vs_code, out_error) ||
+            !compile("PrecipPS", "ps_5_0", look, ps_code, out_error))
+            return false;
+        ok = ok &&
+             SUCCEEDED(device->CreateVertexShader(vs_code->GetBufferPointer(),
+                                                  vs_code->GetBufferSize(), nullptr,
+                                                  &impl_->vs[look])) &&
+             SUCCEEDED(device->CreatePixelShader(ps_code->GetBufferPointer(),
+                                                 ps_code->GetBufferSize(), nullptr,
+                                                 &impl_->ps[look]));
+    }
 
     D3D11_BUFFER_DESC cb{};
     cb.ByteWidth = sizeof(PrecipConstants);
@@ -483,6 +663,8 @@ bool PrecipitationRendererDX11::render(ID3D11DeviceContext* ctx,
         return true;
 
     const KindStyle k = kind_style(params.kind);
+    const uint32_t look = std::min(params.look, kPrecipitationLooks - 1);
+    const LookStyle ls = look_style(params.kind, look, params.rate);
     const FluidGridInfo mg = fluid.map_grid_info();
     PrecipConstants cb{};
     std::memcpy(cb.view_proj, camera.view_proj, sizeof(cb.view_proj));
@@ -526,7 +708,7 @@ bool PrecipitationRendererDX11::render(ID3D11DeviceContext* ctx,
     cb.volume[3] = k.sand_life;
     cb.kind_a[0] = k.fall;
     cb.kind_a[1] = k.jitter;
-    cb.kind_a[2] = k.size * std::clamp(params.size_scale, 0.25f, 3.0f);
+    cb.kind_a[2] = k.size * std::clamp(params.size_scale, 0.25f, 3.0f) * ls.size;
     cb.kind_a[3] = k.exposure;
     cb.kind_b[0] = k.follow;
     cb.kind_b[1] = k.sway;
@@ -540,7 +722,17 @@ bool PrecipitationRendererDX11::render(ID3D11DeviceContext* ctx,
         cb.sun_dir[i] = params.sun_dir[i];
         cb.sun_color[i] = params.sun_color[i];
         cb.ambient_color[i] = params.ambient_color[i];
+        cb.look_fog[i] = ls.fog[i];
     }
+    cb.look_a[0] = ls.extinction;
+    cb.look_a[1] = ls.exposure;
+    cb.look_a[2] = ls.aspect;
+    cb.look_a[3] = ls.fine_share;
+    cb.look_fog[3] = ls.fine_size;
+    cb.look_b[0] = ls.fine_alpha;
+    cb.look_b[1] = ls.big_alpha;
+    cb.look_b[2] = ls.blur_floor;
+    cb.look_b[3] = ls.opacity;
 
     ctx->UpdateSubresource(impl_->constants.Get(), 0, nullptr, &cb, 0, 0);
 
@@ -562,11 +754,11 @@ bool PrecipitationRendererDX11::render(ID3D11DeviceContext* ctx,
     ctx->IASetInputLayout(nullptr);
     ctx->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    ctx->VSSetShader(impl_->vs.Get(), nullptr, 0);
+    ctx->VSSetShader(impl_->vs[look].Get(), nullptr, 0);
     ctx->VSSetConstantBuffers(0, 1, cbs);
     ctx->VSSetSamplers(0, 1, samps);
     ctx->VSSetShaderResources(0, 5, vs_srvs);
-    ctx->PSSetShader(impl_->ps.Get(), nullptr, 0);
+    ctx->PSSetShader(impl_->ps[look].Get(), nullptr, 0);
     ctx->PSSetConstantBuffers(0, 1, cbs);
     ctx->PSSetShaderResources(0, 5, vs_srvs);
 
