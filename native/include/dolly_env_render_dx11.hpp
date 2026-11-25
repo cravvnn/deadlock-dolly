@@ -93,10 +93,12 @@ struct EnvRenderParams {
     // time reached, computed in double so a store filled live and one loaded from disk give
     // the same frame). Negative: use sim_time.
     float trails_through = -1.0f;
-    // Safety net: above this many output pixels, march at half resolution and rebuild each
-    // pixel from it, re-marching depth edges at full resolution. Exports turn it off.
+    // Above this many output pixels (1440p and up; 1080p stays whole), the haze and the
+    // kick-up puffs are marched at half resolution and each pixel is rebuilt from that,
+    // re-marching depth edges at full resolution so outlines stay exact. Exports turn it
+    // off and always march every pixel.
     bool allow_half_res = true;
-    uint64_t half_res_above_pixels = 3840ull * 2160ull;
+    uint64_t half_res_above_pixels = 1920ull * 1080ull;
     int march_steps = 64;
 };
 

@@ -1595,9 +1595,10 @@ int main(int argc, char** argv) {
         CHECK(at30 == at120 && at30 == scrubbed);
     }
 
-    // 7i) Safety net (live above 4K): forced on here at the test size. Half-resolution march
-    //     with depth-aware rebuild and full-resolution re-march at edges must stay close to
-    //     the full-resolution frame.
+    // 7i) Half-resolution air (live above 1080p): forced on here at the test size. The
+    //     half-resolution march with depth-aware rebuild and full-resolution re-march at
+    //     edges must stay close to the full-resolution frame, match it exactly along every
+    //     outline, and repeat exactly.
     std::vector<uint8_t> net_full, net_half;
     {
         dolly::weather::Resolved res = dolly::weather::resolve(
@@ -1622,10 +1623,47 @@ int main(int argc, char** argv) {
             visible += worst > 6;
         }
         const double mean = sum / (frame_px * 3.0);
-        std::printf("WARP safety net: mean %.3f / 255, %.2f%% of pixels differ visibly\n", mean,
+        std::printf("WARP half-resolution haze: mean %.3f / 255, %.2f%% of pixels differ visibly\n", mean,
                     100.0 * visible / frame_px);
         CHECK(net_half != net_full); // the half-resolution path really ran
         CHECK(mean < 1.5 && visible < frame_px / 20);
+        // Live it is on at 1440p and up, off at 1080p; the same frame again is identical.
+        const dolly::env::EnvRenderParams defaults;
+        CHECK(defaults.half_res_above_pixels >= 1920ull * 1080ull &&
+              defaults.half_res_above_pixels < 2560ull * 1440ull);
+        CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,
+                              res.render, solver, emitters, 0));
+        CHECK(readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh) == net_half);
+        // Outlines stay exact: a pixel with a half-resolution neighbour across a depth edge
+        // (or the sky's) is marched at full resolution, so it matches the full frame bit for
+        // bit. (Edges well clear of the shader's 8% threshold, so rounding cannot differ.)
+        size_t edge_px = 0, edge_off = 0;
+        const uint32_t hw = (vw + 1) / 2, hh = (vh + 1) / 2;
+        for (uint32_t y = 0; y < vh; ++y)
+            for (uint32_t x = 0; x < vw; ++x) {
+                const size_t i = static_cast<size_t>(y) * vw + x;
+                const float d = scene_depth[i];
+                const bool sky_here = d <= 1e-6f;
+                bool edge = false;
+                for (uint32_t k = 0; k < 4; ++k) {
+                    const uint32_t qx = std::min(x / 2 + (k & 1), hw - 1);
+                    const uint32_t qy = std::min(y / 2 + (k >> 1), hh - 1);
+                    const float ds = scene_depth[static_cast<size_t>(std::min(qy * 2, vh - 1)) * vw +
+                                                 std::min(qx * 2, vw - 1)];
+                    if ((ds <= 1e-6f) != sky_here)
+                        edge = true;
+                    else if (!sky_here && std::abs(ds - d) / std::max(d, 1e-6f) > 0.1f)
+                        edge = true;
+                }
+                if (!edge)
+                    continue;
+                ++edge_px;
+                edge_off += std::memcmp(&net_full[i * 4], &net_half[i * 4], 4) != 0;
+            }
+        std::printf("WARP half-resolution air: %zu outline pixels, %zu differ from the "
+                    "full-resolution frame\n",
+                    edge_px, edge_off);
+        CHECK(edge_px > frame_px / 200 && edge_off == 0);
     }
 
     // 7j) Rain on the ground: dry at the shot start, wetter as it goes on; raindrop rings move
@@ -1895,6 +1933,7 @@ int main(int argc, char** argv) {
             }
             CHECK(renderer.set_hero_trails(run.data(), static_cast<uint32_t>(run.size())));
             std::vector<uint8_t> mask;
+            bool half_air = false;
             const auto shot = [&](uint8_t level, bool kick) {
                 for (int c = 0; c < 3; ++c)
                     ground_rgb[c] = box_rgb[c] = level;
@@ -1916,6 +1955,8 @@ int main(int argc, char** argv) {
                 p.wind_xy[0] = p.wind_xy[1] = 0.0f;
                 p.sim_time = now;
                 p.hero_kickup = kick;
+                if (half_air)
+                    p.half_res_above_pixels = 0;
                 CHECK(renderer.render(ctx.Get(), cs.Get(), ds.Get(), out_rtv.Get(), view, p, calm,
                                       nullptr, 0));
                 return readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
@@ -1923,6 +1964,22 @@ int main(int argc, char** argv) {
             const auto on_dark = shot(30, true), off_dark = shot(30, false);
             const auto on_light = shot(200, true), off_light = shot(200, false);
             CHECK(shot(200, true) == on_light); // the same time draws the same puffs
+            // Marched at half resolution (live above 1080p) it is the same cloud.
+            half_air = true;
+            const auto on_light_half = shot(200, true);
+            half_air = false;
+            CHECK(on_light_half != on_light);
+            double half_sum = 0.0;
+            size_t half_visible = 0;
+            for (size_t i = 0; i < on_light.size(); i += 4) {
+                const int dg = std::abs(int(on_light[i + 1]) - int(on_light_half[i + 1]));
+                half_sum += dg;
+                half_visible += dg > 8;
+            }
+            std::printf("WARP kick-up puff at half resolution: mean %.3f / 255 from the full "
+                        "one, %zu pixels differ visibly\n",
+                        half_sum / frame_px, half_visible);
+            CHECK(half_sum / frame_px < 1.0 && half_visible < frame_px / 50);
             CHECK(renderer.set_hero_trails(nullptr, 0));
             // Coverage per pixel, where the two scenes differ enough to measure it.
             std::vector<float> cover(frame_px, -1.0f);

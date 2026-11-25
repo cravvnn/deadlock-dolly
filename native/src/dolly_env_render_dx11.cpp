@@ -68,7 +68,7 @@ cbuffer EnvConstants : register(b0) {
     float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w 1 = wallReach set
     float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map,
                           // z newest track time drawn (s), w 1 = z is set
-    float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold,
+    float4 netInfo;       // x 2 = composite the air from halfMarch, y edge threshold,
                           // z 1 = driftMap holds a drift potential, w hero count
     float4 trailInfo;     // x 1 = hero trails (2 = and kick-up), y fill-in time (s), z shot start (s), w build-up (s)
     EmitterGPU emitters[EMITTERS];
@@ -94,7 +94,7 @@ StructuredBuffer<ViewData> gpuView : register(t8);
 // Sun optical depth through the volume, baked per frame by BakeSunCS: map X, map Y, and
 // height above the floor the ray is over, from -18 to the volume reach (volumeBounds.z).
 Texture3D<float> sunBake : register(t9);
-Texture2D<float4> halfMarch : register(t10); // safety net: half-resolution march
+Texture2D<float4> halfMarch : register(t10); // the air (haze and puffs) at half resolution
 Texture2D<float> driftMap : register(t11);   // drift potential 0..2, stored halved (UNORM16)
 Texture2D<float> wallReach : register(t14);  // 1 where a wall is within the enclosure's reach
 // Kick-up: per texel the latest shot time a running hero passed, made older at the edge of
@@ -334,6 +334,9 @@ float3 TrailAt(float3 p) {
     float rimFresh = (exp(-max(rimAge, 0.0) / max(trailInfo.y, 1.0)) - floorFresh) /
                      (1.0 - floorFresh);
     float rim = rimShape * saturate(rimFresh) * smoothstep(0.0, 0.08, edge) * pressed;
+    // Away from every track there is nothing to scale (and no roof to read for it).
+    if (tread <= 0.0 && rim <= 0.0)
+        return float3(0.0, 0.0, 0.0);
     // Only on ground open to the sky (where the cover itself lies): never on a street under a
     // deck someone walked on.
     float openHere = smoothstep(0.15, 0.45, SkyOpenAt(MapUV(p.xy), p.z));
@@ -1074,6 +1077,9 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
     // at grazing views; nothing to do away from tracks (the top is then flat and parallel).
     float3 trailPos = surfPos;
     float rimOcc = 0.0;
+    // The tracks at the ground point itself, when the trace below has read them already.
+    float3 trailAtSurf = float3(0.0, 0.0, 0.0);
+    bool haveSurf = false;
     {
         // Faded out by a 15 degree view (from 30): nearly edge-on, any trace steps show.
         float fade = (1.0 - smoothstep(1200.0, 1600.0, hitDist)) * smoothstep(0.26, 0.5, viewDir.z);
@@ -1093,10 +1099,12 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
             float sMax = min(depth * 1.35 / max(rise, 0.05), 32.0 / across);
             float3 far3 = TrailAt(float3(surfPos.xy + viewDir.xy * sMax, surfPos.z));
             float3 here3 = TrailAt(surfPos);
+            trailAtSurf = here3;
+            haveSurf = true;
             if (max(max(far3.x, far3.z), max(here3.x, here3.z)) > 0.001) {
                 float sPrev = sMax;
-                float ePrev = sMax * rise - BlanketTopAt(surfPos.xy + viewDir.xy * sMax,
-                                                         surfPos.z, depth);
+                // The blanket's top at the far end, from the read above (BlanketTopAt there).
+                float ePrev = sMax * rise - depth * (1.0 - 0.6 * far3.x + 0.25 * far3.z);
                 float sHit = 0.0;
                 // Exports take twice the steps (styleB.z is 128 there).
                 int traceSteps = styleB.z > 100.0 ? 24 : 12;
@@ -1144,7 +1152,11 @@ float3 ApplySurfaceCoating(float3 baseColor, float3 surfPos, float3 surfNormal, 
             }
         }
     }
-    float3 trailHere = TrailAt(trailPos);
+    // (The trace ended on the ground point itself wherever no track cut the view: the same
+    // read, taken once.)
+    float3 trailHere = trailAtSurf;
+    if (!haveSurf || any(trailPos.xy != surfPos.xy))
+        trailHere = TrailAt(trailPos);
     float3 trail = trailHere * upMask;
     float tread = trail.x;
     // Churned snow is broken into lumps with the ground showing between them.
@@ -1685,10 +1697,10 @@ float4 KickUp(float3 rayDir, float hitDist, bool sky, int preset, float2 px) {
 }
 
 // The volumetric march along one view ray: rgb in-scattered light, a transmittance.
-float4 MarchRay(float2 px, float3 rayDir, float hitDist) {
+float4 MarchRay(float2 px, float3 rayDir, float hitDist, float stepScale) {
     float maxDist = windTime.w;
     // Volumetric raymarch front-to-back
-    int steps = clamp(int(styleB.z + 0.5), 16, 128);
+    int steps = clamp(int(styleB.z * stepScale + 0.5), 16, 128);
     // Per-pixel white noise breaks the step bands into fine grain. Interleaved-gradient
     // noise lined up with the per-cell step schedule and drew contour lines over bright
     // ground cover.
@@ -1799,7 +1811,19 @@ float4 MarchRay(float2 px, float3 rayDir, float hitDist) {
     return float4(scatter, trans);
 }
 
-// Safety net above 4K: rebuild this pixel's march from the four nearest half-resolution
+// Everything in the air along one view ray, in front of what it hits: the kick-up puffs,
+// then the haze over them. rgb the light they add (premultiplied), a what shows through.
+float4 AirAlongRay(float2 px, float3 rayDir, float hitDist, bool sky, int preset,
+                   float stepScale) {
+    float4 m = MarchRay(px, rayDir, hitDist, stepScale);
+    if (sunDir.w > 0.5) {
+        float4 kick = KickUp(rayDir, hitDist, sky, preset, px);
+        m = float4(kick.rgb * m.a + m.rgb, (1.0 - kick.a) * m.a);
+    }
+    return m;
+}
+
+// Above 1080p (live): rebuild this pixel's air from the four nearest half-resolution
 // samples, weighted by distance and depth similarity. Returns false when a neighbour sits
 // across a depth edge (or sky boundary); the caller then marches the pixel at full
 // resolution, so silhouettes stay exact.
@@ -1830,6 +1854,8 @@ bool UpsampleMarch(float2 px, float depth, out float4 result) {
     return true;
 }
 
+)HLSL"
+                                  R"HLSL(
 float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
     float2 px = floor(i.pos.xy);
     int2 ipx = clamp(int2(px), int2(0, 0), int2(screenInfo.xy) - 1);
@@ -1901,19 +1927,16 @@ float4 EnvCompositePS(FullscreenVSOut i) : SV_Target {
         }
     }
 
-    if (sunDir.w > 0.5) {
-        float4 kick = KickUp(rayDir, hitDist, sky, preset, px);
-        baseColor = baseColor * (1.0 - kick.a) + kick.rgb;
-    }
-
     float4 m;
     if (netInfo.x < 1.5 || !UpsampleMarch(px, depth, m))
-        m = MarchRay(px, rayDir, hitDist);
+        m = AirAlongRay(px, rayDir, hitDist, sky, preset, 1.0);
     return float4(baseColor * m.a + m.rgb, 1.0);
 }
 
-// Half-resolution march (safety net above 4K): one sample per 2x2 block, at its top-left
-// full-resolution pixel.
+// The air at half resolution (above 1080p, live): one sample per 2x2 block, at its top-left
+// full-resolution pixel. Marched in shorter steps than a full-resolution pixel takes: the
+// march's per-pixel grain is spread over four pixels here, and would show coarser.
+static const float kHalfStepScale = 1.5;
 float4 EnvHalfPS(FullscreenVSOut i) : SV_Target {
     float2 px = floor(i.pos.xy) * 2.0;
     if (!LoadView())
@@ -1925,9 +1948,10 @@ float4 EnvHalfPS(FullscreenVSOut i) : SV_Target {
     float farZ = cameraPos.w > 0.5 ? 1e-5 : (1.0 - 1e-5);
     float3 rayDir = normalize(WorldFromPixelDepth(px, farZ) - gCamPos);
     float maxDist = windTime.w;
-    float hitDist = IsSky(depth) ? maxDist
-                                 : min(length(WorldFromPixelDepth(px, depth) - gCamPos), maxDist);
-    return MarchRay(px, rayDir, hitDist);
+    bool sky = IsSky(depth);
+    float hitDist = sky ? maxDist
+                        : min(length(WorldFromPixelDepth(px, depth) - gCamPos), maxDist);
+    return AirAlongRay(px, rayDir, hitDist, sky, preset, kHalfStepScale);
 }
 )HLSL";
 
@@ -2456,8 +2480,8 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         dst.cone_height_active[3] = src.active_weight;
     }
 
-    // Safety net: above the pixel threshold (and never in exports) march at half resolution
-    // and rebuild each pixel from it, re-marching depth edges at full resolution.
+    // Above the pixel threshold (and never in exports) the air is marched at half resolution
+    // and each pixel rebuilt from it, re-marching depth edges at full resolution.
     const bool net = params.allow_half_res &&
                      uint64_t(camera.width) * camera.height > params.half_res_above_pixels;
     if (net) {
@@ -2639,13 +2663,13 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
     ctx->PSSetConstantBuffers(0, 1, cbs);
     ctx->PSSetSamplers(0, 2, samps);
     if (net) {
-        // Half-resolution march into its own target, then the full-resolution composite.
+        // Half-resolution air into its own target, then the full-resolution composite.
         D3D11_VIEWPORT hvp{0.0f, 0.0f, float(impl_->half_w), float(impl_->half_h), 0.0f, 1.0f};
         ID3D11RenderTargetView* half_rtvs[1] = {impl_->half_rtv.Get()};
         ctx->OMSetRenderTargets(1, half_rtvs, nullptr);
         ctx->RSSetViewports(1, &hvp);
         ctx->PSSetShader(impl_->half_ps.Get(), nullptr, 0);
-        ctx->PSSetShaderResources(0, 10, srvs);
+        ctx->PSSetShaderResources(0, 18, srvs); // slot 10 (its own target) is still empty
         ctx->Draw(3, 0);
         ctx->OMSetRenderTargets(1, rtvs, nullptr);
         ctx->RSSetViewports(1, &vp);
