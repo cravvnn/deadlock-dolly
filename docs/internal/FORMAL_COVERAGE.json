@@ -9662,7 +9662,7 @@
     },
     {
       "path": "native/src/dolly_map_grid.cpp",
-      "sha256": "1c811673bfdeea7e44107794e53f53c2b2d89d57526b0fc9efa6c4e26ca092a1",
+      "sha256": "1a61634b998c31336f8763834ff9b9012859e78db684184db5f62634f99e0ce4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",

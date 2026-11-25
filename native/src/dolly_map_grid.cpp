@@ -1754,6 +1754,34 @@ inline float unpack_height_i16(int16_t q) noexcept {
     return static_cast<float>(q) * 0.5f;
 }
 
+// Heights within +-16000u are cached as 0.5u fixed point; larger maps keep floats.
+bool cache_uses_f32(const MapGrid& grid) noexcept {
+    const size_t n = static_cast<size_t>(grid.width) * static_cast<size_t>(grid.height);
+    for (size_t i = 0; i < n; ++i) {
+        if (std::abs(grid.tops[i]) > 16000.0f || std::abs(grid.street_z[i]) > 16000.0f)
+            return true;
+        for (float h : grid.floor_z[i])
+            if (h > kNoFloorZ * 0.5f && std::abs(h) > 16000.0f)
+                return true;
+    }
+    return false;
+}
+
+// Give a freshly baked grid exactly the heights a later cache load returns, so
+// the first session with a map renders the same as every following one.
+void quantize_like_cache(MapGrid& grid) noexcept {
+    if (!grid.valid() || cache_uses_f32(grid))
+        return;
+    const auto round_trip = [](float& h) { h = unpack_height_i16(pack_height_i16(h)); };
+    for (float& h : grid.tops)
+        round_trip(h);
+    for (float& h : grid.street_z)
+        round_trip(h);
+    for (auto& layers : grid.floor_z)
+        for (float& h : layers)
+            round_trip(h);
+}
+
 } // namespace
 
 uint64_t compute_vpk_fingerprint(const std::filesystem::path& vpk_path) {
@@ -2238,15 +2266,7 @@ bool save_map_grid_cache(const std::filesystem::path& cache_path, const MapGrid&
         std::filesystem::create_directories(cache_path.parent_path(), ec);
 
     const size_t n = static_cast<size_t>(grid.width) * static_cast<size_t>(grid.height);
-    bool use_f32 = false;
-    for (size_t i = 0; i < n && !use_f32; ++i) {
-        if (std::abs(grid.tops[i]) > 16000.0f || std::abs(grid.street_z[i]) > 16000.0f)
-            use_f32 = true;
-        for (float h : grid.floor_z[i]) {
-            if (h > kNoFloorZ * 0.5f && std::abs(h) > 16000.0f)
-                use_f32 = true;
-        }
-    }
+    const bool use_f32 = cache_uses_f32(grid);
 
     CacheHeader hdr{};
     std::memcpy(hdr.magic, kCacheMagic, 8);
@@ -2434,6 +2454,7 @@ bool load_or_bake_map_grid(const std::filesystem::path& vpk_path,
 
     if (!bake_map_grid_from_vpk(vpk_path, opts, out_grid, out_stats, out_error))
         return false;
+    quantize_like_cache(out_grid);
     if (!cache_dir.empty())
         save_map_grid_cache(cache_path, out_grid, fp, nullptr);
     return true;
