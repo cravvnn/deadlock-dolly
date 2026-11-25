@@ -804,7 +804,7 @@ static void publish_weather_clock(const DemoState& demo, const confetti::Camera&
     }
     weather_runtime::publish_clock(demo.time, demo.interval, demo.playing, demo.paused,
                                    demo.seeking, origins,
-                                   count, slots);
+                                   count, slots, demo.name);
 }
 
 static bool read_demo(DemoState& result) noexcept {

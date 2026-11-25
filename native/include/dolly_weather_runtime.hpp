@@ -25,9 +25,11 @@ void poll_editor_block(const unsigned char* memory) noexcept;
 // replay is playing (a loaded demo), paused or seeking, and the heroes' world origins seen
 // at that time (for hero wakes; at most 12 are used, in the order given), with each hero's
 // stable slot (entity index) when known, for the replay's hero tracks.
+// `replay_name` is the loaded replay's name as the game reports it: tracks are kept and
+// drawn only when it is the replay whose store the editor named.
 void publish_clock(double replay_time, double tick_interval, bool playing, bool paused,
                    bool seeking, const float (*heroes)[3] = nullptr, uint32_t hero_count = 0,
-                   const uint32_t* slots = nullptr) noexcept;
+                   const uint32_t* slots = nullptr, const char* replay_name = nullptr) noexcept;
 
 // View thread: whether hero positions are wanted (a replay's track store is open, or the
 // weather is on with hero wakes or coating).

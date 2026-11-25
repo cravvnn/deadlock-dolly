@@ -89,6 +89,10 @@ struct EnvRenderParams {
     // clock: a track made before the cover had settled only pressed what lay there then.
     float coating_build_up = 0.0f;
     float shot_start_time = 0.0f;
+    // Hero tracks: segments ending after this time are not drawn yet (the newest 1/15 s grid
+    // time reached, computed in double so a store filled live and one loaded from disk give
+    // the same frame). Negative: use sim_time.
+    float trails_through = -1.0f;
     // Safety net: above this many output pixels, march at half resolution and rebuild each
     // pixel from it, re-marching depth edges at full resolution. Exports turn it off.
     bool allow_half_res = true;

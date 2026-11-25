@@ -155,12 +155,18 @@ trails::Wire trails_wire(std::uint32_t flags, const char* store, double start, d
     w.window_start = start;
     w.window_end = end;
     std::strncpy(w.store_path, store, sizeof(w.store_path) - 1);
+    if (*store)
+        std::strncpy(w.replay, "139468139.dem", sizeof(w.replay) - 1);
     return w;
 }
 
 void test_trails_wire() {
     auto c = trails::decode(trails_wire(trails::kFlagStore, "a.trk", 10.0, 40.0));
-    CHECK(c && c->store_path == "a.trk" && c->window_start == 10.0 && c->window_end == 40.0);
+    CHECK(c && c->store_path == "a.trk" && c->window_start == 10.0 && c->window_end == 40.0 &&
+          c->replay == "139468139.dem");
+    auto nameless = trails_wire(trails::kFlagStore, "a.trk", 10.0, 40.0);
+    std::memset(nameless.replay, 0, sizeof(nameless.replay));
+    CHECK(!trails::decode(nameless)); // a store always names its replay
     c = trails::decode(trails_wire(0, "", 0.0, 0.0)); // no replay open
     CHECK(c && c->store_path.empty());
     CHECK(!trails::decode(trails_wire(trails::kFlagStore, "", 0.0, 1.0))); // store needs a path
@@ -250,8 +256,22 @@ void test_track_store() {
     jumps.add(5, 1530, p3);  // 1.6 s later: vanished
     CHECK(jumps.segments(0.0, 200.0).size() == 1);
     CHECK(!jumps.add(5, 1503, far) && jumps.size() == 4); // never rewritten
-    // Filled in behind: has_after says the whole set must be rebuilt.
+    // Filled in behind: has_after sees it; insert_effect says what changed.
     CHECK(jumps.has_after(5, 1501));
+    trails::Store behind;
+    const float q0[3] = {0, 0, 0}, q1[3] = {20, 0, 0}, q2[3] = {40, 0, 0}, q9[3] = {200, 0, 0};
+    behind.add(1, 100, q0);
+    behind.add(1, 120, q9); // 20 cells later: not joined to cell 100
+    behind.add(1, 101, q1); // played later, behind cell 120
+    auto effect = behind.insert_effect(1, 101);
+    CHECK(!effect.rejoin && effect.next == 120); // adds 100->101 and 101->120's own joint
+    behind.add(1, 119, q2);
+    CHECK(behind.insert_effect(1, 119).next == 120);
+    behind.add(1, 108, q2); // between 101 and 119, which were not joined (18 cells apart)
+    CHECK(!behind.insert_effect(1, 108).rejoin);
+    behind.add(1, 105, q1);
+    CHECK(behind.insert_effect(1, 105).rejoin); // 101 and 108 were joined: rebuild
+    CHECK(behind.insert_effect(1, 120).next == -1); // the newest cell
     // Saved and read back exactly; a missing file is an empty store; a bad one is refused.
     const auto file = std::filesystem::temp_directory_path() / "dolly_tracks_test.trk";
     std::string error;

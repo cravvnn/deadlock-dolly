@@ -3672,15 +3672,16 @@ class DollyApp:
             self._show_trails_status()
 
     def _hero_tracks_window(self):
-        """The open replay's hero track store and the shot's replay time window (s): what the
-        game fills while the replay plays and draws tracks for. No replay: an empty path."""
+        """The open replay's hero track store, the shot's replay time window (s) and the
+        replay itself: what the game fills while it plays that replay and draws tracks for.
+        No replay: an empty path."""
         replay = self.demo_path.get().strip() if hasattr(self, "demo_path") else ""
         project = self.project
         start = project.start_tick / project.tick_rate
         end = start + max(float(project.duration), 0.0)
         if not replay:
-            return ("", start, end)
-        return (str(weather_model.hero_track_store(replay)), start, end)
+            return ("", start, end, "")
+        return (str(weather_model.hero_track_store(replay)), start, end, replay)
 
     def _show_trails_status(self):
         """The Scene page's tracks line: how much of the shot the replay's store has seen."""
@@ -3688,7 +3689,7 @@ class DollyApp:
         if view is None:
             return
         settings = self.project.weather
-        store, start, end = self._hero_tracks_window()
+        store, start, end, _replay = self._hero_tracks_window()
         if not settings.hero_tracks:
             text = "Hero tracks: off for this shot."
         elif settings.preset not in weather_model.TRACK_PRESETS:
@@ -3718,7 +3719,7 @@ class DollyApp:
         """A frozen take records one replay moment without playing the shot, so its tracks are
         those already kept for the replay. Say so when the shot has not been played through."""
         settings = self.project.weather
-        store, start, end = self._hero_tracks_window()
+        store, start, end, _replay = self._hero_tracks_window()
         if not store or not settings.enabled or not settings.tracks_shown:
             return
         if weather_model.track_coverage(weather_model.track_ranges(store), start, end) < 1.0:

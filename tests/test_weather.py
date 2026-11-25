@@ -206,8 +206,10 @@ class HeroTrails(unittest.TestCase):
                          weather.TRAILS_PATH_BYTES)
         offset = int(re.search(r"kWireOffset = 2 \* 1024 \* 1024 \+ (\d+);", h).group(1))
         self.assertEqual(2 * 1024 * 1024 + offset, weather.TRAILS_WIRE_OFFSET)
-        self.assertEqual(int(re.search(r"sizeof\(Wire\) == (\d+)", h).group(1)),
-                         weather.TRAILS_WIRE_BYTES)
+        replay_bytes = int(re.search(r"kReplayBytes = (\d+);", h).group(1))
+        self.assertEqual(replay_bytes, weather.TRAILS_REPLAY_BYTES)
+        self.assertEqual(int(re.search(r"sizeof\(Wire\) == (\d+) \+ kReplayBytes", h).group(1))
+                         + replay_bytes, weather.TRAILS_WIRE_BYTES)
         self.assertEqual(int(re.search(r"kFlagStore = (\d+);", h).group(1)), weather.TRAILS_FLAG_STORE)
         self.assertEqual("".join(re.search(r"kFileMagic\[8\] = \{(.*?)\};",
                                            SOURCE.read_text(encoding="utf-8")).group(1)
@@ -222,9 +224,12 @@ class HeroTrails(unittest.TestCase):
 
     def test_block_names_the_store_and_window(self):
         block = weather.pack_trails_wire(5, store_path="C:/a/b.tracks", window_start=12.5,
-                                         window_end=40.0)
-        magic, seq, abi, flags, _reserved, start, end, store = struct.unpack(
+                                         window_end=40.0, replay="B:/replays/139468139.dem")
+        magic, seq, abi, flags, _reserved, start, end, store, replay = struct.unpack(
             weather.TRAILS_WIRE_FORMAT, block)
+        self.assertEqual(replay.rstrip(b"\0"), b"139468139.dem")  # its file name only
+        with self.assertRaises(ValueError):  # a store always names its replay
+            weather.pack_trails_wire(1, store_path="C:/a/b.tracks")
         self.assertEqual((magic, seq, abi), (weather.TRAILS_WIRE_MAGIC, 5, 2))
         self.assertEqual((flags, start, end), (weather.TRAILS_FLAG_STORE, 12.5, 40.0))
         self.assertEqual(store.rstrip(b"\0"), b"C:/a/b.tracks")
@@ -233,7 +238,8 @@ class HeroTrails(unittest.TestCase):
         with self.assertRaises(ValueError):
             weather.pack_trails_wire(1, store_path="x" * weather.TRAILS_PATH_BYTES)
         with self.assertRaises(ValueError):
-            weather.pack_trails_wire(1, store_path="a", window_start=5.0, window_end=1.0)
+            weather.pack_trails_wire(1, store_path="a", window_start=5.0, window_end=1.0,
+                                     replay="r.dem")
 
     def test_store_is_per_replay_and_beside_the_map_data(self):
         a = weather.hero_track_store("B:/replays/1.dem")

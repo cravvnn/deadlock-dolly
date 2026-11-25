@@ -731,19 +731,23 @@ class NativeBridge(MediaTransport):
                 self._weather_start = start_tick
             self._publish_weather()
 
-    def set_hero_trails(self, store_path="", window_start=0.0, window_end=0.0):
+    def set_hero_trails(self, store_path="", window_start=0.0, window_end=0.0, replay=""):
         """Name the open replay's hero track store (the game fills it while the replay plays)
-        and the shot's replay time window whose tracks it draws. Empty: no replay open."""
+        and the shot's replay time window whose tracks it draws; ``replay`` is the replay the
+        store belongs to (the game ignores it while playing another). Empty: no replay open."""
         store = str(store_path or "")
+        name = str(replay or "")
         window = (float(window_start), float(window_end))
-        pack_trails_wire(0, store_path=store, window_start=window[0], window_end=window[1])
+        pack_trails_wire(0, store_path=store, window_start=window[0], window_end=window[1],
+                         replay=name)
         with self._operations, self._lock:
             self._check_open()
-            self._trails = (store, *window)
+            self._trails = (store, *window, name)
             self._publish_block(
                 TRAILS_WIRE_OFFSET, "_trails_sequence",
                 lambda sequence: pack_trails_wire(sequence, store_path=store,
-                                                  window_start=window[0], window_end=window[1]))
+                                                  window_start=window[0], window_end=window[1],
+                                                  replay=name))
 
     def set_weather_map(self, map_name):
         """The replay's map, whose collision grid the helper bakes for weather."""

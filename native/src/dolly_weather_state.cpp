@@ -261,13 +261,15 @@ std::pair<std::int64_t, std::int64_t> grid_range(double start, double end) {
 std::optional<Controls> decode(const Wire& wire) {
     if (std::memcmp(wire.magic, kWireMagic, sizeof(kWireMagic)) != 0 || wire.abi != kWireAbi ||
         (wire.flags & ~kFlagStore) != 0 || !terminated(wire.store_path) ||
+        std::memchr(wire.replay, 0, kReplayBytes) == nullptr ||
         !std::isfinite(wire.window_start) || !std::isfinite(wire.window_end) ||
         wire.window_end < wire.window_start)
         return std::nullopt;
     Controls c;
     if (wire.flags & kFlagStore) {
         c.store_path = wire.store_path;
-        if (c.store_path.empty())
+        c.replay = wire.replay;
+        if (c.store_path.empty() || c.replay.empty())
             return std::nullopt;
     }
     c.window_start = wire.window_start;
@@ -306,17 +308,20 @@ bool Store::add(std::uint32_t slot, std::int32_t grid, const float pos[3]) {
     return true;
 }
 
-void Store::add_seen(double t0, double t1) {
+bool Store::add_seen(double t0, double t1) {
     if (!std::isfinite(t0) || !std::isfinite(t1) || t1 < t0 || t0 < 0.0 || t1 > kMaxTime)
-        return;
+        return false;
     // Ranges closer than half a cell are one range.
     const double join = 0.5 * kStep;
     if (!seen_.empty() && seen_.back().first <= t0 && t0 <= seen_.back().second + join) {
-        seen_.back().second = std::max(seen_.back().second, t1); // the common case
-        return;
+        if (t1 <= seen_.back().second)
+            return false;
+        seen_.back().second = t1; // the common case
+        return true;
     }
     if (seen_.size() >= kMaxRanges)
-        return;
+        return false;
+    const auto before = seen_;
     seen_.emplace_back(t0, t1);
     std::sort(seen_.begin(), seen_.end());
     std::vector<std::pair<double, double>> merged;
@@ -327,6 +332,7 @@ void Store::add_seen(double t0, double t1) {
             merged.push_back(r);
     }
     seen_.swap(merged);
+    return seen_ != before;
 }
 
 std::size_t Store::add_step(double t0, double t1, std::uint32_t slot, const float a[3],
@@ -391,6 +397,25 @@ bool Store::segment_to(std::uint32_t slot, std::int32_t grid, double start, doub
         return false;
     out = make_segment(a.first, a.second.data(), grid, it->second.data());
     return true;
+}
+
+Store::InsertEffect Store::insert_effect(std::uint32_t slot, std::int32_t grid) const {
+    InsertEffect effect;
+    const Hero* h = find(slot);
+    if (!h)
+        return effect;
+    const auto& cells = h->cells;
+    const auto it = std::lower_bound(cells.begin(), cells.end(), grid,
+                                     [](const auto& c, std::int32_t g) { return c.first < g; });
+    if (it == cells.end() || it->first != grid || it + 1 == cells.end())
+        return effect; // newest: only its own segment is new
+    const auto& next = *(it + 1);
+    effect.next = next.first;
+    if (it != cells.begin()) {
+        const auto& prev = *(it - 1);
+        effect.rejoin = joins(prev.first, prev.second.data(), next.first, next.second.data());
+    }
+    return effect;
 }
 
 bool Store::has_after(std::uint32_t slot, std::int32_t grid) const {

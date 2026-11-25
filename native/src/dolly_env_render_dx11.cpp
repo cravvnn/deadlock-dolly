@@ -66,7 +66,8 @@ cbuffer EnvConstants : register(b0) {
     float4 denseColor;    // rgb dense scatter albedo, w 1 = puddles reflect the frame
     float4 coatingInfo;   // x growth 0..1, y drift strength, z steady wind speed, w 1 = gpuView
     float4 volumeBounds;  // x lowest floor Z, y highest floor Z + reach, z reach, w 1 = wallReach set
-    float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map
+    float4 floorDecode;   // x lowest floor Z, y floor range: decodes the UNORM16 floor map,
+                          // z newest track time drawn (s), w 1 = z is set
     float4 netInfo;       // x 2 = composite from halfMarch (safety net), y edge threshold,
                           // z 1 = driftMap holds a drift potential, w hero count
     float4 trailInfo;     // x 1 = hero trails (2 = and kick-up), y fill-in time (s), z shot start (s), w build-up (s)
@@ -201,10 +202,11 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
+    float through = floorDecode.w > 0.5 ? floorDecode.z : now;
     // Not yet walked to its end, or long filled in (nothing of it can show any more). Only
     // whole segments: a live store has a hero's cell only once its time has passed, so the
     // same frame draws the same from a store being filled and from one filled long ago.
-    if (s.b.w > now || s.b.w <= s.a.w || s.b.w < now - kTrailFade * trailInfo.y)
+    if (s.b.w > through || s.b.w <= s.a.w || s.b.w < now - kTrailFade * trailInfo.y)
         return o;
     float f = 1.0;
     float2 a = s.a.xy;
@@ -2210,6 +2212,8 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
         cb.volume_bounds[3] = impl_->reach_srv ? 1.0f : 0.0f;
         cb.floor_decode[0] = mg.floor_min;
         cb.floor_decode[1] = mg.floor_max - mg.floor_min;
+        cb.floor_decode[2] = params.trails_through;
+        cb.floor_decode[3] = params.trails_through >= 0.0f ? 1.0f : 0.0f;
     }
     cb.coating_info[2] =
         std::sqrt(params.wind_xy[0] * params.wind_xy[0] + params.wind_xy[1] * params.wind_xy[1]);

@@ -171,6 +171,7 @@ constexpr char kWireMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'L', 'S', '2'};
 constexpr std::uint32_t kWireAbi = 2;
 constexpr std::uint32_t kFlagStore = 1; // store_path names this replay's track store
 constexpr std::size_t kPathBytes = 240;
+constexpr std::size_t kReplayBytes = 128;
 // Seqlocked (magic at 0, sequence at 8, ABI at 12), after the lens rain block and before
 // the cinematic status.
 constexpr std::size_t kWireOffset = 2 * 1024 * 1024 + 59456;
@@ -184,20 +185,25 @@ struct Wire {
     double window_start; // the shot's replay time range (s): tracks are drawn from here on
     double window_end;
     char store_path[kPathBytes]; // UTF-8, NUL-terminated
+    // The replay the store belongs to (its file name; folders and extension are ignored).
+    // The game keeps and draws tracks only while it plays that replay.
+    char replay[kReplayBytes];
 };
 #pragma pack(pop)
-static_assert(sizeof(Wire) == 280, "Python hero trails wire layout must match");
+static_assert(sizeof(Wire) == 280 + kReplayBytes, "Python hero trails wire layout must match");
 static_assert(offsetof(Wire, sequence) == 8, "Seqlocked block layout");
 static_assert(kWireOffset + sizeof(Wire) <= 2 * 1024 * 1024 + 60000,
               "Hero trails block fits before the cinematic status");
 
 struct Controls {
     std::string store_path; // empty: no store (no replay open)
+    std::string replay;     // the replay it belongs to (as published)
     double window_start = 0.0;
     double window_end = 0.0;
 };
-// Rejects a wrong magic or ABI, unknown flags, a path that is not NUL-terminated, the store
-// flag without a path, and a window that is not finite or runs backwards.
+// Rejects a wrong magic or ABI, unknown flags, a path or replay that is not NUL-terminated,
+// the store flag without a path and replay, and a window that is not finite or runs
+// backwards.
 std::optional<Controls> decode(const Wire& wire);
 
 // Hero positions on a fixed grid of 1/15 s replay-time cells, per hero (its entity index):
@@ -214,8 +220,9 @@ class Store {
 public:
     // Writes a cell unless that hero already has one there. Returns true when written.
     bool add(std::uint32_t slot, std::int32_t grid, const float pos[3]);
-    // Marks [t0, t1] as seen (played or read): merged with the ranges already seen.
-    void add_seen(double t0, double t1);
+    // Marks [t0, t1] as seen (played or read): merged with the ranges already seen. Returns
+    // true when that changed them.
+    bool add_seen(double t0, double t1);
     // A hero across one forward playback step from (t0, a) to (t1, b): fills the cells whose
     // times lie in (t0, t1], each from the line between the two frames. Returns how many
     // cells were written (their grids appended to `written` when given).
@@ -235,6 +242,14 @@ public:
                     dolly::env::TrailSegment& out) const;
     // True when `slot` has a cell after `grid` (a cell filled in behind others).
     bool has_after(std::uint32_t slot, std::int32_t grid) const;
+    // What writing `slot`'s cell at `grid` changed in the joined segments: `rejoin` when the
+    // cells before and after it were already joined (that segment is gone: rebuild all),
+    // else `next` is the grid of the cell after it (whose segment now starts here), or -1.
+    struct InsertEffect {
+        bool rejoin = false;
+        std::int32_t next = -1;
+    };
+    InsertEffect insert_effect(std::uint32_t slot, std::int32_t grid) const;
 
     // File "DLYTRK02": cell count, seen-range count (u32 each), the ranges (f64 pairs), then
     // the cells as grid (i32), slot (u32), x, y, z (f32). Saved through a temporary file.

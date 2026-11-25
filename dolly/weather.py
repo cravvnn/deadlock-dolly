@@ -118,7 +118,8 @@ TRAILS_WIRE_OFFSET = 2 * 1024 * 1024 + 59456
 TRAILS_WIRE_MAGIC = b"DLYTRLS2"
 TRAILS_WIRE_ABI = 2
 TRAILS_PATH_BYTES = 240
-TRAILS_WIRE_FORMAT = f"<8sIIIIdd{TRAILS_PATH_BYTES}s"
+TRAILS_REPLAY_BYTES = 128
+TRAILS_WIRE_FORMAT = f"<8sIIIIdd{TRAILS_PATH_BYTES}s{TRAILS_REPLAY_BYTES}s"
 TRAILS_WIRE_BYTES = struct.calcsize(TRAILS_WIRE_FORMAT)
 TRAILS_FLAG_STORE = 1
 # The store file (beside the map grids, never in the replay): seen time ranges, then hero
@@ -291,18 +292,22 @@ def preset_label(preset: str) -> str:
 
 
 def pack_trails_wire(sequence: int, *, store_path: str = "", window_start: float = 0.0,
-                     window_end: float = 0.0) -> bytes:
-    """The native hero tracks block: the open replay's track store (empty: none) and the
+                     window_end: float = 0.0, replay: str = "") -> bytes:
+    """The native hero tracks block: the open replay's track store (empty: none), the replay
+    it belongs to (the game keeps and draws tracks only while it plays that replay) and the
     shot's replay time window [window_start, window_end] in seconds."""
     data = str(store_path).encode("utf-8") if store_path else b""
     if len(data) >= TRAILS_PATH_BYTES or 0 in data:
         raise ValueError("The hero track store path is too long for the game to open")
+    name = Path(str(replay)).name.encode("utf-8") if replay else b""
+    if len(name) >= TRAILS_REPLAY_BYTES or 0 in name or (data and not name):
+        raise ValueError("The hero track store needs its replay's file name")
     start, end = float(window_start), float(window_end)
     if not (math.isfinite(start) and math.isfinite(end)) or end < start:
         raise ValueError("The hero track window must run forwards")
     flags = TRAILS_FLAG_STORE if data else 0
     return struct.pack(TRAILS_WIRE_FORMAT, TRAILS_WIRE_MAGIC, sequence & 0xffffffff,
-                       TRAILS_WIRE_ABI, flags, 0, start, end, data)
+                       TRAILS_WIRE_ABI, flags, 0, start, end, data, name)
 
 
 def hero_paths_directory() -> Path:

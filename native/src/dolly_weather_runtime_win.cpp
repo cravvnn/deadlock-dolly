@@ -18,6 +18,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -51,10 +52,36 @@ struct TrackStore {
     // Cells added at a hero's newest end since this generation: (slot, grid).
     std::vector<std::pair<std::uint32_t, std::int32_t>> journal;
     bool dirty = false;
+    std::chrono::steady_clock::time_point changed; // when cells or seen time were last added
     // The previous playing frame, to fill the cells between it and this one.
     double prev_time = -1.0;
     std::vector<std::pair<std::uint32_t, std::array<float, 3>>> prev;
+    std::string replay;   // the replay the store belongs to (its file name, no extension)
+    std::string playing;  // the replay the game has loaded, as last published
 };
+
+// A replay's file name without folders or extension, lower case ("139468139").
+std::string replay_stem(const char* name) {
+    std::string s = name ? name : "";
+    const auto slash = s.find_last_of("/\\");
+    if (slash != std::string::npos)
+        s = s.substr(slash + 1);
+    if (s.size() > 4) {
+        std::string tail = s.substr(s.size() - 4);
+        for (auto& c : tail)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (tail == ".dem")
+            s.resize(s.size() - 4);
+    }
+    for (auto& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// The open store belongs to the replay the game is playing.
+bool store_matches(const TrackStore& t) {
+    return !t.path.empty() && !t.replay.empty() && t.replay == t.playing;
+}
 std::mutex gTrailsMutex;
 TrackStore gTracks;
 std::atomic<bool> gTracksOn{false};
@@ -673,6 +700,8 @@ void update_trail_recording() noexcept {
         const auto block = std::atomic_load(&gTrailsBlock);
         const auto controls = block ? weather::trails::decode(*block) : std::nullopt;
         const std::string want = controls ? controls->store_path : std::string();
+        const std::string want_replay = controls ? replay_stem(controls->replay.c_str())
+                                                 : std::string();
         static auto last_save = std::chrono::steady_clock::now();
         const auto now = std::chrono::steady_clock::now();
         std::string save_path;
@@ -681,8 +710,10 @@ void update_trail_recording() noexcept {
         {
             std::lock_guard<std::mutex> lock(gTrailsMutex);
             reopen = want != gTracks.path;
-            const bool due = !gPlaying.load(std::memory_order_relaxed) ||
-                             now - last_save > std::chrono::seconds(4);
+            reopen = reopen || want_replay != gTracks.replay;
+            // Once playback has stopped adding (a pause, a stop, a seek), or every 20 s.
+            const bool due = now - gTracks.changed > std::chrono::seconds(1) ||
+                             now - last_save > std::chrono::seconds(20);
             if (gTracks.dirty && !gTracks.path.empty() && (reopen || due)) {
                 to_save = std::make_unique<weather::trails::Store>(gTracks.store);
                 save_path = gTracks.path;
@@ -693,6 +724,11 @@ void update_trail_recording() noexcept {
         if (to_save) {
             std::string error;
             if (!to_save->save(save_path, &error)) {
+                {
+                    std::lock_guard<std::mutex> lock(gTrailsMutex);
+                    if (gTracks.path == save_path)
+                        gTracks.dirty = true; // try again later
+                }
                 char text[200];
                 std::snprintf(text, sizeof(text), "weather: hero tracks not saved (%s)",
                               error.c_str());
@@ -711,6 +747,7 @@ void update_trail_recording() noexcept {
             }
             std::lock_guard<std::mutex> lock(gTrailsMutex);
             gTracks.path = want;
+            gTracks.replay = want_replay;
             gTracks.store = std::move(*loaded);
             ++gTracks.generation;
             gTracks.journal.clear();
@@ -754,8 +791,8 @@ double hero_track_coverage() noexcept {
         if (!(end > start))
             return 1.0;
         std::lock_guard<std::mutex> lock(gTrailsMutex);
-        if (gTracks.path != controls->store_path)
-            return -1.0; // still opening
+        if (gTracks.path != controls->store_path || !store_matches(gTracks))
+            return -1.0; // still opening, or another replay is loaded
         double covered = 0.0;
         for (const auto& range : gTracks.store.seen())
             covered += std::max(0.0, std::min(range.second, end) - std::max(range.first, start));
@@ -768,15 +805,23 @@ double hero_track_coverage() noexcept {
 
 void publish_clock(double replay_time, double tick_interval, bool playing, bool paused,
                    bool seeking, const float (*heroes)[3], uint32_t hero_count,
-                   const uint32_t* slots) noexcept {
+                   const uint32_t* slots, const char* replay_name) noexcept {
     // Hero tracks: every hero seen while the replay moves forward (never paused or seeking),
     // into this replay's store, on its fixed grid of cells.
     if (gTracksOn.load(std::memory_order_relaxed)) {
         try {
             std::lock_guard<std::mutex> lock(gTrailsMutex);
             TrackStore& tracks = gTracks;
+            if (replay_name) {
+                std::string stem = replay_stem(replay_name);
+                if (stem != tracks.playing) {
+                    tracks.playing = std::move(stem);
+                    ++tracks.generation; // drawn or not, by whether it matches
+                    tracks.journal.clear();
+                }
+            }
             const bool moving = playing && !paused && !seeking && std::isfinite(replay_time) &&
-                                replay_time >= 0.0 && !tracks.path.empty();
+                                replay_time >= 0.0 && store_matches(tracks);
             if (!moving) {
                 tracks.prev_time = -1.0;
                 tracks.prev.clear();
@@ -790,7 +835,12 @@ void publish_clock(double replay_time, double tick_interval, bool playing, bool 
                 }
                 std::sort(now.begin(), now.end(),
                           [](const auto& a, const auto& b) { return a.first < b.first; });
-                if (tracks.prev_time >= 0.0 && step > 0.0 && step <= 0.5) {
+                // Steps over about five cells (a hitch, a skip) leave their cells to a smoother
+                // pass: a long straight line baked in for good is worse. Heavy weather at 4x
+                // can still take ~0.3 s a frame. Frames without heroes (the roster not read
+                // yet) mark nothing as seen.
+                if (tracks.prev_time >= 0.0 && step > 0.0 && step <= 0.35 && !now.empty() &&
+                    !tracks.prev.empty()) {
                     std::vector<std::int32_t> written;
                     for (const auto& hero : now) {
                         const auto before = std::lower_bound(
@@ -803,19 +853,24 @@ void publish_clock(double replay_time, double tick_interval, bool playing, bool 
                                               before->second.data(), hero.second.data(),
                                               &written);
                         for (const std::int32_t grid : written) {
-                            if (tracks.store.has_after(hero.first, grid) ||
-                                tracks.journal.size() > (1u << 20)) {
-                                ++tracks.generation; // filled in behind: rebuild all
+                            // Filled in behind later cells: only a joint that already joined
+                            // the cells around it changes what is drawn (a rebuild); otherwise
+                            // its two new joints are added (the one after it as its successor's).
+                            const auto effect = tracks.store.insert_effect(hero.first, grid);
+                            if (effect.rejoin || tracks.journal.size() > (1u << 20)) {
+                                ++tracks.generation;
                                 tracks.journal.clear();
-                            } else {
-                                tracks.journal.emplace_back(hero.first, grid);
+                                continue;
                             }
+                            tracks.journal.emplace_back(hero.first, grid);
+                            if (effect.next >= 0)
+                                tracks.journal.emplace_back(hero.first, effect.next);
                         }
                         tracks.dirty = tracks.dirty || !written.empty();
                     }
-                    const auto seen_before = tracks.store.seen();
-                    tracks.store.add_seen(tracks.prev_time, replay_time);
-                    tracks.dirty = tracks.dirty || tracks.store.seen() != seen_before;
+                    tracks.dirty = tracks.store.add_seen(tracks.prev_time, replay_time) ||
+                                   tracks.dirty;
+                    tracks.changed = std::chrono::steady_clock::now();
                 }
                 if (step != 0.0) { // a repeated frame keeps the frame before it
                     tracks.prev_time = replay_time;
@@ -919,7 +974,7 @@ void ensure_trails(Gpu& gpu, ID3D11DeviceContext* ctx) {
             gpu.trails_path = gTracks.path;
             gpu.trails_start = start;
             gpu.trails_end = end;
-            if (!gTracks.path.empty() && end > start)
+            if (store_matches(gTracks) && end > start)
                 segments = gTracks.store.segments(start, end);
         } else {
             const auto& journal = gTracks.journal;
@@ -940,15 +995,23 @@ void ensure_trails(Gpu& gpu, ID3D11DeviceContext* ctx) {
     if (!rebuild) {
         // Out of room: start over with all of them.
         std::lock_guard<std::mutex> lock(gTrailsMutex);
-        segments = gTracks.store.segments(start, end);
+        segments = store_matches(gTracks) ? gTracks.store.segments(start, end)
+                                          : std::vector<env::TrailSegment>{};
         gpu.trails_journal = gTracks.journal.size();
     }
     const bool ok = gpu.env.set_hero_trails(segments.data(),
                                             static_cast<uint32_t>(segments.size()));
+    // Logged when it fails or the store or window changes, not on every rebuild.
+    static std::string logged;
     char text[160];
     std::snprintf(text, sizeof(text), "weather: hero tracks %s (%zu segments)",
                   ok ? "loaded" : "failed", segments.size());
-    set_status(text);
+    const std::string key = gpu.trails_path + "|" + std::to_string(start) + "|" +
+                            std::to_string(end);
+    if (!ok || key != logged) {
+        logged = key;
+        set_status(text);
+    }
 }
 } // namespace
 
@@ -1107,6 +1170,8 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
         profiler.mark(ctx);
         resolved.render.sim_time = static_cast<float>(time);
         resolved.render.shot_start_time = static_cast<float>(start);
+        resolved.render.trails_through = static_cast<float>(
+            std::floor(time / weather::trails::kStep) * weather::trails::kStep);
         resolved.render.coating_growth = weather::coating_growth(*settings, time - start);
         resolved.precipitation.time = time;
         // Fixed-step exports are not real time: march with twice the step budget.
