@@ -117,6 +117,7 @@ def build_camera(app):
 
 def build_look(app):
     """The Look page (PLAN-5 3.2); it creates the Citadel DOF variables the app's helpers use (N12)."""
+    from .debug_view import DEBUG_VIEW_IDS, DEBUG_VIEW_LABELS
     from .particles import PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN, PARTICLE_LABELS
     from .ui.look_page import LookActions, LookPage, LookState
 
@@ -133,6 +134,8 @@ def build_look(app):
         track_value=app.track_value,
         particle_labels=tuple(PARTICLE_LABELS[name] for name in PARTICLE_LABELS),
         intensity_unit=f"x ({PARTICLE_INTENSITY_MIN:g}–{PARTICLE_INTENSITY_MAX:g})",
+        debug_view=app.debug_view,
+        debug_view_labels=tuple(DEBUG_VIEW_LABELS[key] for key in DEBUG_VIEW_IDS),
     )
     commands = LookActions(
         range_dof_preset=app._range_dof_preset,
@@ -151,13 +154,14 @@ def build_look(app):
         focus_changed=app._citadel_focus_changed,
         focus_commit=app._citadel_focus_commit,
         show_fixed_values=app._show_fixed_values,
+        debug_view_changed=app._debug_view_changed,
         tree=app._tree,
     )
     view = LookPage(app.cvar_tab, state, commands)
     app.look_view = view
     for name in ("look_page", "track_tree", "value_tree", "citadel_dof_checkbox", "citadel_sensor_scale",
                  "citadel_focus_scale", "citadel_enabled", "citadel_sensor", "citadel_sensor_text",
-                 "citadel_focus_internal", "citadel_focus_text"):
+                 "citadel_focus_internal", "citadel_focus_text", "debug_card", "debug_view_combo"):
         setattr(app, name, getattr(view, name))
     # Shot Playback is pinned in the page's dock while Look shows, as on Camera.
     app._playback_hosts[str(app.cvar_tab)] = view.playback_host

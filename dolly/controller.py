@@ -27,6 +27,7 @@ from . import __version__
 from . import dof_preflight as dof_support
 # Compatibility exports shared with graphics runtime diagnostics.
 from .convar_response import NUMBER, read_cvar_value
+from .debug_view import DEBUG_VIEW_DEFAULT, DebugViewState, debug_view_label
 from .file_ops import _plain_path
 from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX,
                    validate_cvar_value, format_cvar_value)
@@ -432,6 +433,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._healthbars_hidden = False
         self._look_restore = {}
         self._glow_disabled = False
+        self._debug_view = DebugViewState()
         self._playback_details = None
         self._playback_metrics = {}
         self._playback_samples = deque(maxlen=256)
@@ -504,6 +506,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         state["scene_appearance_flags"] = (int(self._glow_disabled)
                                            | int(self._healthbars_hidden) << 1
                                            | int(bool(self._near_opacity_restore)) << 2)
+        state["debug_view"] = self._debug_view.current if self._alive() else DEBUG_VIEW_DEFAULT
         state["game_ui_visible"] = self._game_ui_visible
         state["health_panel_restore_pending"] = self._game_ui_restore.get(OWN_HEALTH_HUD) == 0
         state["native_dof_unavailable"] = bool(self._native_dof_unavailable)
@@ -1027,6 +1030,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._healthbar_restore.clear()
             self._healthbars_hidden = False
             self._look_restore.clear()
+            self._debug_view.reset_local()
             self._console_open = None
             self._native_last_status = {}
             self._native_handoff_details = {}
@@ -2070,6 +2074,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 # Reloading the replay restores the game's default glow. A take
                 # must keep the user's choice, so re-assert it before playback.
                 self._apply_citadel_glow()
+            self._reapply_debug_view()
             self._message("Replay prepared. Starting the shot…", startup_stage="replay_ready")
             return checked
         except Exception as exc:
@@ -4236,6 +4241,25 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._restore_cvar_journal(
             self._near_opacity_restore, "Near-player opacity restoration remains pending; retry the toggle.")
 
+    def set_debug_view(self, option):
+        """Apply a live rendering debug view for this session (never persisted)."""
+        with self._op_lock:
+            self._require_quiet_session("changing the debug view")
+            applied = self._debug_view.apply(
+                option,
+                send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error),
+                read_cvar=self._console_cvar,
+            )
+            self._message(f"Debug view set to {debug_view_label(applied)}.")
+            return applied
+
+    def _reapply_debug_view(self):
+        """Re-assert the active session debug view after a replay reload."""
+        self._debug_view.reapply(
+            send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error),
+            read_cvar=self._console_cvar,
+        )
+
     def set_playback_speed(self, speed):
         """Apply a replay speed immediately through the demo timescale.
 
@@ -6089,6 +6113,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._restore_healthbar_values()
             except Exception:  # noqa: BLE001 - the game may have closed mid-restore
                 LOG.warning("Could not restore healthbar values during disconnect", exc_info=True)
+        if console_connected(self._console) and self._alive():
+            try:
+                self._debug_view.reset_best_effort(
+                    send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error))
+            except Exception:  # noqa: BLE001 - a closed game must not block disconnect
+                LOG.warning("Could not reset debug view during disconnect", exc_info=True)
+        else:
+            self._debug_view.reset_local()
         try:
             self.stop(reset_speed=True)
         except Exception as exc:  # noqa: BLE001 - a closed game must not block disconnect
@@ -6151,6 +6183,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._layer_hidden = self._matte_cvar_restore = None
             self._export_timing = self._export_resolution = None
             self._healthbars_hidden = self._glow_disabled = False
+            self._debug_view.reset_local()
             self._invalidate_probe()
             self._invalidate_paused_camera()
             self._reset_camera_position()
@@ -6246,6 +6279,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                   "scene_appearance_flags": (int(self._glow_disabled)
                                              | int(self._healthbars_hidden) << 1
                                              | int(bool(self._near_opacity_restore)) << 2),
+                  "debug_view": self._debug_view.current,
                   "pending_playback_restoration": dict(self._playback_restore),
                   "pending_dof_shader_restoration": dict(self._dof_shader_restore),
                   "pending_game_ui_restoration": dict(self._game_ui_restore),
