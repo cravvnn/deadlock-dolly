@@ -181,6 +181,41 @@ def _pose_matches_key(app, index, pose):
     return True
 
 
+# Seeking a saved camera lands on the nearest recorded packet, a few ticks from
+# the key's exact tick. A held shot (same pose, later replay time) is farther.
+PARKED_TICK_TOLERANCE = 4
+
+
+def _replay_tick(app, bridge):
+    """The live replay tick, or None when it cannot be read."""
+    try:
+        status = bridge.status() if bridge is not None else app.controller.status()
+        tick = status.get("tick")
+    except Exception:  # noqa: BLE001 - an unreadable tick only disables parked edits
+        return None
+    if isinstance(tick, bool) or not isinstance(tick, (int, float)) or not math.isfinite(tick):
+        return None
+    return tick
+
+
+def _tick_matches_key(app, index, tick):
+    """True when the replay sits at the indexed saved camera's moment.
+
+    The pose alone cannot tell a camera parked on a saved key from a held shot:
+    keeping the camera still while the replay moves on reproduces the key's
+    exact pose at a later time, and that zoom belongs to the next capture.
+    """
+    if tick is None:
+        return False
+    try:
+        project = app.project
+        key = project.keyframes[index]
+        key_tick = project.start_tick + key.time * project.tick_rate
+    except (IndexError, TypeError, AttributeError):
+        return False
+    return abs(tick - key_tick) <= PARKED_TICK_TOLERANCE
+
+
 def dispatch(app, event, bridge, *, publish):
     action = event["action"]
     previous = getattr(app, "_history_edit_group", None)
@@ -335,7 +370,8 @@ def _dispatch(app, event, bridge, *, publish):
         # next view or the camera list). Once the user flies away, the edit is
         # live-only and the next capture stores it.
         parked = (isinstance(index, int) and 0 <= index < len(app.project.keyframes)
-                  and _pose_matches_key(app, index, event["pose"]))
+                  and _pose_matches_key(app, index, event["pose"])
+                  and _tick_matches_key(app, index, _replay_tick(app, bridge)))
         if not parked:
             app.status_text.set("Live framing updated. Capture a camera to save it.")
         elif not app._shot_edit_ready():

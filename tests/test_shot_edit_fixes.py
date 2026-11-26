@@ -536,10 +536,41 @@ class AttachedViewChangeTests(unittest.TestCase):
             original = app.project.keyframes[0].aspect_ratio
             published = []
             event = {"action": "set_framing", "value": 0, "pose": [0, 0, 0, 0, 0, 0, 1.1]}
-            self.assertTrue(editor_dispatch.dispatch(app, event, None, publish=lambda: published.append(1)))
+            bridge = SimpleNamespace(status=lambda: {"tick": app.project.start_tick})
+            self.assertTrue(editor_dispatch.dispatch(app, event, bridge, publish=lambda: published.append(1)))
             self.assertEqual(app.project.keyframes[0].aspect_ratio,
                              round(original * 1.1, 4) if ready else original)
             self.assertEqual(published, [] if ready else [1])
+
+    def _held_shot(self, live_tick):
+        # Camera 3 captured at tick 1425; the user keeps the camera still and
+        # moves the replay on before zooming for camera 4 (reported workflow).
+        app = self._app()
+        app.preview_attach = False
+        app._shot_edit_ready = lambda: True
+        app.project = Project(start_tick=1134, tick_rate=64.0, keyframes=[
+            _key(0.0, x=-50), _key(2.61, x=-20), _key(4.546875, aspect_ratio=4.0)])
+        app._selection_index = lambda tree: 2
+        app._commit_camera = lambda keys, _time=None: setattr(
+            app, "project", shot_commands.commit_camera(app.project, keys))
+        event = {"action": "set_framing", "value": 2, "pose": [0, 0, 0, 0, 0, 0, 0.5]}
+        bridge = None if live_tick is None else SimpleNamespace(status=lambda: {"tick": live_tick})
+        if bridge is None:
+            app.controller = SimpleNamespace(status=lambda: {"tick": None})
+        editor_dispatch.dispatch(app, event, bridge, publish=lambda: None)
+        return app
+
+    def test_held_shot_zoom_leaves_the_previous_camera(self):
+        for live_tick in (1490, None):
+            app = self._held_shot(live_tick)
+            self.assertEqual(app.project.keyframes[2].aspect_ratio, 4.0)
+            self.assertEqual(app.status_text.get(), "Live framing updated. Capture a camera to save it.")
+
+    def test_zoom_at_a_seeked_camera_still_edits_it(self):
+        # A seek can land on the nearest recorded packet a few ticks away.
+        for live_tick in (1425, 1428, 1422):
+            app = self._held_shot(live_tick)
+            self.assertEqual(app.project.keyframes[2].aspect_ratio, 2.0)
 
     def test_position_edits_only_arrive_as_curve_values(self):
         app = self._app()
@@ -755,3 +786,10 @@ class EditorEventBusyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InGameTextTests(unittest.TestCase):
+    def test_ellipsis_reaches_the_game_font_as_periods(self):
+        # The overlay fonts hold Latin-1 only; U+2026 drew as "?" in game.
+        self.assertEqual(editor_wire._text("Preparing replay for the shot…", 128),
+                         b"Preparing replay for the shot...")

@@ -110,10 +110,14 @@ class ExportTimingMixin:
         restore = state.get("restore") or {}
         host = restore.get("host_framerate")
         wait = restore.get("r_wait_on_present")
+        # Return to the replay speed the user chose, not a hardcoded 1x.
+        chosen = self._chosen_replay_speed() if callable(getattr(self, "_chosen_replay_speed", None)) else 1.0
         commands = ["host_framerate " + (numeric(host) if host else "0"),
                     "r_wait_on_present " + (numeric(wait) if wait is not None else "0"),
-                    "demo_timescale 1"]
+                    "demo_timescale " + numeric(chosen)]
         self._request("; ".join(commands))
+        # Final session cleanup still owns returning a non-1x speed to 1x.
+        self._speed_owned = chosen != 1.0
         for name, expected in restore.items():
             actual = read_cvar_value(name, self._request(name))
             if not math.isclose(actual, expected, rel_tol=1e-6):

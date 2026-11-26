@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "de94a54d6b4f35d6647a9ba0c135b71a5e9ec43a797bd14528e650053043eb79",
+      "sha256": "ea84c8ad21704f5e01fb154575b215f315dd47e182f278fffa92afed41be9070",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -797,7 +797,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9",
+      "sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1773,7 +1773,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "77cb1b83a96ff3fd1405a98aeb80cc37f048ce30ac141d73502d9026d652bbba",
+      "sha256": "ff3ed25ca229d7ee15b8f281dcdb679502096d552f49352d72029c4fda2dbfa1",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2022,7 +2022,7 @@
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "02729593cf1175e9c4a00c39960ae8072b0ecb3cae49cdb069c09116068b855d",
+      "sha256": "30e1fd68f22c4206eccca638e5e145c3515cbd6853584a4e9764cfc9b0fe7952",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2151,7 +2151,7 @@
     },
     {
       "path": "dolly/export_timing.py",
-      "sha256": "3f9b79265acf179fadc1839cb42b745232d66fac8ceab1103fecf04ea7edff54",
+      "sha256": "f88182e543417c58534e6634f234bf55f4c9611c5e44b9214da42a8a8e473aa4",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -4621,7 +4621,7 @@
     },
     {
       "path": "dolly/replay_warmup.py",
-      "sha256": "753d04ee0da56e423a3602ac4aa45e7c46740a67a2244f351fce7f6600682e4d",
+      "sha256": "6dbbb0568d84ffe04935dcf5f2971d49153cac1f61fd58aa438c316724c29549",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -12281,7 +12281,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -12367,7 +12367,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -12379,7 +12379,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -12451,7 +12451,7 @@
       "instances": [
         "ConsoleReconnectApi"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -12508,7 +12508,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/EditorEventQueue.tla": {
       "path": "dolly/editor_session.py",
@@ -12560,7 +12560,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -12652,7 +12652,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/LaunchRecovery.tla": {
       "path": "dolly/launcher.py",
@@ -12748,7 +12748,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -12759,7 +12759,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -12807,7 +12807,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -12951,7 +12951,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "20734b5d94a5676faaea74f48d3499c55b61bd621765aec90347344b89b743d9"
+      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",
@@ -13029,7 +13029,7 @@
       "instances": [
         "TimingSwitchApi"
       ],
-      "owner_utf8_lf_sha256": "3f9b79265acf179fadc1839cb42b745232d66fac8ceab1103fecf04ea7edff54"
+      "owner_utf8_lf_sha256": "f88182e543417c58534e6634f234bf55f4c9611c5e44b9214da42a8a8e473aa4"
     },
     "dolly/UpdateRollback.tla": {
       "path": "dolly/update_worker.py",
@@ -14516,6 +14516,11 @@
     },
     {
       "path": "docs/RELEASE_NOTES_0.7.59-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "docs/RELEASE_NOTES_0.7.60-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
@@ -20490,7 +20495,7 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 589,
+    "metadata/configuration/documentation input": 590,
     "implementation/tool": 346,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,

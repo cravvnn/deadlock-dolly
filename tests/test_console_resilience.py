@@ -471,3 +471,71 @@ class GameFatalErrorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChosenSpeedTests(unittest.TestCase):
+    """Internal stops and take cleanup return to the user's chosen speed."""
+
+    def _controller(self):
+        c, _ = make_controller(SimpleNamespace(is_connected=True))
+        c._demo = Path("match.dem")
+        c._require_demo = Mock(return_value={"playing": False, "tick": 100})
+        c._alive = lambda: True
+        c._halt = lambda **kw: None
+        c._native_bridge = lambda: None
+        sent = []
+        c._request = lambda command, **kw: sent.append(command) or ""
+        c._playback_details = None
+        c._thread = None
+        c.set_playback_speed(.25)
+        sent.clear()
+        return c, sent
+
+    def test_internal_stop_returns_to_chosen_speed(self):
+        c, sent = self._controller()
+        c._demo_speed_changed = True  # e.g. a shot, warm-up or take ran
+        c.stop()
+        self.assertIn("demo_timescale 0.25", " ".join(sent))
+        self.assertNotIn("demo_timescale 1", " ".join(sent))
+        # Restored, not pending (Play must still start), yet owned so final
+        # cleanup can return the game to 1x.
+        self.assertFalse(c._demo_speed_changed)
+        self.assertTrue(c._speed_owned)
+        sent.clear()
+        c.stop(reset_speed=True)
+        self.assertIn("demo_timescale 1", " ".join(sent))
+        self.assertFalse(c._demo_speed_changed)
+        self.assertFalse(c._speed_owned)
+
+    def test_editing_stop_still_keeps_the_current_speed(self):
+        c, sent = self._controller()
+        c._demo_speed_changed = True
+        c.stop(preserve_speed=True)
+        self.assertNotIn("demo_timescale", " ".join(sent))
+
+    def test_default_speed_keeps_the_old_reset(self):
+        c, _ = make_controller(SimpleNamespace(is_connected=True))
+        c._demo = Path("match.dem")
+        c._require_demo = Mock(return_value={"playing": False, "tick": 100})
+        c._alive, c._halt, c._native_bridge = (lambda: True), (lambda **kw: None), (lambda: None)
+        sent = []
+        c._request = lambda command, **kw: sent.append(command) or ""
+        c._demo_speed_changed = True
+        c.stop()
+        self.assertIn("demo_timescale 1", " ".join(sent))
+        self.assertFalse(c._demo_speed_changed)
+
+    def test_finished_export_returns_to_chosen_speed(self):
+        c, sent = self._controller()
+        c._demo_speed_changed = False
+        c._export_timing = {"fps": 60, "speed": 1.0,
+                            "restore": {"host_framerate": 0.0, "r_wait_on_present": 0.0}}
+        c._request = lambda command, **kw: sent.append(command) or (
+            "host_framerate = 0" if command == "host_framerate" else
+            "r_wait_on_present = 0" if command == "r_wait_on_present" else "")
+        c.clear_export_timing()
+        self.assertIn("demo_timescale 0.25", sent[0])
+        self.assertNotIn("demo_timescale 1", sent[0])
+        self.assertFalse(c._demo_speed_changed)
+        self.assertTrue(c._speed_owned)
+        self.assertIsNone(c._export_timing)

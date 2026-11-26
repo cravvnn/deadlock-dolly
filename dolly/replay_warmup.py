@@ -93,7 +93,7 @@ class ReplayWarmupMixin:
             self._detach_spectator_view()
             before = bridge.status()
             self._require_native_demo(before)
-            self._message("Letting replay effects settle before the shot…", playing=False)
+            self._message("Letting replay effects settle before the shot.", playing=False)
             goal_owned = False
             observation = {"samples": 0, "first": None, "last": None, "ahead_samples": 0}
             details["pause_observation"] = observation

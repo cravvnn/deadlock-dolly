@@ -416,6 +416,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._aspect_capture = {}
         self._restore = {}
         self._demo_speed_changed = False
+        # The replay speed the user last chose. Internal stops, seeks and take
+        # cleanup return to it; only final session cleanup returns to 1x.
+        self._chosen_speed = 1.0
+        # True while a Dolly-applied non-1x speed is in effect. Not a pending
+        # restoration: only final session cleanup returns it to 1x.
+        self._speed_owned = False
         self._playback_restore = {}
         self._dof_shader_restore = {}
         self._dof_shader_checked = False
@@ -1037,6 +1043,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._applied_pose = None
             self._aspect_capture = {}
             self._demo_speed_changed = False
+            self._speed_owned = False
             self._last_output.clear()
             self._unlocker_pid = None
             self._startup_evidence = {}
@@ -4250,6 +4257,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if playing and details is not None and details.get("camera_backend") == "console":
                 raise RuntimeError(
                     "Live speed changes require the native camera. Stop the shot and choose a speed before playing.")
+            self._chosen_speed = speed
             if self._demo is None:
                 self._message(f"Replay speed set to {numeric(speed)}x for the next replay.")
                 return self.status()
@@ -5976,7 +5984,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._request("demo_pause")
         self._message(restoration_error or "Paused. The current camera and lens values are held.", playing=False)
 
-    def stop(self, *, preserve_layers=False, preserve_speed=False):
+    def _chosen_replay_speed(self):
+        speed = getattr(self, "_chosen_speed", 1.0)
+        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(speed)                 or not .05 <= speed <= 4:
+            return 1.0
+        return float(speed)
+
+    def stop(self, *, preserve_layers=False, preserve_speed=False, reset_speed=False):
         hud_error = self._halt(native_action="release")
         if not preserve_layers:
             self._recording_warmup = None
@@ -5999,22 +6013,28 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         ui_error = self._restore_game_ui_settings()
         look_error = self._restore_look_values() if self._look_restore else None
         restoration_error = " ".join(part for part in (hud_error, restoration_error, ui_error, look_error) if part) or None
-        if (self._restore or (self._demo_speed_changed and not preserve_speed)) and console_connected(self._console) and self._alive():
+        restore_speed = not preserve_speed and (
+            self._demo_speed_changed or (reset_speed and getattr(self, "_speed_owned", False)))
+        speed_target = 1.0 if reset_speed else self._chosen_replay_speed()
+        if (self._restore or restore_speed) and console_connected(self._console) and self._alive():
             try:
                 self._require_demo(require_tick=False)
                 commands = []
                 for name, value in sorted(self._restore.items()):
                     validate_cvar_name(name)
                     commands.append(name + " " + format_cvar_value(validate_cvar_value(name, value)))
-                if self._demo_speed_changed and not preserve_speed:
-                    # The editing Stop action keeps the current chosen speed.
-                    # Retain ownership so final session cleanup can still reset
-                    # this command, which has no readable previous value.
-                    commands.append("demo_timescale 1")
+                if restore_speed:
+                    # The editing Stop action keeps the current speed. Other
+                    # stops (seeks, camera changes, take preparation) return to
+                    # the user's chosen speed; only final session cleanup
+                    # returns to 1x. demo_timescale has no readable previous
+                    # value, so _speed_owned remembers a non-1x speed for it.
+                    commands.append("demo_timescale " + numeric(speed_target))
                 self._request("; ".join(commands))
                 self._restore.clear()
-                if not preserve_speed:
+                if restore_speed:
                     self._demo_speed_changed = False
+                    self._speed_owned = speed_target != 1.0
             except Exception as exc:
                 # Keep the journal for retry; matte and layer cleanup still run.
                 restoration_error = " ".join(part for part in (
@@ -6070,7 +6090,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             except Exception:  # noqa: BLE001 - the game may have closed mid-restore
                 LOG.warning("Could not restore healthbar values during disconnect", exc_info=True)
         try:
-            self.stop()
+            self.stop(reset_speed=True)
         except Exception as exc:  # noqa: BLE001 - a closed game must not block disconnect
             LOG.warning("Stop/restore during disconnect remains pending: %s", exc)
         export_error = None

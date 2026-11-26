@@ -420,7 +420,8 @@ def pack_citadel_dof(sequence, available, enabled, sensor_size, focus_distance):
 
 
 def _text(value, capacity):
-    return str(value).replace("\0", "").encode("utf-8")[:capacity - 1].decode("utf-8", errors="ignore").encode("utf-8")
+    # The in-game fonts carry only Latin-1 glyphs; an ellipsis would render as "?".
+    return str(value).replace("\0", "").replace("…", "...").encode("utf-8")[:capacity - 1].decode("utf-8", errors="ignore").encode("utf-8")
 
 
 def _finite(value, low, high, name):
