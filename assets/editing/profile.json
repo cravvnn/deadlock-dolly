@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "description": "6871 reviewed compatibility candidate; live acceptance pending.",
+  "description": "6871 reviewed compatibility profile; one bounded local live check passed (startup, Follow capabilities, four exact seeks, camera path playback, 60-frame Color+Depth/EXR and Players exports; recorded game audio not exercised live).",
   "gameinfo_sha256": "bb537c9c945c6376ea2e8bba6f2a6c4bf98a715af32786280f6cda2f3b89d70f",
   "modules": {
     "citadel/bin/win64/client.dll": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",

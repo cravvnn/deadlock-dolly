@@ -48,7 +48,8 @@ RANGE_INFO = "Range DOF: near blurry · near crisp · far crisp · far blurry. E
 FIXED_INFO = ("Fixed values… opens a separate dialog on Look. These values are applied for the shot; "
               "a track with the same name overrides the fixed value while the shot runs.")
 DEBUG_VIEW_INFO = ("Live rendering overlay for inspecting the replay; stays active during playback and export. "
-                   "Not saved in shots or settings, and resets to Normal when the session ends.")
+                   "Visibility grid and Particle overlays make the game and exports very slow; Dolly pauses "
+                   "them while seeking. Not saved in shots or settings, and resets to Normal when the session ends.")
 CURVES = ("step", "linear", "smooth")
 HEIGHT_UNIT = "units (100–1500)"
 # The DOF captions change with the value; their column fits the widest one, so the

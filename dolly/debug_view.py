@@ -25,6 +25,7 @@ class DebugViewOption:
     undo_commands: tuple[str, ...] = ()
     needs_cheats: bool = False
     is_toggle: bool = False
+    suspend_while_positioning: bool = False
 
 
 DEBUG_VIEW_DEFAULT = "normal"
@@ -110,6 +111,7 @@ DEBUG_VIEW_OPTIONS: tuple[DebugViewOption, ...] = (
         apply_commands=("vis_debug_show",),
         undo_commands=("vis_debug_show",),
         is_toggle=True,
+        suspend_while_positioning=True,
     ),
     DebugViewOption(
         id="particle_overlays",
@@ -125,6 +127,7 @@ DEBUG_VIEW_OPTIONS: tuple[DebugViewOption, ...] = (
             "r_showdebugoverlays 0",
         ),
         needs_cheats=True,
+        suspend_while_positioning=True,
     ),
 )
 
@@ -150,28 +153,45 @@ def debug_view_label(option_id: str) -> str:
     return DEBUG_VIEW_LABELS.get(option_id, DEBUG_VIEW_LABELS[DEBUG_VIEW_DEFAULT])
 
 
+VIS_GRID_UNKNOWN_MESSAGE = "Visibility grid state is unknown; load the replay again to clear it."
+
+
 class DebugViewState:
     """Track live session debug-view state and sequence undo-before-apply transitions."""
 
     def __init__(self) -> None:
         self.current: str = DEBUG_VIEW_DEFAULT
         self.vis_grid_active: bool = False
+        self.vis_grid_uncertain: bool = False
         self.cheats_owned: bool = False
+        self.suspended: bool = False
+
+    def is_heavy(self) -> bool:
+        """True when the active view should pause while Dolly seeks or warms up a shot."""
+        return (
+            self.current != DEBUG_VIEW_DEFAULT
+            and DEBUG_VIEW_BY_ID[self.current].suspend_while_positioning
+        )
 
     def reset_local(self) -> None:
         """Clear local tracking when a session starts or dies (the game state went with it)."""
         self.current = DEBUG_VIEW_DEFAULT
         self.vis_grid_active = False
+        self.vis_grid_uncertain = False
         self.cheats_owned = False
+        self.suspended = False
 
     def after_reload(self) -> None:
         """The replay was reloaded (``disconnect`` / ``playdemo``): the game dropped the view.
 
-        A reload turns ``vis_debug_show`` off (live-verified with an export that reloads
-        the replay), so the toggle must be sent again rather than assumed on. The selected
-        view and the ``sv_cheats`` ownership are kept so :meth:`reapply` can restore it.
+        A confirmed reload turns ``vis_debug_show`` off (live-verified with an export that
+        reloads the replay), so the toggle returns to known-off and must be sent again rather
+        than assumed on. The selected view and ``sv_cheats`` ownership are kept so
+        :meth:`reapply` or :meth:`resume` can restore it.
         """
         self.vis_grid_active = False
+        self.vis_grid_uncertain = False
+        self.suspended = False
 
     def drop_view(self) -> None:
         """The replay was reloaded and the view will not be re-applied: show Normal.
@@ -209,9 +229,15 @@ class DebugViewState:
         if self.cheats_owned and attempt("sv_cheats 0"):
             self.cheats_owned = False
         # The grid toggle goes last: it is the one command whose state cannot be read back.
-        if self.vis_grid_active and attempt("vis_debug_show"):
-            self.vis_grid_active = False
+        # Only toggle it when known active; never toggle blindly while uncertain.
+        if self.vis_grid_active and not self.vis_grid_uncertain:
+            if attempt("vis_debug_show"):
+                self.vis_grid_active = False
+            else:
+                self.vis_grid_active = False
+                self.vis_grid_uncertain = True
         self.current = DEBUG_VIEW_DEFAULT
+        self.suspended = False
         if failure is not None:
             raise failure
 
@@ -221,6 +247,22 @@ class DebugViewState:
             return False
         send("sv_cheats 1", allow_error=False)
         self.cheats_owned = True
+        return True
+
+    def _toggle_vis_grid_on(self, *, send) -> bool:
+        """Turn ``vis_debug_show`` on if known off; mark uncertain on send failure."""
+        if self.vis_grid_uncertain:
+            raise RuntimeError(VIS_GRID_UNKNOWN_MESSAGE)
+        if self.vis_grid_active:
+            return False
+        try:
+            send("vis_debug_show", allow_error=False)
+        except Exception:
+            # The game may have processed the toggle before the reply was lost.
+            self.vis_grid_active = False
+            self.vis_grid_uncertain = True
+            raise
+        self.vis_grid_active = True
         return True
 
     def apply(self, target: str, *, send, read_cvar) -> str:
@@ -235,15 +277,25 @@ class DebugViewState:
             self._undo_active(send=send, force_full_reset=True)
             return self.current
         if target_id == self.current:
-            if not option.is_toggle:
+            if self.suspended:
+                self.resume(send=send, read_cvar=read_cvar)
+            elif not option.is_toggle:
                 if option.needs_cheats:
                     self._ensure_cheats(send=send, read_cvar=read_cvar)
                 for command in option.apply_commands:
                     send(command, allow_error=False)
             return self.current
 
+        if option.is_toggle and self.vis_grid_uncertain:
+            raise RuntimeError(VIS_GRID_UNKNOWN_MESSAGE)
+
         # Always fully undo any active view before applying the next.
-        if self.current != DEBUG_VIEW_DEFAULT or self.vis_grid_active or self.cheats_owned:
+        if (
+            self.current != DEBUG_VIEW_DEFAULT
+            or self.vis_grid_active
+            or self.cheats_owned
+            or self.suspended
+        ):
             self._undo_active(send=send, force_full_reset=False)
 
         # Apply the requested option, rolling back on failure so nothing stacks.
@@ -253,9 +305,7 @@ class DebugViewState:
             if option.needs_cheats:
                 turned_on_cheats = self._ensure_cheats(send=send, read_cvar=read_cvar)
             if option.is_toggle:
-                if not self.vis_grid_active:
-                    send("vis_debug_show", allow_error=False)
-                    self.vis_grid_active = True
+                if self._toggle_vis_grid_on(send=send):
                     applied_commands.append("vis_debug_show")
             else:
                 for command in option.apply_commands:
@@ -263,12 +313,13 @@ class DebugViewState:
                     applied_commands.append(command)
         except Exception:
             if applied_commands:
-                if option.is_toggle and self.vis_grid_active:
+                if option.is_toggle and self.vis_grid_active and not self.vis_grid_uncertain:
                     try:
                         send("vis_debug_show", allow_error=True)
                         self.vis_grid_active = False
                     except Exception:
-                        pass
+                        self.vis_grid_active = False
+                        self.vis_grid_uncertain = True
                 else:
                     for command in option.undo_commands:
                         try:
@@ -282,9 +333,11 @@ class DebugViewState:
                 except Exception:
                     pass
             self.current = DEBUG_VIEW_DEFAULT
+            self.suspended = False
             raise
 
         self.current = target_id
+        self.suspended = False
         return self.current
 
     def reapply(self, *, send, read_cvar) -> None:
@@ -299,17 +352,83 @@ class DebugViewState:
         if option.needs_cheats:
             self._ensure_cheats(send=send, read_cvar=read_cvar)
         if option.is_toggle:
-            if not self.vis_grid_active:
-                send("vis_debug_show", allow_error=False)
-                self.vis_grid_active = True
+            self._toggle_vis_grid_on(send=send)
         else:
             for command in option.apply_commands:
                 send(command, allow_error=False)
+        self.suspended = False
+
+    def defer_heavy(self) -> bool:
+        """Keep an active heavy view off after a confirmed reload until :meth:`resume`."""
+        if not self.is_heavy():
+            return False
+        self.suspended = True
+        return True
+
+    def suspend(self, *, send) -> bool:
+        """Temporarily undo a heavy view while Dolly seeks or warms up a shot.
+
+        Keeps ``current`` and ``cheats_owned`` intact so :meth:`resume` can restore the
+        view afterwards. Safe to call when already suspended or on non-heavy views.
+        """
+        if self.suspended or not self.is_heavy():
+            return False
+        option = DEBUG_VIEW_BY_ID[self.current]
+        if option.is_toggle:
+            if self.vis_grid_uncertain:
+                return False
+            if self.vis_grid_active:
+                try:
+                    send("vis_debug_show", allow_error=False)
+                except Exception:
+                    self.vis_grid_active = False
+                    self.vis_grid_uncertain = True
+                    raise
+                self.vis_grid_active = False
+            self.suspended = True
+            return True
+        failure = None
+        for command in option.undo_commands:
+            try:
+                send(command, allow_error=True)
+            except Exception as exc:  # noqa: BLE001 - undo every command, report first failure
+                failure = failure or exc
+        self.suspended = True
+        if failure is not None:
+            raise failure
+        return True
+
+    def resume(self, *, send, read_cvar) -> bool:
+        """Re-apply a heavy view paused by :meth:`suspend` or :meth:`defer_heavy`."""
+        if not self.suspended:
+            return False
+        if self.current == DEBUG_VIEW_DEFAULT:
+            self.suspended = False
+            return False
+        option = DEBUG_VIEW_BY_ID[self.current]
+        if option.needs_cheats:
+            self._ensure_cheats(send=send, read_cvar=read_cvar)
+        if option.is_toggle:
+            try:
+                self._toggle_vis_grid_on(send=send)
+            except Exception:
+                self.suspended = False
+                raise
+        else:
+            for command in option.apply_commands:
+                send(command, allow_error=False)
+        self.suspended = False
+        return True
 
     def reset_best_effort(self, *, send) -> None:
         """Return the running game to Normal during disconnect without blocking."""
         try:
-            if self.current != DEBUG_VIEW_DEFAULT or self.vis_grid_active or self.cheats_owned:
+            if (
+                self.current != DEBUG_VIEW_DEFAULT
+                or self.vis_grid_active
+                or self.cheats_owned
+                or self.suspended
+            ):
                 self._undo_active(send=send, force_full_reset=True)
         finally:
             self.reset_local()

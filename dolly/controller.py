@@ -27,7 +27,12 @@ from . import __version__
 from . import dof_preflight as dof_support
 # Compatibility exports shared with graphics runtime diagnostics.
 from .convar_response import NUMBER, read_cvar_value
-from .debug_view import DEBUG_VIEW_DEFAULT, DebugViewState, debug_view_label
+from .debug_view import (
+    DEBUG_VIEW_DEFAULT,
+    VIS_GRID_UNKNOWN_MESSAGE,
+    DebugViewState,
+    debug_view_label,
+)
 from .file_ops import _plain_path
 from .path import (Project, Keyframe, validate_cvar_name, STANDARD_ASPECT, ASPECT_MIN, ASPECT_MAX,
                    validate_cvar_value, format_cvar_value)
@@ -1851,6 +1856,21 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 raise RuntimeError("No replay was selected for this launch.")
             self._capture_game_build()
             self._remember_replay_header(path)
+            # Explicitly undo any active debug view before playdemo: only vis_debug_show
+            # was verified to drop across disconnect + playdemo, whereas non-toggle convars
+            # can survive plain playdemo.
+            if (self._debug_view.current != DEBUG_VIEW_DEFAULT
+                    or self._debug_view.vis_grid_active
+                    or self._debug_view.cheats_owned
+                    or self._debug_view.suspended):
+                try:
+                    self._debug_view.apply(
+                        DEBUG_VIEW_DEFAULT,
+                        send=lambda cmd, *, allow_error=False: self._request(cmd, allow_error=allow_error),
+                        read_cvar=self._console_cvar,
+                    )
+                except Exception:  # noqa: BLE001 - best-effort undo before playdemo
+                    LOG.warning("Could not undo debug view before loading replay", exc_info=True)
             # Source commands use forward slashes; _validate_demo rejects quotes,
             # separators and line breaks before this trusted quoted argument.
             command = 'playdemo "' + path.as_posix() + '"'
@@ -1861,7 +1881,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 # Map loading may outlast a console request deadline. Queue the
                 # command once; Probe later verifies the actual selected demo.
                 self._console.send(command)
-                # A reload drops any debug view; the dropdown returns to Normal.
+                # The replay is reloading; reset local debug-view tracking to Normal.
                 self._debug_view.drop_view()
                 self._last_output["playdemo"] = "Sent: " + command + "\nWaiting for Check camera support to verify the loaded replay."
                 LOG.info("Replay requested after confirmed unlocker initialization: %s", path)
@@ -2016,10 +2036,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         try:
             self._check_position_cancelled()
             self._message("Preparing replay for the shot…", startup_stage="recovering_replay")
-            # Once disconnect is sent the game has dropped any debug view.
-            reloaded = True
             self._request("disconnect", timeout=10)
-            self._debug_view.after_reload()
             def inactive():
                 try:
                     info = parse_demo_info(self._request("demo_info", allow_error=True, allow_truncated=True))
@@ -2030,6 +2047,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 return info if not info["playing"] else None
             stopped = self._startup_wait(inactive, "waiting for the previous replay to stop",
                                          self._stop_event, timeout=SHOT_REPLAY_INACTIVE_SECONDS)
+            # Only once the previous replay is confirmed stopped has the game dropped the view.
+            reloaded = True
+            self._debug_view.after_reload()
             self._replay_recovery.update(stage="loading", inactive=stopped)
             self._check_position_cancelled()
             if self._session is not session or not self._alive():
@@ -2081,14 +2101,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 # Reloading the replay restores the game's default glow. A take
                 # must keep the user's choice, so re-assert it before playback.
                 self._apply_citadel_glow()
-            self._reapply_debug_view()
+            self._reapply_debug_view(include_heavy=False)
             reasserted = True
             self._message("Replay prepared. Starting the shot…", startup_stage="replay_ready")
             return checked
         except Exception as exc:
-            if reloaded and not reasserted:
-                # The game is back to Normal; the dropdown must say so.
-                self._debug_view.drop_view()
+            if not reasserted:
+                self._reset_debug_view_after_recovery_failure(reloaded=reloaded)
             self._invalidate_probe(str(exc))
             if self._stop_event.is_set():
                 # The game stays open and Dolly does not retry; say what is
@@ -2746,19 +2765,27 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 pose = project.evaluate(0)
             self._recover_replay_for_shot()
             warmed = None
-            if project is not None:
-                positioned = self._seek(project, 0)
-                start = self._seek_shot_time(project, 0, positioned)
-                pose = project.evaluate(start)
-                try:
-                    positioned = self._warm_replay_for_shot(project, start, positioned, calibrate=True)
-                except Exception:
-                    self.stop()
-                    raise
-                if positioned["replay_warmup"].get("performed"):
-                    warmed = {"project": project.to_dict(), "start": start, "positioned": positioned}
-            self.enter_native_flight(pose=pose)
-            info = self._require_demo()
+            try:
+                if project is not None:
+                    positioned = self._seek(project, 0)
+                    start = self._seek_shot_time(project, 0, positioned)
+                    pose = project.evaluate(start)
+                    try:
+                        positioned = self._warm_replay_for_shot(project, start, positioned, calibrate=True)
+                    except Exception:
+                        self.stop()
+                        raise
+                    if positioned["replay_warmup"].get("performed"):
+                        warmed = {"project": project.to_dict(), "start": start, "positioned": positioned}
+                self.enter_native_flight(pose=pose)
+                info = self._require_demo()
+            except Exception:
+                if self._debug_view.suspended:
+                    self._resume_debug_view()
+                raise
+            # Re-apply any heavy debug view (Visibility grid / Particle overlays) now
+            # that positioning and warm-up finished, just before capture starts.
+            self._resume_debug_view()
             self._recording_replay = (self._session, str(self._demo), info["tick"])
             self._recording_warmup = warmed
             self._message("Replay prepared for recording. Play the shot once, then finish recording.")
@@ -4256,18 +4283,24 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         """Apply a live rendering debug view for this session (never persisted)."""
         with self._op_lock:
             self._require_quiet_session("changing the debug view")
-            applied = self._debug_view.apply(
-                option,
-                send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error),
-                read_cvar=self._console_cvar,
-            )
+            try:
+                applied = self._debug_view.apply(
+                    option,
+                    send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error),
+                    read_cvar=self._console_cvar,
+                )
+            except Exception:
+                if self._debug_view.vis_grid_uncertain:
+                    self._message(VIS_GRID_UNKNOWN_MESSAGE)
+                raise
             self._message(f"Debug view set to {debug_view_label(applied)}.")
             return applied
 
     def _undo_debug_view_after_reconnect(self):
         """Return this process to Normal if a debug view was left on when the console dropped."""
         state = self._debug_view
-        if state.current == DEBUG_VIEW_DEFAULT and not state.vis_grid_active and not state.cheats_owned:
+        if (state.current == DEBUG_VIEW_DEFAULT and not state.vis_grid_active
+                and not state.cheats_owned and not state.suspended):
             return
         try:
             state.reset_best_effort(
@@ -4275,22 +4308,102 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         except Exception:  # noqa: BLE001 - reconnecting must not fail on a viewing aid
             LOG.warning("Could not undo the debug view after reconnecting", exc_info=True)
 
-    def _reapply_debug_view(self):
+    def _fallback_debug_view_to_normal(self, send, exc, *, context):
+        """Undo as far as possible and report fallback to Normal (never raises)."""
+        uncertain = self._debug_view.vis_grid_uncertain
+        self._debug_view.suspended = False
+        if console_connected(self._console) and self._alive():
+            try:
+                self._debug_view.apply(DEBUG_VIEW_DEFAULT, send=send, read_cvar=self._console_cvar)
+            except Exception:  # noqa: BLE001
+                self._debug_view.current = DEBUG_VIEW_DEFAULT
+                self._debug_view.suspended = False
+        else:
+            self._debug_view.current = DEBUG_VIEW_DEFAULT
+            self._debug_view.suspended = False
+        if uncertain or self._debug_view.vis_grid_uncertain:
+            self._message(VIS_GRID_UNKNOWN_MESSAGE)
+        else:
+            self._message(f"Debug view could not be {context} ({exc}); continuing in Normal.")
+
+    def _reapply_debug_view(self, *, include_heavy=True):
         """Re-assert the active session debug view after a replay reload.
 
+        When ``include_heavy`` is False, views flagged ``suspend_while_positioning``
+        stay deferred until :meth:`_resume_debug_view` runs after positioning/warm-up.
         A failure here never stops the shot: the view is undone as far as possible and
         the shot continues in Normal, which the dropdown then shows.
         """
+        if self._debug_view.current == DEBUG_VIEW_DEFAULT:
+            return
+        if not include_heavy and self._debug_view.is_heavy():
+            self._debug_view.defer_heavy()
+            return
         send = lambda command, *, allow_error=False: self._request(command, allow_error=allow_error)
         try:
             self._debug_view.reapply(send=send, read_cvar=self._console_cvar)
         except Exception as exc:  # noqa: BLE001 - a viewing aid must not fail a take
             LOG.warning("Could not re-apply the debug view after the replay reload", exc_info=True)
+            self._fallback_debug_view_to_normal(send, exc, context="re-applied")
+
+    def _resume_debug_view(self):
+        """Resume a suspended or deferred heavy debug view; never raises."""
+        if not self._debug_view.suspended:
+            return
+        send = lambda command, *, allow_error=False: self._request(command, allow_error=allow_error)
+        if not (console_connected(self._console) and self._alive()):
+            self._fallback_debug_view_to_normal(send, RuntimeError("game console is not connected"), context="resumed")
+            return
+        try:
+            self._debug_view.resume(send=send, read_cvar=self._console_cvar)
+        except Exception as exc:  # noqa: BLE001 - a viewing aid must not fail positioning/takes
+            LOG.warning("Could not resume the debug view after positioning", exc_info=True)
+            self._fallback_debug_view_to_normal(send, exc, context="resumed")
+
+    def _reset_debug_view_after_recovery_failure(self, *, reloaded: bool) -> None:
+        """Best-effort debug view reset when replay recovery fails before re-applying."""
+        state = self._debug_view
+        has_state = (state.current != DEBUG_VIEW_DEFAULT or state.vis_grid_active
+                     or state.cheats_owned or state.suspended)
+        if has_state and console_connected(self._console) and self._alive():
+            send = lambda command, *, allow_error=False: self._request(command, allow_error=allow_error)
             try:
-                self._debug_view.apply(DEBUG_VIEW_DEFAULT, send=send, read_cvar=self._console_cvar)
-            except Exception:  # noqa: BLE001
-                self._debug_view.drop_view()
-            self._message(f"Debug view could not be re-applied ({exc}); continuing in Normal.")
+                state.apply(DEBUG_VIEW_DEFAULT, send=send, read_cvar=self._console_cvar)
+            except Exception:  # noqa: BLE001 - recovery is already failing
+                LOG.warning("Could not reset debug view after replay recovery failure", exc_info=True)
+                if state.vis_grid_uncertain and not reloaded:
+                    self._message(VIS_GRID_UNKNOWN_MESSAGE)
+        if reloaded:
+            state.drop_view()
+        elif not self._alive():
+            state.reset_local()
+
+    @contextmanager
+    def _debug_view_suspended(self):
+        """Temporarily undo heavy debug views around seeking/warm-up; never raises.
+
+        Safe to nest: only the outermost call that actually suspends the view resumes it
+        on exit, and a heavy view deferred across a replay reload stays deferred until
+        its caller explicitly calls :meth:`_resume_debug_view`.
+        """
+        send = lambda command, *, allow_error=False: self._request(command, allow_error=allow_error)
+        did_suspend = False
+        if not self._debug_view.suspended and self._debug_view.is_heavy():
+            try:
+                did_suspend = self._debug_view.suspend(send=send)
+            except Exception:  # noqa: BLE001 - a viewing aid must not block positioning
+                LOG.warning("Could not suspend heavy debug view before positioning", exc_info=True)
+                if self._debug_view.vis_grid_uncertain:
+                    self._debug_view.current = DEBUG_VIEW_DEFAULT
+                    self._debug_view.suspended = False
+                    self._message(VIS_GRID_UNKNOWN_MESSAGE)
+                elif self._debug_view.suspended:
+                    did_suspend = True
+        try:
+            yield
+        finally:
+            if did_suspend and self._debug_view.suspended:
+                self._resume_debug_view()
 
     def set_playback_speed(self, speed):
         """Apply a replay speed immediately through the demo timescale.
@@ -4834,32 +4947,33 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 f"{MIN_SAFE_SEEK_REPLAY_BUILD}. Deadlock crashes when seeking replays recorded before "
                 f"{MIN_SAFE_SEEK_REPLAY_BUILD} (a Valve bug), so Dolly stopped before sending the seek. "
                 "Load a replay recorded on 6812 or 6813, or play this replay from the start without seeking.")
-        fast_original = None
-        try:
-            fast_original = read_cvar_value("demo_usefastgoto",
-                                            self._request("demo_usefastgoto"))
-        except (ValueError, RuntimeError):
+        with self._debug_view_suspended():
             fast_original = None
-        if fast_original is not None and not fast_original:
             try:
-                self._request("demo_usefastgoto 1")
-            except (RuntimeError, OSError):
-                pass
-        try:
-            return self._seek_tick_run(target, allow_start_boundary=allow_start_boundary)
-        except RuntimeError as exc:
-            text = str(exc).lower()
-            if "console is disconnected" in text or "game closed the console" in text:
-                message = self._wait_for_crash_after_console_drop("seeking a replay tick")
-                if message:
-                    raise RuntimeError(message) from exc
-            raise
-        finally:
+                fast_original = read_cvar_value("demo_usefastgoto",
+                                                self._request("demo_usefastgoto"))
+            except (ValueError, RuntimeError):
+                fast_original = None
             if fast_original is not None and not fast_original:
                 try:
-                    self._request("demo_usefastgoto 0")
+                    self._request("demo_usefastgoto 1")
                 except (RuntimeError, OSError):
                     pass
+            try:
+                return self._seek_tick_run(target, allow_start_boundary=allow_start_boundary)
+            except RuntimeError as exc:
+                text = str(exc).lower()
+                if "console is disconnected" in text or "game closed the console" in text:
+                    message = self._wait_for_crash_after_console_drop("seeking a replay tick")
+                    if message:
+                        raise RuntimeError(message) from exc
+                raise
+            finally:
+                if fast_original is not None and not fast_original:
+                    try:
+                        self._request("demo_usefastgoto 0")
+                    except (RuntimeError, OSError):
+                        pass
 
     def _seek_tick_run(self, target, *, allow_start_boundary=False):
         """Verify a paused tick; optionally recognize the replay's packet-1 floor."""
@@ -5167,7 +5281,12 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             warmed = None
             if self._native_bridge() is not None and not frozen:
                 warmed = self._prepare_native_shot_replay(project, start)
-            self._snapshot(project)
+            try:
+                self._snapshot(project)
+            except Exception:
+                if self._debug_view.suspended:
+                    self._resume_debug_view()
+                raise
             tick_rate_warning = self._replay_tick_rate_warning(project)
             self._playback_details = {"project": project.to_dict(), "start_time": start,
                                       "resume_free_camera": resume_free_camera,
@@ -5262,6 +5381,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     checked_demo.get("tick") != positioned_demo["tick"]):
                     raise RuntimeError("The replay moved during the camera position check. Keep it paused until Dolly starts the shot, then retry.")
                 self._check_position_cancelled()
+                # Re-apply any heavy debug view deferred across replay recovery
+                # now that seeking and warm-up finished, right before playback starts.
+                self._resume_debug_view()
                 # The paused view is verified; pace the engine for the export
                 # before the authored path takes over.
                 self.resume_export_timing()
@@ -5323,6 +5445,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     self._thread = None
                     raise
             except Exception as exc:
+                if self._debug_view.suspended:
+                    self._resume_debug_view()
                 self._playback_details["error"] = str(exc)
                 if native is not None:
                     cleanup = self._finish_native_playback()

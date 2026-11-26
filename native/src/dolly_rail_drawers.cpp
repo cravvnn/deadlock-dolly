@@ -628,7 +628,7 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             split();
             k::SectionTitle(
                 "Debug view",
-                "Live rendering overlay for inspecting the replay; stays active during playback and export. Not saved in shots or settings, and resets to Normal when the session ends.",
+                "Live rendering overlay for inspecting the replay; stays active during playback and export. Visibility grid and Particle overlays make the game and exports very slow; Dolly pauses them while seeking. Not saved in shots or settings, and resets to Normal when the session ends.",
                 "Session only");
             k::VGap(15);
             {

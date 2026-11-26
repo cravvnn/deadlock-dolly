@@ -20,13 +20,15 @@ from dolly.debug_view import (
     DEBUG_VIEW_IDS,
     DEBUG_VIEW_LABELS,
     DEBUG_VIEW_OPTIONS,
+    NORMAL_RESET_COMMANDS,
+    VIS_GRID_UNKNOWN_MESSAGE,
     DebugViewState,
     debug_view_id,
     debug_view_label,
 )
 from dolly import editing_session, editor_dispatch, editor_publication, editor_wire, graphics_profiles, gui
 from dolly.editor_actions import ACTION_ORDER
-from dolly.path import Project
+from dolly.path import Keyframe, Project
 from dolly.settings import AppSettings, load_settings, save_settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -279,6 +281,145 @@ class DebugViewStateTests(unittest.TestCase):
         self.state.apply("albedo", send=self.send, read_cvar=self.read_cvar)
         self.assertEqual(self.commands(), ["mat_debug ALBEDO"])
 
+    def test_suspend_while_positioning_flag_on_heavy_views_only(self):
+        heavy = {opt.id for opt in DEBUG_VIEW_OPTIONS if opt.suspend_while_positioning}
+        self.assertEqual(heavy, {"visibility_grid", "particle_overlays"})
+
+    def test_suspend_and_resume_visibility_grid_keeps_toggle_in_step(self):
+        self.state.apply("visibility_grid", send=self.send, read_cvar=self.read_cvar)
+        self.assertTrue(self.state.vis_grid_active)
+        self.assertFalse(self.state.suspended)
+
+        # Suspend toggles grid off once, keeps current="visibility_grid".
+        self.sent.clear()
+        self.assertTrue(self.state.suspend(send=self.send))
+        self.assertEqual(self.commands(), ["vis_debug_show"])
+        self.assertEqual(self.state.current, "visibility_grid")
+        self.assertFalse(self.state.vis_grid_active)
+        self.assertTrue(self.state.suspended)
+
+        # Nested/second suspend is a no-op (never double-toggles).
+        self.sent.clear()
+        self.assertFalse(self.state.suspend(send=self.send))
+        self.assertEqual(self.commands(), [])
+        self.assertFalse(self.state.vis_grid_active)
+        self.assertTrue(self.state.suspended)
+
+        # Resume toggles grid back on once.
+        self.sent.clear()
+        self.assertTrue(self.state.resume(send=self.send, read_cvar=self.read_cvar))
+        self.assertEqual(self.commands(), ["vis_debug_show"])
+        self.assertEqual(self.state.current, "visibility_grid")
+        self.assertTrue(self.state.vis_grid_active)
+        self.assertFalse(self.state.suspended)
+
+        # Second resume is a no-op.
+        self.sent.clear()
+        self.assertFalse(self.state.resume(send=self.send, read_cvar=self.read_cvar))
+        self.assertEqual(self.commands(), [])
+
+        # Returning to Normal afterwards toggles off once.
+        self.sent.clear()
+        self.state.apply("normal", send=self.send, read_cvar=self.read_cvar)
+        self.assertEqual(self.commands().count("vis_debug_show"), 1)
+        self.assertFalse(self.state.vis_grid_active)
+
+    def test_suspend_and_resume_particle_overlays_keeps_cheats_ownership(self):
+        self.state.apply("particle_overlays", send=self.send, read_cvar=self.read_cvar)
+        self.assertTrue(self.state.cheats_owned)
+        self.sent.clear()
+
+        self.assertTrue(self.state.suspend(send=self.send))
+        self.assertEqual(
+            self.commands(),
+            [
+                "r_particle_debug_show_control_points 0",
+                "r_particle_debug_show_sort_position 0",
+                "r_showdebugoverlays 0",
+            ],
+        )
+        self.assertNotIn("sv_cheats 0", self.commands())
+        self.assertEqual(self.state.current, "particle_overlays")
+        self.assertTrue(self.state.cheats_owned)
+        self.assertTrue(self.state.suspended)
+
+        self.sent.clear()
+        self.assertTrue(self.state.resume(send=self.send, read_cvar=self.read_cvar))
+        self.assertEqual(
+            self.commands(),
+            [
+                "r_showdebugoverlays 1",
+                "r_particle_debug_show_control_points 1",
+                "r_particle_debug_show_sort_position 1",
+            ],
+        )
+        self.assertTrue(self.state.cheats_owned)
+        self.assertFalse(self.state.suspended)
+
+    def test_suspend_is_noop_for_lightweight_views(self):
+        for view in ("normal", "albedo", "wireframe", "objects"):
+            with self.subTest(view=view):
+                state = DebugViewState()
+                self.sent.clear()
+                self.cvars["sv_cheats"] = 0.0
+                if view != "normal":
+                    state.apply(view, send=self.send, read_cvar=self.read_cvar)
+                self.sent.clear()
+                self.assertFalse(state.suspend(send=self.send))
+                self.assertEqual(self.commands(), [])
+                self.assertFalse(state.suspended)
+
+    def test_apply_normal_while_suspended_does_not_double_toggle_grid(self):
+        self.state.apply("visibility_grid", send=self.send, read_cvar=self.read_cvar)
+        self.state.suspend(send=self.send)
+        self.sent.clear()
+        self.state.apply("normal", send=self.send, read_cvar=self.read_cvar)
+        self.assertNotIn("vis_debug_show", self.commands())
+        self.assertEqual(self.state.current, DEBUG_VIEW_DEFAULT)
+        self.assertFalse(self.state.vis_grid_active)
+        self.assertFalse(self.state.suspended)
+
+    def test_uncertain_grid_state_on_apply_reapply_and_cleared_on_reload(self):
+        def failing_grid(command, *, allow_error=False):
+            self.sent.append((command, allow_error))
+            if command == "vis_debug_show":
+                raise RuntimeError("console timeout")
+            return ""
+
+        # Apply failure leaves grid uncertain (not known-off).
+        with self.assertRaisesRegex(RuntimeError, "console timeout"):
+            self.state.apply("visibility_grid", send=failing_grid, read_cvar=self.read_cvar)
+        self.assertTrue(self.state.vis_grid_uncertain)
+        self.assertFalse(self.state.vis_grid_active)
+        self.assertEqual(self.state.current, DEBUG_VIEW_DEFAULT)
+
+        # Applying visibility_grid while uncertain is refused without toggling.
+        self.sent.clear()
+        with self.assertRaisesRegex(RuntimeError, "Visibility grid state is unknown"):
+            self.state.apply("visibility_grid", send=self.send, read_cvar=self.read_cvar)
+        self.assertEqual(self.commands(), [])
+
+        # Applying Normal while uncertain resets non-toggle views but never sends vis_debug_show.
+        self.sent.clear()
+        self.state.apply("normal", send=self.send, read_cvar=self.read_cvar)
+        self.assertNotIn("vis_debug_show", self.commands())
+        self.assertTrue(self.state.vis_grid_uncertain)
+
+        # Confirmed reload clears the uncertain state back to known-off.
+        self.state.after_reload()
+        self.assertFalse(self.state.vis_grid_uncertain)
+        self.assertFalse(self.state.vis_grid_active)
+
+        # Now apply succeeds, and a failed reapply after reload also marks uncertain.
+        self.sent.clear()
+        self.state.apply("visibility_grid", send=self.send, read_cvar=self.read_cvar)
+        self.assertTrue(self.state.vis_grid_active)
+        self.state.after_reload()
+        with self.assertRaisesRegex(RuntimeError, "console timeout"):
+            self.state.reapply(send=failing_grid, read_cvar=self.read_cvar)
+        self.assertTrue(self.state.vis_grid_uncertain)
+        self.assertFalse(self.state.vis_grid_active)
+
 
 class DebugViewControllerTests(unittest.TestCase):
     def setUp(self):
@@ -371,6 +512,263 @@ class DebugViewControllerTests(unittest.TestCase):
         self.assertFalse(self.c._debug_view.cheats_owned)
         self.assertFalse(self.c._debug_view.vis_grid_active)
         self.assertEqual(self.c.status()["debug_view"], "normal")
+
+    def test_controller_debug_view_suspended_nesting_and_seek_tick(self):
+        self.c.set_debug_view("visibility_grid")
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+        self.sent.clear()
+
+        with self.c._debug_view_suspended():
+            self.assertEqual(self.sent, ["vis_debug_show"])
+            self.assertTrue(self.c._debug_view.suspended)
+            self.assertFalse(self.c._debug_view.vis_grid_active)
+            # Nested suspend must not double-toggle or resume prematurely.
+            with self.c._debug_view_suspended():
+                self.assertEqual(self.sent, ["vis_debug_show"])
+                self.assertTrue(self.c._debug_view.suspended)
+            self.assertEqual(self.sent, ["vis_debug_show"])
+            self.assertTrue(self.c._debug_view.suspended)
+
+        self.assertEqual(self.sent, ["vis_debug_show", "vis_debug_show"])
+        self.assertFalse(self.c._debug_view.suspended)
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+
+        # _seek_tick suspends before seeking and resumes after.
+        self.sent.clear()
+        during_seek = {}
+
+        def fake_seek_run(target, *, allow_start_boundary=False):
+            during_seek["suspended"] = self.c._debug_view.suspended
+            during_seek["vis_grid_active"] = self.c._debug_view.vis_grid_active
+            return {"tick": target, "playing": True}
+
+        with patch.object(self.c, "_recorded_replay_build", return_value=None), \
+             patch.object(self.c, "_seek_tick_run", side_effect=fake_seek_run):
+            self.c._seek_tick(64964)
+        self.assertTrue(during_seek["suspended"])
+        self.assertFalse(during_seek["vis_grid_active"])
+        self.assertFalse(self.c._debug_view.suspended)
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+        self.assertEqual(self.sent.count("vis_debug_show"), 2)
+
+    def test_controller_debug_view_suspended_resume_failure_falls_back_to_normal(self):
+        messages: list[str] = []
+        self.c._message = lambda text, **kwargs: messages.append(text)
+        self.c.set_debug_view("particle_overlays")
+        self.sent.clear()
+        real = self.c._request
+
+        def fail_resume(command, **kwargs):
+            if command == "r_showdebugoverlays 1":
+                raise RuntimeError("console busy")
+            return real(command, **kwargs)
+
+        self.c._request = fail_resume
+        with self.c._debug_view_suspended():
+            self.assertTrue(self.c._debug_view.suspended)
+        # Never raises; falls back to Normal and notifies the user.
+        self.assertEqual(self.c.status()["debug_view"], "normal")
+        self.assertFalse(self.c._debug_view.suspended)
+        self.assertFalse(self.c._debug_view.cheats_owned)
+        self.assertTrue(any("continuing in Normal" in m for m in messages), messages)
+
+    def test_controller_uncertain_grid_posts_user_message(self):
+        messages: list[str] = []
+        self.c._message = lambda text, **kwargs: messages.append(text)
+
+        def fail_grid(command, **kwargs):
+            self.sent.append(command)
+            if command == "vis_debug_show":
+                raise RuntimeError("timeout")
+            return self.console.request(command)
+
+        self.c._request = fail_grid
+        with self.assertRaisesRegex(RuntimeError, "timeout"):
+            self.c.set_debug_view("visibility_grid")
+        self.assertTrue(self.c._debug_view.vis_grid_uncertain)
+        self.assertIn(VIS_GRID_UNKNOWN_MESSAGE, messages)
+
+    def test_controller_heavy_view_deferred_in_recover_and_resumed_in_prepare(self):
+        self.c.set_debug_view("visibility_grid")
+        self.sent.clear()
+        # Simulate reload completion in _recover_replay_for_shot calling _reapply_debug_view(include_heavy=False).
+        self.c._debug_view.after_reload()
+        self.c._reapply_debug_view(include_heavy=False)
+        self.assertEqual(self.sent, [])
+        self.assertTrue(self.c._debug_view.suspended)
+        self.assertFalse(self.c._debug_view.vis_grid_active)
+        self.assertEqual(self.c.status()["debug_view"], "visibility_grid")
+
+        # Seeking while deferred does NOT toggle vis_debug_show on exit.
+        with self.c._debug_view_suspended():
+            self.assertEqual(self.sent, [])
+        self.assertEqual(self.sent, [])
+        self.assertTrue(self.c._debug_view.suspended)
+
+        # Explicit resume after warm-up turns the grid on once.
+        self.c._resume_debug_view()
+        self.assertEqual(self.sent, ["vis_debug_show"])
+        self.assertFalse(self.c._debug_view.suspended)
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+
+    def test_prepare_native_recording_defers_heavy_view_until_after_warmup(self):
+        self.c.set_debug_view("visibility_grid")
+        self.sent.clear()
+        observed_states: list[tuple[str, bool, bool]] = []
+        project = Project(
+            name="Shot",
+            start_tick=64964,
+            tick_rate=64,
+            keyframes=[
+                Keyframe(0.0, 0, 0, 0, 0, 0, 0, 1.0),
+                Keyframe(1.0, 10, 0, 0, 0, 0, 0, 1.0),
+            ],
+        )
+        bridge = Mock()
+        bridge.status.return_value = {"applied_pose": [0, 0, 0, 0, 0, 0, 1.0], "original_pose": [0, 0, 0, 0, 0, 0, 1.0]}
+
+        def fake_recover():
+            self.c._debug_view.after_reload()
+            self.c._reapply_debug_view(include_heavy=False)
+            observed_states.append(("after_recover", self.c._debug_view.suspended, self.c._debug_view.vis_grid_active))
+
+        def fake_seek(proj, t):
+            with self.c._debug_view_suspended():
+                observed_states.append(("during_seek", self.c._debug_view.suspended, self.c._debug_view.vis_grid_active))
+            return {"tick": 64964, "playing": True}
+
+        def fake_warmup(proj, start, pos, *, calibrate=False):
+            with self.c._debug_view_suspended():
+                observed_states.append(("during_warmup", self.c._debug_view.suspended, self.c._debug_view.vis_grid_active))
+            return dict(pos, replay_warmup={"performed": True, "calibration": {}})
+
+        self.c._demo = Path("demo.dem")
+        with patch.object(self.c, "_recorder_active", return_value=False), \
+             patch.object(self.c, "_require_probe"), \
+             patch.object(self.c, "_require_demo", return_value={"tick": 64964, "playing": True}), \
+             patch.object(self.c, "_native_bridge", return_value=bridge), \
+             patch.object(self.c, "stop"), \
+             patch.object(self.c, "_recover_replay_for_shot", side_effect=fake_recover), \
+             patch.object(self.c, "_seek", side_effect=fake_seek), \
+             patch.object(self.c, "_warm_replay_for_shot", side_effect=fake_warmup), \
+             patch.object(self.c, "enter_native_flight"):
+            self.c.prepare_native_recording(project=project)
+
+        self.assertEqual(
+            observed_states,
+            [
+                ("after_recover", True, False),
+                ("during_seek", True, False),
+                ("during_warmup", True, False),
+            ],
+        )
+        # Re-applied once after warm-up before capture starts.
+        self.assertEqual(self.sent, ["vis_debug_show"])
+        self.assertFalse(self.c._debug_view.suspended)
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+
+    def test_load_replay_explicitly_undoes_debug_view_before_playdemo(self):
+        self.c.set_debug_view("objects")
+        self.sent.clear()
+        events: list[str] = []
+        real_request = self.c._request
+
+        def track_request(command, **kwargs):
+            events.append(f"req:{command}")
+            return real_request(command, **kwargs)
+
+        self.c._request = track_request
+        self.console.send = lambda cmd: events.append(f"send:{cmd}")
+        self.c._demo = Path("C:/replays/test.dem")
+
+        with patch.object(self.c, "_require_unlocker"), \
+             patch.object(self.c, "stop"), \
+             patch("dolly.controller.launcher._validate_demo", return_value=Path("C:/replays/test.dem")), \
+             patch.object(self.c, "_capture_game_build"), \
+             patch.object(self.c, "_remember_replay_header"):
+            self.c.load_replay()
+
+        playdemo_idx = next(i for i, e in enumerate(events) if e.startswith("send:playdemo"))
+        reset_idx = next(i for i, e in enumerate(events) if e == "req:sc_visualize_sceneobjects SCENEOBJECT_VIS_NONE")
+        self.assertLess(reset_idx, playdemo_idx)
+        self.assertEqual(self.c.status()["debug_view"], "normal")
+        self.assertFalse(self.c._debug_view.vis_grid_active)
+
+    def test_recover_replay_disconnect_timeout_resets_without_assuming_reload(self):
+        # Case 1: disconnect times out before replay is confirmed stopped with Visibility grid active.
+        self.c.set_debug_view("visibility_grid")
+        self.sent.clear()
+        self.c._demo = Path("C:/replays/test.dem")
+        self.c._probe_result = {"capabilities": {"spec_goto": True}}
+
+        def fail_disconnect(command, **kwargs):
+            self.sent.append(command)
+            if command == "disconnect":
+                raise RuntimeError("disconnect timed out")
+            return self.console.request(command)
+
+        self.c._request = fail_disconnect
+        with patch.object(self.c, "_require_unlocker"), \
+             patch.object(self.c, "_require_probe"), \
+             patch.object(self.c, "_require_demo", return_value={"tick": 100, "playing": True}), \
+             patch("dolly.controller.launcher._validate_demo", return_value=Path("C:/replays/test.dem")), \
+             patch.object(self.c, "_remember_replay_header"), \
+             patch.object(self.c, "_remember_spectator_hero"), \
+             patch.object(self.c, "_recorder_active", return_value=False), \
+             patch.object(self.c, "_console_command_available", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "disconnect timed out"):
+                self.c._recover_replay_for_shot()
+
+        # Full reset + vis_debug_show (grid was known active because reload was NOT confirmed).
+        for cmd in NORMAL_RESET_COMMANDS:
+            self.assertIn(cmd, self.sent)
+        self.assertEqual(self.sent.count("vis_debug_show"), 1)
+        self.assertEqual(self.c.status()["debug_view"], "normal")
+        self.assertFalse(self.c._debug_view.vis_grid_active)
+
+        # Case 2: disconnect confirmed stopped, THEN playdemo wait fails while console alive ->
+        # sends full reset + sv_cheats 0 if owned, but NEVER sends vis_debug_show (grid already dropped).
+        self.c._request = lambda command, **kwargs: (self.sent.append(command), self.console.request(command))[1]
+        self.c.set_debug_view("visibility_grid")
+        self.sent.clear()
+
+        call_count = {"n": 0}
+
+        def fake_startup_wait(predicate, label, stop_event, timeout):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return {"playing": False}  # disconnect confirmed stopped!
+            raise RuntimeError("playdemo timed out")
+
+        with patch.object(self.c, "_require_unlocker"), \
+             patch.object(self.c, "_require_probe"), \
+             patch.object(self.c, "_require_demo", return_value={"tick": 100, "playing": True}), \
+             patch("dolly.controller.launcher._validate_demo", return_value=Path("C:/replays/test.dem")), \
+             patch.object(self.c, "_remember_replay_header"), \
+             patch.object(self.c, "_remember_spectator_hero"), \
+             patch.object(self.c, "_recorder_active", return_value=False), \
+             patch.object(self.c, "_console_command_available", return_value=True), \
+             patch.object(self.c, "_startup_wait", side_effect=fake_startup_wait):
+            with self.assertRaisesRegex(RuntimeError, "playdemo timed out"):
+                self.c._recover_replay_for_shot()
+
+        for cmd in NORMAL_RESET_COMMANDS:
+            self.assertIn(cmd, self.sent)
+        self.assertNotIn("vis_debug_show", self.sent)
+        self.assertEqual(self.c.status()["debug_view"], "normal")
+        self.assertFalse(self.c._debug_view.vis_grid_active)
+
+    def test_heavy_view_tooltip_and_profile_description(self):
+        from dolly.ui.look_page import DEBUG_VIEW_INFO
+
+        drawer = (ROOT / "native" / "src" / "dolly_rail_drawers.cpp").read_text(encoding="utf-8")
+        for text in (DEBUG_VIEW_INFO, drawer):
+            self.assertIn("Visibility grid", text)
+            self.assertIn("Particle overlays", text)
+            self.assertIn("very slow", text)
+            self.assertIn("while seeking", text)
+        profile = json.loads((ROOT / "assets" / "editing" / "profile.json").read_text(encoding="utf-8"))
+        self.assertNotIn("live acceptance pending", profile["description"].lower())
 
 
 class DebugViewNotPersistedTests(unittest.TestCase):

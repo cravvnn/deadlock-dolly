@@ -708,7 +708,10 @@ dropdowns stay in sync and each switch clears the previous mode before applying
 the next. The selected view stays active during playback and export so you can
 render a clip in that mode, but it is never saved in shots or `settings.json`,
 is disabled when no replay is running or an export is active, and resets to
-**Normal** whenever a session ends or restarts.
+**Normal** whenever a session ends or restarts. **Visibility grid** and
+**Particle overlays** make the game and exports very slow; Dolly pauses them
+while seeking and warming up a shot, then turns them back on once the camera is
+in position.
 
 Custom tracks accept numeric camera cvars, including `citadel_camera_*`, `cam_*`,
 `r_citadel_depthoffield_*`, `r_dof_*` and several HUD/lens controls. These are cvar
