@@ -662,7 +662,29 @@ class DebugViewControllerTests(unittest.TestCase):
                 ("during_warmup", True, False),
             ],
         )
-        # Re-applied once after warm-up before capture starts.
+        # For an authored project take, heavy view stays deferred through recorder arming
+        # and play()'s console setup so it cannot trip the recorder's pre-play timeout.
+        self.assertEqual(self.sent, [])
+        self.assertTrue(self.c._debug_view.suspended)
+        self.assertFalse(self.c._debug_view.vis_grid_active)
+
+        # Cancelling/clearing recording pending without calling play() resumes the heavy view.
+        self.c._recording_pending = True
+        self.c.mark_recording_pending(False)
+        self.assertEqual(self.sent, ["vis_debug_show"])
+        self.assertFalse(self.c._debug_view.suspended)
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+
+        # Manual recording (project=None) resumes immediately inside prepare_native_recording.
+        self.sent.clear()
+        with patch.object(self.c, "_recorder_active", return_value=False), \
+             patch.object(self.c, "_require_probe"), \
+             patch.object(self.c, "_require_demo", return_value={"tick": 64964, "playing": True}), \
+             patch.object(self.c, "_native_bridge", return_value=bridge), \
+             patch.object(self.c, "stop"), \
+             patch.object(self.c, "_recover_replay_for_shot", side_effect=fake_recover), \
+             patch.object(self.c, "enter_native_flight"):
+            self.c.prepare_native_recording(project=None)
         self.assertEqual(self.sent, ["vis_debug_show"])
         self.assertFalse(self.c._debug_view.suspended)
         self.assertTrue(self.c._debug_view.vis_grid_active)

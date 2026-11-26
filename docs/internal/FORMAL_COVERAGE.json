@@ -798,7 +798,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d",
+      "sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -12324,7 +12324,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -12410,7 +12410,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -12422,7 +12422,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -12494,7 +12494,7 @@
       "instances": [
         "ConsoleReconnectApi"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -12551,7 +12551,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/EditorEventQueue.tla": {
       "path": "dolly/editor_session.py",
@@ -12603,7 +12603,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -12695,7 +12695,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/LaunchRecovery.tla": {
       "path": "dolly/launcher.py",
@@ -12791,7 +12791,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -12802,7 +12802,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -12850,7 +12850,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -12994,7 +12994,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "90c4110b81fd19a93c2e2eb2ff2977374bd63b82cc2ee29773b96b48bf54dc6d"
+      "owner_utf8_lf_sha256": "458250dceb8d88345617c13d803ef91a9051df9b4c5fce09dfd1d86f64a60d95"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",

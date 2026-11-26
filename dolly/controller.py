@@ -1923,6 +1923,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         if was_pending and not pending:
             self._recording_replay = None
             self._recording_warmup = None
+            if self._debug_view.suspended:
+                self._resume_debug_view()
 
     def _player_capture_pacing_active(self, now):
         """Trust only fresh progress from this owned capture; never send writes."""
@@ -2783,9 +2785,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 if self._debug_view.suspended:
                     self._resume_debug_view()
                 raise
-            # Re-apply any heavy debug view (Visibility grid / Particle overlays) now
-            # that positioning and warm-up finished, just before capture starts.
-            self._resume_debug_view()
+            # For a manual recording (project is None) no play() call follows, so
+            # resume any heavy debug view now before manual frames are captured.
+            # For an authored shot (project is not None), keep heavy views paused
+            # through recorder startup and play()'s console setup so slow views
+            # cannot trip the recorder's pre-play timeout; play() resumes them
+            # immediately before native.play() / demo_resume.
+            if project is None:
+                self._resume_debug_view()
             self._recording_replay = (self._session, str(self._demo), info["tick"])
             self._recording_warmup = warmed
             self._message("Replay prepared for recording. Play the shot once, then finish recording.")
@@ -5381,9 +5388,6 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     checked_demo.get("tick") != positioned_demo["tick"]):
                     raise RuntimeError("The replay moved during the camera position check. Keep it paused until Dolly starts the shot, then retry.")
                 self._check_position_cancelled()
-                # Re-apply any heavy debug view deferred across replay recovery
-                # now that seeking and warm-up finished, right before playback starts.
-                self._resume_debug_view()
                 # The paused view is verified; pace the engine for the export
                 # before the authored path takes over.
                 self.resume_export_timing()
@@ -5405,6 +5409,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                                    int(self._native_last_status["tick"]) != positioned_demo["tick"]):
                         raise RuntimeError("The replay moved while preparing frozen native preview. Pause it and retry.")
                     self._check_position_cancelled()
+                    # Re-apply any heavy debug view deferred across recovery/prepare
+                    # right before frames begin capturing or playback resumes.
+                    self._resume_debug_view()
                     native.play()
                     if not frozen:
                         self._demo_speed_changed = True
@@ -5429,6 +5436,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     # one ordered command batch, while the replay is paused.
                     self._demo_speed_changed = True
                     command += "; demo_timescale " + numeric(speed) + "; demo_resume"
+                self._resume_debug_view()
                 self._playback_details["initial_tick"] = positioned_demo.get("tick")
                 self._playback_details["camera_prepared_at"] = self._recent_camera_targets[-1][0]
                 self._request(command)
