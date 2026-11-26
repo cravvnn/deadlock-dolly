@@ -173,7 +173,8 @@ class DebugViewStateTests(unittest.TestCase):
         self.sent.clear()
         self.state.apply("normal", send=self.send, read_cvar=self.read_cvar)
         self.assertEqual(self.commands().count("vis_debug_show"), 1)
-        self.assertEqual(self.commands()[0], "vis_debug_show")
+        # The toggle goes last: it is the one command whose state cannot be read back.
+        self.assertEqual(self.commands()[-1], "vis_debug_show")
         self.assertFalse(self.state.vis_grid_active)
 
         # Selecting Normal again never sends vis_debug_show.
@@ -220,6 +221,56 @@ class DebugViewStateTests(unittest.TestCase):
         self.state.reapply(send=self.send, read_cvar=self.read_cvar)
         self.assertEqual(self.commands(), ["sv_cheats 1", "mat_wireframe 1"])
         self.assertTrue(self.state.cheats_owned)
+
+    def test_grid_reapplied_once_after_reload(self):
+        # A reload turns the grid off (live-verified); reapply must turn it on exactly once.
+        self.state.apply("visibility_grid", send=self.send, read_cvar=self.read_cvar)
+        self.state.after_reload()
+        self.sent.clear()
+        self.state.reapply(send=self.send, read_cvar=self.read_cvar)
+        self.state.reapply(send=self.send, read_cvar=self.read_cvar)
+        self.assertEqual(self.commands(), ["vis_debug_show"])
+        self.assertTrue(self.state.vis_grid_active)
+
+    def test_dropped_view_after_failed_reload_never_inverts_grid(self):
+        # Grid on, replay reloaded, reload fails before reapply: the game is Normal.
+        self.state.apply("visibility_grid", send=self.send, read_cvar=self.read_cvar)
+        self.state.drop_view()
+        self.assertEqual(self.state.current, DEBUG_VIEW_DEFAULT)
+        self.sent.clear()
+        # Choosing another view must not toggle the (already off) grid back on.
+        self.state.apply("albedo", send=self.send, read_cvar=self.read_cvar)
+        self.assertNotIn("vis_debug_show", self.commands())
+
+    def test_dropped_view_keeps_cheats_ownership(self):
+        self.state.apply("wireframe", send=self.send, read_cvar=self.read_cvar)
+        self.state.drop_view()
+        self.sent.clear()
+        self.state.apply("normal", send=self.send, read_cvar=self.read_cvar)
+        self.assertIn("sv_cheats 0", self.commands())
+        self.assertFalse(self.state.cheats_owned)
+
+    def test_undo_continues_after_a_failed_step(self):
+        self.state.apply("particle_overlays", send=self.send, read_cvar=self.read_cvar)
+        self.sent.clear()
+
+        def flaky_send(command, *, allow_error=False):
+            self.sent.append((command, allow_error))
+            if command == "r_showdebugoverlays 0":
+                raise RuntimeError("timed out")
+            return ""
+
+        with self.assertRaisesRegex(RuntimeError, "timed out"):
+            self.state.apply("normal", send=flaky_send, read_cvar=self.read_cvar)
+        self.assertIn("sv_cheats 0", self.commands())
+        self.assertIn("r_particle_debug_show_control_points 0", self.commands())
+        self.assertFalse(self.state.cheats_owned)
+
+    def test_reselecting_a_view_reasserts_it(self):
+        self.state.apply("albedo", send=self.send, read_cvar=self.read_cvar)
+        self.sent.clear()
+        self.state.apply("albedo", send=self.send, read_cvar=self.read_cvar)
+        self.assertEqual(self.commands(), ["mat_debug ALBEDO"])
 
 
 class DebugViewControllerTests(unittest.TestCase):
@@ -271,6 +322,34 @@ class DebugViewControllerTests(unittest.TestCase):
         self.assertEqual(self.c._debug_view.current, "normal")
         self.assertFalse(self.c._debug_view.vis_grid_active)
         self.assertEqual(self.c.status()["debug_view"], "normal")
+
+    def test_controller_reapply_failure_continues_in_normal(self):
+        self.c.set_debug_view("wireframe")
+        self.c._debug_view.after_reload()
+        real = self.c._request
+
+        def failing(command, **kwargs):
+            if command == "mat_wireframe 1":
+                raise RuntimeError("rejected")
+            return real(command, **kwargs)
+
+        self.c._request = failing
+        self.c._reapply_debug_view()  # must not raise: a viewing aid never fails a take
+        self.assertEqual(self.c.status()["debug_view"], "normal")
+        self.assertFalse(self.c._debug_view.cheats_owned)
+
+    def test_console_lost_keeps_view_tracked_until_reconnect_undo(self):
+        self.c.set_debug_view("visibility_grid")
+        with patch("dolly.controller.console_connected", return_value=False),              patch.object(self.c, "stop"),              patch.object(self.c, "clear_export_resolution"),              patch.object(self.c, "_restore_dof_shader_settings", return_value=""):
+            self.c.disconnect()
+        # The game still shows the grid, so Dolly keeps tracking it ...
+        self.assertTrue(self.c._debug_view.vis_grid_active)
+        # ... and the next Connect to the same process turns it off once.
+        self.sent.clear()
+        self.c._undo_debug_view_after_reconnect()
+        self.assertEqual(self.sent.count("vis_debug_show"), 1)
+        self.assertEqual(self.c._debug_view.current, "normal")
+        self.assertFalse(self.c._debug_view.vis_grid_active)
 
     def test_controller_recover_dead_session_resets_state_without_sending(self):
         self.c.set_debug_view("wireframe")

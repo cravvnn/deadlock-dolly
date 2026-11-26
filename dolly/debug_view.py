@@ -159,33 +159,75 @@ class DebugViewState:
         self.cheats_owned: bool = False
 
     def reset_local(self) -> None:
-        """Clear local tracking when a session starts, disconnects or dies."""
+        """Clear local tracking when a session starts or dies (the game state went with it)."""
         self.current = DEBUG_VIEW_DEFAULT
         self.vis_grid_active = False
         self.cheats_owned = False
 
+    def after_reload(self) -> None:
+        """The replay was reloaded (``disconnect`` / ``playdemo``): the game dropped the view.
+
+        A reload turns ``vis_debug_show`` off (live-verified with an export that reloads
+        the replay), so the toggle must be sent again rather than assumed on. The selected
+        view and the ``sv_cheats`` ownership are kept so :meth:`reapply` can restore it.
+        """
+        self.vis_grid_active = False
+
+    def drop_view(self) -> None:
+        """The replay was reloaded and the view will not be re-applied: show Normal.
+
+        ``cheats_owned`` is kept so the next switch still turns off cheats Dolly turned on.
+        """
+        self.after_reload()
+        self.current = DEBUG_VIEW_DEFAULT
+
     def _undo_active(self, *, send, force_full_reset: bool = False) -> None:
-        """Fully undo the active debug view (or all views when ``force_full_reset``)."""
-        if self.vis_grid_active:
-            send("vis_debug_show", allow_error=False)
-            self.vis_grid_active = False
+        """Fully undo the active debug view (or all views when ``force_full_reset``).
+
+        Every step is attempted even when an earlier one fails, so one lost reply cannot
+        leave cheats or overlays on; the first failure is raised afterwards.
+        """
+        failure = None
+
+        def attempt(command):
+            nonlocal failure
+            try:
+                send(command, allow_error=True)
+                return True
+            except Exception as exc:  # noqa: BLE001 - keep undoing, report the first failure
+                failure = failure or exc
+                return False
+
         if force_full_reset:
             for command in NORMAL_RESET_COMMANDS:
-                send(command, allow_error=True)
+                attempt(command)
         elif self.current != DEBUG_VIEW_DEFAULT:
             previous = DEBUG_VIEW_BY_ID[self.current]
             if not previous.is_toggle:
                 for command in previous.undo_commands:
-                    send(command, allow_error=True)
-        if self.cheats_owned:
-            send("sv_cheats 0", allow_error=True)
+                    attempt(command)
+        if self.cheats_owned and attempt("sv_cheats 0"):
             self.cheats_owned = False
+        # The grid toggle goes last: it is the one command whose state cannot be read back.
+        if self.vis_grid_active and attempt("vis_debug_show"):
+            self.vis_grid_active = False
         self.current = DEBUG_VIEW_DEFAULT
+        if failure is not None:
+            raise failure
+
+    def _ensure_cheats(self, *, send, read_cvar) -> bool:
+        """Turn ``sv_cheats`` on if it is not already; True when this call turned it on."""
+        if read_cvar("sv_cheats") == 1.0:
+            return False
+        send("sv_cheats 1", allow_error=False)
+        self.cheats_owned = True
+        return True
 
     def apply(self, target: str, *, send, read_cvar) -> str:
         """Switch to ``target`` (id or label), undoing the previous view first.
 
-        Returns the active canonical option id after the switch.
+        Choosing the current view again re-sends it (except the grid toggle), so a view
+        lost to a failed reload can be re-asserted. Returns the active option id.
         """
         target_id = debug_view_id(target)
         option = DEBUG_VIEW_BY_ID[target_id]
@@ -193,6 +235,11 @@ class DebugViewState:
             self._undo_active(send=send, force_full_reset=True)
             return self.current
         if target_id == self.current:
+            if not option.is_toggle:
+                if option.needs_cheats:
+                    self._ensure_cheats(send=send, read_cvar=read_cvar)
+                for command in option.apply_commands:
+                    send(command, allow_error=False)
             return self.current
 
         # Always fully undo any active view before applying the next.
@@ -204,10 +251,7 @@ class DebugViewState:
         applied_commands: list[str] = []
         try:
             if option.needs_cheats:
-                if read_cvar("sv_cheats") != 1.0:
-                    send("sv_cheats 1", allow_error=False)
-                    self.cheats_owned = True
-                    turned_on_cheats = True
+                turned_on_cheats = self._ensure_cheats(send=send, read_cvar=read_cvar)
             if option.is_toggle:
                 if not self.vis_grid_active:
                     send("vis_debug_show", allow_error=False)
@@ -243,22 +287,19 @@ class DebugViewState:
         self.current = target_id
         return self.current
 
-    def reapply(self, *, send, read_cvar, vis_survives_reload: bool = False) -> None:
-        """Re-assert the active debug view after an in-process replay reload.
+    def reapply(self, *, send, read_cvar) -> None:
+        """Re-assert the active debug view after a replay reload (call :meth:`after_reload` first).
 
-        ``disconnect`` + ``playdemo`` resets ``sv_cheats`` and cheat-protected
-        convars; re-applying keeps the selected debug view active through
-        playback and export.
+        ``disconnect`` + ``playdemo`` resets cheat-protected convars and the grid toggle;
+        re-applying keeps the selected view through playback and export.
         """
         if self.current == DEBUG_VIEW_DEFAULT:
             return
         option = DEBUG_VIEW_BY_ID[self.current]
         if option.needs_cheats:
-            if read_cvar("sv_cheats") != 1.0:
-                send("sv_cheats 1", allow_error=False)
-                self.cheats_owned = True
+            self._ensure_cheats(send=send, read_cvar=read_cvar)
         if option.is_toggle:
-            if not vis_survives_reload:
+            if not self.vis_grid_active:
                 send("vis_debug_show", allow_error=False)
                 self.vis_grid_active = True
         else:

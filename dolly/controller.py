@@ -1096,6 +1096,7 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._console = console
                 self._request("echo DOLLY_CONNECTION_READY")
                 self._capture_game_build()
+                self._undo_debug_view_after_reconnect()
             except Exception:
                 console.close()
                 self._console = None
@@ -1860,6 +1861,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 # Map loading may outlast a console request deadline. Queue the
                 # command once; Probe later verifies the actual selected demo.
                 self._console.send(command)
+                # A reload drops any debug view; the dropdown returns to Normal.
+                self._debug_view.drop_view()
                 self._last_output["playdemo"] = "Sent: " + command + "\nWaiting for Check camera support to verify the loaded replay."
                 LOG.info("Replay requested after confirmed unlocker initialization: %s", path)
                 self._message("Replay load requested. Wait until it is visible in the game, then Check camera support.", startup_stage="loading_replay", tick=None, total_ticks=None)
@@ -2009,10 +2012,14 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         self._replay_recovery = {"pid": session.pid, "replay": str(path), "stage": "disconnecting"}
         self._replay_recovery_active = True
         self._invalidate_probe()
+        reloaded = reasserted = False
         try:
             self._check_position_cancelled()
             self._message("Preparing replay for the shot…", startup_stage="recovering_replay")
+            # Once disconnect is sent the game has dropped any debug view.
+            reloaded = True
             self._request("disconnect", timeout=10)
+            self._debug_view.after_reload()
             def inactive():
                 try:
                     info = parse_demo_info(self._request("demo_info", allow_error=True, allow_truncated=True))
@@ -2075,9 +2082,13 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 # must keep the user's choice, so re-assert it before playback.
                 self._apply_citadel_glow()
             self._reapply_debug_view()
+            reasserted = True
             self._message("Replay prepared. Starting the shot…", startup_stage="replay_ready")
             return checked
         except Exception as exc:
+            if reloaded and not reasserted:
+                # The game is back to Normal; the dropdown must say so.
+                self._debug_view.drop_view()
             self._invalidate_probe(str(exc))
             if self._stop_event.is_set():
                 # The game stays open and Dolly does not retry; say what is
@@ -4253,12 +4264,33 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             self._message(f"Debug view set to {debug_view_label(applied)}.")
             return applied
 
+    def _undo_debug_view_after_reconnect(self):
+        """Return this process to Normal if a debug view was left on when the console dropped."""
+        state = self._debug_view
+        if state.current == DEBUG_VIEW_DEFAULT and not state.vis_grid_active and not state.cheats_owned:
+            return
+        try:
+            state.reset_best_effort(
+                send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error))
+        except Exception:  # noqa: BLE001 - reconnecting must not fail on a viewing aid
+            LOG.warning("Could not undo the debug view after reconnecting", exc_info=True)
+
     def _reapply_debug_view(self):
-        """Re-assert the active session debug view after a replay reload."""
-        self._debug_view.reapply(
-            send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error),
-            read_cvar=self._console_cvar,
-        )
+        """Re-assert the active session debug view after a replay reload.
+
+        A failure here never stops the shot: the view is undone as far as possible and
+        the shot continues in Normal, which the dropdown then shows.
+        """
+        send = lambda command, *, allow_error=False: self._request(command, allow_error=allow_error)
+        try:
+            self._debug_view.reapply(send=send, read_cvar=self._console_cvar)
+        except Exception as exc:  # noqa: BLE001 - a viewing aid must not fail a take
+            LOG.warning("Could not re-apply the debug view after the replay reload", exc_info=True)
+            try:
+                self._debug_view.apply(DEBUG_VIEW_DEFAULT, send=send, read_cvar=self._console_cvar)
+            except Exception:  # noqa: BLE001
+                self._debug_view.drop_view()
+            self._message(f"Debug view could not be re-applied ({exc}); continuing in Normal.")
 
     def set_playback_speed(self, speed):
         """Apply a replay speed immediately through the demo timescale.
@@ -6119,8 +6151,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                     send=lambda command, *, allow_error=False: self._request(command, allow_error=allow_error))
             except Exception:  # noqa: BLE001 - a closed game must not block disconnect
                 LOG.warning("Could not reset debug view during disconnect", exc_info=True)
-        else:
+        elif not self._alive():
             self._debug_view.reset_local()
+        # Console lost with the game still running: the view stays tracked so the next
+        # Connect to this same process undoes it (see connect()).
         try:
             self.stop(reset_speed=True)
         except Exception as exc:  # noqa: BLE001 - a closed game must not block disconnect
