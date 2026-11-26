@@ -688,11 +688,13 @@ void OverlayPanel::draw_lite_timeline(const EditorSnapshot& state) {
             lite_replay_total_seen_=known_total;
             if (replay_ready) lite_replay_fit_pending_ = false;
         }
-        if (!lite_replay_dragging_) lite_replay_cursor_ = state.tick;
+        const std::int64_t min_tick = have_info && (info.flags & 2) && info.total_ticks > 2 ? 1 : 0;
+        const std::int64_t max_tick = have_info ? std::max<std::int64_t>(1, info.total_ticks - 1) : 1;
+        if (!lite_replay_dragging_) lite_replay_cursor_ = std::max<std::int64_t>(min_tick, state.tick);
         float cursor = float(lite_replay_cursor_);
-        track = slider_row("##lite-replay-position","Tick",&cursor,0,
-                           float(have_info ? std::max<std::int64_t>(1,info.total_ticks-1) : 1),nullptr,42,nullptr,true);
-        lite_replay_cursor_ = std::int64_t(std::nearbyint(cursor));
+        track = slider_row("##lite-replay-position","Tick",&cursor,float(min_tick),
+                           float(max_tick),nullptr,42,nullptr,true);
+        lite_replay_cursor_ = std::max(min_tick, std::int64_t(std::nearbyint(cursor)));
         lite_replay_dragging_ = track.active;
     }
     // Replay kills use the same visible track as camera keyframes. Hovering a

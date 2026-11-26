@@ -266,6 +266,10 @@ CAMERA_SETTLE_SAMPLES = 3
 CAMERA_SETTLE_LIMIT = 18
 # Replays recorded before this client build can fatal Deadlock during a far seek.
 MIN_SAFE_SEEK_REPLAY_BUILD = 6801
+# Deadlock's CDemoPlayer::SkipToTick skips its full-packet wait flag when
+# goal <= 0, flushing after 1 message on full packet 1 and crashing
+# ReadPacketEntities (0xC0000005). Real replays start at tick 1.
+MIN_SAFE_SEEK_TICK = 1
 CAMERA_POSITION_TOLERANCE = .5
 CAMERA_STABILITY_TOLERANCE = .2
 CAMERA_MAX_OFFSET = 256.0
@@ -4736,9 +4740,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             if int(info["tick"]) != current:
                 raise RuntimeError("The replay moved before the tick step. Pause and retry.")
             pose = self._native_pose(view, "applied_pose" if self._native_active else "original_pose")
-            target = max(0, current + int(ticks))
+            target = max(MIN_SAFE_SEEK_TICK, current + int(ticks))
             if info.get("total_ticks") is not None:
-                target = min(target, max(0, int(info["total_ticks"]) - 1))
+                target = min(target, max(MIN_SAFE_SEEK_TICK, int(info["total_ticks"]) - 1))
             requested = target
             index = packet_index(self._demo, check_cancelled=self._check_position_cancelled)
             if index is not None:
@@ -4766,6 +4770,8 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
     def _recorded_replay_target(self, target, info):
         """Use a verified packet in the requested direction for replay controls."""
         self._check_position_cancelled()
+        if target < MIN_SAFE_SEEK_TICK:
+            target = MIN_SAFE_SEEK_TICK
         index = packet_index(self._demo, check_cancelled=self._check_position_cancelled)
         if index is None:
             return target
@@ -4833,9 +4839,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 tick_rate = (self._probe_result.get("demo") or {}).get("tick_rate")
             if isinstance(tick_rate, bool) or not isinstance(tick_rate, (int, float)) or not math.isfinite(tick_rate) or tick_rate <= 0:
                 raise RuntimeError("Replay tick rate is unavailable. Set the shot's ticks/second before using relative seek.")
-            target = max(0, int(round(int(info["tick"]) + seconds * tick_rate)))
+            target = max(MIN_SAFE_SEEK_TICK, int(round(int(info["tick"]) + seconds * tick_rate)))
             if info.get("total_ticks") is not None:
-                target = min(target, max(0, int(info["total_ticks"]) - 1))
+                target = min(target, max(MIN_SAFE_SEEK_TICK, int(info["total_ticks"]) - 1))
             requested = target
             target = self._recorded_replay_target(target, info)
             # A held native view must release before a seek, including replay
@@ -4986,7 +4992,9 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
         """Verify a paused tick; optionally recognize the replay's packet-1 floor."""
         self._recording_replay = None
         self._recording_warmup = None
-        target = int(target)
+        requested = int(target)
+        target = max(MIN_SAFE_SEEK_TICK, requested)
+        clamped_start = requested < MIN_SAFE_SEEK_TICK
         self._check_position_cancelled()
         # Current engine help: demo_goto <tick> [relative] [pause].
         # demo_gototick follows the same command in the reference command list.
@@ -5087,6 +5095,15 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
             stable = stable + 1 if observed == target else 0
             if stable >= SEEK_SETTLE_SAMPLES:
                 if pause_confirmed:
+                    if clamped_start:
+                        self._last_seek_details.update(verified=True, target_tick=requested,
+                            commanded_tick=target, actual_tick=target,
+                            boundary="first_full_packet",
+                            boundary_delta_ticks=target - requested)
+                        if allow_start_boundary:
+                            return dict(info, seek_boundary={"requested_tick": requested,
+                                "actual_tick": target, "reason": "first_full_packet"})
+                        return info
                     self._last_seek_details["verified"] = True
                     return info
                 self._request("demo_pause")

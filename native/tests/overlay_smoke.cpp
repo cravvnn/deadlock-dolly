@@ -2160,15 +2160,15 @@ static void ui_rework_regressions() {
     // Reloading an equally long replay must discard an old one-tick zoom.
     snapshot.ready=false;frame();frame();
     snapshot.ready=true;frame();frame();
-    require(panel.timeline_view_start()==0 && panel.timeline_view_end()==146925,
+    require(panel.timeline_view_start()==1 && panel.timeline_view_end()==146925,
             "Replay startup retains a previous zoom and hides kill events");
     io.AddMousePosEvent((panel.timeline_x0()+panel.timeline_x1())*.5f,panel.timeline_y());
     io.AddMouseWheelEvent(0,8);frame();frame();
-    require(panel.timeline_view_end()-panel.timeline_view_start()<146925,
+    require(panel.timeline_view_end()-panel.timeline_view_start()<146924,
             "Manual zoom no longer works after initial replay fit");
     dolly::replay_events_status_stub=1;frame();frame();
     dolly::replay_events_status_stub=2;frame();frame();
-    require(panel.timeline_view_start()==0 && panel.timeline_view_end()==146925,
+    require(panel.timeline_view_start()==1 && panel.timeline_view_end()==146925,
             "Newly loaded kill index does not fit all replay events");
     activate(main,"Layout");
     require(!ctx->OpenPopupStack.empty(),"Layout preferences cannot open");

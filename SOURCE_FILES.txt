@@ -1448,6 +1448,7 @@ docs/RELEASE_NOTES_0.7.58-beta.md
 docs/RELEASE_NOTES_0.7.59-beta.md
 docs/RELEASE_NOTES_0.7.60-beta.md
 docs/RELEASE_NOTES_0.7.61-beta.md
+docs/RELEASE_NOTES_0.7.62-beta.md
 dolly/debug_view.py
 native/profiles/deadlock-2026-11-26-6871-complete.json
 tests/test_debug_view.py

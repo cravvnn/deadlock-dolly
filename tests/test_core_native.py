@@ -523,8 +523,32 @@ class NativeWorkflows(unittest.TestCase):
         self.assertEqual(self.console.tick, 132)
         self.assertAlmostEqual(self.bridge.phase, .5)
         self.assertAlmostEqual(self.bridge.status()['applied_pose'][0], 40)
-        self.controller.seek_replay_tick(0)
-        self.assertEqual(self.console.tick, 0)
+        self.console.requests.clear()
+        settled_zero = self.controller.seek_replay_tick(0)
+        self.assertEqual(settled_zero['tick'], 1)
+        self.assertEqual(self.console.tick, 1)
+        self.assertIn('demo_gototick 1 0 1', self.console.requests)
+        self.assertNotIn('demo_gototick 0 0 1', self.console.requests)
+        self.assertEqual(self.controller._last_seek_details['requested_tick'], 0)
+        self.assertEqual(self.controller._last_seek_details['commanded_tick'], 1)
+        self.console.tick = 10
+        self.bridge.tick = 10
+        self.console.requests.clear()
+        stepped = self.controller.step_replay_ticks(-25)
+        self.assertEqual(stepped['tick'], 1)
+        self.assertNotIn('demo_gototick 0 0 1', self.console.requests)
+        self.console.tick = 10
+        self.bridge.tick = 10
+        self.console.requests.clear()
+        self.controller.seek_relative(-10, tick_rate=64)
+        self.assertEqual(self.console.tick, 1)
+        self.assertNotIn('demo_gototick 0 0 1', self.console.requests)
+        self.console.requests.clear()
+        boundary_zero = self.controller._seek_tick(0, allow_start_boundary=True)
+        self.assertEqual(boundary_zero['tick'], 1)
+        self.assertEqual(boundary_zero['seek_boundary'],
+                         {'requested_tick': 0, 'actual_tick': 1, 'reason': 'first_full_packet'})
+        self.assertNotIn('demo_gototick 0 0 1', self.console.requests)
         for invalid in (math.nan, math.inf, -math.inf, True, -1, 1.5):
             with self.subTest(target=invalid):
                 self.console.requests.clear()
