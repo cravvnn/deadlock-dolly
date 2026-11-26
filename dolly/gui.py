@@ -3442,14 +3442,21 @@ class DollyApp:
         _set_var(self.debug_view, debug_view_label(active))
 
     def _debug_view_changed(self):
-        if self.busy or self.playing:
-            self._sync_debug_view_from_status(self.controller.status())
-            self.status_text.set("Pause playback and finish the current operation before changing the debug view.")
+        status = self.controller.status()
+        recording = self.video_export.status().get("state") if self.video_export is not None else None
+        if (self.busy or self.playing or status.get("playing")
+                or status.get("startup_stage") not in ("replay_ready", "editing_ready")
+                or recording in ACTIVE_STATES
+                or getattr(self, "_layer_queue", None)
+                or getattr(self, "_active_layer_take", None)
+                or getattr(self, "_renderlock_cancel", None) is not None):
+            self._sync_debug_view_from_status(status)
+            self.status_text.set("Pause playback and finish exports before changing the debug view.")
             return
         try:
             option_id = debug_view_id(self.debug_view.get())
         except ValueError:
-            self._sync_debug_view_from_status(self.controller.status())
+            self._sync_debug_view_from_status(status)
             return
         def complete(applied):
             _set_var(self.debug_view, debug_view_label(applied or DEBUG_VIEW_DEFAULT))
@@ -4038,7 +4045,8 @@ class DollyApp:
                 recording = self.video_export.status().get("state") if self.video_export is not None else None
                 debug_available = (capture_available and recording not in ACTIVE_STATES
                                    and not getattr(self, "_layer_queue", None)
-                                   and not getattr(self, "_active_layer_take", None))
+                                   and not getattr(self, "_active_layer_take", None)
+                                   and getattr(self, "_renderlock_cancel", None) is None)
                 _set_widget_state(debug_combo, "readonly" if debug_available else "disabled")
                 if not self.busy:
                     self._sync_debug_view_from_status(status)

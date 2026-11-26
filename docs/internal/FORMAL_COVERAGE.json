@@ -2722,7 +2722,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0",
+      "sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -12472,7 +12472,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0"
+      "owner_utf8_lf_sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -12534,7 +12534,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0"
+      "owner_utf8_lf_sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -12874,7 +12874,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0"
+      "owner_utf8_lf_sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",

@@ -408,7 +408,8 @@ class DebugViewGuiTests(unittest.TestCase):
         root.withdraw()
         app = None
         try:
-            app = gui.DollyApp(root)
+            with patch.object(gui.DollyApp, "_submit", return_value=False):
+                app = gui.DollyApp(root)
             app.notebook.select(app.cvar_tab)
             root.update_idletasks()
             root.update()
@@ -449,6 +450,51 @@ class DebugViewGuiTests(unittest.TestCase):
                 app._poll_once()
             self.assertEqual(str(app.debug_view_combo.cget("state")), "readonly")
             self.assertEqual(app.debug_view.get(), "Normals")
+
+            # Parity with in-game drawer and Controller._require_quiet_session:
+            # disabled while playing, recording, running layer queues/takes, or RenderLock export.
+            orig_video_export = app.video_export
+            blockers = [
+                ("playing", lambda: live_status.__setitem__("playing", True),
+                 lambda: live_status.__setitem__("playing", False)),
+                ("recording", lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "recording"})),
+                 lambda: setattr(app, "video_export", orig_video_export)),
+                ("layer_queue", lambda: setattr(app, "_layer_queue", [("world", "color")]),
+                 lambda: setattr(app, "_layer_queue", [])),
+                ("active_layer_take", lambda: setattr(app, "_active_layer_take", ("world", "color")),
+                 lambda: setattr(app, "_active_layer_take", None)),
+                ("renderlock_export", lambda: setattr(app, "_renderlock_cancel", object()),
+                 lambda: setattr(app, "_renderlock_cancel", None)),
+            ]
+            for label, enable, restore in blockers:
+                with self.subTest(desktop_blocker=label):
+                    enable()
+                    try:
+                        with patch.object(app.controller, "status", return_value=live_status), \
+                             patch.object(app, "_refresh_video"), \
+                             patch.object(app, "_refresh_discord_presence"), \
+                             patch.object(app, "_check_paused_memory"), \
+                             patch.object(app, "_refresh_renderer_pressure"), \
+                             patch.object(app, "_check_capture_listener"), \
+                             patch("dolly.editor_session.poll"):
+                            app._poll_once()
+                            self.assertEqual(str(app.debug_view_combo.cget("state")), "disabled")
+                            app.debug_view.set("Wireframe")
+                            with patch.object(app, "_submit") as submit_mock:
+                                app._debug_view_changed()
+                                submit_mock.assert_not_called()
+                            self.assertEqual(app.debug_view.get(), "Normals")
+                    finally:
+                        restore()
+                    with patch.object(app.controller, "status", return_value=live_status), \
+                         patch.object(app, "_refresh_video"), \
+                         patch.object(app, "_refresh_discord_presence"), \
+                         patch.object(app, "_check_paused_memory"), \
+                         patch.object(app, "_refresh_renderer_pressure"), \
+                         patch.object(app, "_check_capture_listener"), \
+                         patch("dolly.editor_session.poll"):
+                        app._poll_once()
+                    self.assertEqual(str(app.debug_view_combo.cget("state")), "readonly")
 
             # Poll after session ends disables dropdown and resets to Normal.
             closed_status = {
