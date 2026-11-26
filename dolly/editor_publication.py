@@ -243,6 +243,30 @@ def configure(app):
             publish_level(binding=level[1] if active else None,
                           standard_aspect=level[2] if active else None)
             app._native_level_bridge, app._native_level_cache = bridge, level
+    publish_debug_view = getattr(bridge, "configure_editor_debug_view", None)
+    if callable(publish_debug_view):
+        from .debug_view import DEBUG_VIEW_DEFAULT, DEBUG_VIEW_IDS
+        from .video_export import ACTIVE_STATES
+        current_view = status.get("debug_view", DEBUG_VIEW_DEFAULT)
+        view_index = DEBUG_VIEW_IDS.index(current_view) if current_view in DEBUG_VIEW_IDS else 0
+        video_export = getattr(app, "video_export", None)
+        recording = video_export.status().get("state") if video_export is not None else None
+        debug_available = (
+            active
+            and not app.busy
+            and not getattr(app, "playing", False)
+            and not status.get("playing")
+            and status.get("startup_stage") in ("replay_ready", "editing_ready")
+            and recording not in ACTIVE_STATES
+            and not getattr(app, "_layer_queue", None)
+            and not getattr(app, "_active_layer_take", None)
+            and getattr(app, "_renderlock_cancel", None) is None
+        )
+        debug_state = (view_index, bool(debug_available))
+        if (getattr(app, "_native_debug_view_bridge", None) is not bridge
+                or getattr(app, "_native_debug_view_cache", None) != debug_state):
+            publish_debug_view(view_index, available=bool(debug_available))
+            app._native_debug_view_bridge, app._native_debug_view_cache = bridge, debug_state
     publish_dof = getattr(bridge, "configure_editor_dof", None)
     if callable(publish_dof):
         from .editor_dof import published_values_at

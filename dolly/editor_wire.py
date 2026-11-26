@@ -82,10 +82,18 @@ LENS_ACTIONS = ("set_lens_rain", "set_lens_amount", "set_lens_size", "set_lens_s
                 "set_lens_trails", "set_lens_refraction", "set_lens_softness")
 EXTRA_ACTIONS += LENS_ACTIONS
 EXTRA_ACTIONS += ("set_weather_hero_tracks",)  # ID 146 (dolly_editor.hpp SetWeatherHeroTracks)
+EXTRA_ACTIONS += ("set_debug_view",)  # ID 147 (dolly_editor.hpp SetDebugView)
 
 # Optional completion signal in the unused mapping tail; existing offsets stay fixed.
 CINEMATIC_OFFSET = 2 * 1024 * 1024 + 60000
 CINEMATIC_STATUS = struct.Struct("<8s5I")
+
+# Optional session-only debug view block in the unused mapping tail after
+# cinematic status; existing offsets and layouts stay fixed.
+DEBUG_VIEW_OFFSET = 2 * 1024 * 1024 + 60032
+DEBUG_VIEW_ABI = 1
+DEBUG_VIEW_MAGIC = b"DLYDBGV1"
+DEBUG_VIEW_CONFIG = struct.Struct("<8s4I")
 
 CAMERA_LIST_OFFSET = 2 * 1024 * 1024 + 23360
 CAMERA_LIST_COUNT = 32
@@ -145,6 +153,18 @@ def unpack_prop_probe_status(data):
             "entity_index": fields[12],
             "entity_ptr": fields[13], "identity_ptr": fields[14],
             "entity_class": fields[15].split(b"\0", 1)[0].decode("ascii", "replace")}
+
+
+def pack_debug_view(sequence, view_index, *, available=False):
+    """Session-only debug view index (0..len-1) and in-game editable flag."""
+    from .debug_view import DEBUG_VIEW_OPTIONS
+    if type(available) is not bool:
+        raise ValueError("Debug view availability must be a boolean")
+    index = _uint(view_index, "debug view")
+    if index >= len(DEBUG_VIEW_OPTIONS):
+        raise ValueError("Unknown native editor debug view")
+    return DEBUG_VIEW_CONFIG.pack(DEBUG_VIEW_MAGIC, _uint(sequence, "sequence"),
+                                  DEBUG_VIEW_ABI, index, int(available))
 
 
 def pack_framing_grid(sequence, enabled, binding=None):

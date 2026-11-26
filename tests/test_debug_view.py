@@ -4,8 +4,11 @@ from __future__ import annotations
 from dataclasses import fields
 import json
 from pathlib import Path
+import re
+import struct
 import tempfile
 import tkinter as tk
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -16,13 +19,17 @@ from dolly.debug_view import (
     DEBUG_VIEW_DEFAULT,
     DEBUG_VIEW_IDS,
     DEBUG_VIEW_LABELS,
+    DEBUG_VIEW_OPTIONS,
     DebugViewState,
     debug_view_id,
     debug_view_label,
 )
-from dolly import editing_session, graphics_profiles, gui
+from dolly import editing_session, editor_dispatch, editor_publication, editor_wire, graphics_profiles, gui
+from dolly.editor_actions import ACTION_ORDER
 from dolly.path import Project
 from dolly.settings import AppSettings, load_settings, save_settings
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class DebugViewStateTests(unittest.TestCase):
@@ -469,6 +476,244 @@ class DebugViewGuiTests(unittest.TestCase):
                 app._destroy()
             elif root.winfo_exists():
                 root.destroy()
+
+
+class DebugViewInGameWireTests(unittest.TestCase):
+    def test_action_id_and_native_header_and_drawer_labels_match(self):
+        names = ACTION_ORDER + editor_wire.EXTRA_ACTIONS
+        self.assertEqual(names.index("set_debug_view"), 147)
+        self.assertEqual(names[-1], "set_debug_view")
+
+        header = (ROOT / "native" / "include" / "dolly_editor.hpp").read_text(encoding="utf-8")
+        self.assertIn("SetDebugView) == 147", header)
+        self.assertIn("kEditorActionLast) == 147", header)
+        self.assertIn("kEditorDebugViewOffset = 2 * 1024 * 1024 + 60032;", header)
+        self.assertEqual(editor_wire.DEBUG_VIEW_OFFSET, 2 * 1024 * 1024 + 60032)
+        self.assertIn(f"kEditorDebugViewCount = {len(DEBUG_VIEW_OPTIONS)};", header)
+
+        drawer = (ROOT / "native" / "src" / "dolly_rail_drawers.cpp").read_text(encoding="utf-8")
+        match = re.search(r"debug_views\[kEditorDebugViewCount\]\{(.*?)\};", drawer, re.S)
+        self.assertIsNotNone(match, "Look drawer debug_views label table missing")
+        native_labels = tuple(re.findall(r'"([^"]+)"', match.group(1)))
+        self.assertEqual(native_labels, tuple(opt.label for opt in DEBUG_VIEW_OPTIONS))
+        self.assertIn("EditorAction::SetDebugView", drawer)
+
+    def test_pack_debug_view_validation_and_layout(self):
+        self.assertEqual(editor_wire.DEBUG_VIEW_CONFIG.size, 24)
+        self.assertGreaterEqual(
+            editor_wire.DEBUG_VIEW_OFFSET,
+            editor_wire.CINEMATIC_OFFSET + editor_wire.CINEMATIC_STATUS.size,
+        )
+        self.assertLessEqual(
+            editor_wire.DEBUG_VIEW_OFFSET + editor_wire.DEBUG_VIEW_CONFIG.size,
+            2 * 1024 * 1024 + 61440,
+        )
+        for index in range(len(DEBUG_VIEW_OPTIONS)):
+            for available in (False, True):
+                packed = editor_wire.pack_debug_view(4, index, available=available)
+                self.assertEqual(
+                    editor_wire.DEBUG_VIEW_CONFIG.unpack(packed),
+                    (editor_wire.DEBUG_VIEW_MAGIC, 4, editor_wire.DEBUG_VIEW_ABI, index, int(available)),
+                )
+        for bad_index in (-1, len(DEBUG_VIEW_OPTIONS), True, False, 1.5, "normal"):
+            with self.assertRaises(ValueError):
+                editor_wire.pack_debug_view(2, bad_index, available=True)
+        for bad_available in (0, 1, None, "yes"):
+            with self.assertRaises(ValueError):
+                editor_wire.pack_debug_view(2, 0, available=bad_available)
+
+    def test_unpack_status_decodes_set_debug_view_event(self):
+        data = bytearray(editor_wire.STATUS_BYTES)
+        editor_wire.HEADER.pack_into(
+            data, 0, editor_wire.STATUS_MAGIC, 2, editor_wire.EDITOR_ABI,
+            2, 1 | 2 | 4 | 16 | 32 | 64, 0, 0, 1, 0,
+            320.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, b"", 0.0, 100, 0, 1,
+        )
+        editor_wire.EVENT.pack_into(
+            data, editor_wire.HEADER.size,
+            1, 147, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 100, 1,
+        )
+        status = editor_wire.unpack_status(bytes(data), ack_event=0)
+        self.assertEqual(len(status["events"]), 1)
+        self.assertEqual(status["events"][0]["action"], "set_debug_view")
+        self.assertEqual(status["events"][0]["action_id"], 147)
+        self.assertEqual(status["events"][0]["value"], 6.0)
+
+
+class DebugViewInGameDispatchAndPublicationTests(unittest.TestCase):
+    def _make_app(self, *, status=None, recording_state="idle", busy=False, playing=False):
+        c = Controller(lambda *args, **kwargs: None)
+        console = FakeConsole()
+        console.values["sv_cheats"] = 0
+        c._console = console
+        c._session = Mock()
+        c._session.process = Mock()
+        c._session.process.poll.return_value = None
+        c._require_quiet_session = Mock()
+        c._request = lambda command, **kwargs: console.request(command)
+        c._state["startup_stage"] = "editing_ready"
+
+        live_status = status if status is not None else {
+            "connected": True,
+            "game_running": True,
+            "native_editor_active": True,
+            "playing": playing,
+            "startup_stage": "editing_ready",
+            "tick": 120,
+        }
+
+        def get_status():
+            merged = dict(live_status)
+            merged.setdefault("debug_view", c._debug_view.current)
+            return merged
+
+        c.status = get_status
+        published = []
+        bridge = SimpleNamespace(
+            configure_editor=Mock(),
+            configure_editor_debug_view=lambda view, *, available=False: published.append((view, available)),
+            editor_status=lambda: {"console_open": False},
+        )
+        c._native_bridge = lambda: bridge
+
+        debug_var = Mock()
+        debug_var._value = "Normal"
+        debug_var.get = lambda: debug_var._value
+        debug_var.set = lambda v: setattr(debug_var, "_value", v)
+
+        app = SimpleNamespace(
+            controller=c,
+            project=Project(name="Shot"),
+            app_settings=AppSettings(),
+            busy=busy,
+            playing=playing,
+            native_editor_active=True,
+            closed=False,
+            camera_tree=Mock(),
+            _selection_index=lambda _tree: None,
+            status_text=Mock(),
+            debug_view=debug_var,
+            video_export=SimpleNamespace(status=lambda: {"state": recording_state}),
+            _layer_queue=[],
+            _active_layer_take=None,
+            _renderlock_cancel=None,
+            _mark_dirty=Mock(),
+            _sync_debug_view_from_status=lambda st: debug_var.set(debug_view_label(st.get("debug_view", DEBUG_VIEW_DEFAULT))),
+        )
+
+        def submit(_label, fn, complete=None):
+            result = fn()
+            if complete is not None:
+                complete(result)
+            return True
+
+        app._submit = submit
+        return app, bridge, published, console, live_status
+
+    def test_dispatch_applies_via_controller_syncs_desktop_and_publishes_without_dirtying(self):
+        app, bridge, published, console, _status = self._make_app()
+        publish = lambda: editor_publication.configure(app)
+
+        # Select Wireframe (index 6) from in-game Look drawer.
+        idx = DEBUG_VIEW_IDS.index("wireframe")
+        self.assertTrue(editor_dispatch.dispatch(app, {"action": "set_debug_view", "value": float(idx)}, bridge, publish=publish))
+        self.assertEqual(app.controller._debug_view.current, "wireframe")
+        self.assertEqual(console.values["sv_cheats"], 1.0)
+        self.assertEqual(app.debug_view.get(), "Wireframe")
+        self.assertEqual(published[-1], (idx, True))
+
+        # Switch to Normals (index 2): undo-before-apply turns off cheats and updates both surfaces.
+        normals_idx = DEBUG_VIEW_IDS.index("normals")
+        self.assertTrue(editor_dispatch.dispatch(app, {"action": "set_debug_view", "value": float(normals_idx)}, bridge, publish=publish))
+        self.assertEqual(app.controller._debug_view.current, "normals")
+        self.assertEqual(console.values["sv_cheats"], 0.0)
+        self.assertEqual(app.debug_view.get(), "Normals")
+        self.assertEqual(published[-1], (normals_idx, True))
+
+        # Strictly session-only: never dirties the shot or writes to Project / AppSettings.
+        app._mark_dirty.assert_not_called()
+        self.assertNotIn("debug_view", app.project.to_dict())
+        self.assertFalse(hasattr(app.app_settings, "debug_view"))
+
+    def test_dispatch_rejects_invalid_indices_and_disabled_states(self):
+        app, bridge, _published, _console, live_status = self._make_app()
+        publish = lambda: editor_publication.configure(app)
+        app.controller.set_debug_view = Mock()
+
+        for bad in (-1, len(DEBUG_VIEW_IDS), 1.5, True, False, float("nan"), float("inf"), "albedo"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    editor_dispatch.dispatch(app, {"action": "set_debug_view", "value": bad}, bridge, publish=publish)
+
+        # Busy leaves the event queued (returns False).
+        app.busy = True
+        self.assertFalse(editor_dispatch.dispatch(app, {"action": "set_debug_view", "value": 1.0}, bridge, publish=publish))
+        app.busy = False
+
+        # Playing, wrong stage, active recording, layer queue, active layer take, RenderLock export.
+        blockers = [
+            ("app_playing", lambda: setattr(app, "playing", True), lambda: setattr(app, "playing", False)),
+            ("status_playing", lambda: live_status.__setitem__("playing", True), lambda: live_status.__setitem__("playing", False)),
+            ("stage_loading", lambda: live_status.__setitem__("startup_stage", "loading_replay"), lambda: live_status.__setitem__("startup_stage", "editing_ready")),
+            ("recording", lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "recording"})),
+             lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "idle"}))),
+            ("finalizing", lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "finalizing"})),
+             lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "idle"}))),
+            ("layer_queue", lambda: setattr(app, "_layer_queue", [("world", "color")]), lambda: setattr(app, "_layer_queue", [])),
+            ("active_layer_take", lambda: setattr(app, "_active_layer_take", ("world", "color")), lambda: setattr(app, "_active_layer_take", None)),
+            ("renderlock_export", lambda: setattr(app, "_renderlock_cancel", object()), lambda: setattr(app, "_renderlock_cancel", None)),
+        ]
+        for label, enable, restore in blockers:
+            with self.subTest(blocker=label):
+                enable()
+                try:
+                    with self.assertRaises(ValueError):
+                        editor_dispatch.dispatch(app, {"action": "set_debug_view", "value": 1.0}, bridge, publish=publish)
+                finally:
+                    restore()
+        app.controller.set_debug_view.assert_not_called()
+
+    def test_publication_tracks_state_resets_and_all_disable_conditions(self):
+        app, _bridge, published, _console, live_status = self._make_app()
+        editor_publication.configure(app)
+        self.assertEqual(published[-1], (0, True))
+
+        # Unchanged state does not republish.
+        count = len(published)
+        editor_publication.configure(app)
+        self.assertEqual(len(published), count)
+
+        # Desktop-side controller change publishes the new index.
+        app.controller.set_debug_view("lod")
+        editor_publication.configure(app)
+        self.assertEqual(published[-1], (DEBUG_VIEW_IDS.index("lod"), True))
+
+        # Replay reload failure resets DebugViewState to Normal -> overlay publishes 0.
+        app.controller._debug_view.drop_view()
+        editor_publication.configure(app)
+        self.assertEqual(published[-1], (0, True))
+
+        # Every disable condition publishes available=False.
+        disable_cases = [
+            ("busy", lambda: setattr(app, "busy", True), lambda: setattr(app, "busy", False)),
+            ("playing", lambda: live_status.__setitem__("playing", True), lambda: live_status.__setitem__("playing", False)),
+            ("not_ready_stage", lambda: live_status.__setitem__("startup_stage", "loading_replay"), lambda: live_status.__setitem__("startup_stage", "editing_ready")),
+            ("recording", lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "recording"})),
+             lambda: setattr(app, "video_export", SimpleNamespace(status=lambda: {"state": "idle"}))),
+            ("layer_queue", lambda: setattr(app, "_layer_queue", [("players", "capture")]), lambda: setattr(app, "_layer_queue", [])),
+            ("active_layer_take", lambda: setattr(app, "_active_layer_take", ("players", "capture")), lambda: setattr(app, "_active_layer_take", None)),
+            ("renderlock", lambda: setattr(app, "_renderlock_cancel", object()), lambda: setattr(app, "_renderlock_cancel", None)),
+        ]
+        for label, enable, restore in disable_cases:
+            with self.subTest(disable=label):
+                enable()
+                try:
+                    editor_publication.configure(app)
+                    self.assertEqual(published[-1], (0, False))
+                finally:
+                    restore()
+                editor_publication.configure(app)
+                self.assertEqual(published[-1], (0, True))
 
 
 if __name__ == "__main__":

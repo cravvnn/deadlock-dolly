@@ -50,6 +50,7 @@ std::shared_ptr<const EditorCameraList> gCameraList;
 std::shared_ptr<const EditorLiteReplayInfo> gLiteReplay;
 std::shared_ptr<const EditorReplayEvents> gReplayEvents;
 std::shared_ptr<const EditorCinematicStatus> gCinematicStatus;
+std::shared_ptr<const EditorDebugViewConfig> gDebugViewConfig;
 std::atomic<std::uint64_t> gCinematicRequest{0}, gCinematicCanceled{0};
 std::shared_ptr<const EditorAttachConfig> gAttachConfig;
 std::shared_ptr<const EditorRoster> gRoster;
@@ -820,6 +821,11 @@ EditorSnapshot editor_snapshot() noexcept {
         std::memcpy(result.object_items, objects->items,
                     sizeof(EditorObjectItem) * kEditorObjectCount);
     }
+    auto debug_view = std::atomic_load(&gDebugViewConfig);
+    if (debug_view && gConnected.load()) {
+        result.debug_view = debug_view->view;
+        result.debug_view_available = (debug_view->flags & 1u) != 0;
+    }
     // Atomic field seqlock gives an internally coherent capture pose and tick.
     // Bounded retries never wait for the render callback.
     for (int attempt = 0; attempt < 4; ++attempt) {
@@ -1272,6 +1278,13 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if (action == EditorAction::SetWeatherHeroTracks && value != 0.0 && value != 1.0)
         return false;
+    if (action == EditorAction::SetDebugView &&
+        (!state.ready || !state.debug_view_available || state.busy || state.playing ||
+         state.renderlock_exporting ||
+         editor_recording_locks_cameras(editor_recording_status().state) ||
+         state.owner != EditorOwner::Panel || pose_override || value != std::floor(value) ||
+         value < 0 || value >= kEditorDebugViewCount))
+        return false;
     if (std::uint32_t(action) >= std::uint32_t(EditorAction::SetLensRain) &&
         std::uint32_t(action) <= std::uint32_t(EditorAction::SetLensSoftness) &&
         !lens_rain::valid_panel_value(unsigned(action) - unsigned(EditorAction::SetLensRain),
@@ -1720,6 +1733,12 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
                                     status.abi == 1 && status.token && status.state >= 1 &&
                                     status.state <= 3;
                          });
+        accept_seqlocked(memory + kEditorDebugViewOffset, gDebugViewConfig,
+                         [](const EditorDebugViewConfig& cfg) {
+                             return std::memcmp(cfg.magic, "DLYDBGV1", 8) == 0 &&
+                                    cfg.abi == kEditorDebugViewAbi &&
+                                    cfg.view < kEditorDebugViewCount && (cfg.flags & ~1u) == 0;
+                         });
         accept_seqlocked(memory + kEditorFollowOffset, gFollowConfig,
                          [](const EditorFollowConfig& follow) {
                              return std::memcmp(follow.magic, "DLYFOLL1", 8) == 0 &&
@@ -1944,6 +1963,7 @@ void editor_worker_tick(unsigned char* memory, bool connected) noexcept {
     std::atomic_store(&gLiteReplay, std::shared_ptr<const EditorLiteReplayInfo>{});
     std::atomic_store(&gReplayEvents, std::shared_ptr<const EditorReplayEvents>{});
     std::atomic_store(&gCinematicStatus, std::shared_ptr<const EditorCinematicStatus>{});
+    std::atomic_store(&gDebugViewConfig, std::shared_ptr<const EditorDebugViewConfig>{});
     gCinematicRequest = gCinematicCanceled = 0;
         std::atomic_store(&gAttachConfig, std::shared_ptr<const EditorAttachConfig>{});
         std::atomic_store(&gRoster, std::shared_ptr<const EditorRoster>{});

@@ -699,15 +699,16 @@ continuous focus/aperture changes. **Fixed values…** opens a separate dialog o
 **Look**. These values are applied for the shot; a track with the
 same name overrides the fixed value while the shot runs.
 
-**Debug View** on the desktop **Look** page switches the running replay into a
-live rendering inspection mode (**Normal**, **Albedo**, **Normals**,
-**Roughness**, **Lighting complexity**, **Fullbright**, **Wireframe**,
-**Objects**, **Materials**, **Detail levels (LOD)**, **Visibility grid** or
-**Particle overlays**). Each switch clears the previous mode before applying the
-next. The selected view stays active during playback and export so you can
+**Debug View** on the desktop **Look** page and in the in-game **Look** drawer
+switches the running replay into a live rendering inspection mode (**Normal**,
+**Albedo**, **Normals**, **Roughness**, **Lighting complexity**,
+**Fullbright**, **Wireframe**, **Objects**, **Materials**,
+**Detail levels (LOD)**, **Visibility grid** or **Particle overlays**). Both
+dropdowns stay in sync and each switch clears the previous mode before applying
+the next. The selected view stays active during playback and export so you can
 render a clip in that mode, but it is never saved in shots or `settings.json`,
-is disabled when no replay is running, and resets to **Normal** whenever a
-session ends or restarts.
+is disabled when no replay is running or an export is active, and resets to
+**Normal** whenever a session ends or restarts.
 
 Custom tracks accept numeric camera cvars, including `citadel_camera_*`, `cam_*`,
 `r_citadel_depthoffield_*`, `r_dof_*` and several HUD/lens controls. These are cvar

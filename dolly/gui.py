@@ -3453,6 +3453,7 @@ class DollyApp:
             return
         def complete(applied):
             _set_var(self.debug_view, debug_view_label(applied or DEBUG_VIEW_DEFAULT))
+            editor_session.configure(self)
         if not self._submit("Changing debug view", lambda: self.controller.set_debug_view(option_id), complete):
             self._sync_debug_view_from_status(self.controller.status())
 

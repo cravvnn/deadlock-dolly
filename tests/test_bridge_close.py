@@ -200,6 +200,8 @@ class BlockPublishTests(unittest.TestCase):
              lambda odd: lite_mode.pack_replay_info(odd, project, 7, 0, 900)),
             ("cinematic", lambda b: b.configure_editor_cinematic(5, 6, 2), editor_wire.CINEMATIC_OFFSET,
              lambda odd: editor_wire.CINEMATIC_STATUS.pack(b"DLYCIN01", odd, 1, 5, 6, 2)),
+            ("debug_view", lambda b: b.configure_editor_debug_view(2, available=True), editor_wire.DEBUG_VIEW_OFFSET,
+             lambda odd: editor_wire.pack_debug_view(odd, 2, available=True)),
             ("replay_events", lambda b: b.configure_replay_events(events), replay_event_wire.OFFSET,
              lambda odd: replay_event_wire.pack(odd, events)),
             ("framing_grid", lambda b: b.configure_framing_grid(enabled=True), editor_wire.FRAMING_GRID_OFFSET,

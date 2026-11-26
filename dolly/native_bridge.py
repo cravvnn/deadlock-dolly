@@ -266,6 +266,7 @@ class NativeBridge(MediaTransport):
         self._replay_events_sequence = 0
         self._editor_framing_grid_sequence = 0
         self._editor_level_view_sequence = 0
+        self._editor_debug_view_sequence = 0
         self._editor_object_sequence = 0
         self._editor_attach_sequence = 0
         self._editor_prop_probe_sequence = 0
@@ -1017,6 +1018,14 @@ class NativeBridge(MediaTransport):
             self._check_open()
             self._publish_block(wire.LEVEL_VIEW_OFFSET, "_editor_level_view_sequence",
                                 lambda odd: wire.pack_level_view(odd, binding, standard_aspect))
+
+    def configure_editor_debug_view(self, view_index, *, available=False):
+        """Optional session-only debug view block; never persisted on disk."""
+        from . import editor_wire as wire
+        with self._lock:
+            self._check_open()
+            self._publish_block(wire.DEBUG_VIEW_OFFSET, "_editor_debug_view_sequence",
+                                lambda odd: wire.pack_debug_view(odd, view_index, available=available))
 
     def configure_object_picker(self, objects, *, active=False, preview=False, selected=-1,
                                 distance=None, binding=None):

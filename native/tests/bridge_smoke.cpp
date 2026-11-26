@@ -3577,6 +3577,60 @@ void run() {
         config.sequence = next_sequence;
         std::memcpy(f.mapping.data() + kEditorConfigOffset, &config, sizeof(config));
         editor_worker_tick(f.mapping.data(), true);
+        // Session-only debug view tail block and action ID 147 validation.
+        EditorDebugViewConfig dbg{};
+        std::memcpy(dbg.magic, "DLYDBGV1", 8);
+        dbg.sequence = 2;
+        dbg.abi = kEditorDebugViewAbi;
+        dbg.view = 6;
+        dbg.flags = 1;
+        std::memcpy(f.mapping.data() + kEditorDebugViewOffset, &dbg, sizeof(dbg));
+        editor_worker_tick(f.mapping.data(), true);
+        require(editor_snapshot().debug_view == 6 && editor_snapshot().debug_view_available,
+                "Debug view publication was lost");
+        // Out-of-range view and unknown flags keep the last valid publication.
+        dbg.sequence = 4;
+        dbg.view = kEditorDebugViewCount;
+        std::memcpy(f.mapping.data() + kEditorDebugViewOffset, &dbg, sizeof(dbg));
+        editor_worker_tick(f.mapping.data(), true);
+        require(editor_snapshot().debug_view == 6 && editor_snapshot().debug_view_available,
+                "Out-of-range debug view replaced a valid publication");
+        dbg.sequence = 6;
+        dbg.view = 2;
+        dbg.flags = 2;
+        std::memcpy(f.mapping.data() + kEditorDebugViewOffset, &dbg, sizeof(dbg));
+        editor_worker_tick(f.mapping.data(), true);
+        require(editor_snapshot().debug_view == 6 && editor_snapshot().debug_view_available,
+                "Unknown debug view flags replaced a valid publication");
+        editor_set_owner(EditorOwner::Panel);
+        dolly::gAcknowledged = dolly::gLastEvent;
+        const auto dbg_serial = dolly::gLastEvent;
+        require(editor_enqueue(EditorAction::SetDebugView, 0) &&
+                    editor_enqueue(EditorAction::SetDebugView, kEditorDebugViewCount - 1) &&
+                    dolly::gEvents[dbg_serial % kEditorEventCount].action == 147 &&
+                    dolly::gEvents[dbg_serial % kEditorEventCount].value == 0 &&
+                    dolly::gEvents[(dbg_serial + 1) % kEditorEventCount].value ==
+                        double(kEditorDebugViewCount - 1),
+                "Valid debug view action did not enter the event ring");
+        require(!editor_enqueue(EditorAction::SetDebugView, -1) &&
+                    !editor_enqueue(EditorAction::SetDebugView, kEditorDebugViewCount) &&
+                    !editor_enqueue(EditorAction::SetDebugView, 1.5) &&
+                    !editor_enqueue(EditorAction::SetDebugView,
+                                    std::numeric_limits<double>::quiet_NaN()) &&
+                    !editor_enqueue(EditorAction::SetDebugView, 1, &first),
+                "Malformed debug view action entered the event queue");
+        editor_set_owner(EditorOwner::Flight);
+        require(!editor_enqueue(EditorAction::SetDebugView, 1),
+                "Debug view action bypassed panel ownership");
+        editor_set_owner(EditorOwner::Panel);
+        dbg.sequence = 8;
+        dbg.view = 0;
+        dbg.flags = 0;
+        std::memcpy(f.mapping.data() + kEditorDebugViewOffset, &dbg, sizeof(dbg));
+        editor_worker_tick(f.mapping.data(), true);
+        require(editor_snapshot().debug_view == 0 && !editor_snapshot().debug_view_available &&
+                    !editor_enqueue(EditorAction::SetDebugView, 1),
+                "Unavailable debug view still accepted actions");
         editor_set_owner(EditorOwner::Flight);
         dolly::gAcknowledged = dolly::gLastEvent;
     }
