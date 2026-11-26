@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "6866 reviewed compatibility candidate; live acceptance pending.",
+  "description": "6871 reviewed compatibility candidate; live acceptance pending.",
   "gameinfo_sha256": "bb537c9c945c6376ea2e8bba6f2a6c4bf98a715af32786280f6cda2f3b89d70f",
   "modules": {
-    "citadel/bin/win64/client.dll": "1628ea6d0ddfd801f483c4ab0d392990f9bcf3be55fa87a43461048b3a8246c4",
+    "citadel/bin/win64/client.dll": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
     "bin/win64/engine2.dll": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
     "bin/win64/tier0.dll": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7"
   },
-  "unlocker_server_sha256": "d45cffb92be550e2e11f75de93dc033df2c723c6870e911e076adec20b483940",
+  "unlocker_server_sha256": "72d2699f882ba86118c5122c67d86ca7782981678a57e041b8564cf129741aca",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "79b8f885d86dec21fb9c902266e9daca8f20da42",
-  "stock_gameinfo_depot": "1422456_5088399206847462729",
-  "stock_provenance_sha256": "d789202ef62afe160278f72e776f4a39ef8cd6869d21258ddfcf96fe2a888141",
+  "stock_gameinfo_depot": "1422456_618142853395406110",
+  "stock_provenance_sha256": "3e274b3e762285ad102c3625e2fce4e042fbfb84f30cc08998e08fb815757f2f",
   "configuration_modules": {
     "bin/win64/engine2.dll": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
     "bin/win64/tier0.dll": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7",

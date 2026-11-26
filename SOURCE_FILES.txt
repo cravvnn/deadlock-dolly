@@ -1447,3 +1447,5 @@ docs/RELEASE_NOTES_0.7.57-beta.md
 docs/RELEASE_NOTES_0.7.58-beta.md
 docs/RELEASE_NOTES_0.7.59-beta.md
 docs/RELEASE_NOTES_0.7.60-beta.md
+native/profiles/deadlock-2026-11-26-6871-complete.json
+third_party/cvar_unlocker/unlocker-build-6871.patch

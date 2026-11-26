@@ -2674,7 +2674,7 @@ void attach_allocation_failure_checks() {
     // A synthetic client with one player pawn, reached by both the reviewed
     // identity-chunk scan and the legacy list walk. An allocation failure at
     // any point must end the worker call, never terminate the game.
-    constexpr std::size_t image_size = 0x3640000;
+    constexpr std::size_t image_size = dolly::reviewed::AttachRuntime::CLIENT_IMAGE_SIZE;
     Allocation image(image_size), objects(0x10000);
     const auto base = image.address();
     IMAGE_DOS_HEADER dos{};

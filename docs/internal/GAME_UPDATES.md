@@ -5,6 +5,28 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 26 build 6871 review
+
+Build 6871 changes `client.dll`, `server.dll` and the Steam depot manifests;
+`engine2.dll`, `tier0.dll`, `scenesystem.dll`, `soundsystem.dll`,
+`resourcesystem.dll`, `rendersystemdx11.dll`, `filesystem_stdio.dll` and the
+stock `gameinfo.gi`, cfg, video and UI payloads are unchanged from build 6866.
+122 client owners relocated with exact masked bodies; the minimap jump table,
+two consumed mid-function sites and three single-instruction changed owners
+(`CCitadel_Modifier_PauseUnPause` slot 6 `+0x9ff8->+0xa010`, `Follow.0`
+composition `EModifierState` enum `0x126->0x127` at `+0x480`, and the
+gameplay screen-option fragment unrelated `+0x1658->+0x1660` read at `+0x1292`)
+were requalified individually. The exact-server unlocker was rebuilt against
+the unchanged 6866 Tier0 binary (`0x2bc65b0`; slots `0x9c0268`/`0x9c0274`/`0x9c23d0`), passing 3
+compiled suites and 1241 actual-function pair/table checks; the 6866
+predecessor refuses the new pair.
+
+One bounded local check passed on build 6871: startup, Follow capabilities,
+four exact seeks, camera path playback, a 60-frame Color and paired Depth/EXR
+take and a 60-frame Players export with full decode, with normal exit,
+configuration and runtime restored and no new crash. Recorded game audio was
+not exercised live. This does not certify every replay, recording mode or driver.
+
 ## November 24 build 6866 review
 
 Build 6866 changes `client.dll`, `server.dll`, `engine2.dll`, `tier0.dll`,

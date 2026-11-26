@@ -192,7 +192,7 @@
     },
     {
       "path": "dolly/_runtime_generated.py",
-      "sha256": "49b236b74ec715d7b42e95e79b417fb9f13afd71fcf05c0e8a4d76113e4fe4a5",
+      "sha256": "a05082b11ef0ae643b0e7493dc5ffa4285468889e97b362e4b2fc4faf8d64c01",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -216,7 +216,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "6861 generated runtime identities/addresses; generation/build admission still owns validity. No lifecycle declaration inferred from changed offsets.",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "dolly/assert_watcher.py",
@@ -2372,7 +2373,7 @@
     },
     {
       "path": "dolly/follow_target.py",
-      "sha256": "029c9cb964c3558669819ce8ef67ef69ccbd07191f757c7caa23285dd1172481",
+      "sha256": "0767e7125d8b01454ecfc2e02b8b991e2372b3f41a158dd19b68a2fcc8c9a983",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2402,7 +2403,8 @@
       "full_formal_signoff": false,
       "reconciliation": "Reviewed client hash advances6861; read-only target chain/validation retains its existing authority boundary.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "dolly/game_installation.py",
@@ -8602,7 +8604,7 @@
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
-      "sha256": "7f70c1f631100f97ed74fc50af1e19d36567865a884de5c13ec1725ac0631f55",
+      "sha256": "a0d5572cb4d79482f4bb9cc296a21cbdbdfc4a754758a1ef1e0d0338297b2da9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8621,7 +8623,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "Generated runtime addresses/identities6861; no new independent owner.",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
@@ -9137,7 +9140,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "571938080a8b1ba30f578aa758d49b278e12890d817b73c600817b9ead2995da",
+      "sha256": "b048c5d151759f9005e27f6452bc3a0148ba80c9b400fe0b828978c3af32e15a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9154,7 +9157,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_compat_runtime.hpp",
@@ -9184,7 +9188,7 @@
     },
     {
       "path": "native/src/dolly_confetti.cpp",
-      "sha256": "812d3e98129d959ecb0ad4f3df94602c54530b5465a0a361490dc2044068a763",
+      "sha256": "33060a42aefe70417b3e92991cc30cc99002b6fa406e5e5d4fb912eea17fb85f",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9208,7 +9212,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "Adds reviewed6861BuildOffsets byte spans. Existing particle create/release/reset lifecycle remains open and unchanged.",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_curve_panel.cpp",
@@ -9481,7 +9486,7 @@
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
-      "sha256": "9bf747f5d3b24e844a2b89f19bda0df8e3806e37309dd5af922ac3a49f05b763",
+      "sha256": "f58bad5e520698df10d723d1f5c430651002d187a27a9a5cdcf93a05583c1ff5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9497,7 +9502,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "Additional6861immutable signature/RVA tables. Inspected generated header contains constexpr byte/profile data, not an independently running owner; consuming hooks remain native_follow_anchor_win.hpp.",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_game_audio.cpp",
@@ -11108,7 +11114,7 @@
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
-      "sha256": "ebd1cfb85e04a27234c8157a902b6722bb3cd38dcaf915929d58d63d9e494adc",
+      "sha256": "46ee05ba1035b039b69be7971a2324f005955ec05451cb40aa6e48f21ebd12af",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -11125,7 +11131,8 @@
       },
       "full_formal_signoff": false,
       "reconciliation": "Additional6861screen-effects profile selection; existing camera-only suppression ownership guards retained.",
-      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log"
+      "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
+      "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log"
     },
     {
       "path": "native/src/native_minimap_win.hpp",
@@ -14520,14 +14527,14 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
-      "path": "docs/RELEASE_NOTES_0.7.60-beta.md",
-      "category": "metadata/configuration/documentation input",
-      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
-    },
-    {
       "path": "docs/RELEASE_NOTES_0.7.6-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "docs/RELEASE_NOTES_0.7.60-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
       "path": "docs/RELEASE_NOTES_0.7.7-beta.md",
@@ -16801,6 +16808,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/track_path.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/ui/Admission.cfg",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -17905,6 +17917,11 @@
     },
     {
       "path": "native/profiles/deadlock-2026-11-24-6866-complete.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "native/profiles/deadlock-2026-11-26-6871-complete.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
@@ -19388,6 +19405,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_track_path.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_update_handoff_process.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19715,6 +19737,11 @@
     },
     {
       "path": "third_party/cvar_unlocker/unlocker-build-6866.patch",
+      "category": "external dependency/resource",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "third_party/cvar_unlocker/unlocker-build-6871.patch",
       "category": "external dependency/resource",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
@@ -20482,25 +20509,15 @@
       "path": "tools/update_game.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
-    },
-    {
-      "path": "dolly/track_path.py",
-      "category": "implementation/tool",
-      "coverage": "explicit source role, not proof or execution coverage"
-    },
-    {
-      "path": "tests/test_track_path.py",
-      "category": "test/support input",
-      "coverage": "explicit source role, not proof or execution coverage"
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 590,
+    "metadata/configuration/documentation input": 591,
     "implementation/tool": 346,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
     "test/support input": 106,
-    "external dependency/resource": 205
+    "external dependency/resource": 206
   },
   "unclassified": 0,
   "full_program_formal_verified": false,

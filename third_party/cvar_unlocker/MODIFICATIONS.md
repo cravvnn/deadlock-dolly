@@ -1,5 +1,14 @@
 # Bundled cvar unlocker modifications
 
+- `unlocker-build-6871.patch` (apply after 6866): adds the exact reviewed 6871
+  server paired with the unchanged 6866 Tier0 binary and its relocated Config001
+  table and methods (`0x2bc65b0`; slots `0x9c0268`/`0x9c0274`/`0x9c23d0`). The Tier0 CCvar table and
+  the fourteen adapter slots (`cvar_slots_6864.inc`) are unchanged from 6866.
+  Earlier accepted pairs, secure-mode rejection and owned-command shutdown
+  behavior remain intact. Three compiled ABI/lifecycle suites, 1241
+  actual-function pair checks, the 6866 predecessor rejection and the
+  static-CRT/export/Tier0 import audit pass.
+
 - `unlocker-build-6866.patch` (apply after 6865): adds the exact reviewed 6866
   server/Tier0 pair and its relocated Config001 table and methods
   (`0x2ba0858`; slots `0x9aed9c`/`0x9aeda8`/`0x9b46e0`). The Tier0 CCvar table and the fourteen

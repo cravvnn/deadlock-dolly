@@ -1,0 +1,270 @@
+{
+  "validation": "6871 private candidate: mapped camera consumers, named schema and scoped runtime proofs. Supporting modules unchanged from 6866 and re-verified offline; not yet qualified by generator/tests/live.",
+  "client": {
+    "client_sha256": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
+    "file_size": 60750488,
+    "timestamp": 1795710486,
+    "size_of_image": 71532544,
+    "preferred_image_base": "0x180000000",
+    "main_view_setup_rva": "0x1a23320",
+    "main_view_setup_end_rva": "0x1a233e9",
+    "main_view_setup_prologue_32": "48 89 5c 24 08 48 89 74 24 10 57 48 83 ec 20 48 8b f1 c6 81 30 13 00 00 01 b9 ff ff ff ff e8 4d",
+    "main_view_setup_sha256": "aac7c2cb3595a91ee1ba3b137c6ecb443d439d1c6b57af2661ecb304b7f60767",
+    "matrix_setup_rva": "0x1a1cd20",
+    "matrix_setup_end_rva": "0x1a1ced6",
+    "matrix_setup_sha256": "214504d912da1755fdafc43da95c73f087dda380d6c70ee76a89ae2221c88f25",
+    "primary_vtable_rva": "0x27cf770",
+    "view_setup_this_offset": "0x10",
+    "origin_offset": "0x4a0",
+    "angles_offset": "0x4b8",
+    "fov_offset": "0x498",
+    "aspect_offset": "0x4d4",
+    "view_flag_byte_offset": "0x551",
+    "alternate_projection_bit": "0x2",
+    "viewport_width_offset": "0x430",
+    "viewport_height_offset": "0x438",
+    "viewport_unscaled_width_offset": "0x434",
+    "viewport_unscaled_height_offset": "0x43c",
+    "auxiliary_origin_offset": "0x554",
+    "auxiliary_angles_offset": "0x560",
+    "extra_origin_offset": "0x56c",
+    "call_site_rva": "0x1a1cd3e",
+    "call_site_bytes": "ff 90 88 00 00 00",
+    "view_setup_delegate_rva": "0x5f4080",
+    "camera_layout_revision": 1,
+    "view_setup_abi": {
+      "platform": "Microsoft x64",
+      "arguments": "RCX=CViewRender*. Wrapper does not consume incoming RDX; preserve opaque integer argument.",
+      "return": "No defined return value consumed by matrix caller; void-compatible.",
+      "caller_return_rva": "0x1a1cd44",
+      "call_kind": "virtual",
+      "vtable_byte_offset": "0x88",
+      "direct_call_sites": [],
+      "evidence_limit": "Static reviewed exact build. Runtime cadence and visual behavior unverified."
+    },
+    "aspect_scaling": {
+      "helper_rva": "0x22cd8d0",
+      "original_call_rva": "0x5f430b",
+      "aspect_source_interface_pointer_rva": "0x3ecf7b0",
+      "aspect_source_virtual_offset": "0x2c0",
+      "aspect_source_call_rva": "0x5f42ea",
+      "scale_constant_rva": "0x268b88c",
+      "formula": "2 * degrees(atan(tan(radians(fov)/2) * scale))",
+      "scale": "effective_aspect * 0.75"
+    },
+    "globals": {
+      "pointer_rva": "0x3490950",
+      "fallback_rva": "0x3490a00",
+      "current_time_offset": "0x30",
+      "interval_offset": "0x54",
+      "replay_clock_review": {
+        "client_sha256": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
+        "render_fraction_offset": "0x38",
+        "time_source": "(engine replay tick + client render fraction) * interval_per_tick",
+        "validation": "6871 exact installed-image offline review, re-derived from the 6866 review by exact masked whole-function comparison: CSource2Client RTTI vtable 0x2c60148 slot 11 SetGlobals 0x198c870 pins globals pointer 0x3490950; fractional consumer 0x1743fb0, normalizer 0x21bac50 and render-time consumer 0x77dc50 unchanged in shape and offsets (+0x44 tick, +0x38 fraction, +0x54 interval). No 6871 runtime cadence or replay-tick alignment claim yet.",
+        "reviewed_functions": [
+          {
+            "name": "CSource2Client.SetGlobals",
+            "rva": "0x198c870",
+            "end_rva": "0x198c8b2",
+            "sha256": "a192ddcd7110da1226379ac08b5738a25cd98f617721fa049f0e26e61f877c4d"
+          },
+          {
+            "name": "fractional_time_consumer",
+            "rva": "0x1743fb0",
+            "end_rva": "0x174402d",
+            "sha256": "75a90685114d3fe75aa87317027bb78e922f6288d2c0623131989fc70e7ab9ed"
+          },
+          {
+            "name": "tick_fraction_normalizer",
+            "rva": "0x21bac50",
+            "end_rva": "0x21bad07",
+            "sha256": "6a3121816d97ecc08572167cc13550accddd8820d23df5067b67f86fa4af5883"
+          },
+          {
+            "name": "render_time_consumer",
+            "rva": "0x77dc50",
+            "end_rva": "0x77dcd4",
+            "sha256": "344ffd7cceba736878e0e50d916a2882cfc988694944c2b01e529bc4c3e9971f"
+          }
+        ]
+      }
+    },
+    "camera_layout_review": {
+      "client_sha256": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
+      "validation": "6871 private candidate: mapped camera consumers, named schema and scoped runtime proofs. Supporting modules unchanged from 6866 and re-verified offline; not yet qualified by generator/tests/live.",
+      "client_mode_class": "ClientModeCitadelNormal",
+      "client_mode_vtable_rva": "0x27d0f18",
+      "client_mode_slot": "0x78",
+      "client_mode_array_rva": "0x3869418",
+      "client_mode_object_rva": "0x3869390",
+      "cache": {
+        "origin": "0x3ed9490",
+        "angles": "0x3ed94a0",
+        "forward": "0x3ed94b0",
+        "right": "0x3ed94c0",
+        "up": "0x3ed94d0",
+        "basis": "0x22bd510"
+      },
+      "functions": {
+        "wrapper": {
+          "rva": "0x1a23320",
+          "end_rva": "0x1a233e9",
+          "sha256": "aac7c2cb3595a91ee1ba3b137c6ecb443d439d1c6b57af2661ecb304b7f60767"
+        },
+        "matrix": {
+          "rva": "0x1a1cd20",
+          "end_rva": "0x1a1ced6",
+          "sha256": "214504d912da1755fdafc43da95c73f087dda380d6c70ee76a89ae2221c88f25"
+        },
+        "producer": {
+          "rva": "0x5f4080",
+          "end_rva": "0x5f432d",
+          "sha256": "aa0a617a343c0b782bcb29ec9dacb2cad29baf56b8b0bb5b221afd4d52c750fb"
+        },
+        "cache_basis": {
+          "rva": "0x22bdce0",
+          "end_rva": "0x22bde58",
+          "sha256": "bf3c78dab3314782bd2031216c5cb2d0113b41158f3abc2fc3246e9915a84a90"
+        },
+        "matrix_consumer": {
+          "rva": "0xc3a350",
+          "end_rva": "0xc3a555",
+          "sha256": "089ef700ab31db0953ba67134e37b4790886c2be6c4203242c75777e06b5b2e5"
+        },
+        "aux_consumer": {
+          "rva": "0x193d6e0",
+          "end_rva": "0x193d93c",
+          "sha256": "a993cdd4087b6afc2dd87359159bd53a0b0747fd6d30f62737b07e34f110363d"
+        }
+      }
+    },
+    "camera_signature": {
+      "client_sha256": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
+      "bytes": "48895c24084889742410574883ec20488bf1c6813013000001b9ffffffffe84dd8befe488bc8488b104c8b4278488d561041ffd0488b0d55c44a02448b864c0400008b9644040000488b01ff90c00200004c8d0d58614b02f30f1186d01c00004c8d0539614b02488d1522614b02488d8ec8040000e846a98900f20f1086b0040000488b5c2430f20f1105e1604b028b86b80400008905dd604b02f20f1086c8040000f20f1105d5604b028b86d00400008905d1604b02c6863013000000488b7424384883c4205fc3cccccccccccccc40555356574157488bec4881ec800000004d8bf88bda488bf9e8d2e9b100488bf04885c00f84ba0100004c89a424b00000004c89ac24b80000004533ed4c89b424c00000004c8b7708410fb74e28e89d",
+      "mask": "010101010101010101010101010101010101010101010101010101010101010000000001010101010101010101010101010101010101010000000001010101010101010101010101010101010101010101010101000000000101010101010101010101000000000101010000000001010101010101010000000001010101010101010101010101010101010000000001010101010101010000000001010101010101010101010100000000010101010101010100000000010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101000000000101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
+    }
+  },
+  "engine": {
+    "sha256": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
+    "image_size": "0x906000",
+    "timestamp": "0x6b05d92d",
+    "addresses": {
+      "engine_client_vtable": "0x4e37c0",
+      "demo_player_pointer": "0x5b9430",
+      "demo_player_default_object": "0x631ef8",
+      "demo_player_vtable": "0x4d8e88",
+      "demo_file_vtable": "0x4d8fe0",
+      "network_client_service_pointer": "0x62e818",
+      "network_client_service_vtable": "0x520ae0",
+      "aspect_cvar_object": "0x633d80"
+    },
+    "functions": {
+      "engine_get_aspect_ratio": {
+        "rva": "0x73780",
+        "slot": 88,
+        "abi": "float(void* this,int width,int height)",
+        "first16": "4883ec28488d0df5055c00e8a083fcff"
+      },
+      "engine_is_playing_demo": {
+        "rva": "0x733b0",
+        "slot": 42,
+        "abi": "bool(void* this)",
+        "first16": "48833d78fb830000740e488b0d6f6054"
+      },
+      "engine_get_demo_filename": {
+        "rva": "0x73400",
+        "slot": 43,
+        "abi": "const char*(void* this)",
+        "first16": "4883ec2848833d24fb830000742c488b"
+      },
+      "demo_get_file": {
+        "rva": "0x24290",
+        "slot": 1,
+        "abi": "void*(void* this)",
+        "first16": "488d4120c3cccccccccccccccccccccc"
+      },
+      "demo_get_start_tick": {
+        "rva": "0x34ea0",
+        "slot": 2,
+        "abi": "int(void* this)",
+        "first16": "8b8104020000c3cccccccccccccccccc"
+      },
+      "demo_get_tick": {
+        "rva": "0x34eb0",
+        "slot": 3,
+        "abi": "int(void* this)",
+        "first16": "40534883ec20488bd9488b0d58995f00"
+      },
+      "demo_is_playing": {
+        "rva": "0x2d560",
+        "slot": 11,
+        "abi": "bool(void* this)",
+        "first16": "0fb68130120000c3cccccccccccccccc"
+      },
+      "demo_is_paused": {
+        "rva": "0x34e70",
+        "slot": 12,
+        "abi": "bool(void* this)",
+        "first16": "80b93012000000741a83b92802000000"
+      },
+      "demo_is_seeking": {
+        "rva": "0x28b10",
+        "slot": 14,
+        "abi": "bool(void* this)",
+        "first16": "80b93012000000740c83b908020000ff"
+      },
+      "demo_get_playback_scale": {
+        "rva": "0x34f00",
+        "slot": 17,
+        "abi": "float(void* this)",
+        "first16": "f30f108114020000c3cccccccccccccc"
+      },
+      "demo_file_get_filename": {
+        "rva": "0x24150",
+        "slot": 3,
+        "abi": "const char*(void* this)",
+        "first16": "488b5108488d05d4014b004885d2480f"
+      },
+      "network_service_get_tick": {
+        "rva": "0x1d52d0",
+        "slot": 57,
+        "abi": "int(void* this)",
+        "first16": "8b8190000000c3cccccccccccccccccc"
+      }
+    },
+    "validated_by": "6871 offline: byte-identical to 6866; twelve named slot/body proofs and independently mapped globals re-verified.",
+    "notes": [
+      "All twelve named getters and required globals independently relocated."
+    ]
+  },
+  "tier0": {
+    "sha256": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7",
+    "size_of_image": "0x3fa000",
+    "interface": "VEngineCvar007",
+    "vtable_rva": "0x313208",
+    "find_cvar": {
+      "slot": 11,
+      "rva": "0x6c710",
+      "abi": "void*(void* cvar,uint64* return_storage,const char* name,int allow_defensive)"
+    },
+    "get_data": {
+      "slot": 41,
+      "rva": "0x6c650",
+      "abi": "void*(void* cvar,uint64 reference)"
+    },
+    "set_value": {
+      "rva": "0x20fd10",
+      "abi": "void(ConVarRefAbstract*,int slot,const CVValue* new_value,CVValue* current_value,void* context)",
+      "first16": "4c8944241848894c2408555657415441"
+    },
+    "data_offsets": {
+      "name": "0x0",
+      "type_int16": "0x28",
+      "change_count": "0x2c",
+      "flags": "0x30",
+      "scalar_value": "0x58"
+    },
+    "validated_by": "6871 offline: byte-identical to 6866; named CCvar table, fourteen adapter methods and lookup/data/setter re-verified."
+  }
+}
