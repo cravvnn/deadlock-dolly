@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "ea84c8ad21704f5e01fb154575b215f315dd47e182f278fffa92afed41be9070",
+      "sha256": "06a28b4202b0af216be9e24e98520e0239ed99eccf905c1be8c7d678cdffb5a9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -14573,6 +14573,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.61-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.7-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20558,7 +20563,7 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 591,
+    "metadata/configuration/documentation input": 592,
     "implementation/tool": 347,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
