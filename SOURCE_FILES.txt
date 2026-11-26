@@ -1447,3 +1447,5 @@ docs/RELEASE_NOTES_0.7.57-beta.md
 docs/RELEASE_NOTES_0.7.58-beta.md
 docs/RELEASE_NOTES_0.7.59-beta.md
 docs/RELEASE_NOTES_0.7.60-beta.md
+dolly/debug_view.py
+tests/test_debug_view.py
