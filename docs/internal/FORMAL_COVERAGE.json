@@ -1,24 +1,24 @@
 {
   "base": "24cfc52688f356110d26e25549a609522afa5746",
-  "accounted_units": 346,
+  "accounted_units": 347,
   "scope": "First-party implementation/tool source export; eight additional entrypoint/helper/tool files extend historical 301 Python/C++ units to 309; full export census includes every other file.",
   "classification": "0.7.35 combined main and CRAV camera-only producer; complete inventory accounting, bounded partial models, no whole-program or captured-scene proof",
   "counts": {
-    "no independent lifecycle": 43,
-    "stateful partial/open": 125,
-    "generated data/schema": 10,
-    "native owner/delegated contract open": 134,
-    "offline-tool scope": 27,
     "entrypoint delegated contract open": 4,
-    "child-job contract open": 3
+    "no independent lifecycle": 43,
+    "stateful partial/open": 126,
+    "generated data/schema": 10,
+    "child-job contract open": 3,
+    "native owner/delegated contract open": 134,
+    "offline-tool scope": 27
   },
   "families": {
-    "value": 42,
     "L05": 23,
-    "generated": 10,
-    "L01": 94,
     "L03": 29,
-    "L02": 50,
+    "value": 43,
+    "generated": 10,
+    "L01": 95,
+    "L02": 51,
     "L04": 69,
     "L06": 27
   },
@@ -798,7 +798,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65",
+      "sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -977,7 +977,8 @@
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261122": "2026-11-22: connect re-raises a stop failure while the playback worker is still alive (only restore failures are swallowed while the console is down); console connection checks read self._console once via export_timing.console_connected. ConsoleReconnect bounds connect versus an unwinding worker.",
       "reconciliation_20261123weather": "2026-11-23 weather branch: _native_bridge keeps the bridge told the replay's map for weather; set_native_weather applies a shot's weather live.",
-      "reconciliation_20261123capwait": "2026-11-23: fixed-step native playback does not spend the console-identity miss budget while its own recorder reports recording (writer backpressure); the 15 s rendered-view guard stays the hang limit"
+      "reconciliation_20261123capwait": "2026-11-23: fixed-step native playback does not spend the console-identity miss budget while its own recorder reports recording (writer backpressure); the 15 s rendered-view guard stays the hang limit",
+      "reconciliation_20261126debugview": "2026-11-26 debug-view: added session-only DebugViewState (set_debug_view, _reapply_debug_view, disconnect/recover_dead_session/_launch resets, status/diagnostics field)."
     },
     {
       "path": "dolly/convar_response.py",
@@ -1774,7 +1775,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "ff3ed25ca229d7ee15b8f281dcdb679502096d552f49352d72029c4fda2dbfa1",
+      "sha256": "00c3681a8f985ad4788684fe97c754dd131a02cf617ea5dfe4d75f17c96b419d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1877,7 +1878,7 @@
     },
     {
       "path": "dolly/editor_publication.py",
-      "sha256": "cd978f50bc4fdbf24f6d807b47335e81b497c06e2aee0e67db4161fb0a366ca4",
+      "sha256": "f5f5b67e3c1ed64e1e27325ebb2a753428a11c96590839055375e7b4e2cd5ed3",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2023,7 +2024,7 @@
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "30e1fd68f22c4206eccca638e5e145c3515cbd6853584a4e9764cfc9b0fe7952",
+      "sha256": "6c697b7a80b99e7f9228672e3d09ec7de9537e1bbce265f8fddfdbbb91180913",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2721,7 +2722,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "1929b610e9821de30963297312014d57f9e9fe95ea8862e5e7732a7c7aa92a9b",
+      "sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2879,11 +2880,12 @@
       "reconciliation_20261122": "2026-11-22: every settings writer commits only its owned fields over the latest settings under _SETTINGS_COMMIT (_commit_settings); game-exit cleanup is marked done only on success and retried up to GAME_EXIT_CLEANUP_ATTEMPTS; Auto encoder prewarm on startup/codec/ffmpeg change; layer passes reuse auto_codec.",
       "reconciliation_20261123": "2026-11-23: only close steps finish a close after a failure; busy close waits (_retry_close); idle work dropped during close; launch options set after save; snap correlation",
       "reconciliation_20261123weather": "2026-11-23 weather branch: the Player POV project carries the shot weather; Scene page between Look and Export edits Project.weather (_weather_changed, _refresh_weather).",
-      "reconciliation_20261123capwait": "2026-11-23: Export estimate on the Recording card and recording progress on the card and action bar (routine footer text only); layer passes do not teach the capture rate"
+      "reconciliation_20261123capwait": "2026-11-23: Export estimate on the Recording card and recording progress on the card and action bar (routine footer text only); layer passes do not teach the capture rate",
+      "reconciliation_20261126debugview": "2026-11-26 debug-view: added session-only debug_view StringVar, _debug_view_changed, _sync_debug_view_from_status, poll enable/disable & reset on exit."
     },
     {
       "path": "dolly/gui_layout.py",
-      "sha256": "36bafcb4da6994d82ff9ac3a0ecf993a1d44d468bfe6f876f33bea1c2f4d7990",
+      "sha256": "474e6d17c3760fbecf34cc23dd896c7517c7e7937f766ec9e3c2558086f8c30d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2921,7 +2923,8 @@
       "full_formal_signoff": false,
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
-      "reconciliation_20261123weather": "2026-11-23 weather branch: build_scene wires the desktop Scene page."
+      "reconciliation_20261123weather": "2026-11-23 weather branch: build_scene wires the desktop Scene page.",
+      "reconciliation_20261126debugview": "2026-11-26 debug-view: wired debug_view state/action and debug_card/debug_view_combo in build_look."
     },
     {
       "path": "dolly/gui_theme.py",
@@ -3490,7 +3493,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "b44e52ca27649822aed0021fb676f5a5648938e74a14876bf6c4c8b380268c7d",
+      "sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -6261,7 +6264,7 @@
     },
     {
       "path": "dolly/ui/look_page.py",
-      "sha256": "4b3e75fe80136c6d3ae10c43016afedb98a2e2cf8863a8f6a17892a7ecb761c2",
+      "sha256": "a448e8fc5e4fff1f1bf8e4c3be1468a548c0260e66ff2436e7c177509f9dbc47",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6291,7 +6294,8 @@
           "mutable instance"
         ]
       },
-      "full_formal_signoff": false
+      "full_formal_signoff": false,
+      "reconciliation_20261126debugview": "2026-11-26 debug-view: added Debug View side card with CanvasInfoIcon and Kit.TCombobox aligned in Look bento Row 2."
     },
     {
       "path": "dolly/ui/operations.py",
@@ -7627,7 +7631,7 @@
     },
     {
       "path": "native/include/dolly_editor.hpp",
-      "sha256": "20ee31e8a487e0330010aff06e72468af362a1e7ce8b7fd46d64cdf77f80dcd4",
+      "sha256": "8365c36a639e103a66e43197d12facd95ef0ed5b5b73420fe7cb38755ff7afad",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9389,7 +9393,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "382eadad7dd9e2254d266a7c57771956a9a76e0b401ab94808ebbfe945e96244",
+      "sha256": "676974d439cffa2e3d173caca33d10a4c778fa3ebd4eb6cc20cd5eff4919b320",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10164,7 +10168,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "f66dc5975da32a0a1a37d8b9146fdc9d03fc4d7b069967eebec891ea700791cf",
+      "sha256": "b31cc9b7e1581f8f196c307249adbc7fcdb996fec3a01f57478119757fedef6c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -12276,6 +12280,38 @@
         ]
       },
       "full_formal_signoff": false
+    },
+    {
+      "path": "dolly/debug_view.py",
+      "sha256": "d897aa4a7b6f65baa90e91880c95750e9f62dca98b45d5b19f6c3d12e70994da",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L01",
+      "disposition": "stateful partial/open",
+      "reason": "Session-only debug view catalog and undo-before-apply transition tracker (vis_debug_show toggle and sv_cheats ownership) owned by Controller.",
+      "bounded_models": [],
+      "test_reference_leads": [
+        "tests/test_debug_view.py"
+      ],
+      "test_reference_limits": "Unit tests cover option mapping, undo-before-apply ordering, toggle tracking across reloads and failures, and non-persistence; live behaviour was checked by hand (not an automated test).",
+      "source_structure": {
+        "module_purpose": "Live rendering debug views for inspecting a running replay session.",
+        "classes": [
+          "DebugViewOption",
+          "DebugViewState"
+        ],
+        "functions": [
+          "debug_view_id",
+          "debug_view_label"
+        ],
+        "imports": [
+          "__future__",
+          "dataclasses"
+        ],
+        "persistent_state_signals": [
+          "mutable instance"
+        ]
+      },
+      "full_formal_signoff": false
     }
   ],
   "models": {
@@ -12288,7 +12324,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -12365,7 +12401,7 @@
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "b44e52ca27649822aed0021fb676f5a5648938e74a14876bf6c4c8b380268c7d"
+      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -12374,7 +12410,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -12386,7 +12422,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -12436,7 +12472,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "1929b610e9821de30963297312014d57f9e9fe95ea8862e5e7732a7c7aa92a9b"
+      "owner_utf8_lf_sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -12458,7 +12494,7 @@
       "instances": [
         "ConsoleReconnectApi"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -12498,7 +12534,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "1929b610e9821de30963297312014d57f9e9fe95ea8862e5e7732a7c7aa92a9b"
+      "owner_utf8_lf_sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -12515,7 +12551,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/EditorEventQueue.tla": {
       "path": "dolly/editor_session.py",
@@ -12567,7 +12603,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -12576,7 +12612,7 @@
         "dolly/GameExitClose.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "b44e52ca27649822aed0021fb676f5a5648938e74a14876bf6c4c8b380268c7d"
+      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
     },
     "dolly/GameFileCache.tla": {
       "path": "dolly/preload.py",
@@ -12616,7 +12652,7 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "b44e52ca27649822aed0021fb676f5a5648938e74a14876bf6c4c8b380268c7d"
+      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
     },
     "dolly/HelperWorkspace.tla": {
       "path": "dolly/source2viewer.py",
@@ -12659,7 +12695,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/LaunchRecovery.tla": {
       "path": "dolly/launcher.py",
@@ -12755,7 +12791,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -12766,7 +12802,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -12814,7 +12850,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -12838,7 +12874,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "1929b610e9821de30963297312014d57f9e9fe95ea8862e5e7732a7c7aa92a9b"
+      "owner_utf8_lf_sha256": "2e6b99669bc3c1cddb5466ef1283193f9ed00f1a6ad83169950e291a675d23b0"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",
@@ -12891,7 +12927,7 @@
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "b44e52ca27649822aed0021fb676f5a5648938e74a14876bf6c4c8b380268c7d",
+      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71",
       "instances": [
         "CameraLeaseApi"
       ]
@@ -12958,7 +12994,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "f853a586152abe2fdab7457b89c9531ab6aa8eb0453c6fd788157e8fd342fd65"
+      "owner_utf8_lf_sha256": "ace1377fef5a8f45b8247c5192f747ce8069f52255af5ee0f3af5cd4653f1ad8"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",
@@ -13014,7 +13050,7 @@
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "b44e52ca27649822aed0021fb676f5a5648938e74a14876bf6c4c8b380268c7d"
+      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
     },
     "dolly/StillCleanup.tla": {
       "path": "dolly/screenshot.py",
@@ -16343,6 +16379,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "dolly/debug_view.py",
+      "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "dolly/definitions.py",
       "category": "implementation/tool",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19266,6 +19307,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "tests/test_debug_view.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_display.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20513,10 +20559,10 @@
   ],
   "export_categories": {
     "metadata/configuration/documentation input": 591,
-    "implementation/tool": 346,
+    "implementation/tool": 347,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
-    "test/support input": 106,
+    "test/support input": 107,
     "external dependency/resource": 206
   },
   "unclassified": 0,

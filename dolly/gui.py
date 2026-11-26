@@ -64,6 +64,7 @@ from dolly.settings import AppSettings, load_settings, save_settings
 from dolly.shot_history import ShotHistory
 from dolly.particles import (LABEL_TO_ID, PARTICLE_DEFAULT, PARTICLE_INTENSITY_DEFAULT,
                              PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN, PARTICLE_LABELS)
+from dolly.debug_view import DEBUG_VIEW_DEFAULT, debug_view_id, debug_view_label
 from dolly.smoothing import smoothing_window
 from dolly.source2viewer import HELP_SIZE_MB, find_viewer
 from dolly import capture_estimate
@@ -568,6 +569,8 @@ class DollyApp:
         self.confetti_despawn_on_ground = tk.BooleanVar(value=False)
         self.particles_preset = tk.StringVar(value=PARTICLE_LABELS[PARTICLE_DEFAULT])
         self.particles_intensity = tk.StringVar(value=_number(PARTICLE_INTENSITY_DEFAULT))
+        # Session-only rendering debug view on Look (never persisted in shots or settings).
+        self.debug_view = tk.StringVar(value=debug_view_label(DEBUG_VIEW_DEFAULT))
         # Scene page: the shot's weather (Project.weather), shown and edited as plain values.
         self.weather_preset = tk.StringVar(value=weather_model.WEATHER_LABELS[weather_model.WEATHER_DEFAULT])
         self.weather_values = {name: tk.DoubleVar(value=getattr(weather_model.WEATHER_OFF, name))
@@ -3432,6 +3435,28 @@ class DollyApp:
         self.citadel_focus_text.set(f"Focus distance · {focus:.0f} in")
         self._commit_citadel_dof(2, focus, "Focus distance")
 
+    def _sync_debug_view_from_status(self, status):
+        if not hasattr(self, "debug_view"):
+            return
+        active = status.get("debug_view", DEBUG_VIEW_DEFAULT) if isinstance(status, dict) else DEBUG_VIEW_DEFAULT
+        _set_var(self.debug_view, debug_view_label(active))
+
+    def _debug_view_changed(self):
+        if self.busy or self.playing:
+            self._sync_debug_view_from_status(self.controller.status())
+            self.status_text.set("Pause playback and finish the current operation before changing the debug view.")
+            return
+        try:
+            option_id = debug_view_id(self.debug_view.get())
+        except ValueError:
+            self._sync_debug_view_from_status(self.controller.status())
+            return
+        def complete(applied):
+            _set_var(self.debug_view, debug_view_label(applied or DEBUG_VIEW_DEFAULT))
+            editor_session.configure(self)
+        if not self._submit("Changing debug view", lambda: self.controller.set_debug_view(option_id), complete):
+            self._sync_debug_view_from_status(self.controller.status())
+
     def _session_operation(self, label, function):
         if self.busy and function in (self.controller.stop, self.controller.pause):
             if self.controller.cancel_replay_recovery():
@@ -4008,6 +4033,15 @@ class DollyApp:
             capture_available = available and connected and stage in ("replay_ready", "editing_ready")
             for button in self.capture_buttons:
                 _set_widget_state(button, "normal" if capture_available else "disabled")
+            debug_combo = getattr(self, "debug_view_combo", None)
+            if debug_combo is not None:
+                recording = self.video_export.status().get("state") if self.video_export is not None else None
+                debug_available = (capture_available and recording not in ACTIVE_STATES
+                                   and not getattr(self, "_layer_queue", None)
+                                   and not getattr(self, "_active_layer_take", None))
+                _set_widget_state(debug_combo, "readonly" if debug_available else "disabled")
+                if not self.busy:
+                    self._sync_debug_view_from_status(status)
             message = str(status.get("message") or "")
             if message and message != self._last_controller_message:
                 self._last_controller_message = message
@@ -4113,6 +4147,8 @@ class DollyApp:
             self.native_editor_active = False
             self._native_editor_bridge = self._native_visualization_bridge = None
             self._native_visualization_cache = None
+            if hasattr(self, "debug_view"):
+                _set_var(self.debug_view, debug_view_label(DEBUG_VIEW_DEFAULT))
             if self.root.state() == 'iconic':
                 self._restore_from_taskbar()
             if self.startup_cancel is not None:

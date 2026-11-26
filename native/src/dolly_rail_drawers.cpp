@@ -625,6 +625,35 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             button("Clear stuck effects", EditorAction::DestroyRagdolls, 0, 0,
                    s.playing || locked);
             k::EndRow();
+            split();
+            k::SectionTitle(
+                "Debug view",
+                "Live rendering overlay for inspecting the replay; stays active during playback and export. Not saved in shots or settings, and resets to Normal when the session ends.",
+                "Session only");
+            k::VGap(15);
+            {
+                // Same labels and order as dolly/debug_view.py DEBUG_VIEW_OPTIONS.
+                static const char* const debug_views[kEditorDebugViewCount]{
+                    "Normal",
+                    "Albedo",
+                    "Normals",
+                    "Roughness",
+                    "Lighting complexity",
+                    "Fullbright",
+                    "Wireframe",
+                    "Objects",
+                    "Materials",
+                    "Detail levels (LOD)",
+                    "Visibility grid",
+                    "Particle overlays",
+                };
+                int view = int(std::min<std::uint32_t>(s.debug_view, kEditorDebugViewCount - 1));
+                const bool debug_off =
+                    !live || !s.debug_view_available || s.playing || locked || s.renderlock_exporting;
+                if (k::Dropdown("##look-debug-view", &view, debug_views,
+                                int(kEditorDebugViewCount), 0, debug_off))
+                    d.send(EditorAction::SetDebugView, view);
+            }
             if (!d.overrides) {
                 k::VGap(15);
                 k::Divider();

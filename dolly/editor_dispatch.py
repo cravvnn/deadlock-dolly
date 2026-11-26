@@ -227,7 +227,8 @@ def dispatch(app, event, bridge, *, publish):
         app._history_edit_group = ((action, app._selection_index(app.camera_tree),
                                     float(_value(app, "shot_time", 0) or 0))
                                    if action.startswith("set_") and action not in (
-                                       "set_camera_curve_value", "set_camera_position_tangents") else None)
+                                       "set_camera_curve_value", "set_camera_position_tangents",
+                                       "set_debug_view") else None)
     try:
         return _dispatch(app, event, bridge, publish=publish)
     finally:
@@ -612,6 +613,37 @@ def _dispatch(app, event, bridge, *, publish):
     elif action == "near_player_opacity_fix":
         _native_operation(app, "Toggling near-player opacity",
                           app.controller.near_player_opacity_fix, bridge)
+    elif action == "set_debug_view":
+        from .debug_view import DEBUG_VIEW_DEFAULT, DEBUG_VIEW_IDS, debug_view_label
+        from .video_export import ACTIVE_STATES
+        value = event["value"]
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value != int(value)
+                or not 0 <= int(value) < len(DEBUG_VIEW_IDS)):
+            raise ValueError("Choose a valid debug view.")
+        status = app.controller.status()
+        video_export = getattr(app, "video_export", None)
+        recording = video_export.status().get("state") if video_export is not None else None
+        if (getattr(app, "playing", False) or status.get("playing")
+                or status.get("startup_stage") not in ("replay_ready", "editing_ready")
+                or recording in ACTIVE_STATES
+                or getattr(app, "_layer_queue", None)
+                or getattr(app, "_active_layer_take", None)
+                or getattr(app, "_renderlock_cancel", None) is not None):
+            publish()
+            raise ValueError("Pause playback and finish exports before changing the debug view.")
+        option_id = DEBUG_VIEW_IDS[int(value)]
+
+        def applied_view(applied):
+            if hasattr(app, "_sync_debug_view_from_status"):
+                app._sync_debug_view_from_status({"debug_view": applied or DEBUG_VIEW_DEFAULT})
+            elif hasattr(app, "debug_view") and hasattr(app.debug_view, "set"):
+                app.debug_view.set(debug_view_label(applied or DEBUG_VIEW_DEFAULT))
+            publish()
+
+        _native_operation(app, "Changing debug view",
+                          lambda: app.controller.set_debug_view(option_id), bridge,
+                          complete=applied_view)
     elif action == "start_video":
         app._start_video_recording()
     elif action == "export_renderlock":

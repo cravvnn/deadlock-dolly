@@ -1,17 +1,19 @@
 """Look page view (Figma [design reference]): animated tracks, the track editor, particles, Citadel depth of field.
 
 Built on the page kit (:mod:`.kit_page`, PLAN-5 3.2): Animated Tracks and Track
-Editor in the main column, Particles, Citadel Depth of Field and Fixed Values in
-the side column, and the shared Shot Playback card (``app.timeline_frame``, adopted
-by :attr:`LookPage.playback_host`) pinned at the bottom like on Camera: the cards
-above it scroll together, with the scroll-edge fade (USER-ADDITIONS UPDATE 7, 8).
+Editor in the main column, Particles, Citadel Depth of Field, Fixed Values and
+Debug View in the side column, and the shared Shot Playback card
+(``app.timeline_frame``, adopted by :attr:`LookPage.playback_host`) pinned at
+the bottom like on Camera: the cards above it scroll together, with the
+scroll-edge fade (USER-ADDITIONS UPDATE 7, 8).
 
 The cards are a bento grid (UPDATE 8): Animated Tracks beside Particles, then Track
-Editor beside Citadel Depth of Field over Fixed Values; neighbours share their top and
-bottom edges with 20 px gutters. Track Editor's two buttons sit on its title line, so
-its height matches the two cards beside it exactly; the 5 px Animated Tracks lacks
-beside Particles go to its table. Below the two-column width the cards stack in one
-column. (Kara chose the bento over Replay's one-column look after seeing both.)
+Editor beside Citadel Depth of Field over Fixed Values and Debug View; neighbours
+share their top and bottom edges with 20 px gutters. Track Editor's two buttons sit
+on its title line and its value table grows to match the side cards beside it; the
+5 px Animated Tracks lacks beside Particles go to its table. Below the two-column
+width the cards stack in one column. (Kara chose the bento over Replay's one-column
+look after seeing both.)
 
 Labels, units and every card button are drawn on the cards' canvases; fields,
 dropdowns, checkboxes, tables and the two DOF sliders are real widgets placed on them.
@@ -45,6 +47,8 @@ BENTO_GAP = 20              # the bento's gutters, between columns and between r
 RANGE_INFO = "Range DOF: near blurry · near crisp · far crisp · far blurry. Enter four numbers separated by spaces."
 FIXED_INFO = ("Fixed values… opens a separate dialog on Look. These values are applied for the shot; "
               "a track with the same name overrides the fixed value while the shot runs.")
+DEBUG_VIEW_INFO = ("Live rendering overlay for inspecting the replay; stays active during playback and export. "
+                   "Not saved in shots or settings, and resets to Normal when the session ends.")
 CURVES = ("step", "linear", "smooth")
 HEIGHT_UNIT = "units (100–1500)"
 # The DOF captions change with the value; their column fits the widest one, so the
@@ -73,6 +77,8 @@ class LookState:
     track_value: tk.Variable
     particle_labels: tuple
     intensity_unit: str
+    debug_view: tk.Variable
+    debug_view_labels: tuple
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,7 @@ class LookActions:
     focus_changed: Callable[..., object]
     focus_commit: Callable[..., object]
     show_fixed_values: Callable[..., object]
+    debug_view_changed: Callable[..., object]
     tree: Callable[..., object]
 
 
@@ -223,7 +230,15 @@ class LookPage:
 
         fixed = self.fixed_card = side.add_card("Fixed Values", info=FIXED_INFO)
         self.fixed_values_button = fixed.row().button("Fixed values…", commands.show_fixed_values)
-        page.bento([((tracks,), (particles,)), ((editor,), (dof, fixed))],
+
+        debug = self.debug_card = side.add_card("Debug View", info=DEBUG_VIEW_INFO)
+        row = debug.row()
+        self.debug_view_combo = row.widget(
+            ttk.Combobox(row.host, textvariable=state.debug_view, values=tuple(state.debug_view_labels),
+                         state="disabled", style="Kit.TCombobox"), width="fill")
+        self.debug_view_combo.bind("<<ComboboxSelected>>", lambda _event: commands.debug_view_changed(), add="+")
+
+        page.bento([((tracks,), (particles,)), ((editor,), (dof, fixed, debug))],
                    grow={tracks: self.track_block, editor: self.value_block})
 
         # Shot Playback (the app's timeline_frame) is pinned here while Look shows, with its

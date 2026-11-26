@@ -186,7 +186,9 @@ enum class EditorAction : std::uint32_t {
     SetLensRefraction,
     SetLensSoftness,
     // Scene drawer: footprint tracks in snow, sand, dust and ash (0 or 1).
-    SetWeatherHeroTracks
+    SetWeatherHeroTracks,
+    // Look drawer: live session-only rendering debug view (index into DEBUG_VIEW_OPTIONS).
+    SetDebugView
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -226,8 +228,10 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetLensRain) == 139 &&
               "Stable Scene lens rain action IDs");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetWeatherHeroTracks) == 146,
               "Stable Scene hero tracks action ID");
-constexpr EditorAction kEditorActionLast = EditorAction::SetWeatherHeroTracks;
-static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 146, "Last editor action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetDebugView) == 147,
+              "Stable Look debug view action ID");
+constexpr EditorAction kEditorActionLast = EditorAction::SetDebugView;
+static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 147, "Last editor action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&
@@ -410,6 +414,21 @@ static_assert(sizeof(EditorCinematicStatus) == 28, "Python cinematic completion 
 static_assert(kEditorCinematicOffset + sizeof(EditorCinematicStatus) <= 2 * 1024 * 1024 + 61440,
               "Cinematic completion fits the existing mapping");
 bool editor_cinematic_status(EditorCinematicStatus& out) noexcept;
+// Optional session-only debug view block in the unused mapping tail after
+// cinematic status. Existing offsets and layouts stay fixed.
+constexpr std::size_t kEditorDebugViewOffset = 2 * 1024 * 1024 + 60032;
+constexpr std::uint32_t kEditorDebugViewAbi = 1;
+constexpr std::uint32_t kEditorDebugViewCount = 12;
+struct EditorDebugViewConfig {
+    char magic[8];
+    std::uint32_t sequence, abi, view, flags; // flags bit 0: editable in-game
+};
+static_assert(sizeof(EditorDebugViewConfig) == 24, "Python debug view config layout");
+static_assert(offsetof(EditorDebugViewConfig, sequence) == 8, "Seqlocked block layout");
+static_assert(kEditorDebugViewOffset >= kEditorCinematicOffset + sizeof(EditorCinematicStatus),
+              "Debug view config follows cinematic status");
+static_assert(kEditorDebugViewOffset + sizeof(EditorDebugViewConfig) <= 2 * 1024 * 1024 + 61440,
+              "Debug view config fits the existing mapping");
 constexpr std::size_t kEditorCameraListCount = 32;
 struct EditorCameraRow {
     double time, aspect, roll;
@@ -647,6 +666,8 @@ struct EditorSnapshot {
     std::int32_t tick = 0;
     bool playing = false, busy = false, pause_after_capture = false;
     std::uint8_t scene_appearance_flags = 0;
+    std::uint32_t debug_view = 0;
+    bool debug_view_available = false;
     double playback_speed = 1;
     std::uint32_t playback_rate = 60;
     std::uint32_t video_fps = 60, video_bitrate_mbps = 20, video_codec = 0;

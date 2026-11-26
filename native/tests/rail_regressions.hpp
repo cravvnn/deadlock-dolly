@@ -300,6 +300,46 @@ static void rail_regressions(const char* output, bool motion = false) {
             require(observed_actions.empty(), "Scene checkboxes bypass playback guard");
             snapshot.playing = false;
             snapshot.scene_appearance_flags = 0;
+            // Debug view dropdown in the Look drawer: enabled state, dispatch, and guards.
+            snapshot.debug_view = 0;
+            snapshot.debug_view_available = true;
+            frame();
+            observed_actions.clear();
+            const ImGuiID dbg_id = look->GetID("##look-debug-view");
+            ctx->NavNextActivateId = dbg_id;
+            frame();
+            auto* nav = ctx->NavWindow;
+            require(nav != nullptr, "Debug view dropdown is not keyboard accessible");
+            auto dbg_rect = nav->NavRectRel[ImGuiNavLayer_Main];
+            dbg_rect.Translate(nav->Pos);
+            require(dbg_rect.Min.x >= look->Pos.x && dbg_rect.Max.x <= look->Pos.x + look->Size.x,
+                    "Debug view dropdown escapes the Look drawer");
+            auto* popup = find("##Popup_");
+            require(popup != nullptr, "Debug view dropdown did not open its menu");
+            const int pick = 2;
+            ctx->NavNextActivateId =
+                ImHashStr("##item", 0, ImHashData(&pick, sizeof(pick), popup->ID));
+            frame();
+            require(observed_actions.size() == 1 &&
+                        observed_actions[0].action == dolly::EditorAction::SetDebugView &&
+                        observed_actions[0].value == 2,
+                    "Debug view dropdown did not dispatch SetDebugView");
+            observed_actions.clear();
+            for (unsigned guard = 0; guard < 5; ++guard) {
+                snapshot.debug_view_available = guard != 0;
+                snapshot.playing = guard == 1;
+                snapshot.busy = guard == 2;
+                snapshot.renderlock_exporting = guard == 3;
+                dolly::recording_status_stub.state =
+                    guard == 4 ? dolly::video::State::recording : dolly::video::State::idle;
+                frame();
+                ctx->NavNextActivateId = dbg_id;
+                frame();
+                require(!find("##Popup_"), "Disabled debug view dropdown opened its menu");
+            }
+            snapshot.debug_view_available = false;
+            snapshot.playing = snapshot.busy = snapshot.renderlock_exporting = false;
+            dolly::recording_status_stub = {};
         }
         {
             // RenderLock camera: Kara's section pattern in the Export drawer's right column.
@@ -884,11 +924,15 @@ static void rail_regressions(const char* output, bool motion = false) {
                 if (tab == 11) {
                     snapshot.bone_picker = snapshot.object_picker = false;
                     snapshot.scene_appearance_flags = 7;
+                    snapshot.debug_view = 2;
+                    snapshot.debug_view_available = true;
                     activate_tab(3);
                 }
                 if (tab == 12) {
                     // Export drawer while a RenderLock .crav export runs (Dolly busy).
                     snapshot.scene_appearance_flags = 0;
+                    snapshot.debug_view = 0;
+                    snapshot.debug_view_available = false;
                     snapshot.busy = snapshot.renderlock_exporting = true;
                     std::snprintf(snapshot.message, sizeof(snapshot.message), "%s",
                                   "Exporting camera: Dolly plays the shot once without recording video...");
