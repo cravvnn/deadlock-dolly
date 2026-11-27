@@ -192,7 +192,7 @@
     },
     {
       "path": "dolly/_runtime_generated.py",
-      "sha256": "9936c3c95c2f4c4a60fdeb6c48b1538df2ed0b36da988f07c83e62b2fea058db",
+      "sha256": "bf5540aa91a9c7998536cfb826f78d23d8549f86743078adae82ec488be51dfc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -218,7 +218,8 @@
       "reconciliation": "6861 generated runtime identities/addresses; generation/build admission still owns validity. No lifecycle declaration inferred from changed offsets.",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "dolly/assert_watcher.py",
@@ -2375,7 +2376,7 @@
     },
     {
       "path": "dolly/follow_target.py",
-      "sha256": "269b5b2824a6d4576f68a06fed0028e56cfa7bf4ed306a6333620566db0355d9",
+      "sha256": "9c8197d6ccf328604d8c7e7457ba3d221a7d3361a60ab31d8c985567e1607035",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2407,7 +2408,8 @@
       "reconciliation_20261121sweep": "2026-11-21: overnight sweep 2026-11-21 hardening and simplification fixes",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "dolly/game_installation.py",
@@ -8610,7 +8612,7 @@
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
-      "sha256": "cd08b84601ae7eab65dd319526dafcf7ed0edd794a3bac22d42f97de39c025f7",
+      "sha256": "fde2d9c7e653f527825b5d9c0784bdda882d571ff0a59021e7ccde62bc2e59f7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8631,7 +8633,8 @@
       "reconciliation": "Generated runtime addresses/identities6861; no new independent owner.",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
@@ -9147,7 +9150,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "d0c5daed728bd2e80d9f63e585a17fd47d9a6cfacd4385b08d7719a922202dfb",
+      "sha256": "ac5a2a8aa45b292b4f975fdc9d6a69075587ca19776e3ba01b5e606269a55f0e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9166,7 +9169,8 @@
       "reconciliation": "0.7.35 CRAV integration: reviewed feature delta retained alongside main ownership/heartbeat contracts; bounded scopes only; no full-file signoff.",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_compat_runtime.hpp",
@@ -9196,7 +9200,7 @@
     },
     {
       "path": "native/src/dolly_confetti.cpp",
-      "sha256": "a51eb6f2c0e6bc3299c0b2ca708acf77849f38ced7a09214385a71617aedebcb",
+      "sha256": "510c630b6ce8e75c9c55bcacf46155b83ededbb9b792e1e9c99747cbbd45f12c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9222,7 +9226,8 @@
       "reconciliation": "Adds reviewed6861BuildOffsets byte spans. Existing particle create/release/reset lifecycle remains open and unchanged.",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_curve_panel.cpp",
@@ -9495,7 +9500,7 @@
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
-      "sha256": "f6598c988ae2a3b8c61bdb7b52777d2190ffc195612f15c9e25241e885e11077",
+      "sha256": "46b7d180c7f964d49ac06644da91305856a043a71f5016c4b6bc038bcb3f27ab",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9513,7 +9518,8 @@
       "reconciliation": "Additional6861immutable signature/RVA tables. Inspected generated header contains constexpr byte/profile data, not an independently running owner; consuming hooks remain native_follow_anchor_win.hpp.",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_game_audio.cpp",
@@ -11124,7 +11130,7 @@
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
-      "sha256": "3c1293d8041f3df651a7cbad304ec5703159367e5b21987fa73274c07dcaf0c9",
+      "sha256": "46ddbce65b124718714479633671fe5da620b5a2b63f19566ef1c1b1f5189f94",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -11143,7 +11149,8 @@
       "reconciliation": "Additional6861screen-effects profile selection; existing camera-only suppression ownership guards retained.",
       "reconciliation_20261124": "2026-11-24: reviewed Deadlock build 6866 compatibility data; see commit log",
       "reconciliation_20261126": "2026-11-26: reviewed Deadlock build 6871 compatibility data; see commit log",
-      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log"
+      "reconciliation_20261126_6872": "2026-11-26: reviewed Deadlock build 6872 compatibility data; see commit log",
+      "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log"
     },
     {
       "path": "native/src/native_minimap_win.hpp",
@@ -17994,6 +18001,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "native/profiles/deadlock-2026-11-26-6873-complete.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19824,6 +19836,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "third_party/cvar_unlocker/unlocker-build-6873.patch",
+      "category": "external dependency/resource",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "third_party/cvar_unlocker/unlocker-shutdown.patch",
       "category": "external dependency/resource",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20590,12 +20607,12 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 595,
+    "metadata/configuration/documentation input": 596,
     "implementation/tool": 347,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
     "test/support input": 107,
-    "external dependency/resource": 207
+    "external dependency/resource": 208
   },
   "unclassified": 0,
   "full_program_formal_verified": false,
