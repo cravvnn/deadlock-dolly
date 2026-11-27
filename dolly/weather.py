@@ -122,9 +122,10 @@ TRAILS_REPLAY_BYTES = 128
 TRAILS_WIRE_FORMAT = f"<8sIIIIdd{TRAILS_PATH_BYTES}s{TRAILS_REPLAY_BYTES}s"
 TRAILS_WIRE_BYTES = struct.calcsize(TRAILS_WIRE_FORMAT)
 TRAILS_FLAG_STORE = 1
-# The store file (beside the map grids, never in the replay): seen time ranges, then hero
-# positions on a fixed 1/15 s grid of replay time.
-TRACK_STORE_MAGIC = b"DLYTRK02"
+# The store file (beside the map grids, never in the replay): seen time ranges, hero
+# positions on a fixed 1/15 s grid of replay time, then chess-piece positions (v3).
+TRACK_STORE_MAGIC_V2 = b"DLYTRK02"
+TRACK_STORE_MAGIC = b"DLYTRK03"
 TRACK_STEP = 1.0 / 15.0
 TRACK_CELL_FORMAT = "<iI3f"
 
@@ -324,18 +325,42 @@ def hero_track_store(replay: str) -> Path:
 
 def read_track_store(path: Path) -> tuple[list[tuple[float, float]],
                                           list[tuple[int, int, float, float, float]]]:
-    """A track store's seen time ranges and its cells (grid, hero slot, x, y, z)."""
+    """A track store's seen time ranges and its hero cells (grid, hero slot, x, y, z).
+
+    Accepts both DLYTRK02 (heroes only) and DLYTRK03 (heroes + chess pieces)."""
+    seen, heroes, _pieces = read_track_store_all(path)
+    return seen, heroes
+
+
+def read_track_store_all(path: Path) -> tuple[list[tuple[float, float]],
+                                              list[tuple[int, int, float, float, float]],
+                                              list[tuple[int, int, float, float, float]]]:
+    """A track store's seen time ranges, hero cells, and chess-piece cells."""
     data = Path(path).read_bytes()
-    if len(data) < 16 or data[:8] != TRACK_STORE_MAGIC:
+    if len(data) < 16 or data[:8] not in (TRACK_STORE_MAGIC_V2, TRACK_STORE_MAGIC):
         raise ValueError("Not a hero track store")
+    magic = data[:8]
     cells, ranges = struct.unpack_from("<II", data, 8)
     size = struct.calcsize(TRACK_CELL_FORMAT)
-    if len(data) != 16 + ranges * 16 + cells * size:
-        raise ValueError("The hero track store is truncated")
+    hero_end = 16 + ranges * 16 + cells * size
+    if magic == TRACK_STORE_MAGIC_V2:
+        if len(data) != hero_end:
+            raise ValueError("The hero track store is truncated")
+        piece_cells = []
+    else:
+        if len(data) < hero_end + 4:
+            raise ValueError("The hero track store is truncated")
+        piece_count = struct.unpack_from("<I", data, hero_end)[0]
+        if len(data) != hero_end + 4 + piece_count * size:
+            raise ValueError("The hero track store is truncated")
+        piece_base = hero_end + 4
+        piece_cells = [struct.unpack_from(TRACK_CELL_FORMAT, data, piece_base + i * size)
+                       for i in range(piece_count)]
     seen = [struct.unpack_from("<dd", data, 16 + i * 16) for i in range(ranges)]
     base = 16 + ranges * 16
-    return seen, [struct.unpack_from(TRACK_CELL_FORMAT, data, base + i * size)
+    hero_cells = [struct.unpack_from(TRACK_CELL_FORMAT, data, base + i * size)
                   for i in range(cells)]
+    return seen, hero_cells, piece_cells
 
 
 def track_ranges(path: Path) -> list[tuple[float, float]]:
@@ -343,7 +368,7 @@ def track_ranges(path: Path) -> list[tuple[float, float]]:
     try:
         with open(path, "rb") as stream:
             head = stream.read(16)
-            if len(head) < 16 or head[:8] != TRACK_STORE_MAGIC:
+            if len(head) < 16 or head[:8] not in (TRACK_STORE_MAGIC_V2, TRACK_STORE_MAGIC):
                 return []
             ranges = struct.unpack_from("<I", head, 12)[0]
             body = stream.read(ranges * 16)

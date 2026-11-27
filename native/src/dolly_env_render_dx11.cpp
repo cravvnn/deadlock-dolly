@@ -107,8 +107,9 @@ Texture2D<float> kickNear : register(t16);
 Texture2D<float> kickFar : register(t17);
 // Hero trails: the recorded path segments, and the map they are stamped into each frame.
 struct TrailSeg {
-    float4 a; // xyz start (world), w its shot time (s)
-    float4 b; // xyz end, w its shot time
+    float4 a;     // xyz start (world), w its shot time (s)
+    float4 b;     // xyz end, w its shot time
+    float4 style; // x width scale (1 = hero), y kick-up (1 = hero, 0 = track only)
 };
 StructuredBuffer<TrailSeg> trailSegs : register(t12);
 // Per texel: x the latest shot time a hero trod it, y minus the earliest (both MAX-blended).
@@ -189,6 +190,7 @@ struct TrailVSOut {
     nointerpolation float2 times : TEXCOORD2; // shot times at start and end
     nointerpolation float speed : TEXCOORD3;  // the hero's ground speed on this piece (u/s)
     nointerpolation float2 heights : TEXCOORD4; // foot heights at its start and end
+    nointerpolation float2 style : TEXCOORD5; // x width scale, y kick-up (0 = track only)
 };
 
 struct TrailStampOut {
@@ -204,6 +206,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.times = float2(kTrailNever, kTrailNever);
     o.speed = 0.0;
     o.heights = float2(0.0, 0.0);
+    o.style = float2(1.0, 1.0);
     LoadView();
     TrailSeg s = trailSegs[iid];
     float now = windTime.z;
@@ -221,7 +224,8 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float len = length(dir);
     dir = len > 1e-3 ? dir / len : float2(1.0, 0.0);
     float2 side = float2(-dir.y, dir.x);
-    float r = kTrailReach;
+    float scale = s.style.x > 0.0 ? s.style.x : 1.0;
+    float r = kTrailReach * scale;
     // Two triangles covering the capsule's bounding box.
     // (0,1,2) = (-,-) (+,-) (-,+); (3,4,5) = (+,-) (+,+) (-,+)
     float2 corner = float2((vid == 1 || vid == 3 || vid == 4) ? 1.0 : -1.0,
@@ -235,6 +239,7 @@ TrailVSOut TrailStampVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.times = float2(s.a.w, tb);
     o.speed = length(s.b.xy - s.a.xy) / max(s.b.w - s.a.w, 1e-3);
     o.heights = float2(s.a.z, lerp(s.a.z, s.b.z, f));
+    o.style = float2(scale, s.style.y);
     return o;
 }
 
@@ -243,11 +248,14 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     float2 ab = b - a;
     float k = saturate(dot(i.world - a, ab) / max(dot(ab, ab), 1e-6));
     float d = length(i.world - (a + ab * k));
-    if (d > kTrailReach)
+    // Normalize distance by width scale so narrower tracks (such as chess pieces) keep the
+    // same smooth shoulder fade, rim shape, and outer reach without hard edges.
+    float dNorm = d / i.style.x;
+    if (dNorm > kTrailReach)
         discard;
     float t = lerp(i.times.x, i.times.y, k);
     // The shoulder reads as older (shallower) track, fading out to untouched at its edge.
-    float shoulder = smoothstep(0.0, 1.0, saturate((d - kTrailCore) / kTrailFeather));
+    float shoulder = smoothstep(0.0, 1.0, saturate((dNorm - kTrailCore) / kTrailFeather));
     // Cover only lies where the sky is open, and at most one surface at a spot is open to it:
     // a hero walking under a deck or roof leaves no track (the deck above stays clean), and
     // a track on a deck is the deck's (the street below is not open to the sky).
@@ -265,16 +273,21 @@ TrailStampOut TrailStampPS(TrailVSOut i) {
     // path, smooth through every joint (a rim shaped per piece ringed each joint).
     TrailStampOut o;
     float tw = t - underRoof * kTrailFade * trailInfo.y;
-    o.trail = float4(te, -te, lerp(-d, -kTrailReach, underRoof), tw);
+    o.trail = float4(te, -te, lerp(-dNorm, -kTrailReach, underRoof), tw);
     // A footfall kicks cover up where the hero ran: strongest under the feet and for a
     // running hero, weaker toward the track's edge and for one walking (read as older).
     // At the shoulder's edge the kick is older than a puff lives (2 s), so the puffs' footprint
     // fades out there: stopping at 1.2 s left a hard outline the shape of the stamp. The
     // footprint is as wide as the stamp reaches (wider than the track), for the widest and
-    // so the softest sides the puffs can have.
-    float run = saturate((i.speed - 140.0) / 220.0);
-    float edgeK = saturate(d / kTrailReach);
-    o.kick = t - edgeK * edgeK * 2.2 - (1.0 - run) * 1.5 - underRoof * 10.0;
+    // so the softest sides the puffs can have. Track-only segments (style.y == 0) leave no
+    // kick-up at all.
+    if (i.style.y < 0.5) {
+        o.kick = kTrailNever;
+    } else {
+        float run = saturate((i.speed - 140.0) / 220.0);
+        float edgeK = saturate(d / kTrailReach);
+        o.kick = t - edgeK * edgeK * 2.2 - (1.0 - run) * 1.5 - underRoof * 10.0;
+    }
     return o;
 }
 
@@ -2710,7 +2723,7 @@ bool EnvRendererDX11::set_hero_trails(const TrailSegment* segments, uint32_t cou
     impl_->trail_capacity = 0;
     if (!impl_->initialized || !impl_->device || count > kMaxTrailSegments)
         return count == 0;
-    static_assert(sizeof(TrailSegment) == 32, "TrailSeg layout in the shader");
+    static_assert(sizeof(TrailSegment) == 48, "TrailSeg layout in the shader");
     // Room to grow while the replay plays (new segments are appended).
     const uint32_t capacity =
         std::min(kMaxTrailSegments, std::max(4096u, count + count / 2 + 1024u));

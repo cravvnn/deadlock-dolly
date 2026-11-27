@@ -251,20 +251,34 @@ class HeroTrails(unittest.TestCase):
     def test_store_reads_back_with_coverage(self):
         ranges = [(10.0, 20.0), (30.0, 35.0)]
         cells = [(150, 3, 1.0, 2.0, 256.0), (151, 3, 5.0, 2.0, 256.0)]
+        pieces = [(150, 0x1000c00, 168.0, 75.0, 654.0)]
         body = (b"".join(struct.pack("<dd", *r) for r in ranges) +
                 b"".join(struct.pack(weather.TRACK_CELL_FORMAT, *c) for c in cells))
+        piece_body = (struct.pack("<I", len(pieces)) +
+                      b"".join(struct.pack(weather.TRACK_CELL_FORMAT, *p) for p in pieces))
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "x.tracks"
-            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body)
+            # Legacy DLYTRK02 (heroes only) still loads cleanly.
+            path.write_bytes(weather.TRACK_STORE_MAGIC_V2 + struct.pack("<II", 2, 2) + body)
             seen, read = weather.read_track_store(path)
             self.assertEqual((seen, read), (ranges, cells))
+            self.assertEqual(weather.read_track_store_all(path), (ranges, cells, []))
+            self.assertEqual(weather.track_ranges(path), ranges)
+            # Current DLYTRK03 (heroes + chess pieces).
+            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body + piece_body)
+            self.assertEqual(weather.read_track_store(path), (ranges, cells))
+            self.assertEqual(weather.read_track_store_all(path), (ranges, cells, pieces))
             self.assertEqual(weather.track_ranges(path), ranges)
             self.assertEqual(weather.track_coverage(ranges, 10.0, 20.0), 1.0)
             self.assertAlmostEqual(weather.track_coverage(ranges, 10.0, 30.0), 0.5)
             self.assertEqual(weather.track_coverage([], 10.0, 30.0), 0.0)
             self.assertEqual(weather.track_covered_until(ranges, 10.0), 20.0)
             self.assertEqual(weather.track_covered_until(ranges, 25.0), 25.0)
-            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 3, 2) + body)
+            # Truncated v2 and v3 stores are refused.
+            path.write_bytes(weather.TRACK_STORE_MAGIC_V2 + struct.pack("<II", 3, 2) + body)
+            with self.assertRaises(ValueError):
+                weather.read_track_store(path)
+            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body)
             with self.assertRaises(ValueError):
                 weather.read_track_store(path)
             self.assertEqual(weather.track_ranges(Path(folder) / "missing.tracks"), [])
