@@ -1458,3 +1458,5 @@ native/profiles/deadlock-2026-11-26-6872-complete.json
 third_party/cvar_unlocker/unlocker-build-6872.patch
 native/profiles/deadlock-2026-11-26-6873-complete.json
 third_party/cvar_unlocker/unlocker-build-6873.patch
+native/profiles/deadlock-2026-11-26-6875-complete.json
+third_party/cvar_unlocker/unlocker-build-6875.patch
