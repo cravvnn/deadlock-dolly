@@ -1584,6 +1584,28 @@ int main(int argc, char** argv) {
                 std::printf("WARP kick-up: %zu pixels of fresh puffs, %zu once settled\n",
                             puff_px, late_px);
                 CHECK(puff_px > 0 && late_px == 0);
+                // Track-only narrower segments (Solomon chess pieces): leave a visible,
+                // narrower track in the cover and produce zero kick-up puffs.
+                std::vector<dolly::env::TrailSegment> piece = run;
+                for (auto& s : piece) {
+                    s.width_scale = dolly::weather::trails::kPieceWidthScale;
+                    s.kickup = 0.0f;
+                }
+                CHECK(renderer.set_hero_trails(piece.data(), static_cast<uint32_t>(piece.size())));
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, fresh, solver, emitters, 0));
+                const auto piece_on = readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(),
+                                      cam, no_kick, solver, emitters, 0));
+                const auto piece_no_kick =
+                    readback_rgba8(device.Get(), ctx.Get(), out_tex.Get(), vw, vh);
+                const size_t piece_track_px = changed_pixels(clear_cover, piece_no_kick);
+                const size_t hero_track_px = changed_pixels(clear_cover, unpuffed);
+                std::printf("WARP chess-piece track: %zu px (hero %zu px), kickup diff %zu px\n",
+                            piece_track_px, hero_track_px,
+                            changed_pixels(piece_on, piece_no_kick));
+                CHECK(piece_track_px > 0 && piece_track_px < hero_track_px);
+                CHECK(piece_on == piece_no_kick);
             }
             CHECK(renderer.set_hero_trails(nullptr, 0));
             CHECK(renderer.render(ctx.Get(), scene_srv.Get(), depth_srv.Get(), out_rtv.Get(), cam,

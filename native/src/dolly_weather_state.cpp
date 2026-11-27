@@ -225,32 +225,38 @@ bool terminated(const char (&text)[kPathBytes]) noexcept {
     return std::memchr(text, 0, kPathBytes) != nullptr;
 }
 
-constexpr char kFileMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '2'};
-// More than any replay needs (12 heroes, 15 cells a second, for over three hours).
+constexpr char kFileMagicV2[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '2'};
+constexpr char kFileMagic[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '3'};
+// More than any replay needs (12 heroes + chess pieces, 15 cells a second, for over three hours).
 constexpr std::uint32_t kMaxCells = 2u * 1024u * 1024u;
 constexpr std::uint32_t kMaxRanges = 1u << 20;
-// Broken over gaps longer than half a second or speeds above what a hero reaches (dashes
-// included).
+// Broken over gaps longer than half a second or speeds above what the entity reaches.
 constexpr std::int32_t kGapCells = 7; // 7/15 s
 constexpr float kMaxSpeed = 1200.0f;
+// Solomon's chess pieces slide across the ground at 1500-2500 u/s (and leap up to ~3400 u/s).
+constexpr float kPieceMaxSpeed = 4000.0f;
 // Cells cover replay times up to about two years; far beyond any replay.
 constexpr double kMaxTime = 0x3fffffff * kStep;
 
-bool joins(std::int32_t ga, const float a[3], std::int32_t gb, const float b[3]) {
+bool joins(std::int32_t ga, const float a[3], std::int32_t gb, const float b[3],
+           float max_speed = kMaxSpeed) {
     if (gb <= ga || gb - ga > kGapCells)
         return false;
     const float dx = b[0] - a[0], dy = b[1] - a[1];
     const float dt = static_cast<float>((gb - ga) * kStep);
-    return std::sqrt(dx * dx + dy * dy) <= kMaxSpeed * dt + 8.0f;
+    return std::sqrt(dx * dx + dy * dy) <= max_speed * dt + 8.0f;
 }
 
 dolly::env::TrailSegment make_segment(std::int32_t ga, const float a[3], std::int32_t gb,
-                                      const float b[3]) {
+                                      const float b[3], float width_scale = 1.0f,
+                                      float kickup = 1.0f) {
     dolly::env::TrailSegment seg{};
     std::memcpy(seg.a, a, sizeof(seg.a));
     std::memcpy(seg.b, b, sizeof(seg.b));
     seg.time_a = static_cast<float>(ga * kStep);
     seg.time_b = static_cast<float>(gb * kStep);
+    seg.width_scale = width_scale;
+    seg.kickup = kickup;
     return seg;
 }
 
@@ -290,7 +296,7 @@ const Store::Hero* Store::find(std::uint32_t slot) const {
 bool Store::add(std::uint32_t slot, std::int32_t grid, const float pos[3]) {
     if (!std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2]) ||
         std::abs(pos[0]) > 1e6f || std::abs(pos[1]) > 1e6f || std::abs(pos[2]) > 1e6f ||
-        grid < 0 || cells_ >= kMaxCells)
+        grid < 0 || cells_ + piece_cells_ >= kMaxCells)
         return false;
     auto hit = std::lower_bound(heroes_.begin(), heroes_.end(), slot,
                                 [](const auto& h, std::uint32_t s) { return h.first < s; });
@@ -309,6 +315,31 @@ bool Store::add(std::uint32_t slot, std::int32_t grid, const float pos[3]) {
         return false; // written once, never changed
     cells.insert(it, {grid, p});
     ++cells_;
+    return true;
+}
+
+bool Store::add_piece(std::uint32_t slot, std::int32_t grid, const float pos[3]) {
+    if (!std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2]) ||
+        std::abs(pos[0]) > 1e6f || std::abs(pos[1]) > 1e6f || std::abs(pos[2]) > 1e6f ||
+        grid < 0 || cells_ + piece_cells_ >= kMaxCells)
+        return false;
+    auto hit = std::lower_bound(pieces_.begin(), pieces_.end(), slot,
+                                [](const auto& h, std::uint32_t s) { return h.first < s; });
+    if (hit == pieces_.end() || hit->first != slot)
+        hit = pieces_.insert(hit, {slot, Hero{}});
+    auto& cells = hit->second.cells;
+    const std::array<float, 3> p{pos[0], pos[1], pos[2]};
+    if (cells.empty() || cells.back().first < grid) {
+        cells.emplace_back(grid, p);
+        ++piece_cells_;
+        return true;
+    }
+    const auto it = std::lower_bound(cells.begin(), cells.end(), grid,
+                                     [](const auto& c, std::int32_t g) { return c.first < g; });
+    if (it != cells.end() && it->first == grid)
+        return false;
+    cells.insert(it, {grid, p});
+    ++piece_cells_;
     return true;
 }
 
@@ -356,39 +387,44 @@ void Store::adopt(const Store& from_replay) {
                 return true;
         return false;
     };
-    std::vector<std::pair<std::uint32_t, Hero>> merged;
-    std::size_t count = 0;
-    auto mine = heroes_.begin();
-    auto theirs = from_replay.heroes_.begin();
-    while (mine != heroes_.end() || theirs != from_replay.heroes_.end()) {
-        const bool take_mine = theirs == from_replay.heroes_.end() ||
-                               (mine != heroes_.end() && mine->first <= theirs->first);
-        const bool take_theirs = mine == heroes_.end() ||
-                                 (theirs != from_replay.heroes_.end() && theirs->first <= mine->first);
-        Hero hero;
-        const std::uint32_t slot = take_mine ? mine->first : theirs->first;
-        // Kept cells outside the replay's time, then the replay's cells, in grid order.
-        std::vector<std::pair<std::int32_t, std::array<float, 3>>> kept;
-        if (take_mine)
-            for (const auto& c : mine->second.cells)
-                if (!inside(c.first))
-                    kept.push_back(c);
-        static const std::vector<std::pair<std::int32_t, std::array<float, 3>>> none;
-        const auto& read = take_theirs ? theirs->second.cells : none;
-        hero.cells.reserve(kept.size() + read.size());
-        std::merge(kept.begin(), kept.end(), read.begin(), read.end(),
-                   std::back_inserter(hero.cells),
-                   [](const auto& a, const auto& b) { return a.first < b.first; });
-        count += hero.cells.size();
-        if (!hero.cells.empty())
-            merged.emplace_back(slot, std::move(hero));
-        if (take_mine)
-            ++mine;
-        if (take_theirs)
-            ++theirs;
-    }
-    heroes_.swap(merged);
-    cells_ = count;
+    const auto merge_tracks = [&inside](std::vector<std::pair<std::uint32_t, Hero>>& dst,
+                                        const std::vector<std::pair<std::uint32_t, Hero>>& src) {
+        std::vector<std::pair<std::uint32_t, Hero>> merged;
+        std::size_t count = 0;
+        auto mine = dst.begin();
+        auto theirs = src.begin();
+        while (mine != dst.end() || theirs != src.end()) {
+            const bool take_mine =
+                theirs == src.end() || (mine != dst.end() && mine->first <= theirs->first);
+            const bool take_theirs =
+                mine == dst.end() || (theirs != src.end() && theirs->first <= mine->first);
+            Hero hero;
+            const std::uint32_t slot = take_mine ? mine->first : theirs->first;
+            // Kept cells outside the replay's time, then the replay's cells, in grid order.
+            std::vector<std::pair<std::int32_t, std::array<float, 3>>> kept;
+            if (take_mine)
+                for (const auto& c : mine->second.cells)
+                    if (!inside(c.first))
+                        kept.push_back(c);
+            static const std::vector<std::pair<std::int32_t, std::array<float, 3>>> none;
+            const auto& read = take_theirs ? theirs->second.cells : none;
+            hero.cells.reserve(kept.size() + read.size());
+            std::merge(kept.begin(), kept.end(), read.begin(), read.end(),
+                       std::back_inserter(hero.cells),
+                       [](const auto& a, const auto& b) { return a.first < b.first; });
+            count += hero.cells.size();
+            if (!hero.cells.empty())
+                merged.emplace_back(slot, std::move(hero));
+            if (take_mine)
+                ++mine;
+            if (take_theirs)
+                ++theirs;
+        }
+        dst.swap(merged);
+        return count;
+    };
+    cells_ = merge_tracks(heroes_, from_replay.heroes_);
+    piece_cells_ = merge_tracks(pieces_, from_replay.pieces_);
     for (const auto& r : from_replay.seen_) {
         add_seen(r.first, r.second);
         fixed_.push_back(r);
@@ -421,28 +457,36 @@ std::size_t Store::add_step(double t0, double t1, std::uint32_t slot, const floa
 
 void Store::clear() {
     heroes_.clear();
+    pieces_.clear();
     seen_.clear();
     fixed_.clear();
     cells_ = 0;
+    piece_cells_ = 0;
 }
 
 std::vector<dolly::env::TrailSegment> Store::segments(double start, double end) const {
     std::vector<dolly::env::TrailSegment> out;
     const auto [lo, hi] = grid_range(start, end);
-    for (const auto& h : heroes_) {
-        const auto& cells = h.second.cells;
-        auto it = std::lower_bound(cells.begin(), cells.end(), lo,
-                                   [](const auto& c, std::int64_t g) { return c.first < g; });
-        for (; it != cells.end() && it + 1 != cells.end() && (it + 1)->first <= hi; ++it) {
-            const auto& a = *it;
-            const auto& b = *(it + 1);
-            if (!joins(a.first, a.second.data(), b.first, b.second.data()))
-                continue;
-            if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
-                return out;
-            out.push_back(make_segment(a.first, a.second.data(), b.first, b.second.data()));
+    const auto emit = [&](const std::vector<std::pair<std::uint32_t, Hero>>& tracks,
+                          float max_speed, float width_scale, float kickup) {
+        for (const auto& h : tracks) {
+            const auto& cells = h.second.cells;
+            auto it = std::lower_bound(cells.begin(), cells.end(), lo,
+                                       [](const auto& c, std::int64_t g) { return c.first < g; });
+            for (; it != cells.end() && it + 1 != cells.end() && (it + 1)->first <= hi; ++it) {
+                const auto& a = *it;
+                const auto& b = *(it + 1);
+                if (!joins(a.first, a.second.data(), b.first, b.second.data(), max_speed))
+                    continue;
+                if (out.size() >= dolly::env::EnvRendererDX11::kMaxTrailSegments)
+                    return;
+                out.push_back(make_segment(a.first, a.second.data(), b.first, b.second.data(),
+                                           width_scale, kickup));
+            }
         }
-    }
+    };
+    emit(heroes_, kMaxSpeed, 1.0f, 1.0f);
+    emit(pieces_, kPieceMaxSpeed, kPieceWidthScale, 0.0f);
     return out;
 }
 
@@ -511,6 +555,14 @@ bool Store::save(const std::string& utf8_path, std::string* error) const {
                     out.write(reinterpret_cast<const char*>(&h.first), 4);
                     out.write(reinterpret_cast<const char*>(c.second.data()), 12);
                 }
+            const std::uint32_t piece_count = static_cast<std::uint32_t>(piece_cells_);
+            out.write(reinterpret_cast<const char*>(&piece_count), sizeof(piece_count));
+            for (const auto& p : pieces_)
+                for (const auto& c : p.second.cells) {
+                    out.write(reinterpret_cast<const char*>(&c.first), 4);
+                    out.write(reinterpret_cast<const char*>(&p.first), 4);
+                    out.write(reinterpret_cast<const char*>(c.second.data()), 12);
+                }
             out.flush();
             if (!out) {
                 if (error)
@@ -538,8 +590,9 @@ bool Store::load(const std::string& utf8_path, std::string* error) {
         std::uint32_t head[2]{};
         in.read(magic, sizeof(magic));
         in.read(reinterpret_cast<char*>(head), sizeof(head));
-        if (!in || std::memcmp(magic, kFileMagic, sizeof(magic)) != 0 || head[0] > kMaxCells ||
-            head[1] > kMaxRanges) {
+        const bool is_v2 = std::memcmp(magic, kFileMagicV2, sizeof(magic)) == 0;
+        const bool is_v3 = std::memcmp(magic, kFileMagic, sizeof(magic)) == 0;
+        if (!in || (!is_v2 && !is_v3) || head[0] > kMaxCells || head[1] > kMaxRanges) {
             if (error)
                 *error = "not a hero track store";
             return false;
@@ -558,6 +611,26 @@ bool Store::load(const std::string& utf8_path, std::string* error) {
             in.read(reinterpret_cast<char*>(pos), 12);
             if (in)
                 add(slot, grid, pos);
+        }
+        if (is_v3 && in) {
+            std::uint32_t piece_count = 0;
+            in.read(reinterpret_cast<char*>(&piece_count), sizeof(piece_count));
+            if (!in || piece_count > kMaxCells - head[0]) {
+                clear();
+                if (error)
+                    *error = "the hero track store is truncated";
+                return false;
+            }
+            for (std::uint32_t i = 0; i < piece_count && in; ++i) {
+                std::int32_t grid = 0;
+                std::uint32_t slot = 0;
+                float pos[3]{};
+                in.read(reinterpret_cast<char*>(&grid), 4);
+                in.read(reinterpret_cast<char*>(&slot), 4);
+                in.read(reinterpret_cast<char*>(pos), 12);
+                if (in)
+                    add_piece(slot, grid, pos);
+            }
         }
         if (!in) {
             clear();

@@ -43,13 +43,17 @@ struct EnvCamera {
     ID3D11ShaderResourceView* gpu_view = nullptr;
 };
 
-// One straight piece of a hero's recorded path (feet, world units), with the shot time at
-// each end.
+// One straight piece of a recorded path (feet or base, world units), with the shot time at
+// each end. `width_scale` narrows the footprint (1 = hero, <1 = smaller piece drag mark)
+// and `kickup` enables running kick-up puffs (1 = heroes, 0 = track only).
 struct TrailSegment {
-    float a[3];
-    float time_a;
-    float b[3];
-    float time_b;
+    float a[3] = {};
+    float time_a = 0.0f;
+    float b[3] = {};
+    float time_b = 0.0f;
+    float width_scale = 1.0f;
+    float kickup = 1.0f;
+    float pad[2] = {};
 };
 
 struct EnvRenderParams {

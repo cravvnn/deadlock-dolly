@@ -475,6 +475,7 @@ native/replay_tracks/THIRD_PARTY_NOTICES.txt
 native/replay_tracks/go.mod
 native/replay_tracks/go.sum
 native/replay_tracks/main.go
+native/replay_tracks/main_test.go
 native/src/bridge_win.cpp
 native/src/dolly_attach.cpp
 native/src/dolly_attach_runtime.hpp

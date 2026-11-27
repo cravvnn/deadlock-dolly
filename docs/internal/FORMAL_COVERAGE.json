@@ -7348,7 +7348,7 @@
     },
     {
       "path": "dolly/weather.py",
-      "sha256": "ab2697d7cb1ec995f3d3dc8d78035f9ada642d180ef2cabaef521b72af2398bc",
+      "sha256": "107393c34e1fca62044a59a95aadc6035f9523c2aa95660b4ead0e2ef05ddb8d",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -7720,7 +7720,7 @@
     },
     {
       "path": "native/include/dolly_env_render_dx11.hpp",
-      "sha256": "b6ace4a0d5523de666ad055f18229782fc7d010b5157f863ae89f95bdb124c6e",
+      "sha256": "3d1db90ef2a066835613c6aeccc0f7e955db1ec3f3454451c69fa348ccc920ee",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8823,7 +8823,7 @@
     },
     {
       "path": "native/include/dolly_weather_state.hpp",
-      "sha256": "75e65adeb9c24e39405ae7decfabd6a56b53e78de0ba29e11bb3342c3e482825",
+      "sha256": "abba22f8f233f72fc5d189a2109d9129f9bc94379832a7b144aeb0d1e8d88e0c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8917,7 +8917,7 @@
     },
     {
       "path": "native/replay_tracks/main.go",
-      "sha256": "ef32533d28a05c217cecdaafe2bd9eb7563ca7bb1208e13a070f99035d829937",
+      "sha256": "1ad195f8b6637130e7befa4b89d52ccf2f37607b080265992ba2b20c222e7e45",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L05",
       "disposition": "child-job contract open",
@@ -8932,6 +8932,22 @@
         "persistent_state_signals": [
           "explicit first-party entrypoint/helper/tool scope"
         ]
+      },
+      "full_formal_signoff": false
+    },
+    {
+      "path": "native/replay_tracks/main_test.go",
+      "sha256": "471f4ab8007fa622cc29785fcebeec3aa515871330e96c57a9c3a0ba0013eed4",
+      "digest_kind": "utf8-bom-stripped-lf",
+      "family": "L05",
+      "disposition": "child-job contract open",
+      "reason": "Unit tests for the Go replay track reader (slot packing, grid interpolation, and DLYTRK03 output format).",
+      "bounded_models": [],
+      "test_reference_leads": [],
+      "test_reference_limits": "Text/import/include leads only; not execution coverage or proof of this whole file.",
+      "source_structure": {
+        "includes": [],
+        "persistent_state_signals": []
       },
       "full_formal_signoff": false
     },
@@ -9474,7 +9490,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "35e826e5f22f2e042147ad9b6f69760cfc60359173b6af14c78014a156b96794",
+      "sha256": "3c63dc1258a742e4ef4e073edc80140c2f842c37d38b09174cf8d3c7d43d75b5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10951,7 +10967,7 @@
     },
     {
       "path": "native/src/dolly_weather_state.cpp",
-      "sha256": "888d7299ea1fca0b94f8b470895ea8162d0be385803747715b317120d19cc57b",
+      "sha256": "da863c725893a0e48ff4c811f5a9ab3dd6182ec7aece5ba330ff15d7ba85c209",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -18209,6 +18225,11 @@
     {
       "path": "native/replay_tracks/main.go",
       "category": "implementation/tool",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "native/replay_tracks/main_test.go",
+      "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {

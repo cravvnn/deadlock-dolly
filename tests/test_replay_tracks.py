@@ -88,8 +88,9 @@ class ReplayTracksReaderTest(unittest.TestCase):
 class ReplayTracksHelperFormat(unittest.TestCase):
     def test_helper_writes_the_store_format_and_grid(self):
         source = (ROOT / "native/replay_tracks/main.go").read_text(encoding="utf-8")
-        self.assertIn('"DLYTRK02"', source)
-        self.assertIn("step           = 1.0 / 15.0", source)
+        self.assertIn('"DLYTRK03"', source)
+        self.assertIn('"CNPC_ChessPiece"', source)
+        self.assertIn("step            = 1.0 / 15.0", source)
         self.assertAlmostEqual(1.0 / 15.0, weather.TRACK_STEP)
         # The game adopts <store>.replay (dolly_weather_runtime_win.cpp).
         runtime = (ROOT / "native/src/dolly_weather_runtime_win.cpp").read_text(encoding="utf-8")
