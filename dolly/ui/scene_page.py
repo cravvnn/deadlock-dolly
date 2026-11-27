@@ -35,6 +35,7 @@ BENTO_GAP = 20
 CAPTION_MIN = 120
 
 WEATHER_INFO = "Saved with the shot. Playback, scrubbing and export match exactly."
+QUALITY_INFO = "Live preview quality. High adds richer rain, splashes and ripples; exports always render at High."
 WIND_INFO = "Moves haze, flakes and drifts around the map. Direction is where the wind blows toward."
 PRECIP_INFO = "Snow, rain, sand and ash flakes. Fog and haze presets have none."
 GROUND_INFO = "Coating settles where open sky is above; haze rises to the ceiling."
@@ -74,6 +75,8 @@ class SceneState:
     preset_labels: tuple
     controls: dict      # card title -> tuple[Control, ...]
     hero_tracks: tk.Variable | None = None
+    quality: tk.Variable | None = None
+    quality_labels: tuple = ("Standard", "High")
 
 
 @dataclass(frozen=True)
@@ -122,6 +125,14 @@ class ScenePage:
             ttk.Combobox(row.host, textvariable=state.preset, values=tuple(state.preset_labels),
                          state="readonly", style="Kit.TCombobox"), width="fill")
         self.preset_combo.bind("<<ComboboxSelected>>", lambda _event: commands.weather_changed(), add="+")
+        quality_var = state.quality if state.quality is not None else tk.StringVar(page, state.quality_labels[0])
+        qrow = weather.row(top=8)
+        qrow.label("Quality", width=55, info=QUALITY_INFO)
+        qrow.gap(10)
+        self.quality_combo = qrow.widget(
+            ttk.Combobox(qrow.host, textvariable=quality_var, values=tuple(state.quality_labels),
+                         state="readonly", style="Kit.TCombobox"), width="fill")
+        self.quality_combo.bind("<<ComboboxSelected>>", lambda _event: commands.weather_changed(), add="+")
         self.notice = tk.StringVar(page, OFF_NOTICE)
         weather.row(height=18).label(textvariable=self.notice, tone="dim")
         sliders(weather, state.controls["Weather"])
@@ -197,4 +208,5 @@ class ScenePage:
         for box in (self.hero_checkbox, self.effects_checkbox, self.lens_checkbox,
                     self.tracks_checkbox):
             box.state(["!disabled"] if enabled else ["disabled"])
+        self.quality_combo.configure(state="readonly" if enabled else "disabled")
         self.notice.set(ON_NOTICE if enabled else OFF_NOTICE)

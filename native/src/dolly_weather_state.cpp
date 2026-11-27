@@ -56,7 +56,8 @@ Wire encode(const Settings& settings, std::uint32_t sequence, const char* map_na
     w.preset = static_cast<std::uint32_t>(settings.preset);
     w.flags = (settings.hero_wakes ? kWireFlagHeroWakes : 0u) |
               (settings.include_in_effects ? kWireFlagIncludeInEffects : 0u) |
-              (settings.hero_tracks ? kWireFlagHeroTracks : 0u);
+              (settings.hero_tracks ? kWireFlagHeroTracks : 0u) |
+              (settings.quality == Quality::High ? kWireFlagHighQuality : 0u);
     w.intensity = settings.intensity;
     w.wind_direction = settings.wind_direction;
     w.wind_speed = settings.wind_speed;
@@ -76,8 +77,8 @@ Wire encode(const Settings& settings, std::uint32_t sequence, const char* map_na
 std::optional<Settings> decode(const Wire& wire) noexcept {
     if (std::memcmp(wire.magic, kWireMagic, sizeof(wire.magic)) != 0 || wire.abi != kWireAbi ||
         wire.preset >= kPresetCount ||
-        (wire.flags & ~(kWireFlagHeroWakes | kWireFlagIncludeInEffects | kWireFlagHeroTracks)) !=
-            0 ||
+        (wire.flags & ~(kWireFlagHeroWakes | kWireFlagIncludeInEffects | kWireFlagHeroTracks |
+                        kWireFlagHighQuality)) != 0 ||
         !in_range(wire.flake_size, kFlakeSizeMin, kFlakeSizeMax) ||
         !in_range(wire.density, kDensityMin, kDensityMax))
         return std::nullopt;
@@ -103,6 +104,7 @@ std::optional<Settings> decode(const Wire& wire) noexcept {
     s.hero_wakes = (wire.flags & kWireFlagHeroWakes) != 0;
     s.include_in_effects = (wire.flags & kWireFlagIncludeInEffects) != 0;
     s.hero_tracks = (wire.flags & kWireFlagHeroTracks) != 0;
+    s.quality = (wire.flags & kWireFlagHighQuality) != 0 ? Quality::High : Quality::Standard;
     return s;
 }
 
@@ -191,6 +193,8 @@ Resolved resolve(const Settings& settings) noexcept {
         (snow ? 120.0f : 60.0f) / std::max(settings.intensity * settings.density, 0.2f);
     r.render.coating_build_up = settings.build_up;
     r.render.hero_trails = settings.hero_tracks;
+    r.render.high_quality = settings.quality == Quality::High;
+    r.precipitation.high_quality = settings.quality == Quality::High;
     r.precipitation.size_scale = settings.flake_size;
     r.precipitation.wind_xy[0] = wind_x;
     r.precipitation.wind_xy[1] = wind_y;

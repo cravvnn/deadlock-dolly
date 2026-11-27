@@ -34,6 +34,7 @@ void test_round_trip_every_preset() {
         s.build_up = 12.5f + static_cast<float>(i);
         s.hero_wakes = (i % 2) == 0;
         s.include_in_effects = (i % 3) != 0;
+        s.quality = (i % 2) == 1 ? Quality::High : Quality::Standard;
         const Wire w = encode(s, 41u + i);
         CHECK(w.sequence == 41u + i);
         const auto back = decode(w);
@@ -45,6 +46,7 @@ void test_round_trip_every_preset() {
         CHECK(back->build_up == s.build_up);
         CHECK(back->hero_wakes == s.hero_wakes);
         CHECK(back->include_in_effects == s.include_in_effects);
+        CHECK(back->quality == s.quality);
     }
 }
 
@@ -78,7 +80,7 @@ void test_decode_rejects_bad_blocks() {
     w.preset = kPresetCount;
     CHECK(!decode(w).has_value());
     w = good;
-    w.flags |= 8u; // 1, 2 and 4 are known (hero tracks is 4)
+    w.flags |= 16u; // 1, 2, 4 and 8 are known (hero tracks is 4, high quality is 8)
     CHECK(!decode(w).has_value());
 
     float Wire::*fields[] = {&Wire::intensity, &Wire::wind_direction, &Wire::wind_speed,
@@ -120,6 +122,10 @@ void test_resolve_maps_presets_and_wind() {
     CHECK(fog.render.preset == dolly::env::AtmospherePreset::GroundFog);
     CHECK(fog.precipitation.kind == Precipitation::None);
     CHECK(resolve(preset_settings(Preset::RainStorm)).precipitation.kind == Precipitation::Rain);
+    Settings hq = preset_settings(Preset::RainStorm);
+    CHECK(!resolve(hq).render.high_quality && !resolve(hq).precipitation.high_quality);
+    hq.quality = Quality::High;
+    CHECK(resolve(hq).render.high_quality && resolve(hq).precipitation.high_quality);
     CHECK(resolve(preset_settings(Preset::Ash)).render.preset ==
           dolly::env::AtmospherePreset::AshEmbers);
 }

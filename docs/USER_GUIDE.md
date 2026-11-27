@@ -713,6 +713,13 @@ is disabled when no replay is running or an export is active, and resets to
 while seeking and warming up a shot, then turns them back on once the camera is
 in position.
 
+**Weather quality** on the desktop **Scene** page and in the in-game **Scene**
+drawer (**Standard** / **High**) controls live preview detail for falling sand,
+falling rain, ground splashes, ripples and puddle reflections. Shots default to
+**Standard** so live preview stays light; **High** enables the full look live.
+Fixed-step video exports always render at maximum quality regardless of the
+live switch.
+
 Custom tracks accept numeric camera cvars, including `citadel_camera_*`, `cam_*`,
 `r_citadel_depthoffield_*`, `r_dof_*` and several HUD/lens controls. These are cvar
 names, not arbitrary console command lines. Being accepted by the editor does

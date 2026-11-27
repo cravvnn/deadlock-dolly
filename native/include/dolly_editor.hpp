@@ -188,7 +188,9 @@ enum class EditorAction : std::uint32_t {
     // Scene drawer: footprint tracks in snow, sand, dust and ash (0 or 1).
     SetWeatherHeroTracks,
     // Look drawer: live session-only rendering debug view (index into DEBUG_VIEW_OPTIONS).
-    SetDebugView
+    SetDebugView,
+    // Scene drawer: live preview weather quality (0 = Standard, 1 = High).
+    SetWeatherQuality
 };
 static_assert(static_cast<std::uint32_t>(EditorAction::SeekCamera) == 119,
               "Stable selected-camera seek action ID");
@@ -230,8 +232,10 @@ static_assert(static_cast<std::uint32_t>(EditorAction::SetWeatherHeroTracks) == 
               "Stable Scene hero tracks action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::SetDebugView) == 147,
               "Stable Look debug view action ID");
-constexpr EditorAction kEditorActionLast = EditorAction::SetDebugView;
-static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 147, "Last editor action ID");
+static_assert(static_cast<std::uint32_t>(EditorAction::SetWeatherQuality) == 148,
+              "Stable Scene weather quality action ID");
+constexpr EditorAction kEditorActionLast = EditorAction::SetWeatherQuality;
+static_assert(static_cast<std::uint32_t>(kEditorActionLast) == 148, "Last editor action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::TakeScreenshot) == 98,
               "Stable screenshot action ID");
 static_assert(static_cast<std::uint32_t>(EditorAction::ObjectPickerOpen) == 99 &&

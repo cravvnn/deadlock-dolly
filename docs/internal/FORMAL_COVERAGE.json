@@ -1777,7 +1777,7 @@
     },
     {
       "path": "dolly/editor_dispatch.py",
-      "sha256": "00c3681a8f985ad4788684fe97c754dd131a02cf617ea5dfe4d75f17c96b419d",
+      "sha256": "c41dcb9d90bb04e6341b539ee3a2edb9390acd1ffe70afadb7b2120c5e910dad",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2026,7 +2026,7 @@
     },
     {
       "path": "dolly/editor_wire.py",
-      "sha256": "6c697b7a80b99e7f9228672e3d09ec7de9537e1bbce265f8fddfdbbb91180913",
+      "sha256": "25fd9333823fae0674e6913d58cdcd4680945750faffd2761ef8063e8e3a0d7c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -2726,7 +2726,7 @@
     },
     {
       "path": "dolly/gui.py",
-      "sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb",
+      "sha256": "cdf8c1445117a61d31eb54c3f1905fc558897cad52ce4d7b903834e94511549b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -2889,7 +2889,7 @@
     },
     {
       "path": "dolly/gui_layout.py",
-      "sha256": "474e6d17c3760fbecf34cc23dd896c7517c7e7937f766ec9e3c2558086f8c30d",
+      "sha256": "ca0d430c1f78d6d4c80004e393ea402ed20cdd13a7590e4ace603292282bb749",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -6467,7 +6467,7 @@
     },
     {
       "path": "dolly/ui/scene_page.py",
-      "sha256": "4c431e203059ed4b5424b5d8fae7983fe65bde5ae3840d7dcdb21855b2d9bcea",
+      "sha256": "e41d1ecdacacc6852ae4e7e686aab66a983aa066cae7efb074b1a61725d48217",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -7348,7 +7348,7 @@
     },
     {
       "path": "dolly/weather.py",
-      "sha256": "4fc50bd88c0cc187f3a4e989d7c466eb5f5055e8e4607f8f4445d71c7a335917",
+      "sha256": "ab2697d7cb1ec995f3d3dc8d78035f9ada642d180ef2cabaef521b72af2398bc",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -7635,7 +7635,7 @@
     },
     {
       "path": "native/include/dolly_editor.hpp",
-      "sha256": "8365c36a639e103a66e43197d12facd95ef0ed5b5b73420fe7cb38755ff7afad",
+      "sha256": "3856027fd97a660d15a27fab7b218387a3349bbd21aea9573d8a5ae6b2bcdfe0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -7720,7 +7720,7 @@
     },
     {
       "path": "native/include/dolly_env_render_dx11.hpp",
-      "sha256": "bd141cfd92f788912e3e1f11871e5a58a0bb1c42fbe99a20a67ae13580c43348",
+      "sha256": "b6ace4a0d5523de666ad055f18229782fc7d010b5157f863ae89f95bdb124c6e",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8445,7 +8445,7 @@
     },
     {
       "path": "native/include/dolly_precip_dx11.hpp",
-      "sha256": "735ad5d053e79899034eebb58a9a2020db291410878d6d8579e229d2a2b9599a",
+      "sha256": "e375e8922a1766525e14e4aaf2950577fcdd354591211c9be86fdbdbdf013ff2",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8823,7 +8823,7 @@
     },
     {
       "path": "native/include/dolly_weather_state.hpp",
-      "sha256": "987e78e4088c155eaf9f80490af65c7781d74e52e391b2cb06730c87cec1eb75",
+      "sha256": "75e65adeb9c24e39405ae7decfabd6a56b53e78de0ba29e11bb3342c3e482825",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9403,7 +9403,7 @@
     },
     {
       "path": "native/src/dolly_editor_win.cpp",
-      "sha256": "676974d439cffa2e3d173caca33d10a4c778fa3ebd4eb6cc20cd5eff4919b320",
+      "sha256": "0d5e49ed24998d0f82b66382bda8d0f615b1c9db1c852f5517bedbed59985faf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -9474,7 +9474,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "ad136a35f0ef147c5133a7d7b07bafe5131a95af0441639f1890b7ad20ff464c",
+      "sha256": "35e826e5f22f2e042147ad9b6f69760cfc60359173b6af14c78014a156b96794",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10106,7 +10106,7 @@
     },
     {
       "path": "native/src/dolly_precip_dx11.cpp",
-      "sha256": "21aec9ba5f896889ddb90768d094ca876cc9ffc7590cdcd8ce488e3dd76c694d",
+      "sha256": "aebedaeeb03bdb0ce36452101d7e7f8b465a20b606ed9155155b5d028c90f643",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10180,7 +10180,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "054ed6a820b96593c88968906e1817bff4f1bb82aa22f486427af0da2cfe112a",
+      "sha256": "eb6bbdc43433ea9dcfc4d18e6ae3db58f8c14ca4c191c8b491e65c7a4727f2e0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10903,7 +10903,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "4790332b4397a32a095935e8ee432228d7865933e864ba823c734e362ddfbcf9",
+      "sha256": "dd225a1336e2b40544957c87c4700bd42e9e52f2fe0796162a67c6219af45bbb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10951,7 +10951,7 @@
     },
     {
       "path": "native/src/dolly_weather_state.cpp",
-      "sha256": "b3b2cc9593533dde931be4b9c18376b9b633af1b76772f516d226750de894688",
+      "sha256": "888d7299ea1fca0b94f8b470895ea8162d0be385803747715b317120d19cc57b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -12486,7 +12486,7 @@
         "dolly/CloseFlow.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb"
+      "owner_utf8_lf_sha256": "cdf8c1445117a61d31eb54c3f1905fc558897cad52ce4d7b903834e94511549b"
     },
     "dolly/ConfigMode.tla": {
       "path": "dolly/file_ops.py",
@@ -12548,7 +12548,7 @@
         "dolly/DialogRule.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb"
+      "owner_utf8_lf_sha256": "cdf8c1445117a61d31eb54c3f1905fc558897cad52ce4d7b903834e94511549b"
     },
     "dolly/DollyRoot.tla": {
       "path": "dolly/controller.py",
@@ -12888,7 +12888,7 @@
       "instances": [
         "ProjectOpenSnapshotApi"
       ],
-      "owner_utf8_lf_sha256": "faa3e597c8058e9af6a30beed1769ee86a5c1b376d9c388f3d73251c4210aefb"
+      "owner_utf8_lf_sha256": "cdf8c1445117a61d31eb54c3f1905fc558897cad52ce4d7b903834e94511549b"
     },
     "dolly/PublishReplay.tla": {
       "path": "dolly/replay_repair.py",

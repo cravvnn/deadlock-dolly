@@ -948,11 +948,10 @@ class DebugViewInGameWireTests(unittest.TestCase):
     def test_action_id_and_native_header_and_drawer_labels_match(self):
         names = ACTION_ORDER + editor_wire.EXTRA_ACTIONS
         self.assertEqual(names.index("set_debug_view"), 147)
-        self.assertEqual(names[-1], "set_debug_view")
 
         header = (ROOT / "native" / "include" / "dolly_editor.hpp").read_text(encoding="utf-8")
         self.assertIn("SetDebugView) == 147", header)
-        self.assertIn("kEditorActionLast) == 147", header)
+        self.assertIn("kEditorActionLast) == 148", header)
         self.assertIn("kEditorDebugViewOffset = 2 * 1024 * 1024 + 60032;", header)
         self.assertEqual(editor_wire.DEBUG_VIEW_OFFSET, 2 * 1024 * 1024 + 60032)
         self.assertIn(f"kEditorDebugViewCount = {len(DEBUG_VIEW_OPTIONS)};", header)

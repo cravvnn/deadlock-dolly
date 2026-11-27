@@ -1278,6 +1278,8 @@ bool editor_enqueue(EditorAction action, double value, const CameraPose* pose_ov
         return false;
     if (action == EditorAction::SetWeatherHeroTracks && value != 0.0 && value != 1.0)
         return false;
+    if (action == EditorAction::SetWeatherQuality && value != 0.0 && value != 1.0)
+        return false;
     if (action == EditorAction::SetDebugView &&
         (!state.ready || !state.debug_view_available || state.busy || state.playing ||
          state.renderlock_exporting ||

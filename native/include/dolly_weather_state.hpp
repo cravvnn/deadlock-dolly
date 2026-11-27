@@ -32,6 +32,11 @@ enum class Preset : std::uint32_t {
 };
 constexpr std::uint32_t kPresetCount = 8;
 
+enum class Quality : std::uint32_t {
+    Standard = 0,
+    High = 1,
+};
+
 constexpr float kIntensityMin = 0.1f, kIntensityMax = 3.0f;
 constexpr float kWindSpeedMin = 0.0f, kWindSpeedMax = 900.0f;
 constexpr float kGustsMin = 0.0f, kGustsMax = 2.5f;
@@ -78,6 +83,7 @@ struct Settings {
     bool hero_wakes = true;
     bool include_in_effects = true;
     bool hero_tracks = true; // footprint tracks in snow, sand, dust and ash
+    Quality quality = Quality::Standard;
 
     bool enabled() const noexcept { return preset != Preset::Off; }
 };
@@ -90,6 +96,7 @@ constexpr std::uint32_t kWireAbi = 1;
 constexpr std::uint32_t kWireFlagHeroWakes = 1;
 constexpr std::uint32_t kWireFlagIncludeInEffects = 2;
 constexpr std::uint32_t kWireFlagHeroTracks = 4;
+constexpr std::uint32_t kWireFlagHighQuality = 8;
 // Presets whose ground cover takes hero tracks (snow, sand, dust and ash).
 bool takes_tracks(Preset preset) noexcept;
 // The editor publishes this block in the shared mapping (seqlocked: magic at 0,

@@ -71,6 +71,7 @@ cbuffer EnvConstants : register(b0) {
     float4 netInfo;       // x 2 = composite the air from halfMarch, y edge threshold,
                           // z 1 = driftMap holds a drift potential, w hero count
     float4 trailInfo;     // x 1 = hero trails (2 = and kick-up), y fill-in time (s), z shot start (s), w build-up (s)
+    float4 qualityInfo;   // x 1 = high quality, yzw reserved
     EmitterGPU emitters[EMITTERS];
     float4 heroes[12];    // xyz feet position of a hero the coating leaves clean
 };
@@ -834,8 +835,9 @@ bool ReflectProbe(float3 q, out float behind, out float2 uv) {
 
 // What a puddle at p mirrors along r: rgb, and a = how much of it came from the frame
 // itself (0 = the sky only). With reflections allowed, the ray marches through the frame
-// (12 growing steps to about 600 u, then 4 halvings); anything it misses, leaves the
-// screen for, or finds only faintly falls back smoothly to the sky.
+// (12 growing steps to ~600 u in Standard, 20 finer steps to ~820 u in High, then binary
+// halvings); anything it misses, leaves the screen for, or finds only faintly falls back
+// smoothly to the sky.
 float4 PuddleReflection(float3 p, float3 r, float footprint) {
     float3 sky = SkyReflection(r);
     if (denseColor.w < 0.5) return float4(sky, 0.0);
@@ -843,10 +845,16 @@ float4 PuddleReflection(float3 p, float3 r, float footprint) {
     // darkening half of each ring into a crescent.
     r.z = max(r.z, 0.03);
     r = normalize(r);
+    bool hq = qualityInfo.x > 0.5;
+    int maxSteps = hq ? 20 : 12;
+    int refineSteps = hq ? 5 : 4;
+    float dtGrow = hq ? 1.18 : 1.25;
+    float fadeStart = hq ? 500.0 : 380.0;
+    float fadeEnd = hq ? 820.0 : 600.0;
     // A start fixed per world point (deterministic) keeps hit/miss boundaries from lining
     // up into contours that follow whatever is reflected.
-    float prevT = 0.0, t = 4.0 + 6.0 * Hash3(float3(p.xy, 3.0)), dt = 10.0;
-    [loop] for (int i = 0; i < 12; ++i) {
+    float prevT = 0.0, t = 4.0 + 6.0 * Hash3(float3(p.xy, 3.0)), dt = hq ? 8.0 : 10.0;
+    [loop] for (int i = 0; i < maxSteps; ++i) {
         float behind;
         float2 uv;
         if (!ReflectProbe(p + r * t, behind, uv)) break;
@@ -854,7 +862,7 @@ float4 PuddleReflection(float3 p, float3 r, float footprint) {
         if (behind > 0.0 && behind < thickness) {
             float depthIn = behind;
             float a = prevT, b = t;
-            [unroll] for (int k = 0; k < 4; ++k) {
+            [loop] for (int k = 0; k < refineSteps; ++k) {
                 float m = 0.5 * (a + b);
                 float bm;
                 float2 um;
@@ -867,89 +875,216 @@ float4 PuddleReflection(float3 p, float3 r, float footprint) {
             }
             float2 border = min(uv, 1.0 - uv);
             float conf = smoothstep(0.0, 0.06, min(border.x, border.y)) *
-                         (1.0 - smoothstep(380.0, 600.0, b)) *
+                         (1.0 - smoothstep(fadeStart, fadeEnd, b)) *
                          (1.0 - smoothstep(0.5, 1.0, depthIn / thickness));
             float3 hit = sceneColor.SampleLevel(linearClamp, uv, 0).rgb;
             return float4(lerp(sky, hit, conf), conf);
         }
         prevT = t;
         t += dt;
-        dt *= 1.25;
+        dt *= dtGrow;
     }
     return float4(sky, 0.0);
 }
 
-// How much of a point is standing water: flat, open ground fills first in broad hollows,
-// creases and the gutters below the street deck, and the pools spread as the rain goes on.
+// How much of a point is standing water: flat, open ground fills first in broad hollows
+// and sheltered drainage spots, and the pools spread as the rain goes on. Continuous
+// domain-warped noise + smooth drift potential (no per-cell steps or boxy outlines).
 float PuddleAmount(float3 p, float3 n, float coat, float open, float cavity) {
     // Ground normals come from the map's own slope on known floors, so this thins water
     // smoothly on ramps instead of cutting it at a fixed angle.
     float flat = smoothstep(0.9, 0.985, n.z);
     if (flat * open <= 0.001) return 0.0;
-    // No gutter water: the map's 22 u cells cannot place a curb, and water guessed from
-    // them drew arcs across the road that followed no curb.
-    // Broad hollows with a broken outline (a lone noise blob is round, and a curb clips it
-    // into a half circle), deepening gradually from their edge.
-    float hollow = Fbm3(float3(p.xy * 0.0035, 7.3)) +
-                   (Fbm3(float3(p.xy * 0.021, 2.9)) - 0.5) * 0.12;
-    // About an eighth of open flat ground at the storm's default cover, half at full.
-    float threshold = 0.95 - 0.45 * coat;
-    float depth = saturate((hollow - threshold) / 0.22);
-    return smoothstep(0.0, 0.3, depth) * flat * open;
+    float2 warp = float2(Fbm3(float3(p.xy * 0.0022, 4.1)) - 0.5,
+                         Fbm3(float3(p.xy * 0.0022 + 19.3, 8.7)) - 0.5) * 42.0;
+    float2 q = p.xy + warp;
+    float hollow = Fbm3(float3(q * 0.0034, 7.3)) +
+                   (Fbm3(float3(q * 0.019, 2.9)) - 0.5) * 0.14;
+    // Sheltered low-wind spots (continuous drift map) hold slightly more water.
+    float drainBias = (DriftAt(MapUV(p.xy)) - 1.0) * 0.08;
+    hollow += drainBias;
+    // About a sixth of open flat ground at the storm's default cover, over half at full.
+    float threshold = 0.93 - 0.45 * coat;
+    float depth = saturate((hollow - threshold) / 0.24);
+    return smoothstep(0.0, 0.35, depth) * flat * open;
 }
 
-// Raindrop rings on standing water: the surface slope (xy) from a few hashed drops per
-// 14 u cell, each ring spreading and fading over its own cycle. Stateless in time.
-float2 RippleSlope(float2 xy, float time, float rate) {
+float2 Rot2(float2 v, float c, float s) {
+    return float2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
+// Raindrop rings on standing water: rotated, non-commensurate cell scales with a 2x2
+// neighborhood check so rings never clip at cell boundaries or tile, using a smooth
+// damped capillary wave derivative. Stateless in time.
+float2 RippleSlope(float2 xy, float time, float rate, bool hq) {
+    static const float scales[4] = {14.3, 19.7, 26.9, 9.7};
+    static const float cosA[4] = {1.0, 0.42666, -0.67361, -0.73305};
+    static const float sinA[4] = {0.0, 0.90441, 0.73909, -0.68018};
+    static const float maxR[4] = {6.2, 8.2, 10.5, 4.2};
+    static const float waveW[4] = {1.35, 1.65, 2.0, 0.95};
+    static const float amp[4] = {1.0, 0.82, 0.65, 0.55};
+    int layers = hq ? 4 : 3;
     float2 slope = float2(0.0, 0.0);
-    [unroll] for (int layer = 0; layer < 3; ++layer) {
-        float2 shift = float2(0.37, 0.71) * layer;
-        float2 q = xy / 14.0 + shift;
-        float2 cell = floor(q);
-        float h = Hash3(float3(cell, layer * 13.0));
-        float h2 = Hash3(float3(cell, layer * 13.0 + 5.0));
-        float2 center = (cell + 0.5 + (float2(h, h2) - 0.5) * 0.3 - shift) * 14.0;
-        float phase = frac(time * rate + h * 7.0 + h2 * 3.0);
-        float2 d = xy - center;
-        float dist = length(d);
-        float x = (dist - phase * 6.0) / 0.9;
-        float fade = (1.0 - phase) * (1.0 - phase);
-        slope += d / max(dist, 1e-3) * (-2.0 * x * exp(-x * x)) * fade;
+    [loop] for (int layer = 0; layer < layers; ++layer) {
+        float sc = scales[layer];
+        float2 rxy = Rot2(xy, cosA[layer], sinA[layer]);
+        float2 q = rxy / sc;
+        float2 base = floor(q - 0.5);
+        float2 layerSlope = float2(0.0, 0.0);
+        [unroll] for (int oy = 0; oy < 2; ++oy) {
+            [unroll] for (int ox = 0; ox < 2; ++ox) {
+                float2 cell = base + float2(ox, oy);
+                float h = Hash3(float3(cell, layer * 17.3 + 1.1));
+                float h2 = Hash3(float3(cell, layer * 17.3 + 6.7));
+                float2 center = (cell + 0.18 + 0.64 * float2(h, h2)) * sc;
+                float phase = frac(time * rate * lerp(0.82, 1.18, h) + h * 7.13 + h2 * 3.71);
+                float2 d = rxy - center;
+                float dist = length(d);
+                float r = dist - phase * maxR[layer];
+                float w = waveW[layer];
+                float u = r / w;
+                if (abs(u) < 2.6) {
+                    float env = exp(-u * u);
+                    float k = 2.1;
+                    float ds = ((-2.0 * u / w) * cos(k * r) - k * sin(k * r)) * env;
+                    float fade = smoothstep(0.0, 0.08, phase) * (1.0 - phase) * (1.0 - phase);
+                    layerSlope += (d / max(dist, 1e-3)) * (ds * fade * amp[layer]);
+                }
+            }
+        }
+        // Rotate slope back into world XY.
+        slope += Rot2(layerSlope, cosA[layer], -sinA[layer]);
     }
     return slope;
 }
 
-// Rain: open ground darkens as it soaks and takes a thin sheen; standing water pools on
-// flat ground and mirrors the sky (and, where allowed, the frame), stirred by raindrops.
+// Impact splashes where raindrops hit wet ground or puddles: brief expanding rings and
+// tiny impact crowns, stateless in time, fading cleanly with distance.
+float RainSplash(float2 xy, float time, float rate, float footprint, float puddle, bool hq) {
+    float distFade = 1.0 - smoothstep(0.35, 1.45, footprint);
+    if (distFade <= 0.001) return 0.0;
+    static const float scales[2] = {21.3, 31.9};
+    static const float cosA[2] = {0.91309, -0.29432};
+    static const float sinA[2] = {0.40776, 0.95571};
+    float total = 0.0;
+    [unroll] for (int layer = 0; layer < 2; ++layer) {
+        float sc = scales[layer];
+        float2 rxy = Rot2(xy, cosA[layer], sinA[layer]);
+        float2 q = rxy / sc;
+        if (hq) {
+            float2 base = floor(q - 0.5);
+            [unroll] for (int oy = 0; oy < 2; ++oy) {
+                [unroll] for (int ox = 0; ox < 2; ++ox) {
+                    float2 cell = base + float2(ox, oy);
+                    float h = Hash3(float3(cell, layer * 29.1 + 3.3));
+                    float h2 = Hash3(float3(cell, layer * 29.1 + 11.7));
+                    float phase = frac(time * rate * lerp(0.85, 1.25, h) + h * 11.3 + h2 * 5.9);
+                    if (phase >= 0.28) continue;
+                    float sp = phase / 0.28;
+                    float2 center = (cell + 0.22 + 0.56 * float2(h, h2)) * sc;
+                    float2 d = rxy - center;
+                    float dist = length(d);
+                    float maxRad = lerp(2.8, 5.2, puddle) * lerp(0.75, 1.25, h2);
+                    float ringR = lerp(0.45, maxRad, sqrt(sp));
+                    float thick = max(0.34, footprint * 0.95);
+                    float ring = exp(-pow((dist - ringR) / thick, 2.0)) * (1.0 - sp) * (1.0 - sp);
+                    float crown = 0.0;
+                    if (sp < 0.42) {
+                        float cp = sp / 0.42;
+                        float ang = atan2(d.y, d.x);
+                        float petals = 0.65 + 0.35 * sin(ang * 5.0 + h * 6.2831);
+                        float cr = lerp(0.25, 1.45, cp);
+                        crown = exp(-pow((dist - cr) / max(0.45, footprint * 1.1), 2.0)) *
+                                petals * (1.0 - cp) * 1.25;
+                    }
+                    total += (ring * 0.72 + crown);
+                }
+            }
+        } else {
+            float2 cell = floor(q);
+            float h = Hash3(float3(cell, layer * 29.1 + 3.3));
+            float h2 = Hash3(float3(cell, layer * 29.1 + 11.7));
+            float phase = frac(time * rate * lerp(0.85, 1.25, h) + h * 11.3 + h2 * 5.9);
+            if (phase < 0.28) {
+                float sp = phase / 0.28;
+                // Keep splash center away from cell borders so rings never clip in 1x1 mode.
+                float2 center = (cell + 0.32 + 0.36 * float2(h, h2)) * sc;
+                float2 d = rxy - center;
+                float dist = length(d);
+                float maxRad = lerp(2.5, 4.4, puddle) * lerp(0.8, 1.2, h2);
+                float ringR = lerp(0.45, maxRad, sqrt(sp));
+                float thick = max(0.38, footprint * 1.0);
+                float ring = exp(-pow((dist - ringR) / thick, 2.0)) * (1.0 - sp) * (1.0 - sp);
+                float crown = sp < 0.38
+                                  ? exp(-pow((dist - lerp(0.25, 1.25, sp / 0.38)) /
+                                                 max(0.45, footprint * 1.1), 2.0)) *
+                                        (1.0 - sp / 0.38) * 1.1
+                                  : 0.0;
+                total += (ring * 0.7 + crown);
+            }
+        }
+    }
+    return saturate(total) * distFade;
+}
+
+// Rain: open ground darkens as it soaks and takes a glossy wet sheen; standing water pools
+// on flat ground and mirrors the sky (and, where allowed, the frame), stirred by raindrops
+// and punctuated by expanding impact splashes.
 float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
                     float coat, float open, float cavity, float footprint) {
     float upMask = smoothstep(0.28, 0.78, surfNormal.z);
     float wet = saturate(coat * 3.0) * open * lerp(0.3, 1.0, upMask);
     if (wet <= 0.001) return baseColor;
-    float3 color = baseColor * lerp(1.0, 0.66, wet);
+    bool hq = qualityInfo.x > 0.5;
 
-    // Thin water film: a rough, faint mirror on every wet up-facing surface.
-    float nv = saturate(dot(surfNormal, viewDir));
-    float film = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
-    color += SkyReflection(reflect(-viewDir, surfNormal)) * film * wet * upMask * 0.3;
-
-    float puddle = PuddleAmount(surfPos, surfNormal, coat, open, cavity);
-    if (puddle <= 0.001) return color;
-    // Drops only where a pixel can resolve the rings; they stir harder in heavier rain.
-    float stir = (1.0 - saturate(footprint / 1.2)) * saturate(styleA.y) * open;
-    float2 slope = stir > 0.001 ? RippleSlope(surfPos.xy, windTime.z, 0.6 + 0.6 * styleA.y) * stir
-                                : float2(0.0, 0.0);
-    float3 pn = normalize(float3(-slope * 0.35, 1.0));
-    float pnv = saturate(dot(pn, viewDir));
-    float fresnel = 0.02 + 0.98 * pow(1.0 - pnv, 5.0);
-    float4 mirror = PuddleReflection(surfPos, reflect(-viewDir, pn), footprint);
-    // The light this pixel already has dims the sun's glint in shadow.
+    // Soaked porous surfaces darken and deepen slightly in saturation, with gentle
+    // continuous world-space sheen variation (no flat uniform darken).
     float luma = dot(baseColor, float3(0.2126, 0.7152, 0.0722));
     float lit = lerp(0.35, 1.0, saturate(luma / 0.25));
-    // Shallow at the pool's edge, so it never reads as a dark stain with a hard outline.
-    float3 water = baseColor * lerp(0.62, 0.5, puddle);
-    float3 pool = lerp(water, mirror.rgb * lerp(lit, 1.0, mirror.a), fresnel);
-    return lerp(color, pool, puddle);
+    float dampVar = lerp(0.88, 1.12, ValueNoise3(float3(surfPos.xy * 0.018, 4.7)));
+    float3 soaked = lerp(float3(luma, luma, luma), baseColor, 1.0 + 0.16 * wet);
+    float3 color = soaked * lerp(1.0, 0.58, saturate(wet * dampVar));
+
+    // Thin water film: grazing sky Fresnel + crisp wet specular sheen on non-puddle ground.
+    // Uses sky/sun only (never reflected frame content), preserving layer-take rules.
+    float nv = saturate(dot(surfNormal, viewDir));
+    float film = 0.025 + 0.975 * pow(1.0 - nv, 5.0);
+    float3 sun = normalize(sunDir.xyz);
+    float3 halfVec = normalize(sun + viewDir);
+    float nh = saturate(dot(surfNormal, halfVec));
+    float specSheen = (pow(nh, 42.0) * 0.26 + pow(nh, 140.0) * 0.45) * lit;
+    color += SkyReflection(reflect(-viewDir, surfNormal)) * film * wet * upMask * (0.42 * dampVar) +
+             sunColor.rgb * specSheen * wet * upMask * dampVar;
+
+    float puddle = PuddleAmount(surfPos, surfNormal, coat, open, cavity);
+    // Soft damp meniscus rim around puddles.
+    float meniscus = smoothstep(0.0, 0.25, puddle) * (1.0 - smoothstep(0.25, 0.65, puddle));
+    color *= lerp(1.0, 0.86, meniscus);
+
+    float rainRate = 0.7 + 0.65 * styleA.y;
+    if (puddle > 0.001) {
+        // Drops only where a pixel can resolve the rings; they stir harder in heavier rain.
+        float stir = (1.0 - saturate(footprint / 1.3)) * saturate(styleA.y) * open;
+        float2 slope = stir > 0.001 ? RippleSlope(surfPos.xy, windTime.z, rainRate, hq) * stir
+                                    : float2(0.0, 0.0);
+        float3 pn = normalize(float3(-slope * 0.24, 1.0));
+        float pnv = saturate(dot(pn, viewDir));
+        float fresnel = 0.02 + 0.98 * pow(1.0 - pnv, 5.0);
+        float4 mirror = PuddleReflection(surfPos, reflect(-viewDir, pn), footprint);
+        // Shallow at the pool's edge, so it never reads as a dark stain with a hard outline.
+        float3 water = baseColor * lerp(0.56, 0.44, puddle);
+        float3 pool = lerp(water, mirror.rgb * lerp(lit, 1.0, mirror.a), fresnel);
+        color = lerp(color, pool, puddle);
+    }
+
+    // Impact splashes on open-sky upward-facing wet surfaces (stronger on puddles).
+    float splashMask = saturate(styleA.y) * open * smoothstep(0.55, 0.88, surfNormal.z);
+    if (splashMask > 0.001) {
+        float splash = RainSplash(surfPos.xy, windTime.z, rainRate * 1.15, footprint, puddle, hq);
+        float3 splashLight = (ambientColor.rgb * 1.1 + sunColor.rgb * (0.35 + 0.85 * lit));
+        color += splashLight * splash * splashMask * lerp(0.32, 0.68, puddle);
+    }
+    return color;
 }
 
 )HLSL"
@@ -1992,6 +2127,7 @@ struct EnvConstants {
     float floor_decode[4];
     float net_info[4];
     float trail_info[4];
+    float quality_info[4];
     EmitterGPU emitters[kMaxFluidEmitters];
     float heroes[EnvRenderParams::kMaxCoatingHeroes][4];
 };
@@ -2547,6 +2683,7 @@ bool EnvRendererDX11::render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView*
                            : fill_base / std::max(params.intensity, 0.25f);
     cb.trail_info[2] = params.shot_start_time;
     cb.trail_info[3] = std::max(params.coating_build_up, 0.0f);
+    cb.quality_info[0] = params.high_quality ? 1.0f : 0.0f;
     ctx->UpdateSubresource(impl_->constants.Get(), 0, nullptr, &cb, 0, 0);
     ID3D11Buffer* stamp_cbs[1] = {impl_->constants.Get()};
     if (trails) {

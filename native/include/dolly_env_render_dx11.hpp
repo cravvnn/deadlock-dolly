@@ -100,6 +100,8 @@ struct EnvRenderParams {
     bool allow_half_res = true;
     uint64_t half_res_above_pixels = 1920ull * 1080ull;
     int march_steps = 64;
+    // High quality adds richer ripples, splashes and puddle reflections; exports always set it.
+    bool high_quality = false;
 };
 
 class EnvRendererDX11 {
